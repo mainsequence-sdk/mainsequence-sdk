@@ -6,14 +6,11 @@ import types
 import uuid
 
 import pytest
-from sqlalchemy import Column, Index, Integer, MetaData, String, Table, Uuid
+from sqlalchemy import Column, ForeignKey, Index, Integer, MetaData, String, Table, Uuid
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from mainsequence.client.metatables import MetaTable
-from mainsequence.meta_tables import (
-    MetaTableForeignKey,
-    PlatformManagedMetaTable,
-)
+from mainsequence.meta_tables import PlatformManagedMetaTable
 from mainsequence.meta_tables.migrations import (
     DEFAULT_ALEMBIC_VERSION_COLUMN_NAME,
     DEFAULT_ALEMBIC_VERSION_IDENTIFIER,
@@ -47,8 +44,8 @@ def test_alembic_version_metatable_builds_external_registration_request():
     assert version_column.nullable is False
     assert version_column.primary_key is True
     assert request.table_contract.constraints == []
-    assert request.table_contract.indexes == []
-    assert request.table_contract.foreign_keys == []
+    assert not hasattr(request.table_contract, "indexes")
+    assert not hasattr(request.table_contract, "foreign_keys")
     assert request.table_contract.authoring == {
         "owner": "alembic",
         "schema": DEFAULT_ALEMBIC_VERSION_SCHEMA,
@@ -285,6 +282,7 @@ def test_alembic_metatable_migration_finalizes_catalog_after_alembic(monkeypatch
         __metatable_data_source_uid__ = "data-source-uid"
 
     class Asset(PlatformManagedMetaTable, Base):
+        __tablename__ = "example_assets__asset"
         __metatable_namespace__ = "markets"
         __metatable_identifier__ = "markets.Asset"
         __metatable_data_source_uid__ = "data-source-uid"
@@ -338,7 +336,7 @@ def test_alembic_metatable_migration_finalizes_catalog_after_alembic(monkeypatch
                     identifier="markets.Asset",
                     data_source_uid="data-source-uid",
                     storage_hash="mt_asset_hash",
-                    physical_table_name="metatable_asset",
+                    physical_table_name="example_assets__asset",
                     previous_provisioning_status="reserved",
                     provisioning_status="active",
                     table_kind="relational",
@@ -365,8 +363,8 @@ def test_alembic_metatable_migration_finalizes_catalog_after_alembic(monkeypatch
     assert captured["request"].alembic_version_meta_table_uid == "registry-meta-table-uid"
     assert captured["request"].alembic_revision == "0001"
     assert Asset.get_meta_table_uid() == "asset-meta-table-uid"
-    assert Asset.__table__.name == "metatable_asset"
-    assert Asset.get_physical_table_name() == "metatable_asset"
+    assert Asset.__table__.name == "example_assets__asset"
+    assert Asset.get_physical_table_name() == "example_assets__asset"
     assert events == [
         (
             "hook",
@@ -388,6 +386,7 @@ def test_alembic_metatable_migration_sync_catalog_hook_has_no_reserved_policy(
         __metatable_data_source_uid__ = "data-source-uid"
 
     class Asset(PlatformManagedMetaTable, Base):
+        __tablename__ = "example_assets__asset"
         __metatable_namespace__ = "markets"
         __metatable_identifier__ = "markets.Asset"
         __metatable_data_source_uid__ = "data-source-uid"
@@ -432,6 +431,7 @@ def test_finalize_metatable_catalog_surfaces_missing_physical_tables(monkeypatch
         __metatable_data_source_uid__ = "data-source-uid"
 
     class Asset(PlatformManagedMetaTable, Base):
+        __tablename__ = "example_assets__asset"
         __metatable_namespace__ = "markets"
         __metatable_identifier__ = "markets.Asset"
         __metatable_data_source_uid__ = "data-source-uid"
@@ -466,7 +466,7 @@ def test_finalize_metatable_catalog_surfaces_missing_physical_tables(monkeypatch
                     identifier="markets.Asset",
                     data_source_uid="data-source-uid",
                     storage_hash="mt_asset_hash",
-                    physical_table_name="metatable_asset",
+                    physical_table_name="example_assets__asset",
                     previous_provisioning_status="reserved",
                     provisioning_status="reserved",
                     table_kind="relational",
@@ -495,7 +495,7 @@ def test_finalize_metatable_catalog_surfaces_missing_physical_tables(monkeypatch
         "Finalize-managed response ok=False finalized=0 active=0 reserved=1 failed=1.",
         (
             "Finalize-managed table failed identifier=markets.Asset "
-            "physical_table=metatable_asset provisioning_status=reserved "
+            "physical_table=example_assets__asset provisioning_status=reserved "
             "physical_table_exists=False finalized=False "
             'error={"code": "physical_table_missing"}'
         ),
@@ -693,6 +693,7 @@ def test_prepare_for_alembic_preserves_authored_table_names(monkeypatch):
         __metatable_data_source_uid__ = "data-source-uid"
 
     class Account(PlatformManagedMetaTable, Base):
+        __tablename__ = "example_assets__account"
         __metatable_data_source_uid__ = "data-source-uid"
         __metatable_namespace__ = "example.assets"
         __metatable_identifier__ = "Account"
@@ -701,6 +702,7 @@ def test_prepare_for_alembic_preserves_authored_table_names(monkeypatch):
         name: Mapped[str] = mapped_column(String(255), nullable=False)
 
     class Asset(PlatformManagedMetaTable, Base):
+        __tablename__ = "example_assets__asset"
         __metatable_data_source_uid__ = "data-source-uid"
         __metatable_namespace__ = "example.assets"
         __metatable_identifier__ = "Asset"
@@ -709,12 +711,7 @@ def test_prepare_for_alembic_preserves_authored_table_names(monkeypatch):
         uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
         account_uid: Mapped[uuid.UUID] = mapped_column(
             Uuid,
-            MetaTableForeignKey(
-                Account,
-                column="uid",
-                name="asset_account_uid_fkey",
-                ondelete="CASCADE",
-            ),
+            ForeignKey("example_assets__account.uid", name="asset_account_uid_fkey", ondelete="CASCADE"),
             nullable=False,
         )
         symbol: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -727,24 +724,22 @@ def test_prepare_for_alembic_preserves_authored_table_names(monkeypatch):
     def fake_reserve_managed(request, *, timeout=None, on_status=None):
         reserved_payloads.extend(request.tables)
         assert [table.identifier for table in request.tables] == [
-            "metatable_account",
-            "metatable_asset",
+            "example_assets__account",
+            "example_assets__asset",
         ]
-        assert request.tables[0].table_contract.foreign_keys == []
-        assert request.tables[1].table_contract.foreign_keys == []
+        assert not hasattr(request.tables[0].table_contract, "indexes")
+        assert not hasattr(request.tables[1].table_contract, "indexes")
+        assert not hasattr(request.tables[0].table_contract, "foreign_keys")
+        assert not hasattr(request.tables[1].table_contract, "foreign_keys")
 
         response_tables = []
         for table in request.tables:
-            if table.identifier == "metatable_account":
+            if table.identifier == "example_assets__account":
                 uid = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
-                physical_name = "metatable_account"
-                indexes = []
-                foreign_keys = []
+                physical_name = "example_assets__account"
             else:
                 uid = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
-                physical_name = "metatable_asset"
-                indexes = [{"columns": ["symbol"], "unique": False}]
-                foreign_keys = []
+                physical_name = "example_assets__asset"
             response_tables.append(
                 types.SimpleNamespace(
                     identifier=table.identifier,
@@ -759,8 +754,6 @@ def test_prepare_for_alembic_preserves_authored_table_names(monkeypatch):
                         "version": "relational-table.v1",
                         "physical": {"table_name": physical_name},
                         "columns": [],
-                        "indexes": indexes,
-                        "foreign_keys": foreign_keys,
                     },
                     existing=False,
                 )
@@ -786,25 +779,26 @@ def test_prepare_for_alembic_preserves_authored_table_names(monkeypatch):
     )
 
     assert [payload.identifier for payload in reserved_payloads] == [
-        "metatable_account",
-        "metatable_asset",
+        "example_assets__account",
+        "example_assets__asset",
     ]
     assert reserved_events == [
-        ("Account", "metatable_account", "metatable_account"),
-        ("Asset", "metatable_asset", "metatable_asset"),
+        ("Account", "example_assets__account", "example_assets__account"),
+        ("Asset", "example_assets__asset", "example_assets__asset"),
     ]
     assert prepared.data_source_uid == "data-source-uid"
     assert prepared.meta_table_uids == [
         "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
     ]
-    assert Account.__table__.name == "metatable_account"
-    assert Asset.__table__.name == "metatable_asset"
-    assert reserved_payloads[0].table_contract.physical.table_name == "metatable_account"
-    assert reserved_payloads[1].table_contract.physical.table_name == "metatable_asset"
+    assert Account.__table__.name == "example_assets__account"
+    assert Asset.__table__.name == "example_assets__asset"
+    assert reserved_payloads[0].table_contract.physical.table_name == "example_assets__account"
+    assert reserved_payloads[1].table_contract.physical.table_name == "example_assets__asset"
     assert "backend" not in str(next(iter(Asset.__table__.indexes)).name)
     assert next(iter(Asset.__table__.foreign_key_constraints)).name == "asset_account_uid_fkey"
-    assert reserved_payloads[1].table_contract.foreign_keys == []
+    assert not hasattr(reserved_payloads[1].table_contract, "indexes")
+    assert not hasattr(reserved_payloads[1].table_contract, "foreign_keys")
     assert reserved_payloads[0].schema_management.mode == "alembic_managed"
     assert reserved_payloads[0].schema_management.alembic.package == "sample"
     assert reserved_payloads[0].schema_management.alembic.migration_namespace == "markets"
@@ -819,6 +813,7 @@ def test_prepare_for_alembic_does_not_resolve_foreign_key_targets(monkeypatch):
         __metatable_data_source_uid__ = "data-source-uid"
 
     class Account(PlatformManagedMetaTable, Base):
+        __tablename__ = "example_assets__account"
         __metatable_data_source_uid__ = "data-source-uid"
         __metatable_namespace__ = "example.assets"
         __metatable_identifier__ = "Account"
@@ -826,6 +821,7 @@ def test_prepare_for_alembic_does_not_resolve_foreign_key_targets(monkeypatch):
         uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
 
     class Asset(PlatformManagedMetaTable, Base):
+        __tablename__ = "example_assets__asset"
         __metatable_data_source_uid__ = "data-source-uid"
         __metatable_namespace__ = "example.assets"
         __metatable_identifier__ = "Asset"
@@ -833,7 +829,7 @@ def test_prepare_for_alembic_does_not_resolve_foreign_key_targets(monkeypatch):
         uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
         account_uid: Mapped[uuid.UUID] = mapped_column(
             Uuid,
-            MetaTableForeignKey(Account, column="uid", ondelete="CASCADE"),
+            ForeignKey("example_assets__account.uid", ondelete="CASCADE"),
             nullable=False,
         )
 
@@ -843,19 +839,20 @@ def test_prepare_for_alembic_does_not_resolve_foreign_key_targets(monkeypatch):
 
     def fake_reserve_managed(request, *, timeout=None, on_status=None):
         reserved_payloads.extend(request.tables)
-        assert [table.identifier for table in request.tables] == ["metatable_asset"]
-        assert request.tables[0].table_contract.foreign_keys == []
+        assert [table.identifier for table in request.tables] == ["example_assets__asset"]
+        assert not hasattr(request.tables[0].table_contract, "indexes")
+        assert not hasattr(request.tables[0].table_contract, "foreign_keys")
         return types.SimpleNamespace(
             tables=[
                 types.SimpleNamespace(
-                    identifier="metatable_asset",
+                    identifier="example_assets__asset",
                     namespace="example.assets",
                     meta_table_uid="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
                     data_source_uid="data-source-uid",
                     management_mode="platform_managed",
                     provisioning_status="reserved",
                     storage_hash=request.tables[0].storage_hash,
-                    physical_table_name="metatable_asset",
+                    physical_table_name="example_assets__asset",
                     table_contract={},
                     existing=False,
                 )
@@ -875,7 +872,7 @@ def test_prepare_for_alembic_does_not_resolve_foreign_key_targets(monkeypatch):
 
     prepared = migration.prepare_for_alembic(timeout=5)
 
-    assert [payload.identifier for payload in reserved_payloads] == ["metatable_asset"]
+    assert [payload.identifier for payload in reserved_payloads] == ["example_assets__asset"]
     assert prepared.meta_table_uids == ["bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"]
 
 
@@ -887,6 +884,7 @@ def test_prepare_for_alembic_reserves_existing_table_name_to_stamp_schema_manage
         __metatable_data_source_uid__ = "data-source-uid"
 
     class Account(PlatformManagedMetaTable, Base):
+        __tablename__ = "example_assets__account"
         __metatable_data_source_uid__ = "data-source-uid"
         __metatable_namespace__ = "example.assets"
         __metatable_identifier__ = "Account"
@@ -895,6 +893,7 @@ def test_prepare_for_alembic_reserves_existing_table_name_to_stamp_schema_manage
         name: Mapped[str] = mapped_column(String(255), nullable=False)
 
     class Asset(PlatformManagedMetaTable, Base):
+        __tablename__ = "example_assets__asset"
         __metatable_data_source_uid__ = "data-source-uid"
         __metatable_namespace__ = "example.assets"
         __metatable_identifier__ = "Asset"
@@ -902,7 +901,7 @@ def test_prepare_for_alembic_reserves_existing_table_name_to_stamp_schema_manage
         uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
         account_uid: Mapped[uuid.UUID] = mapped_column(
             Uuid,
-            MetaTableForeignKey(Account, column="uid", ondelete="CASCADE"),
+            ForeignKey("example_assets__account.uid", ondelete="CASCADE"),
             nullable=False,
         )
         symbol: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -913,24 +912,22 @@ def test_prepare_for_alembic_reserves_existing_table_name_to_stamp_schema_manage
         filter_calls.append(kwargs)
         assert set(kwargs) == {"timeout", "physical_table_name__in", "limit"}
         assert kwargs["physical_table_name__in"] == [
-            "metatable_account",
-            "metatable_asset",
+            "example_assets__account",
+            "example_assets__asset",
         ]
         assert kwargs["limit"] == 2
         return [
             types.SimpleNamespace(
-                identifier="metatable_account",
+                identifier="example_assets__account",
                 uid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
                 data_source_uid="data-source-uid",
                 provisioning_status="reserved",
                 storage_hash="account-storage-hash",
-                physical_table_name="metatable_account",
+                physical_table_name="example_assets__account",
                 table_contract={
                     "version": "relational-table.v1",
-                    "physical": {"table_name": "metatable_account"},
+                    "physical": {"table_name": "example_assets__account"},
                     "columns": [],
-                    "indexes": [],
-                    "foreign_keys": [],
                 },
             )
         ]
@@ -942,54 +939,43 @@ def test_prepare_for_alembic_reserves_existing_table_name_to_stamp_schema_manage
     def fake_reserve_managed(request, *, timeout=None, on_status=None):
         reserved_payloads.extend(request.tables)
         assert [table.identifier for table in request.tables] == [
-            "metatable_account",
-            "metatable_asset",
+            "example_assets__account",
+            "example_assets__asset",
         ]
-        assert request.tables[0].table_contract.foreign_keys == []
-        assert request.tables[1].table_contract.foreign_keys == []
+        assert not hasattr(request.tables[0].table_contract, "indexes")
+        assert not hasattr(request.tables[1].table_contract, "indexes")
+        assert not hasattr(request.tables[0].table_contract, "foreign_keys")
+        assert not hasattr(request.tables[1].table_contract, "foreign_keys")
         return types.SimpleNamespace(
             tables=[
                 types.SimpleNamespace(
-                    identifier="metatable_account",
+                    identifier="example_assets__account",
                     namespace="example.assets",
                     meta_table_uid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
                     data_source_uid="data-source-uid",
                     management_mode="platform_managed",
                     provisioning_status="active",
                     storage_hash="account-storage-hash",
-                    physical_table_name="metatable_account",
+                    physical_table_name="example_assets__account",
                     table_contract={
                         "version": "relational-table.v1",
-                        "physical": {"table_name": "metatable_account"},
+                        "physical": {"table_name": "example_assets__account"},
                         "columns": [],
-                        "indexes": [],
-                        "foreign_keys": [],
                     },
                 ),
                 types.SimpleNamespace(
-                    identifier="metatable_asset",
+                    identifier="example_assets__asset",
                     namespace="example.assets",
                     meta_table_uid="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
                     data_source_uid="data-source-uid",
                     management_mode="platform_managed",
                     provisioning_status="reserved",
                     storage_hash=request.tables[1].storage_hash,
-                    physical_table_name="metatable_asset",
+                    physical_table_name="example_assets__asset",
                     table_contract={
                         "version": "relational-table.v1",
-                        "physical": {"table_name": "metatable_asset"},
+                        "physical": {"table_name": "example_assets__asset"},
                         "columns": [],
-                        "indexes": [],
-                        "foreign_keys": [
-                            {
-                                "name": "asset_account_uid_fkey",
-                                "source_columns": ["account_uid"],
-                                "target_meta_table_uid": ("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"),
-                                "target_identifier": "metatable_account",
-                                "target_columns": ["uid"],
-                                "on_delete": "cascade",
-                            }
-                        ],
                     },
                 ),
             ]
@@ -1014,16 +1000,16 @@ def test_prepare_for_alembic_reserves_existing_table_name_to_stamp_schema_manage
 
     assert len(filter_calls) == 1
     assert [payload.identifier for payload in reserved_payloads] == [
-        "metatable_account",
-        "metatable_asset",
+        "example_assets__account",
+        "example_assets__asset",
     ]
     assert reserved_payloads[0].schema_management.mode == "alembic_managed"
     assert prepared.meta_table_uids == [
         "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
     ]
-    assert Account.__table__.name == "metatable_account"
-    assert Asset.__table__.name == "metatable_asset"
+    assert Account.__table__.name == "example_assets__account"
+    assert Asset.__table__.name == "example_assets__asset"
 
 
 def test_prepare_for_alembic_reserves_already_staged_existing_rows(monkeypatch):
@@ -1035,6 +1021,7 @@ def test_prepare_for_alembic_reserves_already_staged_existing_rows(monkeypatch):
         __metatable_data_source_uid__ = "data-source-uid"
 
     class Account(PlatformManagedMetaTable, Base):
+        __tablename__ = "example_assets__account"
         __metatable_data_source_uid__ = "data-source-uid"
         __metatable_namespace__ = "example.assets"
         __metatable_identifier__ = "Account"
@@ -1043,6 +1030,7 @@ def test_prepare_for_alembic_reserves_already_staged_existing_rows(monkeypatch):
         name: Mapped[str] = mapped_column(String(255), nullable=False)
 
     class Asset(PlatformManagedMetaTable, Base):
+        __tablename__ = "example_assets__asset"
         __metatable_data_source_uid__ = "data-source-uid"
         __metatable_namespace__ = "example.assets"
         __metatable_identifier__ = "Asset"
@@ -1050,7 +1038,7 @@ def test_prepare_for_alembic_reserves_already_staged_existing_rows(monkeypatch):
         uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
         account_uid: Mapped[uuid.UUID] = mapped_column(
             Uuid,
-            MetaTableForeignKey(Account, column="uid", ondelete="CASCADE"),
+            ForeignKey("example_assets__account.uid", ondelete="CASCADE"),
             nullable=False,
         )
         symbol: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -1058,13 +1046,13 @@ def test_prepare_for_alembic_reserves_already_staged_existing_rows(monkeypatch):
     def fake_filter_by_body(**kwargs):
         assert set(kwargs) == {"timeout", "physical_table_name__in", "limit"}
         assert kwargs["physical_table_name__in"] == [
-            "metatable_account",
-            "metatable_asset",
+            "example_assets__account",
+            "example_assets__asset",
         ]
         assert kwargs["limit"] == 2
         return [
             types.SimpleNamespace(
-                identifier="metatable_account",
+                identifier="example_assets__account",
                 uid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
                 data_source_uid="data-source-uid",
                 provisioning_status="active",
@@ -1072,17 +1060,15 @@ def test_prepare_for_alembic_reserves_already_staged_existing_rows(monkeypatch):
                 migration_provider_key="sample:markets",
                 alembic_version_meta_table_uid="registry-meta-table-uid",
                 storage_hash="account-storage-hash",
-                physical_table_name="metatable_account",
+                physical_table_name="example_assets__account",
                 table_contract={
                     "version": "relational-table.v1",
-                    "physical": {"table_name": "metatable_account"},
+                    "physical": {"table_name": "example_assets__account"},
                     "columns": [],
-                    "indexes": [],
-                    "foreign_keys": [],
                 },
             ),
             types.SimpleNamespace(
-                identifier="metatable_asset",
+                identifier="example_assets__asset",
                 uid="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
                 data_source_uid="data-source-uid",
                 provisioning_status="active",
@@ -1090,22 +1076,11 @@ def test_prepare_for_alembic_reserves_already_staged_existing_rows(monkeypatch):
                 migration_provider_key="sample:markets",
                 alembic_version_meta_table_uid="registry-meta-table-uid",
                 storage_hash="asset-storage-hash",
-                physical_table_name="metatable_asset",
+                physical_table_name="example_assets__asset",
                 table_contract={
                     "version": "relational-table.v1",
-                    "physical": {"table_name": "metatable_asset"},
+                    "physical": {"table_name": "example_assets__asset"},
                     "columns": [],
-                    "indexes": [],
-                    "foreign_keys": [
-                        {
-                            "name": "asset_account_uid_fkey",
-                            "source_columns": ["account_uid"],
-                            "target_meta_table_uid": ("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"),
-                            "target_identifier": "metatable_account",
-                            "target_columns": ["uid"],
-                            "on_delete": "cascade",
-                        }
-                    ],
                 },
             ),
         ]
@@ -1118,25 +1093,25 @@ def test_prepare_for_alembic_reserves_already_staged_existing_rows(monkeypatch):
         return types.SimpleNamespace(
             tables=[
                 types.SimpleNamespace(
-                    identifier="metatable_account",
+                    identifier="example_assets__account",
                     namespace="example.assets",
                     meta_table_uid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
                     data_source_uid="data-source-uid",
                     management_mode="platform_managed",
                     provisioning_status="active",
                     storage_hash="account-storage-hash",
-                    physical_table_name="metatable_account",
+                    physical_table_name="example_assets__account",
                     table_contract={},
                 ),
                 types.SimpleNamespace(
-                    identifier="metatable_asset",
+                    identifier="example_assets__asset",
                     namespace="example.assets",
                     meta_table_uid="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
                     data_source_uid="data-source-uid",
                     management_mode="platform_managed",
                     provisioning_status="active",
                     storage_hash="asset-storage-hash",
-                    physical_table_name="metatable_asset",
+                    physical_table_name="example_assets__asset",
                     table_contract={},
                 ),
             ]
@@ -1160,15 +1135,15 @@ def test_prepare_for_alembic_reserves_already_staged_existing_rows(monkeypatch):
     prepared = migration.prepare_for_alembic(timeout=5)
 
     assert [payload.identifier for payload in reserved_payloads] == [
-        "metatable_account",
-        "metatable_asset",
+        "example_assets__account",
+        "example_assets__asset",
     ]
     assert prepared.meta_table_uids == [
         "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
     ]
-    assert Account.__table__.name == "metatable_account"
-    assert Asset.__table__.name == "metatable_asset"
+    assert Account.__table__.name == "example_assets__account"
+    assert Asset.__table__.name == "example_assets__asset"
     assert next(iter(Asset.__table__.foreign_key_constraints)).name is None
 
 

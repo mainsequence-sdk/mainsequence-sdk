@@ -2,7 +2,12 @@
 
 Date: 2026-05-31
 
-Status: Accepted
+Status: Superseded by ADR 0023
+
+Superseded note: ADR 0023 removes `MetaTableForeignKey(...)` from the
+Alembic-owned platform-managed MetaTable architecture. Foreign keys are now
+ordinary SQLAlchemy/Alembic DDL declarations, not SDK MetaTable contract
+resolution.
 
 ## Context
 
@@ -47,6 +52,7 @@ from mainsequence.meta_tables import MetaTableForeignKey, PlatformManagedMetaTab
 
 
 class Account(PlatformManagedMetaTable, Base):
+    __tablename__ = "tutorial__account"
     __metatable_namespace__ = "tutorial"
     __metatable_identifier__ = "tutorial.account"
     __metatable_description__ = "Accounts that own asset positions."
@@ -55,6 +61,7 @@ class Account(PlatformManagedMetaTable, Base):
 
 
 class AccountPosition(PlatformManagedMetaTable, Base):
+    __tablename__ = "tutorial__account_position"
     __metatable_namespace__ = "tutorial"
     __metatable_identifier__ = "tutorial.account_position"
     __metatable_description__ = "Positions keyed by owning account."

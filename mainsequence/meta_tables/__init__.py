@@ -9,7 +9,6 @@ _LAZY_IMPORTS = {
         ".sqlalchemy_contracts",
         "DEFAULT_PLATFORM_MANAGED_PROVISIONING",
     ),
-    "MetaTableForeignKey": (".sqlalchemy_contracts", "MetaTableForeignKey"),
     "AlembicMetaTableMigration": (".migrations", "AlembicMetaTableMigration"),
     "AlembicVersionMetaTable": (".migrations", "AlembicVersionMetaTable"),
     "PlatformManagedMetaTable": (".sqlalchemy_contracts", "PlatformManagedMetaTable"),
@@ -27,10 +26,6 @@ _LAZY_IMPORTS = {
     "external_registered_registration_request_from_sqlalchemy_model": (
         ".sqlalchemy_contracts",
         "external_registered_registration_request_from_sqlalchemy_model",
-    ),
-    "metatable_configured_tablename": (
-        ".sqlalchemy_contracts",
-        "metatable_configured_tablename",
     ),
     "DEFAULT_ALEMBIC_VERSION_IDENTIFIER": (
         ".migrations",
@@ -56,7 +51,6 @@ _LAZY_IMPORTS = {
         ".migrations",
         "DEFAULT_ALEMBIC_VERSION_COLUMN_NAME",
     ),
-    "metatable_tablename": (".sqlalchemy_contracts", "metatable_tablename"),
     "platform_managed_registration_request_from_sqlalchemy_model": (
         ".sqlalchemy_contracts",
         "platform_managed_registration_request_from_sqlalchemy_model",

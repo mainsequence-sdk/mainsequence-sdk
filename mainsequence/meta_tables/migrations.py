@@ -187,8 +187,6 @@ class AlembicVersionMetaTable:
                     }
                 ],
                 constraints=[],
-                indexes=[],
-                foreign_keys=[],
                 authoring={
                     "owner": "alembic",
                     "schema": resolved_schema,
@@ -378,7 +376,6 @@ class AlembicMetaTableMigration:
                     data_source_uid=data_source_uid,
                     provisioning={"create_table": create_table, "if_not_exists": True},
                     enforce_storage_hash_name=False,
-                    include_foreign_keys=False,
                 )
                 request.schema_management = schema_management
                 meta_table_cls = _metatable_resource_class_for_model(model)
@@ -553,7 +550,6 @@ class AlembicMetaTableMigration:
                     data_source_uid=data_source_uid,
                     identifier=table_name,
                     enforce_storage_hash_name=False,
-                    include_foreign_keys=False,
                 )
                 request.schema_management = schema_management
 

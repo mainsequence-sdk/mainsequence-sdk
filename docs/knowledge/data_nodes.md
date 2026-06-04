@@ -405,19 +405,13 @@ use, not only list its columns. Column-level descriptions still belong in
 Stable output contracts are declared on the registered `PlatformTimeIndexMetaData`
 storage model and exposed through the MetaTable time-indexed profile/contract.
 
-When a DataNode source table should reference a registered MetaTable, declare the
-relationship on the `PlatformTimeIndexMetaData` storage model. Foreign keys are
-part of the MetaTable contract, not `DataNodeConfiguration`. For
-platform-managed storage, use `MetaTableForeignKey(TargetModel, column=...)`;
-the migration workflow resolves unresolved target model classes by stable
-identifier, reuses the bound MetaTable metadata, and writes the target
-`MetaTable.uid` into the FK contract. Do not use table fullnames,
-`Target.__table__.c.<column>`, or explicit target UID maps for
-platform-managed DataNode storage FKs.
-
-Platform-managed `MetaTableForeignKey(...)` contracts omit physical constraint
-names. Alembic, SQLAlchemy, and the database own the physical FK constraint
-name; backend reservation does not generate or manage it.
+When a DataNode source table should reference another table, declare the
+relationship on the `PlatformTimeIndexMetaData` storage model with normal
+SQLAlchemy `ForeignKey(...)` metadata. Foreign keys are not part of
+`DataNodeConfiguration` and are not serialized into the platform-managed
+MetaTable registration contract. Alembic, SQLAlchemy, and the database own the
+physical FK DDL. Prefer project-prefixed table names when using explicit FK
+string targets so project tables do not collide in shared schemas.
 
 Log useful operational facts:
 

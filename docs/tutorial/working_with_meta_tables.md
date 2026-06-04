@@ -53,10 +53,11 @@ In this mode:
 - table permissions and governed execution go through the platform
 
 For backend-managed tables, the SDK-derived `storage_hash` is the logical table
-identity. TS Manager owns the physical table name and returns it during
-registration. Use `PlatformManagedMetaTable` when the logical identity should be
-derived from the SQLAlchemy table shape. Use Alembic for schema migrations; the
-SDK does not provide a separate schema-migration MetaTable base.
+identity. The authored SQLAlchemy `__tablename__` is the physical table name
+Alembic uses, so prefix it with the project or package name. Use
+`PlatformManagedMetaTable` when the logical identity should be derived from the
+SQLAlchemy table shape. Use Alembic for schema migrations; the SDK does not
+provide a separate schema-migration MetaTable base.
 
 This tutorial assumes SQLAlchemy is available in the project environment.
 
@@ -67,10 +68,10 @@ Create a small SQLAlchemy model for account records:
 ```python
 import uuid
 
-from sqlalchemy import Index, MetaData, String, Uuid
+from sqlalchemy import ForeignKey, Index, MetaData, String, Uuid
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-from mainsequence.meta_tables import MetaTableForeignKey, PlatformManagedMetaTable
+from mainsequence.meta_tables import PlatformManagedMetaTable
 
 
 PROJECT_NAME = "sdk_examples"
@@ -88,6 +89,7 @@ class Base(DeclarativeBase):
 
 
 class Account(PlatformManagedMetaTable, Base):
+    __tablename__ = "sdk_examples__account"
     __table_args__ = (
         Index(None, "region"),
         {"schema": SCHEMA},
@@ -107,8 +109,9 @@ class Account(PlatformManagedMetaTable, Base):
 
 The important pieces are:
 
-- `PlatformManagedMetaTable` derives the initial `__tablename__` / `storage_hash` from storage-relevant configuration and table shape
-- `__table_args__` declares the SQLAlchemy table schema used for storage-hash derivation
+- `PlatformManagedMetaTable` derives the logical `storage_hash` from storage-relevant configuration and table shape
+- `__tablename__` is an explicit project-prefixed SQLAlchemy table name used by Alembic
+- `__table_args__` declares the SQLAlchemy table schema used by Alembic and storage-hash derivation
 - `NAMESPACE` is a plain logical grouping for these SDK examples
 - `__metatable_identifier__` is logical backend metadata and does not rotate the configured storage identity
 - `__metatable_extra_hash_components__` adds a stable storage-identity component so similarly shaped tables cannot collide
@@ -146,22 +149,15 @@ the table later.
 
 ## 5. Add A Simple Related Table
 
-Foreign keys reference a registered target `MetaTable` by UID in the backend
-contract. For platform-managed tables, declare the target model class with
-`MetaTableForeignKey(TargetModel, column=...)`.
-
-Do not build FK targets from SQLAlchemy table fullnames or parent table column
-objects. Registration can rebind `Account.__table__.name` to the backend
-physical table name. `MetaTableForeignKey` keeps the target model and target
-column as SDK metadata so migration tooling can resolve/register parent targets
-and resolve the target `MetaTable.uid`.
-
-Platform-managed FK contracts omit physical constraint names. Alembic,
-SQLAlchemy, and the database own the physical foreign-key constraint name; the
-MetaTable backend stores the logical relationship, not the physical FK name.
+Foreign keys are normal SQLAlchemy/Alembic DDL metadata. The SDK does not
+serialize FK relationships into the MetaTable registration contract and does
+not resolve target MetaTable UIDs for foreign keys. Prefer explicit table names
+prefixed with the project or package name so SQLAlchemy FK string targets do not
+collide across projects sharing the same schema.
 
 ```python
 class AccountLimit(PlatformManagedMetaTable, Base):
+    __tablename__ = "sdk_examples__account_limit"
     __table_args__ = (
         Index(None, "account_uid"),
         {"schema": SCHEMA},
@@ -176,17 +172,16 @@ class AccountLimit(PlatformManagedMetaTable, Base):
     uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
     account_uid: Mapped[uuid.UUID] = mapped_column(
         Uuid,
-        MetaTableForeignKey(Account, column="uid", ondelete="RESTRICT"),
+        ForeignKey(f"{SCHEMA}.sdk_examples__account.uid", ondelete="RESTRICT"),
         nullable=False,
     )
     limit_type: Mapped[str] = mapped_column(String(64), nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
 ```
 
-Add the child to the same migration provider. If the parent has not been
-registered in this process, migration tooling registers it first and reuses the
-local `storage_hash` registry if another relationship has already registered
-the same table:
+Add the child and parent to the same migration provider. The provider reserves
+the MetaTable rows, Alembic creates/evolves the physical tables and constraints,
+and finalization reconciles the MetaTable catalog after the upgrade:
 
 ```python
 migration = AlembicMetaTableMigration(
@@ -195,8 +190,8 @@ migration = AlembicMetaTableMigration(
 )
 ```
 
-The SDK extracts the foreign key source columns, target MetaTable UID, target
-columns, and `on_delete` rule into the registration contract.
+The SDK reserves the MetaTable rows for the provider. Alembic reads the
+SQLAlchemy metadata and owns the FK DDL during revision generation and upgrade.
 
 ## 6. Insert Rows Through Governed Operations
 

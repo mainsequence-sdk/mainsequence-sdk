@@ -46,6 +46,7 @@ PROJECT_NAME = "sdk_examples"
 
 
 class Account(PlatformManagedMetaTable, Base):
+    __tablename__ = f"{PROJECT_NAME}__account"
     __metatable_namespace__ = NAMESPACE
     __metatable_identifier__ = f"{PROJECT_NAME}.Account"
 ```

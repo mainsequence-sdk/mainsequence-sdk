@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import contextvars
+import json
 import pathlib
 import sys
 from collections.abc import Mapping, MutableMapping, Sequence
@@ -9,7 +10,6 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar
 from uuid import UUID
 
-from sqlalchemy import ForeignKey
 from sqlalchemy.orm import declared_attr as _sqlalchemy_declared_attr
 
 from mainsequence.client.dtype_codec import (
@@ -22,8 +22,6 @@ from mainsequence.client.metatables import (
     MetaTable,
     MetaTableColumnContract,
     MetaTableContract,
-    MetaTableForeignKeyContract,
-    MetaTableIndexContract,
     MetaTablePhysicalContract,
     MetaTableRegistrationRequest,
 )
@@ -38,8 +36,6 @@ DEFAULT_PLATFORM_MANAGED_PROVISIONING = {
     "if_not_exists": True,
 }
 SERVER_GENERATED_UUID_DEFAULT = "gen_random_uuid()"
-POSTGRESQL_MAX_IDENTIFIER_LENGTH = 63
-_METATABLE_FOREIGN_KEY_INFO_KEY = "mainsequence_metatable_foreign_key"
 _PLATFORM_MANAGED_MIGRATION_REGISTRATION_CONTEXT: contextvars.ContextVar[bool] = (
     contextvars.ContextVar(
         "mainsequence_platform_managed_migration_registration_context",
@@ -83,147 +79,7 @@ def _require_platform_managed_migration_registration_context(model: type[Any]) -
     )
 
 
-def _truncate_postgresql_identifier(value: str) -> str:
-    return str(value)[:POSTGRESQL_MAX_IDENTIFIER_LENGTH]
-
-
-def _default_time_indexed_meta_table_indexes(index_names: Sequence[str]) -> list[dict[str, Any]]:
-    normalized_index_names = [str(name) for name in index_names or []]
-    if not normalized_index_names:
-        return []
-
-    time_index_name, *identity_dimensions = normalized_index_names
-    indexes: list[dict[str, Any]] = [
-        {
-            "name": "time_idx",
-            "columns": [time_index_name],
-            "unique": False,
-            "method": "brin",
-            "expression": None,
-        }
-    ]
-    if identity_dimensions:
-        indexes.append(
-            {
-                "name": _truncate_postgresql_identifier(f"{'_'.join(identity_dimensions)}_idx"),
-                "columns": identity_dimensions,
-                "unique": False,
-                "method": "btree",
-                "expression": None,
-            }
-        )
-    indexes.append(
-        {
-            "name": "time_identifier_ev_idx",
-            "columns": normalized_index_names,
-            "unique": True,
-            "method": "btree",
-            "expression": None,
-        }
-    )
-    return indexes
-
-
-def metatable_tablename(
-    *,
-    namespace: str,
-    identifier: str,
-    schema: str = "public",
-    hash_namespace: str | None = None,
-    extra_hash_components: Mapping[str, Any] | None = None,
-) -> str:
-    return build_meta_table_storage_hash(
-        namespace=namespace,
-        identifier=identifier,
-        schema=schema,
-        hash_namespace=hash_namespace,
-        extra_hash_components=extra_hash_components,
-    )
-
-
-class MetaTableForeignKey:
-    """Factory for SQLAlchemy foreign keys that target MetaTable model classes."""
-
-    def __new__(
-        cls,
-        target_model: type[PlatformManagedMetaTable],
-        *,
-        column: str = "uid",
-        name: str | None = None,
-        onupdate: str | None = None,
-        ondelete: str | None = None,
-        deferrable: bool | None = None,
-        initially: str | None = None,
-        link_to_name: bool = False,
-        use_alter: bool = False,
-        match: str | None = None,
-        info: Mapping[str, Any] | None = None,
-        comment: str | None = None,
-        **dialect_kw: Any,
-    ) -> Any:
-        target_column = _resolve_metatable_foreign_key_target_column(
-            target_model,
-            column=column,
-        )
-        foreign_key_info = dict(info or {})
-        foreign_key_info[_METATABLE_FOREIGN_KEY_INFO_KEY] = {
-            "target_model": target_model,
-            "target_column": str(column),
-            "name": name,
-        }
-        return ForeignKey(
-            target_column,
-            name=name,
-            onupdate=onupdate,
-            ondelete=ondelete,
-            deferrable=deferrable,
-            initially=initially,
-            link_to_name=link_to_name,
-            use_alter=use_alter,
-            match=match,
-            info=foreign_key_info,
-            comment=comment,
-            **dialect_kw,
-        )
-
-
-def _resolve_metatable_foreign_key_target_column(
-    target_model: type[PlatformManagedMetaTable],
-    *,
-    column: str,
-) -> Any:
-    model_name = getattr(target_model, "__qualname__", repr(target_model))
-    if not _is_platform_managed_meta_table_model(target_model):
-        raise ValueError(
-            "MetaTableForeignKey target must be a PlatformManagedMetaTable authoring "
-            f"model class; got {model_name}."
-        )
-
-    target_table = getattr(target_model, "__table__", None)
-    if target_table is None:
-        raise ValueError(
-            "MetaTableForeignKey target must be a SQLAlchemy MetaTable model "
-            f"class with __table__; got {model_name}."
-        )
-
-    columns = getattr(target_table, "c", None)
-    if columns is None:
-        raise ValueError(f"MetaTableForeignKey target {model_name} does not expose table columns.")
-
-    column_name = str(column)
-    try:
-        return columns[column_name]
-    except (KeyError, TypeError, IndexError):
-        raise ValueError(
-            f"MetaTableForeignKey target {model_name} has no column {column_name!r}."
-        ) from None
-
-
-def _is_platform_managed_meta_table_model(value: Any) -> bool:
-    return isinstance(value, type) and issubclass(value, PlatformManagedMetaTable)
-
-
-def metatable_configured_tablename(
+def _configured_storage_hash_for_model(
     model_or_table: Any,
     *,
     namespace: str | None = None,
@@ -249,10 +105,6 @@ def metatable_configured_tablename(
         hash_namespace=resolved_hash_namespace,
         extra_hash_components=resolved_extra_hash_components,
     )
-
-
-def _metatable_declared_tablename(cls: type[Any]) -> str:
-    return f"metatable_{cls.__name__.lower()}"
 
 
 def _time_index_mapper_args(cls: type[Any]) -> dict[str, list[Any]]:
@@ -282,7 +134,6 @@ class PlatformManagedMetaTable:
     SQLAlchemy table name.
     """
 
-    __metatable_use_configured_table_name__ = True
     __metatable__: ClassVar[MetaTable | None] = None
     __metatable_uid__: ClassVar[str | None] = None
     __metatable_data_source_uid__: ClassVar[str | None] = None
@@ -295,8 +146,6 @@ class PlatformManagedMetaTable:
     __metatable_introspect__: ClassVar[bool | None] = None
     __metatable_hash_namespace__: ClassVar[str | None] = None
     __metatable_extra_hash_components__: ClassVar[Mapping[str, Any] | None] = None
-
-    __tablename__ = _sqlalchemy_declared_attr.directive(_metatable_declared_tablename)
 
     @classmethod
     def __table_cls__(cls, *args: Any, **kwargs: Any) -> Any:
@@ -326,12 +175,9 @@ class PlatformManagedMetaTable:
         protect_from_deletion: bool | None = None,
         provisioning: Mapping[str, Any] | None = None,
         introspect: bool | None = None,
-        _target_meta_tables: Mapping[Any, Any] | None = None,
-        _target_identifiers: Mapping[Any, str] | None = None,
         hash_namespace: str | None = None,
         extra_hash_components: Mapping[str, Any] | None = None,
         enforce_storage_hash_name: bool = True,
-        include_foreign_keys: bool = True,
     ) -> MetaTableRegistrationRequest:
         resolved_data_source_uid = _resolve_model_data_source_uid(
             cls,
@@ -348,12 +194,9 @@ class PlatformManagedMetaTable:
             protect_from_deletion=protect_from_deletion,
             provisioning=provisioning,
             introspect=introspect,
-            _target_meta_tables=_target_meta_tables,
-            _target_identifiers=_target_identifiers,
             hash_namespace=hash_namespace,
             extra_hash_components=extra_hash_components,
             enforce_storage_hash_name=enforce_storage_hash_name,
-            include_foreign_keys=include_foreign_keys,
         )
 
     @classmethod
@@ -376,17 +219,9 @@ class PlatformManagedMetaTable:
             return registry_meta_table
 
         try:
-            target_meta_tables = _register_metatable_foreign_key_targets(
-                cls,
-                data_source=data_source,
-                data_source_uid=data_source_uid,
-                timeout=timeout,
-                stack=_METATABLE_REGISTRATION_REGISTRY[storage_hash].stack,
-            )
             request = cls.build_registration_request(
                 data_source=data_source,
                 data_source_uid=data_source_uid,
-                _target_meta_tables=target_meta_tables,
             )
             meta_table = MetaTable.register(request, timeout=timeout)
             cls._bind_meta_table(meta_table)
@@ -397,17 +232,6 @@ class PlatformManagedMetaTable:
         except Exception:
             _clear_failed_local_registration(storage_hash=storage_hash, model=cls)
             raise
-
-    @classmethod
-    def resolve_foreign_key_targets(
-        cls,
-        *,
-        target_meta_tables: Mapping[Any, Any] | None = None,
-    ) -> dict[type[Any], str]:
-        return _resolve_target_meta_table_uid_by_model(
-            target_meta_tables=target_meta_tables,
-            model_or_table=cls,
-        )
 
     @classmethod
     def _bind_meta_table(cls, meta_table: Any) -> Any:
@@ -467,7 +291,7 @@ class PlatformManagedMetaTable:
         storage_hash = getattr(cls, "__metatable_storage_hash__", None)
         if storage_hash not in (None, ""):
             return str(storage_hash)
-        return metatable_configured_tablename(cls)
+        return _configured_storage_hash_for_model(cls)
 
     @classmethod
     def get_physical_table_name(cls) -> str | None:
@@ -481,7 +305,7 @@ class PlatformTimeIndexMetaData(PlatformManagedMetaTable):
     """SQLAlchemy declarative base mixin for platform-managed TimeIndexMetaData.
 
     This is the SDK authoring surface for time-indexed DataNode storage. It
-    reuses the MetaTable column/type/FK projection, but registers through the
+    reuses the MetaTable column/type projection, but registers through the
     time-indexed MetaTable endpoint and validates the opinionated table shape:
     the first index must be the time index, and any extra index dimensions are
     ordinary non-null table columns.
@@ -552,15 +376,12 @@ class PlatformTimeIndexMetaData(PlatformManagedMetaTable):
         labels: Sequence[str] | None = None,
         protect_from_deletion: bool | None = None,
         provisioning: Mapping[str, Any] | None = None,
-        _target_meta_tables: Mapping[Any, Any] | None = None,
-        _target_identifiers: Mapping[Any, str] | None = None,
         hash_namespace: str | None = None,
         extra_hash_components: Mapping[str, Any] | None = None,
         enforce_storage_hash_name: bool = True,
         time_index_name: str | None = None,
         index_names: Sequence[str] | None = None,
         storage_layout: Mapping[str, Any] | None = None,
-        include_foreign_keys: bool = True,
     ) -> Any:
         resolved_data_source_uid = _resolve_model_data_source_uid(
             cls,
@@ -576,15 +397,12 @@ class PlatformTimeIndexMetaData(PlatformManagedMetaTable):
             labels=labels,
             protect_from_deletion=protect_from_deletion,
             provisioning=provisioning,
-            _target_meta_tables=_target_meta_tables,
-            _target_identifiers=_target_identifiers,
             hash_namespace=hash_namespace,
             extra_hash_components=extra_hash_components,
             enforce_storage_hash_name=enforce_storage_hash_name,
             time_index_name=time_index_name,
             index_names=index_names,
             storage_layout=storage_layout,
-            include_foreign_keys=include_foreign_keys,
         )
 
     @classmethod
@@ -609,17 +427,9 @@ class PlatformTimeIndexMetaData(PlatformManagedMetaTable):
             return registry_meta_table
 
         try:
-            target_meta_tables = _register_metatable_foreign_key_targets(
-                cls,
-                data_source=data_source,
-                data_source_uid=data_source_uid,
-                timeout=timeout,
-                stack=_METATABLE_REGISTRATION_REGISTRY[storage_hash].stack,
-            )
             request = cls.build_registration_request(
                 data_source=data_source,
                 data_source_uid=data_source_uid,
-                _target_meta_tables=target_meta_tables,
             )
             time_index_metadata = TimeIndexMetaData.register(request, timeout=timeout)
             cls._bind_meta_table(time_index_metadata)
@@ -639,27 +449,11 @@ def table_contract_from_sqlalchemy_model(
     *,
     table_model_module: str | None = None,
     table_model_qualname: str | None = None,
-    target_meta_tables: Mapping[Any, Any] | None = None,
-    target_identifier_by_model: Mapping[Any, str] | None = None,
-    target_meta_table_uid_by_fullname: Mapping[str, Any] | None = None,
     schema: str | None = None,
     include_physical_table_name: bool = True,
-    require_metatable_foreign_keys: bool = False,
-    include_foreign_keys: bool = True,
 ) -> MetaTableContract:
     table = _resolve_table(model_or_table)
     _resolve_schema(table, schema=schema)
-    resolved_targets: Mapping[str, Any] = {}
-    resolved_target_models: Mapping[type[Any], Any] = {}
-    if include_foreign_keys:
-        resolved_targets = _resolve_target_meta_table_uid_by_fullname(
-            target_meta_tables=target_meta_tables,
-            target_meta_table_uid_by_fullname=target_meta_table_uid_by_fullname,
-        )
-        resolved_target_models = _resolve_target_meta_table_uid_by_model(
-            target_meta_tables=target_meta_tables,
-            model_or_table=model_or_table,
-        )
     module, qualname = _resolve_model_path(
         model_or_table,
         table_model_module=table_model_module,
@@ -683,27 +477,6 @@ def table_contract_from_sqlalchemy_model(
             for position, column in enumerate(_iter_columns(table))
         ],
         constraints=[],
-        indexes=[
-            _index_contract(index)
-            for index in sorted(_iter_indexes(table), key=lambda item: item.name or "")
-        ],
-        foreign_keys=(
-            [
-                _foreign_key_contract(
-                    foreign_key_constraint,
-                    target_meta_table_uid_by_model=resolved_target_models,
-                    target_identifier_by_model=target_identifier_by_model or {},
-                    target_meta_table_uid_by_fullname=resolved_targets,
-                    require_metatable_foreign_keys=require_metatable_foreign_keys,
-                )
-                for foreign_key_constraint in sorted(
-                    _iter_foreign_key_constraints(table),
-                    key=lambda item: item.name or "",
-                )
-            ]
-            if include_foreign_keys
-            else []
-        ),
     )
 
 
@@ -718,8 +491,6 @@ def time_indexed_registration_request_from_sqlalchemy_model(
     labels: Sequence[str] | None = None,
     protect_from_deletion: bool | None = None,
     provisioning: Mapping[str, Any] | None = None,
-    _target_meta_tables: Mapping[Any, Any] | None = None,
-    _target_identifiers: Mapping[Any, str] | None = None,
     schema: str | None = None,
     hash_namespace: str | None = None,
     extra_hash_components: Mapping[str, Any] | None = None,
@@ -727,7 +498,6 @@ def time_indexed_registration_request_from_sqlalchemy_model(
     time_index_name: str | None = None,
     index_names: Sequence[str] | None = None,
     storage_layout: Mapping[str, Any] | None = None,
-    include_foreign_keys: bool = True,
 ) -> Any:
     from mainsequence.client.metatables import TimeIndexMetaTableRegistrationRequest
 
@@ -757,13 +527,6 @@ def time_indexed_registration_request_from_sqlalchemy_model(
         model_or_table,
         storage_layout=storage_layout,
     )
-    resolved_target_models: Mapping[type[Any], Any] = {}
-    if include_foreign_keys:
-        resolved_target_models = _resolve_target_meta_table_uid_by_model(
-            target_meta_tables=_target_meta_tables,
-            model_or_table=model_or_table,
-        )
-
     columns = _iter_columns(table)
     _validate_time_index_contract(
         columns=columns,
@@ -792,23 +555,6 @@ def time_indexed_registration_request_from_sqlalchemy_model(
         )
         for position, column in enumerate(columns)
     ]
-    foreign_key_contracts = (
-        [
-            _time_indexed_meta_table_foreign_key_contract(
-                foreign_key_constraint,
-                target_meta_table_uid_by_model=resolved_target_models,
-                target_identifier_by_model=_target_identifiers or {},
-                target_meta_table_uid_by_fullname={},
-                require_metatable_foreign_keys=True,
-            ).model_dump(mode="json", exclude_none=True)
-            for foreign_key_constraint in sorted(
-                _iter_foreign_key_constraints(table),
-                key=lambda item: item.name or "",
-            )
-        ]
-        if include_foreign_keys
-        else []
-    )
     module, qualname = _resolve_model_path(
         model_or_table,
         table_model_module=None,
@@ -856,8 +602,6 @@ def time_indexed_registration_request_from_sqlalchemy_model(
             },
             "physical": {"table_name": _table_name(table)},
             "columns": column_contracts,
-            "indexes": _default_time_indexed_meta_table_indexes(resolved_index_names),
-            "foreign_keys": foreign_key_contracts,
         },
     )
 
@@ -874,13 +618,10 @@ def platform_managed_registration_request_from_sqlalchemy_model(
     protect_from_deletion: bool | None = None,
     provisioning: Mapping[str, Any] | None = None,
     introspect: bool | None = None,
-    _target_meta_tables: Mapping[Any, Any] | None = None,
-    _target_identifiers: Mapping[Any, str] | None = None,
     schema: str | None = None,
     hash_namespace: str | None = None,
     extra_hash_components: Mapping[str, Any] | None = None,
     enforce_storage_hash_name: bool = True,
-    include_foreign_keys: bool = True,
 ) -> MetaTableRegistrationRequest:
     table = _resolve_table(model_or_table)
     resolved_schema = _resolve_schema(table, schema=schema)
@@ -906,12 +647,8 @@ def platform_managed_registration_request_from_sqlalchemy_model(
 
     table_contract = table_contract_from_sqlalchemy_model(
         model_or_table,
-        target_meta_tables=_target_meta_tables,
-        target_identifier_by_model=_target_identifiers,
         schema=resolved_schema,
         include_physical_table_name=True,
-        require_metatable_foreign_keys=True,
-        include_foreign_keys=include_foreign_keys,
     )
     return MetaTableRegistrationRequest(
         data_source_uid=_resolve_model_data_source_uid(
@@ -955,8 +692,6 @@ def external_registered_registration_request_from_sqlalchemy_model(
     labels: Sequence[str] | None = None,
     protect_from_deletion: bool = False,
     introspect: bool = True,
-    target_meta_tables: Mapping[Any, Any] | None = None,
-    target_meta_table_uid_by_fullname: Mapping[str, Any] | None = None,
     schema: str | None = None,
     hash_namespace: str | None = None,
     extra_hash_components: Mapping[str, Any] | None = None,
@@ -973,10 +708,6 @@ def external_registered_registration_request_from_sqlalchemy_model(
     resolved_extra_hash_components = _resolve_extra_hash_components(
         model_or_table,
         extra_hash_components=extra_hash_components,
-    )
-    resolved_targets = _resolve_target_meta_table_uid_by_fullname(
-        target_meta_tables=target_meta_tables,
-        target_meta_table_uid_by_fullname=target_meta_table_uid_by_fullname,
     )
     resolved_storage_hash = storage_hash or build_meta_table_storage_hash(
         namespace=resolved_namespace,
@@ -998,8 +729,6 @@ def external_registered_registration_request_from_sqlalchemy_model(
         introspect=introspect,
         table_contract=table_contract_from_sqlalchemy_model(
             model_or_table,
-            target_meta_tables=target_meta_tables,
-            target_meta_table_uid_by_fullname=resolved_targets,
             schema=resolved_schema,
         ),
     )
@@ -1110,49 +839,6 @@ def _resolve_model_data_source_uid(
     )
 
 
-def _resolve_target_meta_table_uid_by_fullname(
-    *,
-    target_meta_tables: Mapping[Any, Any] | None = None,
-    target_meta_table_uid_by_fullname: Mapping[str, Any] | None = None,
-) -> dict[str, str]:
-    resolved: dict[str, str] = {}
-
-    for target, meta_table in dict(target_meta_tables or {}).items():
-        target_fullname = _target_table_fullname(target)
-        target_uid = _target_meta_table_uid(meta_table)
-        resolved[target_fullname] = target_uid
-
-    for target_fullname, target_uid in dict(target_meta_table_uid_by_fullname or {}).items():
-        target_fullname = str(target_fullname)
-        target_uid = _target_meta_table_uid(target_uid)
-        if target_fullname in resolved and resolved[target_fullname] != target_uid:
-            raise ValueError(
-                f"Conflicting target MetaTable UIDs for foreign key target {target_fullname!r}."
-            )
-        resolved[target_fullname] = target_uid
-
-    return resolved
-
-
-def _resolve_target_meta_table_uid_by_model(
-    *,
-    target_meta_tables: Mapping[Any, Any] | None = None,
-    model_or_table: Any | None = None,
-) -> dict[type[Any], str]:
-    resolved: dict[type[Any], str] = {}
-    for target, meta_table in dict(target_meta_tables or {}).items():
-        if _is_platform_managed_meta_table_model(target):
-            resolved[target] = _target_meta_table_uid(meta_table)
-    if model_or_table is not None:
-        for target_model in _metatable_foreign_key_target_models(model_or_table):
-            if target_model in resolved:
-                continue
-            target_uid = target_model.get_meta_table_uid()
-            if target_uid not in (None, ""):
-                resolved[target_model] = str(target_uid)
-    return resolved
-
-
 def _begin_local_registration(
     model: type[PlatformManagedMetaTable],
     *,
@@ -1219,70 +905,6 @@ def _clear_failed_local_registration(
 def _registration_stack_label(model: type[Any], storage_hash: str) -> str:
     model_name = getattr(model, "__qualname__", getattr(model, "__name__", repr(model)))
     return f"{model_name}({storage_hash})"
-
-
-def _register_metatable_foreign_key_targets(
-    model_or_table: Any,
-    *,
-    data_source: DynamicTableDataSource | None = None,
-    data_source_uid: str | None = None,
-    timeout: int | float | tuple[float, float] | None,
-    stack: tuple[str, ...],
-) -> dict[type[Any], Any]:
-    target_meta_tables: dict[type[Any], Any] = {}
-    for target_model in _metatable_foreign_key_target_models(model_or_table):
-        target_meta_table = target_model.register(
-            data_source=data_source,
-            data_source_uid=data_source_uid,
-            timeout=timeout,
-            _registration_stack=stack,
-        )
-        target_meta_tables[target_model] = target_meta_table
-    return target_meta_tables
-
-
-def _metatable_foreign_key_target_models(
-    model_or_table: Any,
-) -> list[type[PlatformManagedMetaTable]]:
-    table = _resolve_table(model_or_table)
-    targets: list[type[PlatformManagedMetaTable]] = []
-    seen: set[type[PlatformManagedMetaTable]] = set()
-    for foreign_key_constraint in _iter_foreign_key_constraints(table):
-        for element in list(getattr(foreign_key_constraint, "elements", []) or []):
-            metadata = _metatable_foreign_key_metadata(element)
-            if metadata is None:
-                continue
-            target_model = metadata.get("target_model")
-            if not _is_platform_managed_meta_table_model(target_model):
-                raise ValueError("MetaTableForeignKey metadata must include a target model class.")
-            if target_model in seen:
-                continue
-            seen.add(target_model)
-            targets.append(target_model)
-    return targets
-
-
-def _target_table_fullname(target: Any) -> str:
-    if isinstance(target, str):
-        return target
-
-    table = _resolve_table(target)
-    fullname = _table_reference_fullname(table)
-    if fullname:
-        return str(fullname)
-
-    schema = getattr(table, "schema", None)
-    name = _table_name(table)
-    return f"{schema}.{name}" if schema else name
-
-
-def _target_meta_table_uid(meta_table: Any) -> str:
-    uid = _meta_table_uid(meta_table)
-    if uid is None and isinstance(meta_table, str):
-        uid = meta_table
-    if uid in (None, ""):
-        raise ValueError("Target MetaTable must be a uid string or an object with a non-empty uid.")
-    return str(uid)
 
 
 def _coerce_optional_uid(value: Any) -> str | None:
@@ -1369,34 +991,6 @@ def _bind_table_logical_identity(table: Any, *, storage_hash: str) -> None:
 
 def _compose_table_fullname(*, schema: str | None, table_name: str) -> str:
     return f"{schema}.{table_name}" if schema else str(table_name)
-
-
-def _table_reference_fullname(table: Any) -> str | None:
-    if table is None:
-        return None
-    logical_fullname = getattr(table, "_mainsequence_logical_fullname", None)
-    if logical_fullname not in (None, ""):
-        return str(logical_fullname)
-    info = getattr(table, "info", None)
-    if isinstance(info, Mapping):
-        logical_fullname = info.get("mainsequence_logical_fullname")
-        if logical_fullname not in (None, ""):
-            return str(logical_fullname)
-
-    fullname = getattr(table, "fullname", None)
-    if fullname not in (None, ""):
-        return str(fullname)
-
-    name = getattr(table, "name", None)
-    if name in (None, ""):
-        return None
-    return _compose_table_fullname(schema=getattr(table, "schema", None), table_name=str(name))
-
-
-def _logical_fullname_for_target_fullname(table_fullname: str | None) -> str | None:
-    if table_fullname in (None, ""):
-        return None
-    return str(table_fullname)
 
 
 def _meta_table_data_source_uid(meta_table: Any) -> str | None:
@@ -1642,16 +1236,6 @@ def _iter_columns(table: Any) -> list[Any]:
     return list(columns)
 
 
-def _iter_indexes(table: Any) -> list[Any]:
-    indexes = getattr(table, "indexes", None) or []
-    return list(indexes)
-
-
-def _iter_foreign_key_constraints(table: Any) -> list[Any]:
-    constraints = getattr(table, "foreign_key_constraints", None) or []
-    return list(constraints)
-
-
 def _column_contract(column: Any, *, ordinal_position: int) -> MetaTableColumnContract:
     type_contract = _column_type_contract(column)
     info = getattr(column, "info", None)
@@ -1716,7 +1300,7 @@ def _table_storage_identity(table: Any) -> dict[str, Any]:
     return _storage_identity_from_parts(
         columns=_iter_columns(table),
         indexes=_iter_indexes(table),
-        foreign_key_constraints=_iter_foreign_key_constraints(table),
+        foreign_keys=_iter_foreign_key_constraints(table),
     )
 
 
@@ -1744,13 +1328,7 @@ def _configured_table_storage_identity(model_or_table: Any, *, table: Any) -> di
 
 def _table_items_storage_identity(table_items: Sequence[Any]) -> dict[str, Any]:
     columns = [item for item in table_items if _looks_like_column(item)]
-    indexes = [item for item in table_items if _looks_like_index(item)]
-    foreign_key_constraints = [item for item in table_items if _looks_like_foreign_key(item)]
-    return _storage_identity_from_parts(
-        columns=columns,
-        indexes=indexes,
-        foreign_key_constraints=foreign_key_constraints,
-    )
+    return _storage_identity_from_parts(columns=columns)
 
 
 def _time_index_table_storage_identity(
@@ -1953,26 +1531,28 @@ def _validate_time_index_contract(
 def _storage_identity_from_parts(
     *,
     columns: Sequence[Any],
-    indexes: Sequence[Any],
-    foreign_key_constraints: Sequence[Any],
+    indexes: Sequence[Any] | None = None,
+    foreign_keys: Sequence[Any] | None = None,
 ) -> dict[str, Any]:
-    return {
+    identity = {
         "columns": [
             _column_storage_identity(column, ordinal_position=position)
             for position, column in enumerate(columns)
         ],
-        "indexes": sorted(
-            (_index_storage_identity(index) for index in indexes),
-            key=lambda item: repr(item),
-        ),
-        "foreign_keys": sorted(
-            _foreign_key_storage_identities(
-                columns=columns,
-                foreign_key_constraints=foreign_key_constraints,
-            ),
-            key=lambda item: repr(item),
-        ),
     }
+    index_identity = [_index_storage_identity(index) for index in indexes or []]
+    if index_identity:
+        identity["indexes"] = sorted(index_identity, key=_storage_identity_sort_key)
+
+    foreign_key_identity = [
+        _foreign_key_storage_identity(foreign_key) for foreign_key in foreign_keys or []
+    ]
+    if foreign_key_identity:
+        identity["foreign_keys"] = sorted(
+            foreign_key_identity,
+            key=_storage_identity_sort_key,
+        )
+    return identity
 
 
 def _column_storage_identity(column: Any, *, ordinal_position: int) -> dict[str, Any]:
@@ -1994,402 +1574,190 @@ def _column_storage_identity(column: Any, *, ordinal_position: int) -> dict[str,
     return identity
 
 
+def _iter_indexes(table: Any) -> list[Any]:
+    indexes = getattr(table, "indexes", None)
+    if indexes is None:
+        return []
+    return list(indexes)
+
+
+def _iter_foreign_key_constraints(table: Any) -> list[Any]:
+    foreign_keys = getattr(table, "foreign_key_constraints", None)
+    if foreign_keys is None:
+        return []
+    return list(foreign_keys)
+
+
+def _index_storage_identity(index: Any) -> dict[str, Any]:
+    identity = {
+        "columns": [_storage_item_name(item) for item in _iter_index_items(index)],
+        "unique": bool(getattr(index, "unique", False)),
+    }
+    dialect_kwargs = _index_dialect_kwargs(index)
+    if dialect_kwargs:
+        identity["dialect_kwargs"] = dialect_kwargs
+    return identity
+
+
+def _iter_index_items(index: Any) -> list[Any]:
+    expressions = getattr(index, "expressions", None)
+    if expressions is not None:
+        return list(expressions)
+    columns = getattr(index, "columns", None)
+    if columns is None:
+        return []
+    return list(columns)
+
+
+def _index_dialect_kwargs(index: Any) -> dict[str, Any]:
+    dialect_kwargs = getattr(index, "dialect_kwargs", None)
+    if isinstance(dialect_kwargs, Mapping):
+        return {
+            str(key): _storage_value(value)
+            for key, value in sorted(dialect_kwargs.items())
+            if _storage_value_should_be_included(value)
+        }
+
+    dialect_options = getattr(index, "dialect_options", None)
+    if not isinstance(dialect_options, Mapping):
+        return {}
+
+    resolved: dict[str, Any] = {}
+    for dialect, values in sorted(dialect_options.items()):
+        if not isinstance(values, Mapping):
+            continue
+        for key, value in sorted(values.items()):
+            if _storage_value_should_be_included(value):
+                resolved[f"{dialect}_{key}"] = _storage_value(value)
+    return resolved
+
+
+def _foreign_key_storage_identity(foreign_key: Any) -> dict[str, Any]:
+    elements = [
+        _foreign_key_element_storage_identity(element)
+        for element in _iter_foreign_key_elements(foreign_key)
+    ]
+    identity: dict[str, Any] = {"elements": elements}
+    for attr_name in ("ondelete", "onupdate", "deferrable", "initially", "match"):
+        attr_value = getattr(foreign_key, attr_name, None)
+        if attr_value not in (None, ""):
+            identity[attr_name] = _storage_value(attr_value)
+    return identity
+
+
+def _iter_foreign_key_elements(foreign_key: Any) -> list[Any]:
+    elements = getattr(foreign_key, "elements", None)
+    if elements is None:
+        return []
+    return list(elements)
+
+
+def _foreign_key_element_storage_identity(element: Any) -> dict[str, Any]:
+    source_column = getattr(element, "parent", None)
+    target_column = _foreign_key_target_column(element)
+    target_schema, target_table, target_column_name = _foreign_key_target_identity(
+        element,
+        target_column=target_column,
+    )
+    identity = {
+        "source_column": _storage_item_name(source_column),
+        "target_schema": target_schema,
+        "target_table": target_table,
+        "target_column": target_column_name,
+    }
+    for attr_name in ("ondelete", "onupdate", "deferrable", "initially", "match"):
+        attr_value = getattr(element, attr_name, None)
+        if attr_value not in (None, ""):
+            identity[attr_name] = _storage_value(attr_value)
+    return identity
+
+
+def _foreign_key_target_column(element: Any) -> Any | None:
+    try:
+        return getattr(element, "column", None)
+    except Exception:
+        return None
+
+
+def _foreign_key_target_identity(
+    element: Any,
+    *,
+    target_column: Any | None,
+) -> tuple[str | None, str | None, str]:
+    if target_column is not None:
+        return (
+            _storage_table_schema(target_column),
+            _storage_table_name(target_column),
+            _storage_item_name(target_column),
+        )
+
+    colspec = getattr(element, "_colspec", None)
+    if colspec in (None, ""):
+        return None, None, ""
+
+    parts = str(colspec).split(".")
+    if len(parts) >= 2:
+        target_column_name = parts[-1]
+        target_table = parts[-2]
+        target_schema = ".".join(parts[:-2]) or None
+        return target_schema, target_table, target_column_name
+    return None, None, str(colspec)
+
+
+def _storage_table_schema(column: Any) -> str | None:
+    table = getattr(column, "table", None)
+    schema = getattr(table, "schema", None)
+    if schema in (None, ""):
+        return None
+    return str(schema)
+
+
+def _storage_table_name(column: Any) -> str | None:
+    table = getattr(column, "table", None)
+    table_name = getattr(table, "name", None)
+    if table_name in (None, ""):
+        return None
+    return str(table_name)
+
+
+def _storage_item_name(item: Any) -> str:
+    name = getattr(item, "name", None)
+    if name not in (None, ""):
+        return str(name)
+    return str(item)
+
+
+def _storage_value(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {
+            str(key): _storage_value(item)
+            for key, item in sorted(value.items())
+            if _storage_value_should_be_included(item)
+        }
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return [_storage_value(item) for item in value]
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    return str(value)
+
+
+def _storage_value_should_be_included(value: Any) -> bool:
+    return value not in (None, "", {}, [], ())
+
+
+def _storage_identity_sort_key(value: Mapping[str, Any]) -> str:
+    return json.dumps(value, sort_keys=True, default=str)
+
+
 def _looks_like_column(value: Any) -> bool:
     return getattr(value, "name", None) not in (None, "") and hasattr(value, "type")
 
 
-def _looks_like_index(value: Any) -> bool:
-    return hasattr(value, "columns") and hasattr(value, "unique") and not hasattr(value, "type")
-
-
-def _looks_like_foreign_key(value: Any) -> bool:
-    return hasattr(value, "elements") and not hasattr(value, "type")
-
-
-def _index_storage_identity(index: Any) -> dict[str, Any]:
-    columns = _column_names(getattr(index, "columns", []))
-    if not columns:
-        columns = _column_names(getattr(index, "expressions", []))
-    return {
-        "columns": columns,
-        "unique": bool(getattr(index, "unique", False)),
-        "method": _index_method(index),
-        "expression": None if columns else str(index),
-    }
-
-
-def _foreign_key_storage_identities(
-    *,
-    columns: Sequence[Any],
-    foreign_key_constraints: Sequence[Any],
-) -> list[dict[str, Any]]:
-    identities = [
-        _foreign_key_storage_identity(foreign_key_constraint)
-        for foreign_key_constraint in foreign_key_constraints
-    ]
-    if not identities:
-        identities = _column_foreign_key_storage_identities(columns)
-    return _deduplicate_identity_dicts(identities)
-
-
-def _foreign_key_storage_identity(foreign_key_constraint: Any) -> dict[str, Any]:
-    elements = list(getattr(foreign_key_constraint, "elements", []) or [])
-    if not elements:
-        return {
-            "source_columns": [],
-            "target_table": None,
-            "target_columns": [],
-            "on_delete": "restrict",
-        }
-    target_table = _foreign_key_element_target_table(elements[0])
-    on_delete = getattr(elements[0], "ondelete", None) or getattr(
-        foreign_key_constraint,
-        "ondelete",
-        None,
-    )
-    return {
-        "source_columns": [str(element.parent.name) for element in elements],
-        "target_table": target_table,
-        "target_columns": [str(element.column.name) for element in elements],
-        "on_delete": str(on_delete or "restrict").lower(),
-    }
-
-
-def _column_foreign_key_storage_identities(columns: Sequence[Any]) -> list[dict[str, Any]]:
-    identities: list[dict[str, Any]] = []
-    for column in columns:
-        for foreign_key in sorted(
-            list(getattr(column, "foreign_keys", []) or []),
-            key=lambda item: str(item),
-        ):
-            target_table, target_column = _foreign_key_target_parts(foreign_key)
-            identities.append(
-                {
-                    "source_columns": [str(column.name)],
-                    "target_table": target_table,
-                    "target_columns": [target_column] if target_column else [],
-                    "on_delete": str(getattr(foreign_key, "ondelete", None) or "restrict").lower(),
-                }
-            )
-    return identities
-
-
-def _foreign_key_element_target_table(element: Any) -> str | None:
-    try:
-        target_column = getattr(element, "column", None)
-    except Exception:
-        target_column = None
-    target_table = getattr(target_column, "table", None)
-    fullname = _table_reference_fullname(target_table)
-    if fullname:
-        return str(fullname)
-    target_fullname = getattr(element, "target_fullname", None)
-    if target_fullname:
-        target_table, _target_column = _split_target_fullname(str(target_fullname))
-        return _logical_fullname_for_target_fullname(target_table)
-    return None
-
-
-def _foreign_key_target_parts(foreign_key: Any) -> tuple[str | None, str | None]:
-    try:
-        target_column = getattr(foreign_key, "column", None)
-    except Exception:
-        target_column = None
-    target_table = getattr(target_column, "table", None)
-    target_table_fullname = _table_reference_fullname(target_table)
-    target_column_name = getattr(target_column, "name", None)
-    if target_table_fullname:
-        return (
-            str(target_table_fullname),
-            str(target_column_name) if target_column_name else None,
-        )
-
-    target_fullname = getattr(foreign_key, "target_fullname", None) or getattr(
-        foreign_key,
-        "_colspec",
-        None,
-    )
-    if target_fullname:
-        return _split_target_fullname(str(target_fullname))
-    return None, str(target_column_name) if target_column_name else None
-
-
-def _split_target_fullname(target_fullname: str) -> tuple[str | None, str | None]:
-    if "." not in target_fullname:
-        return None, target_fullname or None
-    target_table, target_column = target_fullname.rsplit(".", 1)
-    return _logical_fullname_for_target_fullname(target_table), target_column or None
-
-
-def _deduplicate_identity_dicts(items: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
-    deduplicated: dict[str, dict[str, Any]] = {}
-    for item in items:
-        deduplicated[repr(sorted(item.items()))] = item
-    return list(deduplicated.values())
-
-
-def _index_contract(index: Any) -> MetaTableIndexContract:
-    index_name = getattr(index, "name", None)
-    columns = _column_names(getattr(index, "columns", []))
-    expression = None if columns else str(index)
-    return MetaTableIndexContract(
-        name=str(index_name) if index_name else None,
-        columns=columns,
-        unique=bool(getattr(index, "unique", False)),
-        method=_index_method(index),
-        expression=expression,
-    )
-
-
-def _index_method(index: Any) -> str | None:
-    dialect_options = getattr(index, "dialect_options", None)
-    if isinstance(dialect_options, Mapping):
-        postgresql_options = dialect_options.get("postgresql")
-        if isinstance(postgresql_options, Mapping):
-            method = postgresql_options.get("using")
-            if method:
-                return str(method)
-    return None
-
-
-def _foreign_key_contract(
-    foreign_key_constraint: Any,
-    *,
-    target_meta_table_uid_by_model: Mapping[type[Any], Any],
-    target_identifier_by_model: Mapping[Any, str],
-    target_meta_table_uid_by_fullname: Mapping[str, Any],
-    require_metatable_foreign_keys: bool = False,
-) -> MetaTableForeignKeyContract:
-    elements = list(getattr(foreign_key_constraint, "elements", []) or [])
-    if not elements:
-        raise ValueError(f"Foreign key {foreign_key_constraint.name!r} does not expose elements.")
-
-    sdk_target = _metatable_foreign_key_contract_target(
-        elements,
-        target_meta_table_uid_by_model=target_meta_table_uid_by_model,
-        target_identifier_by_model=target_identifier_by_model,
-    )
-    if sdk_target is None:
-        if require_metatable_foreign_keys:
-            raise ValueError(
-                "Platform-managed MetaTable foreign keys must use "
-                "MetaTableForeignKey(TargetModel, column=...)."
-            )
-        if not getattr(foreign_key_constraint, "name", None):
-            raise ValueError("MetaTable SQLAlchemy foreign keys must be explicitly named.")
-        target_tables = {
-            _table_reference_fullname(element.column.table)
-            for element in elements
-            if _table_reference_fullname(element.column.table)
-        }
-        if len(target_tables) != 1:
-            raise ValueError("Composite foreign keys must target one table.")
-        target_table_fullname = next(iter(target_tables))
-        target_meta_table_uid = _lookup_target_meta_table_uid(
-            target_table_fullname,
-            target_meta_table_uid_by_fullname=target_meta_table_uid_by_fullname,
-        )
-        target_identifier = None
-        target_columns = [str(element.column.name) for element in elements]
-    else:
-        target_meta_table_uid, target_identifier, target_columns = sdk_target
-
-    foreign_key_name = (
-        None if sdk_target is not None else getattr(foreign_key_constraint, "name", None)
-    )
-    if sdk_target is None and not require_metatable_foreign_keys and not foreign_key_name:
-        raise ValueError("MetaTable SQLAlchemy foreign keys must be explicitly named.")
-
-    on_delete = getattr(elements[0], "ondelete", None) or getattr(
-        foreign_key_constraint,
-        "ondelete",
-        None,
-    )
-    return MetaTableForeignKeyContract(
-        name=str(foreign_key_name) if foreign_key_name else None,
-        source_columns=[str(element.parent.name) for element in elements],
-        target_meta_table_uid=target_meta_table_uid,
-        target_identifier=target_identifier,
-        target_columns=target_columns,
-        on_delete=str(on_delete or "restrict").lower(),
-    )
-
-
-def _time_indexed_meta_table_foreign_key_contract(
-    foreign_key_constraint: Any,
-    *,
-    target_meta_table_uid_by_model: Mapping[type[Any], Any],
-    target_identifier_by_model: Mapping[Any, str],
-    target_meta_table_uid_by_fullname: Mapping[str, Any],
-    require_metatable_foreign_keys: bool = False,
-) -> MetaTableForeignKeyContract:
-    elements = list(getattr(foreign_key_constraint, "elements", []) or [])
-    if not elements:
-        raise ValueError("Time-indexed MetaTable SQLAlchemy foreign keys must expose elements.")
-
-    sdk_target = _metatable_foreign_key_contract_target(
-        elements,
-        target_meta_table_uid_by_model=target_meta_table_uid_by_model,
-        target_identifier_by_model=target_identifier_by_model,
-    )
-    if sdk_target is None:
-        if require_metatable_foreign_keys:
-            raise ValueError(
-                "Platform-managed MetaTable foreign keys must use "
-                "MetaTableForeignKey(TargetModel, column=...)."
-            )
-        target_tables = {
-            _foreign_key_element_target_table(element)
-            for element in elements
-            if _foreign_key_element_target_table(element)
-        }
-        if len(target_tables) != 1:
-            raise ValueError("Composite foreign keys must target one table.")
-
-        target_table_fullname = next(iter(target_tables))
-        target_meta_table_uid = _lookup_target_meta_table_uid(
-            target_table_fullname,
-            target_meta_table_uid_by_fullname=target_meta_table_uid_by_fullname,
-        )
-        target_identifier = None
-        target_columns = [str(element.column.name) for element in elements]
-    else:
-        target_meta_table_uid, target_identifier, target_columns = sdk_target
-
-    foreign_key_name = (
-        None if sdk_target is not None else getattr(foreign_key_constraint, "name", None)
-    )
-    if sdk_target is None and not require_metatable_foreign_keys and not foreign_key_name:
-        raise ValueError("MetaTable SQLAlchemy foreign keys must be explicitly named.")
-
-    on_delete = getattr(elements[0], "ondelete", None) or getattr(
-        foreign_key_constraint,
-        "ondelete",
-        None,
-    )
-    return MetaTableForeignKeyContract(
-        name=str(foreign_key_name) if foreign_key_name else None,
-        source_columns=[str(element.parent.name) for element in elements],
-        target_meta_table_uid=target_meta_table_uid,
-        target_identifier=target_identifier,
-        target_columns=target_columns,
-        on_delete=str(on_delete or "restrict").lower(),
-    )
-
-
-def _metatable_foreign_key_contract_target(
-    elements: Sequence[Any],
-    *,
-    target_meta_table_uid_by_model: Mapping[type[Any], Any],
-    target_identifier_by_model: Mapping[Any, str],
-) -> tuple[str | None, str | None, list[str]] | None:
-    metadata_by_element = [_metatable_foreign_key_metadata(element) for element in elements]
-    if not any(metadata_by_element):
-        return None
-    if not all(metadata_by_element):
-        raise ValueError(
-            "Composite MetaTableForeignKey constraints must use MetaTableForeignKey "
-            "for every target element."
-        )
-
-    target_models: list[type[PlatformManagedMetaTable]] = []
-    target_columns: list[str] = []
-    for metadata in metadata_by_element:
-        if metadata is None:
-            continue
-        target_model = metadata.get("target_model")
-        target_column = metadata.get("target_column")
-        if not _is_platform_managed_meta_table_model(target_model):
-            raise ValueError("MetaTableForeignKey metadata must include a target model class.")
-        if target_column in (None, ""):
-            raise ValueError("MetaTableForeignKey metadata must include a target column name.")
-        target_models.append(target_model)
-        target_columns.append(str(target_column))
-
-    if len(set(target_models)) != 1:
-        raise ValueError("Composite MetaTableForeignKey constraints must target one model.")
-
-    target_model = target_models[0]
-    target_meta_table_uid = _lookup_target_meta_table_uid_by_model(
-        target_model,
-        target_meta_table_uid_by_model=target_meta_table_uid_by_model,
-    )
-    if target_meta_table_uid not in (None, ""):
-        return target_meta_table_uid, None, target_columns
-
-    target_identifier = target_identifier_by_model.get(target_model)
-    if target_identifier not in (None, ""):
-        return None, str(target_identifier), target_columns
-
-    model_name = getattr(target_model, "__qualname__", repr(target_model))
-    raise ValueError(
-        "Missing registered target MetaTable UID or same-batch target identifier "
-        f"for MetaTableForeignKey target {model_name}."
-    )
-
-
-def _metatable_foreign_key_metadata(element: Any) -> Mapping[str, Any] | None:
-    info = getattr(element, "info", None)
-    if not isinstance(info, Mapping):
-        return None
-    metadata = info.get(_METATABLE_FOREIGN_KEY_INFO_KEY)
-    if metadata is None:
-        return None
-    if not isinstance(metadata, Mapping):
-        raise ValueError("MetaTableForeignKey metadata must be a mapping.")
-    return metadata
-
-
-def _lookup_target_meta_table_uid_by_model(
-    target_model: type[PlatformManagedMetaTable],
-    *,
-    target_meta_table_uid_by_model: Mapping[type[Any], Any],
-) -> str | None:
-    target_uid = target_meta_table_uid_by_model.get(target_model)
-    if target_uid is not None:
-        return _target_meta_table_uid(target_uid)
-
-    get_meta_table_uid = getattr(target_model, "get_meta_table_uid", None)
-    if callable(get_meta_table_uid):
-        target_uid = get_meta_table_uid()
-        if target_uid not in (None, ""):
-            return str(target_uid)
-
-    return None
-
-
-def _lookup_target_meta_table_uid(
-    target_table_fullname: str,
-    *,
-    target_meta_table_uid_by_fullname: Mapping[str, Any],
-) -> str:
-    target_uid = target_meta_table_uid_by_fullname.get(target_table_fullname)
-    if target_uid is None:
-        raise ValueError(
-            "Missing registered target MetaTable UID for foreign key target "
-            f"{target_table_fullname!r}."
-        )
-    if hasattr(target_uid, "uid"):
-        target_uid = target_uid.uid
-    return str(target_uid)
-
-
-def _column_names(columns: Any) -> list[str]:
-    return [
-        str(column if isinstance(column, str) else column.name)
-        for column in list(columns or [])
-        if isinstance(column, str) or getattr(column, "name", None) not in (None, "")
-    ]
-
-
 __all__ = [
     "DEFAULT_PLATFORM_MANAGED_PROVISIONING",
-    "MetaTableForeignKey",
     "PlatformManagedMetaTable",
     "PlatformTimeIndexMetaData",
     "external_registered_registration_request_from_sqlalchemy_model",
-    "metatable_configured_tablename",
-    "metatable_tablename",
     "platform_managed_migration_registration_context",
     "platform_managed_registration_request_from_sqlalchemy_model",
     "register_external_sqlalchemy_model",

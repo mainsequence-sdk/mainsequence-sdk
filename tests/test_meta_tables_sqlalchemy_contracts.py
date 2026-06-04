@@ -17,12 +17,9 @@ from mainsequence.client.metatables import (
     TimeIndexMetaTableRegistrationRequest,
 )
 from mainsequence.meta_tables import (
-    MetaTableForeignKey,
     PlatformManagedMetaTable,
     PlatformTimeIndexMetaData,
     external_registered_registration_request_from_sqlalchemy_model,
-    metatable_configured_tablename,
-    metatable_tablename,
     platform_managed_migration_registration_context,
     platform_managed_registration_request_from_sqlalchemy_model,
     table_contract_from_sqlalchemy_model,
@@ -201,32 +198,6 @@ def _time_index_model_class(
     )
 
 
-def _fake_metatable_fk_element(
-    source_column,
-    target_model,
-    *,
-    target_column="uid",
-    ondelete="RESTRICT",
-):
-    target_columns = getattr(getattr(target_model, "__table__", None), "columns", [])
-    target_column_object = next(
-        (column for column in target_columns if column.name == target_column),
-        FakeColumn(target_column, Uuid(), primary_key=True),
-    )
-    element = FakeForeignKeyElement(
-        source_column,
-        target_column_object,
-        ondelete=ondelete,
-    )
-    element.info = {
-        sqlalchemy_contracts._METATABLE_FOREIGN_KEY_INFO_KEY: {
-            "target_model": target_model,
-            "target_column": target_column,
-        }
-    }
-    return element
-
-
 def _dynamic_table_data_source(uid: str = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"):
     physical = DataSource.model_construct(
         uid="eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
@@ -240,6 +211,10 @@ def _dynamic_table_data_source(uid: str = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
         related_resource=physical,
         related_resource_class_type="DUCK_DB",
     )
+
+
+def _configured_storage_hash(model_or_table):
+    return sqlalchemy_contracts._configured_storage_hash_for_model(model_or_table)
 
 
 def test_default_metatable_identifier_uses_pyproject_and_model_path(tmp_path, monkeypatch):
@@ -323,7 +298,7 @@ def test_platform_managed_registration_request_from_sqlalchemy_metadata():
 
     assert isinstance(request, MetaTableRegistrationRequest)
     assert request.management_mode == "platform_managed"
-    assert request.storage_hash == metatable_configured_tablename(Account)
+    assert request.storage_hash == _configured_storage_hash(Account)
     assert request.identifier == "Account"
     assert request.namespace == "example.assets"
     assert request.provisioning == {"create_table": True, "if_not_exists": True}
@@ -338,7 +313,7 @@ def test_platform_managed_registration_request_from_sqlalchemy_metadata():
 
 
 def test_registration_request_accepts_dynamic_table_data_source():
-    table_name = metatable_tablename(namespace="example.assets", identifier="Account")
+    table_name = "example_assets__account"
     account_table = FakeTable(
         table_name,
         columns=[FakeColumn("uid", Uuid(), nullable=False, primary_key=True)],
@@ -354,7 +329,7 @@ def test_registration_request_accepts_dynamic_table_data_source():
 
 
 def test_registration_request_rejects_non_dynamic_table_data_source():
-    table_name = metatable_tablename(namespace="example.assets", identifier="Account")
+    table_name = "example_assets__account"
     account_table = FakeTable(
         table_name,
         columns=[FakeColumn("uid", Uuid(), nullable=False, primary_key=True)],
@@ -369,7 +344,7 @@ def test_registration_request_rejects_non_dynamic_table_data_source():
 
 
 def test_registration_request_uses_class_metatable_description():
-    table_name = metatable_tablename(namespace="example.assets", identifier="Account")
+    table_name = "example_assets__account"
     account_table = FakeTable(
         table_name,
         columns=[FakeColumn("uid", Uuid(), nullable=False, primary_key=True)],
@@ -390,7 +365,7 @@ def test_registration_request_uses_class_metatable_description():
 
 
 def test_registration_request_description_argument_overrides_class_default():
-    table_name = metatable_tablename(namespace="example.assets", identifier="Account")
+    table_name = "example_assets__account"
     account_table = FakeTable(
         table_name,
         columns=[FakeColumn("uid", Uuid(), nullable=False, primary_key=True)],
@@ -424,7 +399,7 @@ def test_external_registration_request_uses_class_metatable_description():
 
 
 def test_sqlalchemy_contract_marks_id_uuid_primary_key_with_server_default():
-    table_name = metatable_tablename(namespace="example.assets", identifier="Asset")
+    table_name = "example_assets__asset"
     asset_table = FakeTable(
         table_name,
         columns=[
@@ -444,7 +419,7 @@ def test_sqlalchemy_contract_marks_id_uuid_primary_key_with_server_default():
 
 
 def test_sqlalchemy_contract_maps_date_and_timezone_aware_datetime():
-    table_name = metatable_tablename(namespace="example.assets", identifier="Observation")
+    table_name = "example_assets__observation"
     table = FakeTable(
         table_name,
         columns=[
@@ -463,7 +438,7 @@ def test_sqlalchemy_contract_maps_date_and_timezone_aware_datetime():
 
 
 def test_sqlalchemy_contract_rejects_timezone_naive_datetime():
-    table_name = metatable_tablename(namespace="example.assets", identifier="Observation")
+    table_name = "example_assets__observation"
     table = FakeTable(
         table_name,
         columns=[FakeColumn("seen_at", DateTime(timezone=False), nullable=False)],
@@ -474,13 +449,12 @@ def test_sqlalchemy_contract_rejects_timezone_naive_datetime():
         table_contract_from_sqlalchemy_model(Observation)
 
 
-def test_sqlalchemy_contract_includes_indexes_and_foreign_keys():
-    account_table_name = metatable_tablename(namespace="example.assets", identifier="Account")
+def test_sqlalchemy_contract_omits_indexes_and_foreign_keys():
+    account_table_name = "example_assets__account"
     account_uid = FakeColumn("uid", Uuid(), nullable=False, primary_key=True)
-    account_table = FakeTable(account_table_name, columns=[account_uid])
-    Account = _model_class("Account", account_table)
+    FakeTable(account_table_name, columns=[account_uid])
 
-    asset_table_name = metatable_tablename(namespace="example.assets", identifier="Asset")
+    asset_table_name = "example_assets__asset"
     asset_uid = FakeColumn("uid", Uuid(), nullable=False, primary_key=True)
     account_uid_source = FakeColumn("account_uid", Uuid(), nullable=False)
     symbol = FakeColumn("symbol", String(64), nullable=False)
@@ -503,27 +477,17 @@ def test_sqlalchemy_contract_includes_indexes_and_foreign_keys():
     )
     Asset = _model_class("Asset", asset_table)
 
-    contract = table_contract_from_sqlalchemy_model(
-        Asset,
-        target_meta_tables={
-            Account: SimpleNamespace(uid="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"),
-        },
-    )
+    contract = table_contract_from_sqlalchemy_model(Asset)
 
     assert contract.physical.table_name == asset_table_name
-    assert contract.indexes[0].name == "asset_account_uid_idx"
-    assert contract.indexes[0].columns == ["account_uid"]
-    assert contract.indexes[0].method == "btree"
-    assert contract.foreign_keys[0].name == "asset_account_uid_fkey"
-    assert contract.foreign_keys[0].source_columns == ["account_uid"]
-    assert contract.foreign_keys[0].target_meta_table_uid == (
-        "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
-    )
-    assert contract.foreign_keys[0].target_columns == ["uid"]
-    assert contract.foreign_keys[0].on_delete == "restrict"
+    assert not hasattr(contract, "indexes")
+    assert not hasattr(contract, "foreign_keys")
+    payload = contract.model_dump(mode="json", exclude_none=True)
+    assert "indexes" not in payload
+    assert "foreign_keys" not in payload
 
 
-def test_configured_metatable_tablename_changes_with_column_shape():
+def test_configured_storage_hash_changes_with_column_shape():
     base_table = FakeTable(
         "placeholder",
         columns=[FakeColumn("uid", Uuid(), nullable=False, primary_key=True)],
@@ -538,12 +502,182 @@ def test_configured_metatable_tablename_changes_with_column_shape():
     BaseAsset = _model_class("Asset", base_table)
     ExtendedAsset = _model_class("Asset", extended_table)
 
-    assert metatable_configured_tablename(BaseAsset) != metatable_configured_tablename(
-        ExtendedAsset
+    assert _configured_storage_hash(BaseAsset) != _configured_storage_hash(ExtendedAsset)
+
+
+def test_configured_storage_hash_changes_with_index_shape():
+    uid = FakeColumn("uid", Uuid(), nullable=False, primary_key=True)
+    symbol = FakeColumn("symbol", String(64), nullable=False)
+    base_table = FakeTable("placeholder", columns=[uid, symbol])
+
+    indexed_uid = FakeColumn("uid", Uuid(), nullable=False, primary_key=True)
+    indexed_symbol = FakeColumn("symbol", String(64), nullable=False)
+    indexed_table = FakeTable(
+        "placeholder",
+        columns=[indexed_uid, indexed_symbol],
+        indexes=[FakeIndex("asset_symbol_idx", [indexed_symbol], method="btree")],
+    )
+    BaseAsset = _model_class("Asset", base_table)
+    IndexedAsset = _model_class("Asset", indexed_table)
+
+    assert _configured_storage_hash(BaseAsset) != _configured_storage_hash(IndexedAsset)
+
+
+def test_configured_storage_hash_ignores_index_name():
+    first_symbol = FakeColumn("symbol", String(64), nullable=False)
+    first_table = FakeTable(
+        "placeholder",
+        columns=[FakeColumn("uid", Uuid(), nullable=False, primary_key=True), first_symbol],
+        indexes=[FakeIndex("asset_symbol_idx", [first_symbol], method="btree")],
+    )
+    second_symbol = FakeColumn("symbol", String(64), nullable=False)
+    second_table = FakeTable(
+        "placeholder",
+        columns=[FakeColumn("uid", Uuid(), nullable=False, primary_key=True), second_symbol],
+        indexes=[FakeIndex("backend_generated_name", [second_symbol], method="btree")],
+    )
+    FirstAsset = _model_class("Asset", first_table)
+    SecondAsset = _model_class("Asset", second_table)
+
+    assert _configured_storage_hash(FirstAsset) == _configured_storage_hash(SecondAsset)
+
+
+def test_configured_storage_hash_changes_with_foreign_key_shape():
+    account_uid = FakeColumn("uid", Uuid(), nullable=False, primary_key=True)
+    account_table = FakeTable("example_assets__account", columns=[account_uid])
+
+    base_asset_uid = FakeColumn("uid", Uuid(), nullable=False, primary_key=True)
+    base_account_uid = FakeColumn("account_uid", Uuid(), nullable=False)
+    base_table = FakeTable(
+        "placeholder",
+        columns=[base_asset_uid, base_account_uid],
     )
 
+    fk_asset_uid = FakeColumn("uid", Uuid(), nullable=False, primary_key=True)
+    fk_account_uid = FakeColumn("account_uid", Uuid(), nullable=False)
+    fk_table = FakeTable(
+        "placeholder",
+        columns=[fk_asset_uid, fk_account_uid],
+        foreign_keys=[
+            FakeForeignKeyConstraint(
+                "asset_account_uid_fkey",
+                [
+                    FakeForeignKeyElement(
+                        fk_account_uid,
+                        account_table.columns[0],
+                        ondelete="RESTRICT",
+                    )
+                ],
+            )
+        ],
+    )
+    BaseAsset = _model_class("Asset", base_table)
+    ForeignKeyAsset = _model_class("Asset", fk_table)
 
-def test_configured_metatable_tablename_ignores_logical_identifier():
+    assert _configured_storage_hash(BaseAsset) != _configured_storage_hash(ForeignKeyAsset)
+
+
+def test_configured_storage_hash_ignores_foreign_key_name():
+    account_uid = FakeColumn("uid", Uuid(), nullable=False, primary_key=True)
+    account_table = FakeTable("example_assets__account", columns=[account_uid])
+
+    first_account_uid = FakeColumn("account_uid", Uuid(), nullable=False)
+    first_table = FakeTable(
+        "placeholder",
+        columns=[
+            FakeColumn("uid", Uuid(), nullable=False, primary_key=True),
+            first_account_uid,
+        ],
+        foreign_keys=[
+            FakeForeignKeyConstraint(
+                "asset_account_uid_fkey",
+                [
+                    FakeForeignKeyElement(
+                        first_account_uid,
+                        account_table.columns[0],
+                        ondelete="RESTRICT",
+                    )
+                ],
+            )
+        ],
+    )
+    second_account_uid = FakeColumn("account_uid", Uuid(), nullable=False)
+    second_table = FakeTable(
+        "placeholder",
+        columns=[
+            FakeColumn("uid", Uuid(), nullable=False, primary_key=True),
+            second_account_uid,
+        ],
+        foreign_keys=[
+            FakeForeignKeyConstraint(
+                "backend_generated_name",
+                [
+                    FakeForeignKeyElement(
+                        second_account_uid,
+                        account_table.columns[0],
+                        ondelete="RESTRICT",
+                    )
+                ],
+            )
+        ],
+    )
+    FirstAsset = _model_class("Asset", first_table)
+    SecondAsset = _model_class("Asset", second_table)
+
+    assert _configured_storage_hash(FirstAsset) == _configured_storage_hash(SecondAsset)
+
+
+def test_configured_storage_hash_changes_with_foreign_key_action():
+    account_uid = FakeColumn("uid", Uuid(), nullable=False, primary_key=True)
+    account_table = FakeTable("example_assets__account", columns=[account_uid])
+
+    restrict_account_uid = FakeColumn("account_uid", Uuid(), nullable=False)
+    restrict_table = FakeTable(
+        "placeholder",
+        columns=[
+            FakeColumn("uid", Uuid(), nullable=False, primary_key=True),
+            restrict_account_uid,
+        ],
+        foreign_keys=[
+            FakeForeignKeyConstraint(
+                None,
+                [
+                    FakeForeignKeyElement(
+                        restrict_account_uid,
+                        account_table.columns[0],
+                        ondelete="RESTRICT",
+                    )
+                ],
+            )
+        ],
+    )
+    cascade_account_uid = FakeColumn("account_uid", Uuid(), nullable=False)
+    cascade_table = FakeTable(
+        "placeholder",
+        columns=[
+            FakeColumn("uid", Uuid(), nullable=False, primary_key=True),
+            cascade_account_uid,
+        ],
+        foreign_keys=[
+            FakeForeignKeyConstraint(
+                None,
+                [
+                    FakeForeignKeyElement(
+                        cascade_account_uid,
+                        account_table.columns[0],
+                        ondelete="CASCADE",
+                    )
+                ],
+            )
+        ],
+    )
+    RestrictAsset = _model_class("Asset", restrict_table)
+    CascadeAsset = _model_class("Asset", cascade_table)
+
+    assert _configured_storage_hash(RestrictAsset) != _configured_storage_hash(CascadeAsset)
+
+
+def test_configured_storage_hash_ignores_logical_identifier():
     account_table = FakeTable(
         "placeholder",
         columns=[FakeColumn("uid", Uuid(), nullable=False, primary_key=True)],
@@ -555,7 +689,7 @@ def test_configured_metatable_tablename_ignores_logical_identifier():
     Account = _model_class("Account", account_table, identifier="Account")
     RenamedAccount = _model_class("RenamedAccount", renamed_table, identifier="CustomerAccount")
 
-    assert metatable_configured_tablename(Account) == metatable_configured_tablename(RenamedAccount)
+    assert _configured_storage_hash(Account) == _configured_storage_hash(RenamedAccount)
 
 
 def test_legacy_schema_migration_bases_are_not_public():
@@ -607,7 +741,7 @@ def test_platform_managed_preserves_authored_physical_table_name():
     )
 
     assert request.management_mode == "platform_managed"
-    assert request.storage_hash == metatable_configured_tablename(Asset)
+    assert request.storage_hash == _configured_storage_hash(Asset)
     assert request.table_contract.physical.table_name == "example_assets__asset"
 
 
@@ -615,11 +749,10 @@ def test_platform_managed_metatable_build_request_uses_session_data_source(monke
     import mainsequence.client.metatables as models_metatables
 
     table = FakeTable(
-        "placeholder",
+        "example_assets__account",
         columns=[FakeColumn("uid", Uuid(), nullable=False, primary_key=True)],
     )
     Account = _platform_model_class("Account", table)
-    table.name = metatable_configured_tablename(Account)
 
     monkeypatch.setattr(
         models_metatables.SessionDataSource,
@@ -635,18 +768,18 @@ def test_platform_managed_metatable_build_request_uses_session_data_source(monke
     assert request.data_source_uid == "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
     assert request.identifier == "Account"
     assert request.description == "Account table"
-    assert request.storage_hash == table.name
+    assert request.storage_hash == _configured_storage_hash(Account)
+    assert request.storage_hash != table.name
 
 
 def test_platform_managed_metatable_does_not_use_physical_data_source_uid(monkeypatch):
     import mainsequence.client.metatables as models_metatables
 
     table = FakeTable(
-        "placeholder",
+        "example_assets__account",
         columns=[FakeColumn("uid", Uuid(), nullable=False, primary_key=True)],
     )
     Account = _platform_model_class("Account", table)
-    table.name = metatable_configured_tablename(Account)
 
     monkeypatch.setattr(
         models_metatables.SessionDataSource,
@@ -665,13 +798,12 @@ def test_platform_managed_metatable_does_not_use_physical_data_source_uid(monkey
         Account.build_registration_request()
 
 
-def test_platform_managed_metatable_uses_bound_target_model_uid():
+def test_platform_managed_metatable_omits_bound_target_model_uid():
     account_table = FakeTable(
-        "placeholder",
+        "example_assets__account",
         columns=[FakeColumn("uid", Uuid(), nullable=False, primary_key=True)],
     )
     Account = _platform_model_class("Account", account_table)
-    account_table.name = metatable_configured_tablename(Account)
 
     asset_uid = FakeColumn("uid", Uuid(), nullable=False, primary_key=True)
     account_uid_source = FakeColumn("account_uid", Uuid(), nullable=False)
@@ -680,27 +812,20 @@ def test_platform_managed_metatable_uses_bound_target_model_uid():
         account_table.columns[0],
         ondelete="RESTRICT",
     )
-    account_fk_element.info = {
-        sqlalchemy_contracts._METATABLE_FOREIGN_KEY_INFO_KEY: {
-            "target_model": Account,
-            "target_column": "uid",
-        }
-    }
     asset_fk = FakeForeignKeyConstraint(
         "asset_account_uid_fkey",
         [account_fk_element],
     )
     asset_table = FakeTable(
-        "placeholder",
+        "example_assets__asset",
         columns=[asset_uid, account_uid_source],
         foreign_keys=[asset_fk],
     )
     Asset = _platform_model_class("Asset", asset_table)
-    asset_table.name = metatable_configured_tablename(Asset)
     Account._bind_meta_table(
         SimpleNamespace(
             uid="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
-            storage_hash=account_table.name,
+            storage_hash=_configured_storage_hash(Account),
             data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
         )
     )
@@ -709,18 +834,16 @@ def test_platform_managed_metatable_uses_bound_target_model_uid():
         data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
     )
 
-    assert request.table_contract.foreign_keys[0].target_meta_table_uid == (
-        "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
-    )
+    assert not hasattr(request.table_contract, "foreign_keys")
 
 
-def test_platform_managed_metatable_registers_fk_targets_recursively(monkeypatch):
+def test_platform_managed_metatable_register_does_not_register_fk_targets_recursively(
+    monkeypatch,
+):
     account_table = FakeTable(
-        "placeholder",
+        "example_assets__account",
         columns=[FakeColumn("uid", Uuid(), nullable=False, primary_key=True)],
     )
-    Account = _platform_model_class("Account", account_table)
-    account_table.name = metatable_configured_tablename(Account)
 
     asset_uid = FakeColumn("uid", Uuid(), nullable=False, primary_key=True)
     account_uid_source = FakeColumn("account_uid", Uuid(), nullable=False)
@@ -729,35 +852,23 @@ def test_platform_managed_metatable_registers_fk_targets_recursively(monkeypatch
         account_table.columns[0],
         ondelete="RESTRICT",
     )
-    account_fk_element.info = {
-        sqlalchemy_contracts._METATABLE_FOREIGN_KEY_INFO_KEY: {
-            "target_model": Account,
-            "target_column": "uid",
-        }
-    }
     asset_fk = FakeForeignKeyConstraint(
         "asset_account_uid_fkey",
         [account_fk_element],
     )
     asset_table = FakeTable(
-        "placeholder",
+        "example_assets__asset",
         columns=[asset_uid, account_uid_source],
         foreign_keys=[asset_fk],
     )
     Asset = _platform_model_class("Asset", asset_table)
-    asset_table.name = metatable_configured_tablename(Asset)
 
     captured_requests = []
 
     def fake_register(cls, request, timeout=None):
         captured_requests.append(request)
-        uid = (
-            "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
-            if request.identifier == "Account"
-            else "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
-        )
         return SimpleNamespace(
-            uid=uid,
+            uid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
             data_source_uid=request.data_source_uid,
             storage_hash=request.storage_hash,
         )
@@ -775,28 +886,19 @@ def test_platform_managed_metatable_registers_fk_targets_recursively(monkeypatch
     with platform_managed_migration_registration_context():
         Asset.register(data_source_uid="eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee")
 
-    assert [request.identifier for request in captured_requests] == ["Account", "ChildOverride"]
-    assert [request.data_source_uid for request in captured_requests] == [
-        "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
-        "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
-    ]
-    assert captured_requests[0].description is None
-    assert captured_requests[0].labels == []
-    assert captured_requests[1].identifier == "ChildOverride"
-    assert captured_requests[1].description == "Child-specific description."
-    assert captured_requests[1].labels == ["child"]
-    assert captured_requests[1].table_contract.foreign_keys[0].target_meta_table_uid == (
-        "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
-    )
+    assert [request.identifier for request in captured_requests] == ["ChildOverride"]
+    assert captured_requests[0].data_source_uid == "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
+    assert captured_requests[0].description == "Child-specific description."
+    assert captured_requests[0].labels == ["child"]
+    assert not hasattr(captured_requests[0].table_contract, "foreign_keys")
 
 
 def test_platform_managed_register_reuses_local_registry(monkeypatch):
     table = FakeTable(
-        "placeholder",
+        "example_assets__account",
         columns=[FakeColumn("uid", Uuid(), nullable=False, primary_key=True)],
     )
     Account = _platform_model_class("Account", table)
-    table.name = metatable_configured_tablename(Account)
     captured_requests = []
 
     def fake_register(cls, request, timeout=None):
@@ -823,11 +925,10 @@ def test_platform_managed_register_reuses_local_registry(monkeypatch):
 
 def test_platform_managed_register_clears_failed_registry_entry(monkeypatch):
     table = FakeTable(
-        "placeholder",
+        "example_assets__account",
         columns=[FakeColumn("uid", Uuid(), nullable=False, primary_key=True)],
     )
     Account = _platform_model_class("Account", table)
-    table.name = metatable_configured_tablename(Account)
 
     def fake_register(cls, request, timeout=None):
         raise RuntimeError("registration failed")
@@ -845,48 +946,61 @@ def test_platform_managed_register_clears_failed_registry_entry(monkeypatch):
     assert table.name not in sqlalchemy_contracts._METATABLE_REGISTRATION_REGISTRY
 
 
-def test_platform_managed_register_detects_recursive_registration_cycle():
+def test_platform_managed_register_ignores_foreign_key_cycles(monkeypatch):
     account_uid = FakeColumn("uid", Uuid(), nullable=False, primary_key=True)
     account_owner_uid = FakeColumn("owner_uid", Uuid(), nullable=False)
-    account_table = FakeTable("placeholder", columns=[account_uid, account_owner_uid])
+    account_table = FakeTable("example_assets__account", columns=[account_uid, account_owner_uid])
     Account = _platform_model_class("Account", account_table)
-    account_table.name = metatable_configured_tablename(Account)
 
     owner_uid = FakeColumn("uid", Uuid(), nullable=False, primary_key=True)
     owner_account_uid = FakeColumn("account_uid", Uuid(), nullable=False)
-    owner_table = FakeTable("placeholder", columns=[owner_uid, owner_account_uid])
-    Owner = _platform_model_class("Owner", owner_table)
-    owner_table.name = metatable_configured_tablename(Owner)
+    owner_table = FakeTable("example_assets__owner", columns=[owner_uid, owner_account_uid])
 
     account_table.foreign_key_constraints = [
         FakeForeignKeyConstraint(
             "account_owner_uid_fkey",
-            [_fake_metatable_fk_element(account_owner_uid, Owner)],
+            [FakeForeignKeyElement(account_owner_uid, owner_uid, ondelete="RESTRICT")],
         )
     ]
     owner_table.foreign_key_constraints = [
         FakeForeignKeyConstraint(
             "owner_account_uid_fkey",
-            [_fake_metatable_fk_element(owner_account_uid, Account)],
+            [FakeForeignKeyElement(owner_account_uid, account_uid, ondelete="RESTRICT")],
         )
     ]
 
+    captured_requests = []
+
+    def fake_register(cls, request, timeout=None):
+        captured_requests.append(request)
+        return SimpleNamespace(
+            uid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            data_source_uid=request.data_source_uid,
+            storage_hash=request.storage_hash,
+        )
+
+    monkeypatch.setattr(
+        sqlalchemy_contracts.MetaTable,
+        "register",
+        classmethod(fake_register),
+    )
+
     with platform_managed_migration_registration_context():
-        with pytest.raises(ValueError, match="recursive registration cycle"):
-            Account.register()
+        Account.register(data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd")
+
+    assert [request.identifier for request in captured_requests] == ["Account"]
 
 
-def test_platform_managed_omits_name_for_metatable_foreign_key():
+def test_platform_managed_omits_foreign_key_contracts():
     account_table = FakeTable(
-        "placeholder",
+        "example_assets__account",
         columns=[FakeColumn("uid", Uuid(), nullable=False, primary_key=True)],
     )
     Account = _platform_model_class("Account", account_table)
-    account_table.name = metatable_configured_tablename(Account)
     Account._bind_meta_table(
         SimpleNamespace(
             uid="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
-            storage_hash=account_table.name,
+            storage_hash=_configured_storage_hash(Account),
             data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
         )
     )
@@ -899,7 +1013,13 @@ def test_platform_managed_omits_name_for_metatable_foreign_key():
         foreign_keys=[
             FakeForeignKeyConstraint(
                 None,
-                [_fake_metatable_fk_element(account_uid_source, Account)],
+                [
+                    FakeForeignKeyElement(
+                        account_uid_source,
+                        account_table.columns[0],
+                        ondelete="RESTRICT",
+                    )
+                ],
             )
         ],
     )
@@ -910,14 +1030,14 @@ def test_platform_managed_omits_name_for_metatable_foreign_key():
         enforce_storage_hash_name=False,
     )
 
-    assert request.table_contract.foreign_keys[0].name is None
-    assert "name" not in request.table_contract.foreign_keys[0].model_dump(
+    assert not hasattr(request.table_contract, "foreign_keys")
+    assert "foreign_keys" not in request.table_contract.model_dump(
         mode="json",
         exclude_none=True,
     )
 
 
-def test_platform_managed_metatable_requires_metatable_foreign_key():
+def test_platform_managed_metatable_allows_normal_sqlalchemy_foreign_key():
     account_table = FakeTable(
         "account_storage_hash",
         columns=[FakeColumn("uid", Uuid(), nullable=False, primary_key=True)],
@@ -936,17 +1056,17 @@ def test_platform_managed_metatable_requires_metatable_foreign_key():
         ],
     )
     asset_table = FakeTable(
-        "placeholder",
+        "example_assets__asset",
         columns=[asset_uid, account_uid_source],
         foreign_keys=[asset_fk],
     )
     Asset = _platform_model_class("Asset", asset_table)
-    asset_table.name = metatable_configured_tablename(Asset)
 
-    with pytest.raises(ValueError, match="must use MetaTableForeignKey"):
-        Asset.build_registration_request(
-            data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
-        )
+    request = Asset.build_registration_request(
+        data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+    )
+
+    assert not hasattr(request.table_contract, "foreign_keys")
 
 
 def test_platform_managed_metatable_register_delegates_to_meta_table_register(monkeypatch):
@@ -996,11 +1116,10 @@ def test_platform_managed_metatable_register_delegates_to_meta_table_register(mo
 
 def test_platform_managed_register_requires_migration_context():
     table = FakeTable(
-        "placeholder",
+        "example_assets__account",
         columns=[FakeColumn("uid", Uuid(), nullable=False, primary_key=True)],
     )
     Account = _platform_model_class("Account", table)
-    table.name = metatable_configured_tablename(Account)
 
     with pytest.raises(ValueError, match="migration-managed"):
         Account.register()
@@ -1039,7 +1158,7 @@ def test_time_index_metadata_registration_request_uses_dynamic_contract():
     )
 
     assert isinstance(request, TimeIndexMetaTableRegistrationRequest)
-    assert request.storage_hash == metatable_configured_tablename(AccountHoldings)
+    assert request.storage_hash == _configured_storage_hash(AccountHoldings)
     assert request.storage_hash != table.name
     assert request.identifier == "AccountHoldings"
     assert request.namespace == "example.assets"
@@ -1099,7 +1218,7 @@ def test_time_index_metadata_registration_request_uses_class_metatable_descripti
     assert request.description == ("Account holdings history used to reconstruct portfolio state.")
 
 
-def test_time_index_metadata_configured_tablename_changes_with_index_grain():
+def test_time_index_metadata_configured_storage_hash_changes_with_index_grain():
     one_index_table = FakeTable(
         "placeholder",
         columns=[
@@ -1126,7 +1245,7 @@ def test_time_index_metadata_configured_tablename_changes_with_index_grain():
         index_names=["time_index", "account_uid", "unique_identifier"],
     )
 
-    assert metatable_configured_tablename(OneIndex) != metatable_configured_tablename(ThreeIndex)
+    assert _configured_storage_hash(OneIndex) != _configured_storage_hash(ThreeIndex)
 
 
 def test_time_index_metadata_rejects_first_index_not_time_index():
@@ -1144,7 +1263,7 @@ def test_time_index_metadata_rejects_first_index_not_time_index():
     )
 
     with pytest.raises(ValueError, match="must start with the time_index_name"):
-        metatable_configured_tablename(BadHoldings)
+        _configured_storage_hash(BadHoldings)
 
 
 def test_time_index_metadata_rejects_nullable_index_columns():
@@ -1162,7 +1281,7 @@ def test_time_index_metadata_rejects_nullable_index_columns():
     )
 
     with pytest.raises(ValueError, match="index columns must be non-nullable"):
-        metatable_configured_tablename(BadHoldings)
+        _configured_storage_hash(BadHoldings)
 
 
 def test_time_index_metadata_register_posts_to_dynamic_table_endpoint(monkeypatch):
@@ -1313,13 +1432,12 @@ def test_ensure_registered_storage_table_rejects_unbound_storage():
         FakeColumn("time_index", DateTime(timezone=True), nullable=False),
         FakeColumn("asset_uid", Uuid(), nullable=False),
     ]
-    table = FakeTable("placeholder", columns=columns)
+    table = FakeTable("example_assets__asset_snapshots", columns=columns)
     AssetSnapshots = _time_index_model_class(
         "AssetSnapshots",
         table,
         index_names=["time_index", "asset_uid"],
     )
-    table.name = metatable_configured_tablename(AssetSnapshots)
 
     with pytest.raises(ValueError, match="migrations upgrade"):
         ensure_registered_storage_table(AssetSnapshots, context="DataNode")
@@ -1334,8 +1452,8 @@ def test_time_index_storage_name_hash_component_separates_identical_table_shapes
         FakeColumn("time_index", DateTime(timezone=True), nullable=False),
         FakeColumn("random_number", String(255), nullable=False),
     ]
-    table_a = FakeTable("placeholder_a", columns=columns_a)
-    table_b = FakeTable("placeholder_b", columns=columns_b)
+    table_a = FakeTable("mainsequence_examples__daily_random_number", columns=columns_a)
+    table_b = FakeTable("mainsequence_examples__daily_random_addition", columns=columns_b)
     RandomNumber = _time_index_model_class(
         "RandomNumber",
         table_a,
@@ -1351,16 +1469,16 @@ def test_time_index_storage_name_hash_component_separates_identical_table_shapes
     RandomNumber.__metatable_extra_hash_components__ = {"storage_name": "daily_random_number"}
     RandomAddition.__metatable_extra_hash_components__ = {"storage_name": "daily_random_addition"}
 
-    table_a.name = metatable_configured_tablename(RandomNumber)
-    table_b.name = metatable_configured_tablename(RandomAddition)
-
-    assert table_a.name != table_b.name
+    random_number_storage_hash = _configured_storage_hash(RandomNumber)
+    random_addition_storage_hash = _configured_storage_hash(RandomAddition)
+    assert random_number_storage_hash != random_addition_storage_hash
 
     request = time_indexed_registration_request_from_sqlalchemy_model(
         RandomNumber,
         data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
     )
-    assert request.storage_hash == table_a.name
+    assert request.storage_hash == random_number_storage_hash
+    assert request.table_contract["physical"]["table_name"] == table_a.name
     assert request.identifier == "daily_random_number_project"
     assert request.namespace == "mainsequence.examples"
 
@@ -1368,7 +1486,7 @@ def test_time_index_storage_name_hash_component_separates_identical_table_shapes
 def test_platform_managed_metatable_preserves_authored_tablename_with_sqlalchemy():
     pytest.importorskip("sqlalchemy")
 
-    from sqlalchemy import Index, MetaData, String, Uuid
+    from sqlalchemy import ForeignKey, Index, MetaData, String, Uuid
     from sqlalchemy.orm import DeclarativeBase, mapped_column
 
     naming_convention = {
@@ -1403,7 +1521,7 @@ def test_platform_managed_metatable_preserves_authored_tablename_with_sqlalchemy
         uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
         account_uid: Mapped[uuid.UUID] = mapped_column(
             Uuid,
-            MetaTableForeignKey(Account, column="uid", ondelete="RESTRICT"),
+            ForeignKey("public.example_assets__account.uid", ondelete="RESTRICT"),
             nullable=False,
         )
         symbol: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -1414,7 +1532,7 @@ def test_platform_managed_metatable_preserves_authored_tablename_with_sqlalchemy
         SimpleNamespace(
             uid="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
             data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
-            storage_hash=metatable_configured_tablename(Account),
+            storage_hash=_configured_storage_hash(Account),
         )
     )
 
@@ -1423,90 +1541,10 @@ def test_platform_managed_metatable_preserves_authored_tablename_with_sqlalchemy
         data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
     )
 
-    assert request.storage_hash == metatable_configured_tablename(Asset)
+    assert request.storage_hash == _configured_storage_hash(Asset)
     assert request.table_contract.physical.table_name == "example_assets__asset"
-    assert request.table_contract.indexes[0].name
-    assert request.table_contract.foreign_keys[0].name is None
-
-
-def test_metatable_foreign_key_rejects_non_platform_target_before_sqlalchemy_import():
-    with pytest.raises(ValueError, match="PlatformManagedMetaTable authoring model class"):
-        sqlalchemy_contracts.MetaTableForeignKey(object, column="uid")
-
-
-def test_metatable_foreign_key_validates_target_column_before_sqlalchemy_import():
-    id_column = FakeColumn("id", Uuid(), primary_key=True)
-    account_table = FakeTable("account", columns=[id_column])
-    account_table.c = {"id": id_column}
-    Account = _platform_model_class("Account", account_table)
-
-    with pytest.raises(ValueError, match="has no column 'uid'"):
-        sqlalchemy_contracts.MetaTableForeignKey(Account, column="uid")
-
-
-def test_metatable_foreign_key_allows_explicit_names_before_sqlalchemy_import():
-    pytest.importorskip("sqlalchemy")
-
-    from sqlalchemy import MetaData, Uuid
-    from sqlalchemy.orm import DeclarativeBase, mapped_column
-
-    class Base(DeclarativeBase):
-        metadata = MetaData()
-
-    class Account(PlatformManagedMetaTable, Base):
-        __metatable_namespace__ = "example.assets"
-        __metatable_identifier__ = "Account"
-
-        uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
-
-    foreign_key = sqlalchemy_contracts.MetaTableForeignKey(
-        Account,
-        column="uid",
-        name="asset_account_uid_fkey",
-    )
-
-    assert foreign_key.name == "asset_account_uid_fkey"
-
-
-def test_metatable_foreign_key_metadata_drives_fk_contract_target_resolution():
-    account_uid = FakeColumn("uid", Uuid(), primary_key=True)
-    account_table = FakeTable("account", columns=[account_uid])
-    Account = _platform_model_class("Account", account_table)
-
-    asset_account_uid = FakeColumn("account_uid", Uuid(), nullable=False)
-    physical_target_uid = FakeColumn("physical_uid", Uuid(), primary_key=True)
-    FakeTable("physical_account", columns=[physical_target_uid])
-    element = FakeForeignKeyElement(
-        asset_account_uid,
-        physical_target_uid,
-        ondelete="RESTRICT",
-    )
-    element.info = {
-        sqlalchemy_contracts._METATABLE_FOREIGN_KEY_INFO_KEY: {
-            "target_model": Account,
-            "target_column": "uid",
-            "name": "asset_account_uid_fkey",
-        }
-    }
-    asset_table = FakeTable(
-        "asset",
-        columns=[asset_account_uid],
-        foreign_keys=[FakeForeignKeyConstraint("asset_account_uid_fkey", [element])],
-    )
-    Asset = _model_class("Asset", asset_table)
-
-    contract = table_contract_from_sqlalchemy_model(
-        Asset,
-        target_meta_tables={
-            Account: SimpleNamespace(uid="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"),
-        },
-    )
-
-    assert contract.foreign_keys[0].target_meta_table_uid == (
-        "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
-    )
-    assert contract.foreign_keys[0].target_columns == ["uid"]
-    assert contract.foreign_keys[0].name is None
+    assert not hasattr(request.table_contract, "indexes")
+    assert not hasattr(request.table_contract, "foreign_keys")
 
 
 def test_platform_managed_register_preserves_authored_sqlalchemy_table_name(
@@ -1529,7 +1567,7 @@ def test_platform_managed_register_preserves_authored_sqlalchemy_table_name(
         uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
         name: Mapped[str] = mapped_column(String(255), nullable=False)
 
-    storage_hash = metatable_configured_tablename(Account)
+    storage_hash = _configured_storage_hash(Account)
     physical_table_name = "mt_aaaaaaaaaaaa4aaa8aaaaaaaaaaaaaaa"
     captured = {}
 
@@ -1568,22 +1606,23 @@ def test_platform_managed_register_preserves_authored_sqlalchemy_table_name(
     assert storage_hash not in compiled_sql
 
 
-def test_bound_parent_table_fullname_resolves_fk_and_contract_uses_logical_target():
+def test_bound_parent_table_foreign_key_stays_sqlalchemy_only():
     pytest.importorskip("sqlalchemy")
 
-    from sqlalchemy import MetaData, String, Uuid
+    from sqlalchemy import ForeignKey, MetaData, String, Uuid
     from sqlalchemy.orm import DeclarativeBase, mapped_column
 
     class Base(DeclarativeBase):
         metadata = MetaData()
 
     class Account(PlatformManagedMetaTable, Base):
+        __tablename__ = "example_assets__account"
         __metatable_namespace__ = "example.assets"
         __metatable_identifier__ = "Account"
 
         uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
 
-    account_storage_hash = metatable_configured_tablename(Account)
+    account_storage_hash = _configured_storage_hash(Account)
     account_physical_table_name = "mt_aaaaaaaaaaaa4aaa8aaaaaaaaaaaaaaa"
     Account._bind_meta_table(
         SimpleNamespace(
@@ -1594,45 +1633,36 @@ def test_bound_parent_table_fullname_resolves_fk_and_contract_uses_logical_targe
         )
     )
 
-    assert Account.__table__.fullname == "public.metatable_account"
+    assert Account.__table__.fullname == "public.example_assets__account"
 
     class Asset(PlatformManagedMetaTable, Base):
+        __tablename__ = "example_assets__asset"
         __metatable_namespace__ = "example.assets"
         __metatable_identifier__ = "Asset"
 
         uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
         account_uid: Mapped[uuid.UUID] = mapped_column(
             Uuid,
-            MetaTableForeignKey(
-                Account,
-                column="uid",
-                ondelete="RESTRICT",
-            ),
+            ForeignKey("public.example_assets__account.uid", ondelete="RESTRICT"),
             nullable=False,
         )
         symbol: Mapped[str] = mapped_column(String(64), nullable=False)
 
     foreign_key = next(iter(Asset.__table__.foreign_keys))
-    assert (
-        foreign_key.info[sqlalchemy_contracts._METATABLE_FOREIGN_KEY_INFO_KEY]["target_model"]
-        is Account
-    )
-    assert Asset.__table__.name == "metatable_asset"
+    assert foreign_key.ondelete == "RESTRICT"
+    assert Asset.__table__.name == "example_assets__asset"
 
     request = Asset.build_registration_request(
         data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
     )
 
-    assert request.table_contract.foreign_keys[0].target_meta_table_uid == (
-        "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
-    )
-    assert request.table_contract.foreign_keys[0].name is None
+    assert not hasattr(request.table_contract, "foreign_keys")
 
 
 def test_time_index_metadata_preserves_authored_tablename_with_sqlalchemy():
     pytest.importorskip("sqlalchemy")
 
-    from sqlalchemy import DateTime, Index, MetaData, String, Uuid
+    from sqlalchemy import DateTime, ForeignKey, Index, MetaData, String, Uuid
     from sqlalchemy.orm import DeclarativeBase, mapped_column
 
     class Base(DeclarativeBase):
@@ -1664,7 +1694,7 @@ def test_time_index_metadata_preserves_authored_tablename_with_sqlalchemy():
         )
         account_uid: Mapped[uuid.UUID] = mapped_column(
             Uuid,
-            MetaTableForeignKey(Account, column="uid", ondelete="RESTRICT"),
+            ForeignKey("example_assets__account.uid", ondelete="RESTRICT"),
             nullable=False,
         )
         unique_identifier: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -1680,7 +1710,7 @@ def test_time_index_metadata_preserves_authored_tablename_with_sqlalchemy():
         SimpleNamespace(
             uid="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
             data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
-            storage_hash=metatable_configured_tablename(Account),
+            storage_hash=_configured_storage_hash(Account),
         )
     )
 
@@ -1688,7 +1718,7 @@ def test_time_index_metadata_preserves_authored_tablename_with_sqlalchemy():
         data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
     )
 
-    assert request.storage_hash == metatable_configured_tablename(AccountHoldings)
+    assert request.storage_hash == _configured_storage_hash(AccountHoldings)
     assert request.time_index_name == "time_index"
     assert request.table_contract["physical"]["table_name"] == "example_assets__account_holdings"
     assert request.table_contract["authoring"]["time_indexed"]["index_names"] == [
@@ -1701,12 +1731,8 @@ def test_time_index_metadata_preserves_authored_tablename_with_sqlalchemy():
         False,
         False,
     ]
-    assert len(request.table_contract["foreign_keys"]) == 1
-    foreign_key = request.table_contract["foreign_keys"][0]
-    assert foreign_key["source_columns"] == ["account_uid"]
-    assert foreign_key["target_meta_table_uid"] == "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
-    assert foreign_key["target_columns"] == ["uid"]
-    assert foreign_key["on_delete"] == "restrict"
+    assert "foreign_keys" not in request.table_contract
+    assert "indexes" not in request.table_contract
 
 
 def test_platform_managed_allows_authored_table_name_distinct_from_storage_hash():
@@ -1721,7 +1747,7 @@ def test_platform_managed_allows_authored_table_name_distinct_from_storage_hash(
         data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
     )
 
-    assert request.storage_hash == metatable_configured_tablename(Asset)
+    assert request.storage_hash == _configured_storage_hash(Asset)
     assert request.storage_hash != "asset"
     assert request.table_contract.physical.table_name == "asset"
 

@@ -147,9 +147,8 @@ Backend route:
 GET /orm/api/ts_manager/meta_table/<uid>/schema-graph/?depth=<n>&include_incoming=<bool>
 ```
 
-Use this graph for dependency analysis. `MetaTable.incoming_fks` is a direct FK
-projection on the table response; graph edges include both `source_uid` and
-`target_uid`, which is the shape needed to identify dependent MetaTables.
+Use this graph for dependency analysis. Graph edges include both `source_uid`
+and `target_uid`, which is the shape needed to identify dependent MetaTables.
 
 Return shape:
 
@@ -331,7 +330,7 @@ After registration, TS Manager stores:
 - the `MetaTable` row
 - normalized `MetaTableColumn` rows
 - normalized `MetaTableIndex` rows
-- normalized `MetaTableForeignKey` rows
+- normalized foreign-key projection rows
 - an optional `introspection_snapshot`
 - a `TableSearchIndex` document
 

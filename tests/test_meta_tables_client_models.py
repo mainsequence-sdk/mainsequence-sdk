@@ -44,8 +44,6 @@ def _meta_table_response(**overrides):
                     "primary_key": True,
                 }
             ],
-            "indexes": [],
-            "foreign_keys": [],
         },
         "contract_version": "relational-table.v1",
         "introspection_snapshot": {},
@@ -62,9 +60,6 @@ def _meta_table_response(**overrides):
                 "contract_fragment": {},
             }
         ],
-        "indexes_meta": [],
-        "foreign_keys": [],
-        "incoming_fks": [],
         "creation_date": "2026-05-25T08:00:00Z",
         "created_by_user_uid": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
         "organization_owner_uid": "ffffffff-ffff-4fff-8fff-ffffffffffff",
@@ -110,8 +105,6 @@ def test_managed_reservation_response_accepts_backend_contract_shape():
                     "version": "relational-table.v1",
                     "physical": {"table_name": "asset"},
                     "columns": [],
-                    "indexes": [],
-                    "foreign_keys": [],
                 },
             }
         ],
@@ -152,8 +145,6 @@ def test_managed_reservation_response_accepts_backend_contract_shape():
                     "version": "relational-table.v1",
                     "physical": {"table_name": "asset"},
                     "columns": [],
-                    "indexes": [],
-                    "foreign_keys": [],
                 },
             }
         ],
@@ -185,8 +176,6 @@ def test_managed_reservation_response_accepts_backend_contract_shape():
                     "version": "relational-table.v1",
                     "physical": {},
                     "columns": [],
-                    "indexes": [],
-                    "foreign_keys": [],
                 },
             )
         ],
@@ -234,19 +223,6 @@ def test_meta_table_register_posts_contract_to_meta_table_endpoint(monkeypatch):
                     nullable=False,
                     primary_key=True,
                 ),
-                meta_table_models.MetaTableColumnContract(
-                    name="account_uid",
-                    data_type="uuid",
-                    nullable=False,
-                ),
-            ],
-            foreign_keys=[
-                meta_table_models.MetaTableForeignKeyContract(
-                    source_columns=["account_uid"],
-                    target_meta_table_uid="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
-                    target_columns=["uid"],
-                    on_delete="restrict",
-                )
             ],
         ),
         provisioning={"create_table": True, "if_not_exists": True},
@@ -260,14 +236,8 @@ def test_meta_table_register_posts_contract_to_meta_table_endpoint(monkeypatch):
     assert captured["payload"]["json"]["table_contract"]["physical"] == {
         "table_name": "mt_example_assets_asset_80390fee13",
     }
-    assert captured["payload"]["json"]["table_contract"]["foreign_keys"] == [
-        {
-            "source_columns": ["account_uid"],
-            "target_meta_table_uid": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
-            "target_columns": ["uid"],
-            "on_delete": "restrict",
-        }
-    ]
+    assert "foreign_keys" not in captured["payload"]["json"]["table_contract"]
+    assert "indexes" not in captured["payload"]["json"]["table_contract"]
     assert captured["payload"]["json"]["provisioning"] == {
         "create_table": True,
         "if_not_exists": True,
@@ -452,8 +422,6 @@ def test_meta_table_reserve_managed_posts_reservation_payload(monkeypatch):
                             "version": "relational-table.v1",
                             "physical": {"table_name": "mt_asset_physical"},
                             "columns": [],
-                            "indexes": [{"name": "mt_asset_symbol_idx", "columns": ["symbol"]}],
-                            "foreign_keys": [],
                         },
                         "created": True,
                         "matched_by": None,
@@ -482,8 +450,6 @@ def test_meta_table_reserve_managed_posts_reservation_payload(monkeypatch):
                         "version": "relational-table.v1",
                         "physical": {},
                         "columns": [],
-                        "indexes": [{"columns": ["symbol"]}],
-                        "foreign_keys": [],
                     },
                 )
             ],
@@ -502,10 +468,8 @@ def test_meta_table_reserve_managed_posts_reservation_payload(monkeypatch):
     )
     assert "management_mode" not in captured["payload"]["json"]["tables"][0]
     assert result.tables[0].management_mode == "platform_managed"
-    assert captured["payload"]["json"]["tables"][0]["table_contract"]["indexes"][0] == {
-        "columns": ["symbol"],
-        "unique": False,
-    }
+    assert "indexes" not in captured["payload"]["json"]["tables"][0]["table_contract"]
+    assert "foreign_keys" not in captured["payload"]["json"]["tables"][0]["table_contract"]
 
 
 def test_meta_table_finalize_managed_posts_finalize_payload(monkeypatch):

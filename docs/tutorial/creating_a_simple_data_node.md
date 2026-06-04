@@ -41,7 +41,7 @@ from typing import Dict, Union
 import numpy as np
 import pandas as pd
 from pydantic import BaseModel, Field
-from sqlalchemy import DateTime, Float, Index, MetaData, String, Uuid
+from sqlalchemy import DateTime, Float, ForeignKey, Index, MetaData, String, Uuid
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from mainsequence.client import MetaTable
@@ -50,14 +50,13 @@ from mainsequence.meta_tables import (
     DataNode,
     DataNodeConfiguration,
 )
-from mainsequence.meta_tables import (
-    MetaTableForeignKey,
-    PlatformManagedMetaTable,
-    PlatformTimeIndexMetaData,
-)
+from mainsequence.meta_tables import PlatformManagedMetaTable, PlatformTimeIndexMetaData
 from mainsequence.meta_tables.compiled_sql.v1 import build_operation
 
 PROJECT_UID = os.getenv("MAIN_SEQUENCE_PROJECT_UID", "local").strip() or "local"
+PROJECT_TABLE_SUFFIX = "".join(
+    char if char.isalnum() else "_" for char in PROJECT_UID.lower()
+)
 
 
 class Base(DeclarativeBase):
@@ -65,6 +64,7 @@ class Base(DeclarativeBase):
 
 
 class DailyRandomNumberStorage(PlatformTimeIndexMetaData, Base):
+    __tablename__ = f"mainsequence_examples__daily_random_number_{PROJECT_TABLE_SUFFIX}"
     __metatable_namespace__ = "mainsequence.examples"
     __metatable_identifier__ = f"daily_random_number_{PROJECT_UID}"
     __metatable_description__ = "Daily random number observations produced by the tutorial node."
@@ -81,6 +81,7 @@ class DailyRandomNumberStorage(PlatformTimeIndexMetaData, Base):
 
 
 class DailyRandomAdditionStorage(PlatformTimeIndexMetaData, Base):
+    __tablename__ = f"mainsequence_examples__daily_random_addition_{PROJECT_TABLE_SUFFIX}"
     __metatable_namespace__ = "mainsequence.examples"
     __metatable_identifier__ = f"daily_random_addition_{PROJECT_UID}"
     __metatable_description__ = "Daily random additions produced from the tutorial dependency node."
@@ -187,15 +188,11 @@ deterministic storage disambiguation only. Do not put labels, descriptions,
 runtime parameters, backend UIDs, data-source UIDs, updater scope, or
 test-specific values in this mapping.
 
-MetaTable foreign keys target a registered `MetaTable.uid`. For platform-managed
-storage, declare the FK with `MetaTableForeignKey(TargetModel, column=...)` and
-let migration tooling resolve/register unresolved parent targets. This first
-tutorial keeps the runnable example focused on a single table; the FK authoring
-surface appears below and in the [Data Nodes Knowledge Guide](../knowledge/data_nodes.md).
-
-Foreign-key names are not part of the platform-managed MetaTable contract.
-`MetaTableForeignKey(...)` records the logical relationship; Alembic,
-SQLAlchemy, and the database own the physical FK constraint name.
+Foreign keys are normal SQLAlchemy/Alembic DDL metadata. They are not part of
+`DataNodeConfiguration` and are not serialized into the platform-managed
+MetaTable registration contract. When a storage table needs a FK, use
+SQLAlchemy `ForeignKey(...)`; prefer project-prefixed table names for explicit
+FK string targets to avoid collisions in shared schemas.
 
 !!! important
     `MetaTable.identifier` and namespace must be unique enough to find the table later. In tutorial code, generic names like `daily_random_number` are very likely to collide because someone else in your organization has probably already run the same tutorial. Prefix table identifiers with the project name, package name, or project UID.
@@ -283,16 +280,17 @@ MetaTable and is identified by:
 That means `(2026-01-02, account-a, AAPL)` and `(2026-01-02, account-b, AAPL)`
 are different rows, even though they share the same timestamp and security.
 `Account` is the platform-managed parent table. `AccountHoldingsStorage` is the
-time-indexed storage MetaTable. The foreign key in that MetaTable contract connects
-`AccountHoldingsStorage.account_uid` to `Account.uid`, while
-`PlatformTimeIndexMetaData` still uses the full `__index_names__` tuple as the
-ORM identity and sends that tuple as `index_names`.
+time-indexed storage MetaTable. The foreign key is ordinary SQLAlchemy/Alembic
+DDL metadata, while `PlatformTimeIndexMetaData` still uses the full
+`__index_names__` tuple as the ORM identity and sends that tuple as
+`index_names`.
 
 Add these models to `src/data_nodes/example_nodes.py` when your DataNode
 publishes account/security observations:
 
 ```python
 class Account(PlatformManagedMetaTable, Base):
+    __tablename__ = f"mainsequence_examples__account_{PROJECT_TABLE_SUFFIX}"
     __metatable_namespace__ = "mainsequence.examples"
     __metatable_identifier__ = f"account_{PROJECT_UID}"
     __metatable_description__ = "Tutorial account rows used as the parent for holdings storage."
@@ -305,6 +303,7 @@ class Account(PlatformManagedMetaTable, Base):
 
 
 class AccountHoldingsStorage(PlatformTimeIndexMetaData, Base):
+    __tablename__ = f"mainsequence_examples__account_holdings_{PROJECT_TABLE_SUFFIX}"
     __table_args__ = (Index(None, "account_uid"),)
     __metatable_namespace__ = "mainsequence.examples"
     __metatable_identifier__ = f"account_holdings_{PROJECT_UID}"
@@ -320,7 +319,10 @@ class AccountHoldingsStorage(PlatformTimeIndexMetaData, Base):
     )
     account_uid: Mapped[uuid.UUID] = mapped_column(
         Uuid,
-        MetaTableForeignKey(Account, column="uid", ondelete="RESTRICT"),
+        ForeignKey(
+            f"public.mainsequence_examples__account_{PROJECT_TABLE_SUFFIX}.uid",
+            ondelete="RESTRICT",
+        ),
         nullable=False,
     )
     unique_identifier: Mapped[str] = mapped_column(

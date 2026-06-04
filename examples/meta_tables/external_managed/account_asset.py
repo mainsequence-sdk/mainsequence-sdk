@@ -109,9 +109,6 @@ def main() -> None:
         introspect=False,
         description="Example externally managed asset table.",
         labels=["sdk-example", "external-managed", "sqlite"],
-        target_meta_table_uid_by_fullname={
-            Account.__table__.fullname: account_meta_table.uid,
-        },
     )
     asset_meta_table = MetaTable.register(asset_request, timeout=DEFAULT_TIMEOUT)
     print_json("Registered Account MetaTable", account_meta_table)

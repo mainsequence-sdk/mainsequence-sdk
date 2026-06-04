@@ -12,7 +12,7 @@ a `PlatformTimeIndexMetaData` SQLAlchemy model owns the table contract, and the
 | Node declares schema with methods such as `get_table_metadata()` and `get_column_metadata()`. | A `PlatformTimeIndexMetaData` SQLAlchemy model declares the schema. |
 | Node metadata mixes table identity, columns, and update behavior. | Storage identity lives on the storage class; update identity lives in `DataNodeConfiguration`. |
 | Registration is implicit or manually glued together from table metadata. | Registration is migration-first: add the storage class to the MetaTable migration provider and run `mainsequence migrations upgrade`. |
-| Foreign keys are raw SQLAlchemy targets or backend UID maps. | Foreign keys use `MetaTableForeignKey(TargetModel, column=...)`. |
+| Foreign keys were sometimes glued through SDK/backend UID maps. | Foreign keys are normal SQLAlchemy/Alembic DDL metadata; they are not serialized into MetaTable registration contracts. |
 | `storage_table` had to be registered before node construction. | Output `storage_table` must be registered by the MetaTable migration workflow before `DataNode` / `PersistManager` uses it. Config-stored storage classes fail if they are not already bound. |
 
 ## The New Mental Model
@@ -26,7 +26,8 @@ The storage class answers:
 
 - What table is this?
 - Which project/session data source owns it?
-- What columns, indexes, foreign keys, and descriptions define it?
+- What columns and descriptions define the MetaTable contract?
+- What SQLAlchemy/Alembic DDL metadata, such as indexes and foreign keys, belongs in migrations?
 - What stable storage identity should downstream users depend on?
 
 The DataNode answers:
@@ -106,6 +107,7 @@ class Base(DeclarativeBase):
 
 
 class DailyMetricsStorage(PlatformTimeIndexMetaData, Base):
+    __tablename__ = "example_project__daily_metrics"
     __metatable_namespace__ = "example-data"
     __metatable_identifier__ = "example_project.daily_metrics"
     __metatable_description__ = (
@@ -303,22 +305,25 @@ data_source_uid = "..."                   # wrong as DataNode config
 
 ## Foreign Keys
 
-Use `MetaTableForeignKey` for platform-managed storage relationships.
+Use normal SQLAlchemy `ForeignKey(...)` for platform-managed storage
+relationships. The SDK does not wrap FK declarations and does not resolve FK
+target MetaTable UIDs. Alembic, SQLAlchemy, and the database own the physical FK
+DDL.
 
 ```python
 import uuid
 
-from sqlalchemy import Uuid
+from sqlalchemy import ForeignKey, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from mainsequence.meta_tables import (
-    MetaTableForeignKey,
     PlatformManagedMetaTable,
     PlatformTimeIndexMetaData,
 )
 
 
 class Account(PlatformManagedMetaTable, Base):
+    __tablename__ = "example_project__account"
     __metatable_namespace__ = "accounts"
     __metatable_identifier__ = "example_project.account"
     __metatable_description__ = "Account master rows used to scope positions."
@@ -335,6 +340,7 @@ class Account(PlatformManagedMetaTable, Base):
 
 
 class AccountPositions(PlatformTimeIndexMetaData, Base):
+    __tablename__ = "example_project__account_positions"
     __metatable_namespace__ = "positions"
     __metatable_identifier__ = "example_project.account_positions"
     __metatable_description__ = "Time-indexed position rows keyed by account."
@@ -344,7 +350,7 @@ class AccountPositions(PlatformTimeIndexMetaData, Base):
 
     account_uid: Mapped[uuid.UUID] = mapped_column(
         Uuid,
-        MetaTableForeignKey(Account, column="uid", ondelete="RESTRICT"),
+        ForeignKey("public.example_project__account.uid", ondelete="RESTRICT"),
         nullable=False,
         info={
             "label": "Account UID",
@@ -353,10 +359,9 @@ class AccountPositions(PlatformTimeIndexMetaData, Base):
     )
 ```
 
-Do not use table fullnames or `Parent.__table__.c.uid` as the public
-declaration. `MetaTableForeignKey` keeps the target model class as SDK metadata
-and lets recursive registration resolve the backend `MetaTable.uid`; the
-authored SQLAlchemy table name remains the physical table name Alembic sees.
+Prefer project-prefixed SQLAlchemy table names for FK string targets. Do not
+use backend physical table names or target MetaTable UIDs in FK declarations;
+the FK target is database DDL metadata, not a MetaTable registration contract.
 
 Prefix explicit table identifiers and explicit physical table names with the
 project or package name. Bare names such as `account`, `positions`, or
@@ -455,7 +460,7 @@ scope, keep it in config and write into the same storage table.
 
 For each old DataNode:
 
-1. [ ] Identify the output table contract: index columns, payload columns, dtypes, nullable flags, and foreign keys.
+1. [ ] Identify the output shape: index columns, payload columns, dtypes, nullable flags, and any SQLAlchemy/Alembic FK metadata.
 2. [ ] Replace old `mainsequence.tdag` imports with the modern SDK or domain-layer DataNode surface.
 3. [ ] Create a `PlatformTimeIndexMetaData` SQLAlchemy storage class.
 4. [ ] Move table identifier, namespace, descriptions, labels, and storage disambiguation to class metadata.
@@ -464,7 +469,7 @@ For each old DataNode:
 7. [ ] Make the node constructor accept `config` and `storage_table`.
 8. [ ] Keep `DataNodeConfiguration` limited to update-scope fields.
 9. [ ] Use `Field(...)` descriptions and examples for config fields.
-10. [ ] Replace raw foreign keys with `MetaTableForeignKey(TargetModel, column=...)`.
+10. [ ] Keep foreign keys as normal SQLAlchemy `ForeignKey(...)` declarations and use project-prefixed table names for explicit string targets.
 11. [ ] Use a memoized storage-class factory for parameterized table identities.
 12. [ ] Delete manual UID binding, manual `data_source_uid` threading, and direct register kwargs.
 13. [ ] Add contract tests comparing the storage columns/indexes to the frame returned by `update()`.
@@ -483,7 +488,7 @@ At minimum, add tests for:
 - different table identities produce different storage hashes
 - `DataNodeConfiguration` changes alter `update_hash` only when they should
 - `hash_excluded` fields do not alter `update_hash`
-- `MetaTableForeignKey` targets resolve through model classes, not table names
+- SQLAlchemy foreign keys remain present in `Base.metadata` for Alembic but are absent from MetaTable registration contracts
 
 Offline tests should avoid backend calls by monkeypatching the migration
 registration plumbing or using SDK model constructors for returned metadata.
@@ -499,8 +504,7 @@ run should append/update rows according to the node logic.
 - Putting `storage_table` in `DataNodeConfiguration`.
 - Putting backend UIDs or data-source UIDs in config.
 - Using `hash_namespace` to define real storage identity.
-- Using `ForeignKey(f"{Parent.__table__.fullname}.uid")` or
-  `ForeignKey(Parent.__table__.c.uid)` for platform-managed storage.
+- Using backend physical table names or target MetaTable UIDs in SQLAlchemy FK declarations.
 - Creating a new dynamic SQLAlchemy class every time instead of memoizing a
   parameterized storage factory.
 - Declaring config fields without `Field(...)` descriptions.

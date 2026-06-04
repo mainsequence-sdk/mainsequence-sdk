@@ -18,7 +18,8 @@ A `MetaTable` record binds these things together:
 - a registered TS Manager `DynamicTableDataSource`
 - a logical `identifier` and `namespace`
 - a physical table name
-- a neutral table contract with columns, indexes, and foreign keys
+- a neutral table contract with columns and table identity
+- SQLAlchemy/Alembic metadata for physical DDL such as indexes and foreign keys
 - labels, ownership, and shareable access
 - the latest backend introspection snapshot when available
 
@@ -155,6 +156,7 @@ with the SQLAlchemy table shape:
 
 ```python
 class Asset(PlatformManagedMetaTable, Base):
+    __tablename__ = "sdk_examples__asset"
     __metatable_namespace__ = "sdk-examples"
     __metatable_identifier__ = "sdk_examples.Asset"
     __metatable_extra_hash_components__ = {"storage_name": "asset"}
@@ -225,9 +227,8 @@ for edge in incoming_edges:
     print(edge["source_uid"], edge["source_columns"], "->", edge["target_columns"])
 ```
 
-Do not use `incoming_fks` as the main dependency API. It is a serialized FK
-projection on the table response. `get_schema_graph(include_incoming=True)` is
-the graph API because its edges include both `source_uid` and `target_uid`.
+Use `get_schema_graph(include_incoming=True)` as the dependency API because its
+edges include both `source_uid` and `target_uid`.
 
 For compiled execution, TS Manager:
 

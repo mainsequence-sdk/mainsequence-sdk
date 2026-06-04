@@ -9,7 +9,9 @@ Superseded in part by
 for platform-managed lifecycle details, by
 [ADR 0022: Thin SDK Alembic-Owned MetaTable Migrations](0022-thin-sdk-alembic-owned-metatable-migrations.md)
 for the direct-Alembic SDK flow, and by backend ADR 013 for
-Alembic-managed finalization and reset semantics.
+Alembic-managed finalization and reset semantics. FK/index migration-resolution
+policy is superseded by
+[ADR 0023: Alembic-Owned Foreign Keys And Indexes](0023-alembic-owned-foreign-keys-and-indexes.md).
 
 ## Context
 

@@ -290,43 +290,11 @@ class MetaTableColumnContract(BasePydanticModel):
         return _normalize_backend_type(value)
 
 
-class MetaTableIndexContract(BasePydanticModel):
-    name: str | None = None
-    columns: list[str] = Field(default_factory=list)
-    unique: bool = False
-    method: str | None = None
-    expression: str | None = None
-
-
-class MetaTableForeignKeyContract(BasePydanticModel):
-    name: str | None = None
-    source_columns: list[str] = Field(default_factory=list)
-    target_meta_table_uid: str | None = Field(
-        None,
-        validation_alias=AliasChoices("target_meta_table_uid", "targetMetaTableUid"),
-    )
-    target_identifier: str | None = None
-    target_columns: list[str] = Field(default_factory=list)
-    on_delete: str = "restrict"
-
-    model_config = ConfigDict(populate_by_name=True)
-
-    @model_validator(mode="after")
-    def _require_target(self) -> MetaTableForeignKeyContract:
-        if self.target_meta_table_uid in (None, "") and self.target_identifier in (None, ""):
-            raise ValueError(
-                "MetaTable foreign keys require target_meta_table_uid or target_identifier."
-            )
-        return self
-
-
 class MetaTableContract(BasePydanticModel):
     version: str = "relational-table.v1"
     physical: MetaTablePhysicalContract
     columns: list[MetaTableColumnContract] = Field(default_factory=list)
     constraints: list[dict[str, Any]] = Field(default_factory=list)
-    indexes: list[MetaTableIndexContract] = Field(default_factory=list)
-    foreign_keys: list[MetaTableForeignKeyContract] = Field(default_factory=list)
     authoring: dict[str, Any] | None = None
 
 
@@ -387,25 +355,6 @@ class MetaTableColumnPayload(BasePydanticModel):
     @classmethod
     def _normalize_backend_type(cls, value: str | None) -> str | None:
         return _normalize_backend_type(value)
-
-
-class MetaTableIndexPayload(BasePydanticModel):
-    name: str
-    columns: list[str] = Field(default_factory=list)
-    unique: bool = False
-    method: str | None = None
-    expression: str | None = None
-    contract_fragment: dict[str, Any] = Field(default_factory=dict)
-
-
-class MetaTableForeignKeyPayload(BasePydanticModel):
-    name: str
-    source_columns: list[str] = Field(default_factory=list)
-    target_table_uid: str | None = None
-    target_table_storage_hash: str | None = None
-    target_columns: list[str] = Field(default_factory=list)
-    on_delete: str = "restrict"
-    contract_fragment: dict[str, Any] = Field(default_factory=dict)
 
 
 class MetaTableStatementPayload(BasePydanticModel):
@@ -1350,9 +1299,6 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
     introspection_snapshot: dict[str, Any] = Field(default_factory=dict)
     protect_from_deletion: bool = False
     columns: list[MetaTableColumnPayload] = Field(default_factory=list)
-    indexes_meta: list[MetaTableIndexPayload] = Field(default_factory=list)
-    foreign_keys: list[MetaTableForeignKeyPayload] = Field(default_factory=list)
-    incoming_fks: list[MetaTableForeignKeyPayload] = Field(default_factory=list)
     creation_date: datetime.datetime | None = None
     created_by_user_uid: str | None = None
     organization_owner_uid: str | None = None
@@ -2000,7 +1946,7 @@ class TimeIndexMetaTableRegistrationRequest(BasePydanticModel):
     )
     table_contract: dict[str, Any] = Field(
         ...,
-        description="Inherited MetaTable contract; owns columns, indexes, and foreign keys.",
+        description="Inherited MetaTable contract; owns table and column identity.",
     )
 
     @model_validator(mode="before")
@@ -2041,8 +1987,6 @@ class TimeIndexMetaTableRegistrationRequest(BasePydanticModel):
         normalized_contract["table_kind"] = "time_indexed"
         normalized_contract.setdefault("version", "relational-table.v1")
         normalized_contract.setdefault("physical", {})
-        normalized_contract.setdefault("indexes", [])
-        normalized_contract.setdefault("foreign_keys", [])
         data["table_contract"] = normalized_contract
         return data
 
@@ -4884,10 +4828,6 @@ __all__ = [
     "MetaTableCompiledSQLParamstyle",
     "MetaTableCompiledSQLVersion",
     "MetaTableContract",
-    "MetaTableForeignKeyContract",
-    "MetaTableForeignKeyPayload",
-    "MetaTableIndexContract",
-    "MetaTableIndexPayload",
     "MetaTableManagementMode",
     "MetaTableSchemaManagementMode",
     "MetaTableOperation",

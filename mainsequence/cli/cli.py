@@ -7038,9 +7038,6 @@ def _meta_table_detail_impl(meta_table_uid: str, timeout: int | None) -> None:
             ("Contract Version", str(meta_table.get("contract_version") or "-")),
             ("Table Contract", _format_json_value(meta_table.get("table_contract"))),
             ("Columns", _format_json_value(meta_table.get("columns"))),
-            ("Indexes", _format_json_value(meta_table.get("indexes_meta"))),
-            ("Foreign Keys", _format_json_value(meta_table.get("foreign_keys"))),
-            ("Incoming FKs", _format_json_value(meta_table.get("incoming_fks"))),
             ("Introspection", _format_json_value(meta_table.get("introspection_snapshot"))),
         ],
     )

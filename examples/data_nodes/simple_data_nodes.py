@@ -13,15 +13,11 @@ from typing import Any, Union
 import numpy as np
 import pandas as pd
 from pydantic import BaseModel, Field
-from sqlalchemy import DateTime, Float, Index, MetaData, String, Uuid
+from sqlalchemy import DateTime, Float, ForeignKey, Index, MetaData, String, Uuid
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from mainsequence.client import MetaTable
-from mainsequence.meta_tables import (
-    MetaTableForeignKey,
-    PlatformManagedMetaTable,
-    PlatformTimeIndexMetaData,
-)
+from mainsequence.meta_tables import PlatformManagedMetaTable, PlatformTimeIndexMetaData
 from mainsequence.meta_tables.compiled_sql.v1 import build_operation
 from mainsequence.meta_tables.data_nodes import (
     APIDataNode,
@@ -31,6 +27,9 @@ from mainsequence.meta_tables.data_nodes import (
 )
 
 PROJECT_UID = os.getenv("MAIN_SEQUENCE_PROJECT_UID", "local").strip() or "local"
+PROJECT_TABLE_SUFFIX = "".join(
+    char if char.isalnum() else "_" for char in PROJECT_UID.lower()
+)
 
 
 class Base(DeclarativeBase):
@@ -38,6 +37,7 @@ class Base(DeclarativeBase):
 
 
 class Account(PlatformManagedMetaTable, Base):
+    __tablename__ = f"mainsequence_examples__account_{PROJECT_TABLE_SUFFIX}"
     __metatable_namespace__ = "mainsequence.examples"
     __metatable_identifier__ = f"account_{PROJECT_UID}"
     __metatable_description__ = "Tutorial account master rows used to scope account holdings."
@@ -72,6 +72,7 @@ class Account(PlatformManagedMetaTable, Base):
 
 
 class DailyRandomNumberStorage(PlatformTimeIndexMetaData, Base):
+    __tablename__ = f"mainsequence_examples__daily_random_number_{PROJECT_TABLE_SUFFIX}"
     __metatable_namespace__ = "mainsequence.examples"
     __metatable_identifier__ = f"daily_random_number_{PROJECT_UID}"
     __metatable_description__ = "Daily random number observations produced by the tutorial node."
@@ -99,6 +100,7 @@ class DailyRandomNumberStorage(PlatformTimeIndexMetaData, Base):
 
 
 class DailyRandomAdditionStorage(PlatformTimeIndexMetaData, Base):
+    __tablename__ = f"mainsequence_examples__daily_random_addition_{PROJECT_TABLE_SUFFIX}"
     __metatable_namespace__ = "mainsequence.examples"
     __metatable_identifier__ = f"daily_random_addition_{PROJECT_UID}"
     __metatable_description__ = (
@@ -129,6 +131,7 @@ class DailyRandomAdditionStorage(PlatformTimeIndexMetaData, Base):
 
 
 class AccountHoldingsStorage(PlatformTimeIndexMetaData, Base):
+    __tablename__ = f"mainsequence_examples__account_holdings_{PROJECT_TABLE_SUFFIX}"
     __table_args__ = (Index(None, "account_uid"),)
     __metatable_namespace__ = "mainsequence.examples"
     __metatable_identifier__ = f"account_holdings_{PROJECT_UID}"
@@ -150,7 +153,10 @@ class AccountHoldingsStorage(PlatformTimeIndexMetaData, Base):
     )
     account_uid: Mapped[uuid.UUID] = mapped_column(
         Uuid,
-        MetaTableForeignKey(Account, column="uid", ondelete="RESTRICT"),
+        ForeignKey(
+            f"public.mainsequence_examples__account_{PROJECT_TABLE_SUFFIX}.uid",
+            ondelete="RESTRICT",
+        ),
         nullable=False,
         info={
             "label": "Account UID",

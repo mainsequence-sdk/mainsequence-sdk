@@ -12,14 +12,10 @@ metadata and build Pydantic transport objects for the backend.
 import datetime
 import uuid
 
-from sqlalchemy import DateTime, Float, Index, MetaData, String, Uuid
+from sqlalchemy import DateTime, Float, ForeignKey, Index, MetaData, String, Uuid
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-from mainsequence.meta_tables import (
-    MetaTableForeignKey,
-    PlatformManagedMetaTable,
-    PlatformTimeIndexMetaData,
-)
+from mainsequence.meta_tables import PlatformManagedMetaTable, PlatformTimeIndexMetaData
 ```
 
 ## Define A Base
@@ -40,11 +36,13 @@ class Base(DeclarativeBase):
 
 For platform-managed tables, inherit `PlatformManagedMetaTable`. It derives the
 logical `storage_hash` from storage-relevant configuration and the SQLAlchemy
-table shape, and exposes registration helpers on the model class. The backend
-owns the physical table name.
+table shape, and exposes registration helpers on the model class. The authored
+SQLAlchemy `__tablename__` is the physical table name Alembic uses, so prefix it
+with the project or package name.
 
 ```python
 class Account(PlatformManagedMetaTable, Base):
+    __tablename__ = "sdk_examples__account"
     __table_args__ = {"schema": "public"}
 
     __metatable_namespace__ = "sdk-examples"
@@ -61,8 +59,9 @@ The `__metatable_identifier__` attribute is logical backend metadata. It is
 sent during registration but does not contribute to the configured
 `storage_hash`. When present, it must be globally unique per organization and
 is not the Alembic migration lookup key. Migration preparation resolves
-provider MetaTables by authored SQLAlchemy table name. The mapped columns,
-indexes, and foreign keys do contribute to the configured storage identity.
+provider MetaTables by authored SQLAlchemy table name. Mapped columns contribute
+to configured storage identity. Indexes and foreign keys are SQLAlchemy/Alembic
+DDL metadata and are not serialized into the MetaTable registration contract.
 
 Prefix explicit table identifiers, explicit physical table names, and Alembic
 version table names with the project or package name. Bare names such as
@@ -76,6 +75,7 @@ as several one-index time-series tables with the same column types.
 
 ```python
 class DailyReturns(PlatformTimeIndexMetaData, Base):
+    __tablename__ = "sdk_examples__daily_returns"
     __metatable_namespace__ = "sdk-examples"
     __metatable_identifier__ = "sdk_examples.DailyReturns"
     __metatable_description__ = "Daily return observations keyed by time for tutorial assets."
@@ -123,28 +123,23 @@ mainsequence migrations upgrade --provider mainsequence_migrations:migration hea
 ```
 
 Migration tooling calls the managed reservation path for missing
-provider-scoped models, lets Alembic create the initial physical table, binds
-`Account.__table__.name` to the returned physical table name, and then
-renders/applies Alembic SQL for schema creation and evolution.
+provider-scoped models, keeps the authored SQLAlchemy table name intact, and
+then renders/applies Alembic SQL for schema creation and evolution.
 
 ## Foreign Keys
 
-Foreign keys must reference registered target MetaTables by platform UID in the
-backend contract. For platform-managed tables, declare the target model class
-with `MetaTableForeignKey(TargetModel, column=...)`.
+Foreign keys are normal SQLAlchemy/Alembic DDL metadata. Platform-managed
+MetaTable registration does not serialize foreign keys into the backend table
+contract and does not resolve target MetaTable UIDs for FK declarations.
 
-Do not use SQLAlchemy table fullnames or parent table column objects as the
-public SDK declaration. `MetaTableForeignKey` stores the target model class and
-target column as SDK metadata. Migration tooling resolves parent targets and
-backend `MetaTable.uid` values before rendering SQL while preserving authored
-SQLAlchemy table names.
-
-Platform-managed `MetaTableForeignKey(...)` contracts omit physical constraint
-names. Alembic, SQLAlchemy, and the database own the physical FK name; backend
-reservation does not generate or manage it.
+Use SQLAlchemy `ForeignKey(...)` exactly as you would for an Alembic-managed
+table. Prefer explicit table names prefixed with the project or package name so
+string targets remain stable and do not collide across projects sharing one
+schema.
 
 ```python
 class Asset(PlatformManagedMetaTable, Base):
+    __tablename__ = "sdk_examples__asset"
     __table_args__ = (
         Index(None, "account_uid"),
         {"schema": "public"},
@@ -157,16 +152,15 @@ class Asset(PlatformManagedMetaTable, Base):
     uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
     account_uid: Mapped[uuid.UUID] = mapped_column(
         Uuid,
-        MetaTableForeignKey(Account, column="uid", ondelete="RESTRICT"),
+        ForeignKey("public.sdk_examples__account.uid", ondelete="RESTRICT"),
         nullable=False,
     )
     symbol: Mapped[str] = mapped_column(String(64), nullable=False)
 ```
 
-Include `Asset` in the provider's `metatable_models`. The migration workflow
-resolves unresolved parent targets first and keeps a local
-`storage_hash -> MetaTable` registry so the same table is not registered twice
-during migration-managed registration.
+Include both parent and child models in the provider's `metatable_models`.
+The migration workflow reserves MetaTable rows, Alembic renders/applies the
+physical FK DDL, and finalization refreshes the MetaTable catalog.
 
 The SDK contract serializer extracts:
 
@@ -174,11 +168,6 @@ The SDK contract serializer extracts:
 - nullable flags
 - primary-key flags
 - unique flags
-- indexes named by SQLAlchemy's naming convention
-- foreign-key relationships without physical constraint names
-- FK source columns
-- FK target MetaTable UID
-- FK target columns
 - backend type strings such as `VARCHAR(64)`
 
 ## Time-Indexed DataNode Storage
@@ -207,6 +196,7 @@ MetaTable contract.
 
 ```python
 class AccountHoldings(PlatformTimeIndexMetaData, Base):
+    __tablename__ = "sdk_examples__account_holdings"
     __table_args__ = (
         Index(None, "account_uid"),
         {"schema": "public"},
@@ -224,7 +214,7 @@ class AccountHoldings(PlatformTimeIndexMetaData, Base):
     )
     account_uid: Mapped[uuid.UUID] = mapped_column(
         Uuid,
-        MetaTableForeignKey(Account, column="uid", ondelete="RESTRICT"),
+        ForeignKey("public.sdk_examples__account.uid", ondelete="RESTRICT"),
         nullable=False,
     )
     unique_identifier: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -260,6 +250,7 @@ For generic MetaTables:
 
 ```python
 class Account(PlatformManagedMetaTable, Base):
+    __tablename__ = "sdk_examples__account"
     __metatable_namespace__ = "sdk-examples"
     __metatable_identifier__ = "sdk-examples.Account"
 
@@ -271,6 +262,7 @@ For time-indexed DataNode storage:
 
 ```python
 class AccountHoldings(PlatformTimeIndexMetaData, Base):
+    __tablename__ = "sdk_examples__account_holdings"
     __metatable_namespace__ = "sdk-examples"
     __metatable_identifier__ = "sdk-examples.AccountHoldings"
     __time_index_name__ = "time_index"
@@ -332,9 +324,8 @@ The SDK intentionally fails early for ambiguous metadata:
 
 - platform-managed tables must use `PlatformManagedMetaTable` so the SDK can derive the logical `storage_hash`
 - SQLAlchemy models must expose schema through SQLAlchemy table metadata, usually `__table_args__`
-- indexes must resolve to names, either explicitly or through SQLAlchemy naming conventions
-- platform-managed foreign keys must use `MetaTableForeignKey(TargetModel, column=...)`
-- the migration workflow resolves `MetaTableForeignKey` target models through their stable identifiers and binds their `MetaTable.uid`
+- project tables should use project-prefixed SQLAlchemy table names when FK string targets are authored explicitly
+- Alembic owns index and foreign-key DDL; the SDK does not resolve FK target MetaTable UIDs
 - unsupported SQLAlchemy column types raise before registration
 
 This is deliberate. TS Manager should receive a deterministic table contract,
@@ -358,10 +349,10 @@ storage hash.
 
 ## Common Mistakes
 
-Do not hand-write a platform-managed table name:
+Do not use a bare, globally ambiguous platform-managed table name:
 
 ```python
-class Asset(Base):
+class Asset(PlatformManagedMetaTable, Base):
     __tablename__ = "asset"  # wrong for platform_managed
 ```
 
@@ -369,6 +360,7 @@ Use:
 
 ```python
 class Asset(PlatformManagedMetaTable, Base):
+    __tablename__ = "sdk_examples__asset"
     __metatable_namespace__ = "sdk-examples"
     __metatable_identifier__ = "sdk_examples.Asset"
     __metatable_description__ = "Externally managed asset table registered as a governed MetaTable."

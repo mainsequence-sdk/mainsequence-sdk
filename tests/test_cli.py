@@ -7839,9 +7839,6 @@ def test_meta_table_detail(cli_mod, runner, monkeypatch):
             "contract_version": "relational-table.v1",
             "table_contract": {"columns": [{"name": "time_index"}]},
             "columns": [{"name": "time_index", "data_type": "timestamp with time zone"}],
-            "indexes_meta": [{"name": "idx_weights_time"}],
-            "foreign_keys": [],
-            "incoming_fks": [],
             "introspection_snapshot": {"row_count": 7},
         },
     )

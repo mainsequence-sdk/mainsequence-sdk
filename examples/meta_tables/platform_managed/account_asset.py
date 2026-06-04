@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import Index, MetaData, String, Uuid
+from sqlalchemy import ForeignKey, Index, MetaData, String, Uuid
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from examples.meta_tables.common import (
     DEFAULT_SCHEMA,
     print_json,
 )
-from mainsequence.meta_tables import MetaTableForeignKey, PlatformManagedMetaTable
+from mainsequence.meta_tables import PlatformManagedMetaTable
 
 NAMESPACE = "sdk-examples"
 PROJECT_NAME = "sdk_examples"
@@ -25,6 +25,7 @@ class Base(DeclarativeBase):
 
 
 class Account(PlatformManagedMetaTable, Base):
+    __tablename__ = f"{PROJECT_NAME}__account"
     __table_args__ = {"schema": DEFAULT_SCHEMA}
 
     __metatable_namespace__ = NAMESPACE
@@ -35,6 +36,7 @@ class Account(PlatformManagedMetaTable, Base):
 
 
 class Asset(PlatformManagedMetaTable, Base):
+    __tablename__ = f"{PROJECT_NAME}__asset"
     __table_args__ = (
         Index(None, "account_uid"),
         {"schema": DEFAULT_SCHEMA},
@@ -46,7 +48,7 @@ class Asset(PlatformManagedMetaTable, Base):
     uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
     account_uid: Mapped[uuid.UUID] = mapped_column(
         Uuid,
-        MetaTableForeignKey(Account, column="uid", ondelete="RESTRICT"),
+        ForeignKey(f"{DEFAULT_SCHEMA}.{PROJECT_NAME}__account.uid", ondelete="RESTRICT"),
         nullable=False,
     )
     symbol: Mapped[str] = mapped_column(String(64), nullable=False)

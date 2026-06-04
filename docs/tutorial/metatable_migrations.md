@@ -328,6 +328,7 @@ model had:
 
 ```python
 class Account(PlatformManagedMetaTable, Base):
+    __tablename__ = "sdk_examples__account"
     __metatable_namespace__ = NAMESPACE
     __metatable_extra_hash_components__ = {"storage_name": "account"}
 
@@ -341,6 +342,7 @@ The new model adds `status`:
 
 ```python
 class Account(PlatformManagedMetaTable, Base):
+    __tablename__ = "sdk_examples__account"
     __metatable_namespace__ = NAMESPACE
     __metatable_extra_hash_components__ = {"storage_name": "account"}
 
@@ -487,9 +489,7 @@ physical application tables:
       "table_contract": {
         "version": "relational-table.v1",
         "physical": {},
-        "columns": [],
-        "indexes": [],
-        "foreign_keys": []
+        "columns": []
       }
     }
   ]
@@ -499,9 +499,9 @@ physical application tables:
 The backend returns reserved MetaTable UIDs and storage metadata. The SDK binds
 that catalog metadata to the provider models while preserving the authored
 SQLAlchemy table names Alembic will render against. Index names remain normal
-SQLAlchemy/Alembic metadata. Platform-managed foreign-key contracts carry the
-logical relationship only; Alembic, SQLAlchemy, and the database own the
-physical FK constraint names.
+SQLAlchemy/Alembic metadata. Foreign keys are also normal
+SQLAlchemy/Alembic metadata; Alembic, SQLAlchemy, and the database own the
+physical FK constraint names and DDL.
 
 Second, schema-changing commands request a short-lived migration credential
 scoped to the Alembic version MetaTable UID plus the reserved provider
