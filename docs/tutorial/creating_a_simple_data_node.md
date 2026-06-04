@@ -50,21 +50,43 @@ from mainsequence.meta_tables import (
     DataNode,
     DataNodeConfiguration,
 )
-from mainsequence.meta_tables import PlatformManagedMetaTable, PlatformTimeIndexMetaData
+from mainsequence.meta_tables import (
+    PlatformManagedMetaTable,
+    PlatformTimeIndexMetaData,
+    schema_table_name,
+    sqlalchemy_naming_convention,
+)
 from mainsequence.meta_tables.compiled_sql.v1 import build_operation
 
 PROJECT_UID = os.getenv("MAIN_SEQUENCE_PROJECT_UID", "local").strip() or "local"
 PROJECT_TABLE_SUFFIX = "".join(
     char if char.isalnum() else "_" for char in PROJECT_UID.lower()
 )
+PROJECT_TABLE_APP = "mainsequence_examples"
+ACCOUNT_TABLE_NAME = schema_table_name(PROJECT_TABLE_APP, "account", PROJECT_TABLE_SUFFIX)
+DAILY_RANDOM_NUMBER_TABLE_NAME = schema_table_name(
+    PROJECT_TABLE_APP,
+    "daily_random_number",
+    PROJECT_TABLE_SUFFIX,
+)
+DAILY_RANDOM_ADDITION_TABLE_NAME = schema_table_name(
+    PROJECT_TABLE_APP,
+    "daily_random_addition",
+    PROJECT_TABLE_SUFFIX,
+)
+ACCOUNT_HOLDINGS_TABLE_NAME = schema_table_name(
+    PROJECT_TABLE_APP,
+    "account_holdings",
+    PROJECT_TABLE_SUFFIX,
+)
 
 
 class Base(DeclarativeBase):
-    metadata = MetaData()
+    metadata = MetaData(naming_convention=sqlalchemy_naming_convention())
 
 
 class DailyRandomNumberStorage(PlatformTimeIndexMetaData, Base):
-    __tablename__ = f"mainsequence_examples__daily_random_number_{PROJECT_TABLE_SUFFIX}"
+    __tablename__ = DAILY_RANDOM_NUMBER_TABLE_NAME
     __metatable_namespace__ = "mainsequence.examples"
     __metatable_identifier__ = f"daily_random_number_{PROJECT_UID}"
     __metatable_description__ = "Daily random number observations produced by the tutorial node."
@@ -81,7 +103,7 @@ class DailyRandomNumberStorage(PlatformTimeIndexMetaData, Base):
 
 
 class DailyRandomAdditionStorage(PlatformTimeIndexMetaData, Base):
-    __tablename__ = f"mainsequence_examples__daily_random_addition_{PROJECT_TABLE_SUFFIX}"
+    __tablename__ = DAILY_RANDOM_ADDITION_TABLE_NAME
     __metatable_namespace__ = "mainsequence.examples"
     __metatable_identifier__ = f"daily_random_addition_{PROJECT_UID}"
     __metatable_description__ = "Daily random additions produced from the tutorial dependency node."
@@ -192,7 +214,10 @@ Foreign keys are normal SQLAlchemy/Alembic DDL metadata. They are not part of
 `DataNodeConfiguration` and are not serialized into the platform-managed
 MetaTable registration contract. When a storage table needs a FK, use
 SQLAlchemy `ForeignKey(...)`; prefer project-prefixed table names for explicit
-FK string targets to avoid collisions in shared schemas.
+FK string targets to avoid collisions in shared schemas. Use
+`schema_table_name(project_or_app, concept, optional_suffix)` so tutorial,
+application, index, and FK names all follow the same bounded PostgreSQL-safe
+convention.
 
 !!! important
     `MetaTable.identifier` and namespace must be unique enough to find the table later. In tutorial code, generic names like `daily_random_number` are very likely to collide because someone else in your organization has probably already run the same tutorial. Prefix table identifiers with the project name, package name, or project UID.
@@ -290,7 +315,7 @@ publishes account/security observations:
 
 ```python
 class Account(PlatformManagedMetaTable, Base):
-    __tablename__ = f"mainsequence_examples__account_{PROJECT_TABLE_SUFFIX}"
+    __tablename__ = ACCOUNT_TABLE_NAME
     __metatable_namespace__ = "mainsequence.examples"
     __metatable_identifier__ = f"account_{PROJECT_UID}"
     __metatable_description__ = "Tutorial account rows used as the parent for holdings storage."
@@ -303,7 +328,7 @@ class Account(PlatformManagedMetaTable, Base):
 
 
 class AccountHoldingsStorage(PlatformTimeIndexMetaData, Base):
-    __tablename__ = f"mainsequence_examples__account_holdings_{PROJECT_TABLE_SUFFIX}"
+    __tablename__ = ACCOUNT_HOLDINGS_TABLE_NAME
     __table_args__ = (Index(None, "account_uid"),)
     __metatable_namespace__ = "mainsequence.examples"
     __metatable_identifier__ = f"account_holdings_{PROJECT_UID}"
@@ -320,7 +345,7 @@ class AccountHoldingsStorage(PlatformTimeIndexMetaData, Base):
     account_uid: Mapped[uuid.UUID] = mapped_column(
         Uuid,
         ForeignKey(
-            f"public.mainsequence_examples__account_{PROJECT_TABLE_SUFFIX}.uid",
+            f"public.{ACCOUNT_TABLE_NAME}.uid",
             ondelete="RESTRICT",
         ),
         nullable=False,

@@ -45,6 +45,8 @@ from mainsequence.meta_tables import (
     PlatformTimeIndexMetaData,
     external_registered_registration_request_from_sqlalchemy_model,
     register_external_sqlalchemy_model,
+    schema_table_name,
+    sqlalchemy_naming_convention,
 )
 from mainsequence.meta_tables.compiled_sql.v1 import compile_sqlalchemy_statement
 ```
@@ -83,7 +85,7 @@ Manager keeps the MetaTable catalog binding.
 
 Typical flow:
 
-1. Define SQLAlchemy models with `PlatformManagedMetaTable` and project-prefixed `__tablename__` values.
+1. Define SQLAlchemy models with `PlatformManagedMetaTable` and project-prefixed `__tablename__` values, preferably from `schema_table_name(project_or_app, concept)`.
 2. Add those models to `AlembicMetaTableMigration.metatable_models`.
 3. Run `mainsequence migrations upgrade --provider ... head`.
 4. Migration tooling reserves catalog rows for missing models, Alembic applies schema
@@ -155,8 +157,11 @@ For platform-managed tables, prefer the class API when the name should rotate
 with the SQLAlchemy table shape:
 
 ```python
+ASSET_TABLE_NAME = schema_table_name("sdk_examples", "asset")
+
+
 class Asset(PlatformManagedMetaTable, Base):
-    __tablename__ = "sdk_examples__asset"
+    __tablename__ = ASSET_TABLE_NAME
     __metatable_namespace__ = "sdk-examples"
     __metatable_identifier__ = "sdk_examples.Asset"
     __metatable_extra_hash_components__ = {"storage_name": "asset"}
@@ -188,11 +193,12 @@ backend UIDs, data-source UIDs, or updater scope.
 For explicit physical naming, use a project-prefixed SQLAlchemy table name:
 
 ```python
-__tablename__ = "sdk_examples__asset"
+__tablename__ = schema_table_name("sdk_examples", "asset")
 ```
 
 Keep authored physical table names within PostgreSQL's 63-character identifier
-limit.
+limit. `schema_table_name()` preserves the project/app prefix and adds a stable
+hash suffix when a generated name would exceed that limit.
 
 ## Backend Responsibilities
 

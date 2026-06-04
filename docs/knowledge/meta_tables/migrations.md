@@ -12,8 +12,8 @@ The migration lifecycle is provider-based:
 ```text
 AlembicMetaTableMigration provider
 -> Alembic revision from provider.target_metadata
--> SDK reserves provider.metatable_models and binds MetaTable UID/storage metadata
--> SDK requests a scoped migration database URI
+-> SDK requests a provider migration database URI
+-> SDK reserves provider.metatable_models only for upgrade/downgrade
 -> Alembic executes revision/current/upgrade/downgrade directly
 -> project tooling refreshes provider.metatable_models
 ```
@@ -26,10 +26,11 @@ The SDK owns:
 - the `AlembicMetaTableMigration` provider contract
 - `AlembicVersionMetaTable`
 - provider discovery by convention plus explicit `--provider`
-- typed reservation and scoped-connection request/response models
-- CLI commands that prepare providers, reserve/bind MetaTable UID/storage
-  metadata, call Alembic directly, and refresh provider-scoped MetaTables after
-  successful upgrade
+- typed reservation and migration-connection request/response models
+- CLI commands that prepare providers, request migration credentials, reserve
+  and bind MetaTable UID/storage metadata only for schema-mutating commands,
+  call Alembic directly, and refresh provider-scoped MetaTables after successful
+  upgrade
 
 ## SDK Alembic Coordination
 
@@ -45,7 +46,7 @@ Alembic cannot know on its own:
 - load the selected `AlembicMetaTableMigration` provider
 - register or resolve the provider's `AlembicVersionMetaTable` catalog binding
 - reserve or resolve the provider-scoped platform-managed MetaTables without
-  creating physical application tables
+  creating physical application tables for `upgrade` and `downgrade`
 - preserve authored SQLAlchemy table names and bind backend MetaTable
   UID/storage metadata into the provider models
 - keep the Alembic version MetaTable UID and provider MetaTable UIDs in prepared
@@ -143,6 +144,7 @@ from mainsequence.meta_tables.migrations import (
     AlembicMetaTableMigration,
     AlembicVersionMetaTable,
 )
+from mainsequence.meta_tables import schema_table_name
 
 from sdk_examples.meta_tables.account_limits import Account, AccountLimit, Base
 
@@ -159,7 +161,7 @@ class ProjectAlembicVersion(AlembicVersionMetaTable):
     __metatable_namespace__ = "sdk-examples"
     __metatable_identifier__ = "sdk_examples.alembic_version"
     __alembic_version_schema__ = "public"
-    __alembic_version_table_name__ = "sdk_examples_alembic_version"
+    __alembic_version_table_name__ = schema_table_name("sdk_examples", "alembic_version")
 
 
 migration = AlembicMetaTableMigration(
@@ -198,7 +200,8 @@ exist. `__metatable_identifier__` is not the Alembic migration identity. A model
 move or rename keeps the same migration identity when its SQLAlchemy table name
 stays stable.
 
-`prepare_for_alembic()` always sends provider model rows through typed
+`prepare_for_alembic()` runs for `upgrade` and `downgrade`; revision generation
+does not provision provider MetaTables. When it runs, it sends provider model rows through typed
 collection-create endpoints. Plain `PlatformManagedMetaTable` rows go to
 `POST /orm/api/ts_manager/meta_table/`; `PlatformTimeIndexMetaData` rows go to
 `POST /orm/api/ts_manager/dynamic_table/`. The SDK sends raw JSON lists with
@@ -220,7 +223,7 @@ The generated contract declares the Alembic revision column:
 
 ```json
 {
-  "physical": {"table_name": "sdk_examples_alembic_version"},
+  "physical": {"table_name": "sdk_examples__alembic_version"},
   "columns": [
     {
       "name": "version_num",
@@ -233,7 +236,7 @@ The generated contract declares the Alembic revision column:
   "authoring": {
     "owner": "alembic",
     "schema": "public",
-    "version_table": "sdk_examples_alembic_version"
+    "version_table": "sdk_examples__alembic_version"
   }
 }
 ```

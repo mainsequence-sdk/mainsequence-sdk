@@ -9,23 +9,24 @@ from examples.meta_tables.common import (
     DEFAULT_SCHEMA,
     print_json,
 )
-from mainsequence.meta_tables import PlatformManagedMetaTable
+from mainsequence.meta_tables import (
+    PlatformManagedMetaTable,
+    schema_table_name,
+    sqlalchemy_naming_convention,
+)
 
 NAMESPACE = "sdk-examples"
 PROJECT_NAME = "sdk_examples"
-
-NAMING_CONVENTION = {
-    "ix": "%(table_name)s_%(column_0_name)s_idx",
-    "pk": "%(table_name)s_pkey",
-}
+ACCOUNT_TABLE_NAME = schema_table_name(PROJECT_NAME, "account")
+ASSET_TABLE_NAME = schema_table_name(PROJECT_NAME, "asset")
 
 
 class Base(DeclarativeBase):
-    metadata = MetaData(naming_convention=NAMING_CONVENTION)
+    metadata = MetaData(naming_convention=sqlalchemy_naming_convention())
 
 
 class Account(PlatformManagedMetaTable, Base):
-    __tablename__ = f"{PROJECT_NAME}__account"
+    __tablename__ = ACCOUNT_TABLE_NAME
     __table_args__ = {"schema": DEFAULT_SCHEMA}
 
     __metatable_namespace__ = NAMESPACE
@@ -36,7 +37,7 @@ class Account(PlatformManagedMetaTable, Base):
 
 
 class Asset(PlatformManagedMetaTable, Base):
-    __tablename__ = f"{PROJECT_NAME}__asset"
+    __tablename__ = ASSET_TABLE_NAME
     __table_args__ = (
         Index(None, "account_uid"),
         {"schema": DEFAULT_SCHEMA},
@@ -48,7 +49,7 @@ class Asset(PlatformManagedMetaTable, Base):
     uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
     account_uid: Mapped[uuid.UUID] = mapped_column(
         Uuid,
-        ForeignKey(f"{DEFAULT_SCHEMA}.{PROJECT_NAME}__account.uid", ondelete="RESTRICT"),
+        ForeignKey(f"{DEFAULT_SCHEMA}.{ACCOUNT_TABLE_NAME}.uid", ondelete="RESTRICT"),
         nullable=False,
     )
     symbol: Mapped[str] = mapped_column(String(64), nullable=False)

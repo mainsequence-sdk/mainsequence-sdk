@@ -34,6 +34,8 @@ from mainsequence.meta_tables import (
     PlatformManagedMetaTable,
     external_registered_registration_request_from_sqlalchemy_model,
     register_external_sqlalchemy_model,
+    schema_table_name,
+    sqlalchemy_naming_convention,
 )
 from mainsequence.meta_tables.compiled_sql.v1 import compile_sqlalchemy_statement
 ```
@@ -86,6 +88,10 @@ Alembic sees. The two values are intentionally separate.
 migration-managed registration derive the same configured `storage_hash` from
 storage-relevant configuration while preserving the authored physical table
 name. Prefix explicit table names with the project or package name.
+Use `schema_table_name(project_or_app, concept)` and
+`sqlalchemy_naming_convention()` to keep authored table, index, constraint, and
+Alembic version names collision-resistant and within PostgreSQL identifier
+limits.
 
 `__metatable_extra_hash_components__` adds deterministic fields to the
 `storage_hash` payload before registration. Use it only to disambiguate storage

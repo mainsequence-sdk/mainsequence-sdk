@@ -4,6 +4,7 @@ import os
 
 from examples.meta_tables.common import DEFAULT_SCHEMA
 from examples.meta_tables.platform_managed.account_asset import Account, Asset, Base
+from mainsequence.meta_tables import schema_table_name
 from mainsequence.meta_tables.migrations import (
     AlembicMetaTableMigration,
     AlembicVersionMetaTable,
@@ -17,7 +18,7 @@ class ExampleAlembicVersion(AlembicVersionMetaTable):
     __metatable_namespace__ = NAMESPACE
     __metatable_identifier__ = f"{PROJECT_NAME}.alembic_version"
     __alembic_version_schema__ = DEFAULT_SCHEMA
-    __alembic_version_table_name__ = f"{PROJECT_NAME}_alembic_version"
+    __alembic_version_table_name__ = schema_table_name(PROJECT_NAME, "alembic_version")
     __alembic_version_column_name__ = "version_num"
     __metatable_data_source_uid__ = os.getenv("MAINSEQUENCE_META_TABLE_DATA_SOURCE_UID") or None
 

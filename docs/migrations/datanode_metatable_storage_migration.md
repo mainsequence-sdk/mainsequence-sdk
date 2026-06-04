@@ -81,6 +81,7 @@ from mainsequence.meta_tables import (
     DataNode,
     DataNodeConfiguration,
     PlatformTimeIndexMetaData,
+    schema_table_name,
 )
 ```
 
@@ -99,7 +100,9 @@ import datetime
 from sqlalchemy import DateTime, Float, String
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-from mainsequence.meta_tables import PlatformTimeIndexMetaData
+from mainsequence.meta_tables import PlatformTimeIndexMetaData, schema_table_name
+
+PROJECT_TABLE_APP = "example_project"
 
 
 class Base(DeclarativeBase):
@@ -107,7 +110,7 @@ class Base(DeclarativeBase):
 
 
 class DailyMetricsStorage(PlatformTimeIndexMetaData, Base):
-    __tablename__ = "example_project__daily_metrics"
+    __tablename__ = schema_table_name(PROJECT_TABLE_APP, "daily_metrics")
     __metatable_namespace__ = "example-data"
     __metatable_identifier__ = "example_project.daily_metrics"
     __metatable_description__ = (
@@ -151,6 +154,8 @@ Rules:
 - Always include `__metatable_description__`.
 - Describe both schema and intention, not only column names.
 - Use SQLAlchemy column `info` for column labels and descriptions.
+- Use `schema_table_name(project_or_app, concept)` for authored SQLAlchemy table
+  names so project/app prefixes are consistent and bounded for PostgreSQL.
 - Use `__metatable_extra_hash_components__` when two tables could otherwise have
   the same storage-relevant shape.
 - Do not use `__metatable_extra_hash_components__` for labels, tests,
@@ -319,11 +324,16 @@ from sqlalchemy.orm import Mapped, mapped_column
 from mainsequence.meta_tables import (
     PlatformManagedMetaTable,
     PlatformTimeIndexMetaData,
+    schema_table_name,
 )
+
+PROJECT_TABLE_APP = "example_project"
+ACCOUNT_TABLE_NAME = schema_table_name(PROJECT_TABLE_APP, "account")
+ACCOUNT_POSITIONS_TABLE_NAME = schema_table_name(PROJECT_TABLE_APP, "account_positions")
 
 
 class Account(PlatformManagedMetaTable, Base):
-    __tablename__ = "example_project__account"
+    __tablename__ = ACCOUNT_TABLE_NAME
     __metatable_namespace__ = "accounts"
     __metatable_identifier__ = "example_project.account"
     __metatable_description__ = "Account master rows used to scope positions."
@@ -340,7 +350,7 @@ class Account(PlatformManagedMetaTable, Base):
 
 
 class AccountPositions(PlatformTimeIndexMetaData, Base):
-    __tablename__ = "example_project__account_positions"
+    __tablename__ = ACCOUNT_POSITIONS_TABLE_NAME
     __metatable_namespace__ = "positions"
     __metatable_identifier__ = "example_project.account_positions"
     __metatable_description__ = "Time-indexed position rows keyed by account."
@@ -350,7 +360,7 @@ class AccountPositions(PlatformTimeIndexMetaData, Base):
 
     account_uid: Mapped[uuid.UUID] = mapped_column(
         Uuid,
-        ForeignKey("public.example_project__account.uid", ondelete="RESTRICT"),
+        ForeignKey(f"public.{ACCOUNT_TABLE_NAME}.uid", ondelete="RESTRICT"),
         nullable=False,
         info={
             "label": "Account UID",
@@ -364,7 +374,8 @@ use backend physical table names or target MetaTable UIDs in FK declarations;
 the FK target is database DDL metadata, not a MetaTable registration contract.
 
 Prefix explicit table identifiers and explicit physical table names with the
-project or package name. Bare names such as `account`, `positions`, or
+project or package name. Prefer `schema_table_name(project_or_app, concept)` for
+authored SQLAlchemy names. Bare names such as `account`, `positions`, or
 `alembic_version` are easy to collide across projects sharing an organization
 or database schema.
 
@@ -381,7 +392,7 @@ from functools import lru_cache
 from sqlalchemy import DateTime, Float, String
 from sqlalchemy.orm import Mapped, mapped_column
 
-from mainsequence.meta_tables import PlatformTimeIndexMetaData
+from mainsequence.meta_tables import PlatformTimeIndexMetaData, schema_table_name
 
 
 class _ObservationColumns(PlatformTimeIndexMetaData, Base):
@@ -425,6 +436,7 @@ def observation_storage(dataset_variant: str) -> type[_ObservationColumns]:
         {
             "__module__": __name__,
             "__qualname__": f"ObservationStorage_{normalized}",
+            "__tablename__": schema_table_name("example_project", "observations", normalized),
             "__metatable_namespace__": "example-data",
             "__metatable_identifier__": identifier,
             "__metatable_description__": (

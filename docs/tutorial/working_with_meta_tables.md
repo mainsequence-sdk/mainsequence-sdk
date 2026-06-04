@@ -71,25 +71,25 @@ import uuid
 from sqlalchemy import ForeignKey, Index, MetaData, String, Uuid
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-from mainsequence.meta_tables import PlatformManagedMetaTable
+from mainsequence.meta_tables import (
+    PlatformManagedMetaTable,
+    schema_table_name,
+    sqlalchemy_naming_convention,
+)
 
 
 PROJECT_NAME = "sdk_examples"
 NAMESPACE = "sdk-examples"
 SCHEMA = "public"
+ACCOUNT_TABLE_NAME = schema_table_name(PROJECT_NAME, "account")
 
 
 class Base(DeclarativeBase):
-    metadata = MetaData(
-        naming_convention={
-            "ix": "%(table_name)s_%(column_0_name)s_idx",
-            "pk": "%(table_name)s_pkey",
-        }
-    )
+    metadata = MetaData(naming_convention=sqlalchemy_naming_convention())
 
 
 class Account(PlatformManagedMetaTable, Base):
-    __tablename__ = "sdk_examples__account"
+    __tablename__ = ACCOUNT_TABLE_NAME
     __table_args__ = (
         Index(None, "region"),
         {"schema": SCHEMA},
@@ -110,7 +110,7 @@ class Account(PlatformManagedMetaTable, Base):
 The important pieces are:
 
 - `PlatformManagedMetaTable` derives the logical `storage_hash` from storage-relevant configuration and table shape
-- `__tablename__` is an explicit project-prefixed SQLAlchemy table name used by Alembic
+- `schema_table_name(PROJECT_NAME, "account")` creates an explicit project-prefixed SQLAlchemy table name used by Alembic
 - `__table_args__` declares the SQLAlchemy table schema used by Alembic and storage-hash derivation
 - `NAMESPACE` is a plain logical grouping for these SDK examples
 - `__metatable_identifier__` is logical backend metadata and does not rotate the configured storage identity
@@ -118,9 +118,10 @@ The important pieces are:
 - `uid` is an application-level primary key, not a backend row id
 
 Prefix explicit table identifiers and explicit physical table names with the
-project or package name. Bare names such as `Account`, `Asset`, or
-`alembic_version` are easy to collide across projects sharing one organization
-or database schema.
+project or package name. Prefer `schema_table_name(project_or_app, concept)` so
+the same convention is used everywhere. Bare names such as `Account`, `Asset`,
+or `alembic_version` are easy to collide across projects sharing one
+organization or database schema.
 
 `__metatable_extra_hash_components__` is part of storage identity. Use stable
 values such as `{"storage_name": "account"}` or
@@ -156,8 +157,11 @@ prefixed with the project or package name so SQLAlchemy FK string targets do not
 collide across projects sharing the same schema.
 
 ```python
+ACCOUNT_LIMIT_TABLE_NAME = schema_table_name(PROJECT_NAME, "account_limit")
+
+
 class AccountLimit(PlatformManagedMetaTable, Base):
-    __tablename__ = "sdk_examples__account_limit"
+    __tablename__ = ACCOUNT_LIMIT_TABLE_NAME
     __table_args__ = (
         Index(None, "account_uid"),
         {"schema": SCHEMA},
@@ -172,7 +176,7 @@ class AccountLimit(PlatformManagedMetaTable, Base):
     uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
     account_uid: Mapped[uuid.UUID] = mapped_column(
         Uuid,
-        ForeignKey(f"{SCHEMA}.sdk_examples__account.uid", ondelete="RESTRICT"),
+        ForeignKey(f"{SCHEMA}.{ACCOUNT_TABLE_NAME}.uid", ondelete="RESTRICT"),
         nullable=False,
     )
     limit_type: Mapped[str] = mapped_column(String(64), nullable=False)

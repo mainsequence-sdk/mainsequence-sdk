@@ -126,9 +126,11 @@ Do not hand-build contract fragments when the SQLAlchemy helper can derive them.
 
 For `platform_managed`, inherit from `PlatformManagedMetaTable`.
 
-Declare an explicit project-prefixed SQLAlchemy `__tablename__`. The mixin derives
-only the logical `storage_hash` from storage-relevant configuration and table
-shape; it must not use that hash as the SQLAlchemy table name.
+Declare an explicit project-prefixed SQLAlchemy `__tablename__`. Use
+`schema_table_name(project_or_app, concept)` from `mainsequence.meta_tables` to
+generate that name. The mixin derives only the logical `storage_hash` from
+storage-relevant configuration and table shape; it must not use that hash as the
+SQLAlchemy table name.
 
 When a platform-managed table must support in-place contract migrations from its
 first version, use Alembic. Keep the SDK model as a normal
@@ -157,13 +159,21 @@ or experiment isolation.
 Prefix explicit table identifiers, explicit physical table names, and Alembic
 version table names with the project or package name. Bare names such as
 `Account`, `Asset`, or `alembic_version` can collide across projects sharing an
-organization or database schema.
+organization or database schema. Prefer `schema_table_name(...)` over
+hand-built f-strings so project/app prefixes, bounded length, and separators are
+consistent.
 
 Register through the class API:
 
 ```python
+from mainsequence.meta_tables import PlatformManagedMetaTable, schema_table_name
+
+PROJECT_NAME = "sdk_examples"
+ACCOUNT_TABLE_NAME = schema_table_name(PROJECT_NAME, "account")
+
+
 class Account(PlatformManagedMetaTable, Base):
-    __tablename__ = "sdk_examples__account"
+    __tablename__ = ACCOUNT_TABLE_NAME
     __metatable_namespace__ = "sdk-examples"
     __metatable_identifier__ = "sdk_examples.Account"
     __metatable_extra_hash_components__ = {"storage_name": "account"}
@@ -290,21 +300,19 @@ For contract evolution, define or update one selected
 - set `package`, `migration_namespace`, `script_location`, and `target_metadata`
 - set `alembic_registry` to an `AlembicVersionMetaTable` subclass
 - list the post-apply catalog scope in `metatable_models`
-- generate, render, dry-run, apply, and refresh catalog bindings
+- generate revisions, apply migrations, and refresh catalog bindings
   through `mainsequence migrations ...` commands
 
 `alembic_version_meta_table_uid` is the UID of the catalog binding for Alembic's
 version table. It is not the UID of the table being migrated.
 
-Application MetaTable catalog sync resolves existing rows by exact
-`identifier`. If a model declares `__metatable_identifier__`, that value is the
-global identity. If it does not, the SDK derives the identifier from
-`[project].name` in `pyproject.toml` plus
-`<model.__module__>.<model.__qualname__>`. Pin an explicit identifier when a
-class is renamed or moved but must keep the same platform identity.
+Application MetaTable catalog sync resolves existing rows by the authored
+SQLAlchemy table name used by the provider model. Keep that table name stable
+when a class is renamed or moved but must keep the same platform identity.
 When declaring an explicit identifier, explicit physical table name, or Alembic
 version table name, prefix it with the project or package name rather than using
-a bare table name.
+a bare table name. Use `schema_table_name(project_or_app, concept)` for the
+physical table and Alembic version table names.
 
 Do not ask users to construct backend migration payloads, call low-level
 migration request models, or use SDK helper functions directly. The backend

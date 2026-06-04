@@ -15,7 +15,12 @@ import uuid
 from sqlalchemy import DateTime, Float, ForeignKey, Index, MetaData, String, Uuid
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-from mainsequence.meta_tables import PlatformManagedMetaTable, PlatformTimeIndexMetaData
+from mainsequence.meta_tables import (
+    PlatformManagedMetaTable,
+    PlatformTimeIndexMetaData,
+    schema_table_name,
+    sqlalchemy_naming_convention,
+)
 ```
 
 ## Define A Base
@@ -24,25 +29,25 @@ You can create a small project-local base and use `PlatformManagedMetaTable` onl
 models that should be platform-managed.
 
 ```python
-NAMING_CONVENTION = {
-    "ix": "%(table_name)s_%(column_0_name)s_idx",
-    "pk": "%(table_name)s_pkey",
-}
-
-
 class Base(DeclarativeBase):
-    metadata = MetaData(naming_convention=NAMING_CONVENTION)
+    metadata = MetaData(naming_convention=sqlalchemy_naming_convention())
 ```
 
 For platform-managed tables, inherit `PlatformManagedMetaTable`. It derives the
 logical `storage_hash` from storage-relevant configuration and the SQLAlchemy
 table shape, and exposes registration helpers on the model class. The authored
 SQLAlchemy `__tablename__` is the physical table name Alembic uses, so prefix it
-with the project or package name.
+with the project or package name. Prefer `schema_table_name(project_or_app,
+concept)` so table names, FK string targets, indexes, and Alembic version tables
+use one collision-resistant convention.
 
 ```python
+PROJECT_NAME = "sdk_examples"
+ACCOUNT_TABLE_NAME = schema_table_name(PROJECT_NAME, "account")
+
+
 class Account(PlatformManagedMetaTable, Base):
-    __tablename__ = "sdk_examples__account"
+    __tablename__ = ACCOUNT_TABLE_NAME
     __table_args__ = {"schema": "public"}
 
     __metatable_namespace__ = "sdk-examples"
@@ -64,9 +69,10 @@ to configured storage identity. Indexes and foreign keys are SQLAlchemy/Alembic
 DDL metadata and are not serialized into the MetaTable registration contract.
 
 Prefix explicit table identifiers, explicit physical table names, and Alembic
-version table names with the project or package name. Bare names such as
-`Account`, `Asset`, or `alembic_version` can collide across projects sharing the
-same organization or database schema.
+version table names with the project or package name. Use
+`schema_table_name("sdk_examples", "asset")` instead of hand-building names.
+Bare names such as `Account`, `Asset`, or `alembic_version` can collide across
+projects sharing the same organization or database schema.
 
 Use `__metatable_extra_hash_components__` to add stable, deterministic
 storage-identity components when two table classes could otherwise hash to the
@@ -75,7 +81,7 @@ as several one-index time-series tables with the same column types.
 
 ```python
 class DailyReturns(PlatformTimeIndexMetaData, Base):
-    __tablename__ = "sdk_examples__daily_returns"
+    __tablename__ = schema_table_name(PROJECT_NAME, "daily_returns")
     __metatable_namespace__ = "sdk-examples"
     __metatable_identifier__ = "sdk_examples.DailyReturns"
     __metatable_description__ = "Daily return observations keyed by time for tutorial assets."
@@ -139,7 +145,7 @@ schema.
 
 ```python
 class Asset(PlatformManagedMetaTable, Base):
-    __tablename__ = "sdk_examples__asset"
+    __tablename__ = schema_table_name(PROJECT_NAME, "asset")
     __table_args__ = (
         Index(None, "account_uid"),
         {"schema": "public"},
@@ -152,7 +158,7 @@ class Asset(PlatformManagedMetaTable, Base):
     uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
     account_uid: Mapped[uuid.UUID] = mapped_column(
         Uuid,
-        ForeignKey("public.sdk_examples__account.uid", ondelete="RESTRICT"),
+        ForeignKey(f"public.{ACCOUNT_TABLE_NAME}.uid", ondelete="RESTRICT"),
         nullable=False,
     )
     symbol: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -196,7 +202,7 @@ MetaTable contract.
 
 ```python
 class AccountHoldings(PlatformTimeIndexMetaData, Base):
-    __tablename__ = "sdk_examples__account_holdings"
+    __tablename__ = schema_table_name(PROJECT_NAME, "account_holdings")
     __table_args__ = (
         Index(None, "account_uid"),
         {"schema": "public"},
@@ -214,7 +220,7 @@ class AccountHoldings(PlatformTimeIndexMetaData, Base):
     )
     account_uid: Mapped[uuid.UUID] = mapped_column(
         Uuid,
-        ForeignKey("public.sdk_examples__account.uid", ondelete="RESTRICT"),
+        ForeignKey(f"public.{ACCOUNT_TABLE_NAME}.uid", ondelete="RESTRICT"),
         nullable=False,
     )
     unique_identifier: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -250,7 +256,7 @@ For generic MetaTables:
 
 ```python
 class Account(PlatformManagedMetaTable, Base):
-    __tablename__ = "sdk_examples__account"
+    __tablename__ = schema_table_name(PROJECT_NAME, "account")
     __metatable_namespace__ = "sdk-examples"
     __metatable_identifier__ = "sdk-examples.Account"
 
@@ -262,7 +268,7 @@ For time-indexed DataNode storage:
 
 ```python
 class AccountHoldings(PlatformTimeIndexMetaData, Base):
-    __tablename__ = "sdk_examples__account_holdings"
+    __tablename__ = schema_table_name(PROJECT_NAME, "account_holdings")
     __metatable_namespace__ = "sdk-examples"
     __metatable_identifier__ = "sdk-examples.AccountHoldings"
     __time_index_name__ = "time_index"
@@ -324,7 +330,7 @@ The SDK intentionally fails early for ambiguous metadata:
 
 - platform-managed tables must use `PlatformManagedMetaTable` so the SDK can derive the logical `storage_hash`
 - SQLAlchemy models must expose schema through SQLAlchemy table metadata, usually `__table_args__`
-- project tables should use project-prefixed SQLAlchemy table names when FK string targets are authored explicitly
+- project tables should use `schema_table_name(project_or_app, concept)` for project-prefixed SQLAlchemy table names when FK string targets are authored explicitly
 - Alembic owns index and foreign-key DDL; the SDK does not resolve FK target MetaTable UIDs
 - unsupported SQLAlchemy column types raise before registration
 
@@ -360,7 +366,7 @@ Use:
 
 ```python
 class Asset(PlatformManagedMetaTable, Base):
-    __tablename__ = "sdk_examples__asset"
+    __tablename__ = schema_table_name(PROJECT_NAME, "asset")
     __metatable_namespace__ = "sdk-examples"
     __metatable_identifier__ = "sdk_examples.Asset"
     __metatable_description__ = "Externally managed asset table registered as a governed MetaTable."

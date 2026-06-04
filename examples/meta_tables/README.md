@@ -42,11 +42,15 @@ python -m examples.meta_tables.platform_managed.account_asset
 The model definitions use:
 
 ```python
+from mainsequence.meta_tables import schema_table_name, sqlalchemy_naming_convention
+
+
 PROJECT_NAME = "sdk_examples"
+ACCOUNT_TABLE_NAME = schema_table_name(PROJECT_NAME, "account")
 
 
 class Account(PlatformManagedMetaTable, Base):
-    __tablename__ = f"{PROJECT_NAME}__account"
+    __tablename__ = ACCOUNT_TABLE_NAME
     __metatable_namespace__ = NAMESPACE
     __metatable_identifier__ = f"{PROJECT_NAME}.Account"
 ```
@@ -55,12 +59,13 @@ The model classes are registered by migration tooling through the provider in
 `examples.meta_tables.migrations:migration`. Do not call `Account.register()` or
 `Asset.register()` in application/bootstrap code.
 
-The examples use a `PROJECT_NAME` prefix for logical MetaTable identifiers,
-external physical table names, and the Alembic version table name. Do not use
-bare names like `Account`, `asset`, or `alembic_version` in shared schemas; they
-collide easily across projects and providers.
+The examples use `schema_table_name(PROJECT_NAME, "...")` for physical table
+names and Alembic version table names. Keep the first argument as a stable
+project or app prefix. Do not use bare names like `Account`, `asset`, or
+`alembic_version` in shared schemas; they collide easily across projects and
+providers.
 
-The platform-managed example uses a SQLAlchemy naming convention for indexes.
+The platform-managed example uses `sqlalchemy_naming_convention()` for indexes.
 Platform-managed foreign-key contracts keep logical FK relationships only. The
 physical FK constraint names are not managed by the MetaTable backend and should
 not be copied into the MetaTable contract.

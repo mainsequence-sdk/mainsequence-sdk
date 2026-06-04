@@ -14,24 +14,22 @@ from mainsequence.client import DataSource, DynamicTableDataSource, MetaTable
 from mainsequence.client.data_sources_interfaces import get_sqlite_interface_class
 from mainsequence.meta_tables import (
     external_registered_registration_request_from_sqlalchemy_model,
+    schema_table_name,
+    sqlalchemy_naming_convention,
 )
 
 NAMESPACE = "sdk-examples"
 PROJECT_NAME = "sdk_examples"
-
-NAMING_CONVENTION = {
-    "ix": "%(table_name)s_%(column_0_name)s_idx",
-    "fk": "%(table_name)s_%(column_0_name)s_fkey",
-    "pk": "%(table_name)s_pkey",
-}
+ACCOUNT_TABLE_NAME = schema_table_name(PROJECT_NAME, "account")
+ASSET_TABLE_NAME = schema_table_name(PROJECT_NAME, "asset")
 
 
 class Base(DeclarativeBase):
-    metadata = MetaData(naming_convention=NAMING_CONVENTION)
+    metadata = MetaData(naming_convention=sqlalchemy_naming_convention())
 
 
 class Account(Base):
-    __tablename__ = f"{PROJECT_NAME}_account"
+    __tablename__ = ACCOUNT_TABLE_NAME
 
     __metatable_namespace__ = NAMESPACE
     __metatable_identifier__ = f"{PROJECT_NAME}.Account"
@@ -41,7 +39,7 @@ class Account(Base):
 
 
 class Asset(Base):
-    __tablename__ = f"{PROJECT_NAME}_asset"
+    __tablename__ = ASSET_TABLE_NAME
     __table_args__ = (Index(None, "account_uid"),)
 
     __metatable_namespace__ = NAMESPACE
