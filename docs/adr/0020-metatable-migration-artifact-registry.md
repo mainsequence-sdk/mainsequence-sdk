@@ -585,9 +585,10 @@ The SDK owns:
 - `AlembicVersionMetaTable`
 - provider discovery for one conventional migration provider plus explicit
   `--provider` override
-- CLI commands that read current state, generate revisions, run Alembic
-  upgrade/downgrade directly, reset provider state, register the version table,
-  reserve provider MetaTables, and finalize provider MetaTables
+- CLI commands that read current state, generate revisions locally, run Alembic
+  upgrade/downgrade directly, reset provider state, register the version table
+  for backend-scoped commands, reserve provider MetaTables for apply-time
+  commands, and finalize provider MetaTables
 - typed reservation and finalization request/response models
 - helpers that bind MetaTable UID/storage metadata while preserving authored
   SQLAlchemy table names before Alembic runs

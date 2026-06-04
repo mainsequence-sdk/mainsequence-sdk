@@ -257,10 +257,14 @@ mainsequence migrations upgrade --provider msm.migrations:migration head
 `revision` must:
 
 1. load the provider;
-2. register/resolve `AlembicVersionMetaTable`;
-3. reserve and bind platform-managed MetaTables;
-4. issue a scoped migration connection for the reserved MetaTable UID scope;
-5. call Alembic `revision(...)` / autogenerate against the bound metadata.
+2. build a local Alembic `Config` from provider `script_location` and
+   `target_metadata`;
+3. require an explicit local `--sqlalchemy-url` when `--autogenerate` is used;
+4. call Alembic `revision(...)` / autogenerate against local provider metadata.
+
+`revision` is local Alembic authoring. It must not register, reserve, finalize,
+or otherwise mutate provider MetaTables. Provider application MetaTable
+reservation is an apply-time concern, not a revision-file generation concern.
 
 `current` must:
 
@@ -271,9 +275,7 @@ mainsequence migrations upgrade --provider msm.migrations:migration head
 
 `current` is read-only for provider application MetaTables. It must not call
 `reserve-managed` for the provider model list because checking Alembic version
-state should not mutate or restage 44 application catalog rows. Provider
-reservation/binding belongs to `revision`, `upgrade`, and `downgrade`, where the
-command renders or mutates provider schema.
+state should not mutate or restage application catalog rows.
 
 `upgrade` must:
 

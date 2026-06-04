@@ -287,8 +287,21 @@ def test_migrations_revision_forwards_alembic_logs_and_scans_revision_id(monkeyp
     migration_cli = importlib.import_module("mainsequence.cli.migrations")
     migration = _migration()
     captured = {}
-    _patch_preflight(monkeypatch, migration_cli, migration)
-    _patch_scoped_connection(monkeypatch, migration_cli, captured)
+    monkeypatch.setattr(migration_cli, "_load_migration", lambda provider: migration)
+
+    def fail_backend_call(*args, **kwargs):
+        raise AssertionError("revision must not provision MetaTables")
+
+    monkeypatch.setattr(
+        AlembicMetaTableMigration,
+        "ensure_alembic_registry",
+        fail_backend_call,
+    )
+    monkeypatch.setattr(
+        AlembicMetaTableMigration,
+        "prepare_for_alembic",
+        fail_backend_call,
+    )
 
     from alembic import command
     from alembic.script import ScriptDirectory
@@ -315,6 +328,7 @@ def test_migrations_revision_forwards_alembic_logs_and_scans_revision_id(monkeyp
         captured["autogenerate"] = autogenerate
         captured["rev_id"] = rev_id
         captured["head"] = head
+        captured["sqlalchemy_url"] = config.get_main_option("sqlalchemy.url")
         logging.getLogger("alembic.command").debug("fake revision command log")
         return types.SimpleNamespace(revision=rev_id, path="/tmp/0002_migration.py")
 
@@ -329,8 +343,8 @@ def test_migrations_revision_forwards_alembic_logs_and_scans_revision_id(monkeyp
             "ignored:migration",
             "--message",
             "schema change",
-            "--timeout",
-            "5",
+            "--sqlalchemy-url",
+            "sqlite:///baseline.db",
         ],
     )
 
@@ -339,9 +353,109 @@ def test_migrations_revision_forwards_alembic_logs_and_scans_revision_id(monkeyp
     assert captured["autogenerate"] is True
     assert captured["rev_id"] == "0002"
     assert captured["head"] == "head"
+    assert captured["sqlalchemy_url"] == "sqlite:///baseline.db"
     output = _combined_output(result)
     assert "[alembic] DEBUG alembic.script: fake revision scan log" in output
     assert "[alembic] DEBUG alembic.command: fake revision command log" in output
+    assert "Ensuring Alembic registry MetaTable" not in output
+    assert "Preparing platform-managed MetaTable reservations" not in output
+
+
+def test_migrations_revision_autogenerate_requires_local_sqlalchemy_url(monkeypatch):
+    cli_mod = _load_cli_module()
+    runner = CliRunner()
+    migration_cli = importlib.import_module("mainsequence.cli.migrations")
+    migration = _migration()
+    monkeypatch.setattr(migration_cli, "_load_migration", lambda provider: migration)
+
+    from alembic.script import ScriptDirectory
+
+    class FakeScriptDirectory:
+        def get_heads(self):
+            return []
+
+        def walk_revisions(self):
+            return []
+
+    monkeypatch.setattr(
+        ScriptDirectory,
+        "from_config",
+        staticmethod(lambda config: FakeScriptDirectory()),
+    )
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["migrations", "revision", "--provider", "ignored:migration"],
+    )
+
+    assert result.exit_code != 0
+    output = _combined_output(result)
+    assert "--sqlalchemy-url" in output
+    assert "requires --sqlalchemy-url" in output
+
+
+def test_migrations_revision_no_autogenerate_does_not_touch_backend(monkeypatch):
+    cli_mod = _load_cli_module()
+    runner = CliRunner()
+    migration_cli = importlib.import_module("mainsequence.cli.migrations")
+    migration = _migration()
+    captured = {}
+    monkeypatch.setattr(migration_cli, "_load_migration", lambda provider: migration)
+
+    def fail_backend_call(*args, **kwargs):
+        raise AssertionError("revision must not provision MetaTables")
+
+    monkeypatch.setattr(
+        AlembicMetaTableMigration,
+        "ensure_alembic_registry",
+        fail_backend_call,
+    )
+    monkeypatch.setattr(
+        AlembicMetaTableMigration,
+        "prepare_for_alembic",
+        fail_backend_call,
+    )
+
+    from alembic import command
+    from alembic.script import ScriptDirectory
+
+    class FakeScriptDirectory:
+        def get_heads(self):
+            return []
+
+        def walk_revisions(self):
+            return []
+
+    monkeypatch.setattr(
+        ScriptDirectory,
+        "from_config",
+        staticmethod(lambda config: FakeScriptDirectory()),
+    )
+
+    def fake_revision(config, message, autogenerate, rev_id, head):
+        captured["autogenerate"] = autogenerate
+        captured["sqlalchemy_url"] = config.get_main_option("sqlalchemy.url")
+        return types.SimpleNamespace(revision=rev_id, path="/tmp/0001_migration.py")
+
+    monkeypatch.setattr(command, "revision", fake_revision)
+
+    result = runner.invoke(
+        cli_mod.app,
+        [
+            "migrations",
+            "revision",
+            "--provider",
+            "ignored:migration",
+            "--no-autogenerate",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured["autogenerate"] is False
+    assert captured["sqlalchemy_url"] == "postgresql://"
+    output = _combined_output(result)
+    assert "Ensuring Alembic registry MetaTable" not in output
+    assert "Preparing platform-managed MetaTable reservations" not in output
 
 
 def test_autogenerate_preflight_rejects_existing_head_with_no_visible_tables(

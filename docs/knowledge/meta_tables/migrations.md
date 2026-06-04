@@ -254,22 +254,22 @@ mainsequence migrations upgrade --provider mainsequence_migrations:migration hea
 ```
 
 `revision` accepts an optional `-m/--message`. If it is omitted, the CLI passes
-`migration` to Alembic. The command prepares the provider, reserves
-platform-managed MetaTables, obtains a scoped migration connection, builds a
-normal Alembic `Config`, and calls Alembic `revision` directly. Autogenerate is
-enabled by default.
+`migration` to Alembic. The command builds a local Alembic `Config` from the
+provider and calls Alembic `revision` directly. Autogenerate is enabled by
+default and requires `--sqlalchemy-url` so Alembic can reflect a local baseline
+database. `revision` does not register, reserve, or finalize provider
+MetaTables.
 
 The standard `revision` command writes an Alembic revision file for the
 provider. It does not build SDK migration operations and it does not ask the
 backend to render or apply SQL. Alembic owns revision generation.
 
-`revision`, `upgrade`, and `downgrade` reserve provider-scoped
-platform-managed MetaTables, bind MetaTable UID/storage metadata while
-preserving authored SQLAlchemy table names, ask TS Manager for a temporary
-table-scoped migration URI, build a normal Alembic `Config`, and call Alembic
-directly. `current` only needs the Alembic version MetaTable binding and a
-scoped credential for that version table because it is read-only for
-application MetaTables.
+`upgrade` and `downgrade` reserve provider-scoped platform-managed MetaTables,
+bind MetaTable UID/storage metadata while preserving authored SQLAlchemy table
+names, ask TS Manager for a temporary table-scoped migration URI, build a normal
+Alembic `Config`, and call Alembic directly. `current` only needs the Alembic
+version MetaTable binding and a scoped credential for that version table
+because it is read-only for application MetaTables.
 
 There is no normal-user `render` or `upgrade --dry-run` path. Alembic is the
 execution path. The backend only provides registry reservation and the scoped

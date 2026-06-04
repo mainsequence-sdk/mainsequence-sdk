@@ -474,6 +474,23 @@ def _prepare_alembic_config(
     return prepared, config
 
 
+def _build_revision_alembic_config(
+    migration: AlembicMetaTableMigration,
+    *,
+    sqlalchemy_url: str | None,
+    alembic_output: _AlembicOutput,
+) -> Any:
+    _emit_status("Building local Alembic config for revision...")
+    config = alembic_config_for_provider(
+        migration,
+        sqlalchemy_url=sqlalchemy_url or "postgresql://",
+        stdout=alembic_output,
+        output_buffer=alembic_output,
+    )
+    _emit_status("Local Alembic config built.")
+    return config
+
+
 def _prepared_physical_table_refs(prepared: Any) -> list[tuple[str | None, str]]:
     refs: list[tuple[str | None, str]] = []
     for item in getattr(prepared, "reserved_tables", []) or []:
@@ -664,7 +681,7 @@ def revision(
     autogenerate: bool = typer.Option(
         True,
         "--autogenerate/--no-autogenerate",
-        help="Use Alembic autogenerate against the reserved MetaTable metadata.",
+        help="Use Alembic autogenerate against the local database URL and provider metadata.",
     ),
     provider: str | None = typer.Option(
         None,
@@ -673,8 +690,11 @@ def revision(
     ),
     rev_id: str | None = typer.Option(None, "--rev-id", help="Explicit Alembic revision id."),
     head: str = typer.Option("head", "--head", help="Alembic head to base the revision on."),
-    timeout: float | None = typer.Option(None, "--timeout"),
-    ttl_seconds: int = typer.Option(900, "--ttl-seconds", min=1),
+    sqlalchemy_url: str | None = typer.Option(
+        None,
+        "--sqlalchemy-url",
+        help="Local database URL for Alembic autogenerate. Required with --autogenerate.",
+    ),
     json_output: bool = typer.Option(False, "--json", help="Emit JSON."),
 ) -> None:
     """Create a normal Alembic revision for the selected provider."""
@@ -687,15 +707,18 @@ def revision(
         migration,
         alembic_output=alembic_output,
     )
-    prepared, config = _prepare_alembic_config(
+    if autogenerate and sqlalchemy_url in (None, ""):
+        raise typer.BadParameter(
+            "Alembic autogenerate is a local database diff and requires "
+            "--sqlalchemy-url. Pass --no-autogenerate to create an empty revision.",
+            param_hint="--sqlalchemy-url",
+        )
+    config = _build_revision_alembic_config(
         migration,
-        timeout=timeout,
-        ttl_seconds=ttl_seconds,
+        sqlalchemy_url=sqlalchemy_url,
         alembic_output=alembic_output,
     )
     _emit_alembic_script_context(config, target_revision=head)
-    if autogenerate:
-        _assert_autogenerate_baseline_visible(prepared, config)
     _emit_status(f"Starting Alembic revision now rev_id={resolved_rev_id}...")
     with _forward_alembic_logging():
         script = command.revision(
@@ -712,7 +735,6 @@ def revision(
             "path": getattr(script, "path", None),
             "package": migration.package,
             "migration_namespace": migration.migration_namespace,
-            "meta_table_uids": prepared.meta_table_uids,
         },
         json_output=json_output,
     )

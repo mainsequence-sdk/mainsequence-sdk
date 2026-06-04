@@ -308,9 +308,10 @@ def downgrade() -> None:
 
 The provider's `AlembicVersionMetaTable` is registered automatically when a
 command needs backend migration state. `current` uses only that registry
-MetaTable because it is read-only. `revision`, `upgrade`, and `downgrade` also
-reserve or resolve provider application MetaTables before Alembic renders or
-applies schema changes.
+MetaTable because it is read-only. `revision` is local Alembic authoring and
+does not register, reserve, or finalize provider application MetaTables.
+`upgrade` and `downgrade` reserve or resolve provider application MetaTables
+before Alembic applies schema changes.
 
 Initial registration resolves the data source through the same resolver used by
 normal MetaTable registration. After registration, the bound
@@ -378,9 +379,10 @@ name, for example `-m "add account status"`; otherwise the SDK passes
 The Alembic version MetaTable registry is not what generates this file's table
 operations. `revision` uses the provider to find `script_location`, the
 revision template, and Alembic configuration, then calls Alembic directly. The
-registry is part of the thin SDK setup: commands auto-register or resolve the
-provider's `AlembicVersionMetaTable`, and scoped-credential requests include
-that registry UID so Alembic can read and write its physical version table.
+registry is not touched by `revision`; it is part of backend-scoped commands
+such as `current`, `upgrade`, and `downgrade`, where scoped-credential requests
+include that registry UID so Alembic can read and write its physical version
+table.
 
 `--autogenerate` is optional and not the standard path. If used, Alembic must
 connect to an explicit baseline database through `--sqlalchemy-url` so it can
@@ -557,8 +559,8 @@ physical tables have drifted.
 
 ## 9. Catalog Registration Scope
 
-Migration tooling reserves provider models before Alembic runs and finalizes
-only those models after Alembic execution:
+`upgrade` and `downgrade` reserve provider models before Alembic runs and
+finalize only those models after Alembic execution:
 
 ```python
 finalize_response = migration.finalize_metatable_catalog(prepared=prepared)

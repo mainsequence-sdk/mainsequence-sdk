@@ -1069,7 +1069,6 @@ def test_prepare_for_alembic_reserves_existing_table_name_with_provider_identity
     def fake_bulk_create(rows, *, timeout=None, on_status=None):
         reserved_payloads.extend(rows)
         assert [table["identifier"] for table in rows] == [
-            "example_assets__account",
             "example_assets__asset",
         ]
         assert all(table["migration_package"] == "sample" for table in rows)
@@ -1077,22 +1076,14 @@ def test_prepare_for_alembic_reserves_existing_table_name_with_provider_identity
         assert all(table["migration_provider_key"] == "sample:markets" for table in rows)
         assert all(table["is_alembic_managed"] is True for table in rows)
         assert not hasattr(rows[0]["table_contract"], "indexes")
-        assert not hasattr(rows[1]["table_contract"], "indexes")
         assert not hasattr(rows[0]["table_contract"], "foreign_keys")
-        assert not hasattr(rows[1]["table_contract"], "foreign_keys")
         assert all("schema_management" not in table for table in rows)
         return [
-            _reserved_metatable(
-                uid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-                identifier="example_assets__account",
-                physical_table_name="example_assets__account",
-                storage_hash="account-storage-hash",
-            ),
             _reserved_metatable(
                 uid="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
                 identifier="example_assets__asset",
                 physical_table_name="example_assets__asset",
-                storage_hash=rows[1]["storage_hash"],
+                storage_hash=rows[0]["storage_hash"],
             ),
         ]
 
@@ -1115,7 +1106,6 @@ def test_prepare_for_alembic_reserves_existing_table_name_with_provider_identity
 
     assert len(filter_calls) == 1
     assert [payload["identifier"] for payload in reserved_payloads] == [
-        "example_assets__account",
         "example_assets__asset",
     ]
     assert "schema_management" not in reserved_payloads[0]
@@ -1203,27 +1193,9 @@ def test_prepare_for_alembic_reserves_already_staged_existing_rows(monkeypatch):
         ]
 
     monkeypatch.setattr(MetaTable, "filter_by_body", staticmethod(fake_filter_by_body))
-    reserved_payloads = []
 
     def fake_bulk_create(rows, *, timeout=None, on_status=None):
-        reserved_payloads.extend(rows)
-        assert all(table["migration_package"] == "sample" for table in rows)
-        assert all(table["migration_namespace"] == "markets" for table in rows)
-        assert all(table["migration_provider_key"] == "sample:markets" for table in rows)
-        return [
-            _reserved_metatable(
-                uid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-                identifier="example_assets__account",
-                physical_table_name="example_assets__account",
-                storage_hash="account-storage-hash",
-            ),
-            _reserved_metatable(
-                uid="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
-                identifier="example_assets__asset",
-                physical_table_name="example_assets__asset",
-                storage_hash="asset-storage-hash",
-            ),
-        ]
+        raise AssertionError("ready existing rows must not be collection-created again")
 
     monkeypatch.setattr(MetaTable, "bulk_create", staticmethod(fake_bulk_create))
 
@@ -1238,10 +1210,6 @@ def test_prepare_for_alembic_reserves_already_staged_existing_rows(monkeypatch):
 
     prepared = migration.prepare_for_alembic(timeout=5)
 
-    assert [payload["identifier"] for payload in reserved_payloads] == [
-        "example_assets__account",
-        "example_assets__asset",
-    ]
     assert prepared.meta_table_uids == [
         "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
