@@ -217,7 +217,7 @@ def _configured_storage_hash(model_or_table):
     return sqlalchemy_contracts._configured_storage_hash_for_model(model_or_table)
 
 
-def test_default_metatable_identifier_uses_pyproject_and_model_path(tmp_path, monkeypatch):
+def test_metatable_identifier_is_optional_with_pyproject(tmp_path, monkeypatch):
     (tmp_path / "pyproject.toml").write_text(
         '[project]\nname = "alpha-project"\n',
         encoding="utf-8",
@@ -235,10 +235,7 @@ def test_default_metatable_identifier_uses_pyproject_and_model_path(tmp_path, mo
         },
     )
 
-    assert (
-        sqlalchemy_contracts.resolve_metatable_identifier(AssetModel)
-        == "alpha-project:project.models.assets.Outer.AssetModel"
-    )
+    assert sqlalchemy_contracts.resolve_metatable_identifier(AssetModel) is None
 
 
 def test_explicit_metatable_identifier_does_not_require_pyproject(tmp_path, monkeypatch):
@@ -258,7 +255,7 @@ def test_explicit_metatable_identifier_does_not_require_pyproject(tmp_path, monk
     assert sqlalchemy_contracts.resolve_metatable_identifier(AssetModel) == "global.asset"
 
 
-def test_default_metatable_identifier_requires_pyproject_project_name(tmp_path, monkeypatch):
+def test_metatable_identifier_is_optional_without_pyproject(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     table = FakeTable("asset")
     AssetModel = type(
@@ -271,8 +268,7 @@ def test_default_metatable_identifier_requires_pyproject_project_name(tmp_path, 
         },
     )
 
-    with pytest.raises(ValueError, match=r"\[project\]\.name"):
-        sqlalchemy_contracts.resolve_metatable_identifier(AssetModel)
+    assert sqlalchemy_contracts.resolve_metatable_identifier(AssetModel) is None
 
 
 def test_platform_managed_registration_request_from_sqlalchemy_metadata():
@@ -823,7 +819,7 @@ def test_platform_managed_metatable_omits_bound_target_model_uid():
     )
     Asset = _platform_model_class("Asset", asset_table)
     Account._bind_meta_table(
-        SimpleNamespace(
+        MetaTable.model_construct(
             uid="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
             storage_hash=_configured_storage_hash(Account),
             data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
@@ -867,7 +863,7 @@ def test_platform_managed_metatable_register_does_not_register_fk_targets_recurs
 
     def fake_register(cls, request, timeout=None):
         captured_requests.append(request)
-        return SimpleNamespace(
+        return MetaTable.model_construct(
             uid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
             data_source_uid=request.data_source_uid,
             storage_hash=request.storage_hash,
@@ -903,7 +899,7 @@ def test_platform_managed_register_reuses_local_registry(monkeypatch):
 
     def fake_register(cls, request, timeout=None):
         captured_requests.append(request)
-        return SimpleNamespace(
+        return MetaTable.model_construct(
             uid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
             data_source_uid=request.data_source_uid,
             storage_hash=request.storage_hash,
@@ -973,7 +969,7 @@ def test_platform_managed_register_ignores_foreign_key_cycles(monkeypatch):
 
     def fake_register(cls, request, timeout=None):
         captured_requests.append(request)
-        return SimpleNamespace(
+        return MetaTable.model_construct(
             uid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
             data_source_uid=request.data_source_uid,
             storage_hash=request.storage_hash,
@@ -998,7 +994,7 @@ def test_platform_managed_omits_foreign_key_contracts():
     )
     Account = _platform_model_class("Account", account_table)
     Account._bind_meta_table(
-        SimpleNamespace(
+        MetaTable.model_construct(
             uid="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
             storage_hash=_configured_storage_hash(Account),
             data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
@@ -1081,7 +1077,7 @@ def test_platform_managed_metatable_register_delegates_to_meta_table_register(mo
     def fake_register(cls, request, timeout=None):
         captured["request"] = request
         captured["timeout"] = timeout
-        return SimpleNamespace(
+        return MetaTable.model_construct(
             uid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
             data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
             storage_hash=request.storage_hash,
@@ -1377,9 +1373,19 @@ def test_time_index_metadata_register_posts_to_dynamic_table_endpoint(monkeypatc
     ]
 
 
-def test_time_index_metadata_bind_rehydrates_flagged_generic_metatable(monkeypatch):
-    class AccountHoldings(PlatformTimeIndexMetaData):
-        pass
+def test_time_index_metadata_bind_accepts_typed_metadata():
+    table = FakeTable(
+        "example_assets__account_holdings",
+        columns=[
+            FakeColumn("time_index", DateTime(timezone=True), nullable=False),
+            FakeColumn("account_uid", Uuid(), nullable=False),
+        ],
+    )
+    AccountHoldings = _time_index_model_class(
+        "AccountHoldings",
+        table,
+        index_names=["time_index", "account_uid"],
+    )
 
     typed_meta_table = TimeIndexMetaData.model_construct(
         uid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
@@ -1387,27 +1393,9 @@ def test_time_index_metadata_bind_rehydrates_flagged_generic_metatable(monkeypat
         storage_hash="holdings-storage-hash",
         physical_table_name="mt_holdings",
     )
-    generic_meta_table = MetaTable.model_construct(
-        uid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-        data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
-        storage_hash="holdings-storage-hash",
-        management_mode="platform_managed",
-        physical_table_name="mt_holdings",
-        time_indexed=True,
-        table_kind="time_indexed",
-    )
 
-    calls = []
+    AccountHoldings._bind_meta_table(typed_meta_table)
 
-    def fake_get_by_uid(cls, uid, timeout=None, **filters):
-        calls.append((uid, timeout, filters))
-        return typed_meta_table
-
-    monkeypatch.setattr(TimeIndexMetaData, "get_by_uid", classmethod(fake_get_by_uid))
-
-    AccountHoldings._bind_meta_table(generic_meta_table)
-
-    assert calls == [("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", None, {})]
     assert AccountHoldings.get_time_index_metadata() is typed_meta_table
 
 
@@ -1423,7 +1411,7 @@ def test_time_index_metadata_bind_rejects_unflagged_generic_metatable():
         physical_table_name="mt_holdings",
     )
 
-    with pytest.raises(TypeError, match="requires TimeIndexMetaData binding"):
+    with pytest.raises(TypeError, match="requires TimeIndexMetaData"):
         AccountHoldings._bind_meta_table(generic_meta_table)
 
 
@@ -1529,7 +1517,7 @@ def test_platform_managed_metatable_preserves_authored_tablename_with_sqlalchemy
     assert Account.__table__.name == "example_assets__account"
     assert Asset.__table__.name == "example_assets__asset"
     Account._bind_meta_table(
-        SimpleNamespace(
+        MetaTable.model_construct(
             uid="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
             data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
             storage_hash=_configured_storage_hash(Account),
@@ -1573,7 +1561,7 @@ def test_platform_managed_register_preserves_authored_sqlalchemy_table_name(
 
     def fake_register(cls, request, timeout=None):
         captured["request"] = request
-        return SimpleNamespace(
+        return MetaTable.model_construct(
             uid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
             data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
             storage_hash=request.storage_hash,
@@ -1625,7 +1613,7 @@ def test_bound_parent_table_foreign_key_stays_sqlalchemy_only():
     account_storage_hash = _configured_storage_hash(Account)
     account_physical_table_name = "mt_aaaaaaaaaaaa4aaa8aaaaaaaaaaaaaaa"
     Account._bind_meta_table(
-        SimpleNamespace(
+        MetaTable.model_construct(
             uid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
             data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
             storage_hash=account_storage_hash,
@@ -1707,7 +1695,7 @@ def test_time_index_metadata_preserves_authored_tablename_with_sqlalchemy():
         "unique_identifier",
     ]
     Account._bind_meta_table(
-        SimpleNamespace(
+        MetaTable.model_construct(
             uid="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
             data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
             storage_hash=_configured_storage_hash(Account),

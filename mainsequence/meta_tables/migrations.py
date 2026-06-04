@@ -15,6 +15,8 @@ from mainsequence.client.metatables import (
     DynamicTableDataSource,
     ManagedMetaTableFinalizeRequest,
     ManagedMetaTableFinalizeResponse,
+    ManagedMetaTableFinalizeTableResult,
+    ManagedMetaTableReservationItem,
     ManagedMetaTableReservationRequest,
     ManagedMetaTableReservationTable,
     MetaTable,
@@ -46,7 +48,7 @@ DEFAULT_ALEMBIC_PROVIDER_REFERENCE = "mainsequence_migrations:migration"
 class PreparedAlembicMetaTableMigration:
     data_source_uid: str
     meta_table_uids: list[str]
-    reserved_tables: list[Any] = field(default_factory=list)
+    reserved_tables: list[MetaTable] = field(default_factory=list)
     owner_role_name: str | None = None
 
 
@@ -54,7 +56,7 @@ class PreparedAlembicMetaTableMigration:
 class AlembicMetaTableCatalogRefreshContext:
     package: str
     migration_namespace: str
-    registered_metatables: list[Any]
+    registered_metatables: list[MetaTable]
     reserved_policy: Literal["reconcile"] | None = None
 
 
@@ -217,7 +219,7 @@ class AlembicVersionMetaTable:
         return meta_table
 
     @classmethod
-    def _bind_meta_table(cls, meta_table: Any) -> Any:
+    def _bind_meta_table(cls, meta_table: MetaTable) -> MetaTable:
         cls.__metatable_uid__ = str(meta_table.uid)
         cls.__metatable__ = meta_table
         cls.__metatable_data_source_uid__ = str(meta_table.data_source_uid)
@@ -364,8 +366,8 @@ class AlembicMetaTableMigration:
         create_table: bool = False,
         on_metatable_registered: Callable[[type[Any], Any], Any] | None = None,
         reserved_policy: Literal["reconcile"] | None = None,
-    ) -> list[Any]:
-        registered: list[Any] = []
+    ) -> list[MetaTable]:
+        registered: list[MetaTable] = []
         data_source_uid = self._resolve_provider_data_source_uid()
         schema_management = self._schema_management_request(
             alembic_version_meta_table_uid=self.alembic_registry.get_meta_table_uid(),
@@ -437,15 +439,13 @@ class AlembicMetaTableMigration:
                 f"active={response.active_count} reserved={response.reserved_count} "
                 f"failed={response.failed_count}."
             )
-        finalized_by_table_name = {
-            _meta_table_physical_table_name(item) or "": item for item in response.tables
-        }
-        finalized_by_uid = {_meta_table_uid(item) or "": item for item in response.tables}
+        finalized_by_table_name = {item.physical_table_name or "": item for item in response.tables}
+        finalized_by_uid = {item.meta_table_uid: item for item in response.tables}
         if on_metatable_finalize_status is not None:
             for item in response.tables:
                 if _finalize_table_failed(item):
                     on_metatable_finalize_status(_finalize_failure_message(item))
-        finalized_for_models: list[Any] = []
+        finalized_for_models: list[MetaTable] = []
         for model in self.metatable_models:
             table_name = _migration_table_name(model)
             item = finalized_by_table_name.get(table_name) or finalized_by_uid.get(
@@ -453,8 +453,9 @@ class AlembicMetaTableMigration:
             )
             if item is None:
                 continue
-            _bind_model_to_existing_metatable(model, item)
-            finalized_for_models.append(item)
+            finalized_meta_table = _metatable_from_finalize_result(model, item)
+            _bind_model_to_existing_metatable(model, finalized_meta_table)
+            finalized_for_models.append(finalized_meta_table)
             if on_metatable_finalized is not None:
                 on_metatable_finalized(model, item)
 
@@ -512,8 +513,8 @@ class AlembicMetaTableMigration:
         on_metatable_reserved: Callable[[type[Any], Any], Any] | None = None,
     ) -> PreparedAlembicMetaTableMigration:
         data_source_uid = self._resolve_provider_data_source_uid()
-        reserved_by_model: dict[type[Any], Any] = {}
-        reserved_tables: list[Any] = []
+        reserved_by_model: dict[type[Any], MetaTable] = {}
+        reserved_tables: list[MetaTable] = []
         owner_role_name: str | None = None
 
         ordered_models = list(dict.fromkeys(self.metatable_models))
@@ -540,10 +541,7 @@ class AlembicMetaTableMigration:
                     reserved_by_model[model] = existing_meta_table
                 else:
                     bound_meta_table = _bound_meta_table_for_model(model)
-                    if bound_meta_table is not None and _meta_table_uid(bound_meta_table) not in (
-                        None,
-                        "",
-                    ):
+                    if bound_meta_table is not None:
                         reserved_by_model[model] = bound_meta_table
 
                 request = model.build_registration_request(
@@ -578,9 +576,10 @@ class AlembicMetaTableMigration:
                 for model, item in zip(pending_models, response.tables, strict=True):
                     if on_metatable_reserved is not None:
                         on_metatable_reserved(model, item)
-                    _bind_model_to_existing_metatable(model, item)
-                    reserved_by_model[model] = item
-                    reserved_tables.append(item)
+                    reserved_meta_table = _metatable_from_reservation_item(model, item)
+                    _bind_model_to_existing_metatable(model, reserved_meta_table)
+                    reserved_by_model[model] = reserved_meta_table
+                    reserved_tables.append(reserved_meta_table)
                     item_owner_role_name = getattr(item, "owner_role_name", None)
                     if item_owner_role_name not in (None, ""):
                         owner_role_name = str(item_owner_role_name)
@@ -588,9 +587,14 @@ class AlembicMetaTableMigration:
         meta_table_uids = []
         for model in ordered_models:
             meta_table = reserved_by_model.get(model) or _bound_meta_table_for_model(model)
+            if meta_table is None:
+                model_name = getattr(model, "__qualname__", repr(model))
+                raise RuntimeError(f"MetaTable model {model_name} was not bound after reservation.")
             uid = _meta_table_uid(meta_table)
-            if uid not in (None, ""):
-                meta_table_uids.append(str(uid))
+            if uid in (None, ""):
+                model_name = getattr(model, "__qualname__", repr(model))
+                raise RuntimeError(f"MetaTable model {model_name} was bound without uid.")
+            meta_table_uids.append(str(uid))
         return PreparedAlembicMetaTableMigration(
             data_source_uid=data_source_uid,
             meta_table_uids=list(dict.fromkeys(meta_table_uids)),
@@ -831,16 +835,8 @@ def _request_contract_physical_table_name(request: Any) -> str | None:
     return None
 
 
-def _bound_meta_table_for_model(model: type[Any]) -> Any | None:
-    get_meta_table = getattr(model, "get_meta_table", None)
-    if callable(get_meta_table):
-        meta_table = get_meta_table()
-        if meta_table is not None:
-            return meta_table
-    uid = getattr(model, "get_meta_table_uid", lambda: None)()
-    if uid not in (None, ""):
-        return model
-    return None
+def _bound_meta_table_for_model(model: type[Any]) -> MetaTable | None:
+    return model.get_meta_table()
 
 
 def _conventional_provider_refs(*, cwd: str | pathlib.Path | None = None) -> list[str]:
@@ -935,8 +931,7 @@ def _migration_table_name(model: type[Any]) -> str:
     if table_name in (None, ""):
         model_name = getattr(model, "__qualname__", repr(model))
         raise ValueError(
-            "Alembic MetaTable migrations require a SQLAlchemy table name for "
-            f"{model_name}."
+            f"Alembic MetaTable migrations require a SQLAlchemy table name for {model_name}."
         )
     return str(table_name)
 
@@ -945,8 +940,8 @@ def _get_metatables_by_model_table_name(
     models: Sequence[type[Any]],
     *,
     timeout: int | float | tuple[float, float] | None = None,
-) -> dict[str, Any]:
-    table_names_by_resource: dict[type[Any], list[str]] = {}
+) -> dict[str, MetaTable]:
+    table_names_by_resource: dict[type[MetaTable], list[str]] = {}
     for model in models:
         table_names_by_resource.setdefault(
             _metatable_resource_class_for_model(model),
@@ -975,8 +970,8 @@ def _get_metatables_by_table_name(
     table_names: Sequence[str],
     *,
     timeout: int | float | tuple[float, float] | None = None,
-    meta_table_cls: type[Any] = MetaTable,
-) -> dict[str, Any]:
+    meta_table_cls: type[MetaTable] = MetaTable,
+) -> dict[str, MetaTable]:
     unique_table_names = list(dict.fromkeys(str(table_name) for table_name in table_names))
     if not unique_table_names:
         return {}
@@ -989,7 +984,7 @@ def _get_metatables_by_table_name(
     if not matches:
         return {}
 
-    matched_by_table_name: dict[str, Any] = {}
+    matched_by_table_name: dict[str, MetaTable] = {}
     for meta_table in matches:
         table_name = _meta_table_physical_table_name(meta_table)
         if table_name is None:
@@ -1010,78 +1005,53 @@ def _get_metatables_by_table_name(
     return matched_by_table_name
 
 
-def _meta_table_identifier(meta_table: Any) -> str | None:
-    if isinstance(meta_table, Mapping):
-        identifier = meta_table.get("identifier")
-    else:
-        identifier = getattr(meta_table, "identifier", None)
+def _meta_table_identifier(meta_table: MetaTable) -> str | None:
+    identifier = meta_table.identifier
     if identifier in (None, ""):
         return None
     return str(identifier)
 
 
-def _meta_table_physical_table_name(meta_table: Any) -> str | None:
-    if isinstance(meta_table, Mapping):
-        physical_table_name = meta_table.get("physical_table_name")
-    else:
-        physical_table_name = getattr(meta_table, "physical_table_name", None)
+def _meta_table_physical_table_name(meta_table: MetaTable) -> str | None:
+    physical_table_name = meta_table.physical_table_name
     if physical_table_name in (None, ""):
         return None
     return str(physical_table_name)
 
 
-def _meta_table_uid(meta_table: Any) -> str | None:
-    if meta_table is None:
-        return None
-    if isinstance(meta_table, Mapping):
-        uid = meta_table.get("meta_table_uid") or meta_table.get("uid")
-    else:
-        uid = getattr(meta_table, "meta_table_uid", None) or getattr(meta_table, "uid", None)
+def _meta_table_uid(meta_table: MetaTable) -> str | None:
+    uid = meta_table.uid
     if uid in (None, ""):
         return None
     return str(uid)
 
 
-def _finalize_table_failed(item: Any) -> bool:
-    provisioning_status = _meta_table_attr(item, "provisioning_status")
-    physical_table_exists = _meta_table_attr(item, "physical_table_exists")
-    finalized = _meta_table_attr(item, "finalized")
-    error = _meta_table_attr(item, "error")
+def _finalize_table_failed(item: ManagedMetaTableFinalizeTableResult) -> bool:
     return (
-        provisioning_status != "active"
-        or physical_table_exists is False
-        or finalized is False
-        or error not in (None, "", {})
+        item.provisioning_status != "active"
+        or item.physical_table_exists is False
+        or item.finalized is False
+        or item.error not in (None, "", {})
     )
 
 
-def _finalize_failure_message(item: Any) -> str:
-    identifier = _meta_table_identifier(item) or _meta_table_uid(item) or "<unknown>"
-    physical_table_name = _meta_table_attr(item, "physical_table_name") or "no-physical-table"
-    provisioning_status = _meta_table_attr(item, "provisioning_status")
-    physical_table_exists = _meta_table_attr(item, "physical_table_exists")
-    finalized = _meta_table_attr(item, "finalized")
-    error = _meta_table_attr(item, "error")
+def _finalize_failure_message(item: ManagedMetaTableFinalizeTableResult) -> str:
+    identifier = item.identifier or item.meta_table_uid or "<unknown>"
+    physical_table_name = item.physical_table_name or "no-physical-table"
     parts = [
         "Finalize-managed table failed",
         f"identifier={identifier}",
         f"physical_table={physical_table_name}",
-        f"provisioning_status={provisioning_status}",
-        f"physical_table_exists={physical_table_exists}",
-        f"finalized={finalized}",
+        f"provisioning_status={item.provisioning_status}",
+        f"physical_table_exists={item.physical_table_exists}",
+        f"finalized={item.finalized}",
     ]
-    if error not in (None, "", {}):
-        parts.append(f"error={json.dumps(error, sort_keys=True, default=str)}")
+    if item.error not in (None, "", {}):
+        parts.append(f"error={json.dumps(item.error, sort_keys=True, default=str)}")
     return " ".join(parts)
 
 
-def _meta_table_attr(meta_table: Any, name: str) -> Any:
-    if isinstance(meta_table, Mapping):
-        return meta_table.get(name)
-    return getattr(meta_table, name, None)
-
-
-def _metatable_resource_class_for_model(model: type[Any]) -> type[Any]:
+def _metatable_resource_class_for_model(model: type[Any]) -> type[MetaTable]:
     if _is_platform_time_index_metatable_model(model):
         return TimeIndexMetaData
     return MetaTable
@@ -1095,6 +1065,52 @@ def _bind_model_to_existing_metatable(model: Any, meta_table: MetaTable) -> None
             f"Migration MetaTable model {model_name} cannot bind an existing MetaTable row."
         )
     bind(meta_table)
+
+
+def _metatable_from_reservation_item(
+    model: type[Any],
+    item: ManagedMetaTableReservationItem,
+) -> MetaTable:
+    resource_cls = _metatable_resource_class_for_model(model)
+    schema_management = item.schema_management or {}
+    return resource_cls.model_construct(
+        uid=item.meta_table_uid,
+        data_source_uid=item.data_source_uid,
+        storage_hash=item.storage_hash,
+        identifier=item.identifier,
+        namespace=item.namespace,
+        management_mode=item.management_mode,
+        provisioning_status=item.provisioning_status,
+        schema_management=schema_management,
+        schema_management_mode=schema_management.get("mode", "backend_managed"),
+        migration_provider_key=schema_management.get("provider_key"),
+        alembic_version_meta_table_uid=schema_management.get("alembic_version_meta_table_uid"),
+        physical_table_name=item.physical_table_name,
+        table_contract=item.table_contract,
+    )
+
+
+def _metatable_from_finalize_result(
+    model: type[Any],
+    item: ManagedMetaTableFinalizeTableResult,
+) -> MetaTable:
+    resource_cls = _metatable_resource_class_for_model(model)
+    schema_management = item.schema_management or {}
+    return resource_cls.model_construct(
+        uid=item.meta_table_uid,
+        data_source_uid=_resolve_model_data_source_uid(model),
+        storage_hash=item.storage_hash,
+        identifier=item.identifier,
+        management_mode="platform_managed",
+        provisioning_status=item.provisioning_status,
+        schema_management=schema_management,
+        schema_management_mode=schema_management.get("mode", "backend_managed"),
+        migration_provider_key=schema_management.get("provider_key"),
+        alembic_version_meta_table_uid=schema_management.get("alembic_version_meta_table_uid"),
+        physical_table_name=item.physical_table_name,
+        table_kind=item.table_kind,
+        time_indexed=item.time_indexed,
+    )
 
 
 def _is_platform_managed_metatable_model(model: Any) -> bool:

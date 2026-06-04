@@ -9,7 +9,13 @@ import pytest
 from sqlalchemy import Column, ForeignKey, Index, Integer, MetaData, String, Table, Uuid
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-from mainsequence.client.metatables import MetaTable
+from mainsequence.client.metatables import (
+    ManagedMetaTableFinalizeResponse,
+    ManagedMetaTableFinalizeTableResult,
+    ManagedMetaTableReservationItem,
+    ManagedMetaTableReservationResponse,
+    MetaTable,
+)
 from mainsequence.meta_tables import PlatformManagedMetaTable
 from mainsequence.meta_tables.migrations import (
     DEFAULT_ALEMBIC_VERSION_COLUMN_NAME,
@@ -20,6 +26,7 @@ from mainsequence.meta_tables.migrations import (
     AlembicMetaTableCatalogRefreshContext,
     AlembicMetaTableMigration,
     AlembicVersionMetaTable,
+    PreparedAlembicMetaTableMigration,
     alembic_config_for_provider,
     apply_mainsequence_migration_role,
     load_alembic_metatable_migration_provider,
@@ -298,7 +305,7 @@ def test_alembic_metatable_migration_finalizes_catalog_after_alembic(monkeypatch
                 context.package,
                 context.migration_namespace,
                 context.reserved_policy,
-                [meta_table.meta_table_uid for meta_table in context.registered_metatables],
+                [meta_table.uid for meta_table in context.registered_metatables],
             )
         )
 
@@ -315,7 +322,7 @@ def test_alembic_metatable_migration_finalizes_catalog_after_alembic(monkeypatch
     captured = {}
 
     ProjectAlembicVersion._bind_meta_table(
-        types.SimpleNamespace(
+        MetaTable.model_construct(
             uid="registry-meta-table-uid",
             data_source_uid="data-source-uid",
         )
@@ -324,17 +331,16 @@ def test_alembic_metatable_migration_finalizes_catalog_after_alembic(monkeypatch
     def fake_finalize(request, *, timeout=None, on_status=None):
         captured["request"] = request
         captured["timeout"] = timeout
-        return types.SimpleNamespace(
+        return ManagedMetaTableFinalizeResponse.model_construct(
             ok=True,
             finalized_count=1,
             active_count=1,
             reserved_count=0,
             failed_count=0,
             tables=[
-                types.SimpleNamespace(
+                ManagedMetaTableFinalizeTableResult.model_construct(
                     meta_table_uid="asset-meta-table-uid",
                     identifier="markets.Asset",
-                    data_source_uid="data-source-uid",
                     storage_hash="mt_asset_hash",
                     physical_table_name="example_assets__asset",
                     previous_provisioning_status="reserved",
@@ -343,6 +349,7 @@ def test_alembic_metatable_migration_finalizes_catalog_after_alembic(monkeypatch
                     time_indexed=False,
                     finalized=True,
                     physical_table_exists=True,
+                    schema_management={},
                 )
             ],
         )
@@ -350,7 +357,10 @@ def test_alembic_metatable_migration_finalizes_catalog_after_alembic(monkeypatch
     monkeypatch.setattr(MetaTable, "finalize_managed", staticmethod(fake_finalize))
 
     response = migration.finalize_metatable_catalog(
-        prepared=types.SimpleNamespace(meta_table_uids=["asset-meta-table-uid"]),
+        prepared=PreparedAlembicMetaTableMigration(
+            data_source_uid="data-source-uid",
+            meta_table_uids=["asset-meta-table-uid"],
+        ),
         alembic_revision="0001",
         timeout=15,
     )
@@ -409,11 +419,12 @@ def test_alembic_metatable_migration_sync_catalog_hook_has_no_reserved_policy(
     )
 
     def fake_register(request, *, timeout=None):
-        return types.SimpleNamespace(
+        return MetaTable.model_construct(
             uid="asset-meta-table-uid",
             data_source_uid=request.data_source_uid,
             storage_hash=request.storage_hash,
             physical_table_name="mt_asset",
+            management_mode="platform_managed",
         )
 
     monkeypatch.setattr(MetaTable, "register", staticmethod(fake_register))
@@ -447,24 +458,23 @@ def test_finalize_metatable_catalog_surfaces_missing_physical_tables(monkeypatch
         metatable_models=[Asset],
     )
     ProjectAlembicVersion._bind_meta_table(
-        types.SimpleNamespace(
+        MetaTable.model_construct(
             uid="registry-meta-table-uid",
             data_source_uid="data-source-uid",
         )
     )
 
     def fake_finalize(request, *, timeout=None, on_status=None):
-        return types.SimpleNamespace(
+        return ManagedMetaTableFinalizeResponse.model_construct(
             ok=False,
             finalized_count=0,
             active_count=0,
             reserved_count=1,
             failed_count=1,
             tables=[
-                types.SimpleNamespace(
+                ManagedMetaTableFinalizeTableResult.model_construct(
                     meta_table_uid="asset-meta-table-uid",
                     identifier="markets.Asset",
-                    data_source_uid="data-source-uid",
                     storage_hash="mt_asset_hash",
                     physical_table_name="example_assets__asset",
                     previous_provisioning_status="reserved",
@@ -473,6 +483,7 @@ def test_finalize_metatable_catalog_surfaces_missing_physical_tables(monkeypatch
                     time_indexed=False,
                     finalized=False,
                     physical_table_exists=False,
+                    schema_management={},
                     error={"code": "physical_table_missing"},
                 )
             ],
@@ -483,7 +494,10 @@ def test_finalize_metatable_catalog_surfaces_missing_physical_tables(monkeypatch
 
     with pytest.raises(Exception) as exc_info:
         migration.finalize_metatable_catalog(
-            prepared=types.SimpleNamespace(meta_table_uids=["asset-meta-table-uid"]),
+            prepared=PreparedAlembicMetaTableMigration(
+                data_source_uid="data-source-uid",
+                meta_table_uids=["asset-meta-table-uid"],
+            ),
             alembic_revision="0001",
             timeout=15,
             on_metatable_finalize_status=statuses.append,
@@ -711,7 +725,9 @@ def test_prepare_for_alembic_preserves_authored_table_names(monkeypatch):
         uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
         account_uid: Mapped[uuid.UUID] = mapped_column(
             Uuid,
-            ForeignKey("example_assets__account.uid", name="asset_account_uid_fkey", ondelete="CASCADE"),
+            ForeignKey(
+                "example_assets__account.uid", name="asset_account_uid_fkey", ondelete="CASCADE"
+            ),
             nullable=False,
         )
         symbol: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -741,7 +757,7 @@ def test_prepare_for_alembic_preserves_authored_table_names(monkeypatch):
                 uid = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
                 physical_name = "example_assets__asset"
             response_tables.append(
-                types.SimpleNamespace(
+                ManagedMetaTableReservationItem.model_construct(
                     identifier=table.identifier,
                     namespace=table.namespace,
                     meta_table_uid=uid,
@@ -755,10 +771,13 @@ def test_prepare_for_alembic_preserves_authored_table_names(monkeypatch):
                         "physical": {"table_name": physical_name},
                         "columns": [],
                     },
+                    schema_management={},
+                    created=True,
+                    matched_by=None,
                     existing=False,
                 )
             )
-        return types.SimpleNamespace(tables=response_tables)
+        return ManagedMetaTableReservationResponse.model_construct(tables=response_tables)
 
     monkeypatch.setattr(MetaTable, "reserve_managed", staticmethod(fake_reserve_managed))
 
@@ -842,9 +861,9 @@ def test_prepare_for_alembic_does_not_resolve_foreign_key_targets(monkeypatch):
         assert [table.identifier for table in request.tables] == ["example_assets__asset"]
         assert not hasattr(request.tables[0].table_contract, "indexes")
         assert not hasattr(request.tables[0].table_contract, "foreign_keys")
-        return types.SimpleNamespace(
+        return ManagedMetaTableReservationResponse.model_construct(
             tables=[
-                types.SimpleNamespace(
+                ManagedMetaTableReservationItem.model_construct(
                     identifier="example_assets__asset",
                     namespace="example.assets",
                     meta_table_uid="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
@@ -854,6 +873,9 @@ def test_prepare_for_alembic_does_not_resolve_foreign_key_targets(monkeypatch):
                     storage_hash=request.tables[0].storage_hash,
                     physical_table_name="example_assets__asset",
                     table_contract={},
+                    schema_management={},
+                    created=True,
+                    matched_by=None,
                     existing=False,
                 )
             ]
@@ -917,10 +939,11 @@ def test_prepare_for_alembic_reserves_existing_table_name_to_stamp_schema_manage
         ]
         assert kwargs["limit"] == 2
         return [
-            types.SimpleNamespace(
+            MetaTable.model_construct(
                 identifier="example_assets__account",
                 uid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
                 data_source_uid="data-source-uid",
+                management_mode="platform_managed",
                 provisioning_status="reserved",
                 storage_hash="account-storage-hash",
                 physical_table_name="example_assets__account",
@@ -946,9 +969,9 @@ def test_prepare_for_alembic_reserves_existing_table_name_to_stamp_schema_manage
         assert not hasattr(request.tables[1].table_contract, "indexes")
         assert not hasattr(request.tables[0].table_contract, "foreign_keys")
         assert not hasattr(request.tables[1].table_contract, "foreign_keys")
-        return types.SimpleNamespace(
+        return ManagedMetaTableReservationResponse.model_construct(
             tables=[
-                types.SimpleNamespace(
+                ManagedMetaTableReservationItem.model_construct(
                     identifier="example_assets__account",
                     namespace="example.assets",
                     meta_table_uid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
@@ -962,8 +985,11 @@ def test_prepare_for_alembic_reserves_existing_table_name_to_stamp_schema_manage
                         "physical": {"table_name": "example_assets__account"},
                         "columns": [],
                     },
+                    schema_management={},
+                    created=False,
+                    matched_by="identifier",
                 ),
-                types.SimpleNamespace(
+                ManagedMetaTableReservationItem.model_construct(
                     identifier="example_assets__asset",
                     namespace="example.assets",
                     meta_table_uid="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
@@ -977,6 +1003,9 @@ def test_prepare_for_alembic_reserves_existing_table_name_to_stamp_schema_manage
                         "physical": {"table_name": "example_assets__asset"},
                         "columns": [],
                     },
+                    schema_management={},
+                    created=True,
+                    matched_by=None,
                 ),
             ]
         )
@@ -1051,10 +1080,11 @@ def test_prepare_for_alembic_reserves_already_staged_existing_rows(monkeypatch):
         ]
         assert kwargs["limit"] == 2
         return [
-            types.SimpleNamespace(
+            MetaTable.model_construct(
                 identifier="example_assets__account",
                 uid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
                 data_source_uid="data-source-uid",
+                management_mode="platform_managed",
                 provisioning_status="active",
                 schema_management_mode="alembic_managed",
                 migration_provider_key="sample:markets",
@@ -1067,10 +1097,11 @@ def test_prepare_for_alembic_reserves_already_staged_existing_rows(monkeypatch):
                     "columns": [],
                 },
             ),
-            types.SimpleNamespace(
+            MetaTable.model_construct(
                 identifier="example_assets__asset",
                 uid="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
                 data_source_uid="data-source-uid",
+                management_mode="platform_managed",
                 provisioning_status="active",
                 schema_management_mode="alembic_managed",
                 migration_provider_key="sample:markets",
@@ -1090,9 +1121,9 @@ def test_prepare_for_alembic_reserves_already_staged_existing_rows(monkeypatch):
 
     def fake_reserve_managed(request, *, timeout=None, on_status=None):
         reserved_payloads.extend(request.tables)
-        return types.SimpleNamespace(
+        return ManagedMetaTableReservationResponse.model_construct(
             tables=[
-                types.SimpleNamespace(
+                ManagedMetaTableReservationItem.model_construct(
                     identifier="example_assets__account",
                     namespace="example.assets",
                     meta_table_uid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
@@ -1102,8 +1133,11 @@ def test_prepare_for_alembic_reserves_already_staged_existing_rows(monkeypatch):
                     storage_hash="account-storage-hash",
                     physical_table_name="example_assets__account",
                     table_contract={},
+                    schema_management={},
+                    created=False,
+                    matched_by="identifier",
                 ),
-                types.SimpleNamespace(
+                ManagedMetaTableReservationItem.model_construct(
                     identifier="example_assets__asset",
                     namespace="example.assets",
                     meta_table_uid="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
@@ -1113,6 +1147,9 @@ def test_prepare_for_alembic_reserves_already_staged_existing_rows(monkeypatch):
                     storage_hash="asset-storage-hash",
                     physical_table_name="example_assets__asset",
                     table_contract={},
+                    schema_management={},
+                    created=False,
+                    matched_by="identifier",
                 ),
             ]
         )

@@ -3,13 +3,13 @@ from __future__ import annotations
 import contextlib
 import contextvars
 import json
-import pathlib
-import sys
-from collections.abc import Mapping, MutableMapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import Any, ClassVar
 from uuid import UUID
 
+from sqlalchemy import Table as _SQLAlchemyTable
+from sqlalchemy import inspect as _sqlalchemy_inspect
 from sqlalchemy.orm import declared_attr as _sqlalchemy_declared_attr
 
 from mainsequence.client.dtype_codec import (
@@ -24,12 +24,10 @@ from mainsequence.client.metatables import (
     MetaTableContract,
     MetaTablePhysicalContract,
     MetaTableRegistrationRequest,
+    TimeIndexMetaData,
 )
 
-from .hashing import build_meta_table_configured_storage_hash, build_meta_table_storage_hash
-
-if TYPE_CHECKING:
-    from mainsequence.client.metatables import TimeIndexMetaData
+from .hashing import build_meta_table_configured_storage_hash
 
 DEFAULT_PLATFORM_MANAGED_PROVISIONING = {
     "create_table": True,
@@ -48,7 +46,7 @@ _PLATFORM_MANAGED_MIGRATION_REGISTRATION_CONTEXT: contextvars.ContextVar[bool] =
 class _MetaTableRegistrationState:
     status: str
     model: type[Any]
-    meta_table: Any | None = None
+    meta_table: MetaTable | None = None
     stack: tuple[str, ...] = ()
 
 
@@ -69,7 +67,7 @@ def _require_platform_managed_migration_registration_context(model: type[Any]) -
         return
     model_name = getattr(model, "__qualname__", repr(model))
     try:
-        identifier = resolve_metatable_identifier(model)
+        identifier = resolve_metatable_identifier(model) or model_name
     except Exception:
         identifier = model_name
     raise ValueError(
@@ -234,44 +232,17 @@ class PlatformManagedMetaTable:
             raise
 
     @classmethod
-    def _bind_meta_table(cls, meta_table: Any) -> Any:
+    def _bind_meta_table(cls, meta_table: MetaTable) -> MetaTable:
         """Attach an already-created backend MetaTable resource to this authoring model."""
-        meta_table_uid = _meta_table_uid(meta_table)
-        if meta_table_uid in (None, ""):
-            raise ValueError("PlatformManagedMetaTable._bind_meta_table requires meta_table.uid.")
-
         cls.__metatable__ = meta_table
-        cls.__metatable_uid__ = str(meta_table_uid)
-
-        storage_hash = _meta_table_storage_hash(meta_table)
-        if storage_hash in (None, ""):
-            try:
-                storage_hash = _table_name(_resolve_table(cls))
-            except TypeError:
-                storage_hash = None
-        if storage_hash not in (None, ""):
-            cls.__metatable_storage_hash__ = str(storage_hash)
-            try:
-                table = _resolve_table(cls)
-            except TypeError:
-                table = None
-            if table is not None:
-                _bind_table_logical_identity(table, storage_hash=str(storage_hash))
-
-        try:
-            physical_table_name = _table_name(_resolve_table(cls))
-        except TypeError:
-            physical_table_name = _meta_table_physical_table_name(meta_table)
-        if physical_table_name not in (None, ""):
-            cls.__metatable_physical_table_name__ = str(physical_table_name)
-
-        data_source_uid = _meta_table_data_source_uid(meta_table)
-        if data_source_uid not in (None, ""):
-            cls.__metatable_data_source_uid__ = str(data_source_uid)
+        cls.__metatable_uid__ = _required_meta_table_uid(meta_table)
+        cls.__metatable_storage_hash__ = _required_meta_table_storage_hash(meta_table)
+        cls.__metatable_physical_table_name__ = _table_name(cls.__table__)
+        cls.__metatable_data_source_uid__ = _required_meta_table_data_source_uid(meta_table)
         return meta_table
 
     @classmethod
-    def get_meta_table(cls) -> Any | None:
+    def get_meta_table(cls) -> MetaTable | None:
         return getattr(cls, "__metatable__", None)
 
     @classmethod
@@ -317,28 +288,17 @@ class PlatformTimeIndexMetaData(PlatformManagedMetaTable):
 
     @classmethod
     def _bind_meta_table(cls, meta_table: TimeIndexMetaData) -> TimeIndexMetaData:
-        from mainsequence.client.metatables import TimeIndexMetaData
-
         if not isinstance(meta_table, TimeIndexMetaData):
-            meta_table = cls._resolve_time_index_metadata_for_bind(meta_table)
-        bound = super()._bind_meta_table(meta_table)
-        cls.__time_index_metadata__ = bound
-        return bound
+            raise TypeError(
+                "PlatformTimeIndexMetaData._bind_meta_table requires TimeIndexMetaData."
+            )
+        super()._bind_meta_table(meta_table)
+        cls.__time_index_metadata__ = meta_table
+        return meta_table
 
     @classmethod
     def get_time_index_metadata(cls) -> TimeIndexMetaData | None:
         return getattr(cls, "__time_index_metadata__", None)
-
-    @classmethod
-    def _resolve_time_index_metadata_for_bind(cls, meta_table: Any) -> TimeIndexMetaData:
-        from mainsequence.client.metatables import TimeIndexMetaData
-
-        meta_table_uid = _meta_table_uid(meta_table)
-        if meta_table_uid not in (None, "") and _meta_table_is_time_indexed(meta_table):
-            return TimeIndexMetaData.get_by_uid(str(meta_table_uid))
-        model_name = getattr(cls, "__qualname__", cls.__name__)
-        received_type = type(meta_table).__name__
-        raise TypeError(f"{model_name} requires TimeIndexMetaData binding; got {received_type}.")
 
     @classmethod
     def __table_cls__(cls, *args: Any, **kwargs: Any) -> Any:
@@ -503,7 +463,7 @@ def time_indexed_registration_request_from_sqlalchemy_model(
 
     table = _resolve_table(model_or_table)
     resolved_schema = _resolve_schema(table, schema=schema)
-    resolved_identifier = _resolve_identifier(model_or_table, identifier=identifier)
+    resolved_identifier = resolve_metatable_identifier(model_or_table, identifier=identifier)
     resolved_namespace = _resolve_namespace(model_or_table, namespace=namespace)
     resolved_description = _resolve_description(model_or_table, description=description)
     resolved_hash_namespace = _resolve_hash_namespace(
@@ -625,7 +585,7 @@ def platform_managed_registration_request_from_sqlalchemy_model(
 ) -> MetaTableRegistrationRequest:
     table = _resolve_table(model_or_table)
     resolved_schema = _resolve_schema(table, schema=schema)
-    resolved_identifier = _resolve_identifier(model_or_table, identifier=identifier)
+    resolved_identifier = resolve_metatable_identifier(model_or_table, identifier=identifier)
     resolved_namespace = _resolve_namespace(model_or_table, namespace=namespace)
     resolved_description = _resolve_description(model_or_table, description=description)
     resolved_hash_namespace = _resolve_hash_namespace(
@@ -698,7 +658,7 @@ def external_registered_registration_request_from_sqlalchemy_model(
 ) -> MetaTableRegistrationRequest:
     table = _resolve_table(model_or_table)
     resolved_schema = _resolve_schema(table, schema=schema)
-    resolved_identifier = _resolve_identifier(model_or_table, identifier=identifier)
+    resolved_identifier = resolve_metatable_identifier(model_or_table, identifier=identifier)
     resolved_namespace = _resolve_namespace(model_or_table, namespace=namespace)
     resolved_description = _resolve_description(model_or_table, description=description)
     resolved_hash_namespace = _resolve_hash_namespace(
@@ -709,10 +669,10 @@ def external_registered_registration_request_from_sqlalchemy_model(
         model_or_table,
         extra_hash_components=extra_hash_components,
     )
-    resolved_storage_hash = storage_hash or build_meta_table_storage_hash(
+    resolved_storage_hash = storage_hash or _build_configured_storage_hash(
         namespace=resolved_namespace,
-        identifier=resolved_identifier,
         schema=resolved_schema,
+        table_storage_identity=_table_storage_identity(table),
         hash_namespace=resolved_hash_namespace,
         extra_hash_components=resolved_extra_hash_components,
     )
@@ -750,10 +710,25 @@ def register_external_sqlalchemy_model(
 
 
 def _resolve_table(model_or_table: Any) -> Any:
-    table = getattr(model_or_table, "__table__", model_or_table)
-    if not hasattr(table, "columns"):
-        raise TypeError("Expected a SQLAlchemy model class/instance or Table-like object.")
-    return table
+    inspected = _sqlalchemy_inspect(model_or_table, raiseerr=False)
+    table = _table_from_sqlalchemy_inspection(inspected)
+    if table is not None:
+        return table
+    return getattr(model_or_table, "__table__", model_or_table)
+
+
+def _table_from_sqlalchemy_inspection(inspected: Any | None) -> Any | None:
+    if inspected is None:
+        return None
+    if isinstance(inspected, _SQLAlchemyTable):
+        return inspected
+    local_table = getattr(inspected, "local_table", None)
+    if local_table is not None:
+        return local_table
+    persist_selectable = getattr(inspected, "persist_selectable", None)
+    if isinstance(persist_selectable, _SQLAlchemyTable):
+        return persist_selectable
+    return None
 
 
 def _table_name(table: Any) -> str:
@@ -844,7 +819,7 @@ def _begin_local_registration(
     *,
     storage_hash: str,
     stack: tuple[str, ...],
-) -> Any | None:
+) -> MetaTable | None:
     state = _METATABLE_REGISTRATION_REGISTRY.get(storage_hash)
     if state is not None:
         if state.status == "registered" and state.meta_table is not None:
@@ -880,7 +855,7 @@ def _complete_local_registration(
     *,
     storage_hash: str,
     model: type[PlatformManagedMetaTable],
-    meta_table: Any,
+    meta_table: MetaTable,
 ) -> None:
     state = _METATABLE_REGISTRATION_REGISTRY.get(storage_hash)
     stack = state.stack if state is not None else ()
@@ -915,59 +890,48 @@ def _coerce_optional_uid(value: Any) -> str | None:
     return None
 
 
-def _meta_table_uid(meta_table: Any) -> str | None:
-    if isinstance(meta_table, Mapping):
-        uid = meta_table.get("meta_table_uid") or meta_table.get("uid")
-    else:
-        uid = (
-            getattr(meta_table, "meta_table_uid", None)
-            or getattr(meta_table, "__metatable_uid__", None)
-            or getattr(meta_table, "uid", None)
-        )
+def _meta_table_uid(meta_table: MetaTable) -> str | None:
+    uid = getattr(meta_table, "uid", None)
     return _coerce_optional_uid(uid)
 
 
-def _meta_table_storage_hash(meta_table: Any) -> str | None:
-    if isinstance(meta_table, Mapping):
-        storage_hash = meta_table.get("storage_hash")
-    else:
-        storage_hash = getattr(meta_table, "storage_hash", None)
+def _required_meta_table_uid(meta_table: MetaTable) -> str:
+    uid = _meta_table_uid(meta_table)
+    if uid in (None, ""):
+        raise ValueError("PlatformManagedMetaTable._bind_meta_table requires meta_table.uid.")
+    return uid
+
+
+def _meta_table_storage_hash(meta_table: MetaTable) -> str | None:
+    storage_hash = getattr(meta_table, "storage_hash", None)
     if storage_hash in (None, ""):
         return None
     return str(storage_hash)
 
 
-def _meta_table_physical_table_name(meta_table: Any) -> str | None:
-    if isinstance(meta_table, Mapping):
-        physical_table_name = meta_table.get("physical_table_name")
-    else:
-        physical_table_name = getattr(meta_table, "physical_table_name", None)
+def _required_meta_table_storage_hash(meta_table: MetaTable) -> str:
+    storage_hash = _meta_table_storage_hash(meta_table)
+    if storage_hash in (None, ""):
+        raise ValueError(
+            "PlatformManagedMetaTable._bind_meta_table requires meta_table.storage_hash."
+        )
+    return storage_hash
+
+
+def _required_meta_table_data_source_uid(meta_table: MetaTable) -> str:
+    data_source_uid = _coerce_optional_uid(meta_table.data_source_uid)
+    if data_source_uid in (None, ""):
+        raise ValueError(
+            "PlatformManagedMetaTable._bind_meta_table requires meta_table.data_source_uid."
+        )
+    return data_source_uid
+
+
+def _meta_table_physical_table_name(meta_table: MetaTable) -> str | None:
+    physical_table_name = getattr(meta_table, "physical_table_name", None)
     if physical_table_name in (None, ""):
         return None
     return str(physical_table_name)
-
-
-def _meta_table_is_time_indexed(meta_table: Any) -> bool:
-    if isinstance(meta_table, Mapping):
-        time_indexed = meta_table.get("time_indexed")
-        table_kind = meta_table.get("table_kind")
-        table_contract = meta_table.get("table_contract")
-        time_indexed_profile = meta_table.get("time_indexed_profile")
-    else:
-        time_indexed = getattr(meta_table, "time_indexed", None)
-        table_kind = getattr(meta_table, "table_kind", None)
-        table_contract = getattr(meta_table, "table_contract", None)
-        time_indexed_profile = getattr(meta_table, "time_indexed_profile", None)
-
-    if time_indexed is True or table_kind == "time_indexed" or time_indexed_profile is not None:
-        return True
-    if isinstance(table_contract, Mapping):
-        return (
-            table_contract.get("table_kind") == "time_indexed"
-            or table_contract.get("dynamic_table") is not None
-            or table_contract.get("time_indexed") is not None
-        )
-    return False
 
 
 def _model_bound_storage_hash(model_or_table: Any) -> str | None:
@@ -977,122 +941,21 @@ def _model_bound_storage_hash(model_or_table: Any) -> str | None:
     return None
 
 
-def _bind_table_logical_identity(table: Any, *, storage_hash: str) -> None:
-    schema = getattr(table, "schema", None)
-    logical_fullname = _compose_table_fullname(schema=schema, table_name=storage_hash)
-    table._mainsequence_storage_hash = str(storage_hash)
-    table._mainsequence_logical_fullname = logical_fullname
+def resolve_metatable_identifier(
+    model_or_table: Any,
+    *,
+    identifier: str | None = None,
+) -> str | None:
+    """Resolve the optional globally stable MetaTable identifier for a SQLAlchemy model."""
 
-    info = getattr(table, "info", None)
-    if isinstance(info, MutableMapping):
-        info["mainsequence_storage_hash"] = str(storage_hash)
-        info["mainsequence_logical_fullname"] = logical_fullname
-
-
-def _compose_table_fullname(*, schema: str | None, table_name: str) -> str:
-    return f"{schema}.{table_name}" if schema else str(table_name)
-
-
-def _meta_table_data_source_uid(meta_table: Any) -> str | None:
-    if isinstance(meta_table, Mapping):
-        data_source_uid = meta_table.get("data_source_uid")
-        data_source = meta_table.get("data_source")
-    else:
-        data_source_uid = getattr(meta_table, "data_source_uid", None) or getattr(
-            meta_table, "__metatable_data_source_uid__", None
-        )
-        data_source = getattr(meta_table, "data_source", None)
-
-    coerced_data_source_uid = _coerce_optional_uid(data_source_uid)
-    if coerced_data_source_uid is not None:
-        return coerced_data_source_uid
-    if isinstance(data_source, Mapping):
-        nested_uid = data_source.get("uid")
-    else:
-        nested_uid = getattr(data_source, "uid", None)
-    return _coerce_optional_uid(nested_uid)
-
-
-def _resolve_identifier(model_or_table: Any, *, identifier: str | None) -> str:
     resolved_identifier = (
         identifier
         or getattr(model_or_table, "__metatable_identifier__", None)
         or _table_info_value(model_or_table, "identifier")
     )
     if resolved_identifier in (None, ""):
-        return _default_metatable_identifier(model_or_table)
+        return None
     return str(resolved_identifier)
-
-
-def resolve_metatable_identifier(
-    model_or_table: Any,
-    *,
-    identifier: str | None = None,
-) -> str:
-    """Resolve the globally stable MetaTable identifier for a SQLAlchemy model."""
-
-    return _resolve_identifier(model_or_table, identifier=identifier)
-
-
-def _default_metatable_identifier(model_or_table: Any) -> str:
-    module, qualname = _resolve_model_path(
-        model_or_table,
-        table_model_module=None,
-        table_model_qualname=None,
-    )
-    if module == "sqlalchemy":
-        raise ValueError(
-            "MetaTable SQLAlchemy contracts require __metatable_identifier__ for "
-            "plain SQLAlchemy Table objects."
-        )
-
-    project_name = _resolve_pyproject_project_name(model_or_table)
-    if project_name in (None, ""):
-        raise ValueError(
-            "MetaTable SQLAlchemy contracts require __metatable_identifier__ when "
-            "[project].name cannot be resolved from pyproject.toml."
-        )
-    return f"{project_name}:{module}.{qualname}"
-
-
-def _resolve_pyproject_project_name(model_or_table: Any) -> str | None:
-    candidate_dirs: list[pathlib.Path] = []
-    module_name = getattr(model_or_table, "__module__", None)
-    if module_name:
-        module = sys.modules.get(str(module_name))
-        module_file = getattr(module, "__file__", None) if module is not None else None
-        if module_file:
-            candidate_dirs.append(pathlib.Path(module_file).resolve().parent)
-    candidate_dirs.append(pathlib.Path.cwd().resolve())
-
-    seen: set[pathlib.Path] = set()
-    for start_dir in candidate_dirs:
-        for path in (start_dir, *start_dir.parents):
-            if path in seen:
-                continue
-            seen.add(path)
-            pyproject_path = path / "pyproject.toml"
-            if not pyproject_path.exists():
-                continue
-            project_name = _read_pyproject_project_name(pyproject_path)
-            if project_name not in (None, ""):
-                return project_name
-    return None
-
-
-def _read_pyproject_project_name(pyproject_path: pathlib.Path) -> str | None:
-    try:
-        import tomllib
-    except ModuleNotFoundError:  # pragma: no cover - Python < 3.11 fallback.
-        return None
-    try:
-        pyproject = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
-    except Exception:
-        return None
-    project_name = pyproject.get("project", {}).get("name")
-    if project_name in (None, ""):
-        return None
-    return str(project_name).strip() or None
 
 
 def _resolve_namespace(model_or_table: Any, *, namespace: str | None) -> str:
