@@ -567,7 +567,6 @@ class APIPersistManager:
             result = TimeIndexMetaTable.get_or_none(
                 physical_table_name=self.storage_hash,
                 data_source__uid=self.data_source_uid,
-                include_relations_detail=True,
             )
             self._storage_table_future.set_result(result)
         except Exception as exc:

@@ -2928,15 +2928,6 @@ class TimeIndexMetaTable(MetaTable):
         "labels__in": "str",
         "labels__contains": "str",
     }
-    READ_QUERY_PARAMS: ClassVar[dict[str, str]] = {
-        "include_relations_detail": "bool",
-    }
-    READ_QUERY_PARAM_DESCRIPTIONS: ClassVar[dict[str, str]] = {
-        "include_relations_detail": (
-            "Expand related objects in the serializer response. "
-            "This changes response detail only and does not change which rows are returned."
-        ),
-    }
     build_configuration_json_schema: dict[str, Any] | None = Field(
         None,
         description="JSON schema describing the DataNode update build configuration.",

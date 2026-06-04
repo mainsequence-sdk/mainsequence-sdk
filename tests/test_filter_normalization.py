@@ -287,6 +287,22 @@ def test_data_node_storage_rejects_data_source_id_filter():
         TimeIndexMetaTable._normalize_filter_kwargs({"data_source__id": {"id": 7}})
 
 
+def test_include_relations_detail_is_only_data_node_update_read_param():
+    from mainsequence.client.metatables import DataNodeUpdate, TimeIndexMetaTable
+
+    assert "include_relations_detail" in DataNodeUpdate.READ_QUERY_PARAMS
+    assert "include_relations_detail" not in (TimeIndexMetaTable.READ_QUERY_PARAMS or {})
+
+    filter_kwargs, read_query_kwargs = TimeIndexMetaTable._split_filter_and_read_query_kwargs(
+        {"include_relations_detail": True}
+    )
+
+    assert read_query_kwargs == {}
+    assert filter_kwargs == {"include_relations_detail": True}
+    with pytest.raises(ValueError, match="Unsupported TimeIndexMetaTable filter"):
+        TimeIndexMetaTable._normalize_filter_kwargs(filter_kwargs)
+
+
 def test_data_node_storage_delete_after_date_posts_tail_delete(monkeypatch):
     from mainsequence.client import metatables as models_metatables
 

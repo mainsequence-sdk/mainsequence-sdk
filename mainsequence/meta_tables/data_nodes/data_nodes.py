@@ -211,7 +211,6 @@ class APIDataNode(DataAccessMixin):
     def build_from_table_name(cls, table_name: str) -> "APIDataNode":
         storage_table = TimeIndexMetaTable.get_or_none(
             physical_table_name=table_name,
-            include_relations_detail=True,
         )
         if storage_table is None:
             raise DoesNotExist(
