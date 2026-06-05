@@ -180,6 +180,7 @@ def _time_index_model_class(
     identifier=None,
     time_index_name="time_index",
     index_names=None,
+    cadence=None,
 ):
     attrs = _model_attrs(
         name,
@@ -193,6 +194,8 @@ def _time_index_model_class(
             "__index_names__": list(index_names or [time_index_name]),
         }
     )
+    if cadence is not None:
+        attrs["__cadence__"] = cadence
     return type(
         name,
         (PlatformTimeIndexMetaTable,),
@@ -1245,6 +1248,78 @@ def test_time_index_meta_table_registration_request_uses_dynamic_contract():
     assert "tail_delete" not in payload
     assert "uniqueness" not in payload
     assert "physical_index_plan" not in payload
+
+
+def test_time_index_meta_table_registration_request_uses_class_cadence():
+    table = FakeTable(
+        "example_assets__prices",
+        columns=[
+            FakeColumn("time_index", DateTime(timezone=True), nullable=False),
+            FakeColumn("asset_uid", Uuid(), nullable=False),
+            FakeColumn("price", String(64), nullable=False),
+        ],
+    )
+    DailyPrices = _time_index_model_class(
+        "DailyPrices",
+        table,
+        index_names=["time_index", "asset_uid"],
+        cadence="1D",
+    )
+
+    request = DailyPrices.build_registration_request(
+        data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+    )
+
+    assert request.cadence == "1d"
+    assert request.table_contract["authoring"]["time_indexed"]["cadence"] == "1d"
+    payload = request.model_dump(mode="json", exclude_none=True)
+    assert payload["cadence"] == "1d"
+
+
+def test_time_index_meta_table_cadence_changes_configured_storage_hash():
+    table = FakeTable(
+        "example_assets__prices",
+        columns=[
+            FakeColumn("time_index", DateTime(timezone=True), nullable=False),
+            FakeColumn("asset_uid", Uuid(), nullable=False),
+            FakeColumn("price", String(64), nullable=False),
+        ],
+    )
+    DailyPrices = _time_index_model_class(
+        "DailyPrices",
+        table,
+        index_names=["time_index", "asset_uid"],
+        cadence="1d",
+    )
+    IntradayPrices = _time_index_model_class(
+        "IntradayPrices",
+        table,
+        index_names=["time_index", "asset_uid"],
+        cadence="5m",
+    )
+
+    assert _configured_storage_hash(DailyPrices) != _configured_storage_hash(IntradayPrices)
+
+
+def test_time_index_meta_table_rejects_invalid_class_cadence():
+    table = FakeTable(
+        "example_assets__prices",
+        columns=[
+            FakeColumn("time_index", DateTime(timezone=True), nullable=False),
+            FakeColumn("asset_uid", Uuid(), nullable=False),
+        ],
+    )
+    Prices = _time_index_model_class(
+        "Prices",
+        table,
+        index_names=["time_index", "asset_uid"],
+        cadence="daily",
+    )
+
+    with pytest.raises(ValueError, match="cadence"):
+        Prices.build_registration_request(
+            data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+        )
 
 
 def test_time_index_meta_table_registration_request_uses_class_metatable_description():

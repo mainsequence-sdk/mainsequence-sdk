@@ -192,11 +192,15 @@ The client sends only the explicit time-indexed table contract:
 - `namespace`
 - `description`
 - `time_index_name`
+- `cadence`, when the class defines `__cadence__`
 - `table_contract`, which owns columns
 
 `__index_names__` declares the full DataNode grain. The SDK adds a normal
 SQLAlchemy unique index over that tuple before Alembic autogenerate runs, so
 the database enforces one row per `(time_index, dimensions...)` observation.
+`__cadence__` is optional first-class time-indexed metadata. When set, it must
+be an interval token such as `1m`, `5m`, `1h`, `1d`, `1w`, `1mo`, `1q`, or
+`1y`, and it participates in the SDK-derived `storage_hash`.
 Foreign keys, the generated unique grain index, and any additional lookup
 indexes are Alembic-owned DDL metadata. TS Manager does not manage index or
 foreign-key contracts.
@@ -212,6 +216,7 @@ class AccountHoldings(PlatformTimeIndexMetaTable, Base):
     __metatable_identifier__ = "AccountHoldings"
     __metatable_description__ = "Time-indexed account holdings by account and unique instrument identifier."
     __time_index_name__ = "time_index"
+    __cadence__ = "1d"
     __index_names__ = ["time_index", "account_uid", "unique_identifier"]
 
     time_index: Mapped[datetime.datetime] = mapped_column(

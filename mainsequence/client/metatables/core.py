@@ -8,6 +8,7 @@ import gzip
 import json
 import math
 import os
+import re
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -58,6 +59,24 @@ from ..utils import (
 DUCK_DB = "duck_db"
 SQLITE = "sqlite"
 LOCAL_DATA_SOURCE_CLASS_TYPES = {DUCK_DB, SQLITE}
+_TIME_INDEXED_CADENCE_RE = re.compile(
+    r"^[1-9][0-9]*(mo|s|m|h|d|w|q|y)$",
+    re.IGNORECASE,
+)
+
+
+def _normalize_time_indexed_cadence(value: Any) -> str | None:
+    if value is None:
+        return None
+    normalized = str(value).strip().lower()
+    if not normalized:
+        return None
+    if not _TIME_INDEXED_CADENCE_RE.fullmatch(normalized):
+        raise ValueError(
+            "cadence must be an interval token such as 1m, 5m, 1h, 1d, 1w, "
+            "1mo, 1q, or 1y."
+        )
+    return normalized
 
 
 def _duckdb_interface():
@@ -667,6 +686,11 @@ class ManagedMetaTableFinalizeTableResult(BasePydanticModel):
     )
     table_kind: str = Field(..., description="Backend table kind after reconciliation.")
     time_indexed: bool = Field(..., description="Whether the MetaTable is time-indexed.")
+    cadence: str | None = Field(
+        None,
+        max_length=32,
+        description="Optional declared cadence for time-indexed MetaTables.",
+    )
     finalized: bool = Field(
         ...,
         description="True when this row was reconciled and activated by this call.",
@@ -694,6 +718,11 @@ class ManagedMetaTableFinalizeTableResult(BasePydanticModel):
         None,
         description="Per-table structured error when finalization did not activate this row.",
     )
+
+    @field_validator("cadence")
+    @classmethod
+    def _normalize_cadence(cls, value: str | None) -> str | None:
+        return _normalize_time_indexed_cadence(value)
 
     model_config = ConfigDict(extra="ignore")
 
@@ -1923,6 +1952,14 @@ class TimeIndexMetaTableRegistrationRequest(BasePydanticModel):
         default_factory=lambda: {"create_table": True, "if_not_exists": True}
     )
     time_index_name: str = Field(..., description="Canonical timestamp column name")
+    cadence: str | None = Field(
+        None,
+        max_length=32,
+        description=(
+            "Optional time-indexed cadence token such as 1m, 5m, 1h, 1d, "
+            "1w, 1mo, 1q, or 1y."
+        ),
+    )
     partition_strategy: str = Field(
         default="backend_default",
         description="Time-indexed MetaTable physical partitioning strategy",
@@ -1972,6 +2009,11 @@ class TimeIndexMetaTableRegistrationRequest(BasePydanticModel):
         normalized_contract.setdefault("physical", {})
         data["table_contract"] = normalized_contract
         return data
+
+    @field_validator("cadence")
+    @classmethod
+    def _normalize_cadence(cls, value: str | None) -> str | None:
+        return _normalize_time_indexed_cadence(value)
 
 
 def _payload_get(obj: Any, key: str, default: Any = None) -> Any:
@@ -2113,6 +2155,11 @@ class TimeIndexedProfile(TimeIndexedProfileBase, BasePydanticModel):
         None, description="Public uid of the related TimeIndexMetaTable"
     )
     time_index_name: str = Field(..., max_length=100, description="Time index name")
+    cadence: str | None = Field(
+        None,
+        max_length=32,
+        description="Optional declared cadence for the time-indexed table.",
+    )
     partition_strategy: str | None = None
     last_time_index_value: datetime.datetime | None = Field(
         None, description="Last time index value"
@@ -2124,6 +2171,11 @@ class TimeIndexedProfile(TimeIndexedProfileBase, BasePydanticModel):
     physical_index_plan: dict[str, Any] | None = Field(
         None, description="Server-rendered physical index plan"
     )
+
+    @field_validator("cadence")
+    @classmethod
+    def _normalize_cadence(cls, value: str | None) -> str | None:
+        return _normalize_time_indexed_cadence(value)
     multi_index_stats: dict[str, Any] | None = Field(
         None, description="Canonical multi-index progress statistics"
     )

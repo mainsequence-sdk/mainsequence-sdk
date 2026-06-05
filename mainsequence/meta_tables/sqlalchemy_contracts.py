@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import contextvars
 import json
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, ClassVar
@@ -37,6 +38,10 @@ DEFAULT_PLATFORM_MANAGED_PROVISIONING = {
 }
 SERVER_GENERATED_UUID_DEFAULT = "gen_random_uuid()"
 DEFAULT_POSTGRES_SCHEMA = "public"
+_TIME_INDEXED_CADENCE_RE = re.compile(
+    r"^[1-9][0-9]*(mo|s|m|h|d|w|q|y)$",
+    re.IGNORECASE,
+)
 _PLATFORM_MANAGED_MIGRATION_REGISTRATION_CONTEXT: contextvars.ContextVar[bool] = (
     contextvars.ContextVar(
         "mainsequence_platform_managed_migration_registration_context",
@@ -292,6 +297,7 @@ class PlatformTimeIndexMetaTable(PlatformManagedMetaTable):
     """
 
     __time_index_meta_table__: ClassVar[TimeIndexMetaTable | None] = None
+    __cadence__: ClassVar[str | None] = None
 
     __mapper_args__ = _sqlalchemy_declared_attr.directive(_time_index_mapper_args)
 
@@ -505,6 +511,7 @@ def time_indexed_registration_request_from_sqlalchemy_model(
         model_or_table,
         storage_layout=storage_layout,
     )
+    resolved_cadence = _resolve_time_index_cadence(model_or_table)
     columns = _iter_columns(table)
     _validate_time_index_contract(
         columns=columns,
@@ -520,6 +527,7 @@ def time_indexed_registration_request_from_sqlalchemy_model(
             time_index_name=resolved_time_index_name,
             index_names=resolved_index_names,
             storage_layout=resolved_storage_layout,
+            cadence=resolved_cadence,
         ),
         hash_namespace=resolved_hash_namespace,
         extra_hash_components=resolved_extra_hash_components,
@@ -559,6 +567,7 @@ def time_indexed_registration_request_from_sqlalchemy_model(
         labels=_resolve_labels(model_or_table, labels=labels),
         provisioning=_resolve_provisioning(model_or_table, provisioning=provisioning),
         time_index_name=resolved_time_index_name,
+        cadence=resolved_cadence,
         table_contract={
             "version": "relational-table.v1",
             "table_kind": "time_indexed",
@@ -571,6 +580,7 @@ def time_indexed_registration_request_from_sqlalchemy_model(
                 "time_indexed": {
                     "time_index_name": resolved_time_index_name,
                     "index_names": resolved_index_names,
+                    **({"cadence": resolved_cadence} if resolved_cadence else {}),
                     **(
                         {"storage_layout": dict(resolved_storage_layout)}
                         if resolved_storage_layout
@@ -1246,6 +1256,7 @@ def _configured_table_storage_identity(model_or_table: Any, *, table: Any) -> di
         time_index_name=time_index_name,
         index_names=index_names,
         storage_layout=_resolve_time_index_storage_layout(model_or_table),
+        cadence=_resolve_time_index_cadence(model_or_table),
     )
 
 
@@ -1260,12 +1271,14 @@ def _time_index_table_storage_identity(
     time_index_name: str,
     index_names: Sequence[str],
     storage_layout: Mapping[str, Any] | None,
+    cadence: str | None,
 ) -> dict[str, Any]:
     return _time_index_storage_identity(
         table_storage_identity=_table_storage_identity(table),
         time_index_name=time_index_name,
         index_names=index_names,
         storage_layout=storage_layout,
+        cadence=cadence,
     )
 
 
@@ -1275,12 +1288,14 @@ def _time_index_table_items_storage_identity(
     time_index_name: str,
     index_names: Sequence[str],
     storage_layout: Mapping[str, Any] | None,
+    cadence: str | None,
 ) -> dict[str, Any]:
     return _time_index_storage_identity(
         table_storage_identity=_table_items_storage_identity(table_items),
         time_index_name=time_index_name,
         index_names=index_names,
         storage_layout=storage_layout,
+        cadence=cadence,
     )
 
 
@@ -1290,12 +1305,15 @@ def _time_index_storage_identity(
     time_index_name: str,
     index_names: Sequence[str],
     storage_layout: Mapping[str, Any] | None,
+    cadence: str | None,
 ) -> dict[str, Any]:
     profile: dict[str, Any] = {
         "kind": "time_indexed",
         "time_index_name": str(time_index_name),
         "index_names": [str(name) for name in index_names],
     }
+    if cadence:
+        profile["cadence"] = cadence
     if storage_layout:
         profile["storage_layout"] = dict(storage_layout)
     return {
@@ -1399,8 +1417,26 @@ def _resolve_time_index_storage_layout(
     if not isinstance(resolved, Mapping):
         raise ValueError(
             "PlatformTimeIndexMetaTable storage_layout must be a mapping when provided."
-        )
+    )
     return resolved
+
+
+def _resolve_time_index_cadence(model_or_table: Any) -> str | None:
+    resolved = (
+        getattr(model_or_table, "__cadence__", None)
+        or getattr(model_or_table, "__dynamic_table_cadence__", None)
+    )
+    if resolved in (None, ""):
+        return None
+    normalized = str(resolved).strip().lower()
+    if not normalized:
+        return None
+    if not _TIME_INDEXED_CADENCE_RE.fullmatch(normalized):
+        raise ValueError(
+            "PlatformTimeIndexMetaTable cadence must be an interval token such as "
+            "1m, 5m, 1h, 1d, 1w, 1mo, 1q, or 1y."
+        )
+    return normalized
 
 
 def _dynamic_table_info_value(model_or_table: Any, key: str) -> Any:

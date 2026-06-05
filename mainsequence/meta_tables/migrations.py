@@ -935,6 +935,9 @@ def _collection_create_row_from_registration_request(
     time_index_name = getattr(request, "time_index_name", None)
     if time_index_name not in (None, ""):
         row["time_index_name"] = str(time_index_name)
+    cadence = getattr(request, "cadence", None)
+    if cadence not in (None, ""):
+        row["cadence"] = str(cadence)
     partition_strategy = getattr(request, "partition_strategy", None)
     if partition_strategy not in (None, ""):
         row["partition_strategy"] = str(partition_strategy)
