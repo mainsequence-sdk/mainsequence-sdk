@@ -127,10 +127,22 @@ Do not hand-build contract fragments when the SQLAlchemy helper can derive them.
 For `platform_managed`, inherit from `PlatformManagedMetaTable`.
 
 Declare an explicit project-prefixed SQLAlchemy `__tablename__`. Use
-`schema_table_name(project_or_app, concept)` from `mainsequence.meta_tables` to
-generate that name. The mixin derives only the logical `storage_hash` from
-storage-relevant configuration and table shape; it must not use that hash as the
-SQLAlchemy table name.
+`schema_table_name(app, concept, suffix=None)` from `mainsequence.meta_tables`
+to generate that name:
+
+```python
+def schema_table_name(
+    app: str,
+    concept: str,
+    suffix: str | None = None,
+) -> str: ...
+```
+
+Use `app` for the project/package prefix, `concept` for the table concept, and
+`suffix` for a namespace, variant, or bounded specialization when the same
+concept exists in multiple logical scopes. The mixin derives only the logical
+`storage_hash` from storage-relevant configuration and table shape; it must not
+use that hash as the SQLAlchemy table name.
 
 When a platform-managed table must support in-place contract migrations from its
 first version, use Alembic. Keep the SDK model as a normal
@@ -179,6 +191,7 @@ from mainsequence.meta_tables import PlatformManagedMetaTable, schema_table_name
 
 PROJECT_NAME = "sdk_examples"
 ACCOUNT_TABLE_NAME = schema_table_name(PROJECT_NAME, "account")
+BROKER_ACCOUNT_TABLE_NAME = schema_table_name(PROJECT_NAME, "account", suffix="broker")
 
 
 class Account(PlatformManagedMetaTable, Base):
@@ -326,8 +339,9 @@ SQLAlchemy table name used by the provider model. Keep that table name stable
 when a class is renamed or moved but must keep the same platform identity.
 When declaring an explicit identifier, explicit physical table name, or Alembic
 version table name, prefix it with the project or package name rather than using
-a bare table name. Use `schema_table_name(project_or_app, concept)` for the
-physical table and Alembic version table names.
+a bare table name. Use `schema_table_name(app, concept, suffix=None)` for the
+physical table and Alembic version table names. Use `suffix` for a namespace or
+variant, for example `schema_table_name("msm", "positions", suffix="broker")`.
 
 Do not ask users to construct backend migration payloads, call low-level
 migration request models, or use SDK helper functions directly. The backend
