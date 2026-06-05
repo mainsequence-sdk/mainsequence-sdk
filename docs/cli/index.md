@@ -1,7 +1,9 @@
 # MainSequence CLI
 
 This page gives a practical overview of the `mainsequence` command-line interface.
-For command-by-command behavior, use `--help` (for example: `mainsequence project --help`).
+For command-by-command behavior, use `--help` (for example:
+`mainsequence project --help`). The installed CLI exposes both `mainsequence`
+and the shorter `ms` command; they point to the same command app.
 For a deeper workflow guide, see [CLI Deep Dive](../knowledge/cli.md).
 
 ## Installation

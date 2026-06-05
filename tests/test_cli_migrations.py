@@ -367,14 +367,35 @@ def test_migrations_revision_forwards_alembic_logs_and_scans_revision_id(monkeyp
     assert "Preparing platform-managed MetaTable reservations" not in output
 
 
+def test_coerce_alembic_version_path_resolves_package_resource(tmp_path, monkeypatch):
+    migration_cli = importlib.import_module("mainsequence.cli.migrations")
+    package_root = tmp_path / "sample_provider"
+    namespace_versions = package_root / "migrations" / "versions" / "mainsequence_examples"
+    namespace_versions.mkdir(parents=True)
+    (package_root / "__init__.py").write_text("", encoding="utf-8")
+    (package_root / "migrations" / "__init__.py").write_text("", encoding="utf-8")
+    monkeypatch.syspath_prepend(str(tmp_path))
+
+    assert migration_cli._coerce_alembic_version_path(
+        "sample_provider:migrations/versions/mainsequence_examples"
+    ) == str(namespace_versions)
+
+
 def test_migrations_revision_passes_provider_version_path(monkeypatch):
     cli_mod = _load_cli_module()
     runner = CliRunner()
     migration_cli = importlib.import_module("mainsequence.cli.migrations")
     version_location = "msm:alembic/versions/mainsequence_examples"
+    resolved_version_path = "/tmp/msm/alembic/versions/mainsequence_examples"
     migration = _migration(version_locations=[version_location], version_path=version_location)
     captured = {}
     monkeypatch.setattr(migration_cli, "_load_migration", lambda provider: migration)
+
+    def fake_coerce_version_path(path):
+        captured["unresolved_version_path"] = path
+        return resolved_version_path
+
+    monkeypatch.setattr(migration_cli, "_coerce_alembic_version_path", fake_coerce_version_path)
 
     def fail_backend_call(*args, **kwargs):
         raise AssertionError("revision must not provision MetaTables")
@@ -436,7 +457,8 @@ def test_migrations_revision_passes_provider_version_path(monkeypatch):
     assert captured["script_context_path_separator"] == "newline"
     assert captured["revision_version_locations"] == version_location
     assert captured["revision_path_separator"] == "newline"
-    assert captured["version_path"] == version_location
+    assert captured["unresolved_version_path"] == version_location
+    assert captured["version_path"] == resolved_version_path
 
 
 def test_migrations_revision_default_autogenerates_without_metatable_provisioning(monkeypatch):

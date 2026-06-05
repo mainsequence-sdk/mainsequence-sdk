@@ -122,6 +122,14 @@ def _load_alembic_command(command_name: str) -> Any:
     return command
 
 
+def _coerce_alembic_version_path(version_path: str) -> str:
+    try:
+        from alembic import util
+    except ImportError as exc:
+        raise typer.BadParameter("Alembic is required for migration commands.") from exc
+    return str(util.coerce_resource_to_filename(version_path))
+
+
 def _emit_alembic_script_context(
     config: Any,
     *,
@@ -759,7 +767,7 @@ def revision(
     }
     version_path = migration.resolved_version_path()
     if version_path is not None:
-        revision_kwargs["version_path"] = version_path
+        revision_kwargs["version_path"] = _coerce_alembic_version_path(version_path)
     with _forward_alembic_logging():
         script = command.revision(config, **revision_kwargs)
     _emit_status("Alembic revision finished.")
