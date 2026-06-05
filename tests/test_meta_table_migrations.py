@@ -853,10 +853,12 @@ def test_prepare_for_alembic_preserves_authored_table_names(monkeypatch):
         assert all(table["management_mode"] == "platform_managed" for table in rows)
         assert all("schema_management" not in table for table in rows)
         assert all(table["protect_from_deletion"] is False for table in rows)
-        assert not hasattr(rows[0]["table_contract"], "indexes")
-        assert not hasattr(rows[1]["table_contract"], "indexes")
-        assert not hasattr(rows[0]["table_contract"], "foreign_keys")
-        assert not hasattr(rows[1]["table_contract"], "foreign_keys")
+        assert "indexes" not in rows[0]["table_contract"]
+        assert "indexes" not in rows[1]["table_contract"]
+        assert "foreign_keys" not in rows[0]["table_contract"]
+        assert "foreign_keys" not in rows[1]["table_contract"]
+        assert "schema" not in rows[0]["table_contract"]["physical"]
+        assert "schema" not in rows[1]["table_contract"]["physical"]
 
         response_tables = []
         for table in rows:
@@ -909,12 +911,20 @@ def test_prepare_for_alembic_preserves_authored_table_names(monkeypatch):
     ]
     assert Account.__table__.name == "example_assets__account"
     assert Asset.__table__.name == "example_assets__asset"
-    assert reserved_payloads[0]["table_contract"].physical.table_name == "example_assets__account"
-    assert reserved_payloads[1]["table_contract"].physical.table_name == "example_assets__asset"
+    assert (
+        reserved_payloads[0]["table_contract"]["physical"]["table_name"]
+        == "example_assets__account"
+    )
+    assert (
+        reserved_payloads[1]["table_contract"]["physical"]["table_name"]
+        == "example_assets__asset"
+    )
     assert "backend" not in str(next(iter(Asset.__table__.indexes)).name)
     assert next(iter(Asset.__table__.foreign_key_constraints)).name == "asset_account_uid_fkey"
-    assert not hasattr(reserved_payloads[1]["table_contract"], "indexes")
-    assert not hasattr(reserved_payloads[1]["table_contract"], "foreign_keys")
+    assert "indexes" not in reserved_payloads[1]["table_contract"]
+    assert "foreign_keys" not in reserved_payloads[1]["table_contract"]
+    assert "schema" not in reserved_payloads[0]["table_contract"]["physical"]
+    assert "schema" not in reserved_payloads[1]["table_contract"]["physical"]
     assert "schema_management" not in reserved_payloads[0]
     assert reserved_payloads[0]["protect_from_deletion"] is False
 
@@ -958,8 +968,9 @@ def test_prepare_for_alembic_does_not_resolve_foreign_key_targets(monkeypatch):
         assert rows[0]["migration_namespace"] == "markets"
         assert rows[0]["migration_provider_key"] == "sample:markets"
         assert rows[0]["is_alembic_managed"] is True
-        assert not hasattr(rows[0]["table_contract"], "indexes")
-        assert not hasattr(rows[0]["table_contract"], "foreign_keys")
+        assert "indexes" not in rows[0]["table_contract"]
+        assert "foreign_keys" not in rows[0]["table_contract"]
+        assert "schema" not in rows[0]["table_contract"]["physical"]
         assert "schema_management" not in rows[0]
         return [
             _reserved_metatable(
@@ -1194,8 +1205,9 @@ def test_prepare_for_alembic_reserves_existing_table_name_with_provider_identity
         assert all(table["migration_namespace"] == "markets" for table in rows)
         assert all(table["migration_provider_key"] == "sample:markets" for table in rows)
         assert all(table["is_alembic_managed"] is True for table in rows)
-        assert not hasattr(rows[0]["table_contract"], "indexes")
-        assert not hasattr(rows[0]["table_contract"], "foreign_keys")
+        assert "indexes" not in rows[0]["table_contract"]
+        assert "foreign_keys" not in rows[0]["table_contract"]
+        assert "schema" not in rows[0]["table_contract"]["physical"]
         assert all("schema_management" not in table for table in rows)
         return [
             _reserved_metatable(

@@ -930,7 +930,9 @@ def _collection_create_row_from_registration_request(
         "alembic_revision": alembic_revision,
         "physical_table_name": str(physical_table_name),
         "protect_from_deletion": bool(getattr(request, "protect_from_deletion", False)),
-        "table_contract": request.table_contract,
+        "table_contract": _collection_create_table_contract_payload(
+            request.table_contract
+        ),
     }
     time_index_name = getattr(request, "time_index_name", None)
     if time_index_name not in (None, ""):
@@ -942,6 +944,30 @@ def _collection_create_row_from_registration_request(
     if partition_strategy not in (None, ""):
         row["partition_strategy"] = str(partition_strategy)
     return row
+
+
+def _collection_create_table_contract_payload(table_contract: Any) -> dict[str, Any]:
+    if isinstance(table_contract, MetaTableContract):
+        payload = table_contract.model_dump(mode="json", exclude_none=True)
+    elif hasattr(table_contract, "model_dump"):
+        payload = table_contract.model_dump(mode="json", exclude_none=True)
+    elif isinstance(table_contract, Mapping):
+        payload = dict(table_contract)
+    else:
+        raise TypeError("Alembic MetaTable collection-create requires table_contract.")
+
+    physical = payload.get("physical")
+    if hasattr(physical, "model_dump"):
+        physical_payload = physical.model_dump(mode="json", exclude_none=True)
+    elif isinstance(physical, Mapping):
+        physical_payload = dict(physical)
+    else:
+        physical_payload = None
+    if physical_payload is not None:
+        for schema_key in ("schema", "schema_", "table_schema", "schema_name"):
+            physical_payload.pop(schema_key, None)
+        payload["physical"] = physical_payload
+    return payload
 
 
 def _request_contract_physical_table_name(request: Any) -> str | None:
