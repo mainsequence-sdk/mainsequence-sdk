@@ -201,6 +201,35 @@ def test_time_index_meta_table_bulk_create_posts_raw_collection_payload(monkeypa
     assert captured["payload"]["json"] == [row]
 
 
+def test_time_index_meta_table_accepts_backend_top_level_cadence():
+    table = meta_table_models.TimeIndexMetaTable(
+        **_meta_table_response(
+            cadence="1D",
+            time_indexed_profile={
+                "time_index_name": "time_index",
+                "cadence": "1D",
+                "index_names": ["time_index"],
+            },
+        )
+    )
+
+    assert table.cadence == "1d"
+    assert table.time_indexed_profile is not None
+    assert table.time_indexed_profile.cadence == "1d"
+
+    table_with_null_cadence = meta_table_models.TimeIndexMetaTable(
+        **_meta_table_response(
+            cadence=None,
+            time_indexed_profile={
+                "time_index_name": "time_index",
+                "index_names": ["time_index"],
+            },
+        )
+    )
+
+    assert table_with_null_cadence.cadence is None
+
+
 def test_metatable_accepts_projection_relation_fields():
     meta_table = meta_table_models.MetaTable(
         **_meta_table_response(

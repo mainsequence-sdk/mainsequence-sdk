@@ -3023,6 +3023,11 @@ class TimeIndexMetaTable(MetaTable):
         default=False, description="Whether the data source is open for everyone"
     )
     source_class_name: str | None = None
+    cadence: str | None = Field(
+        None,
+        max_length=32,
+        description="Optional declared cadence for the time-indexed table.",
+    )
     time_indexed_profile: TimeIndexedProfile | None = None
     table_index_names: dict | None = None
 
@@ -3032,6 +3037,11 @@ class TimeIndexMetaTable(MetaTable):
 
     _drop_indices: bool = False  # for direct incertion we can pass this values
     _rebuild_indices: bool = False  # for direct incertion we can pass this values
+
+    @field_validator("cadence")
+    @classmethod
+    def _normalize_cadence(cls, value: str | None) -> str | None:
+        return _normalize_time_indexed_cadence(value)
 
     def _time_indexed_dynamic_contract(self) -> dict[str, Any]:
         return _dynamic_table_contract_fragment(self.table_contract)

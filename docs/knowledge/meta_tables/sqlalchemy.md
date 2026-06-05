@@ -202,6 +202,8 @@ the database enforces one row per `(time_index, dimensions...)` observation.
 recommended whenever the observation frequency is known and stable. When set,
 it must be an interval token such as `1m`, `5m`, `1h`, `1d`, `1w`, `1mo`,
 `1q`, or `1y`, and it participates in the SDK-derived `storage_hash`.
+Registered `TimeIndexMetaTable` responses expose the value as the first-class
+`table.cadence` attribute.
 Foreign keys, the generated unique grain index, and any additional lookup
 indexes are Alembic-owned DDL metadata. TS Manager does not manage index or
 foreign-key contracts.
