@@ -234,6 +234,7 @@ operation = build_operation(
         "region": "US",
     },
     scope={
+        "data_source_uid": account_meta_table.data_source_uid,
         "tables": [
                 {
                     "meta_table_uid": account_meta_table.uid,
@@ -267,6 +268,7 @@ operation = build_operation(
     """,
     parameters={"region": "US", "limit": 50},
     scope={
+        "data_source_uid": account_meta_table.data_source_uid,
         "tables": [
                 {
                     "meta_table_uid": account_meta_table.uid,
@@ -282,7 +284,7 @@ rows = MetaTable.execute_operation(operation)
 ```
 
 The exact response shape is backend-defined, but the request contract is always
-the same: compiled SQL plus declared MetaTable scope.
+the same: compiled SQL plus execution data source and declared MetaTable scope.
 
 ## 8. How MetaTables Fit With DataNodes
 

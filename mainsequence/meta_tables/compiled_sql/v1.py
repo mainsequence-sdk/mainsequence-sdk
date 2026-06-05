@@ -34,8 +34,8 @@ def build_operation(
     Build and validate the TS Manager compiled-sql.v1 operation contract.
 
     This is the client-side protocol object. It is intentionally plain SQL plus
-    bound parameters and declared MetaTable scope, not a serialized SQLAlchemy
-    object.
+    bound parameters, an explicit execution data source, and declared MetaTable
+    scope, not a serialized SQLAlchemy object.
     """
 
     if parameters is None:
@@ -72,6 +72,7 @@ def compile_sqlalchemy_statement(
     statement: Any,
     *,
     operation: MetaTableOperation,
+    data_source_uid: str | None = None,
     scope_tables: Sequence[MetaTableOperationScopeTable | Mapping[str, Any]],
     limits: MetaTableOperationLimits | Mapping[str, Any] | None = None,
     dialect: MetaTableCompiledSQLDialect = "postgresql",
@@ -80,6 +81,11 @@ def compile_sqlalchemy_statement(
 ) -> MetaTableCompiledSQLOperation:
     """
     Compile a SQLAlchemy/Core statement into the TS Manager compiled-sql.v1 payload.
+
+    ``data_source_uid`` selects the DynamicTableDataSource connection. If it is
+    omitted, the SDK resolves the configured project/session default data source.
+    ``scope_tables`` remains the declared MetaTable permission scope for the
+    operation.
     """
 
     if dialect != "postgresql":
@@ -97,6 +103,7 @@ def compile_sqlalchemy_statement(
     )
     parameter_types = _compiled_sqlalchemy_parameter_types(compiled)
     scope = MetaTableOperationScope(
+        data_source_uid=data_source_uid,
         tables=[
             (
                 table

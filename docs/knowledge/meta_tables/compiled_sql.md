@@ -39,6 +39,7 @@ parameters:
     "paramstyle": "pyformat"
   },
   "scope": {
+    "data_source_uid": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
     "tables": [
       {
         "meta_table_uid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
@@ -72,6 +73,7 @@ operation = build_operation(
     sql="SELECT asset.uid, asset.symbol FROM public.asset AS asset WHERE asset.symbol ILIKE %(symbol_1)s",
     parameters={"symbol_1": "%BTC%"},
     scope={
+        "data_source_uid": data_source.uid,
         "tables": [
             {
                 "metaTableUid": asset_meta_table.uid,
@@ -85,6 +87,9 @@ operation = build_operation(
 ```
 
 The return value is a `MetaTableCompiledSQLOperation` Pydantic object.
+If `scope.data_source_uid` is omitted or `None`, the SDK resolves the configured
+project/session default data source and serializes that concrete UID into the
+request payload.
 
 The SDK validates:
 
@@ -92,7 +97,8 @@ The SDK validates:
 - `dialect == "postgresql"`
 - `paramstyle == "pyformat"`
 - non-empty SQL
-- non-empty declared scope
+- concrete execution data source after default resolution
+- non-empty declared table scope
 - positive limits when supplied
 - operation kind: `select`, `insert`, `update`, `delete`, or `upsert`
 
@@ -127,6 +133,7 @@ stmt = (
 operation = compile_sqlalchemy_statement(
     stmt,
     operation="select",
+    data_source_uid=data_source.uid,
     scope_tables=[
         {
             "metaTableUid": asset_meta_table.uid,
@@ -160,7 +167,11 @@ POST /orm/api/ts_manager/meta_table/execute-operation/
 
 ## Scope Is Required
 
-`scope.tables` is not optional. It is the primary authorization contract.
+Compiled SQL execution has two pieces of scope:
+
+- `scope.data_source_uid` selects the `DynamicTableDataSource` execution
+  connection. The SDK resolves the project/session default when callers omit it.
+- `scope.tables` declares MetaTable permissions for the operation.
 
 Every table referenced by the compiled SQL should appear in scope:
 
@@ -178,8 +189,8 @@ Access can be:
 
 For write operations, scope the mutated table with `access="write"`.
 
-TS Manager may parse the SQL as a defense-in-depth check, but the declared
-MetaTable scope is the platform permission contract.
+TS Manager does not treat SQL text as the permission model. PostgreSQL owns SQL
+validity, while the declared MetaTable scope is the platform permission contract.
 
 ## Backend Execution Rules
 
@@ -190,7 +201,7 @@ It checks:
 
 - every scoped MetaTable exists and is visible to the caller
 - the caller has the requested access
-- scoped tables belong to a compatible data source
+- the selected data source exists and can execute the requested operation
 - the operation kind matches the SQL statement kind
 - the dialect is supported
 - the statement is single-statement
@@ -221,6 +232,7 @@ operation = build_operation(
     ),
     parameters={"uid": str(asset_uid), "symbol": "BTC"},
     scope={
+        "data_source_uid": data_source.uid,
         "tables": [
             {
                 "metaTableUid": asset_meta_table.uid,
@@ -249,6 +261,7 @@ Compile first:
 operation = compile_sqlalchemy_statement(
     stmt,
     operation="select",
+    data_source_uid=data_source.uid,
     scope_tables=[{"metaTableUid": asset_meta_table.uid, "access": "read"}],
 )
 MetaTable.execute_operation(operation)

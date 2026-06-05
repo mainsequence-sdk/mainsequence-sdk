@@ -350,6 +350,7 @@ def test_meta_table_execute_operation_serializes_scope_uid(monkeypatch):
                 parameters={"symbol_1": "%BTC%"},
             ),
             scope=meta_table_models.MetaTableOperationScope(
+                data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
                 tables=[
                     meta_table_models.MetaTableOperationScopeTable(
                         metaTableUid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
@@ -367,6 +368,10 @@ def test_meta_table_execute_operation_serializes_scope_uid(monkeypatch):
     assert result["ok"] is True
     assert captured["r_type"] == "POST"
     assert captured["url"].endswith("/ts_manager/meta_table/execute-operation/")
+    assert (
+        captured["payload"]["json"]["scope"]["data_source_uid"]
+        == "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+    )
     assert captured["payload"]["json"]["scope"]["tables"][0] == {
         "meta_table_uid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         "alias": "asset",
@@ -697,6 +702,7 @@ def test_compiled_sql_v1_protocol_is_validated_by_pydantic():
         sql="SELECT asset.symbol FROM public.asset AS asset",
         parameters={"symbol_1": "%BTC%"},
         scope={
+            "dataSourceUid": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
             "tables": [
                 {
                     "metaTableUid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
@@ -712,6 +718,7 @@ def test_compiled_sql_v1_protocol_is_validated_by_pydantic():
     assert operation.version == "compiled-sql.v1"
     assert operation.dialect == "postgresql"
     assert operation.statement.paramstyle == "pyformat"
+    assert operation.scope.data_source_uid == "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
     assert operation.scope.tables[0].meta_table_uid == "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
     assert operation.scope.tables[0].reserved_policy == "reconcile"
     assert (
@@ -725,6 +732,7 @@ def test_compiled_sql_v1_protocol_is_validated_by_pydantic():
             version="compiled-sql.v2",
             statement=meta_table_models.MetaTableStatementPayload(sql="SELECT 1"),
             scope=meta_table_models.MetaTableOperationScope(
+                data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
                 tables=[
                     meta_table_models.MetaTableOperationScopeTable(
                         metaTableUid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
@@ -737,8 +745,38 @@ def test_compiled_sql_v1_protocol_is_validated_by_pydantic():
         meta_table_models.MetaTableCompiledSQLOperation(
             operation="select",
             statement=meta_table_models.MetaTableStatementPayload(sql="SELECT 1"),
-            scope=meta_table_models.MetaTableOperationScope(tables=[]),
+            scope=meta_table_models.MetaTableOperationScope(
+                data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+                tables=[],
+            ),
         )
+
+
+def test_compiled_sql_v1_scope_resolves_session_data_source(monkeypatch):
+    monkeypatch.setattr(
+        meta_table_models,
+        "get_session_data_source",
+        lambda: SimpleNamespace(uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd"),
+    )
+
+    operation = build_operation(
+        operation="select",
+        sql="SELECT asset.symbol FROM public.asset AS asset",
+        scope={
+            "tables": [
+                {
+                    "metaTableUid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                    "alias": "asset",
+                }
+            ]
+        },
+    )
+
+    assert operation.scope.data_source_uid == "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+    assert (
+        operation.model_dump(mode="json", by_alias=True)["scope"]["data_source_uid"]
+        == "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+    )
 
 
 def test_compiled_sql_v1_serializes_typed_temporal_parameters():
@@ -754,6 +792,7 @@ def test_compiled_sql_v1_serializes_typed_temporal_parameters():
             "seen_at": "datetime64[ns, UTC]",
         },
         scope={
+            "data_source_uid": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
             "tables": [
                 {
                     "metaTableUid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
@@ -780,6 +819,7 @@ def test_compiled_sql_v1_rejects_untyped_temporal_parameters():
             sql="SELECT * FROM asset WHERE as_of = %(as_of)s",
             parameters={"as_of": datetime.date(2026, 5, 28)},
             scope={
+                "data_source_uid": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
                 "tables": [
                     {
                         "metaTableUid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
@@ -804,6 +844,7 @@ def test_compile_sqlalchemy_statement_emits_temporal_parameter_types():
     operation = compile_sqlalchemy_statement(
         statement,
         operation="select",
+        data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
         scope_tables=[
             {
                 "metaTableUid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
@@ -815,6 +856,7 @@ def test_compile_sqlalchemy_statement_emits_temporal_parameter_types():
     assert operation.statement.parameter_types == {
         "seen_at": "timestamp with time zone",
     }
+    assert operation.scope.data_source_uid == "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
     assert operation.statement.parameters["seen_at"] == "2026-05-28T12:30:00Z"
 
 
@@ -833,6 +875,7 @@ def test_compile_sqlalchemy_statement_rejects_naive_datetime_bind_types():
         compile_sqlalchemy_statement(
             statement,
             operation="select",
+            data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
             scope_tables=[
                 {
                     "metaTableUid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",

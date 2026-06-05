@@ -35,6 +35,7 @@ def build_asset_search_operation(
     asset_model,
     asset_meta_table_uid: str,
     account_meta_table_uid: str,
+    data_source_uid: str | None,
     account_row_uid: str,
     symbol_pattern: str,
 ):
@@ -48,6 +49,7 @@ def build_asset_search_operation(
     return compile_sqlalchemy_statement(
         stmt,
         operation="select",
+        data_source_uid=data_source_uid,
         scope_tables=[
             {
                 "metaTableUid": asset_meta_table_uid,
@@ -78,6 +80,7 @@ def main() -> None:
             "MAINSEQUENCE_META_TABLE_ACCOUNT_UID",
             PLACEHOLDER_ACCOUNT_META_TABLE_UID,
         ),
+        data_source_uid=optional_env("MAINSEQUENCE_META_TABLE_DATA_SOURCE_UID", "") or None,
         account_row_uid=optional_env(
             "MAINSEQUENCE_META_TABLE_ACCOUNT_ROW_UID",
             PLACEHOLDER_ACCOUNT_ROW_UID,

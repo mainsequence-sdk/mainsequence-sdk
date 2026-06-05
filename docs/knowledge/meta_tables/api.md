@@ -229,6 +229,7 @@ Execution expects a `compiled-sql.v1` operation:
 operation = compile_sqlalchemy_statement(
     stmt,
     operation="select",
+    data_source_uid=data_source.uid,
     scope_tables=[
         {"metaTableUid": asset_meta_table.uid, "alias": "asset", "access": "read"},
         {"metaTableUid": account_meta_table.uid, "alias": "account", "access": "read"},
@@ -239,20 +240,20 @@ result = MetaTable.execute_operation(operation)
 ```
 
 The SDK accepts `metaTableUid` and `meta_table_uid` when building scope objects.
-The serialized backend payload uses `meta_table_uid`.
+The serialized backend payload uses `meta_table_uid`. If
+`scope.data_source_uid` is omitted, the SDK resolves the configured
+project/session default data source before sending the request.
 
 Backend checks include:
 
 - every scoped MetaTable is visible to the caller
 - write operations require edit access
-- all scoped tables are on the same data source
-- the data source supports the requested compiled operation
+- the selected data source supports the requested compiled operation
 - `version` is `compiled-sql.v1`
 - `dialect` is `postgresql`
 - `statement.paramstyle` is `pyformat`
 - the SQL is one statement
 - the SQL statement type matches `operation`
-- parsed physical table references are covered by `scope.tables`
 
 The response shape is:
 
