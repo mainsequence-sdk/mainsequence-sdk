@@ -159,6 +159,7 @@ class PricesTable(PlatformTimeIndexMetaTable, Base):
         "risk analytics."
     )
     __time_index_name__ = "time_index"
+    __cadence__ = "1d"
     __index_names__ = ["time_index", "unique_identifier"]
 
     time_index: Mapped[datetime.datetime] = mapped_column(
@@ -196,6 +197,12 @@ automatically adds a SQLAlchemy unique index over that tuple before Alembic
 autogenerate runs. Do not manually repeat the full grain unique index in
 `__table_args__`; add ordinary SQLAlchemy `Index(...)` entries only for
 additional lookup/performance paths.
+
+When the dataset has a known stable observation interval, declare `__cadence__`
+on the `PlatformTimeIndexMetaTable` model, for example `1m`, `5m`, `1h`, `1d`,
+`1w`, `1mo`, `1q`, or `1y`. Cadence is table metadata and should be included
+whenever possible; do not make it a DataNode runtime configuration field unless
+changing it actually changes the produced dataset identity.
 
 `PlatformTimeIndexMetaTable.register()` remains SDK plumbing for the migration
 workflow. Do not manually attach an existing UID, reconstruct a generic

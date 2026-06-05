@@ -137,6 +137,11 @@ first version, use Alembic. Keep the SDK model as a normal
 `PlatformManagedMetaTable` or `PlatformTimeIndexMetaTable` catalog contract, and
 apply physical schema changes through the Alembic migration workflow.
 
+For `PlatformTimeIndexMetaTable`, declare `__cadence__` whenever the table has a
+known stable observation interval, for example `1m`, `5m`, `1h`, `1d`, `1w`,
+`1mo`, `1q`, or `1y`. Cadence is table metadata and belongs on the storage
+model when possible.
+
 Default-schema tables must leave SQLAlchemy `Table.schema` unset; do not write
 `__table_args__ = {"schema": "public"}` for the default PostgreSQL schema. Set
 schema metadata only for non-default schemas, using `__table_args__ = {"schema":

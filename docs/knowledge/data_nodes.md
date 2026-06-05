@@ -158,6 +158,12 @@ Examples:
 - source choice when it changes dataset meaning
 - index columns and foreign keys
 
+When the output has a known stable observation frequency, declare
+`__cadence__` on the `PlatformTimeIndexMetaTable` model. Cadence is
+time-indexed table metadata, not a runtime configuration knob, and should be
+included whenever possible so the catalog can expose the intended observation
+interval.
+
 ### 4.2 Config fields affect `update_hash`
 
 Every `DataNodeConfiguration` field participates in `update_hash`. Declare a
@@ -366,6 +372,8 @@ Must-have rules:
 
 Recommended rules:
 
+- declare `__cadence__` on the storage model when the dataset has a stable
+  observation interval
 - keep column names short (<= 63 chars)
 - avoid mixed `object` dtype when possible
 - replace `inf/-inf` with `NaN`

@@ -217,8 +217,8 @@ the old reservation conflict-diagnostic engine.
 - [ ] Ensure every reservation row includes `is_alembic_managed=true`.
 - [x] Ensure every reservation row includes
   `provisioning_status="reserved"`.
-- [x] Ensure `PlatformTimeIndexMetaTable` rows include `time_index_name` and
-  `partition_strategy`.
+- [x] Ensure `PlatformTimeIndexMetaTable` rows include `time_index_name`,
+  optional `cadence`, and `partition_strategy`.
 - [x] Bind returned rows to the source SQLAlchemy models in request order per
   endpoint.
 - [x] Keep `MetaTable.finalize_managed(...)` and

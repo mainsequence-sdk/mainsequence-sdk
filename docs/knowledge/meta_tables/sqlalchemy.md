@@ -198,9 +198,10 @@ The client sends only the explicit time-indexed table contract:
 `__index_names__` declares the full DataNode grain. The SDK adds a normal
 SQLAlchemy unique index over that tuple before Alembic autogenerate runs, so
 the database enforces one row per `(time_index, dimensions...)` observation.
-`__cadence__` is optional first-class time-indexed metadata. When set, it must
-be an interval token such as `1m`, `5m`, `1h`, `1d`, `1w`, `1mo`, `1q`, or
-`1y`, and it participates in the SDK-derived `storage_hash`.
+`__cadence__` is optional first-class time-indexed metadata, and it is
+recommended whenever the observation frequency is known and stable. When set,
+it must be an interval token such as `1m`, `5m`, `1h`, `1d`, `1w`, `1mo`,
+`1q`, or `1y`, and it participates in the SDK-derived `storage_hash`.
 Foreign keys, the generated unique grain index, and any additional lookup
 indexes are Alembic-owned DDL metadata. TS Manager does not manage index or
 foreign-key contracts.
