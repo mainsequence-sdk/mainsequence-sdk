@@ -75,6 +75,48 @@ def test_time_indexed_profile_rejects_foreign_keys():
         models_metatables.TimeIndexedProfile(**payload)
 
 
+def test_time_index_meta_table_contract_requires_registered_profile_index_names():
+    storage = models_metatables.TimeIndexMetaTable.model_construct(
+        table_contract={
+            "dynamic_table": {
+                "time_index_name": "time_index",
+                "index_names": ["time_index", "asset_identifier"],
+            },
+            "columns": [
+                {"name": "time_index", "data_type": "datetime64[ns, UTC]"},
+                {"name": "asset_identifier", "data_type": "object"},
+            ],
+        },
+        time_indexed_profile=None,
+    )
+
+    assert storage.index_names == []
+    with pytest.raises(ValueError, match="got no time_indexed_profile"):
+        storage._require_time_indexed_table_contract()
+
+
+def test_time_index_meta_table_contract_does_not_infer_from_storage_layout():
+    storage = models_metatables.TimeIndexMetaTable.model_construct(
+        time_indexed_profile=models_metatables.TimeIndexedProfile.model_construct(
+            time_index_name="time_index",
+            index_names=[],
+            column_dtypes_map={
+                "time_index": "datetime64[ns, UTC]",
+                "asset_identifier": "object",
+            },
+            storage_layout={
+                "time_index": "time_index",
+                "identity_dimensions": ["asset_identifier"],
+                "uniqueness": {"columns": ["time_index", "asset_identifier"]},
+            },
+        ),
+    )
+
+    assert storage.index_names == []
+    with pytest.raises(ValueError, match="expected index_names from registered storage profile"):
+        storage._require_time_indexed_table_contract()
+
+
 def test_time_indexed_profile_get_data_updates_prefers_canonical_stats(monkeypatch):
     captured = {}
 

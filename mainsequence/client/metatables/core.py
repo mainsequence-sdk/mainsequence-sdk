@@ -105,36 +105,27 @@ def _storage_time_indexed_contract(storage: Any) -> tuple[str, list[str], dict[s
         return getattr(obj, name, default)
 
     profile = _field(storage, "time_indexed_profile")
-    if profile is not None:
-        time_index_name = _field(profile, "time_index_name")
-        index_names = _field(profile, "index_names")
-        column_dtypes_map = _field(profile, "column_dtypes_map")
-        if time_index_name and index_names and column_dtypes_map:
-            return (
-                str(time_index_name),
-                [str(name) for name in index_names],
-                dict(column_dtypes_map),
-            )
-
-    columns = _field(storage, "columns")
-    if columns:
-        column_dtypes_map = {
-            str(_field(column, "name")): _field(column, "data_type")
-            for column in columns
-            if _field(column, "name")
-        }
-        table_contract = _field(storage, "table_contract", {})
-        dynamic_contract = (
-            table_contract.get("dynamic_table") or {} if isinstance(table_contract, Mapping) else {}
+    if profile is None:
+        raise ValueError(
+            "TimeIndexMetaTable contract is incomplete: expected registered "
+            "storage profile with time_index_name and index_names, got no "
+            "time_indexed_profile."
         )
-        index_names = dynamic_contract.get("index_names") or []
-        time_index_name = dynamic_contract.get("time_index_name") or (
-            index_names[0] if index_names else None
-        )
-        if time_index_name and index_names and column_dtypes_map:
-            return str(time_index_name), [str(name) for name in index_names], column_dtypes_map
 
-    raise ValueError("Storage is missing its time-indexed table contract.")
+    time_index_name = _field(profile, "time_index_name")
+    index_names = _field(profile, "index_names")
+    column_dtypes_map = _field(profile, "column_dtypes_map")
+    if time_index_name and index_names and column_dtypes_map:
+        return (
+            str(time_index_name),
+            [str(name) for name in index_names],
+            dict(column_dtypes_map),
+        )
+
+    raise ValueError(
+        "TimeIndexMetaTable contract is incomplete: expected time_index_name, "
+        "index_names, and column_dtypes_map from registered storage profile."
+    )
 
 
 MetaTableManagementMode = Literal["external_registered", "platform_managed"]
@@ -2022,15 +2013,6 @@ def _payload_get(obj: Any, key: str, default: Any = None) -> Any:
     return getattr(obj, key, default)
 
 
-def _dynamic_table_contract_fragment(table_contract: Mapping[str, Any] | None) -> dict[str, Any]:
-    if not isinstance(table_contract, Mapping):
-        return {}
-    dynamic_contract = table_contract.get("dynamic_table")
-    if isinstance(dynamic_contract, Mapping):
-        return dict(dynamic_contract)
-    return {}
-
-
 def _column_contracts_from_dtype_map(
     column_dtypes_map: Mapping[str, Any],
     *,
@@ -3043,26 +3025,10 @@ class TimeIndexMetaTable(MetaTable):
     def _normalize_cadence(cls, value: str | None) -> str | None:
         return _normalize_time_indexed_cadence(value)
 
-    def _time_indexed_dynamic_contract(self) -> dict[str, Any]:
-        return _dynamic_table_contract_fragment(self.table_contract)
-
     def _time_indexed_storage_layout(self) -> dict[str, Any]:
         profile = self.time_indexed_profile
         if profile is not None and isinstance(profile.storage_layout, Mapping):
             return dict(profile.storage_layout)
-
-        dynamic_contract = self._time_indexed_dynamic_contract()
-        storage_layout = dynamic_contract.get("storage_layout")
-        if isinstance(storage_layout, Mapping):
-            return dict(storage_layout)
-
-        contract_layout = (
-            self.table_contract.get("storage_layout")
-            if isinstance(self.table_contract, Mapping)
-            else None
-        )
-        if isinstance(contract_layout, Mapping):
-            return dict(contract_layout)
         return {}
 
     @property
@@ -3070,23 +3036,6 @@ class TimeIndexMetaTable(MetaTable):
         profile = self.time_indexed_profile
         if profile is not None and profile.time_index_name:
             return str(profile.time_index_name)
-
-        dynamic_contract = self._time_indexed_dynamic_contract()
-        if dynamic_contract.get("time_index_name"):
-            return str(dynamic_contract["time_index_name"])
-
-        index_names = dynamic_contract.get("index_names")
-        if (
-            isinstance(index_names, Sequence)
-            and not isinstance(index_names, (str, bytes, bytearray))
-            and index_names
-        ):
-            return str(index_names[0])
-
-        storage_layout = self._time_indexed_storage_layout()
-        time_index = storage_layout.get("time_index")
-        if isinstance(time_index, Mapping) and time_index.get("name"):
-            return str(time_index["name"])
         return None
 
     @property
@@ -3094,30 +3043,7 @@ class TimeIndexMetaTable(MetaTable):
         profile = self.time_indexed_profile
         if profile is not None and profile.index_names:
             return [str(name) for name in profile.index_names]
-
-        dynamic_contract = self._time_indexed_dynamic_contract()
-        dynamic_index_names = dynamic_contract.get("index_names")
-        if isinstance(dynamic_index_names, Sequence) and not isinstance(
-            dynamic_index_names, (str, bytes, bytearray)
-        ):
-            return [str(name) for name in dynamic_index_names]
-
-        storage_layout = self._time_indexed_storage_layout()
-        uniqueness_columns = (storage_layout.get("uniqueness") or {}).get("columns")
-        if isinstance(uniqueness_columns, Sequence) and not isinstance(
-            uniqueness_columns, (str, bytes, bytearray)
-        ):
-            return [str(name) for name in uniqueness_columns]
-
-        time_index_name = self.time_index_name
-        identity_dimensions = storage_layout.get("identity_dimensions")
-        if (
-            time_index_name
-            and isinstance(identity_dimensions, Sequence)
-            and not isinstance(identity_dimensions, (str, bytes, bytearray))
-        ):
-            return [time_index_name, *[str(name) for name in identity_dimensions]]
-        return [time_index_name] if time_index_name else []
+        return []
 
     @property
     def column_dtypes_map(self) -> dict[str, str]:
@@ -3150,15 +3076,33 @@ class TimeIndexMetaTable(MetaTable):
         return {}
 
     def _require_time_indexed_table_contract(self) -> tuple[str, list[str], dict[str, str]]:
-        time_index_name = self.time_index_name
-        index_names = self.index_names
-        column_dtypes_map = self.column_dtypes_map
-        if not time_index_name or not index_names or not column_dtypes_map:
+        profile = self.time_indexed_profile
+        if profile is None:
+            raise ValueError(
+                "TimeIndexMetaTable contract is incomplete: expected registered "
+                "storage profile with time_index_name and index_names, got no "
+                "time_indexed_profile."
+            )
+
+        time_index_name = profile.time_index_name
+        index_names = [str(name) for name in profile.index_names]
+        if not time_index_name or not index_names:
+            raise ValueError(
+                "TimeIndexMetaTable contract is incomplete: expected index_names "
+                "from registered storage profile."
+            )
+
+        column_dtypes_map = normalize_column_dtypes_map(
+            profile.column_dtypes_map,
+            remote=False,
+            allow_naive_datetime=True,
+        )
+        if not column_dtypes_map:
             raise ValueError(
                 "TimeIndexMetaTable is missing its time-indexed table contract. "
-                "Expected canonical MetaTable columns plus a time_indexed_profile projection."
+                "Expected column_dtypes_map from registered storage profile."
             )
-        return time_index_name, index_names, column_dtypes_map
+        return str(time_index_name), index_names, column_dtypes_map
 
     @staticmethod
     def _date_for_payload(value: Any) -> Any:
