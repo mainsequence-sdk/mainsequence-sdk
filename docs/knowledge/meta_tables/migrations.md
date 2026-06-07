@@ -152,6 +152,7 @@ from sdk_examples.meta_tables.account_limits import Account, AccountLimit, Base
 def refresh_project_catalog_from_registered_metatables(
     context: AlembicMetaTableCatalogRefreshContext,
 ):
+    models = context.metatable_models
     registered_metatables = context.registered_metatables
     reserved_policy = context.reserved_policy
     ...

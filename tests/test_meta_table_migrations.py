@@ -344,6 +344,7 @@ def test_alembic_metatable_migration_finalizes_catalog_after_alembic(monkeypatch
                 context.migration_namespace,
                 context.reserved_policy,
                 [meta_table.uid for meta_table in context.registered_metatables],
+                [model.__name__ for model in context.metatable_models],
             )
         )
 
@@ -425,6 +426,7 @@ def test_alembic_metatable_migration_finalizes_catalog_after_alembic(monkeypatch
             "markets",
             "reconcile",
             ["asset-meta-table-uid"],
+            ["Asset"],
         )
     ]
 
@@ -473,7 +475,12 @@ def test_finalize_metatable_catalog_passes_full_bound_provider_scope_to_hook(mon
     hook_uids = []
 
     def after_register(context):
-        hook_uids.append([meta_table.uid for meta_table in context.registered_metatables])
+        hook_uids.append(
+            (
+                [meta_table.uid for meta_table in context.registered_metatables],
+                [model.__name__ for model in context.metatable_models],
+            )
+        )
 
     migration = AlembicMetaTableMigration(
         package="msm",
@@ -524,7 +531,12 @@ def test_finalize_metatable_catalog_passes_full_bound_provider_scope_to_hook(mon
     )
 
     assert response.ok is True
-    assert hook_uids == [["asset-meta-table-uid", "price-meta-table-uid"]]
+    assert hook_uids == [
+        (
+            ["asset-meta-table-uid", "price-meta-table-uid"],
+            ["Asset", "Price"],
+        )
+    ]
 
 
 def test_alembic_metatable_migration_sync_catalog_hook_has_no_reserved_policy(

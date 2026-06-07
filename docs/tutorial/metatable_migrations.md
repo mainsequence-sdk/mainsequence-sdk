@@ -573,6 +573,11 @@ migration = AlembicMetaTableMigration(
 )
 ```
 
+The hook receives the same ordered model scope through
+`context.metatable_models` and the matching MetaTable objects through
+`context.registered_metatables`. Use those context fields for catalog refresh;
+do not import a broader registry inside the hook.
+
 The hook receives the ordered finalized MetaTable objects and runs only after
 `upgrade` has successfully applied Alembic migrations and finalized
 provider-scoped MetaTables. It does not run for `current`, `revision`, or

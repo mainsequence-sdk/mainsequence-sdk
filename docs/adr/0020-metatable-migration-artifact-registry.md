@@ -149,15 +149,20 @@ that must happen after provider-scoped MetaTable registration. The SDK calls it
 only after every model in `migration.metatable_models` has registered or
 refreshed successfully. The hook receives an
 `AlembicMetaTableCatalogRefreshContext` containing the ordered registered
-MetaTable objects, provider identity, and the reserved-table policy for any
-post-Alembic catalog writes:
+MetaTable objects, the matching ordered provider model classes, provider
+identity, and the reserved-table policy for any post-Alembic catalog writes:
 
 ```python
 def refresh_markets_catalog_from_registered_metatables(context):
+    models = context.metatable_models
     registered_metatables = context.registered_metatables
     reserved_policy = context.reserved_policy
     ...
 ```
+
+Hooks must use the provider-scoped `context.metatable_models`; importing a
+separate global registry can compare the current provider against the wrong
+model scope.
 
 The hook is client/project tooling. It is not part of the backend apply request,
 is not a second migration language, and must not run during `current`,

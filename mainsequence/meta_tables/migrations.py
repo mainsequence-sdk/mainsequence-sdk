@@ -58,6 +58,7 @@ class AlembicMetaTableCatalogRefreshContext:
     migration_namespace: str
     registered_metatables: list[MetaTable]
     reserved_policy: Literal["reconcile"] | None = None
+    metatable_models: list[type[Any]] = field(default_factory=list)
 
 
 class AlembicProviderPhysicalStateError(RuntimeError):
@@ -459,6 +460,7 @@ class AlembicMetaTableMigration:
                     migration_namespace=self.migration_namespace,
                     registered_metatables=registered,
                     reserved_policy=reserved_policy,
+                    metatable_models=list(self.metatable_models),
                 )
             )
         return registered
@@ -548,6 +550,7 @@ class AlembicMetaTableMigration:
                     migration_namespace=self.migration_namespace,
                     registered_metatables=registered_metatables,
                     reserved_policy="reconcile",
+                    metatable_models=list(self.metatable_models),
                 )
             )
         return response
