@@ -10,8 +10,6 @@ from typing import Any, ClassVar, Literal
 
 from mainsequence.client.metatables import (
     AlembicManagementRequest,
-    AlembicProviderResetRequest,
-    AlembicProviderResetResponse,
     DynamicTableDataSource,
     ManagedMetaTableFinalizeRequest,
     ManagedMetaTableFinalizeResponse,
@@ -545,31 +543,6 @@ class AlembicMetaTableMigration:
             )
         return response
 
-    def reset_alembic_provider(
-        self,
-        *,
-        confirm_reset: bool,
-        drop_physical_tables: bool = True,
-        clear_alembic_version_table: bool = True,
-        include_reserved: bool = True,
-        timeout: int | float | tuple[float, float] | None = None,
-        on_reset_status: Callable[[str], Any] | None = None,
-    ) -> AlembicProviderResetResponse:
-        request = AlembicProviderResetRequest(
-            migration_package=self.package,
-            migration_namespace=self.migration_namespace,
-            data_source_uid=self._resolve_provider_data_source_uid(),
-            confirm_reset=confirm_reset,
-            drop_physical_tables=drop_physical_tables,
-            clear_alembic_version_table=clear_alembic_version_table,
-            include_reserved=include_reserved,
-        )
-        return MetaTable.alembic_provider_reset(
-            request,
-            timeout=timeout,
-            on_status=on_reset_status,
-        )
-
     def prepare_for_alembic(
         self,
         *,
@@ -605,15 +578,23 @@ class AlembicMetaTableMigration:
                 table_name = target_table_names[model]
                 existing_meta_table = existing_by_table_name.get(table_name)
                 if existing_meta_table is not None:
-                    if _meta_table_provisioning_status(existing_meta_table) == "active":
+                    provisioning_status = _meta_table_provisioning_status(existing_meta_table)
+                    if provisioning_status in {"active", "reserved"}:
                         _bind_model_to_existing_metatable(model, existing_meta_table)
                         reserved_by_model[model] = existing_meta_table
+                        if provisioning_status == "reserved":
+                            reserved_tables.append(existing_meta_table)
+                            if on_metatable_reservation_status is not None:
+                                on_metatable_reservation_status(
+                                    "Reusing existing reserved MetaTable "
+                                    f"table_name={table_name}."
+                                )
                         continue
-                    if on_metatable_reservation_status is not None:
-                        on_metatable_reservation_status(
-                            "Restaging existing reserved MetaTable "
-                            f"table_name={table_name} with current provider contract."
-                        )
+                    raise RuntimeError(
+                        "Cannot prepare Alembic MetaTable reservation because "
+                        f"table_name={table_name} already exists with unsupported "
+                        f"provisioning_status={provisioning_status!r}."
+                    )
                 else:
                     bound_meta_table = _bound_meta_table_for_model(model)
                     if bound_meta_table is not None:

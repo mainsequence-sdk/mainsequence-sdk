@@ -527,7 +527,6 @@ mainsequence migrations current --provider module.path:migration
 mainsequence migrations revision --provider module.path:migration -m "schema change"
 mainsequence migrations upgrade --provider module.path:migration head
 mainsequence migrations downgrade --provider module.path:migration <revision>
-mainsequence migrations reset --provider module.path:migration --confirm-reset
 ```
 
 All commands resolve the same provider object by convention or by
@@ -554,11 +553,14 @@ Command responsibilities:
   once, and runs `migration.after_register_metatables` when configured.
 - `downgrade` uses the same scoped connection flow and calls Alembic
   `downgrade`.
-- `reset` is an explicit destructive provider reset command.
 
 There is no `--register-metatables` flag in the final workflow. Catalog sync is
 part of `upgrade` success. The command exits successfully only when Alembic
 execution and provider-scoped catalog finalization succeed.
+
+Existing reserved MetaTables found during prepare are bound and reused; they are
+not collection-created again. If reserved state cannot be reused safely, the
+client must fail with a clear error.
 
 ## Superseded Backend Apply Contract
 

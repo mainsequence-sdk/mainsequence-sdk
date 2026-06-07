@@ -373,10 +373,10 @@ normal tutorial workflow.
   SQL artifact apply endpoints.
 - [x] Finalize reserved provider MetaTables after successful Alembic
   upgrade/downgrade through the backend batch finalize endpoint.
-- [x] Add typed SDK request/response models for schema-management,
-  finalize-managed, and Alembic provider reset.
-- [x] Add `mainsequence migrations reset --confirm-reset` for explicit
-  provider-scoped repair workflows.
+- [x] Add typed SDK request/response models for schema-management and
+  finalize-managed.
+- [x] Reuse existing reserved provider rows during migration prepare instead of
+  collection-creating duplicates.
 - [x] Apply ADR 0023 cleanup: remove SDK FK/index contract generation from
   migration resolution and remove the legacy `MetaTableForeignKey(...)` surface.
 - [x] Deprecate or remove import-time binding of `MetaTable.apply_migration` and

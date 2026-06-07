@@ -735,98 +735,6 @@ class ManagedMetaTableFinalizeResponse(BasePydanticModel):
     model_config = ConfigDict(extra="allow")
 
 
-class AlembicProviderResetRequest(BasePydanticModel):
-    migration_package: str = Field(
-        ...,
-        description="Alembic provider package, for example 'msm'.",
-    )
-    migration_namespace: str = Field(
-        ...,
-        description="Alembic provider namespace, for example 'mainsequence.examples'.",
-    )
-    data_source_uid: str = Field(
-        ...,
-        description="DynamicTableDataSource UID that owns the provider MetaTables.",
-    )
-    confirm_reset: Literal[True] = Field(
-        ...,
-        description="Must be true. This endpoint is destructive and provider-scoped.",
-    )
-    drop_physical_tables: bool = Field(
-        True,
-        description="Drop provider physical tables before reserving catalog rows.",
-    )
-    clear_alembic_version_table: bool = Field(
-        True,
-        description="Clear the provider Alembic version table after physical reset.",
-    )
-    include_reserved: bool = Field(
-        True,
-        description="Include already-reserved provider MetaTables in the reset result.",
-    )
-
-
-class AlembicProviderResetTableResult(BasePydanticModel):
-    meta_table_uid: str = Field(..., description="Public UID of the reset MetaTable.")
-    identifier: str | None = Field(None, description="Logical MetaTable identifier.")
-    storage_hash: str = Field(..., description="Canonical MetaTable storage hash.")
-    physical_table_name: str | None = Field(None, description="Physical table name.")
-    previous_provisioning_status: str = Field(
-        ...,
-        description="Provisioning status before the reset attempt.",
-    )
-    provisioning_status: str = Field(
-        ...,
-        description="Provisioning status after the reset attempt.",
-    )
-    physical_table_exists: bool = Field(
-        ...,
-        description="Whether the physical table existed before reset completed.",
-    )
-    physical_table_dropped: bool = Field(
-        ...,
-        description="Whether this physical table was dropped by reset.",
-    )
-    error: dict[str, Any] | None = Field(
-        None,
-        description="Per-table structured reset error, when present.",
-    )
-
-    model_config = ConfigDict(extra="allow")
-
-
-class AlembicProviderResetResponse(BasePydanticModel):
-    ok: bool = Field(..., description="Whether the provider reset completed without errors.")
-    migration_provider_key: str = Field(..., description="Resolved provider key.")
-    migration_package: str = Field(..., description="Alembic provider package.")
-    migration_namespace: str = Field(..., description="Alembic provider namespace.")
-    data_source_uid: str = Field(..., description="Provider DynamicTableDataSource UID.")
-    meta_table_uids: list[str] = Field(..., description="Provider MetaTable UIDs reset.")
-    dropped_physical_tables: list[str] = Field(
-        default_factory=list,
-        description="Physical table names dropped during reset.",
-    )
-    cleared_alembic_version_table: bool = Field(
-        ...,
-        description="Whether the provider Alembic version table was cleared.",
-    )
-    deleted_or_reserved_catalog_rows: list[str] = Field(
-        default_factory=list,
-        description="Catalog row UIDs deleted or moved to reserved by reset.",
-    )
-    failed_count: int = Field(..., description="Number of reset failures.")
-    tables: list[AlembicProviderResetTableResult] = Field(
-        default_factory=list,
-        description="Per-MetaTable reset results.",
-    )
-    errors: list[dict[str, Any]] = Field(
-        default_factory=list,
-        description="Provider-level reset errors.",
-    )
-
-    model_config = ConfigDict(extra="allow")
-
-
 class DataSource(BasePydanticModel, BaseObjectOrm):
     uid: str | None = Field(
         None,
@@ -1548,27 +1456,6 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
             on_status=on_status,
         )
         return ManagedMetaTableFinalizeResponse(**response_json)
-
-    @classmethod
-    def alembic_provider_reset(
-        cls,
-        request: AlembicProviderResetRequest | Mapping[str, Any] | None = None,
-        *,
-        timeout: int | float | tuple[float, float] | None = None,
-        on_status: Callable[[str], Any] | None = None,
-        **kwargs: Any,
-    ) -> AlembicProviderResetResponse:
-        if request is not None and kwargs:
-            raise ValueError("Pass either request or keyword fields, not both.")
-        payload = request if request is not None else AlembicProviderResetRequest(**kwargs)
-        response_json = cls._post_action(
-            "alembic-provider-reset",
-            payload,
-            timeout=timeout,
-            expected_statuses=(200, 409),
-            on_status=on_status,
-        )
-        return AlembicProviderResetResponse(**response_json)
 
     @classmethod
     def validate_contract(
@@ -2782,19 +2669,29 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
         data_source: DynamicTableDataSource,
         overwrite: bool,
         records: Sequence[Any] | None = None,
-        source_table_schema: Mapping[str, Any] | None = None,
     ):
         overwrite = True  # ALWAYS OVERWRITE
+        if isinstance(self.data_node_storage, str | UUID):
+            raise ValueError(
+                "DataNode writes require data_node_storage to be a bound "
+                "TimeIndexMetaTable, not a UID reference."
+            )
+        if not hasattr(self.data_node_storage, "_require_time_indexed_table_contract"):
+            raise ValueError(
+                "DataNode writes require data_node_storage to expose a complete "
+                "TimeIndexMetaTable contract."
+            )
+        schema_time_index_name, schema_index_names, schema_column_dtypes_map = (
+            self.data_node_storage._require_time_indexed_table_contract()
+        )
+
         storage_class_type = getattr(
             getattr(data_source, "related_resource", None), "class_type", None
         )
         is_local_storage = storage_class_type in LOCAL_DATA_SOURCE_CLASS_TYPES
 
-        schema_time_index_name = (
-            str(source_table_schema["time_index_name"])
-            if source_table_schema and source_table_schema.get("time_index_name") is not None
-            else None
-        )
+        schema_time_index_name = str(schema_time_index_name)
+        schema_index_names = [str(name) for name in schema_index_names]
         data, index_names, column_dtypes_map, time_index_name = self._break_pandas_dataframe(
             data,
             time_index_name=schema_time_index_name,
@@ -2803,36 +2700,24 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
             allow_naive_datetime=is_local_storage,
         )
         inferred_index_names = list(index_names)
-        if source_table_schema:
-            schema_index_names = source_table_schema.get("index_names")
-            if schema_index_names is not None:
-                index_names = [str(name) for name in schema_index_names]
-                if index_names != inferred_index_names:
-                    raise ValueError(
-                        "DataFrame index names do not match declared source table "
-                        f"index_names. DataFrame: {inferred_index_names}; "
-                        f"declared: {index_names}"
-                    )
-            schema_columns = source_table_schema.get("columns")
-            schema_column_dtypes_map = source_table_schema.get("column_dtypes_map")
-            if schema_columns is not None:
-                column_dtypes_map = _column_dtype_map_from_contracts(
-                    schema_columns,
-                    remote=not is_local_storage,
-                    allow_naive_datetime=is_local_storage,
-                )
-            elif schema_column_dtypes_map is not None:
-                column_contracts = _column_contracts_from_dtype_map(
-                    schema_column_dtypes_map,
-                    index_names=index_names,
-                    remote=not is_local_storage,
-                    allow_naive_datetime=is_local_storage,
-                )
-                column_dtypes_map = _column_dtype_map_from_contracts(
-                    column_contracts,
-                    remote=not is_local_storage,
-                    allow_naive_datetime=is_local_storage,
-                )
+        index_names = list(schema_index_names)
+        if index_names != inferred_index_names:
+            raise ValueError(
+                "DataFrame index names do not match declared source table "
+                f"index_names. DataFrame: {inferred_index_names}; "
+                f"declared: {index_names}"
+            )
+        column_contracts = _column_contracts_from_dtype_map(
+            schema_column_dtypes_map,
+            index_names=index_names,
+            remote=not is_local_storage,
+            allow_naive_datetime=is_local_storage,
+        )
+        column_dtypes_map = _column_dtype_map_from_contracts(
+            column_contracts,
+            remote=not is_local_storage,
+            allow_naive_datetime=is_local_storage,
+        )
         index_names = list(index_names)
         missing_index_dtypes = [name for name in index_names if name not in column_dtypes_map]
         if missing_index_dtypes:
@@ -4775,9 +4660,6 @@ MetaTable.model_rebuild()
 
 __all__ = [
     "AlembicManagementRequest",
-    "AlembicProviderResetRequest",
-    "AlembicProviderResetResponse",
-    "AlembicProviderResetTableResult",
     "BaseColumnMetaData",
     "BaseUpdateStatistics",
     "ColumnMetaData",

@@ -213,7 +213,7 @@ def test_persist_manager_build_update_details_uses_update_details_resource():
     assert patched == [("data-node-update-44", {})]
 
 
-def test_persist_manager_passes_storage_contract_schema_to_update():
+def test_persist_manager_does_not_pass_storage_contract_schema_override_to_update():
     captured = {}
 
     class UpdateResource:
@@ -265,16 +265,7 @@ def test_persist_manager_passes_storage_contract_schema_to_update():
     )
 
     assert manager.persist_updated_data(df) is True
-    assert captured["source_table_schema"] == {
-        "time_index_name": "time_index",
-        "index_names": ["time_index", "account_uid", "unique_identifier"],
-        "column_dtypes_map": {
-            "time_index": "timestamp with time zone",
-            "account_uid": "uuid",
-            "unique_identifier": "string",
-            "quantity": "float64",
-        },
-    }
+    assert "source_table_schema" not in captured
 
 
 def test_data_node_storage_accepts_namespace():

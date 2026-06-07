@@ -30,7 +30,6 @@ REGISTER_ENDPOINT = "/orm/api/ts_manager/meta_table/register/"
 METATABLE_COLLECTION_ENDPOINT = "/orm/api/ts_manager/meta_table/"
 DYNAMIC_TABLE_COLLECTION_ENDPOINT = "/orm/api/ts_manager/dynamic_table/"
 FINALIZE_MANAGED_ENDPOINT = "/orm/api/ts_manager/meta_table/finalize-managed/"
-ALEMBIC_PROVIDER_RESET_ENDPOINT = "/orm/api/ts_manager/meta_table/alembic-provider-reset/"
 
 
 class _AlembicOutput:
@@ -884,57 +883,3 @@ def downgrade(
         },
         json_output=json_output,
     )
-
-
-@migrations.command("reset")
-def reset(
-    provider: str | None = typer.Option(
-        None,
-        "--provider",
-        help="Migration provider reference, for example msm.migrations:migration.",
-    ),
-    confirm_reset: bool = typer.Option(
-        False,
-        "--confirm-reset",
-        help="Required confirmation for destructive provider-scoped reset.",
-    ),
-    drop_physical_tables: bool = typer.Option(
-        True,
-        "--drop-physical-tables/--keep-physical-tables",
-        help="Drop provider physical tables during reset.",
-    ),
-    clear_alembic_version_table: bool = typer.Option(
-        True,
-        "--clear-alembic-version-table/--keep-alembic-version-table",
-        help="Clear the provider Alembic version table during reset.",
-    ),
-    include_reserved: bool = typer.Option(
-        True,
-        "--include-reserved/--active-only",
-        help="Include already-reserved provider MetaTables in reset results.",
-    ),
-    timeout: float | None = typer.Option(None, "--timeout"),
-    json_output: bool = typer.Option(False, "--json", help="Emit JSON."),
-) -> None:
-    """Reset an Alembic-managed provider catalog/physical state."""
-
-    if not confirm_reset:
-        raise typer.BadParameter(
-            "Pass --confirm-reset to call the destructive provider reset endpoint.",
-            param_hint="--confirm-reset",
-        )
-    migration = _load_migration(provider)
-    _emit_status(
-        "Calling provider reset endpoint "
-        f"{ALEMBIC_PROVIDER_RESET_ENDPOINT} provider={migration.migration_provider_key}..."
-    )
-    response = migration.reset_alembic_provider(
-        confirm_reset=True,
-        drop_physical_tables=drop_physical_tables,
-        clear_alembic_version_table=clear_alembic_version_table,
-        include_reserved=include_reserved,
-        timeout=timeout,
-        on_reset_status=_emit_status,
-    )
-    _emit_status("Alembic provider reset finished.")
-    _emit(response, json_output=json_output)

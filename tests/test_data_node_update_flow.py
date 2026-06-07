@@ -478,7 +478,15 @@ def test_upsert_data_into_table_computes_canonical_stats(monkeypatch):
         update_hash="update-hash",
         build_configuration={},
         ogm_dependencies_linked=False,
-        data_node_storage=object(),
+        data_node_storage=_storage_with_source_config(
+            index_names=["time_index", "account_uid", "unique_identifier"],
+            column_dtypes_map={
+                "time_index": "timestamp with time zone",
+                "account_uid": "string",
+                "unique_identifier": "string",
+                "value": "float64",
+            },
+        ),
     )
 
     def _fake_set_last(**kwargs):
@@ -654,6 +662,27 @@ def test_upsert_data_into_table_rejects_full_index_duplicates():
     df = pd.DataFrame({"value": [1.0, 2.0]}, index=duplicate_index)
 
     with pytest.raises(Exception, match="Duplicates found"):
+        update.upsert_data_into_table(
+            df,
+            data_source=SimpleNamespace(related_resource=SimpleNamespace()),
+            overwrite=True,
+        )
+
+
+def test_upsert_data_into_table_requires_bound_data_node_storage_contract():
+    update = models_metatables.DataNodeUpdate.model_construct(
+        id=77,
+        update_hash="update-hash",
+        build_configuration={},
+        ogm_dependencies_linked=False,
+        data_node_storage="data-node-storage-uid",
+    )
+    df = pd.DataFrame(
+        {"value": [1.0]},
+        index=pd.DatetimeIndex([_dt(0)], name="time_index"),
+    )
+
+    with pytest.raises(ValueError, match="bound TimeIndexMetaTable"):
         update.upsert_data_into_table(
             df,
             data_source=SimpleNamespace(related_resource=SimpleNamespace()),

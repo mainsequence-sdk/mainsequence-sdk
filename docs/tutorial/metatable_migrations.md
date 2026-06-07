@@ -543,17 +543,9 @@ This request intentionally does not include `data_source_uid`, `storage_hash`,
 TS Manager verifies that Alembic created the physical tables and then marks the
 reserved catalog rows active.
 
-For development repair, use the explicit provider reset path:
-
-```bash
-mainsequence migrations reset \
-  --provider mainsequence_migrations:migration \
-  --confirm-reset
-```
-
-Reset is destructive and provider-scoped. It is the supported way to drop or
-reserve Alembic-managed provider state when local Alembic revision state and
-physical tables have drifted.
+Existing reserved MetaTables found during prepare are bound and reused; the SDK
+does not create them again. If a reserved row exists but cannot be reused safely,
+the command must fail with a clear error.
 
 ## 9. Catalog Registration Scope
 

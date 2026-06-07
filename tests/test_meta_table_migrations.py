@@ -1134,7 +1134,7 @@ def test_provider_adds_time_index_grain_index_when_table_cls_is_overridden():
     )
 
 
-def test_prepare_for_alembic_reserves_existing_table_name_with_provider_identity(monkeypatch):
+def test_prepare_for_alembic_reuses_existing_reserved_table_name(monkeypatch):
     class Base(DeclarativeBase):
         metadata = MetaData()
 
@@ -1198,7 +1198,6 @@ def test_prepare_for_alembic_reserves_existing_table_name_with_provider_identity
     def fake_bulk_create(rows, *, timeout=None, on_status=None):
         reserved_payloads.extend(rows)
         assert [table["identifier"] for table in rows] == [
-            "example_assets__account",
             "example_assets__asset",
         ]
         assert all(table["migration_package"] == "sample" for table in rows)
@@ -1211,16 +1210,10 @@ def test_prepare_for_alembic_reserves_existing_table_name_with_provider_identity
         assert all("schema_management" not in table for table in rows)
         return [
             _reserved_metatable(
-                uid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-                identifier="example_assets__account",
-                physical_table_name="example_assets__account",
-                storage_hash=rows[0]["storage_hash"],
-            ),
-            _reserved_metatable(
                 uid="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
                 identifier="example_assets__asset",
                 physical_table_name="example_assets__asset",
-                storage_hash=rows[1]["storage_hash"],
+                storage_hash=rows[0]["storage_hash"],
             ),
         ]
 
@@ -1242,20 +1235,20 @@ def test_prepare_for_alembic_reserves_existing_table_name_with_provider_identity
     )
 
     assert len(filter_calls) == 1
-    assert [payload["identifier"] for payload in reserved_payloads] == [
-        "example_assets__account",
-        "example_assets__asset",
-    ]
+    assert [payload["identifier"] for payload in reserved_payloads] == ["example_assets__asset"]
     assert "schema_management" not in reserved_payloads[0]
     assert prepared.meta_table_uids == [
+        "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    ]
+    assert [item.uid for item in prepared.reserved_tables] == [
         "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
     ]
     assert Account.__table__.name == "example_assets__account"
     assert Asset.__table__.name == "example_assets__asset"
     assert (
-        "Restaging existing reserved MetaTable table_name=example_assets__account "
-        "with current provider contract."
+        "Reusing existing reserved MetaTable table_name=example_assets__account."
     ) in reservation_statuses
 
 
