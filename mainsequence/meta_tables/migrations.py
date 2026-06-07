@@ -512,19 +512,18 @@ class AlembicMetaTableMigration:
             for item in response.tables:
                 if _finalize_table_failed(item):
                     on_metatable_finalize_status(_finalize_failure_message(item))
-        finalized_for_models: list[MetaTable] = []
+        finalized_by_model: dict[type[Any], MetaTable] = {}
         for model in self.metatable_models:
             table_name = _migration_table_name(model)
             item = finalized_by_table_name.get(table_name) or finalized_by_uid.get(
                 str(getattr(model, "get_meta_table_uid", lambda: "")())
             )
-            if item is None:
-                continue
-            finalized_meta_table = _metatable_from_finalize_result(model, item)
-            _bind_model_to_existing_metatable(model, finalized_meta_table)
-            finalized_for_models.append(finalized_meta_table)
-            if on_metatable_finalized is not None:
-                on_metatable_finalized(model, item)
+            if item is not None:
+                finalized_meta_table = _metatable_from_finalize_result(model, item)
+                _bind_model_to_existing_metatable(model, finalized_meta_table)
+                finalized_by_model[model] = finalized_meta_table
+                if on_metatable_finalized is not None:
+                    on_metatable_finalized(model, item)
 
         if not response.ok:
             raise AlembicProviderPhysicalStateError(
@@ -533,11 +532,21 @@ class AlembicMetaTableMigration:
             )
 
         if self.after_register_metatables is not None:
+            registered_metatables = []
+            for model in self.metatable_models:
+                meta_table = finalized_by_model.get(model) or _bound_meta_table_for_model(model)
+                if meta_table is None:
+                    model_name = getattr(model, "__qualname__", repr(model))
+                    raise RuntimeError(
+                        "Cannot refresh Alembic MetaTable catalog because provider "
+                        f"model {model_name} is not bound to a MetaTable after finalize."
+                    )
+                registered_metatables.append(meta_table)
             self.after_register_metatables(
                 AlembicMetaTableCatalogRefreshContext(
                     package=self.package,
                     migration_namespace=self.migration_namespace,
-                    registered_metatables=finalized_for_models,
+                    registered_metatables=registered_metatables,
                     reserved_policy="reconcile",
                 )
             )

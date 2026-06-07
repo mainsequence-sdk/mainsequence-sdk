@@ -728,3 +728,28 @@ def test_migrations_upgrade_calls_alembic_and_finalizes_catalog(monkeypatch):
     assert "POST /orm/api/ts_manager/meta_table/finalize-managed/" in output
     assert "finalized MetaTable identifier=markets.Asset" in output
     assert "physical_table=mt_asset" in output
+
+
+def test_migration_finalization_log_reports_existing_active_rows(monkeypatch):
+    migration_cli = importlib.import_module("mainsequence.cli.migrations")
+    messages = []
+    monkeypatch.setattr(migration_cli, "_emit_progress", messages.append)
+
+    class Asset:
+        __metatable_identifier__ = "markets.Asset"
+
+    migration_cli._emit_metatable_finalization(
+        Asset,
+        types.SimpleNamespace(
+            identifier="markets.Asset",
+            meta_table_uid="asset-meta-table-uid",
+            physical_table_name="mt_asset",
+            provisioning_status="active",
+            finalized=False,
+            physical_table_exists=True,
+        ),
+    )
+
+    assert len(messages) == 1
+    assert "active MetaTable identifier=markets.Asset" in messages[0]
+    assert "finalize-failed" not in messages[0]

@@ -429,6 +429,104 @@ def test_alembic_metatable_migration_finalizes_catalog_after_alembic(monkeypatch
     ]
 
 
+def test_finalize_metatable_catalog_passes_full_bound_provider_scope_to_hook(monkeypatch):
+    class Base(DeclarativeBase):
+        metadata = MetaData()
+
+    class ProjectAlembicVersion(AlembicVersionMetaTable):
+        __metatable_data_source_uid__ = "data-source-uid"
+
+    class Asset(PlatformManagedMetaTable, Base):
+        __tablename__ = "example_assets__asset"
+        __metatable_namespace__ = "markets"
+        __metatable_identifier__ = "markets.Asset"
+        __metatable_data_source_uid__ = "data-source-uid"
+
+        uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+
+    class Price(PlatformManagedMetaTable, Base):
+        __tablename__ = "example_assets__price"
+        __metatable_namespace__ = "markets"
+        __metatable_identifier__ = "markets.Price"
+        __metatable_data_source_uid__ = "data-source-uid"
+
+        uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+
+    ProjectAlembicVersion._bind_meta_table(
+        MetaTable.model_construct(
+            uid="registry-meta-table-uid",
+            data_source_uid="data-source-uid",
+        )
+    )
+    Price._bind_meta_table(
+        MetaTable.model_construct(
+            uid="price-meta-table-uid",
+            data_source_uid="data-source-uid",
+            storage_hash="mt_price_hash",
+            identifier="markets.Price",
+            physical_table_name="example_assets__price",
+            management_mode="platform_managed",
+            provisioning_status="active",
+        )
+    )
+
+    hook_uids = []
+
+    def after_register(context):
+        hook_uids.append([meta_table.uid for meta_table in context.registered_metatables])
+
+    migration = AlembicMetaTableMigration(
+        package="msm",
+        migration_namespace="markets",
+        script_location="msm:alembic",
+        target_metadata=Base.metadata,
+        alembic_registry=ProjectAlembicVersion,
+        metatable_models=[Asset, Price],
+        after_register_metatables=after_register,
+    )
+
+    def fake_finalize(request, *, timeout=None, on_status=None):
+        return ManagedMetaTableFinalizeResponse.model_construct(
+            ok=True,
+            finalized_count=0,
+            active_count=2,
+            reserved_count=0,
+            failed_count=0,
+            tables=[
+                ManagedMetaTableFinalizeTableResult.model_construct(
+                    meta_table_uid="asset-meta-table-uid",
+                    identifier="markets.Asset",
+                    storage_hash="mt_asset_hash",
+                    physical_table_name="example_assets__asset",
+                    previous_provisioning_status="active",
+                    provisioning_status="active",
+                    table_kind="relational",
+                    time_indexed=False,
+                    finalized=False,
+                    physical_table_exists=True,
+                    schema_management_mode="alembic_managed",
+                    migration_package="msm",
+                    migration_namespace="markets",
+                    migration_provider_key="msm:markets",
+                    alembic_version_meta_table_uid="registry-meta-table-uid",
+                )
+            ],
+        )
+
+    monkeypatch.setattr(MetaTable, "finalize_managed", staticmethod(fake_finalize))
+
+    response = migration.finalize_metatable_catalog(
+        prepared=PreparedAlembicMetaTableMigration(
+            data_source_uid="data-source-uid",
+            meta_table_uids=["asset-meta-table-uid", "price-meta-table-uid"],
+        ),
+        alembic_revision="0001",
+    )
+
+    assert response.ok is True
+    assert hook_uids == [["asset-meta-table-uid", "price-meta-table-uid"]]
+
+
 def test_alembic_metatable_migration_sync_catalog_hook_has_no_reserved_policy(
     monkeypatch,
 ):

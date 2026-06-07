@@ -411,9 +411,22 @@ def _emit_metatable_reservation(model: type[Any], item: Any) -> None:
     )
 
 
+def _finalization_item_failed(item: Any) -> bool:
+    return (
+        _item_value(item, "provisioning_status") != "active"
+        or _item_value(item, "physical_table_exists") is False
+        or _item_value(item, "error") not in (None, "", {})
+    )
+
+
 def _emit_metatable_finalization(model: type[Any], item: Any) -> None:
     finalized = _item_value(item, "finalized")
-    action = "finalized" if finalized is not False else "finalize-failed"
+    if _finalization_item_failed(item):
+        action = "finalize-failed"
+    elif finalized is False:
+        action = "active"
+    else:
+        action = "finalized"
     _emit_progress(
         _metatable_message(
             endpoint=FINALIZE_MANAGED_ENDPOINT,
