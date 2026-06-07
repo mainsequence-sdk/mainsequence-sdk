@@ -45,7 +45,7 @@ For platform-managed SDK storage classes, the public registration path is the
 MetaTable migration workflow:
 
 ```bash
-mainsequence migrations upgrade --provider mainsequence_migrations:migration head
+mainsequence migrations upgrade --provider sdk_examples.migrations:migration head
 ```
 
 Do not call `StorageClass.register()` directly in application/bootstrap code.

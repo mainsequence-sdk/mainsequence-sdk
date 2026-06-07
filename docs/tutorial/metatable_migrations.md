@@ -120,13 +120,28 @@ The CLI lifecycle intentionally separates three jobs:
 
 ## 1. Define The Migration Provider
 
-Put this code in a Python module that the CLI can import. The simplest location
-is `mainsequence_migrations.py` at the project root, next to `pyproject.toml`:
+Create the migration package with the SDK scaffold command:
+
+```bash
+mainsequence migrations scaffold \
+  --package sdk_examples \
+  --module sdk_examples.migrations \
+  --namespace sdk-examples \
+  --metadata sdk_examples.meta_tables.account_limits:Base.metadata
+```
+
+The command creates the Alembic package, SDK-owned `env.py`, SDK-owned
+`script.py.mako`, and a namespace-specific versions directory. Pass
+`--force` only when you intentionally want to overwrite changed scaffold files.
+
+The generated provider module is importable as
+`sdk_examples.migrations:migration`. The CLI imports that provider to know which
+Alembic environment, SQLAlchemy metadata, version-table binding, and MetaTable
+models belong to this migration stream.
 
 ```text
 your-project/
   pyproject.toml
-  mainsequence_migrations.py
   sdk_examples/
     meta_tables/
       account_limits.py
@@ -138,17 +153,51 @@ your-project/
         __init__.py
 ```
 
-This file is not registered with the backend. It is a local provider module.
-The CLI imports `mainsequence_migrations:migration` to know which Alembic
-environment, SQLAlchemy metadata, version-table binding, and MetaTable models
-belong to this migration stream.
-
-The Alembic version-table binding is registered automatically by commands that
-need backend state, such as `mainsequence migrations current` and
+The provider module itself is not registered with the backend. The Alembic
+version-table binding is registered automatically by commands that need backend
+state, such as `mainsequence migrations current` and
 `mainsequence migrations upgrade`.
 
-The provider below uses the same `Base`, `Account`, and `AccountLimit` model
-classes from Part 2:
+After scaffolding, add the provider-scoped model list. The provider below uses
+the same `Base`, `Account`, and `AccountLimit` model classes from Part 2:
+
+```python
+from mainsequence.meta_tables.migrations import (
+    build_alembic_version_metatable,
+    build_metatable_migration_provider,
+)
+from mainsequence.meta_tables import schema_table_name
+
+from sdk_examples.meta_tables.account_limits import Account, AccountLimit, Base
+
+
+TutorialAlembicVersion = build_alembic_version_metatable(
+    class_name="TutorialAlembicVersion",
+    namespace="sdk-examples",
+    identifier="sdk_examples.alembic_version",
+    schema="public",
+    table_name=schema_table_name("sdk_examples", "alembic_version"),
+)
+
+migration = build_metatable_migration_provider(
+    package="sdk_examples",
+    migration_namespace="sdk-examples",
+    script_location="sdk_examples.migrations:",
+    version_location_prefix="sdk_examples.migrations:versions",
+    target_metadata=Base.metadata,
+    alembic_registry=TutorialAlembicVersion,
+    metatable_models=[
+        Account,
+        AccountLimit,
+    ],
+)
+```
+
+The scaffolded `registry.py` can also return the model list through
+`build_metatable_model_registry(...)` when the project has many model source
+functions.
+
+The equivalent hand-written provider shape is:
 
 ```python
 from mainsequence.meta_tables.migrations import (
@@ -171,7 +220,9 @@ class TutorialAlembicVersion(AlembicVersionMetaTable):
 migration = AlembicMetaTableMigration(
     package="sdk_examples",
     migration_namespace="sdk-examples",
-    script_location="sdk_examples:migrations",
+    script_location="sdk_examples.migrations:",
+    version_locations=["sdk_examples.migrations:versions/sdk_examples"],
+    version_path="sdk_examples.migrations:versions/sdk_examples",
     target_metadata=Base.metadata,
     alembic_registry=TutorialAlembicVersion,
     metatable_models=[
@@ -207,9 +258,7 @@ exist. `__metatable_identifier__` is not the Alembic migration identity.
 If a model is renamed or moved, its migration identity stays stable as long as
 the SQLAlchemy table name stays stable.
 
-If you do not want a root-level `mainsequence_migrations.py`, put the same
-provider object in your package, for example `sdk_examples/migrations/__init__.py`,
-and pass it explicitly:
+This tutorial uses the scaffolded package provider, so pass it explicitly:
 
 ```bash
 mainsequence migrations current --provider sdk_examples.migrations:migration
@@ -217,8 +266,9 @@ mainsequence migrations current --provider sdk_examples.migrations:migration
 
 ## 2. Create The Alembic Environment
 
-Create the full Alembic environment under the provider's `script_location`.
-For `script_location="sdk_examples:migrations"`, create exactly these files:
+The scaffold command created the Alembic environment under the provider's
+`script_location`. For `script_location="sdk_examples.migrations:"`, the files
+are:
 
 ```text
 sdk_examples/
@@ -230,49 +280,22 @@ sdk_examples/
       __init__.py
 ```
 
-The `__init__.py` files can be empty. The `versions/` directory is where
-`mainsequence migrations revision` writes generated Alembic revision files.
-
-`env.py` tells Alembic how to load the selected provider:
+`env.py` should stay thin and delegate to the SDK-owned Alembic environment:
 
 ```python
-from alembic import context
+from __future__ import annotations
 
-from mainsequence_migrations import migration
+from mainsequence.meta_tables.migrations.env import run_mainsequence_alembic_env
 
-
-def include_name(name, type_, parent_names):
-    return migration.include_name(name, type_, parent_names)
+from sdk_examples.migrations import migration
 
 
-def run_migrations_offline():
-    context.configure(
-        url=context.config.get_main_option("sqlalchemy.url"),
-        target_metadata=migration.target_metadata,
-        version_table=migration.version_table,
-        version_table_schema=migration.version_table_schema,
-        include_name=include_name,
-        compare_type=True,
-        compare_server_default=True,
-        literal_binds=True,
-    )
-    with context.begin_transaction():
-        context.run_migrations()
-
-
-run_migrations_offline()
+run_mainsequence_alembic_env(default_provider=migration)
 ```
 
-The important parts are:
-
-- Alembic reads `target_metadata` from the selected provider
-- the physical version table comes from `migration.alembic_registry`
-- `include_name` delegates to the provider so unrelated imported tables stay out of this migration stream
-
-`script.py.mako` is required by `mainsequence migrations revision`. Alembic
-uses this template to write each generated file under `versions/`. If it is
-missing, revision generation fails with a `FileNotFoundError` for
-`script.py.mako`.
+The `versions/` directory is where `mainsequence migrations revision` writes
+generated Alembic revision files. `script.py.mako` is required by Alembic and is
+copied from the SDK template by the scaffold command.
 
 Use this minimal template:
 
@@ -367,7 +390,7 @@ Use the provider-scoped CLI command:
 
 ```bash
 mainsequence migrations revision \
-  --provider mainsequence_migrations:migration
+  --provider sdk_examples.migrations:migration
 ```
 
 This command is needed because the changed SQLAlchemy class is only desired
@@ -436,7 +459,7 @@ Read current Alembic state through the selected provider:
 
 ```bash
 mainsequence migrations current \
-  --provider mainsequence_migrations:migration
+  --provider sdk_examples.migrations:migration
 ```
 
 This command is needed because the source revision must come from the target
@@ -454,7 +477,7 @@ Apply the provider migration:
 
 ```bash
 mainsequence migrations upgrade \
-  --provider mainsequence_migrations:migration \
+  --provider sdk_examples.migrations:migration \
   head
 ```
 

@@ -33,8 +33,15 @@ from mainsequence.meta_tables.migrations import (
     PreparedAlembicMetaTableMigration,
     alembic_config_for_provider,
     apply_mainsequence_migration_role,
+    build_alembic_version_metatable,
+    build_metatable_migration_provider,
+    build_metatable_model_registry,
     load_alembic_metatable_migration_provider,
+    metadata_for_models,
+    namespace_version_location,
+    namespace_version_slug,
     resolve_alembic_revision_metadata,
+    scaffold_migration_package,
 )
 
 
@@ -317,6 +324,182 @@ def test_alembic_metatable_migration_requires_callable_after_register_hook():
             alembic_registry=ProjectAlembicVersion,
             after_register_metatables="not-callable",
         )
+
+
+def test_namespace_version_location_normalizes_and_hashes_long_names():
+    assert namespace_version_slug(None) == "default"
+    assert namespace_version_slug("MainSequence.Examples") == "mainsequence_examples"
+    long_namespace = "mainsequence." + ("very-long-" * 12) + "examples"
+    slug = namespace_version_slug(long_namespace)
+
+    assert len(slug) <= 48
+    assert slug == namespace_version_slug(long_namespace)
+    assert namespace_version_location(
+        "MainSequence.Examples",
+        prefix="migrations:versions",
+    ) == "migrations:versions/mainsequence_examples"
+
+
+def test_build_metatable_model_registry_filters_dedupes_and_requires_identifiers():
+    class Base(DeclarativeBase):
+        metadata = MetaData()
+
+    class Asset(PlatformManagedMetaTable, Base):
+        __tablename__ = "registry_asset"
+        __metatable_namespace__ = "markets"
+        __metatable_identifier__ = "markets.Asset"
+
+        uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+
+    class NotMetaTable(Base):
+        __tablename__ = "not_metatable"
+
+        uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+
+    assert build_metatable_model_registry([Asset, Asset, NotMetaTable], base=Base) == [Asset]
+    assert build_metatable_model_registry(Asset, base=Base) == [Asset]
+
+    class DuplicateAsset(PlatformManagedMetaTable, Base):
+        __tablename__ = "registry_duplicate_asset"
+        __metatable_namespace__ = "markets"
+        __metatable_identifier__ = "markets.Asset"
+
+        uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+
+    with pytest.raises(ValueError, match="Duplicate MetaTable identifier"):
+        build_metatable_model_registry([Asset, DuplicateAsset], base=Base)
+
+    class MissingIdentifier(PlatformManagedMetaTable, Base):
+        __tablename__ = "registry_missing_identifier"
+        __metatable_namespace__ = "markets"
+
+        uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+
+    with pytest.raises(ValueError, match="non-empty __metatable_identifier__"):
+        build_metatable_model_registry([MissingIdentifier], base=Base)
+
+
+def test_metadata_for_models_copies_selected_tables_and_indexes():
+    class Base(DeclarativeBase):
+        metadata = MetaData(naming_convention={"ix": "ix_%(table_name)s_%(column_0_name)s"})
+
+    class Asset(PlatformManagedMetaTable, Base):
+        __tablename__ = "metadata_asset"
+        __table_args__ = (Index("ix_metadata_asset_name", "name"), {"schema": "markets"})
+        __metatable_namespace__ = "markets"
+        __metatable_identifier__ = "markets.MetadataAsset"
+
+        uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+        name: Mapped[str] = mapped_column(String)
+
+    class Price(PlatformManagedMetaTable, Base):
+        __tablename__ = "metadata_price"
+        __metatable_namespace__ = "markets"
+        __metatable_identifier__ = "markets.MetadataPrice"
+
+        uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+
+    metadata = metadata_for_models([Asset])
+
+    assert sorted(metadata.tables) == ["markets.metadata_asset"]
+    copied_table = metadata.tables["markets.metadata_asset"]
+    assert copied_table.schema == "markets"
+    assert sorted(copied_table.columns.keys()) == ["name", "uid"]
+    assert {index.name for index in copied_table.indexes} == {"ix_metadata_asset_name"}
+    assert "metadata_price" not in metadata.tables
+
+
+def test_build_alembic_version_metatable_and_provider_factory():
+    class Base(DeclarativeBase):
+        metadata = MetaData()
+
+    class Asset(PlatformManagedMetaTable, Base):
+        __tablename__ = "provider_asset"
+        __metatable_namespace__ = "markets"
+        __metatable_identifier__ = "markets.ProviderAsset"
+
+        uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+
+    registry = build_alembic_version_metatable(
+        class_name="MarketsAlembicVersion",
+        namespace="markets",
+        identifier="markets.alembic_version",
+        schema="markets_schema",
+        table_name="markets_alembic_version",
+    )
+
+    migration = build_metatable_migration_provider(
+        package="msm",
+        migration_namespace="MainSequence.Examples",
+        script_location="migrations:",
+        target_metadata=Base.metadata,
+        alembic_registry=registry,
+        metatable_models=[Asset],
+    )
+
+    assert issubclass(registry, AlembicVersionMetaTable)
+    assert registry.__module__ == __name__
+    assert registry.__metatable_identifier__ == "markets.alembic_version"
+    assert registry.alembic_table_path() == "markets_schema.markets_alembic_version"
+    assert migration.version_locations == ["migrations:versions/mainsequence_examples"]
+    assert migration.version_path == "migrations:versions/mainsequence_examples"
+    assert list(migration.metatable_models) == [Asset]
+
+
+def test_scaffold_migration_package_creates_idempotent_sdk_skeleton(tmp_path):
+    result = scaffold_migration_package(
+        project_root=tmp_path,
+        module="migrations",
+        package="msm",
+        namespace="mainsequence.examples",
+        metadata_ref="msm.base:MarketsBase.metadata",
+        base_ref="msm.base:MarketsBase",
+    )
+
+    assert result.root == tmp_path / "src" / "migrations"
+    assert {file.action for file in result.files} == {"created"}
+    package_init = result.root / "__init__.py"
+    package_init_text = package_init.read_text()
+    assert "build_metatable_migration_provider" in package_init_text
+    assert 'version_location_prefix="migrations:versions"' in package_init_text
+    assert "run_mainsequence_alembic_env(default_provider=migration)" in (
+        result.root / "env.py"
+    ).read_text()
+    assert (result.root / "versions" / "mainsequence_examples" / "__init__.py").exists()
+
+    second_result = scaffold_migration_package(
+        project_root=tmp_path,
+        module="migrations",
+        package="msm",
+        namespace="mainsequence.examples",
+        metadata_ref="msm.base:MarketsBase.metadata",
+        base_ref="msm.base:MarketsBase",
+    )
+
+    assert {file.action for file in second_result.files} == {"skipped"}
+
+    package_init.write_text("changed", encoding="utf-8")
+    with pytest.raises(FileExistsError, match="Refusing to overwrite"):
+        scaffold_migration_package(
+            project_root=tmp_path,
+            module="migrations",
+            package="msm",
+            namespace="mainsequence.examples",
+            metadata_ref="msm.base:MarketsBase.metadata",
+            base_ref="msm.base:MarketsBase",
+        )
+
+    forced_result = scaffold_migration_package(
+        project_root=tmp_path,
+        module="migrations",
+        package="msm",
+        namespace="mainsequence.examples",
+        metadata_ref="msm.base:MarketsBase.metadata",
+        base_ref="msm.base:MarketsBase",
+        force=True,
+    )
+
+    assert any(file.action == "overwritten" for file in forced_result.files)
 
 
 def test_alembic_metatable_migration_finalizes_catalog_after_alembic(monkeypatch):

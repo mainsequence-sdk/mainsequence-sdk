@@ -111,10 +111,11 @@ not call `Account.register()` directly for platform-managed tables.
 Put platform-managed models in the selected migration provider:
 
 ```python
-migration = AlembicMetaTableMigration(
+migration = build_metatable_migration_provider(
     package="sdk_examples",
     migration_namespace="sdk-examples",
-    script_location="sdk_examples:migrations",
+    script_location="sdk_examples.migrations:",
+    version_location_prefix="sdk_examples.migrations:versions",
     target_metadata=Base.metadata,
     alembic_registry=ProjectAlembicVersion,
     metatable_models=[Account],
@@ -124,7 +125,7 @@ migration = AlembicMetaTableMigration(
 Then run:
 
 ```bash
-mainsequence migrations upgrade --provider mainsequence_migrations:migration head
+mainsequence migrations upgrade --provider sdk_examples.migrations:migration head
 ```
 
 Migration tooling calls the managed reservation path for missing

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mainsequence"
-version = "4.3.13"
+version = "4.3.14"
 description = "Main Sequence SDK "
 readme = "README.md"
 requires-python = ">=3.11"
@@ -79,7 +79,7 @@ include = ["mainsequence", "mainsequence.*", "agent_scaffold", "agent_scaffold.*
 
 # Include your non-.py assets in wheels/sdists
 [tool.setuptools.package-data]
-"mainsequence" = ["**/*.html", "**/*.css", "**/*.png", "**/*.toml", "**/*.json"]
+"mainsequence" = ["**/*.html", "**/*.css", "**/*.png", "**/*.toml", "**/*.json", "**/*.mako"]
 "agent_scaffold" = ["*.md", "**/*.md"]
 
 [[tool.uv.index]]

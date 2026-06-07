@@ -36,6 +36,21 @@ from mainsequence.meta_tables.sqlalchemy_contracts import (
     platform_managed_migration_registration_context,
 )
 
+from .alembic import (
+    build_alembic_version_metatable,
+    build_metatable_migration_provider,
+    metadata_for_models,
+    namespace_version_location,
+    namespace_version_slug,
+)
+from .env import run_mainsequence_alembic_env
+from .registry import build_metatable_model_registry
+from .scaffold import (
+    MigrationScaffoldFile,
+    MigrationScaffoldResult,
+    scaffold_migration_package,
+)
+
 DEFAULT_ALEMBIC_VERSION_IDENTIFIER = "alembic_version"
 DEFAULT_ALEMBIC_VERSION_NAMESPACE = "mainsequence.migrations"
 DEFAULT_ALEMBIC_VERSION_TABLE_NAME = "alembic_version"
@@ -1267,6 +1282,7 @@ def _is_platform_time_index_metatable_model(model: Any) -> bool:
 __all__ = [
     "AlembicMetaTableCatalogRefreshContext",
     "AlembicMetaTableMigration",
+    "AlembicProviderPhysicalStateError",
     "AlembicVersionMetaTable",
     "DEFAULT_ALEMBIC_PROVIDER_REFERENCE",
     "DEFAULT_ALEMBIC_VERSION_COLUMN_NAME",
@@ -1277,6 +1293,16 @@ __all__ = [
     "PreparedAlembicMetaTableMigration",
     "alembic_config_for_provider",
     "apply_mainsequence_migration_role",
+    "build_alembic_version_metatable",
+    "build_metatable_migration_provider",
+    "build_metatable_model_registry",
     "load_alembic_metatable_migration_provider",
+    "metadata_for_models",
+    "namespace_version_location",
+    "namespace_version_slug",
     "resolve_alembic_revision_metadata",
+    "run_mainsequence_alembic_env",
+    "MigrationScaffoldFile",
+    "MigrationScaffoldResult",
+    "scaffold_migration_package",
 ]

@@ -1,32 +1,31 @@
 from __future__ import annotations
 
-import os
-
 from examples.meta_tables.common import DEFAULT_SCHEMA
 from examples.meta_tables.platform_managed.account_asset import Account, Asset, Base
 from mainsequence.meta_tables import schema_table_name
 from mainsequence.meta_tables.migrations import (
-    AlembicMetaTableMigration,
-    AlembicVersionMetaTable,
+    build_alembic_version_metatable,
+    build_metatable_migration_provider,
 )
 
 NAMESPACE = "sdk-examples"
 PROJECT_NAME = "sdk_examples"
 
 
-class ExampleAlembicVersion(AlembicVersionMetaTable):
-    __metatable_namespace__ = NAMESPACE
-    __metatable_identifier__ = f"{PROJECT_NAME}.alembic_version"
-    __alembic_version_schema__ = DEFAULT_SCHEMA
-    __alembic_version_table_name__ = schema_table_name(PROJECT_NAME, "alembic_version")
-    __alembic_version_column_name__ = "version_num"
-    __metatable_data_source_uid__ = os.getenv("MAINSEQUENCE_META_TABLE_DATA_SOURCE_UID") or None
+ExampleAlembicVersion = build_alembic_version_metatable(
+    class_name="ExampleAlembicVersion",
+    namespace=NAMESPACE,
+    identifier=f"{PROJECT_NAME}.alembic_version",
+    schema=DEFAULT_SCHEMA,
+    table_name=schema_table_name(PROJECT_NAME, "alembic_version"),
+)
 
 
-migration = AlembicMetaTableMigration(
+migration = build_metatable_migration_provider(
     package="mainsequence_sdk_examples",
     migration_namespace=NAMESPACE,
-    script_location="examples.meta_tables:migrations",
+    script_location="examples.meta_tables.migrations:",
+    version_location_prefix="examples.meta_tables.migrations:versions",
     target_metadata=Base.metadata,
     alembic_registry=ExampleAlembicVersion,
     metatable_models=[

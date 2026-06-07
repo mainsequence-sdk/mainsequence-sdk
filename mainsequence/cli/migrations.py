@@ -3,6 +3,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import logging
+import pathlib
 import re
 import sys
 from collections.abc import Mapping, Sequence
@@ -23,6 +24,7 @@ from mainsequence.meta_tables.migrations import (
     alembic_config_for_provider,
     apply_mainsequence_migration_role,
     load_alembic_metatable_migration_provider,
+    scaffold_migration_package,
 )
 
 migrations = typer.Typer(help="Alembic-owned MetaTable migration commands")
@@ -30,6 +32,8 @@ REGISTER_ENDPOINT = "/orm/api/ts_manager/meta_table/register/"
 METATABLE_COLLECTION_ENDPOINT = "/orm/api/ts_manager/meta_table/"
 DYNAMIC_TABLE_COLLECTION_ENDPOINT = "/orm/api/ts_manager/dynamic_table/"
 FINALIZE_MANAGED_ENDPOINT = "/orm/api/ts_manager/meta_table/finalize-managed/"
+DEFAULT_SCAFFOLD_PROJECT_ROOT = pathlib.Path(".")
+DEFAULT_SCAFFOLD_SOURCE_ROOT = pathlib.Path("src")
 
 
 class _AlembicOutput:
@@ -676,6 +680,113 @@ def _next_sequential_revision_id(
     next_revision_id = f"{max(numeric_revisions, default=0) + 1:04d}"
     _emit_status(f"Next Alembic revision id is {next_revision_id}.")
     return next_revision_id
+
+
+@migrations.command("scaffold")
+def scaffold(
+    package: str = typer.Option(
+        ...,
+        "--package",
+        help="Project package or migration provider package name, for example msm.",
+    ),
+    namespace: str = typer.Option(
+        ...,
+        "--namespace",
+        help="Migration namespace for this provider.",
+    ),
+    metadata: str = typer.Option(
+        ...,
+        "--metadata",
+        help="Target SQLAlchemy metadata reference in module:object form.",
+    ),
+    module: str = typer.Option(
+        "migrations",
+        "--module",
+        help="Python module to create, for example migrations or msm.migrations.",
+    ),
+    project_root: pathlib.Path = typer.Option(  # noqa: B008
+        DEFAULT_SCAFFOLD_PROJECT_ROOT,
+        "--project-root",
+        help="Project root where the source tree lives.",
+    ),
+    source_root: pathlib.Path = typer.Option(  # noqa: B008
+        DEFAULT_SCAFFOLD_SOURCE_ROOT,
+        "--source-root",
+        help="Source root under project root.",
+    ),
+    base: str | None = typer.Option(
+        None,
+        "--base",
+        help="Optional project declarative base reference in module:object form.",
+    ),
+    models: str | None = typer.Option(
+        None,
+        "--models",
+        help="Optional model registry function reference in module:object form.",
+    ),
+    alembic_version_name: str = typer.Option(
+        "ProjectAlembicVersion",
+        "--alembic-version-name",
+        help="Generated Alembic version MetaTable class name.",
+    ),
+    alembic_version_identifier: str | None = typer.Option(
+        None,
+        "--alembic-version-identifier",
+        help="Generated Alembic version MetaTable identifier.",
+    ),
+    alembic_version_schema: str | None = typer.Option(
+        "public",
+        "--alembic-version-schema",
+        help="Physical schema for the Alembic version table. Pass an empty string for no schema.",
+    ),
+    alembic_version_table_name: str = typer.Option(
+        "alembic_version",
+        "--alembic-version-table-name",
+        help="Physical Alembic version table name.",
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help="Overwrite changed scaffold files.",
+    ),
+    json_output: bool = typer.Option(False, "--json", help="Emit JSON."),
+) -> None:
+    """Create an SDK-shaped MetaTable migration package skeleton."""
+
+    normalized_schema = alembic_version_schema
+    if normalized_schema == "":
+        normalized_schema = None
+    try:
+        result = scaffold_migration_package(
+            project_root=project_root,
+            module=module,
+            package=package,
+            namespace=namespace,
+            metadata_ref=metadata,
+            base_ref=base,
+            model_registry_ref=models,
+            alembic_version_name=alembic_version_name,
+            alembic_version_identifier=alembic_version_identifier,
+            alembic_version_schema=normalized_schema,
+            alembic_version_table_name=alembic_version_table_name,
+            source_root=source_root,
+            force=force,
+        )
+    except (FileExistsError, ValueError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    for file in result.files:
+        _emit_status(f"Scaffold {file.action} {file.path}")
+    _emit(
+        {
+            "root": str(result.root),
+            "files": [
+                {"path": str(file.path), "action": file.action}
+                for file in result.files
+            ],
+        },
+        json_output=json_output,
+    )
 
 
 @migrations.command("current")

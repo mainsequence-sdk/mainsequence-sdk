@@ -158,6 +158,39 @@ def _patch_scoped_connection(monkeypatch, migration_cli, captured):
     )
 
 
+def test_migrations_scaffold_writes_sdk_owned_package(tmp_path):
+    cli_mod = _load_cli_module()
+    runner = CliRunner()
+
+    result = runner.invoke(
+        cli_mod.app,
+        [
+            "migrations",
+            "scaffold",
+            "--package",
+            "msm",
+            "--namespace",
+            "mainsequence.examples",
+            "--metadata",
+            "msm.base:MarketsBase.metadata",
+            "--base",
+            "msm.base:MarketsBase",
+            "--project-root",
+            str(tmp_path),
+        ],
+    )
+
+    assert result.exit_code == 0
+    package_root = tmp_path / "src" / "migrations"
+    assert (package_root / "__init__.py").exists()
+    assert (package_root / "env.py").exists()
+    assert (package_root / "script.py.mako").exists()
+    assert (package_root / "versions" / "mainsequence_examples" / "__init__.py").exists()
+    output = _combined_output(result)
+    assert "[mainsequence migrations] Scaffold created" in output
+    assert "mainsequence_examples" in output
+
+
 def test_migrations_current_uses_scoped_connection_without_printing_secret(monkeypatch):
     cli_mod = _load_cli_module()
     runner = CliRunner()

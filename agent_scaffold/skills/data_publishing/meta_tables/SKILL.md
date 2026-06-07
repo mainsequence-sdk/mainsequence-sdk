@@ -1,6 +1,6 @@
 ---
 name: mainsequence-meta-tables
-description: Use this skill when the task is about defining, registering, querying, migrating, or reviewing Main Sequence MetaTables. This skill owns SQLAlchemy table contracts, backend-managed table registration, external table registration, Alembic-based MetaTable migrations, governed compiled SQL operations, foreign keys, indexes, and validation rules. It does not own DataNode producers, API route contracts, scheduling, releases, or sharing policy.
+description: Use this skill when the task is about defining, querying, or reviewing Main Sequence MetaTables. This skill owns SQLAlchemy table contracts, backend-managed table authoring, external table registration, governed compiled SQL operations, foreign keys, indexes, naming, cadence, and validation rules. For Alembic migration lifecycle work, use the mainsequence-metatable-migrations skill. It does not own DataNode producers, API route contracts, scheduling, releases, or sharing policy.
 ---
 
 # Main Sequence MetaTables
@@ -15,12 +15,11 @@ This skill is for schema-driven application tables registered through TS Manager
 
 - define SQLAlchemy/Core or ORM table models for `MetaTable` registration
 - choose `platform_managed` or `external_registered` management mode
-- register platform-managed tables through the model class API
+- declare platform-managed tables for migration-managed registration
 - build registration requests from resolved SQLAlchemy metadata when inspection is useful
 - define indexes and foreign keys in SQLAlchemy metadata for Alembic-owned DDL
 - design governed compiled SQL read and write operations
-- design provider-based Alembic contract evolution for MetaTables
-- run the documented `mainsequence migrations ...` lifecycle for Alembic-backed MetaTable changes
+- route provider-based Alembic contract evolution to the MetaTable migration skill
 - review table contracts for physical-name, namespace, and identifier issues
 - review whether a task should be a `MetaTable` or a `DataNode`
 
@@ -41,6 +40,8 @@ If the user is still in the discovery process and does not yet know what data ex
 
 - discovery-only data inventory before table implementation:
   `.agents/skills/mainsequence/data_access/exploration/SKILL.md`
+- MetaTable migrations:
+  `.agents/skills/mainsequence/data_publishing/meta_table_migrations/SKILL.md`
 - DataNodes:
   `.agents/skills/mainsequence/data_publishing/data_nodes/SKILL.md`
 - APIs and FastAPI:
@@ -55,7 +56,9 @@ If the user is still in the discovery process and does not yet know what data ex
 ## Read First
 
 1. `docs/tutorial/working_with_meta_tables.md`
-2. For migration work, `docs/tutorial/metatable_migrations.md`
+2. For migration work, use
+   `.agents/skills/mainsequence/data_publishing/meta_table_migrations/SKILL.md`
+   and `docs/tutorial/metatable_migrations.md`
 3. `docs/knowledge/meta_tables/index.md`
 4. `docs/knowledge/meta_tables/sqlalchemy.md`
 5. `docs/knowledge/meta_tables/compiled_sql.md`
@@ -111,9 +114,9 @@ creation or deletion.
 The only migration workflow to recommend is the Main Sequence CLI lifecycle:
 
 ```bash
-mainsequence migrations current --provider mainsequence_migrations:migration
-mainsequence migrations revision --provider mainsequence_migrations:migration
-mainsequence migrations upgrade --provider mainsequence_migrations:migration head
+mainsequence migrations current --provider sdk_examples.migrations:migration
+mainsequence migrations revision --provider sdk_examples.migrations:migration
+mainsequence migrations upgrade --provider sdk_examples.migrations:migration head
 ```
 
 ### 1. SQLAlchemy metadata is the authoring source
@@ -279,7 +282,7 @@ both the schema and the table's intention.
 Provider scope:
 
 ```python
-migration = AlembicMetaTableMigration(
+migration = build_metatable_migration_provider(
     ...,
     metatable_models=[Account, Asset],
 )
@@ -304,9 +307,10 @@ asset_meta_table = MetaTable.register(asset_request)
 
 ### 4. Schema changes use Alembic
 
-When doing migration work, first read
-`docs/tutorial/metatable_migrations.md`. That document is the tutorial source
-for the provider-based Alembic lifecycle.
+When doing migration work, use
+`.agents/skills/mainsequence/data_publishing/meta_table_migrations/SKILL.md`
+and read `docs/tutorial/metatable_migrations.md`. The migration skill owns the
+provider-based Alembic lifecycle.
 
 Do not apply in-place contract changes by changing a `PlatformManagedMetaTable`
 SQLAlchemy class and calling normal registration again. Shape-addressed
@@ -323,8 +327,10 @@ create a new Alembic revision on top of the current head.
 For contract evolution, define or update one selected
 `AlembicMetaTableMigration` provider:
 
-- put the provider in `mainsequence_migrations.py:migration` or pass
-  `--provider module.path:migration`
+- create or update a scaffolded package provider with
+  `mainsequence migrations scaffold`
+- pass the selected provider explicitly, for example
+  `--provider sdk_examples.migrations:migration`
 - set `package`, `migration_namespace`, `script_location`, and `target_metadata`
 - set `alembic_registry` to an `AlembicVersionMetaTable` subclass
 - list the post-apply catalog scope in `metatable_models`
@@ -343,14 +349,14 @@ a bare table name. Use `schema_table_name(app, concept, suffix=None)` for the
 physical table and Alembic version table names. Use `suffix` for a namespace or
 variant, for example `schema_table_name("msm", "positions", suffix="broker")`.
 
-Do not ask users to construct backend migration payloads, call low-level
-migration request models, or use SDK helper functions directly. The backend
-request shape is reference material in the tutorial; the user-facing path is:
+Do not ask users to construct backend migration payloads or call low-level
+migration request models. The backend request shape is reference material in
+the tutorial; the user-facing path is:
 
 ```bash
-mainsequence migrations current --provider mainsequence_migrations:migration
-mainsequence migrations revision --provider mainsequence_migrations:migration
-mainsequence migrations upgrade --provider mainsequence_migrations:migration head
+mainsequence migrations current --provider sdk_examples.migrations:migration
+mainsequence migrations revision --provider sdk_examples.migrations:migration
+mainsequence migrations upgrade --provider sdk_examples.migrations:migration head
 ```
 
 All migration commands prepare the provider, reserve provider-scoped

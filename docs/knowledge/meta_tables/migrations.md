@@ -82,13 +82,19 @@ the tutorial, see
 ## Provider Object
 
 Each project defines one selected provider object in an importable Python
-module. The simplest conventional location is `mainsequence_migrations.py` at
-the project root, next to `pyproject.toml`:
+module. The SDK-owned scaffold command creates the normal provider package:
+
+```bash
+mainsequence migrations scaffold \
+  --package sdk_examples \
+  --module sdk_examples.migrations \
+  --namespace sdk-examples \
+  --metadata sdk_examples.meta_tables.account_limits:Base.metadata
+```
 
 ```text
 your-project/
   pyproject.toml
-  mainsequence_migrations.py
   sdk_examples/
     migrations/
       __init__.py
@@ -98,51 +104,18 @@ your-project/
         __init__.py
 ```
 
-The Alembic environment must include `script.py.mako`. Alembic uses that
-template when `mainsequence migrations revision` writes a new file under
-`versions/`; without it, revision generation fails before any migration file is
-created.
+The scaffolded `env.py` delegates to the SDK-owned Alembic environment, and the
+scaffolded `script.py.mako` is the SDK-owned Alembic revision template.
 
-Minimal `script.py.mako`:
-
-```mako
-"""${message}
-
-Revision ID: ${up_revision}
-Revises: ${down_revision}
-Create Date: ${create_date}
-"""
-
-from typing import Sequence, Union
-
-from alembic import op
-import sqlalchemy as sa
-${imports if imports else ""}
-
-
-revision: str = ${repr(up_revision)}
-down_revision: Union[str, Sequence[str], None] = ${repr(down_revision)}
-branch_labels: Union[str, Sequence[str], None] = ${repr(branch_labels)}
-depends_on: Union[str, Sequence[str], None] = ${repr(depends_on)}
-
-
-def upgrade() -> None:
-    ${upgrades if upgrades else "pass"}
-
-
-def downgrade() -> None:
-    ${downgrades if downgrades else "pass"}
-```
-
-This provider module is not registered with the backend. The CLI imports it to
+The provider module is not registered with the backend. The CLI imports it to
 build Alembic configuration and backend request metadata. The backend
 registration step is only for the provider's `AlembicVersionMetaTable` binding.
 
 ```python
 from mainsequence.meta_tables.migrations import (
     AlembicMetaTableCatalogRefreshContext,
-    AlembicMetaTableMigration,
-    AlembicVersionMetaTable,
+    build_alembic_version_metatable,
+    build_metatable_migration_provider,
 )
 from mainsequence.meta_tables import schema_table_name
 
@@ -158,17 +131,20 @@ def refresh_project_catalog_from_registered_metatables(
     ...
 
 
-class ProjectAlembicVersion(AlembicVersionMetaTable):
-    __metatable_namespace__ = "sdk-examples"
-    __metatable_identifier__ = "sdk_examples.alembic_version"
-    __alembic_version_schema__ = "public"
-    __alembic_version_table_name__ = schema_table_name("sdk_examples", "alembic_version")
+ProjectAlembicVersion = build_alembic_version_metatable(
+    class_name="ProjectAlembicVersion",
+    namespace="sdk-examples",
+    identifier="sdk_examples.alembic_version",
+    schema="public",
+    table_name=schema_table_name("sdk_examples", "alembic_version"),
+)
 
 
-migration = AlembicMetaTableMigration(
+migration = build_metatable_migration_provider(
     package="sdk_examples",
     migration_namespace="sdk-examples",
-    script_location="sdk_examples:migrations",
+    script_location="sdk_examples.migrations:",
+    version_location_prefix="sdk_examples.migrations:versions",
     target_metadata=Base.metadata,
     alembic_registry=ProjectAlembicVersion,
     metatable_models=[Account, AccountLimit],
@@ -252,9 +228,9 @@ registration; it does not accept a data-source override.
 The provider-based CLI workflow is:
 
 ```bash
-mainsequence migrations current --provider mainsequence_migrations:migration
-mainsequence migrations revision --provider mainsequence_migrations:migration
-mainsequence migrations upgrade --provider mainsequence_migrations:migration head
+mainsequence migrations current --provider sdk_examples.migrations:migration
+mainsequence migrations revision --provider sdk_examples.migrations:migration
+mainsequence migrations upgrade --provider sdk_examples.migrations:migration head
 ```
 
 `revision` accepts an optional `-m/--message`. If it is omitted, the CLI passes
