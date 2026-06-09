@@ -1566,8 +1566,12 @@ def test_ensure_registered_storage_table_rejects_unbound_storage(monkeypatch):
         classmethod(lambda cls, **filters: []),
     )
 
-    with pytest.raises(ValueError, match="not bound to backend TimeIndexMetaTable"):
+    with pytest.raises(ValueError) as exc_info:
         ensure_registered_storage_table(AssetSnapshots, context="DataNode")
+    message = str(exc_info.value)
+    assert "not bound to backend TimeIndexMetaTable" in message
+    assert "found no backend TimeIndexMetaTable catalog row" in message
+    assert "example_assets__asset_snapshots" in message
 
 
 def test_ensure_registered_storage_table_binds_existing_time_index_meta_table(monkeypatch):
@@ -1607,8 +1611,46 @@ def test_ensure_registered_storage_table_binds_existing_time_index_meta_table(mo
     assert AssetSnapshots.get_meta_table_uid() == "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
     assert captured == {
         "physical_table_name__in": ["example_assets__asset_snapshots"],
-        "limit": 1,
+        "limit": 20,
     }
+
+
+def test_ensure_registered_storage_table_reports_duplicate_matches(monkeypatch):
+    columns = [
+        FakeColumn("time_index", DateTime(timezone=True), nullable=False),
+        FakeColumn("asset_uid", Uuid(), nullable=False),
+    ]
+    table = FakeTable("example_assets__asset_snapshots", columns=columns)
+    AssetSnapshots = _time_index_model_class(
+        "AssetSnapshots",
+        table,
+        index_names=["time_index", "asset_uid"],
+    )
+    first = TimeIndexMetaTable.model_construct(
+        uid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+        storage_hash="storage-hash",
+        physical_table_name="example_assets__asset_snapshots",
+    )
+    second = TimeIndexMetaTable.model_construct(
+        uid="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        data_source_uid="eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+        storage_hash="storage-hash",
+        physical_table_name="example_assets__asset_snapshots",
+    )
+
+    monkeypatch.setattr(
+        TimeIndexMetaTable,
+        "filter_by_body",
+        classmethod(lambda cls, **filters: [first, second]),
+    )
+
+    with pytest.raises(ValueError) as exc_info:
+        ensure_registered_storage_table(AssetSnapshots, context="DataNode")
+    message = str(exc_info.value)
+    assert "found 2 matching backend TimeIndexMetaTable catalog rows" in message
+    assert "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" in message
+    assert "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb" in message
 
 
 def test_time_index_storage_name_hash_component_separates_identical_table_shapes():

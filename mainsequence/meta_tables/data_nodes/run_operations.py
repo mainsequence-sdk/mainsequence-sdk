@@ -307,6 +307,9 @@ class UpdateRunner:
         if self.ts.dependencies_df is None:
             self.ts.set_dependencies_df()
 
+        if self.update_tree:
+            self._ensure_dependency_tree_matches_current_declarations()
+
         # 2. Connect the dependency tree to the scheduler if it hasn't been already.
         if not self.ts._scheduler_tree_connected and self.update_tree:
             self.logger.debug("Connecting dependency tree to scheduler...")
@@ -555,53 +558,15 @@ class UpdateRunner:
         Backend dependency metadata is ordering/state only; it is not used to
         cold-rebuild executable DataNode instances.
         """
-        # 1. Ensure the dependency graph is built in the backend
-        declared_dependencies = self.ts.dependencies() or {}
-        deps_uids = [
-            (
-                _require_uid(d.data_node_update, "DataNodeUpdate")
-                if (not d.is_api and d.data_node_update is not None)
-                else None
-            )
-            for d in declared_dependencies.values()
-        ]
-
-        # 2. Get the list of dependencies to update
-        dependencies_df = self.ts.dependencies_df
-        if (
-            dependencies_df is not None
-            and not dependencies_df.empty
-            and "update_node_uid" not in dependencies_df.columns
-        ):
-            raise ValueError("Dependency dataframe must include 'update_node_uid'.")
-        dependency_uids_in_tree = (
-            dependencies_df["update_node_uid"].astype(str).to_list()
-            if dependencies_df is not None and not dependencies_df.empty
-            else []
+        _, dependencies_df, update_map = (
+            self._ensure_dependency_tree_matches_current_declarations()
         )
-
-        if any([a is None for a in deps_uids]) or any(
-            [d not in dependency_uids_in_tree for d in deps_uids]
-        ):
-            # Datanode not update set
-            self.ts.local_persist_manager.data_node_update.patch(ogm_dependencies_linked=False)
-
-        if not self.ts.local_persist_manager.data_node_update.ogm_dependencies_linked:
-            self.logger.info("Dependency tree not set. Building now...")
-            start_time = time.time()
-            self.ts.set_relation_tree()
-            self.logger.debug(f"Tree build took {time.time() - start_time:.2f}s.")
-            self.ts.set_dependencies_df()
-            dependencies_df = self.ts.dependencies_df
 
         if dependencies_df.empty:
             self.logger.debug("No dependencies to update.")
             return
 
-        # 3. Build the executable dependency map from source declarations.
-        update_map = self._get_update_map(declared_dependencies, logger=self.logger)
-
-        # 4. Delegate to the appropriate execution method
+        # Delegate to the appropriate execution method.
         self.logger.debug(f"Starting update for {len(dependencies_df)} dependencies...")
 
         if self.debug_mode:
@@ -617,6 +582,174 @@ class UpdateRunner:
             )
 
         self.logger.debug(f"Dependency tree evaluation complete for {self.ts}.")
+
+    def _ensure_dependency_tree_matches_current_declarations(
+        self,
+    ) -> tuple[dict[str, DataNode], pd.DataFrame, dict[str, dict[str, Any]]]:
+        declared_dependencies = self.ts.dependencies() or {}
+
+        if self._has_uninitialized_non_api_dependencies(declared_dependencies):
+            self.ts.local_persist_manager.set_ogm_dependencies_unlinked()
+            dependencies_df = self._rebuild_dependency_tree_from_current_declarations(
+                force_rebuild=True,
+                reason="Dependency declarations include uninitialized update nodes.",
+            )
+            declared_dependencies = self.ts.dependencies() or {}
+        elif not self.ts.local_persist_manager.data_node_update.ogm_dependencies_linked:
+            dependencies_df = self._rebuild_dependency_tree_from_current_declarations(
+                force_rebuild=False,
+                reason="Dependency tree not set. Building now.",
+            )
+            declared_dependencies = self.ts.dependencies() or {}
+        else:
+            dependencies_df = self._dependencies_df_or_empty(self.ts.dependencies_df)
+
+        update_map = self._get_update_map(declared_dependencies, logger=self.logger)
+        mismatch = self._dependency_tree_mismatch(
+            dependencies_df=dependencies_df,
+            update_map=update_map,
+        )
+        if self._mismatch_is_empty(mismatch):
+            return declared_dependencies, dependencies_df, update_map
+
+        self._log_dependency_tree_rebuild(mismatch)
+        dependencies_df = self._rebuild_dependency_tree_from_current_declarations(
+            force_rebuild=True,
+            reason="Backend dependency tree drift detected.",
+        )
+        declared_dependencies = self.ts.dependencies() or {}
+        update_map = self._get_update_map(declared_dependencies, logger=self.logger)
+        mismatch = self._dependency_tree_mismatch(
+            dependencies_df=dependencies_df,
+            update_map=update_map,
+        )
+        if not self._mismatch_is_empty(mismatch):
+            raise DependencyUpdateError(
+                self._dependency_tree_mismatch_message(
+                    mismatch,
+                    after_automatic_refresh=True,
+                )
+            )
+
+        return declared_dependencies, dependencies_df, update_map
+
+    @staticmethod
+    def _has_uninitialized_non_api_dependencies(
+        declared_dependencies: dict[str, DataNode],
+    ) -> bool:
+        return any(
+            not dependency_ts.is_api
+            and getattr(dependency_ts, "data_node_update", None) is None
+            for dependency_ts in declared_dependencies.values()
+        )
+
+    def _rebuild_dependency_tree_from_current_declarations(
+        self,
+        *,
+        force_rebuild: bool,
+        reason: str,
+    ) -> pd.DataFrame:
+        self.logger.info(reason)
+        start_time = time.time()
+        self.ts.set_relation_tree(force_rebuild=force_rebuild)
+        self.logger.debug(f"Tree build took {time.time() - start_time:.2f}s.")
+        self.ts.set_dependencies_df()
+        return self._dependencies_df_or_empty(self.ts.dependencies_df)
+
+    @staticmethod
+    def _dependencies_df_or_empty(dependencies_df: pd.DataFrame | None) -> pd.DataFrame:
+        if dependencies_df is None:
+            return pd.DataFrame()
+        if not dependencies_df.empty and "update_node_uid" not in dependencies_df.columns:
+            raise ValueError("Dependency dataframe must include 'update_node_uid'.")
+        return dependencies_df
+
+    @staticmethod
+    def _dependency_tree_mismatch(
+        *,
+        dependencies_df: pd.DataFrame,
+        update_map: dict[str, dict[str, Any]],
+    ) -> dict[str, list[str]]:
+        if not dependencies_df.empty and "update_node_uid" not in dependencies_df.columns:
+            raise ValueError("Dependency dataframe must include 'update_node_uid'.")
+        backend_uids = (
+            set(dependencies_df["update_node_uid"].astype(str).to_list())
+            if not dependencies_df.empty
+            else set()
+        )
+        declared_uids = set(update_map)
+        return {
+            "stale_backend_uids": sorted(backend_uids - declared_uids),
+            "missing_backend_uids": sorted(declared_uids - backend_uids),
+        }
+
+    @staticmethod
+    def _mismatch_is_empty(mismatch: dict[str, list[str]]) -> bool:
+        return not mismatch["stale_backend_uids"] and not mismatch["missing_backend_uids"]
+
+    def _log_dependency_tree_rebuild(self, mismatch: dict[str, list[str]]) -> None:
+        message = self._dependency_tree_mismatch_message(
+            mismatch,
+            after_automatic_refresh=False,
+        )
+        warning = getattr(self.logger, "warning", None)
+        if callable(warning):
+            warning(message)
+        else:
+            self.logger.info(message)
+
+    @staticmethod
+    def _dependency_tree_mismatch_message(
+        mismatch: dict[str, list[str]],
+        *,
+        after_automatic_refresh: bool,
+    ) -> str:
+        stale_backend_uids = mismatch["stale_backend_uids"]
+        missing_backend_uids = mismatch["missing_backend_uids"]
+        message_parts = [
+            "Backend dependency tree is out of sync with the current "
+            "DataNode.dependencies() graph."
+        ]
+        if stale_backend_uids:
+            message_parts.append(
+                "Backend contains stale dependency update UIDs that current Python "
+                f"code does not declare: {stale_backend_uids!r}."
+            )
+        if missing_backend_uids:
+            message_parts.append(
+                "Backend is missing dependency update UIDs declared by current "
+                f"Python code: {missing_backend_uids!r}."
+            )
+        if after_automatic_refresh:
+            message_parts.append(
+                "The SDK already cleared and rebuilt the dependency tree once, but "
+                "the backend response still does not match the current graph."
+            )
+        else:
+            message_parts.append(
+                "The SDK will clear and rebuild backend dependency edges from the "
+                "current declarations before executing dependency updates."
+            )
+        return " ".join(message_parts)
+
+    @staticmethod
+    def _validate_dependency_tree_matches_update_map(
+        *,
+        dependencies_df: pd.DataFrame,
+        update_map: dict[str, dict[str, Any]],
+    ) -> None:
+        mismatch = UpdateRunner._dependency_tree_mismatch(
+            dependencies_df=dependencies_df,
+            update_map=update_map,
+        )
+        if UpdateRunner._mismatch_is_empty(mismatch):
+            return
+        raise DependencyUpdateError(
+            UpdateRunner._dependency_tree_mismatch_message(
+                mismatch,
+                after_automatic_refresh=True,
+            )
+        )
 
     def _get_update_map(
         self,

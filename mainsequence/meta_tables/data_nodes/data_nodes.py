@@ -807,12 +807,29 @@ class DataNode(DataAccessMixin, ABC):
             local_configuration=self.local_initial_configuration,
         )
 
-    def set_relation_tree(self):
+    def set_relation_tree(
+        self,
+        *,
+        force_rebuild: bool = False,
+        _visited_update_uids: set[str] | None = None,
+    ):
         """Sets the node relationships in the backend by calling the dependencies() method."""
 
         if self.local_persist_manager.data_node_update is None:
             self.verify_and_build_remote_objects()  #
-        if self.local_persist_manager.is_local_relation_tree_set():
+        data_node_update_uid = str(getattr(self.local_persist_manager.data_node_update, "uid", ""))
+        if _visited_update_uids is None:
+            _visited_update_uids = set()
+        if data_node_update_uid:
+            if data_node_update_uid in _visited_update_uids:
+                return
+            _visited_update_uids.add(data_node_update_uid)
+
+        if force_rebuild:
+            self.local_persist_manager.clear_dependencies()
+            self.depth_df = pd.DataFrame()
+            self.dependencies_df = None
+        elif self.local_persist_manager.is_local_relation_tree_set():
             return
         declared_dependencies = self.dependencies() or {}
 
@@ -827,7 +844,11 @@ class DataNode(DataAccessMixin, ABC):
             self.local_persist_manager.depends_on_connect(dependency_ts, is_api=is_api)
 
             # Recursively set the relation tree for the dependency
-            dependency_ts.set_relation_tree()
+            if not is_api:
+                dependency_ts.set_relation_tree(
+                    force_rebuild=force_rebuild,
+                    _visited_update_uids=_visited_update_uids,
+                )
 
         self.local_persist_manager.set_ogm_dependencies_linked()
 

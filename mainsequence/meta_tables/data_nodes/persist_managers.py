@@ -4,6 +4,7 @@ import hashlib
 import inspect
 import threading
 from concurrent.futures import Future
+from dataclasses import dataclass
 from typing import Any, ClassVar
 
 import pandas as pd
@@ -28,6 +29,15 @@ from mainsequence.logconf import logger
 from mainsequence.meta_tables import PlatformTimeIndexMetaTable
 
 from .. import future_registry
+
+_STORAGE_TABLE_LOOKUP_LIMIT = 20
+
+
+@dataclass(frozen=True)
+class _StorageTableLookupResult:
+    table_name: str | None
+    filters: dict[str, Any]
+    matches: list[TimeIndexMetaTable]
 
 
 def get_data_node_source_code(DataNodeClass: type[Any]) -> str:
@@ -96,17 +106,18 @@ def ensure_registered_storage_table(
             f"model class; got {type(storage_table).__name__}."
         )
 
+    lookup_result: _StorageTableLookupResult | None = None
     if storage_table.get_time_index_meta_table() is None:
-        _bind_registered_storage_table(storage_table)
+        lookup_result = _bind_registered_storage_table(storage_table)
 
     storage_metadata = storage_table.get_time_index_meta_table()
     if storage_metadata is None:
         raise ValueError(
-            f"{context} storage_table class is not bound to backend "
-            "TimeIndexMetaTable "
-            "metadata in this Python process. The backend table may already exist; "
-            "the SDK could not resolve a unique TimeIndexMetaTable row for "
-            f"{_storage_table_lookup_label(storage_table)}."
+            _unbound_storage_table_message(
+                storage_table,
+                context=context,
+                lookup_result=lookup_result,
+            )
         )
     if not isinstance(storage_metadata, TimeIndexMetaTable):
         raise TypeError(
@@ -120,25 +131,34 @@ def ensure_registered_storage_table(
     return storage_table
 
 
-def _bind_registered_storage_table(storage_table: type[PlatformTimeIndexMetaTable]) -> None:
-    matches = _registered_storage_table_matches(storage_table)
-    if len(matches) == 1:
-        storage_table._bind_meta_table(matches[0])
-
-
-def _registered_storage_table_matches(
+def _bind_registered_storage_table(
     storage_table: type[PlatformTimeIndexMetaTable],
-) -> list[TimeIndexMetaTable]:
+) -> _StorageTableLookupResult:
+    lookup_result = _registered_storage_table_lookup(storage_table)
+    if len(lookup_result.matches) == 1:
+        storage_table._bind_meta_table(lookup_result.matches[0])
+    return lookup_result
+
+
+def _registered_storage_table_lookup(
+    storage_table: type[PlatformTimeIndexMetaTable],
+) -> _StorageTableLookupResult:
     table_name = _storage_table_physical_table_name(storage_table)
     if table_name:
+        filters = {
+            "physical_table_name__in": [table_name],
+            "limit": _STORAGE_TABLE_LOOKUP_LIMIT,
+        }
         matches = TimeIndexMetaTable.filter_by_body(
-            physical_table_name__in=[table_name],
-            limit=1,
+            **filters,
         )
-        if matches:
-            return matches
+        return _StorageTableLookupResult(
+            table_name=table_name,
+            filters=filters,
+            matches=matches,
+        )
 
-    return []
+    return _StorageTableLookupResult(table_name=None, filters={}, matches=[])
 
 
 def _storage_table_physical_table_name(
@@ -157,6 +177,100 @@ def _storage_table_physical_table_name(
 def _storage_table_lookup_label(storage_table: type[PlatformTimeIndexMetaTable]) -> str:
     table_name = _storage_table_physical_table_name(storage_table) or "<unknown-table>"
     return f"{storage_table.__name__}(table={table_name})"
+
+
+def _unbound_storage_table_message(
+    storage_table: type[PlatformTimeIndexMetaTable],
+    *,
+    context: str,
+    lookup_result: _StorageTableLookupResult | None,
+) -> str:
+    label = _storage_table_lookup_label(storage_table)
+    identity = _storage_table_identity_summary(storage_table)
+    message = (
+        f"{context} storage_table class is not bound to backend TimeIndexMetaTable "
+        f"metadata in this Python process for {label}. {identity} "
+        "Expected exactly one backend TimeIndexMetaTable catalog row before "
+        "constructing a DataNode."
+    )
+    if lookup_result is None:
+        return (
+            f"{message} The SDK did not run a backend lookup because the model "
+            "already appeared to be bound before validation failed. Check the "
+            "bound MetaTable UID and data-source UID on the storage model."
+        )
+    if lookup_result.table_name is None:
+        return (
+            f"{message} The SDK could not determine a physical table name from "
+            "the storage model, so no backend catalog lookup was possible."
+        )
+
+    filters = _format_lookup_filters(lookup_result.filters)
+    match_count = len(lookup_result.matches)
+    if match_count == 0:
+        return (
+            f"{message} Lookup used TimeIndexMetaTable.filter_by_body({filters}) "
+            "and found no backend TimeIndexMetaTable catalog row. This usually "
+            "means the exact storage model/table has not been reserved and "
+            "finalized by its migration provider. If the SQL table already exists "
+            "without a TimeIndexMetaTable catalog row, it is still unusable by "
+            "DataNodes until the migration finalization step creates that row. "
+            "Add this exact storage model to the relevant migration provider "
+            "or dynamic scoped provider and run the provider upgrade before "
+            "constructing the DataNode."
+        )
+
+    candidates = "; ".join(
+        _time_index_meta_table_candidate_summary(match)
+        for match in lookup_result.matches[:_STORAGE_TABLE_LOOKUP_LIMIT]
+    )
+    qualifier = "at least " if match_count >= _STORAGE_TABLE_LOOKUP_LIMIT else ""
+    return (
+        f"{message} Lookup used TimeIndexMetaTable.filter_by_body({filters}) "
+        f"and found {qualifier}{match_count} matching backend TimeIndexMetaTable "
+        "catalog rows, so the SDK refused to guess. Matching rows: "
+        f"{candidates}. Remove or repair the duplicate catalog state so exactly "
+        "one row owns this physical table."
+    )
+
+
+def _storage_table_identity_summary(storage_table: type[PlatformTimeIndexMetaTable]) -> str:
+    parts = []
+    identifier = getattr(storage_table, "__metatable_identifier__", None)
+    if identifier not in (None, ""):
+        parts.append(f"identifier={identifier!r}")
+    try:
+        storage_hash = storage_table.get_storage_hash()
+    except Exception:
+        storage_hash = None
+    if storage_hash not in (None, ""):
+        parts.append(f"storage_hash={storage_hash!r}")
+    data_source_uid = storage_table.get_data_source_uid()
+    if data_source_uid not in (None, ""):
+        parts.append(f"model_data_source_uid={data_source_uid!r}")
+    if not parts:
+        return "Storage identity is incomplete."
+    return "Storage identity: " + ", ".join(parts) + "."
+
+
+def _format_lookup_filters(filters: dict[str, Any]) -> str:
+    return ", ".join(f"{key}={value!r}" for key, value in filters.items())
+
+
+def _time_index_meta_table_candidate_summary(meta_table: TimeIndexMetaTable) -> str:
+    parts = []
+    for attr in (
+        "uid",
+        "data_source_uid",
+        "identifier",
+        "physical_table_name",
+        "storage_hash",
+        "provisioning_status",
+    ):
+        value = getattr(meta_table, attr, None)
+        if value not in (None, ""):
+            parts.append(f"{attr}={value}")
+    return "{" + ", ".join(parts) + "}" if parts else "{unidentified TimeIndexMetaTable}"
 
 
 class BasePersistManager:
@@ -336,8 +450,16 @@ class BasePersistManager:
     def get_all_dependencies_update_priority(self) -> pd.DataFrame:
         return self.data_node_update.get_all_dependencies_update_priority()
 
+    def clear_dependencies(self) -> Any:
+        result = self.data_node_update.clear_dependencies()
+        self.set_data_node_update_lazy(force_registry=True, include_relations_detail=True)
+        return result
+
+    def set_ogm_dependencies_unlinked(self) -> None:
+        self.set_data_node_update(self.data_node_update.patch(ogm_dependencies_linked=False))
+
     def set_ogm_dependencies_linked(self) -> None:
-        self.data_node_update.patch(ogm_dependencies_linked=True)
+        self.set_data_node_update(self.data_node_update.patch(ogm_dependencies_linked=True))
 
     @property
     def update_details(self) -> Any | None:

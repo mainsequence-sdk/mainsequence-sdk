@@ -16,6 +16,9 @@ class _Logger:
     def info(self, *_args, **_kwargs):
         return None
 
+    def warning(self, *_args, **_kwargs):
+        return None
+
     def exception(self, *_args, **_kwargs):
         return None
 
@@ -76,7 +79,7 @@ def _time_series(update=None, depth_df=None, dependencies_df=None):
         scheduler=None,
         update_details_tree=None,
         DATA_NODE_UPDATE_CLASS=None,
-        set_relation_tree=lambda: None,
+        set_relation_tree=lambda **_kwargs: None,
         set_dependencies_df=lambda: None,
         dependencies=lambda: {},
     )
@@ -129,12 +132,15 @@ def test_update_runner_pre_update_uses_uid_payloads_and_maps():
             )
 
     ts = _time_series(depth_df=depth_df, dependencies_df=pd.DataFrame())
+    relation_tree_calls = []
+    ts.set_relation_tree = lambda **kwargs: relation_tree_calls.append(kwargs)
     ts.DATA_NODE_UPDATE_CLASS = _UpdateClass
     runner = run_operations.UpdateRunner(ts)
     runner.scheduler = scheduler
 
     data_node_updates, state_data = runner._pre_update_routines()
 
+    assert relation_tree_calls == [{}]
     assert scheduler.active_tree_calls == [["dep-uid", "head-uid"]]
     assert captured["update_nodes"] == [
         {
@@ -203,6 +209,172 @@ def test_update_runner_verify_tree_uses_dependency_uids(monkeypatch):
     assert patch_calls == []
     assert executed["update_node_uids"] == ["dep-uid"]
     assert list(executed["update_map"]) == ["dep-uid"]
+
+
+def test_update_runner_verify_tree_self_heals_stale_backend_dependency(monkeypatch):
+    dependency_update = _update("dep-uid")
+    head_update = _update("head-uid")
+    depth_df = pd.DataFrame(
+        [
+            {
+                "update_node_uid": "dep-uid",
+                "source_class_name": "ConcreteDataNode",
+            },
+            {
+                "update_node_uid": "stale-dep-uid",
+                "source_class_name": "OldDataNode",
+            },
+        ]
+    )
+    ts = _time_series(
+        update=head_update,
+        depth_df=depth_df,
+        dependencies_df=depth_df.copy(),
+    )
+    dependency = SimpleNamespace(
+        is_api=False,
+        data_node_update=dependency_update,
+        local_persist_manager=_PersistManager(dependency_update),
+        dependencies=lambda: {},
+    )
+    ts.dependencies = lambda: {"dependency": dependency}
+    runner = run_operations.UpdateRunner(ts, debug_mode=True)
+    relation_tree_calls = []
+    ts.set_relation_tree = lambda **kwargs: relation_tree_calls.append(kwargs)
+    ts.set_dependencies_df = lambda: setattr(
+        ts,
+        "dependencies_df",
+        pd.DataFrame(
+            [
+                {
+                    "update_node_uid": "dep-uid",
+                    "source_class_name": "ConcreteDataNode",
+                    "update_priority": 0,
+                    "number_of_upstreams": 0,
+                }
+            ]
+        ),
+    )
+    executed = {}
+    monkeypatch.setattr(
+        runner,
+        "_execute_sequential_debug_update",
+        lambda dependencies_df, update_map: executed.update(
+            {
+                "update_node_uids": dependencies_df["update_node_uid"].tolist(),
+                "update_map": update_map,
+            }
+        ),
+    )
+
+    runner._verify_tree_is_updated()
+
+    assert relation_tree_calls == [{"force_rebuild": True}]
+    assert executed["update_node_uids"] == ["dep-uid"]
+    assert list(executed["update_map"]) == ["dep-uid"]
+
+
+def test_update_runner_pre_update_self_heals_before_scheduler_payload():
+    dependency_update = _update("dep-uid")
+    head_update = _update("head-uid")
+    stale_depth_df = pd.DataFrame(
+        [
+            {
+                "update_node_uid": "dep-uid",
+                "node_type": "local_time_serie",
+                "update_hash": "dep-hash",
+                "remote_table_hash_id": "dep-storage",
+            },
+            {
+                "update_node_uid": "stale-dep-uid",
+                "node_type": "local_time_serie",
+                "update_hash": "stale-dep-hash",
+                "remote_table_hash_id": "stale-storage",
+            },
+        ]
+    )
+    current_depth_df = stale_depth_df.iloc[[0]].copy()
+    captured = {}
+
+    class _UpdateClass:
+        @staticmethod
+        def get_data_nodes_and_set_updates(**kwargs):
+            captured.update(kwargs)
+            return SimpleNamespace(
+                state_data={"state": "ok"},
+                data_node_updates=[_update("dep-uid"), _update("head-uid")],
+            )
+
+    ts = _time_series(
+        update=head_update,
+        depth_df=stale_depth_df,
+        dependencies_df=stale_depth_df.copy(),
+    )
+    dependency = SimpleNamespace(
+        is_api=False,
+        data_node_update=dependency_update,
+        local_persist_manager=_PersistManager(dependency_update),
+        dependencies=lambda: {},
+    )
+    ts.dependencies = lambda: {"dependency": dependency}
+    relation_tree_calls = []
+    ts.set_relation_tree = lambda **kwargs: relation_tree_calls.append(kwargs)
+    ts.set_dependencies_df = lambda: (
+        setattr(ts, "depth_df", current_depth_df),
+        setattr(ts, "dependencies_df", current_depth_df.copy()),
+    )
+    ts.DATA_NODE_UPDATE_CLASS = _UpdateClass
+    scheduler = _Scheduler()
+    runner = run_operations.UpdateRunner(ts, debug_mode=True)
+    runner.scheduler = scheduler
+
+    runner._pre_update_routines()
+
+    assert relation_tree_calls == [{}, {"force_rebuild": True}]
+    assert scheduler.active_tree_calls == [["dep-uid", "head-uid"]]
+    assert [node["uid"] for node in captured["update_nodes"]] == ["dep-uid", "head-uid"]
+
+
+def test_update_runner_verify_tree_rejects_persistent_stale_backend_dependency():
+    dependency_update = _update("dep-uid")
+    head_update = _update("head-uid")
+    depth_df = pd.DataFrame(
+        [
+            {
+                "update_node_uid": "dep-uid",
+                "source_class_name": "ConcreteDataNode",
+            },
+            {
+                "update_node_uid": "stale-dep-uid",
+                "source_class_name": "OldDataNode",
+            },
+        ]
+    )
+    ts = _time_series(
+        update=head_update,
+        depth_df=depth_df,
+        dependencies_df=depth_df.copy(),
+    )
+    dependency = SimpleNamespace(
+        is_api=False,
+        data_node_update=dependency_update,
+        local_persist_manager=_PersistManager(dependency_update),
+        dependencies=lambda: {},
+    )
+    ts.dependencies = lambda: {"dependency": dependency}
+    ts.set_dependencies_df = lambda: setattr(ts, "dependencies_df", depth_df.copy())
+    runner = run_operations.UpdateRunner(ts, debug_mode=True)
+
+    try:
+        runner._verify_tree_is_updated()
+    except run_operations.DependencyUpdateError as exc:
+        message = str(exc)
+        assert "out of sync" in message
+        assert "stale-dep-uid" in message
+        assert "already cleared and rebuilt" in message
+        assert "refresh_dependency_tree" not in message
+    else:
+        raise AssertionError("Expected DependencyUpdateError")
 
 
 def test_sequential_debug_update_uses_update_node_uid_without_data_source_uid(monkeypatch):
@@ -301,3 +473,35 @@ def test_data_node_update_dependency_priority_normalizes_uid_columns(monkeypatch
 
     assert depth_df["update_node_uid"].tolist() == ["dep-uid"]
     assert "local_time_serie_uid" not in depth_df.columns
+
+
+def test_data_node_update_clear_dependencies_posts_to_backend(monkeypatch):
+    captured = {}
+
+    class _Response:
+        status_code = 200
+        content = b'{"ok": true}'
+
+        @staticmethod
+        def json():
+            return {"ok": True}
+
+    def fake_make_request(**kwargs):
+        captured.update(kwargs)
+        return _Response()
+
+    monkeypatch.setattr(models_metatables, "make_request", fake_make_request)
+    update = models_metatables.DataNodeUpdate(
+        uid="head-uid",
+        update_hash="head-hash",
+        build_configuration={},
+        data_node_storage=uuid4(),
+    )
+
+    response = update.clear_dependencies(timeout=12)
+
+    assert response == {"ok": True}
+    assert captured["r_type"] == "POST"
+    assert captured["url"].endswith("/head-uid/clear-dependencies/")
+    assert captured["payload"] == {"json": {}}
+    assert captured["time_out"] == 12

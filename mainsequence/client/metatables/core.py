@@ -2375,6 +2375,23 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
 
         return depth_df
 
+    def clear_dependencies(self, timeout=None) -> dict[str, Any] | None:
+        url = self.get_object_url() + f"/{self._public_uid()}/clear-dependencies/"
+        payload = {"json": {}}
+        r = make_request(
+            s=self.build_session(),
+            loaders=self.LOADERS,
+            r_type="POST",
+            url=url,
+            payload=payload,
+            time_out=timeout,
+        )
+        if r.status_code not in (200, 204):
+            raise_for_response(r, payload=payload)
+        if not r.content:
+            return None
+        return r.json()
+
     @classmethod
     def get_upstream_nodes(cls, storage_hash, data_source_uid, timeout=None):
         s = cls.build_session()
