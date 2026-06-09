@@ -1,6 +1,6 @@
 ---
 name: command-center-app-components
-description: Use this skill when the task is about AppComponent widgets in a Main Sequence project. This skill owns AppComponent input contracts, custom forms, form sections and field definitions, and the boundary between AppComponent input contracts and widget-facing output contracts, including requiring generic tabular consumers to receive core.tabular_frame@v1 instead of ad hoc AppComponent JSON. Before changing AppComponent payloads or contracts, verify the target widget in the Command Center registry through the CLI. Source order is strict: registry detail first, SDK client models second, local Main Sequence repository docs/models third only if the first two still leave something unresolved. Main Sequence is platform-first: if an AppComponent depends on a project API, that API must already exist as a FastAPI project resource and have a corresponding FastAPI ResourceRelease before the AppComponent is considered usable from Command Center. Resource and release creation belong to the orchestration-and-releases skill. It does not own workspace layout, generic FastAPI design, or Streamlit dashboards.
+description: Use this skill when the task is about AppComponent widgets in a Main Sequence project. This skill owns AppComponent generated request forms, response-side editable-form and notification UI contracts, dynamic request/response binding contracts, and the boundary between AppComponent responses and widget-facing output contracts, including requiring generic tabular consumers to receive core.tabular_frame@v1 instead of ad hoc AppComponent JSON. Before changing AppComponent payloads or contracts, verify the target widget in the Command Center registry through the CLI. Source order is strict: registry detail first, SDK client models second, local Main Sequence repository docs/models third only if the first two still leave something unresolved. Main Sequence is platform-first: if an AppComponent depends on a project API, that API must already exist as a FastAPI project resource and have a corresponding FastAPI ResourceRelease before the AppComponent is considered usable from Command Center. Resource and release creation belong to the orchestration-and-releases skill. It does not own workspace layout, generic FastAPI design, or Streamlit dashboards.
 ---
 
 # Command Center AppComponents
@@ -11,22 +11,23 @@ Use this skill when the task is about the backend contract behind a Command Cent
 
 This skill is for:
 
-- AppComponent input contracts
-- custom forms
+- AppComponent generated request form contracts
+- response-side editable form and notification contracts
 - field and section definitions
-- deciding when default argument resolution is enough
+- deciding when default request form generation is enough
 - deciding when a widget-facing API response must use an exact SDK contract
 - requiring API-backed AppComponents to depend on deployed FastAPI resources/releases, not local-only API code
 
 ## This Skill Can Do
 
-- decide whether an AppComponent should rely on the default generated form
-- create a custom `EditableFormDefinition`
+- decide whether an AppComponent should rely on the default generated request form
+- return an `EditableFormDefinition` response when the API should render a stateful editable response form
+- return a `NotificationDefinition` response when the API should render banner-style feedback
 - define `FormSectionDefinition`
 - define `FormFieldDefinition`
 - choose the correct `FormFieldKind`
 - define stable `token` values for fields
-- review whether an AppComponent form is too thin or too custom
+- review whether the request form or response UI contract is over- or under-specified
 - separate input contracts from output contracts
 - decide when the API behind an AppComponent must return exact widget-facing response models
 - verify the target widget type in the CLI registry before changing payload or contract logic
@@ -90,8 +91,10 @@ Before changing an AppComponent backend contract, collect or infer:
 - registry detail payload from:
   - `mainsequence cc registered_widget_type detail <WIDGET_ID> --json`
 - what the widget is trying to collect from the user
-- whether the default generated form is already sufficient
-- the fields, sections, and labels the form should expose
+- whether the default generated request form is already sufficient
+- whether the request form needs supported operation-level UI metadata such as `select2` async search
+- whether the response should render as a notification banner, an editable form session, or the generic response viewer
+- the fields, sections, labels, and tokens a response-side editable form should expose
 - whether the output is:
   - a generic API contract
   - an exact widget-facing contract
@@ -118,26 +121,27 @@ If registry detail is not sufficient, and only after checking the SDK client mod
 - `mainsequence/client/command_center/app_component.py`
 - `mainsequence/client/command_center/data_models.py`
 
-If the input contract or output contract is unclear, stop before building the form.
+If the request contract, response UI contract, or widget-facing output contract is unclear, stop before building the AppComponent contract.
 
 ## Required Decisions
 
 For every non-trivial AppComponent task, decide:
 
-1. Is the default generated form sufficient?
-2. If not, what requires a custom `EditableFormDefinition`?
-3. What are the stable field tokens?
-4. What field kinds should the frontend render?
-5. Is the output generic, or does it need an exact widget-facing response contract?
-6. If the AppComponent depends on a project API, does that API already exist as a FastAPI project resource with a FastAPI `ResourceRelease`?
+1. Is the default generated request form sufficient?
+2. If not, can the request-side need be handled by supported OpenAPI UI metadata such as `select2` async search?
+3. Should the response render as generic JSON/form output, a `NotificationDefinition`, or an `EditableFormDefinition` session?
+4. What are the stable field tokens for editable-form responses?
+5. What field kinds should the frontend render?
+6. Is the output generic, or does it need an exact widget-facing response contract?
+7. If the AppComponent depends on a project API, does that API already exist as a FastAPI project resource with a FastAPI `ResourceRelease`?
 
 ## Build Rules
 
-### 1. Default generated form first
+### 1. Default generated request form first
 
-Do not jump to a custom form by default.
+Do not jump to a response-side editable form by default.
 
-If the operation only exposes simple flat arguments with a straightforward shape, let Command Center resolve the form automatically.
+If the operation only exposes simple flat arguments with a straightforward shape, let Command Center resolve the request form automatically from OpenAPI parameters and request body schema.
 
 Typical cases where default generation is enough:
 
@@ -176,9 +180,14 @@ This skill does not create resources or releases. If the FastAPI project resourc
 
 Only return to AppComponent contract work once the backing API deployment surface is real on the platform.
 
-### 2. Use `EditableFormDefinition` only when the form needs to be specialized
+### 2. Use `EditableFormDefinition` only for response-side editable form sessions
 
-Use a custom form when the widget needs:
+`EditableFormDefinition` is a response model. Command Center renders it after the operation returns successfully when the selected operation's primary success response advertises:
+
+- `"x-ui-role": "editable-form"`
+- `"x-ui-widget": "definition-v1"`
+
+Use it when the response should become a stateful editable form session with:
 
 - grouped sections
 - domain-specific labels
@@ -186,7 +195,14 @@ Use a custom form when the widget needs:
 - more control over editable vs read-only behavior
 - stable custom tokens for bindings or draft state
 
-Do not use a custom form just to restate a trivial flat contract.
+Do not use `EditableFormDefinition` to define the pre-submit request form. Request inputs are generated from OpenAPI path, query, header, and JSON body metadata. If the request side needs richer behavior, use supported operation-level UI metadata instead of returning a form definition.
+
+The current supported request-side UI enhancement is:
+
+- `"x-ui-widget": "select2"`
+- `"x-ui-role": "async-select-search"`
+
+This enhancement is resolved from the selected OpenAPI operation metadata and currently targets query-parameter search helpers on that operation.
 
 ### 3. Treat tokens as stable identities
 
@@ -212,7 +228,10 @@ Example:
 
 Keep the boundary clear:
 
-- `EditableFormDefinition` and related form objects describe what the widget should collect
+- OpenAPI parameters and request body schemas describe what the widget should collect before execution
+- operation-level `select2` metadata can specialize supported request-side generated fields
+- `EditableFormDefinition` and related form objects describe a response-side editable form session
+- `NotificationDefinition` describes response-side banner feedback
 - `mainsequence.client.command_center.data_models.TabularFrameResponse` is the SDK canonical model for `core.tabular_frame@v1`
 - other SDK widget data models describe specialized widget-facing API responses when those exist
 
@@ -265,23 +284,36 @@ Do not use AppComponent as a shortcut source node for generic workspace data jus
 operation itself is the intended form-driven action or workflow producing the canonical tabular
 result.
 
-### 6.2 `x-ui-role` is what makes the contract render as richer UI
+### 6.2 `x-ui-role` is what makes supported contracts render as richer UI
 
-For AppComponent contracts, prefer SDK models whose OpenAPI schema carries the explicit UI role markers.
+For AppComponent response contracts, prefer SDK models whose OpenAPI schema carries the explicit UI role markers.
 
 The AppComponent should always try to implement:
 
-- `"x-ui-role": "editable-form"` for input-side contracts
-- `"x-ui-role": "notification"` for response-side contracts
+- `"x-ui-role": "editable-form"` with `"x-ui-widget": "definition-v1"` for response-side editable form sessions
+- `"x-ui-role": "notification"` with `"x-ui-widget": "banner-v1"` for response-side banner feedback
+
+For request-side generated form enhancements, the current supported operation-level contract is:
+
+- `"x-ui-role": "async-select-search"` with `"x-ui-widget": "select2"`
 
 These markers are not cosmetic. They are what tell Command Center to treat the payload as a richer UI contract instead of generic JSON.
 
 That means:
 
-- use `EditableFormDefinition` and related input models when the AppComponent needs a specialized input form
+- use OpenAPI parameters and request bodies for pre-submit inputs
+- use operation-level `select2` metadata when a request field should render as an async search input
+- use `EditableFormDefinition` and related models when the AppComponent response should render as a stateful editable form
 - use `NotificationDefinition` for response-side user feedback when the backend should return a banner-style notification
 - do not handcraft loose dictionaries for these cases when the SDK model already exists
 - keep input and response contracts separate instead of overloading one model to do both jobs
+
+Current frontend resolution details matter:
+
+- generated request forms come from OpenAPI path, query, header, and JSON body metadata
+- request-side `select2` metadata is read from the selected OpenAPI operation
+- response-side editable-form and notification metadata is read from the primary success response schema first, then from the operation metadata
+- placing these response UI markers only on the OpenAPI media-type or response object is not sufficient in the current frontend
 
 ### 6.3 AppComponent bindings are dynamic, port-to-port, and response-shape aware
 
@@ -369,8 +401,8 @@ When reviewing an AppComponent task, look for:
 
 - inferred or guessed `widget_id` values
 - AppComponent work that skipped `registered_widget_type list/detail`
-- a custom form that should have been auto-generated
-- a flat autogenerated form that should have been specialized
+- a response-side editable form being used where the request form should simply be generated from OpenAPI
+- a flat autogenerated request form that should have used supported operation-level UI metadata
 - unstable or poorly named field tokens
 - wrong `FormFieldKind` choices
 - generic API output being used where an exact widget-facing contract should have been returned
@@ -388,14 +420,16 @@ Do not claim success until you have checked:
   - `mainsequence cc registered_widget_type list --json`
   - `mainsequence cc registered_widget_type detail <WIDGET_ID> --json`
 - registry detail was used as the first source of truth
-- the choice between autogenerated form and custom form is intentional
-- custom forms use `EditableFormDefinition`
+- the choice between autogenerated request form and supported request-side UI metadata is intentional
+- response-side editable forms use `EditableFormDefinition`
+- response-side notifications use `NotificationDefinition`
 - sections and fields are explicit where needed
 - field tokens are stable and meaningful
 - field kinds reflect business meaning
 - input and output contracts are not mixed together
-- input-side AppComponent contracts use `"x-ui-role": "editable-form"` when a specialized form is intended
-- response-side AppComponent contracts use `"x-ui-role": "notification"` when the API is returning user-facing banner feedback
+- request-side AppComponent enhancements use operation-level `"x-ui-role": "async-select-search"` with `"x-ui-widget": "select2"` when async search is intended
+- response-side AppComponent contracts use `"x-ui-role": "editable-form"` with `"x-ui-widget": "definition-v1"` when the API is returning a stateful editable form
+- response-side AppComponent contracts use `"x-ui-role": "notification"` with `"x-ui-widget": "banner-v1"` when the API is returning user-facing banner feedback
 - widget-facing outputs use exact SDK response models when applicable
 - generic tabular consumers receive `core.tabular_frame@v1`
 - AppComponent operations producing full canonical tabular frames use `TabularFrameResponse`
@@ -411,7 +445,8 @@ Do not claim success until you have checked:
 - the task depends on guessed widget behavior without registry verification
 - registry detail is insufficient and the required contract cannot be resolved from Main Sequence docs/models in this repository
 - the task is really about workspace structure instead of AppComponent contracts
-- the form contract is unclear but a custom form is being forced anyway
+- the request form contract is unclear but a response-side editable form is being forced anyway
+- the response UI contract is unclear but `EditableFormDefinition` or `NotificationDefinition` is being forced anyway
 - the widget-facing output contract is unclear and no exact SDK model is available
 - the task is really a generic API design problem rather than an AppComponent problem
 - the AppComponent depends on a project API that does not yet exist as a FastAPI resource and FastAPI `ResourceRelease`
