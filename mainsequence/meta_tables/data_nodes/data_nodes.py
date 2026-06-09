@@ -1017,7 +1017,7 @@ class DataNode(DataAccessMixin, ABC):
             self.logger.warning(f"{self} produced no new data in this update round.")
             return temp_df
 
-        if update_statistics_max_time_index is None and not SessionDataSource.is_local_db:
+        if update_statistics_max_time_index is not None and not SessionDataSource.is_local_db:
             temp_df = self.update_statistics.filter_df_by_latest_value(temp_df)
 
         if temp_df.empty:

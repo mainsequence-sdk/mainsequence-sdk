@@ -904,3 +904,131 @@ def test_data_node_update_returning_none_is_invalid():
 
     with pytest.raises(Exception, match="needs to return a data frame"):
         node._execute_local_update(historical_update=None)
+
+
+def test_data_node_update_filters_when_historical_update_stats_have_max_time(monkeypatch):
+    class FilteringNode(DataNode):
+        def dependencies(self):
+            return {}
+
+        def update(self):
+            return pd.DataFrame(
+                {"value": [1, 2]},
+                index=pd.DatetimeIndex(
+                    [
+                        pd.Timestamp("2026-04-13T00:00:00Z"),
+                        pd.Timestamp("2026-04-14T00:00:00Z"),
+                    ],
+                    name="time_index",
+                ),
+            )
+
+    class LoggerStub:
+        def debug(self, *args, **kwargs):
+            return None
+
+        def info(self, *args, **kwargs):
+            return None
+
+        def warning(self, *args, **kwargs):
+            return None
+
+    class PersistManagerStub:
+        def __init__(self):
+            self.persisted = []
+
+        def persist_updated_data(self, *, temp_df, overwrite=False):
+            self.persisted.append((temp_df.copy(), overwrite))
+            return True
+
+    class UpdateStatisticsStub:
+        def __init__(self):
+            self.filter_calls = 0
+
+        def filter_df_by_latest_value(self, df):
+            self.filter_calls += 1
+            return df.iloc[[1]]
+
+    monkeypatch.setattr(data_nodes_mod, "SessionDataSource", SimpleNamespace(is_local_db=False))
+
+    node = FilteringNode.__new__(FilteringNode)
+    node._logger = LoggerStub()
+    node.update_statistics = UpdateStatisticsStub()
+    node._local_persist_manager = PersistManagerStub()
+    node._validate_update_output = lambda temp_df: None
+    historical_update = SimpleNamespace(
+        update_statistics=SimpleNamespace(
+            max_time_index_value=pd.Timestamp("2026-04-13T00:00:00Z")
+        )
+    )
+
+    result = node._execute_local_update(historical_update=historical_update)
+
+    assert node.update_statistics.filter_calls == 1
+    assert result["value"].tolist() == [2]
+    [(persisted_df, overwrite)] = node.local_persist_manager.persisted
+    assert persisted_df["value"].tolist() == [2]
+    assert overwrite is True
+
+
+def test_data_node_update_does_not_filter_without_historical_max_time(monkeypatch):
+    class FilteringNode(DataNode):
+        def dependencies(self):
+            return {}
+
+        def update(self):
+            return pd.DataFrame(
+                {"value": [1, 2]},
+                index=pd.DatetimeIndex(
+                    [
+                        pd.Timestamp("2026-04-13T00:00:00Z"),
+                        pd.Timestamp("2026-04-14T00:00:00Z"),
+                    ],
+                    name="time_index",
+                ),
+            )
+
+    class LoggerStub:
+        def debug(self, *args, **kwargs):
+            return None
+
+        def info(self, *args, **kwargs):
+            return None
+
+        def warning(self, *args, **kwargs):
+            return None
+
+    class PersistManagerStub:
+        def __init__(self):
+            self.persisted = []
+
+        def persist_updated_data(self, *, temp_df, overwrite=False):
+            self.persisted.append((temp_df.copy(), overwrite))
+            return True
+
+    class UpdateStatisticsStub:
+        def __init__(self):
+            self.filter_calls = 0
+
+        def filter_df_by_latest_value(self, df):
+            self.filter_calls += 1
+            return df.iloc[[1]]
+
+    monkeypatch.setattr(data_nodes_mod, "SessionDataSource", SimpleNamespace(is_local_db=False))
+
+    node = FilteringNode.__new__(FilteringNode)
+    node._logger = LoggerStub()
+    node.update_statistics = UpdateStatisticsStub()
+    node._local_persist_manager = PersistManagerStub()
+    node._validate_update_output = lambda temp_df: None
+    historical_update = SimpleNamespace(
+        update_statistics=SimpleNamespace(max_time_index_value=None)
+    )
+
+    result = node._execute_local_update(historical_update=historical_update)
+
+    assert node.update_statistics.filter_calls == 0
+    assert result["value"].tolist() == [1, 2]
+    [(persisted_df, overwrite)] = node.local_persist_manager.persisted
+    assert persisted_df["value"].tolist() == [1, 2]
+    assert overwrite is False
