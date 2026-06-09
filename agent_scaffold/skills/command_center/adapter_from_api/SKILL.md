@@ -1,6 +1,6 @@
 ---
 name: command-center-adapter-from-api
-description: Use when building or changing an API so Command Center can consume it through an Adapter from API connection. This skill defines the provider-side API contract standards required for Command Center connection discovery, health checks, operation selection, config fields, secret injection metadata, canonical `TabularFrameResponse` outputs, and tabular response mappings. It does not define general API architecture and does not imply the API may only serve these endpoints.
+description: Use when building or changing an API so Command Center can consume it through an Adapter from API connection. This skill defines the provider-side API contract standards required for Command Center connection discovery, health checks, operation selection, config fields, secret injection metadata, canonical `TabularFrameResponse` outputs, and optional response-mapping metadata for frontend/editor context or future explicit transforms. It does not define general API architecture and does not imply the API may only serve these endpoints.
 ---
 
 # Command Center Adapter From API
@@ -13,7 +13,7 @@ connection.
 This skill defines the Command Center-facing contract that the API must expose. It does not own the
 whole API architecture. An API may serve other clients and routes, but if it is consumed by Command
 Center through this adapter, it must also expose the discovery, health, operation, config, secret,
-and response-mapping metadata described here.
+and any optional response-mapping metadata described here.
 
 The runtime flow is:
 
@@ -26,8 +26,12 @@ API with Command Center contract endpoints
 ```
 
 Generic table, chart, statistic, curve, transform, and agent-facing data consumers must consume
-`core.tabular_frame@v1`. API responses that are provider-native, paginated, nested, or domain
-specific need an exact response mapping before they are consumed by generic tabular widgets.
+an actual `core.tabular_frame@v1` payload at the consumption boundary. API responses that are
+provider-native, paginated, nested, or domain specific are still provider-native even when the
+contract includes `responseMappings`. A mapping may describe how a response could be interpreted by
+frontend/editor tooling or a future explicit transform, but the current backend adapter must not
+hot-path validate, extract JSONPath rows, coerce schemas, or reshape provider responses because a
+mapping exists.
 
 ## Scope
 
@@ -39,7 +43,7 @@ This skill owns:
 - operation metadata needed by Connection Query
 - public config variable definitions
 - secret variable definitions and backend injection metadata
-- response mappings for canonical tabular consumption
+- optional response-mapping metadata for frontend/editor context and future explicit transforms
 - API-side validation and maintenance rules for this contract
 
 This skill does not own:
@@ -103,7 +107,7 @@ GET /openapi.json
 ```
 
 This is supplementary metadata. The well-known Command Center contract decides what operations,
-config fields, secrets, and response mappings Command Center may use.
+config fields, secrets, and optional response-mapping metadata Command Center may use.
 
 ### 3. Dedicated Health Endpoint
 
@@ -123,8 +127,9 @@ parameters. Do not use a parameterized data endpoint as a fake health check.
 Each queryable API operation must have a stable `operationId` in the well-known contract and a
 matching route in the API.
 
-Operation endpoints may return provider-native JSON. For generic tabular consumers, the contract
-must declare exactly how that response becomes `core.tabular_frame@v1`.
+Operation endpoints may return a full canonical `core.tabular_frame@v1` payload or provider-native
+JSON. `responseMappings` may document an intended tabular interpretation, but they are not a
+runtime guarantee that provider-native JSON becomes `core.tabular_frame@v1`.
 
 ## Well-Known Contract Shape
 
@@ -185,7 +190,7 @@ Every operation listed in `availableOperations` must define:
 - `supportsMaxRows`
 - `parameters`
 - optional `requestBody`
-- `responseMappings`
+- optional `responseMappings`
 - `cache`
 
 Rules:
@@ -264,8 +269,8 @@ from mainsequence.client.command_center.data_models import TabularFrameResponse
 Declare `response_model=TabularFrameResponse` instead of recreating the canonical frame shape
 locally.
 
-If an operation returns provider-native JSON, declare a `responseMappings` entry that exposes the
-operation as `core.tabular_frame@v1`:
+If an operation returns provider-native JSON, it may declare a `responseMappings` entry that
+describes a tabular interpretation for frontend/editor metadata or future explicit transforms:
 
 ```json
 {
@@ -289,13 +294,23 @@ operation as `core.tabular_frame@v1`:
 
 Rules:
 
-- `contract` must be `core.tabular_frame@v1` for generic tabular consumption.
-- `rowsPath` must point to the array of row objects inside the operation response.
-- `fieldTypes` must cover the fields that consumers need for formatting and inference.
-- Time-series metadata should be present when the rows are meant for charts, curves, or time-aware
+- `responseMappings` are optional metadata in the current Adapter from API flow.
+- A mapping does not make provider-native JSON a `core.tabular_frame@v1` runtime payload.
+- The backend must not hot-path validate the upstream body against `responseMappings`.
+- The backend must not extract JSONPath rows, coerce schemas, or reshape the response merely
+  because a mapping exists.
+- If a mapping describes tabular interpretation, `contract` should be `core.tabular_frame@v1`.
+- If `rowsPath` is present, it should point to the array of row objects inside the operation
+  response.
+- If `fieldTypes` is present, it should cover the fields that frontend/editor tooling or future
+  transforms need for formatting and inference.
+- Time-series metadata is useful when the mapped rows are meant for charts, curves, or time-aware
   transforms.
 - If the response shape changes, update the response mapping in the same change.
-- Do not bind provider-native JSON directly to generic tabular consumers.
+- Do not claim provider-native JSON is safe for generic tabular consumers just because a
+  `responseMappings` entry exists.
+- If generic tabular widgets need to consume the operation directly today, return
+  `TabularFrameResponse` from the API operation.
 
 ## Canonical SDK Model
 
@@ -313,8 +328,9 @@ Related SDK models:
 - `TabularTimeSeriesMetaResponse`
 
 Use these models when the API operation returns the full canonical frame. If the provider operation
-returns provider-native JSON instead, keep the provider response model explicit and declare an exact
-`responseMappings` entry that maps it into `core.tabular_frame@v1`.
+returns provider-native JSON instead, keep the provider response model explicit. Add
+`responseMappings` only as metadata; do not treat it as runtime conversion into
+`core.tabular_frame@v1`.
 
 ## Required Decisions
 
@@ -327,9 +343,10 @@ Before implementing or revising an API for Adapter from API consumption, decide:
 5. Which operation IDs must remain stable?
 6. Which public config fields does the connection need?
 7. Which secrets does the connection need, and how does the backend inject them?
-8. Which operations produce generic tabular consumption?
-9. For each tabular operation, does the API return a full `core.tabular_frame@v1` document or a
-   provider-native response with an exact `responseMappings` entry?
+8. Which operations directly return a full `core.tabular_frame@v1` payload for generic tabular
+   consumption?
+9. For provider-native responses, is optional `responseMappings` metadata useful, and what explicit
+   transform or future feature would consume it?
 10. If the operation returns a full canonical frame, does it use `TabularFrameResponse` as the
     FastAPI `response_model`?
 
@@ -343,7 +360,8 @@ For a FastAPI provider:
 - expose a zero-argument health route
 - expose query operation routes with documented request parameters
 - declare every Command Center-callable operation in `availableOperations`
-- declare `core.tabular_frame@v1` response mappings for tabular consumption
+- declare `responseMappings` only as optional metadata when useful; do not rely on them for runtime
+  normalization
 - use `TabularFrameResponse` when an operation returns the full canonical frame
 - keep the API root, well-known contract, and OpenAPI document internally consistent
 
@@ -358,10 +376,11 @@ When reviewing an Adapter from API provider change, look for:
 - operations missing from `availableOperations`
 - operations exposed to Command Center without explicit allowlist metadata
 - secret values represented as public config or query payload fields
-- tabular responses without `core.tabular_frame@v1` response mappings
-- response mappings whose `rowsPath` no longer matches the API response
-- missing `fieldTypes` for fields consumed by widgets
-- API endpoints returning provider-native JSON directly to generic tabular consumers
+- provider-native responses being treated as `core.tabular_frame@v1` because a mapping exists
+- response mappings whose `rowsPath` no longer matches the API response when the mapping is present
+- missing `fieldTypes` for fields that declared mappings or future transforms need
+- API endpoints returning provider-native JSON directly to generic tabular consumers without an
+  explicit transform path
 - full canonical frame endpoints that do not use `TabularFrameResponse`
 - docs or README examples that disagree with the actual contract endpoint
 
@@ -380,10 +399,12 @@ Do not claim the API is consumable by Adapter from API until:
 - query-capable operations are explicitly marked as query-capable
 - public config and secret fields are separated
 - secret injection rules are backend-owned and explicit
-- each generic tabular operation declares `core.tabular_frame@v1`
+- each operation that must feed generic tabular consumers directly returns `core.tabular_frame@v1`
 - each full canonical frame operation uses `TabularFrameResponse`
-- each provider-native tabular response has an exact `rowsPath`
-- field types and time-series hints are present where consumers need them
+- provider-native responses are not represented as direct generic tabular outputs solely through
+  `responseMappings`
+- optional response mappings, when present, have accurate `rowsPath`, `fieldTypes`, and time-series
+  hints for their intended metadata or transform use
 - the local README documents the Command Center contract endpoints
 - any general FastAPI/API work has also followed `application_surfaces/api_surfaces`
 
@@ -396,8 +417,10 @@ Stop and surface the missing backend task when:
 - operation IDs cannot be made stable
 - auth requirements are unknown
 - secret injection cannot be described without exposing secret values
-- no exact response mapping exists for generic tabular consumption
-- the API response shape cannot be mapped to `core.tabular_frame@v1`
+- a provider-native response is being treated as generic tabular output only because
+  `responseMappings` exists
+- the API response shape must feed generic tabular consumers directly but cannot return
+  `TabularFrameResponse`
 - a full canonical frame endpoint cannot import or use `TabularFrameResponse`
 - backend Adapter from API runtime support is required but not implemented
 
