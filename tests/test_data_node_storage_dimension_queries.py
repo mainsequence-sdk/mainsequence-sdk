@@ -1,8 +1,10 @@
 import datetime
 
 import pandas as pd
+import pytest
 
 from mainsequence.client import metatables as models_metatables
+from mainsequence.client.exceptions import BadRequestError
 
 
 def _source_config(index_names: list[str]) -> models_metatables.TimeIndexedProfile:
@@ -171,6 +173,79 @@ def test_get_data_between_dates_from_api_sends_dimension_range_map(monkeypatch):
             ],
         }
     ]
+
+
+def test_get_data_between_dates_rejects_incomplete_dimension_range_map(monkeypatch):
+    def _fake_make_request(**_kwargs):
+        raise AssertionError("request should not be sent with an incomplete coordinate")
+
+    monkeypatch.setattr(models_metatables, "make_request", _fake_make_request)
+
+    start = datetime.datetime(2026, 5, 1, 0, tzinfo=datetime.UTC)
+
+    with pytest.raises(ValueError) as exc:
+        _storage(
+            ["time_index", "account_uid", "asset_identifier"]
+        ).get_data_between_dates_from_api(
+            start_date=start,
+            dimension_range_map=[
+                {
+                    "coordinate": {"account_uid": "account-a"},
+                    "start_date": start,
+                }
+            ],
+        )
+
+    message = str(exc.value)
+    assert "dimension_range_map coordinate is incomplete" in message
+    assert "asset_identifier" in message
+    assert "account_uid" in message
+
+
+def test_get_data_between_dates_raises_backend_error(monkeypatch):
+    class FakeResponse:
+        status_code = 400
+        text = '{"error": {"dimension_range_map": ["Index coordinate missing dimension(s): asset_identifier"]}}'
+
+        @staticmethod
+        def json():
+            return {
+                "error": {
+                    "dimension_range_map": [
+                        "Index coordinate missing dimension(s): asset_identifier"
+                    ]
+                }
+            }
+
+    def _fake_make_request(*, s, loaders, payload, r_type, url):
+        return FakeResponse()
+
+    monkeypatch.setattr(models_metatables, "make_request", _fake_make_request)
+    monkeypatch.setattr(
+        models_metatables.TimeIndexMetaTable,
+        "build_session",
+        classmethod(lambda cls: object()),
+    )
+
+    start = datetime.datetime(2026, 5, 1, 0, tzinfo=datetime.UTC)
+
+    with pytest.raises(BadRequestError) as exc:
+        _storage(
+            ["time_index", "account_uid", "asset_identifier"]
+        ).get_data_between_dates_from_api(
+            start_date=start,
+            dimension_range_map=[
+                {
+                    "coordinate": {
+                        "account_uid": "account-a",
+                        "asset_identifier": "BTC",
+                    },
+                    "start_date": start,
+                }
+            ],
+        )
+
+    assert "asset_identifier" in str(exc.value)
 
 
 def test_get_data_between_dates_from_node_identifier_sends_canonical_dimensions(monkeypatch):

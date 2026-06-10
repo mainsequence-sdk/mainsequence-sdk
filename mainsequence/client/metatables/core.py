@@ -3027,6 +3027,56 @@ class TimeIndexMetaTable(MetaTable):
                     descriptor[key] = cls._date_for_payload(descriptor[key])
         return normalized
 
+    def _identity_dimensions_from_time_indexed_profile(self) -> list[str]:
+        profile = self.time_indexed_profile
+        if profile is None:
+            raise ValueError(
+                "Cannot validate dimension_range_map because TimeIndexMetaTable "
+                "is missing time_indexed_profile."
+            )
+
+        time_index_name = str(profile.time_index_name)
+        index_names = [str(name) for name in profile.index_names]
+        if not time_index_name or not index_names:
+            raise ValueError(
+                "Cannot validate dimension_range_map because TimeIndexMetaTable "
+                "time_indexed_profile is missing time_index_name or index_names."
+            )
+        return [name for name in index_names if name != time_index_name]
+
+    def _validate_dimension_range_map_coordinates(
+        self,
+        dimension_range_map: list[dict[str, Any]] | None,
+    ) -> None:
+        if not dimension_range_map:
+            return
+
+        expected_dimensions = self._identity_dimensions_from_time_indexed_profile()
+        if not expected_dimensions:
+            return
+
+        for position, descriptor in enumerate(dimension_range_map):
+            coordinate = descriptor.get("coordinate") if isinstance(descriptor, Mapping) else None
+            provided_dimensions = (
+                [str(name) for name in coordinate.keys()]
+                if isinstance(coordinate, Mapping)
+                else []
+            )
+            provided_set = set(provided_dimensions)
+            missing_dimensions = [
+                dimension
+                for dimension in expected_dimensions
+                if dimension not in provided_set
+            ]
+            if missing_dimensions:
+                raise ValueError(
+                    "dimension_range_map coordinate is incomplete for "
+                    "TimeIndexMetaTable read. "
+                    f"Entry {position} expected identity dimensions "
+                    f"{expected_dimensions!r}; provided {provided_dimensions!r}; "
+                    f"missing {missing_dimensions!r}."
+                )
+
     def _build_dimension_payload(
         self,
         *,
@@ -3040,6 +3090,7 @@ class TimeIndexMetaTable(MetaTable):
         if index_coordinates is not None:
             payload["index_coordinates"] = index_coordinates
         if dimension_range_map is not None:
+            self._validate_dimension_range_map_coordinates(dimension_range_map)
             payload["dimension_range_map"] = self._normalize_dimension_range_map(
                 dimension_range_map
             )
@@ -3326,7 +3377,7 @@ class TimeIndexMetaTable(MetaTable):
                 )
                 if r.status_code != 200:
                     logger.warning(f"Error in request: {r.text}")
-                    return [], None
+                    raise_for_response(r, payload=payload)
 
                 response_data = r.json()
                 # Accumulate results
