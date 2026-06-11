@@ -500,9 +500,17 @@ class MetaTableOperationScope(BasePydanticModel):
         return self
 
 
+DEFAULT_META_TABLE_OPERATION_MAX_ROWS = 10_000
+DEFAULT_META_TABLE_OPERATION_STATEMENT_TIMEOUT_MS = 60_000
+
+
 class MetaTableOperationLimits(BasePydanticModel):
-    max_rows: int | None = Field(default=None, ge=1)
-    statement_timeout_ms: int | None = Field(default=None, ge=1)
+    max_rows: int = Field(default=DEFAULT_META_TABLE_OPERATION_MAX_ROWS, ge=1)
+    offset: int = Field(default=0, ge=0)
+    statement_timeout_ms: int = Field(
+        default=DEFAULT_META_TABLE_OPERATION_STATEMENT_TIMEOUT_MS,
+        ge=1,
+    )
 
 
 class MetaTableCompiledSQLOperation(BasePydanticModel):
@@ -511,7 +519,12 @@ class MetaTableCompiledSQLOperation(BasePydanticModel):
     dialect: MetaTableCompiledSQLDialect = "postgresql"
     statement: MetaTableStatementPayload
     scope: MetaTableOperationScope
-    limits: MetaTableOperationLimits | None = None
+    limits: MetaTableOperationLimits = Field(default_factory=MetaTableOperationLimits)
+
+    @field_validator("limits", mode="before")
+    @classmethod
+    def default_limits(cls, value):
+        return {} if value is None else value
 
 
 class MetaTableRequestFields(BasePydanticModel):
@@ -1704,12 +1717,68 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
             if isinstance(operation, MetaTableCompiledSQLOperation)
             else MetaTableCompiledSQLOperation(**operation)
         )
-        return cls._post_action(
+        response = cls._post_action(
             "execute-operation",
             payload,
             timeout=timeout,
             expected_statuses=(200,),
         )
+        if payload.operation != "select":
+            return response
+
+        rows = response.get("rows")
+        if not isinstance(rows, list):
+            return response
+
+        requested_max_rows = payload.limits.max_rows
+        if len(rows) >= requested_max_rows:
+            return response
+
+        pagination = response.get("pagination") or {}
+        has_more = bool(pagination.get("has_more"))
+        next_offset = pagination.get("next_offset")
+        if not has_more or next_offset in (None, ""):
+            return response
+
+        accumulated_rows = list(rows)
+        last_pagination = pagination
+        while (
+            has_more
+            and next_offset not in (None, "")
+            and len(accumulated_rows) < requested_max_rows
+        ):
+            remaining_rows = requested_max_rows - len(accumulated_rows)
+            next_payload = payload.model_copy(deep=True)
+            next_payload.limits.offset = int(next_offset)
+            next_payload.limits.max_rows = remaining_rows
+            page_response = cls._post_action(
+                "execute-operation",
+                next_payload,
+                timeout=timeout,
+                expected_statuses=(200,),
+            )
+            page_rows = page_response.get("rows") or []
+            if not isinstance(page_rows, list) or not page_rows:
+                last_pagination = page_response.get("pagination") or {}
+                break
+
+            accumulated_rows.extend(page_rows[:remaining_rows])
+            last_pagination = page_response.get("pagination") or {}
+            has_more = bool(last_pagination.get("has_more"))
+            next_offset = last_pagination.get("next_offset")
+
+        response["rows"] = accumulated_rows
+        response["row_count"] = len(accumulated_rows)
+        response["max_rows"] = requested_max_rows
+        response["truncated"] = bool(last_pagination.get("has_more"))
+        response["pagination"] = {
+            "limit": requested_max_rows,
+            "offset": payload.limits.offset,
+            "returned_count": len(accumulated_rows),
+            "has_more": bool(last_pagination.get("has_more")),
+            "next_offset": last_pagination.get("next_offset"),
+        }
+        return response
 
 
 # Global executor (or you could define one on your class)

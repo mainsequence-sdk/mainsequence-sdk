@@ -271,6 +271,13 @@ The response shape is:
   ],
   "truncated": false,
   "max_rows": 1000,
+  "pagination": {
+    "limit": 1000,
+    "offset": 0,
+    "returned_count": 1,
+    "has_more": false,
+    "next_offset": null
+  },
   "scope": {
     "meta_table_uids": ["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"],
     "data_source_uid": "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
@@ -279,7 +286,10 @@ The response shape is:
 ```
 
 Rows are returned only for statements that produce rows. For result sets larger
-than `max_rows`, `truncated` is `true`.
+than one backend page, `MetaTable.execute_operation(...)` follows
+`pagination.next_offset` automatically for select operations until it has
+returned the requested `limits.max_rows` rows or `pagination.has_more` is
+`false`. Include a deterministic `ORDER BY` in paginated select SQL.
 
 ## Migration Execution
 

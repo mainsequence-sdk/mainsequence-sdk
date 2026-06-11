@@ -283,6 +283,12 @@ operation = build_operation(
 rows = MetaTable.execute_operation(operation)
 ```
 
+For select operations, `limits.max_rows` is the total row count requested by the
+SDK call. If the backend returns a paginated response, the SDK follows
+`pagination.next_offset` automatically until that count is satisfied or the
+backend reports no more rows. Keep an explicit `ORDER BY` in paginated select
+SQL so pages are stable.
+
 The exact response shape is backend-defined, but the request contract is always
 the same: compiled SQL plus execution data source and declared MetaTable scope.
 

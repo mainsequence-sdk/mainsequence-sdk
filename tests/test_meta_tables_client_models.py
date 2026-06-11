@@ -410,6 +410,118 @@ def test_meta_table_execute_operation_serializes_scope_uid(monkeypatch):
     assert captured["payload"]["json"]["statement"]["parameters"] == {
         "symbol_1": "%BTC%",
     }
+    assert captured["payload"]["json"]["limits"]["offset"] == 0
+
+
+def test_meta_table_execute_operation_fetches_requested_rows_with_backend_pagination(
+    monkeypatch,
+):
+    calls = []
+
+    def fake_make_request(**kwargs):
+        payload = kwargs["payload"]["json"]
+        calls.append(payload)
+        offset = payload["limits"]["offset"]
+        if offset == 0:
+            return _Response(
+                {
+                    "ok": True,
+                    "operation": "select",
+                    "dialect": "postgresql",
+                    "row_count": 2,
+                    "rows": [{"value": 1}, {"value": 2}],
+                    "truncated": True,
+                    "max_rows": 2,
+                    "pagination": {
+                        "limit": 2,
+                        "offset": 0,
+                        "returned_count": 2,
+                        "has_more": True,
+                        "next_offset": 2,
+                    },
+                }
+            )
+        if offset == 2:
+            return _Response(
+                {
+                    "ok": True,
+                    "operation": "select",
+                    "dialect": "postgresql",
+                    "row_count": 2,
+                    "rows": [{"value": 3}, {"value": 4}],
+                    "truncated": True,
+                    "max_rows": 2,
+                    "pagination": {
+                        "limit": 2,
+                        "offset": 2,
+                        "returned_count": 2,
+                        "has_more": True,
+                        "next_offset": 4,
+                    },
+                }
+            )
+        return _Response(
+            {
+                "ok": True,
+                "operation": "select",
+                "dialect": "postgresql",
+                "row_count": 1,
+                "rows": [{"value": 5}],
+                "truncated": False,
+                "max_rows": 1,
+                "pagination": {
+                    "limit": 1,
+                    "offset": 4,
+                    "returned_count": 1,
+                    "has_more": False,
+                    "next_offset": None,
+                },
+            }
+        )
+
+    monkeypatch.setattr(meta_table_models, "make_request", fake_make_request)
+    monkeypatch.setattr(
+        meta_table_models.MetaTable,
+        "build_session",
+        classmethod(lambda cls: SimpleNamespace(headers={})),
+    )
+
+    result = meta_table_models.MetaTable.execute_operation(
+        {
+            "operation": "select",
+            "statement": {
+                "sql": "SELECT value FROM public.asset ORDER BY value",
+                "parameters": {},
+            },
+            "scope": {
+                "data_source_uid": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+                "tables": [
+                    {
+                        "meta_table_uid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                        "alias": "asset",
+                    }
+                ],
+            },
+            "limits": {
+                "max_rows": 5,
+                "statement_timeout_ms": 15000,
+            },
+        }
+    )
+
+    assert [row["value"] for row in result["rows"]] == [1, 2, 3, 4, 5]
+    assert result["row_count"] == 5
+    assert result["max_rows"] == 5
+    assert result["truncated"] is False
+    assert result["pagination"] == {
+        "limit": 5,
+        "offset": 0,
+        "returned_count": 5,
+        "has_more": False,
+        "next_offset": None,
+    }
+    assert [call["limits"]["offset"] for call in calls] == [0, 2, 4]
+    assert [call["limits"]["max_rows"] for call in calls] == [5, 3, 1]
 
 
 def test_dynamic_table_data_source_issue_migration_connection_posts_scope(monkeypatch):
@@ -728,6 +840,31 @@ def test_compiled_sql_v1_protocol_is_validated_by_pydantic():
         )
 
 
+def test_compiled_sql_v1_operation_uses_backend_limit_defaults():
+    operation = build_operation(
+        operation="select",
+        sql="SELECT asset.symbol FROM public.asset AS asset",
+        scope={
+            "dataSourceUid": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+            "tables": [
+                {
+                    "metaTableUid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                    "alias": "asset",
+                }
+            ]
+        },
+    )
+
+    assert operation.limits.max_rows == 10_000
+    assert operation.limits.offset == 0
+    assert operation.limits.statement_timeout_ms == 60_000
+    assert meta_table_models._payload_json(operation)["limits"] == {
+        "max_rows": 10_000,
+        "offset": 0,
+        "statement_timeout_ms": 60_000,
+    }
+
+
 def test_compiled_sql_v1_scope_resolves_session_data_source(monkeypatch):
     monkeypatch.setattr(
         meta_table_models,
@@ -774,7 +911,7 @@ def test_compiled_sql_v1_serializes_typed_temporal_parameters():
                     "metaTableUid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
                     "alias": "asset",
                 }
-            ]
+            ],
         },
     )
 
