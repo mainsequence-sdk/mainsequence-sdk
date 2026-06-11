@@ -11450,6 +11450,66 @@ def project_sync(
     success(f"Synced: {repo_name}")
 
 
+@project.command("sync-after-commit")
+def project_sync_after_commit(
+    project_uid: str | None = typer.Argument(
+        None,
+        help="Project UID. If omitted, read MAIN_SEQUENCE_PROJECT_UID from local .env.",
+    ),
+    path: str | None = typer.Option(
+        None,
+        "--path",
+        help="Project directory used to resolve MAIN_SEQUENCE_PROJECT_UID when PROJECT_UID is omitted.",
+    ),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds."),
+):
+    """
+    Trigger backend post-commit project sync.
+
+    This directly calls:
+
+    POST /orm/api/pods/projects/<project_uid>/sync_project_after_commit/
+
+    Examples
+    --------
+    ```bash
+    mainsequence project sync-after-commit project-uid-123
+    mainsequence project sync-after-commit --path .
+    ```
+    """
+    _require_login()
+
+    resolved_project_uid = project_uid
+    if resolved_project_uid is None:
+        project_dir = normalize_path(path) if path else pathlib.Path.cwd()
+        if path and not project_dir.exists():
+            error(f"Folder does not exist: {project_dir}")
+            raise typer.Exit(1)
+        resolved_project_uid = _read_project_ref_from_env_file(project_dir)
+
+    if resolved_project_uid is None:
+        error(
+            "Could not determine project uid. Pass PROJECT_UID or ensure "
+            "MAIN_SEQUENCE_PROJECT_UID is present in local .env."
+        )
+        raise typer.Exit(1)
+
+    try:
+        payload = sync_project_after_commit(resolved_project_uid, timeout=timeout)
+    except ApiError as e:
+        error(f"Backend post-commit sync failed: {e}")
+        raise typer.Exit(1) from e
+
+    result = payload or {
+        "project_uid": resolved_project_uid,
+        "detail": "sync_project_after_commit triggered",
+    }
+    if _emit_json(result):
+        return
+
+    success(f"Triggered backend sync for project {resolved_project_uid}.")
+
+
 @project.command("sync_project", hidden=True)
 def project_sync_project(
     message: str = typer.Argument(..., help="Git commit message"),

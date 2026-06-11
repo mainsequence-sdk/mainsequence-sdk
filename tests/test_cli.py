@@ -10294,6 +10294,59 @@ def test_project_sync_triggers_backend_sync_after_push(cli_mod, runner, monkeypa
     assert "Triggered backend sync for project project-uid-123." in result.output
 
 
+def test_project_sync_after_commit_uses_project_uid(cli_mod, runner, monkeypatch):
+    captured = {}
+
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "sync_project_after_commit",
+        lambda project_uid, timeout=None: captured.update(
+            project_uid=project_uid,
+            timeout=timeout,
+        )
+        or {"uid": project_uid},
+    )
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["project", "sync-after-commit", "project-uid-123", "--timeout", "30"],
+    )
+
+    assert result.exit_code == 0
+    assert captured == {"project_uid": "project-uid-123", "timeout": 30}
+    assert "Triggered backend sync for project project-uid-123." in result.output
+
+
+def test_project_sync_after_commit_reads_project_uid_from_env_file(
+    cli_mod, runner, monkeypatch, tmp_path
+):
+    target = tmp_path / "project"
+    target.mkdir()
+    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8")
+
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "sync_project_after_commit",
+        lambda project_uid, timeout=None: {
+            "project_uid": project_uid,
+            "status": "queued",
+        },
+    )
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["project", "sync-after-commit", "--path", str(target), "--json"],
+    )
+
+    assert result.exit_code == 0
+    assert json.loads(result.output) == {
+        "project_uid": "project-uid-123",
+        "status": "queued",
+    }
+
+
 def test_project_sync_project(cli_mod, runner, monkeypatch, tmp_path):
     target = tmp_path / "project"
     target.mkdir(parents=True, exist_ok=True)

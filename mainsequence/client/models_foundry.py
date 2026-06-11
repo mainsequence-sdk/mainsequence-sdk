@@ -183,6 +183,16 @@ class Project(LabelableObjectMixin, ShareableObjectMixin, BasePydanticModel, Bas
         examples=["git@github.com:mainsequence/data-pipeline.git"],
         json_schema_extra={"label": "Git SSH URL"},
     )
+    latest_git_version: str = Field(
+        "",
+        title="Latest Git Version",
+        description=(
+            "Normalized highest valid version extracted from repository tags for the "
+            "project's configured branch. Empty when the backend has not found a valid version."
+        ),
+        examples=["1.2.3"],
+        json_schema_extra={"label": "Latest Git Version"},
+    )
     created_by: str | int | dict[str, Any] | None = Field(
         None,
         title="Created By",
