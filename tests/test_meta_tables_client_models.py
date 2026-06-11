@@ -524,6 +524,70 @@ def test_meta_table_execute_operation_fetches_requested_rows_with_backend_pagina
     assert [call["limits"]["max_rows"] for call in calls] == [5, 3, 1]
 
 
+def test_meta_table_execute_operation_does_not_paginate_upsert(monkeypatch):
+    calls = []
+
+    def fake_make_request(**kwargs):
+        calls.append(kwargs["payload"]["json"])
+        return _Response(
+            {
+                "ok": True,
+                "operation": "upsert",
+                "dialect": "postgresql",
+                "row_count": 1,
+                "rows": [{"uid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"}],
+                "truncated": True,
+                "max_rows": 1,
+                "pagination": {
+                    "limit": 1,
+                    "offset": 0,
+                    "returned_count": 1,
+                    "has_more": True,
+                    "next_offset": 1,
+                },
+            }
+        )
+
+    monkeypatch.setattr(meta_table_models, "make_request", fake_make_request)
+    monkeypatch.setattr(
+        meta_table_models.MetaTable,
+        "build_session",
+        classmethod(lambda cls: SimpleNamespace(headers={})),
+    )
+
+    result = meta_table_models.MetaTable.execute_operation(
+        {
+            "operation": "upsert",
+            "statement": {
+                "sql": (
+                    "INSERT INTO public.asset (uid) VALUES (%(uid)s::UUID) "
+                    "ON CONFLICT (uid) DO UPDATE SET uid = %(uid)s::UUID "
+                    "RETURNING uid"
+                ),
+                "parameters": {"uid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"},
+            },
+            "scope": {
+                "data_source_uid": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+                "tables": [
+                    {
+                        "meta_table_uid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                        "alias": "asset",
+                        "access": "write",
+                    }
+                ],
+            },
+            "limits": {
+                "max_rows": 1,
+                "statement_timeout_ms": 15000,
+            },
+        }
+    )
+
+    assert result["operation"] == "upsert"
+    assert len(calls) == 1
+    assert calls[0]["limits"]["offset"] == 0
+
+
 def test_dynamic_table_data_source_issue_migration_connection_posts_scope(monkeypatch):
     captured = {}
 
@@ -855,13 +919,13 @@ def test_compiled_sql_v1_operation_uses_backend_limit_defaults():
         },
     )
 
-    assert operation.limits.max_rows == 10_000
+    assert operation.limits.max_rows == 1_000
     assert operation.limits.offset == 0
-    assert operation.limits.statement_timeout_ms == 60_000
+    assert operation.limits.statement_timeout_ms == 15_000
     assert meta_table_models._payload_json(operation)["limits"] == {
-        "max_rows": 10_000,
+        "max_rows": 1_000,
         "offset": 0,
-        "statement_timeout_ms": 60_000,
+        "statement_timeout_ms": 15_000,
     }
 
 

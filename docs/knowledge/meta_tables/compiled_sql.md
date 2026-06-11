@@ -209,13 +209,17 @@ It checks:
 - row limits and statement timeouts are respected
 - writes are gated by object permission and data-source capabilities
 
-If omitted, the SDK sends `max_rows=10000`,
-`offset=0`, and `statement_timeout_ms=60000`. For select operations,
+If omitted, the SDK sends `max_rows=1000`,
+`offset=0`, and `statement_timeout_ms=15000`, matching the backend defaults.
+For select operations,
 `max_rows` is the total number of rows requested by the SDK call. The backend
 still enforces a per-response page cap, so `MetaTable.execute_operation(...)`
 uses the backend `pagination.next_offset` contract to fetch additional pages
 until it has returned the requested row count or the backend reports no more
 rows. Stable pagination requires the SQL to include a deterministic `ORDER BY`.
+Write operations execute once; the SDK does not follow pagination for
+`insert`, `update`, `upsert`, or `delete` responses because that would rerun the
+mutation.
 
 Read-only raw SQL remains separate. Writable MetaTable operations should use
 compiled operation envelopes with declared scope.
