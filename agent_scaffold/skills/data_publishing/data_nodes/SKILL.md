@@ -335,7 +335,80 @@ Use `UpdateStatistics`.
 Do not fetch or return full history every run unless there is a documented
 reason.
 
-### 6. `time_index` Must Be Nanosecond UTC
+### 6. DataNode Tail Deletes Must Use `delete_after_date(...)`
+
+When a DataNode workflow needs to remove persisted rows from its
+`PlatformTimeIndexMetaTable` storage table, use
+`TimeIndexMetaTable.delete_after_date(...)`. This is the only normal DataNode
+storage deletion path.
+
+Do not use raw SQL, compiled SQL operations, direct database clients,
+`run_query(...)`, backend-private endpoints, table truncation, or ad hoc
+delete helpers to clean DataNode storage rows.
+
+The SDK call targets:
+
+```text
+POST /orm/api/ts_manager/dynamic_table/<dynamic_table_uid>/delete_after_date/
+```
+
+Use a global tail delete only when all streams in the table should be rolled
+back from the same inclusive cutoff:
+
+```python
+storage = MyStorageTable.get_time_index_meta_table()
+storage.delete_after_date("2026-04-01T00:00:00Z")
+```
+
+For multidimensional storage, prefer an explicit scope. Use
+`dimension_filters` when deleting all rows for one or more dimension values:
+
+```python
+storage.delete_after_date(
+    "2026-04-01T00:00:00Z",
+    dimension_filters={
+        "asset_identifier": ["example-asset-btc", "example-asset-eth"],
+    },
+)
+```
+
+Use `index_coordinates` when deleting exact coordinate streams:
+
+```python
+storage.delete_after_date(
+    "2026-04-01T00:00:00Z",
+    index_coordinates=[
+        {
+            "account_uid": "account-a",
+            "asset_identifier": "example-asset-btc",
+        }
+    ],
+)
+```
+
+Deleting all rows for scoped streams is allowed only with an explicit scope:
+
+```python
+storage.delete_after_date(
+    None,
+    dimension_filters={"asset_identifier": ["example-asset-btc"]},
+)
+
+storage.delete_after_date(
+    None,
+    index_coordinates=[
+        {
+            "account_uid": "account-a",
+            "asset_identifier": "example-asset-btc",
+        }
+    ],
+)
+```
+
+Never send `after_date=None` without `dimension_filters` or
+`index_coordinates`. That is an unbounded table delete and must be rejected.
+
+### 7. `time_index` Must Be Nanosecond UTC
 
 Every non-empty DataFrame returned by `update()` must have its first index
 level named `time_index` with dtype exactly `datetime64[ns, UTC]`.
@@ -386,7 +459,7 @@ physical schema evolution. Keep the `PlatformTimeIndexMetaTable` catalog model a
 the SDK storage contract, apply Alembic-rendered SQL through the migration
 workflow, then register or refresh the MetaTable catalog binding separately.
 
-### 7. Dependencies Must Be Deterministic
+### 8. Dependencies Must Be Deterministic
 
 Dependencies belong in constructor setup and `dependencies()`.
 
@@ -395,7 +468,7 @@ changing it changes the dependency graph and update identity.
 
 Do not construct dependency graphs dynamically inside `update()`.
 
-### 8. Foreign Keys Belong To SQLAlchemy And Alembic
+### 9. Foreign Keys Belong To SQLAlchemy And Alembic
 
 For new code, model foreign keys on the `PlatformTimeIndexMetaTable` storage
 class, or route the storage work to the MetaTable skill. When a DataNode storage
@@ -416,7 +489,7 @@ binding after upgrade.
 
 Do not add DataNode configuration fields just to mutate storage metadata.
 
-### 9. Metadata Belongs To Storage
+### 10. Metadata Belongs To Storage
 
 Production-quality table identifiers, descriptions, labels, column docs, and
 foreign-key metadata belong to the storage class/MetaTable registration path.
@@ -444,6 +517,8 @@ When reviewing an existing DataNode, look for:
 - misuse of `hash_namespace`
 - non-incremental `update()` behavior
 - hidden dependency creation inside `update()`
+- DataNode storage cleanup that bypasses `TimeIndexMetaTable.delete_after_date(...)`
+- `delete_after_date(None)` without explicit `dimension_filters` or `index_coordinates`
 - invalid identity-indexed output shape
 - `time_index` dtype that is not exactly `datetime64[ns, UTC]`
 - DataFrame columns that do not match the `PlatformTimeIndexMetaTable` class
@@ -464,6 +539,9 @@ Do not claim success until you have checked:
 - no `test_node` usage remains
 - `dependencies()` is deterministic
 - `update()` is incremental
+- DataNode storage deletion, rollback, and repair paths use
+  `TimeIndexMetaTable.delete_after_date(...)`
+- unbounded deletes with `after_date=None` and no dimension/coordinate scope are absent
 - the DataFrame shape matches the storage class
 - non-empty outputs have first index level `time_index` with dtype `datetime64[ns, UTC]`
 - the first validation run uses explicit `hash_namespace(...)` when it touches a shared backend

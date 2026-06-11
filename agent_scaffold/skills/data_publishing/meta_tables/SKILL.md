@@ -387,6 +387,24 @@ Only use physical table names returned by registered `MetaTable` objects when co
 
 Do not hardcode platform-managed physical names manually.
 
+### 7. DataNode storage deletes use the DataNode tail-delete API
+
+For `PlatformTimeIndexMetaTable` storage owned by DataNodes, do not design raw
+SQL delete operations or compiled SQL delete operations for rollback, repair, or
+stream cleanup. Route that work to the DataNode skill and use
+`TimeIndexMetaTable.delete_after_date(...)`.
+
+The DataNode delete path is:
+
+```text
+POST /orm/api/ts_manager/dynamic_table/<dynamic_table_uid>/delete_after_date/
+```
+
+Use `after_date` for global tail rollback. Use `dimension_filters` or
+`index_coordinates` for scoped deletes, including scoped full-stream deletes
+where `after_date=None`. Never allow `after_date=None` without an explicit
+dimension or coordinate scope.
+
 ## Review Rules
 
 When reviewing an existing MetaTable workflow, look for:
@@ -406,6 +424,8 @@ When reviewing an existing MetaTable workflow, look for:
 - migration work that asks users to define backend payloads, artifact rows, or SDK request objects
 - compiled SQL operations without complete table scope
 - raw SQL that hardcodes stale physical names
+- raw SQL or compiled SQL deletes against DataNode-owned
+  `PlatformTimeIndexMetaTable` storage instead of `delete_after_date(...)`
 - a table that should really be modeled as a DataNode instead
 
 ## Validation Checklist
