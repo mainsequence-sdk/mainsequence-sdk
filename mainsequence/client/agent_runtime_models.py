@@ -121,10 +121,7 @@ class Agent(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
         default_factory=dict,
         description="Additional agent configuration unrelated to runtime resolution.",
     )
-    metadata: dict[str, Any] = Field(
-        default_factory=dict,
-        description="Arbitrary metadata for UI or integration use.",
-    )
+
     last_session_at: datetime.datetime | None = Field(
         None,
         description="Timestamp of the most recent session recorded for this agent.",
