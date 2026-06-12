@@ -60,10 +60,11 @@ class LoggedUserContextMiddleware:
         authorization_scheme = _authorization_scheme(request.headers)
         logger.info(
             "LoggedUserContextMiddleware request context method=%s path=%s "
-            "x-user-id=%r x-username=%r x-resource-release-id=%r x-fastapi-id=%r "
+            "x-user-uid=%r x-user-id=%r x-username=%r x-resource-release-id=%r x-fastapi-id=%r "
             "authorization_present=%s authorization_scheme=%r",
             request.method,
             request.url.path,
+            request.headers.get("x-user-uid"),
             request.headers.get("x-user-id"),
             request.headers.get("x-username"),
             request.headers.get("x-resource-release-id"),
@@ -74,9 +75,10 @@ class LoggedUserContextMiddleware:
         bound_headers = current_auth_headers.get()
         logger.info(
             "LoggedUserContextMiddleware bound context current_auth_headers_is_none=%s "
-            "header_keys=%s x-user-id=%r",
+            "header_keys=%s x-user-uid=%r x-user-id=%r",
             bound_headers is None,
             _header_keys(bound_headers),
+            _header_get(bound_headers, "x-user-uid"),
             _header_get(bound_headers, "x-user-id"),
         )
 
@@ -93,9 +95,11 @@ class LoggedUserContextMiddleware:
                 raise
 
             request.state.user = user
+            request.state.user_uid = user.uid
             request.state.user_id = user.id
             logger.info(
-                "LoggedUserContextMiddleware User.get_logged_user resolved user_id=%s for %s %s",
+                "LoggedUserContextMiddleware User.get_logged_user resolved user_uid=%s user_id=%s for %s %s",
+                request.state.user_uid,
                 request.state.user_id,
                 request.method,
                 request.url.path,

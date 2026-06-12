@@ -67,6 +67,7 @@ def _logged_user_header_context(
         return {
             "header_source": header_source,
             "header_keys": [],
+            "x_user_uid": None,
             "x_user_id": None,
             "authorization_present": False,
             "authorization_scheme": None,
@@ -86,6 +87,12 @@ def _logged_user_header_context(
     return {
         "header_source": header_source,
         "header_keys": sorted(str(key) for key in headers.keys()),
+        "x_user_uid": (
+            normalized_headers.get("X-User-UID")
+            or normalized_headers.get("x-user-uid")
+            or normalized_headers.get("HTTP_X_USER_UID")
+            or normalized_headers.get("http_x_user_uid")
+        ),
         "x_user_id": (
             normalized_headers.get("X-User-ID")
             or normalized_headers.get("x-user-id")
@@ -1063,15 +1070,17 @@ class User(UserApiBaseObjectOrm, BasePydanticModel):
         cls,
         *,
         normalized_headers: Mapping[str, Any],
-        user_id: int,
+        user_uid: str | None = None,
+        user_id: int | None = None,
     ):
+        identity = user_uid or user_id
         username = str(
             normalized_headers.get("X-Username")
             or normalized_headers.get("x-username")
             or normalized_headers.get("X-User-Email")
             or normalized_headers.get("x-user-email")
-            or f"user-{user_id}"
-        ).strip() or f"user-{user_id}"
+            or f"user-{identity}"
+        ).strip() or f"user-{identity}"
         email = str(
             normalized_headers.get("X-User-Email")
             or normalized_headers.get("x-user-email")
@@ -1080,6 +1089,7 @@ class User(UserApiBaseObjectOrm, BasePydanticModel):
 
         payload = {
             "id": user_id,
+            "uid": user_uid,
             "username": username,
             "email": email,
             "date_joined": None,
@@ -1138,10 +1148,14 @@ class User(UserApiBaseObjectOrm, BasePydanticModel):
         cls,
         *,
         headers: Mapping[str, Any],
+        user_uid: str | None = None,
         user_id: int | None = None,
     ) -> User:
         outbound_headers = _build_request_bound_outbound_headers(headers)
-        if user_id is None:
+        if user_uid:
+            url = f"{cls.get_object_url()}/get_user_details/"
+            params = None
+        elif user_id is None:
             url = f"{cls.get_object_url()}/get_user_details/"
             params = None
         else:
@@ -1170,8 +1184,10 @@ class User(UserApiBaseObjectOrm, BasePydanticModel):
         Use this when code is running with request-scoped identity context, such
         as FastAPI middleware, Streamlit, or code that explicitly binds
         `_CURRENT_AUTH_HEADERS`. This method first uses the bound request/user
-        context and only falls back to `get_authenticated_user_details()` when
-        request headers are present with Bearer auth but no `X-User-ID`.
+        context and only falls back to the current-user details endpoint when
+        request headers are present with Bearer auth but no request-bound user
+        identity header. `X-User-UID` is the public identity header; `X-User-ID`
+        is kept only for legacy request-bound callers.
 
         For standalone authenticated CLI or script code that is not request-bound,
         prefer `get_authenticated_user_details()`.
@@ -1220,12 +1236,40 @@ class User(UserApiBaseObjectOrm, BasePydanticModel):
             and str(authorization_value).split(" ", 1)[0].lower() == "bearer"
         )
 
+        user_uid_raw = (
+            normalized_headers.get("X-User-UID")
+            or normalized_headers.get("x-user-uid")
+            or normalized_headers.get("HTTP_X_USER_UID")
+            or normalized_headers.get("http_x_user_uid")
+        )
         user_id_raw = (
             normalized_headers.get("X-User-ID")
             or normalized_headers.get("x-user-id")
             or normalized_headers.get("HTTP_X_USER_ID")
             or normalized_headers.get("http_x_user_id")
         )
+
+        if user_uid_raw not in (None, ""):
+            user_uid = str(user_uid_raw).strip()
+            if not has_bearer_authorization:
+                user = cls._build_request_bound_identity_user(
+                    normalized_headers=normalized_headers,
+                    user_uid=user_uid,
+                )
+                _CURRENT_USER.set(user)
+                logger.info(
+                    "User.get_logged_user resolved user_uid=%s via request identity headers without backend auth",
+                    user.uid,
+                )
+                return user
+
+            user = cls._get_request_bound_user(headers=headers, user_uid=user_uid)
+            _CURRENT_USER.set(user)
+            logger.info(
+                "User.get_logged_user resolved user_uid=%s via X-User-UID header",
+                user.uid,
+            )
+            return user
 
         if user_id_raw in (None, ""):
             if has_bearer_authorization:
@@ -1256,10 +1300,11 @@ class User(UserApiBaseObjectOrm, BasePydanticModel):
                     context = _logged_user_header_context(headers, header_source=header_source)
                     logger.exception(
                         "User.get_logged_user failed during bearer fallback; "
-                        "header_source=%s header_keys=%s X-User-ID=%r "
+                        "header_source=%s header_keys=%s X-User-UID=%r X-User-ID=%r "
                         "authorization_present=%s authorization_scheme=%r",
                         context["header_source"],
                         context["header_keys"],
+                        context["x_user_uid"],
                         context["x_user_id"],
                         context["authorization_present"],
                         context["authorization_scheme"],
@@ -1274,16 +1319,17 @@ class User(UserApiBaseObjectOrm, BasePydanticModel):
 
             context = _logged_user_header_context(headers, header_source=header_source)
             logger.error(
-                "User.get_logged_user failed: missing X-User-ID in request headers; "
-                "header_source=%s header_keys=%s X-User-ID=%r "
+                "User.get_logged_user failed: missing X-User-UID or X-User-ID in request headers; "
+                "header_source=%s header_keys=%s X-User-UID=%r X-User-ID=%r "
                 "authorization_present=%s authorization_scheme=%r",
                 context["header_source"],
                 context["header_keys"],
+                context["x_user_uid"],
                 context["x_user_id"],
                 context["authorization_present"],
                 context["authorization_scheme"],
             )
-            raise RuntimeError("Missing X-User-ID in request headers.")
+            raise RuntimeError("Missing X-User-UID or X-User-ID in request headers.")
 
         try:
             user_id = int(str(user_id_raw).strip())
@@ -1291,10 +1337,11 @@ class User(UserApiBaseObjectOrm, BasePydanticModel):
             context = _logged_user_header_context(headers, header_source=header_source)
             logger.exception(
                 "User.get_logged_user failed: invalid X-User-ID value; "
-                "header_source=%s header_keys=%s X-User-ID=%r "
+                "header_source=%s header_keys=%s X-User-UID=%r X-User-ID=%r "
                 "authorization_present=%s authorization_scheme=%r",
                 context["header_source"],
                 context["header_keys"],
+                context["x_user_uid"],
                 context["x_user_id"],
                 context["authorization_present"],
                 context["authorization_scheme"],

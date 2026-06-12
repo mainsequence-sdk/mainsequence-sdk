@@ -73,6 +73,62 @@ def test_get_logged_user_uses_request_bound_headers_for_user_lookup(monkeypatch)
     assert "Host" not in captured["headers"]
 
 
+def test_get_logged_user_uses_request_bound_uid_header_for_user_lookup(monkeypatch):
+    monkeypatch.delenv("MAINSEQUENCE_ACCESS_TOKEN", raising=False)
+    monkeypatch.delenv("MAINSEQUENCE_REFRESH_TOKEN", raising=False)
+
+    captured: dict[str, object] = {}
+
+    class _FakeSession:
+        def get(self, url, *, headers=None, params=None, timeout=None):
+            captured["url"] = url
+            captured["headers"] = headers
+            captured["params"] = params
+            captured["timeout"] = timeout
+            return _FakeResponse(
+                {
+                    "uid": "user-uid-4",
+                    "username": "jose",
+                    "email": "jose@main-sequence.io",
+                    "date_joined": "2026-01-01T00:00:00Z",
+                    "is_active": True,
+                    "api_request_limit": 10000,
+                    "mfa_enabled": False,
+                    "groups": [],
+                    "user_permissions": [],
+                    "organization_teams": [],
+                }
+            )
+
+    monkeypatch.setattr(
+        models_user_mod.User,
+        "build_session",
+        classmethod(lambda cls: _FakeSession()),
+    )
+
+    auth_token = models_user_mod._CURRENT_AUTH_HEADERS.set(
+        {
+            "X-User-UID": "user-uid-4",
+            "Authorization": "Bearer inbound-token",
+            "Cookie": "sessionid=abc",
+            "Host": "frontend.test",
+        }
+    )
+    user_token = models_user_mod._CURRENT_USER.set(None)
+    try:
+        user = models_user_mod.User.get_logged_user()
+    finally:
+        models_user_mod._CURRENT_USER.reset(user_token)
+        models_user_mod._CURRENT_AUTH_HEADERS.reset(auth_token)
+
+    assert user.uid == "user-uid-4"
+    assert str(captured["url"]).endswith("/user/api/user/get_user_details/")
+    assert captured["params"] is None
+    assert captured["headers"]["Authorization"] == "Bearer inbound-token"
+    assert captured["headers"]["Cookie"] == "sessionid=abc"
+    assert "Host" not in captured["headers"]
+
+
 def test_get_logged_user_returns_header_identity_without_backend_auth(monkeypatch):
     monkeypatch.delenv("MAINSEQUENCE_ACCESS_TOKEN", raising=False)
     monkeypatch.delenv("MAINSEQUENCE_REFRESH_TOKEN", raising=False)
@@ -102,6 +158,42 @@ def test_get_logged_user_returns_header_identity_without_backend_auth(monkeypatc
         models_user_mod._CURRENT_AUTH_HEADERS.reset(auth_token)
 
     assert user.id == 4
+    assert user.username == "dashboard-user"
+    assert user.email == "dashboard-user"
+    assert user.date_joined is None
+    assert user.api_request_limit is None
+
+
+def test_get_logged_user_returns_uid_header_identity_without_backend_auth(monkeypatch):
+    monkeypatch.delenv("MAINSEQUENCE_ACCESS_TOKEN", raising=False)
+    monkeypatch.delenv("MAINSEQUENCE_REFRESH_TOKEN", raising=False)
+
+    class _FakeSession:
+        def get(self, url, *, headers=None, params=None, timeout=None):
+            raise AssertionError("header-only identity should not trigger backend lookup")
+
+    monkeypatch.setattr(
+        models_user_mod.User,
+        "build_session",
+        classmethod(lambda cls: _FakeSession()),
+    )
+
+    auth_token = models_user_mod._CURRENT_AUTH_HEADERS.set(
+        {
+            "X-User-UID": "user-uid-4",
+            "X-Username": "dashboard-user",
+            "X-Dashboard-ID": "dashboard-7",
+        }
+    )
+    user_token = models_user_mod._CURRENT_USER.set(None)
+    try:
+        user = models_user_mod.User.get_logged_user()
+    finally:
+        models_user_mod._CURRENT_USER.reset(user_token)
+        models_user_mod._CURRENT_AUTH_HEADERS.reset(auth_token)
+
+    assert user.uid == "user-uid-4"
+    assert user.id is None
     assert user.username == "dashboard-user"
     assert user.email == "dashboard-user"
     assert user.date_joined is None

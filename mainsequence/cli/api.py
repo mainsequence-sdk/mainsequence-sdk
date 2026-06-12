@@ -567,8 +567,8 @@ def get_logged_user_details() -> dict[str, Any]:
     Return the authenticated user via SDK client `User.get_logged_user()`.
 
     The CLI does not naturally run inside a request context, so this bridge resolves
-    the current user id from the authenticated API session and temporarily binds
-    `X-User-ID` plus `Authorization` into
+    the current user UID from the authenticated API session and temporarily binds
+    `X-User-UID` plus `Authorization` into
     `mainsequence.client.models_user._CURRENT_AUTH_HEADERS`
     before calling the SDK method.
     """
@@ -598,14 +598,13 @@ def get_logged_user_details() -> dict[str, Any]:
     try:
         who = authed("GET", AUTH_PATHS["ping"])
         data = who.json() if who.ok else {}
-        user_id = (
-            data.get("id")
-            or data.get("pk")
-            or (data.get("user") or {}).get("id")
-            or data.get("user_id")
+        user_uid = (
+            data.get("uid")
+            or (data.get("user") or {}).get("uid")
+            or data.get("user_uid")
         )
-        if user_id in (None, ""):
-            raise ApiError("Could not determine the authenticated user id.")
+        if user_uid in (None, ""):
+            raise ApiError("Could not determine the authenticated user uid.")
 
         os.environ["MAINSEQUENCE_AUTH_MODE"] = "jwt"
         os.environ["MAINSEQUENCE_ACCESS_TOKEN"] = access
@@ -637,17 +636,26 @@ def get_logged_user_details() -> dict[str, Any]:
         ClientUser.ROOT_URL = root_url
         headers_token = current_auth_headers.set(
             {
-                "X-User-ID": str(user_id),
+                "X-User-UID": str(user_uid),
                 "Authorization": f"Bearer {access}",
             }
         )
 
         user = ClientUser.get_logged_user()
         if isinstance(user, dict):
+            user.pop("id", None)
+            organization = user.get("organization")
+            if isinstance(organization, dict):
+                organization.pop("id", None)
             return user
         if hasattr(user, "model_dump"):
-            return user.model_dump()
-        return {"id": getattr(user, "id", None)}
+            payload = user.model_dump()
+            payload.pop("id", None)
+            organization = payload.get("organization")
+            if isinstance(organization, dict):
+                organization.pop("id", None)
+            return payload
+        return {"uid": getattr(user, "uid", None)}
 
     except Exception as e:
         err_name = type(e).__name__

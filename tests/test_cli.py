@@ -96,10 +96,10 @@ def test_user_show(cli_mod, runner, monkeypatch):
         cli_mod,
         "get_logged_user_details",
         lambda: {
-            "id": 7,
+            "uid": "user-uid-7",
             "username": "jose",
             "email": "jose@main-sequence.io",
-            "organization": {"id": 2, "name": "Main Sequence"},
+            "organization": {"uid": "org-uid-2", "name": "Main Sequence"},
             "is_active": True,
             "is_verified": True,
             "mfa_enabled": False,
@@ -111,6 +111,7 @@ def test_user_show(cli_mod, runner, monkeypatch):
     result = runner.invoke(cli_mod.app, ["user"])
     assert result.exit_code == 0
     assert "MainSequence User" in result.output
+    assert "user-uid-7" in result.output
     assert "jose" in result.output
     assert "jose@main-sequence.io" in result.output
     assert "Main Sequence" in result.output
@@ -121,17 +122,18 @@ def test_user_show_json(cli_mod, runner, monkeypatch):
         cli_mod,
         "get_logged_user_details",
         lambda: {
-            "id": 7,
+            "uid": "user-uid-7",
             "username": "jose",
             "email": "jose@main-sequence.io",
-            "organization": {"id": 2, "name": "Main Sequence"},
+            "organization": {"uid": "org-uid-2", "name": "Main Sequence"},
         },
     )
 
     result = runner.invoke(cli_mod.app, ["user", "--json"])
     assert result.exit_code == 0
     payload = json.loads(result.output)
-    assert payload["id"] == 7
+    assert "id" not in payload
+    assert payload["uid"] == "user-uid-7"
     assert payload["username"] == "jose"
     assert payload["organization"]["name"] == "Main Sequence"
 
@@ -5668,7 +5670,7 @@ def test_get_logged_user_details_uses_client_model(cli_mod, monkeypatch):
         "authed",
         lambda method, api_path, body=None: types.SimpleNamespace(
             ok=True,
-            json=lambda: {"id": 7},
+            json=lambda: {"uid": "user-uid-7"},
         ),
     )
 
@@ -5722,10 +5724,10 @@ def test_get_logged_user_details_uses_client_model(cli_mod, monkeypatch):
             captured["headers_seen"] = fake_headers.current
             return types.SimpleNamespace(
                 model_dump=lambda: {
-                    "id": 7,
+                    "uid": "user-uid-7",
                     "username": "jose",
                     "email": "jose@main-sequence.io",
-                    "organization": {"id": 2, "name": "Main Sequence"},
+                    "organization": {"uid": "org-uid-2", "name": "Main Sequence"},
                 }
             )
 
@@ -5745,9 +5747,12 @@ def test_get_logged_user_details_uses_client_model(cli_mod, monkeypatch):
     assert fake_utils.API_ENDPOINT == "https://backend.test/orm/api"
     assert fake_utils.AUTH_ENDPOINT == "https://backend.test"
     assert captured["jwt"] == ("acc", "ref")
-    assert captured["headers_set"] == {"X-User-ID": "7", "Authorization": "Bearer acc"}
-    assert captured["headers_seen"] == {"X-User-ID": "7", "Authorization": "Bearer acc"}
+    assert captured["headers_set"] == {"X-User-UID": "user-uid-7", "Authorization": "Bearer acc"}
+    assert captured["headers_seen"] == {"X-User-UID": "user-uid-7", "Authorization": "Bearer acc"}
     assert captured["headers_reset"] == "token"
+    assert "id" not in out
+    assert "id" not in out["organization"]
+    assert out["uid"] == "user-uid-7"
     assert out["username"] == "jose"
 
 

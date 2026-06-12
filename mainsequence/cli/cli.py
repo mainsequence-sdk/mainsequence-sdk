@@ -2601,14 +2601,14 @@ def user_show():
 
     organization = user.get("organization")
     if isinstance(organization, dict):
-        organization_name = str(organization.get("name") or organization.get("id") or "-")
+        organization_name = str(organization.get("name") or organization.get("uid") or "-")
     else:
         organization_name = str(organization or "-")
 
     print_kv(
         "MainSequence User",
         [
-            ("ID", str(user.get("id") or "-")),
+            ("UID", str(user.get("uid") or "-")),
             ("Username", str(user.get("username") or "-")),
             ("Email", str(user.get("email") or "-")),
             ("Organization", organization_name),
