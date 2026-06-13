@@ -62,7 +62,6 @@ class Account(PlatformManagedMetaTable, Base):
     __metatable_identifier__ = f"account_{PROJECT_UID}"
     __metatable_description__ = "Tutorial account master rows used to scope account holdings."
     __metatable_labels__ = ["example", "data-node"]
-    __metatable_extra_hash_components__ = {"storage_name": "account"}
 
     uid: Mapped[uuid.UUID] = mapped_column(
         Uuid,
@@ -97,7 +96,6 @@ class DailyRandomNumberStorage(PlatformTimeIndexMetaTable, Base):
     __metatable_identifier__ = f"daily_random_number_{PROJECT_UID}"
     __metatable_description__ = "Daily random number observations produced by the tutorial node."
     __metatable_labels__ = ["example", "data-node"]
-    __metatable_extra_hash_components__ = {"storage_name": "daily_random_number"}
     __time_index_name__ = "time_index"
     __index_names__ = ["time_index"]
 
@@ -128,7 +126,6 @@ class DailyRandomAdditionStorage(PlatformTimeIndexMetaTable, Base):
         "dependency."
     )
     __metatable_labels__ = ["example", "data-node"]
-    __metatable_extra_hash_components__ = {"storage_name": "daily_random_addition"}
     __time_index_name__ = "time_index"
     __index_names__ = ["time_index"]
 
@@ -159,7 +156,6 @@ class AccountHoldingsStorage(PlatformTimeIndexMetaTable, Base):
         "Time-indexed tutorial holdings by account and instrument identifier."
     )
     __metatable_labels__ = ["example", "data-node"]
-    __metatable_extra_hash_components__ = {"storage_name": "account_holdings"}
     __time_index_name__ = "time_index"
     __index_names__ = ["time_index", "account_uid", "unique_identifier"]
 

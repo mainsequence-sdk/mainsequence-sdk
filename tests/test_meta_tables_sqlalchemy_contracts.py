@@ -1108,7 +1108,6 @@ def test_platform_managed_omits_foreign_key_contracts():
 
     request = Asset.build_registration_request(
         data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
-        enforce_storage_hash_name=False,
     )
 
     assert not hasattr(request.table_contract, "foreign_keys")
@@ -1184,7 +1183,6 @@ def test_platform_managed_metatable_register_delegates_to_meta_table_register(mo
     assert Account.get_meta_table() is registered
     assert Account.get_meta_table_uid() == "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
     assert Account.get_data_source_uid() == "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
-    assert Account.get_storage_hash() == _configured_storage_hash(Account)
     assert Account.get_physical_table_name() == "example_assets__account"
     assert Account.__table__.name == "example_assets__account"
     assert captured["timeout"] == 15
@@ -1508,7 +1506,6 @@ def test_time_index_meta_table_register_posts_to_dynamic_table_endpoint(monkeypa
     assert AccountHoldings.get_meta_table() is registered
     assert AccountHoldings.get_time_index_meta_table() is registered
     assert AccountHoldings.get_meta_table_uid() == "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
-    assert AccountHoldings.get_storage_hash() == _configured_storage_hash(AccountHoldings)
     assert AccountHoldings.get_physical_table_name() == "example_assets__account_holdings"
     assert AccountHoldings.__table__.name == "example_assets__account_holdings"
     assert captured["r_type"] == "POST"
@@ -1675,7 +1672,7 @@ def test_ensure_registered_storage_table_reports_duplicate_matches(monkeypatch):
     assert "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb" in message
 
 
-def test_time_index_storage_name_hash_component_separates_identical_table_shapes():
+def test_contract_hash_extra_components_are_explicit_utility_inputs():
     columns_a = [
         FakeColumn("time_index", DateTime(timezone=True), nullable=False),
         FakeColumn("random_number", String(255), nullable=False),
@@ -1698,12 +1695,20 @@ def test_time_index_storage_name_hash_component_separates_identical_table_shapes
         namespace="mainsequence.examples",
         identifier="daily_random_addition_project",
     )
-    RandomNumber.__metatable_extra_hash_components__ = {"storage_name": "daily_random_number"}
-    RandomAddition.__metatable_extra_hash_components__ = {"storage_name": "daily_random_addition"}
 
     random_number_storage_hash = _configured_storage_hash(RandomNumber)
     random_addition_storage_hash = _configured_storage_hash(RandomAddition)
     assert random_number_storage_hash != random_addition_storage_hash
+    assert (
+        sqlalchemy_contracts.compute_metatable_contract_hash(
+            RandomNumber,
+            extra_components={"storage_name": "daily_random_number"},
+        )
+        != sqlalchemy_contracts.compute_metatable_contract_hash(
+            RandomNumber,
+            extra_components={"storage_name": "daily_random_addition"},
+        )
+    )
 
     request = time_indexed_registration_request_from_sqlalchemy_model(
         RandomNumber,
@@ -1901,7 +1906,7 @@ def test_platform_managed_register_preserves_authored_sqlalchemy_table_name(
 
     _assert_omits_storage_hash(captured["request"])
     assert captured["request"].table_contract.physical.table_name == "example_assets__account"
-    assert Account.get_storage_hash() == storage_hash
+    assert _configured_storage_hash(Account) == storage_hash
     assert Account.get_physical_table_name() == "example_assets__account"
     assert Account.__table__.name == "example_assets__account"
     assert Account.__table__.schema is None

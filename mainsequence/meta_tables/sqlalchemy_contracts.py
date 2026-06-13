@@ -90,15 +90,11 @@ def _configured_storage_hash_for_model(
     *,
     namespace: str | None = None,
     schema: str | None = None,
-    hash_namespace: str | None = None,
-    extra_hash_components: Mapping[str, Any] | None = None,
 ) -> str:
     return compute_metatable_contract_hash(
         model_or_table,
         namespace=namespace,
         schema=schema,
-        hash_namespace=hash_namespace,
-        extra_components=extra_hash_components,
     )
 
 
@@ -122,11 +118,9 @@ def compute_metatable_contract_hash(
     resolved_schema = _resolve_schema(table, schema=schema)
     resolved_namespace = _resolve_namespace(model_or_table, namespace=namespace)
     resolved_hash_namespace = _resolve_hash_namespace(
-        model_or_table,
         hash_namespace=hash_namespace,
     )
     resolved_extra_hash_components = _resolve_extra_hash_components(
-        model_or_table,
         extra_hash_components=extra_components,
     )
     table_storage_identity = _configured_table_storage_identity(model_or_table, table=table)
@@ -164,9 +158,8 @@ def _time_index_mapper_args(cls: type[Any]) -> dict[str, list[Any]]:
 class PlatformManagedMetaTable:
     """SQLAlchemy declarative base mixin for platform-managed MetaTables.
 
-    The class derives the logical storage hash from storage-relevant metadata
-    plus the SQLAlchemy table storage shape, builds the platform registration
-    request, and registers the MetaTable through TS Manager. Binding records the
+    The class builds the platform registration request from SQLAlchemy table
+    metadata and registers the MetaTable through TS Manager. Binding records the
     returned MetaTable UID and storage metadata while preserving the authored
     SQLAlchemy table name.
     """
@@ -180,8 +173,6 @@ class PlatformManagedMetaTable:
     __metatable_provisioning__: ClassVar[Mapping[str, Any] | None] = None
     __metatable_protect_from_deletion__: ClassVar[bool | None] = None
     __metatable_introspect__: ClassVar[bool | None] = None
-    __metatable_hash_namespace__: ClassVar[str | None] = None
-    __metatable_extra_hash_components__: ClassVar[Mapping[str, Any] | None] = None
 
     @classmethod
     def __table_cls__(cls, *args: Any, **kwargs: Any) -> Any:
@@ -217,9 +208,6 @@ class PlatformManagedMetaTable:
         protect_from_deletion: bool | None = None,
         provisioning: Mapping[str, Any] | None = None,
         introspect: bool | None = None,
-        hash_namespace: str | None = None,
-        extra_hash_components: Mapping[str, Any] | None = None,
-        enforce_storage_hash_name: bool = True,
     ) -> MetaTableRegistrationRequest:
         resolved_data_source_uid = _resolve_model_data_source_uid(
             cls,
@@ -236,9 +224,6 @@ class PlatformManagedMetaTable:
             protect_from_deletion=protect_from_deletion,
             provisioning=provisioning,
             introspect=introspect,
-            hash_namespace=hash_namespace,
-            extra_hash_components=extra_hash_components,
-            enforce_storage_hash_name=enforce_storage_hash_name,
         )
 
     @classmethod
@@ -299,10 +284,6 @@ class PlatformManagedMetaTable:
             cls, "data_source_uid", None
         )
         return _coerce_optional_uid(data_source_uid)
-
-    @classmethod
-    def get_storage_hash(cls) -> str:
-        return compute_metatable_contract_hash(cls)
 
     @classmethod
     def get_physical_table_name(cls) -> str | None:
@@ -385,9 +366,6 @@ class PlatformTimeIndexMetaTable(PlatformManagedMetaTable):
         labels: Sequence[str] | None = None,
         protect_from_deletion: bool | None = None,
         provisioning: Mapping[str, Any] | None = None,
-        hash_namespace: str | None = None,
-        extra_hash_components: Mapping[str, Any] | None = None,
-        enforce_storage_hash_name: bool = True,
         time_index_name: str | None = None,
         index_names: Sequence[str] | None = None,
         storage_layout: Mapping[str, Any] | None = None,
@@ -406,9 +384,6 @@ class PlatformTimeIndexMetaTable(PlatformManagedMetaTable):
             labels=labels,
             protect_from_deletion=protect_from_deletion,
             provisioning=provisioning,
-            hash_namespace=hash_namespace,
-            extra_hash_components=extra_hash_components,
-            enforce_storage_hash_name=enforce_storage_hash_name,
             time_index_name=time_index_name,
             index_names=index_names,
             storage_layout=storage_layout,
@@ -502,9 +477,6 @@ def time_indexed_registration_request_from_sqlalchemy_model(
     protect_from_deletion: bool | None = None,
     provisioning: Mapping[str, Any] | None = None,
     schema: str | None = None,
-    hash_namespace: str | None = None,
-    extra_hash_components: Mapping[str, Any] | None = None,
-    enforce_storage_hash_name: bool = True,
     time_index_name: str | None = None,
     index_names: Sequence[str] | None = None,
     storage_layout: Mapping[str, Any] | None = None,
@@ -612,9 +584,6 @@ def platform_managed_registration_request_from_sqlalchemy_model(
     provisioning: Mapping[str, Any] | None = None,
     introspect: bool | None = None,
     schema: str | None = None,
-    hash_namespace: str | None = None,
-    extra_hash_components: Mapping[str, Any] | None = None,
-    enforce_storage_hash_name: bool = True,
 ) -> MetaTableRegistrationRequest:
     table = _resolve_table(model_or_table)
     resolved_schema = _resolve_schema(table, schema=schema)
@@ -667,8 +636,6 @@ def external_registered_registration_request_from_sqlalchemy_model(
     protect_from_deletion: bool = False,
     introspect: bool = True,
     schema: str | None = None,
-    hash_namespace: str | None = None,
-    extra_hash_components: Mapping[str, Any] | None = None,
 ) -> MetaTableRegistrationRequest:
     table = _resolve_table(model_or_table)
     resolved_schema = _resolve_schema(table, schema=schema)
@@ -1059,24 +1026,17 @@ def _resolve_bool_metadata(
     return bool(resolved_value)
 
 
-def _resolve_hash_namespace(model_or_table: Any, *, hash_namespace: str | None) -> str | None:
+def _resolve_hash_namespace(*, hash_namespace: str | None) -> str | None:
     if hash_namespace is not None:
         return hash_namespace
-    resolved_hash_namespace = getattr(model_or_table, "__metatable_hash_namespace__", None)
-    if resolved_hash_namespace in (None, ""):
-        return None
-    return str(resolved_hash_namespace)
+    return None
 
 
 def _resolve_extra_hash_components(
-    model_or_table: Any,
     *,
     extra_hash_components: Mapping[str, Any] | None,
 ) -> dict[str, Any] | None:
     resolved: dict[str, Any] = {}
-    class_components = getattr(model_or_table, "__metatable_extra_hash_components__", None)
-    if isinstance(class_components, Mapping):
-        resolved.update(dict(class_components))
     if isinstance(extra_hash_components, Mapping):
         resolved.update(dict(extra_hash_components))
     return resolved or None

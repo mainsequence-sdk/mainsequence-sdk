@@ -90,7 +90,6 @@ class DailyRandomNumberStorage(PlatformTimeIndexMetaTable, Base):
     __metatable_namespace__ = "mainsequence.examples"
     __metatable_identifier__ = f"daily_random_number_{PROJECT_UID}"
     __metatable_description__ = "Daily random number observations produced by the tutorial node."
-    __metatable_extra_hash_components__ = {"storage_name": "daily_random_number"}
     __metatable_labels__ = ["tutorial", "data-node"]
     __time_index_name__ = "time_index"
     __index_names__ = ["time_index"]
@@ -107,7 +106,6 @@ class DailyRandomAdditionStorage(PlatformTimeIndexMetaTable, Base):
     __metatable_namespace__ = "mainsequence.examples"
     __metatable_identifier__ = f"daily_random_addition_{PROJECT_UID}"
     __metatable_description__ = "Daily random additions produced from the tutorial dependency node."
-    __metatable_extra_hash_components__ = {"storage_name": "daily_random_addition"}
     __metatable_labels__ = ["tutorial", "data-node"]
     __time_index_name__ = "time_index"
     __index_names__ = ["time_index"]
@@ -203,12 +201,11 @@ the backend, binds the returned MetaTable UID to the class, and retargets the
 SQLAlchemy table to the backend-owned physical table name.
 The DataFrame returned by `update()` must match that table contract.
 
-`__metatable_extra_hash_components__` is part of the storage-table identity. The
-two storage classes above have the same simple shape, so each class adds a
-stable `storage_name` component to prevent storage-hash collisions. Use this for
-deterministic storage disambiguation only. Do not put labels, descriptions,
-runtime parameters, backend UIDs, data-source UIDs, updater scope, or
-test-specific values in this mapping.
+The authored SQLAlchemy table name is part of the physical storage binding and
+the optional contract fingerprint utility includes that table name by default.
+If you need a custom deterministic fingerprint for drift checks or cache keys,
+call `compute_metatable_contract_hash(..., extra_components={...})` explicitly;
+do not put hash-only inputs on the storage class.
 
 Foreign keys are normal SQLAlchemy/Alembic DDL metadata. They are not part of
 `DataNodeConfiguration` and are not serialized into the platform-managed
@@ -322,7 +319,6 @@ class Account(PlatformManagedMetaTable, Base):
     __metatable_namespace__ = "mainsequence.examples"
     __metatable_identifier__ = f"account_{PROJECT_UID}"
     __metatable_description__ = "Tutorial account rows used as the parent for holdings storage."
-    __metatable_extra_hash_components__ = {"storage_name": "account"}
     __metatable_labels__ = ["tutorial", "data-node"]
 
     uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
@@ -336,7 +332,6 @@ class AccountHoldingsStorage(PlatformTimeIndexMetaTable, Base):
     __metatable_namespace__ = "mainsequence.examples"
     __metatable_identifier__ = f"account_holdings_{PROJECT_UID}"
     __metatable_description__ = "Time-indexed tutorial account holdings by account and unique identifier."
-    __metatable_extra_hash_components__ = {"storage_name": "account_holdings"}
     __metatable_labels__ = ["tutorial", "data-node"]
     __time_index_name__ = "time_index"
     __index_names__ = ["time_index", "account_uid", "unique_identifier"]

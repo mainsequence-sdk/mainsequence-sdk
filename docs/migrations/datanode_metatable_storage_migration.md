@@ -61,7 +61,6 @@ Those values are inferred:
 - provisioning: `__metatable_provisioning__` or SDK default
 - time index: `__time_index_name__`
 - index grain: `__index_names__`
-- stable storage disambiguation: `__metatable_extra_hash_components__`
 
 `introspect` belongs to lower-level externally registered table flows. It is not
 part of normal platform-managed DataNode storage registration.
@@ -118,7 +117,6 @@ class DailyMetricsStorage(PlatformTimeIndexMetaTable, Base):
         "analytics."
     )
     __metatable_labels__ = ["metrics", "daily"]
-    __metatable_extra_hash_components__ = {"storage_name": "daily_metrics"}
 
     __time_index_name__ = "time_index"
     __index_names__ = ["time_index", "entity_identifier"]
@@ -156,10 +154,9 @@ Rules:
 - Use SQLAlchemy column `info` for column labels and descriptions.
 - Use `schema_table_name(project_or_app, concept)` for authored SQLAlchemy table
   names so project/app prefixes are consistent and bounded for PostgreSQL.
-- Use `__metatable_extra_hash_components__` when two tables could otherwise have
-  the same storage-relevant shape.
-- Do not use `__metatable_extra_hash_components__` for labels, tests,
-  backend UIDs, data-source UIDs, or updater scope.
+- If you need a deterministic contract fingerprint outside registration, call
+  `compute_metatable_contract_hash(..., extra_components={...})` explicitly.
+  Do not put hash-only inputs on the storage class.
 
 ### 2. Configuration
 
@@ -342,7 +339,6 @@ class Account(PlatformManagedMetaTable, Base):
     __metatable_namespace__ = "accounts"
     __metatable_identifier__ = "example_project.account"
     __metatable_description__ = "Account master rows used to scope positions."
-    __metatable_extra_hash_components__ = {"storage_name": "account"}
 
     uid: Mapped[uuid.UUID] = mapped_column(
         Uuid,
@@ -359,7 +355,6 @@ class AccountPositions(PlatformTimeIndexMetaTable, Base):
     __metatable_namespace__ = "positions"
     __metatable_identifier__ = "example_project.account_positions"
     __metatable_description__ = "Time-indexed position rows keyed by account."
-    __metatable_extra_hash_components__ = {"storage_name": "account_positions"}
     __time_index_name__ = "time_index"
     __index_names__ = ["time_index", "account_uid"]
 
@@ -447,7 +442,6 @@ def observation_storage(dataset_variant: str) -> type[_ObservationColumns]:
             "__metatable_description__": (
                 f"{dataset_variant} observations keyed by entity identifier."
             ),
-            "__metatable_extra_hash_components__": {"storage_name": identifier},
         },
     )
 ```

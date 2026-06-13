@@ -24,9 +24,8 @@ fingerprint, but risky as table identity in an Alembic lifecycle:
 - A schema-derived hash suggests "new storage identity".
 - Exposing both as first-class user concepts makes migration behavior harder to
   reason about.
-- The current configured hash path does not include the authored table name, so
-  two same-shaped tables in the same namespace/schema can collide unless users
-  remember to add `__metatable_extra_hash_components__`.
+- Hash output used as table identity creates collision and migration questions
+  that belong in explicit utility code, not in the MetaTable resource model.
 
 The backend is expected to remove `storage_hash` from the MetaTable resource
 contract. The SDK should follow that direction instead of preserving
@@ -179,7 +178,7 @@ examples, and skills should stop describing `storage_hash` as MetaTable identity
   physical table name.
 - Schema evolution no longer implies a new table identity just because a
   fingerprint changed.
-- Users no longer need to learn `__metatable_extra_hash_components__` to avoid
+- Users no longer need class-level hash-disambiguation hooks to avoid
   same-shape table collisions in normal authored-table workflows.
 - Hashing remains available for explicit stability and drift-detection use
   cases.
