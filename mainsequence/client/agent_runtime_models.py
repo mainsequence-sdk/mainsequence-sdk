@@ -126,6 +126,18 @@ class Agent(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
         None,
         description="Timestamp of the most recent session recorded for this agent.",
     )
+    has_agent_service: bool = Field(
+        False,
+        description="Whether the backend resolved this agent to a typed coding-agent service.",
+    )
+    agent_service_uid: str | None = Field(
+        None,
+        description="Public UID of the resolved typed coding-agent service, if one exists.",
+    )
+    agent_service_automatic_deployment: bool | None = Field(
+        None,
+        description="Service-level automatic deployment flag for the resolved typed coding-agent service.",
+    )
 
     @classmethod
     def get_by_agent_unique_id(cls, agent_unique_id: str, *, timeout=None) -> Agent:
@@ -416,6 +428,10 @@ class AgentSession(BaseObjectOrm, BasePydanticModel):
     agent_uid: str | None = Field(None, description="Public UID of the agent definition used for this session.")
     created_by_user_uid: str | None = Field(None, description="Public UID of the actor who created the session.")
     parent_session_uid: str | None = Field(None, description="Public UID of the parent session, if any.")
+    name: str = Field(
+        "",
+        description="Optional human-readable session name for UI and user-facing history.",
+    )
     created_by_user: int | None = Field(
         None,
         exclude=True,

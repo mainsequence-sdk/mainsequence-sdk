@@ -1318,12 +1318,17 @@ def test_agent_runtime_models_deserialize_backend_uid_payloads():
             "llm_thinking": "medium",
             "runtime_config": {"temperature": 0},
             "configuration": {"mode": "analysis"},
-            "metadata": {"owner": "quant"},
             "last_session_at": "2026-01-01T00:00:00Z",
+            "has_agent_service": True,
+            "agent_service_uid": service_uid,
+            "agent_service_automatic_deployment": True,
         }
     )
     assert agent.uid == agent_uid
     assert agent.agent_unique_id == "research-copilot"
+    assert agent.has_agent_service is True
+    assert agent.agent_service_uid == service_uid
+    assert agent.agent_service_automatic_deployment is True
 
     search_result = agent_models_mod.AgentSemanticSearchResult.model_validate(
         {
@@ -1347,6 +1352,7 @@ def test_agent_runtime_models_deserialize_backend_uid_payloads():
             "agent_type": "custom",
             "created_by_user_uid": user_uid,
             "parent_session_uid": None,
+            "name": "Research follow-up",
             "status": "running",
             "runtime_state": "running",
             "working": True,
@@ -1371,6 +1377,7 @@ def test_agent_runtime_models_deserialize_backend_uid_payloads():
     )
     assert session.uid == session_uid
     assert session.agent_uid == agent_uid
+    assert session.name == "Research follow-up"
 
     orchestrator = agent_models_mod.UserOrchestratorAgentService.model_validate(
         {
