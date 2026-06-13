@@ -735,6 +735,10 @@ class ManagedMetaTableFinalizeTableResult(BasePydanticModel):
         ...,
         description="Whether the backend found the physical table during reconciliation.",
     )
+    deleted: bool = Field(
+        default=False,
+        description="Whether this MetaTable row was deleted during finalization cleanup.",
+    )
     schema_management_mode: str | None = Field(
         None,
         description="Backend schema management mode implied by the managed endpoint.",

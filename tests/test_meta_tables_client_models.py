@@ -697,6 +697,7 @@ def test_meta_table_finalize_managed_posts_finalize_payload(monkeypatch):
                         "time_indexed": False,
                         "finalized": True,
                         "physical_table_exists": True,
+                        "deleted": False,
                     }
                 ],
             }
@@ -722,6 +723,7 @@ def test_meta_table_finalize_managed_posts_finalize_payload(monkeypatch):
 
     assert response.ok is True
     assert response.tables[0].provisioning_status == "active"
+    assert response.tables[0].deleted is False
     assert captured["r_type"] == "POST"
     assert captured["url"].endswith("/ts_manager/meta_table/finalize-managed/")
     assert captured["payload"]["json"] == {
@@ -764,6 +766,7 @@ def test_meta_table_finalize_managed_accepts_conflict_response(monkeypatch):
                         "time_indexed": False,
                         "finalized": False,
                         "physical_table_exists": False,
+                        "deleted": False,
                         "error": {"code": "physical_table_missing"},
                     }
                 ],
