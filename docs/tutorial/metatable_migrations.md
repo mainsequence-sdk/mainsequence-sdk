@@ -22,11 +22,11 @@ Initial platform-managed registration reserves a catalog row and physical table
 name, but Alembic creates the physical table. `migrations upgrade` resolves or
 reserves provider-scoped models before Alembic SQL is rendered.
 
-For shape-addressed platform-managed tables, the SDK derives `storage_hash` from
-storage-relevant SQLAlchemy table attributes. If you add or remove a column in
-the class and then call normal registration again, the newly constructed class
-can point at a different logical storage identity before the SDK can recover the
-previous table. That is not a migration. It is a new table identity.
+For platform-managed tables, Alembic owns physical schema evolution while the
+MetaTable catalog row is reconciled by backend-supported identities such as
+`uid`, logical `identifier`, data source, and physical table name. If you add or
+remove a column in the class and then call normal registration directly, you are
+bypassing the migration lifecycle. That is not a migration.
 
 Alembic migrations preserve a deployed table by changing the physical schema in
 place. For a new provider-scoped platform-managed model, `migrations upgrade`
@@ -358,7 +358,6 @@ ACCOUNT_TABLE_NAME = schema_table_name("sdk_examples", "account")
 class Account(PlatformManagedMetaTable, Base):
     __tablename__ = ACCOUNT_TABLE_NAME
     __metatable_namespace__ = NAMESPACE
-    __metatable_extra_hash_components__ = {"storage_name": "account"}
 
     uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
     account_code: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
@@ -372,7 +371,6 @@ The new model adds `status`:
 class Account(PlatformManagedMetaTable, Base):
     __tablename__ = ACCOUNT_TABLE_NAME
     __metatable_namespace__ = NAMESPACE
-    __metatable_extra_hash_components__ = {"storage_name": "account"}
 
     uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
     account_code: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
@@ -510,10 +508,9 @@ physical application tables:
       "identifier": "sdk_examples.Asset",
       "namespace": "sdk_examples",
       "data_source_uid": "dynamic-table-data-source-uid",
-      "storage_hash": "logical-storage-hash",
       "table_contract": {
         "version": "relational-table.v1",
-        "physical": {},
+        "physical": {"table_name": "sdk_examples_asset"},
         "columns": []
       }
     }

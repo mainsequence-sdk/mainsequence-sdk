@@ -174,12 +174,19 @@ class APIDataNode(DataAccessMixin):
 
     @classmethod
     def build_from_local_time_serie(cls, source_table: "DataNodeUpdate") -> "APIDataNode":
+        physical_table_name = getattr(source_table, "physical_table_name", None) or getattr(
+            getattr(source_table, "data_node_storage", None),
+            "physical_table_name",
+            None,
+        )
+        if physical_table_name in (None, ""):
+            raise ValueError("APIDataNode.build_from_local_time_serie requires physical_table_name.")
         return cls(
             data_source_uid=cls._require_data_source_uid(
                 source_table.data_source,
                 context="APIDataNode.build_from_local_time_serie",
             ),
-            storage_hash=source_table.storage_hash,
+            physical_table_name=str(physical_table_name),
         )
 
     @classmethod
@@ -195,7 +202,7 @@ class APIDataNode(DataAccessMixin):
                 storage_table,
                 context=context,
             ),
-            storage_hash=cls._require_physical_table_name(
+            physical_table_name=cls._require_physical_table_name(
                 storage_table,
                 context=context,
             ),
@@ -222,7 +229,9 @@ class APIDataNode(DataAccessMixin):
     def __init__(
         self,
         data_source_uid: str,
-        storage_hash: str,
+        physical_table_name: str | None = None,
+        *,
+        storage_hash: str | None = None,
         data_source_local_lake: DataSource | None = None,
         storage_table: MetaTable | None = None,
     ):
@@ -231,7 +240,7 @@ class APIDataNode(DataAccessMixin):
 
         Args:
             data_source_uid: The UID of the data source.
-            storage_hash: The storage hash of the data node table.
+            physical_table_name: The physical table name of the data node table.
             data_source_local_lake: Optional local data source for the lake.
             storage_table: Optional resolved MetaTable backing this read wrapper.
         """
@@ -242,8 +251,11 @@ class APIDataNode(DataAccessMixin):
 
         if data_source_uid in (None, ""):
             raise ValueError("APIDataNode requires data_source_uid.")
+        resolved_physical_table_name = physical_table_name or storage_hash
+        if resolved_physical_table_name in (None, ""):
+            raise ValueError("APIDataNode requires physical_table_name.")
         self.data_source_uid = str(data_source_uid)
-        self.storage_hash = storage_hash
+        self.physical_table_name = str(resolved_physical_table_name)
         self.storage_table = storage_table
         self.data_source = data_source_local_lake
         self._local_persist_manager: APIPersistManager = None
@@ -257,19 +269,19 @@ class APIDataNode(DataAccessMixin):
         return True
 
     @staticmethod
-    def _get_update_hash(storage_hash):
-        return "API_" + f"{storage_hash}"
+    def _get_update_hash(physical_table_name):
+        return "API_" + f"{physical_table_name}"
 
     @property
     def update_hash(self):
-        return self._get_update_hash(storage_hash=self.storage_hash)
+        return self._get_update_hash(physical_table_name=self.physical_table_name)
 
     @property
     def local_persist_manager(self) -> Any:
         """Gets the local persistence manager, initializing it if necessary."""
         if self._local_persist_manager is None:
             self._set_local_persist_manager()
-            self.logger.debug(f"Setting local persist manager for {self.storage_hash}")
+            self.logger.debug(f"Setting local persist manager for {self.physical_table_name}")
         return self._local_persist_manager
 
     def set_relation_tree(self) -> None:
@@ -308,12 +320,12 @@ class APIDataNode(DataAccessMixin):
     def _set_local_persist_manager(self) -> None:
         self._verify_local_data_source()
         self._local_persist_manager = APIPersistManager(
-            storage_hash=self.storage_hash,
+            physical_table_name=self.physical_table_name,
             data_source_uid=self.data_source_uid,
         )
         storage_table = self._local_persist_manager.storage_table
 
-        assert storage_table is not None, f"Verify that the table {self.storage_hash} exists "
+        assert storage_table is not None, f"Verify that the table {self.physical_table_name} exists "
 
     def get_update_statistics(self):
         """

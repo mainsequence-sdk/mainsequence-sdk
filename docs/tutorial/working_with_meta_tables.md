@@ -52,12 +52,13 @@ In this mode:
 - the application does not need direct DDL credentials
 - table permissions and governed execution go through the platform
 
-For backend-managed tables, the SDK-derived `storage_hash` is the logical table
-identity. The authored SQLAlchemy `__tablename__` is the physical table name
-Alembic uses, so prefix it with the project or package name. Use
-`PlatformManagedMetaTable` when the logical identity should be derived from the
-SQLAlchemy table shape. Use Alembic for schema migrations; the SDK does not
-provide a separate schema-migration MetaTable base.
+For backend-managed tables, the MetaTable `uid` is the platform identity and
+the optional `identifier` is the stable logical application identity. The
+authored SQLAlchemy `__tablename__` is the physical table name Alembic uses, so
+prefix it with the project or package name. Use `PlatformManagedMetaTable` to
+derive the neutral MetaTable contract from the SQLAlchemy table shape. Use
+Alembic for schema migrations; the SDK does not provide a separate
+schema-migration MetaTable base.
 
 This tutorial assumes SQLAlchemy is available in the project environment.
 
@@ -96,7 +97,6 @@ class Account(PlatformManagedMetaTable, Base):
     __metatable_namespace__ = NAMESPACE
     __metatable_identifier__ = f"{PROJECT_NAME}.Account"
     __metatable_description__ = "Tutorial accounts used as parent rows for governed related tables."
-    __metatable_extra_hash_components__ = {"storage_name": "account"}
     __metatable_labels__ = ["tutorial"]
 
     uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
@@ -107,12 +107,11 @@ class Account(PlatformManagedMetaTable, Base):
 
 The important pieces are:
 
-- `PlatformManagedMetaTable` derives the logical `storage_hash` from storage-relevant configuration and table shape
+- `PlatformManagedMetaTable` derives the neutral MetaTable contract from storage-relevant configuration and table shape
 - `schema_table_name(PROJECT_NAME, "account")` creates an explicit project-prefixed SQLAlchemy table name used by Alembic
 - omit SQLAlchemy schema metadata for the default PostgreSQL schema; use `__table_args__` only for non-default schemas or other table args
 - `NAMESPACE` is a plain logical grouping for these SDK examples
-- `__metatable_identifier__` is logical backend metadata and does not rotate the configured storage identity
-- `__metatable_extra_hash_components__` adds a stable storage-identity component so similarly shaped tables cannot collide
+- `__metatable_identifier__` is logical backend metadata and does not affect physical table naming
 - `uid` is an application-level primary key, not a backend row id
 
 Prefix explicit table identifiers and explicit physical table names with the
@@ -121,10 +120,9 @@ the same convention is used everywhere. Bare names such as `Account`, `Asset`,
 or `alembic_version` are easy to collide across projects sharing one
 organization or database schema.
 
-`__metatable_extra_hash_components__` is part of storage identity. Use stable
-values such as `{"storage_name": "account"}` or
-`{"storage_name": "account_limit"}`. Do not use labels, descriptions, runtime
-options, backend UIDs, data-source UIDs, or test-specific values there.
+If you need a deterministic fingerprint for drift checks or custom stability
+validation, call `compute_metatable_contract_hash()` explicitly. It includes the
+physical table name by default and is not a MetaTable identity.
 
 ## 4. Add The Parent MetaTable To Migrations
 
@@ -167,7 +165,6 @@ class AccountLimit(PlatformManagedMetaTable, Base):
     __metatable_namespace__ = NAMESPACE
     __metatable_identifier__ = f"{PROJECT_NAME}.AccountLimit"
     __metatable_description__ = "Account limit records keyed to the owning tutorial account."
-    __metatable_extra_hash_components__ = {"storage_name": "account_limit"}
     __metatable_labels__ = ["tutorial"]
 
     uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)

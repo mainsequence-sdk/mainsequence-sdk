@@ -198,23 +198,17 @@ def _metatable_contract_column_dtypes_map(meta_table: Any) -> dict[str, str]:
     return column_dtypes
 
 
-def _storage_hash(storage_table: Any) -> str | None:
+def _physical_table_name(storage_table: Any) -> str | None:
     if storage_table is None:
         return None
     if isinstance(storage_table, Mapping):
-        storage_hash = storage_table.get("storage_hash") or storage_table.get("physical_table_name")
+        table_name = storage_table.get("physical_table_name")
     else:
-        hash_getter = getattr(storage_table, "get_storage_hash", None)
-        try:
-            storage_hash = hash_getter() if callable(hash_getter) else None
-        except Exception:
-            storage_hash = None
-        storage_hash = storage_hash or getattr(storage_table, "storage_hash", None)
-        storage_hash = storage_hash or getattr(storage_table, "physical_table_name", None)
-        if storage_hash in (None, ""):
+        table_name = getattr(storage_table, "physical_table_name", None)
+        if table_name in (None, ""):
             table = getattr(storage_table, "__table__", None)
-            storage_hash = getattr(table, "name", None)
-    return str(storage_hash) if isinstance(storage_hash, str) and storage_hash else None
+            table_name = getattr(table, "name", None)
+    return str(table_name) if isinstance(table_name, str) and table_name else None
 
 
 def _require_uid(obj: Any, object_name: str) -> str:
@@ -323,11 +317,16 @@ class UpdateRunner:
         # 3. Collect all UIDs in the dependency graph to fetch their metadata.
         # This correctly initializes the list, fixing the original bug.
         if not self.ts.depth_df.empty:
-            update_nodes_in_tree = self.ts.depth_df[
-                ["update_node_uid", "node_type", "update_hash", "remote_table_hash_id"]
-            ].to_dict("records")
+            dependency_columns = ["update_node_uid", "node_type", "update_hash"]
+            if "physical_table_name" in self.ts.depth_df.columns:
+                dependency_columns.append("physical_table_name")
+            elif "remote_table_hash_id" in self.ts.depth_df.columns:
+                dependency_columns.append("remote_table_hash_id")
+            update_nodes_in_tree = self.ts.depth_df[dependency_columns].to_dict("records")
             for update_node in update_nodes_in_tree:
                 update_node["uid"] = str(update_node.pop("update_node_uid"))
+                if "remote_table_hash_id" in update_node:
+                    update_node["physical_table_name"] = update_node.pop("remote_table_hash_id")
         else:
             update_nodes_in_tree = []
 
@@ -336,7 +335,7 @@ class UpdateRunner:
             {
                 "uid": _require_uid(self.ts.data_node_update, "DataNodeUpdate"),
                 "update_hash": self.ts.data_node_update.update_hash,
-                "remote_table_hash_id": _storage_hash(
+                "physical_table_name": _physical_table_name(
                     self.ts.local_persist_manager.storage_metadata
                 ),
                 "node_type": self.ts.data_node_update.NODE_TYPE,
@@ -900,9 +899,11 @@ class UpdateRunner:
                 f"Scheduler Head Update: {self.ts.update_hash}"
             ) as span:
                 span.set_attribute("time_serie_update_hash", self.ts.update_hash)
-                storage_hash = _storage_hash(self.ts.local_persist_manager.storage_metadata)
-                if storage_hash is not None:
-                    span.set_attribute("storage_hash", storage_hash)
+                physical_table_name = _physical_table_name(
+                    self.ts.local_persist_manager.storage_metadata
+                )
+                if physical_table_name is not None:
+                    span.set_attribute("physical_table_name", physical_table_name)
                 span.set_attribute("head_scheduler", self.scheduler.name)
 
                 # 3. Prepare the execution environment (Ray actors, dependency metadata)

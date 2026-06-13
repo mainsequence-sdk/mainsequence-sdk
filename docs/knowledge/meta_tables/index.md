@@ -14,7 +14,6 @@ resolved table metadata and compiled query artifacts into TS Manager contracts.
 A `MetaTable` record binds these things together:
 
 - a stable platform `uid`
-- a collision-resistant `storage_hash`
 - a registered TS Manager `DynamicTableDataSource`
 - a logical `identifier` and `namespace`
 - a physical table name
@@ -75,8 +74,8 @@ Typical flow:
 5. TS Manager enforces permissions and can execute governed read/write operations through its data source.
 
 The physical table name can be a normal application name such as `asset` or
-`account`. The `storage_hash` is still the platform identity for the registered
-table, but it does not have to equal the physical table name in this mode.
+`account`. The platform identity is the MetaTable `uid`; the logical
+application identity is the optional `identifier`.
 
 ### `platform_managed`
 
@@ -91,15 +90,16 @@ Typical flow:
 4. Migration tooling reserves catalog rows for missing models, Alembic applies schema
    evolution SQL.
 
-For `platform_managed`, `storage_hash` is the logical table identity and
-`storage_hash` is the logical platform identity. The authored SQLAlchemy table
-name is sent separately as `table_contract.physical.table_name` and should be
-prefixed with the project or package name.
+For `platform_managed`, the authored SQLAlchemy table name is sent as
+`table_contract.physical.table_name` and should be prefixed with the project or
+package name. Alembic owns the physical table lifecycle, while the backend owns
+MetaTable uniqueness and reconciliation through `uid`, `identifier`, data
+source, and physical table name.
 
 That is why the SDK exposes `PlatformManagedMetaTable`.
-The platform-managed class computes the logical storage identity from
-storage-relevant configuration, including the SQLAlchemy table shape, without
-using that identity as the SQLAlchemy table name.
+The platform-managed class builds the neutral table contract from
+storage-relevant SQLAlchemy metadata without replacing the SQLAlchemy table
+name.
 
 ## Why Choose Platform-Managed
 
@@ -110,8 +110,8 @@ The practical benefits are:
 
 - TS Manager uses the configured `DynamicTableDataSource` connection, so client
   code does not need direct database credentials.
-- Logical storage identities come from `storage_hash`, while backend physical
-  table names are allocated by TS Manager.
+- Physical table names are explicit SQLAlchemy/Alembic names, while platform
+  references use MetaTable UIDs and logical identifiers.
 - Creation, permission checks, introspection, search-document refresh, and
   Command Center discovery happen through one platform path.
 - Hosted or restricted environments can create relational tables without giving
@@ -130,8 +130,7 @@ The table contract is neutral JSON. It is not a SQLAlchemy object.
 It contains:
 
 - `version`: currently `relational-table.v1`
-- `physical.table_name` for external-registered tables. Platform-managed client
-  requests leave this empty because the backend owns the physical name.
+- `physical.table_name`, the authored physical table name.
 - `columns`
 - `indexes`
 - `foreign_keys`
@@ -144,17 +143,30 @@ way DataNode resolves its data source.
 ```python
 request = Asset.build_registration_request()
 
-assert request.storage_hash != Asset.__table__.name
+assert "storage_hash" not in request.model_dump(mode="json", exclude_none=True)
 assert request.table_contract.physical.table_name == Asset.__table__.name
 ```
 
-## Storage Hashes
+## Contract Fingerprints
 
-`storage_hash` is the platform table identity. It prevents collisions better
-than letting every app register a human table name such as `asset`.
+`storage_hash` is no longer a MetaTable field or platform identity. Use
+`uid`, `identifier`, and `physical_table_name` for MetaTable identity and
+lookup.
 
-For platform-managed tables, prefer the class API when the name should rotate
-with the SQLAlchemy table shape:
+If you need a deterministic contract fingerprint for drift checks, cache keys,
+or custom stability validation, call the explicit utility:
+
+```python
+from mainsequence.meta_tables import compute_metatable_contract_hash
+
+contract_hash = compute_metatable_contract_hash(Asset)
+```
+
+The utility includes the physical table name by default, so two same-shaped
+tables with different authored table names produce different fingerprints.
+
+For platform-managed tables, prefer explicit, project-prefixed SQLAlchemy table
+names:
 
 ```python
 ASSET_TABLE_NAME = schema_table_name("sdk_examples", "asset")
@@ -164,13 +176,12 @@ class Asset(PlatformManagedMetaTable, Base):
     __tablename__ = ASSET_TABLE_NAME
     __metatable_namespace__ = "sdk-examples"
     __metatable_identifier__ = "sdk_examples.Asset"
-    __metatable_extra_hash_components__ = {"storage_name": "asset"}
 ```
 
 For time-indexed DataNode storage, use `PlatformTimeIndexMetaTable` instead of
-the generic `PlatformManagedMetaTable`. It uses the same storage-hash machinery,
-but also includes `time_index_name` and `index_names` in the stable identity and
-registers through the TimeIndexMetaTable endpoint.
+the generic `PlatformManagedMetaTable`. It includes `time_index_name` and
+`index_names` in the authored table contract and registers through the
+TimeIndexMetaTable endpoint.
 
 For schema migrations, use Alembic with ordinary SQLAlchemy models. The SDK no
 longer provides schema-migration MetaTable bases or custom operation lists.
@@ -178,17 +189,19 @@ Register `AlembicVersionMetaTable` as the catalog pointer to Alembic's version
 table, then register or refresh changed MetaTable catalog bindings separately
 after Alembic applies SQL.
 
-When two backend-managed tables could otherwise have the same storage-relevant
-shape, add `__metatable_extra_hash_components__` with stable deterministic
-values:
+When a custom fingerprint needs additional stable inputs beyond the default
+contract and physical table name, pass `extra_components` to the utility:
 
 ```python
-__metatable_extra_hash_components__ = {"storage_name": "account_holdings"}
+compute_metatable_contract_hash(
+    AccountHoldings,
+    extra_components={"storage_name": "account_holdings"},
+)
 ```
 
-This attribute is part of storage identity. Changing it creates a different
-table. It is not for labels, descriptions, runtime options, test isolation,
-backend UIDs, data-source UIDs, or updater scope.
+These components are not MetaTable identity. Do not use them for labels,
+descriptions, runtime options, test isolation, backend UIDs, data-source UIDs,
+or updater scope.
 
 For explicit physical naming, use a project-prefixed SQLAlchemy table name:
 

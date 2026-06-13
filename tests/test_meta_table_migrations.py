@@ -51,13 +51,11 @@ def _reserved_metatable(
     uid: str,
     identifier: str,
     physical_table_name: str,
-    storage_hash: str,
     namespace: str = "example.assets",
 ) -> MetaTable:
     return resource_cls.model_construct(
         uid=uid,
         data_source_uid="data-source-uid",
-        storage_hash=storage_hash,
         identifier=identifier,
         namespace=namespace,
         management_mode="platform_managed",
@@ -101,7 +99,7 @@ def test_alembic_version_metatable_builds_external_registration_request():
         "schema": DEFAULT_ALEMBIC_VERSION_SCHEMA,
         "version_table": DEFAULT_ALEMBIC_VERSION_TABLE_NAME,
     }
-    assert len(request.storage_hash) <= 63
+    assert "storage_hash" not in request.model_dump(mode="json", exclude_none=True)
 
 
 def test_alembic_version_metatable_uses_session_data_source(monkeypatch):
@@ -563,7 +561,6 @@ def test_alembic_metatable_migration_finalizes_catalog_after_alembic(monkeypatch
                 ManagedMetaTableFinalizeTableResult.model_construct(
                     meta_table_uid="asset-meta-table-uid",
                     identifier="markets.Asset",
-                    storage_hash="mt_asset_hash",
                     physical_table_name="example_assets__asset",
                     previous_provisioning_status="reserved",
                     provisioning_status="active",
@@ -647,7 +644,6 @@ def test_finalize_metatable_catalog_passes_full_bound_provider_scope_to_hook(mon
         MetaTable.model_construct(
             uid="price-meta-table-uid",
             data_source_uid="data-source-uid",
-            storage_hash="mt_price_hash",
             identifier="markets.Price",
             physical_table_name="example_assets__price",
             management_mode="platform_managed",
@@ -686,7 +682,6 @@ def test_finalize_metatable_catalog_passes_full_bound_provider_scope_to_hook(mon
                 ManagedMetaTableFinalizeTableResult.model_construct(
                     meta_table_uid="asset-meta-table-uid",
                     identifier="markets.Asset",
-                    storage_hash="mt_asset_hash",
                     physical_table_name="example_assets__asset",
                     previous_provisioning_status="active",
                     provisioning_status="active",
@@ -758,7 +753,6 @@ def test_alembic_metatable_migration_sync_catalog_hook_has_no_reserved_policy(
         return MetaTable.model_construct(
             uid="asset-meta-table-uid",
             data_source_uid=request.data_source_uid,
-            storage_hash=request.storage_hash,
             physical_table_name="mt_asset",
             management_mode="platform_managed",
         )
@@ -811,7 +805,6 @@ def test_finalize_metatable_catalog_surfaces_missing_physical_tables(monkeypatch
                 ManagedMetaTableFinalizeTableResult.model_construct(
                     meta_table_uid="asset-meta-table-uid",
                     identifier="markets.Asset",
-                    storage_hash="mt_asset_hash",
                     physical_table_name="example_assets__asset",
                     previous_provisioning_status="reserved",
                     provisioning_status="reserved",
@@ -1144,6 +1137,7 @@ def test_prepare_for_alembic_preserves_authored_table_names(monkeypatch):
         assert all(table["is_alembic_managed"] is True for table in rows)
         assert all(table["provisioning_status"] == "reserved" for table in rows)
         assert all(table["management_mode"] == "platform_managed" for table in rows)
+        assert all("storage_hash" not in table for table in rows)
         assert all("schema_management" not in table for table in rows)
         assert all(table["protect_from_deletion"] is False for table in rows)
         assert "indexes" not in rows[0]["table_contract"]
@@ -1166,7 +1160,6 @@ def test_prepare_for_alembic_preserves_authored_table_names(monkeypatch):
                     uid=uid,
                     identifier=table["identifier"],
                     physical_table_name=physical_name,
-                    storage_hash=table["storage_hash"],
                 )
             )
         return response_tables
@@ -1261,6 +1254,7 @@ def test_prepare_for_alembic_does_not_resolve_foreign_key_targets(monkeypatch):
         assert rows[0]["migration_namespace"] == "markets"
         assert rows[0]["migration_provider_key"] == "sample:markets"
         assert rows[0]["is_alembic_managed"] is True
+        assert "storage_hash" not in rows[0]
         assert "indexes" not in rows[0]["table_contract"]
         assert "foreign_keys" not in rows[0]["table_contract"]
         assert "schema" not in rows[0]["table_contract"]["physical"]
@@ -1270,7 +1264,6 @@ def test_prepare_for_alembic_does_not_resolve_foreign_key_targets(monkeypatch):
                 uid="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
                 identifier="example_assets__asset",
                 physical_table_name="example_assets__asset",
-                storage_hash=rows[0]["storage_hash"],
             )
         ]
 
@@ -1332,7 +1325,6 @@ def test_prepare_for_alembic_routes_time_indexed_models_to_dynamic_table_bulk_cr
                 uid="cccccccc-cccc-4ccc-8ccc-cccccccccccc",
                 identifier="example_assets__prices",
                 physical_table_name="example_assets__prices",
-                storage_hash=rows[0]["storage_hash"],
             )
         ]
 
@@ -1474,7 +1466,6 @@ def test_prepare_for_alembic_reuses_existing_reserved_table_name(monkeypatch):
                 data_source_uid="data-source-uid",
                 management_mode="platform_managed",
                 provisioning_status="reserved",
-                storage_hash="account-storage-hash",
                 physical_table_name="example_assets__account",
                 table_contract={
                     "version": "relational-table.v1",
@@ -1506,7 +1497,6 @@ def test_prepare_for_alembic_reuses_existing_reserved_table_name(monkeypatch):
                 uid="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
                 identifier="example_assets__asset",
                 physical_table_name="example_assets__asset",
-                storage_hash=rows[0]["storage_hash"],
             ),
         ]
 
@@ -1593,7 +1583,6 @@ def test_prepare_for_alembic_reserves_already_staged_existing_rows(monkeypatch):
                 schema_management_mode="alembic_managed",
                 migration_provider_key="sample:markets",
                 alembic_version_meta_table_uid="registry-meta-table-uid",
-                storage_hash="account-storage-hash",
                 physical_table_name="example_assets__account",
                 table_contract={
                     "version": "relational-table.v1",
@@ -1610,7 +1599,6 @@ def test_prepare_for_alembic_reserves_already_staged_existing_rows(monkeypatch):
                 schema_management_mode="alembic_managed",
                 migration_provider_key="sample:markets",
                 alembic_version_meta_table_uid="registry-meta-table-uid",
-                storage_hash="asset-storage-hash",
                 physical_table_name="example_assets__asset",
                 table_contract={
                     "version": "relational-table.v1",

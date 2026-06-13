@@ -33,13 +33,13 @@ class Base(DeclarativeBase):
     metadata = MetaData(naming_convention=sqlalchemy_naming_convention())
 ```
 
-For platform-managed tables, inherit `PlatformManagedMetaTable`. It derives the
-logical `storage_hash` from storage-relevant configuration and the SQLAlchemy
-table shape, and exposes registration helpers on the model class. The authored
-SQLAlchemy `__tablename__` is the physical table name Alembic uses, so prefix it
-with the project or package name. Prefer `schema_table_name(project_or_app,
-concept)` so table names, FK string targets, indexes, and Alembic version tables
-use one collision-resistant convention.
+For platform-managed tables, inherit `PlatformManagedMetaTable`. It builds a
+neutral MetaTable contract from storage-relevant SQLAlchemy metadata and exposes
+registration helpers on the model class. The authored SQLAlchemy `__tablename__`
+is the physical table name Alembic uses, so prefix it with the project or
+package name. Prefer `schema_table_name(project_or_app, concept)` so table
+names, FK string targets, indexes, and Alembic version tables use one
+collision-resistant convention.
 
 ```python
 PROJECT_NAME = "sdk_examples"
@@ -52,7 +52,6 @@ class Account(PlatformManagedMetaTable, Base):
     __metatable_namespace__ = "sdk-examples"
     __metatable_identifier__ = "sdk_examples.Account"
     __metatable_description__ = "Accounts used as the parent entity for asset and holdings tables."
-    __metatable_extra_hash_components__ = {"storage_name": "account"}
     __metatable_labels__ = ["sdk-example"]
 
     uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
@@ -60,12 +59,12 @@ class Account(PlatformManagedMetaTable, Base):
 ```
 
 The `__metatable_identifier__` attribute is logical backend metadata. It is
-sent during registration but does not contribute to the configured
-`storage_hash`. When present, it must be globally unique per organization and
-is not the Alembic migration lookup key. Migration preparation resolves
-provider MetaTables by authored SQLAlchemy table name. Mapped columns contribute
-to configured storage identity. Indexes and foreign keys are SQLAlchemy/Alembic
-DDL metadata and are not serialized into the MetaTable registration contract.
+sent during registration. When present, it must be globally unique per
+organization and is not the Alembic migration lookup key. Migration preparation
+resolves provider MetaTables by authored SQLAlchemy table name. Mapped columns
+contribute to the neutral table contract. Indexes and foreign keys are
+SQLAlchemy/Alembic DDL metadata and are not serialized into the MetaTable
+registration contract.
 
 Prefix explicit table identifiers, explicit physical table names, and Alembic
 version table names with the project or package name. Use
@@ -73,10 +72,10 @@ version table names with the project or package name. Use
 Bare names such as `Account`, `Asset`, or `alembic_version` can collide across
 projects sharing the same organization or database schema.
 
-Use `__metatable_extra_hash_components__` to add stable, deterministic
-storage-identity components when two table classes could otherwise hash to the
-same storage name. This is common for generic or repeated storage shapes, such
-as several one-index time-series tables with the same column types.
+Use `compute_metatable_contract_hash()` when you need an explicit deterministic
+contract fingerprint for drift checks, cache keys, or custom stability checks.
+The utility includes the physical table name by default; pass
+`extra_components` only when a custom fingerprint needs additional stable inputs.
 
 ```python
 class DailyReturns(PlatformTimeIndexMetaTable, Base):
@@ -84,13 +83,11 @@ class DailyReturns(PlatformTimeIndexMetaTable, Base):
     __metatable_namespace__ = "sdk-examples"
     __metatable_identifier__ = "sdk_examples.DailyReturns"
     __metatable_description__ = "Daily return observations keyed by time for tutorial assets."
-    __metatable_extra_hash_components__ = {"storage_name": "daily_returns"}
 ```
 
-Changing `__metatable_extra_hash_components__` changes the logical storage
-identity and therefore points at a different table. Do not use it for labels,
-descriptions, runtime parameters, test isolation, backend UIDs, data-source
-UIDs, or per-run updater scope.
+Changing utility-only extra components does not change MetaTable identity. Do
+not use them for labels, descriptions, runtime parameters, test isolation,
+backend UIDs, data-source UIDs, or per-run updater scope.
 
 ## Migration-Manage A Platform-Managed Table
 
@@ -100,7 +97,7 @@ Build the request first when you want to inspect the payload:
 request = Account.build_registration_request()
 
 assert request.management_mode == "platform_managed"
-assert request.storage_hash != Account.__table__.name
+assert "storage_hash" not in request.model_dump(mode="json", exclude_none=True)
 assert request.table_contract.physical.table_name == Account.__table__.name
 ```
 
@@ -188,7 +185,6 @@ authoring behavior, but registers through:
 The client sends only the explicit time-indexed table contract:
 
 - `data_source_uid`
-- `storage_hash`
 - `identifier`
 - `namespace`
 - `description`
@@ -202,7 +198,7 @@ the database enforces one row per `(time_index, dimensions...)` observation.
 `__cadence__` is optional first-class time-indexed metadata, and it is
 recommended whenever the observation frequency is known and stable. When set,
 it must be an interval token such as `1m`, `5m`, `1h`, `1d`, `1w`, `1mo`,
-`1q`, or `1y`, and it participates in the SDK-derived `storage_hash`.
+`1q`, or `1y`, and it is included in the authored time-indexed table contract.
 Registered `TimeIndexMetaTable` responses expose the value as the first-class
 `table.cadence` attribute.
 Foreign keys, the generated unique grain index, and any additional lookup
@@ -322,7 +318,7 @@ In this mode:
 - the physical table name can be `asset`
 - TS Manager does not create the table
 - TS Manager registers metadata and can introspect the existing table
-- `storage_hash` remains the platform identity
+- MetaTable `uid` is the platform identity
 
 ## Complete Examples
 
@@ -340,7 +336,7 @@ prints the generated operation unless you set `MAINSEQUENCE_META_TABLE_EXECUTE=1
 
 The SDK intentionally fails early for ambiguous metadata:
 
-- platform-managed tables must use `PlatformManagedMetaTable` so the SDK can derive the logical `storage_hash`
+- platform-managed tables must use `PlatformManagedMetaTable` so the SDK can derive a neutral MetaTable contract
 - default-schema tables should leave SQLAlchemy `Table.schema` unset; set schema metadata only for non-default schemas
 - project tables should use `schema_table_name(project_or_app, concept)` for project-prefixed SQLAlchemy table names when FK string targets are authored explicitly
 - Alembic owns index and foreign-key DDL; the SDK does not resolve FK target MetaTable UIDs

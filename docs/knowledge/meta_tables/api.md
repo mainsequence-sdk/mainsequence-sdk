@@ -70,7 +70,6 @@ Request fields:
 | --- | --- |
 | `data_source_uid` | TS Manager `DynamicTableDataSource` that owns connection, credentials, capabilities, and execution. |
 | `management_mode` | `external_registered` or `platform_managed`. |
-| `storage_hash` | Collision-resistant platform table identifier. |
 | `identifier` | Optional logical MetaTable identifier, such as `Asset`. Non-empty values are globally unique per organization. Alembic migration preparation resolves provider MetaTables by authored SQLAlchemy table name instead. |
 | `namespace` | Logical namespace, such as `sdk-examples`. |
 | `description` | Optional discovery text. |
@@ -80,23 +79,22 @@ Request fields:
 | `introspect` | Ask the backend to refresh the physical metadata snapshot during registration. |
 | `table_contract` | Neutral relational contract. It does not include `data_source_uid`. |
 
-For `platform_managed`, `storage_hash` is the logical table identity and
-`table_contract.physical.table_name` is the authored SQLAlchemy table name that
-Alembic sees. The two values are intentionally separate.
+For `platform_managed`, `table_contract.physical.table_name` is the authored
+SQLAlchemy table name that Alembic sees. The platform identity is the MetaTable
+`uid`; the stable logical application identity is `identifier` when provided.
 
 `PlatformManagedMetaTable` exists so SQLAlchemy table construction and
-migration-managed registration derive the same configured `storage_hash` from
-storage-relevant configuration while preserving the authored physical table
-name. Prefix explicit table names with the project or package name.
+migration-managed registration produce the same table contract while preserving
+the authored physical table name. Prefix explicit table names with the project
+or package name.
 Use `schema_table_name(project_or_app, concept)` and
 `sqlalchemy_naming_convention()` to keep authored table, index, constraint, and
 Alembic version names collision-resistant and within PostgreSQL identifier
 limits.
 
-`__metatable_extra_hash_components__` adds deterministic fields to the
-`storage_hash` payload before registration. Use it only to disambiguate storage
-identity for tables that could otherwise share the same storage-relevant shape;
-changing it points at a different logical table.
+If a caller needs a deterministic contract fingerprint, use
+`compute_metatable_contract_hash(model_or_table)`. It is an explicit utility,
+not a MetaTable API field, and it includes the physical table name by default.
 
 ## Contract Validation
 
@@ -106,7 +104,6 @@ Validate a new contract before registration:
 result = MetaTable.validate_contract(
     table_contract=request.table_contract,
     management_mode=request.management_mode,
-    storage_hash=request.storage_hash,
 )
 ```
 

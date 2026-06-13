@@ -118,7 +118,6 @@ def test_meta_table_bulk_create_posts_raw_collection_payload(monkeypatch):
         "identifier": "Asset",
         "namespace": "example.assets",
         "data_source_uid": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
-        "storage_hash": "example_assets__asset",
         "physical_table_name": "example_assets__asset",
         "management_mode": "platform_managed",
         "provisioning_status": "reserved",
@@ -174,7 +173,6 @@ def test_time_index_meta_table_bulk_create_posts_raw_collection_payload(monkeypa
         "identifier": "Prices",
         "namespace": "example.assets",
         "data_source_uid": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
-        "storage_hash": "example_assets__prices",
         "physical_table_name": "example_assets__prices",
         "management_mode": "platform_managed",
         "provisioning_status": "reserved",
@@ -259,7 +257,7 @@ def test_metatable_accepts_projection_relation_fields():
     )
 
     assert meta_table.indexes_meta[0].name == "asset_symbol_idx"
-    assert meta_table.foreign_keys[0].target_table_storage_hash == "mt_account_hash"
+    assert not hasattr(meta_table.foreign_keys[0], "target_table_storage_hash")
     assert meta_table.incoming_fks == []
 
 
@@ -283,7 +281,6 @@ def test_meta_table_register_posts_contract_to_meta_table_endpoint(monkeypatch):
     table = meta_table_models.MetaTable.register(
         data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
         management_mode="platform_managed",
-        storage_hash="mt_example_assets_asset_80390fee13",
         identifier="Asset",
         namespace="example.assets",
         table_contract=meta_table_models.MetaTableContract(

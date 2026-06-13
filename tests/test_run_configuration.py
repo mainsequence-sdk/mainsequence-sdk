@@ -32,7 +32,7 @@ from mainsequence.meta_tables.data_nodes.run_operations import UpdateRunner
 
 
 def _meta_table(
-    storage_hash: str = "prices_storage_hash",
+    physical_table_name: str = "prices_table",
     *,
     uid: str = "meta-table-uid",
     data_source_uid: str = "data-source-uid",
@@ -43,12 +43,11 @@ def _meta_table(
         uid=uid,
         data_source_uid=data_source_uid,
         data_source=data_source,
-        storage_hash=storage_hash,
         management_mode="platform_managed",
-        physical_table_name=storage_hash,
+        physical_table_name=physical_table_name,
         table_contract={
             "version": "relational-table.v1",
-            "physical": {"table_name": storage_hash},
+            "physical": {"table_name": physical_table_name},
             "columns": columns or [],
         },
     )
@@ -326,7 +325,7 @@ def test_persist_manager_requires_storage_table_constructor_argument():
 
 
 def test_persist_manager_validates_storage_table_without_creating_storage():
-    meta_table = _meta_table(storage_hash="canonical_prices_table")
+    meta_table = _meta_table(physical_table_name="canonical_prices_table")
     storage_table = _platform_storage_model(meta_table)
     created_update_payloads = []
 
@@ -382,7 +381,7 @@ def test_persist_manager_uses_platform_managed_storage_identity():
     meta_table = _meta_table(
         uid="platform-meta-table-uid",
         data_source_uid="platform-data-source-uid",
-        storage_hash="canonical_prices_table",
+        physical_table_name="canonical_prices_table",
     )
     storage_table = _platform_storage_model(meta_table)
     created_update_payloads = []
@@ -425,7 +424,7 @@ def test_persist_manager_update_lookup_uses_storage_uid_not_data_source_uid():
     meta_table = _meta_table(
         uid="platform-meta-table-uid",
         data_source_uid="platform-data-source-uid",
-        storage_hash="canonical_prices_table",
+        physical_table_name="canonical_prices_table",
     )
     storage_table = _platform_storage_model(meta_table)
 
@@ -452,7 +451,7 @@ def test_persist_manager_preserves_storage_table_during_update_lookup():
     stale_response_storage = _meta_table(
         uid="stale-meta-table-uid",
         data_source_uid="stale-data-source-uid",
-        storage_hash="stale_prices_table",
+        physical_table_name="stale_prices_table",
     )
 
     class UpdateResource:
@@ -466,7 +465,7 @@ def test_persist_manager_preserves_storage_table_during_update_lookup():
     class ExplicitStoragePersistManager(BasePersistManager):
         UPDATE_CLASS = UpdateResource
 
-    meta_table = _meta_table(storage_hash="canonical_prices_table")
+    meta_table = _meta_table(physical_table_name="canonical_prices_table")
     storage_table = _platform_storage_model(meta_table)
     manager = ExplicitStoragePersistManager(
         update_hash="prices-update-hash",
@@ -497,11 +496,13 @@ def test_data_node_accepts_platform_time_index_storage_table_runtime_argument():
         def update(self):
             return pd.DataFrame()
 
-    storage_table = _platform_storage_model(_meta_table(storage_hash="canonical_prices_table"))
+    storage_table = _platform_storage_model(
+        _meta_table(physical_table_name="canonical_prices_table")
+    )
     node = StorageTableNode(Config(identifier="prices"), storage_table=storage_table)
 
     assert node.storage_table is storage_table
-    assert node.storage_metadata.storage_hash == "canonical_prices_table"
+    assert node.storage_metadata.physical_table_name == "canonical_prices_table"
     assert "storage_hash" not in node.__dict__
     assert "storage_table" not in node.build_configuration
     assert "storage_table" not in node.local_initial_configuration
@@ -526,7 +527,9 @@ def test_data_node_rejects_test_node_constructor_shortcut():
         def update(self):
             return pd.DataFrame()
 
-    storage_table = _platform_storage_model(_meta_table(storage_hash="canonical_prices_table"))
+    storage_table = _platform_storage_model(
+        _meta_table(physical_table_name="canonical_prices_table")
+    )
 
     with pytest.raises(TypeError, match="test_node has been removed"):
         StorageTableNode(
@@ -588,7 +591,9 @@ def test_data_node_passes_storage_table_to_persist_manager(monkeypatch):
         def update(self):
             return pd.DataFrame()
 
-    storage_table = _platform_storage_model(_meta_table(storage_hash="canonical_prices_table"))
+    storage_table = _platform_storage_model(
+        _meta_table(physical_table_name="canonical_prices_table")
+    )
     node = StorageTableNode(Config(identifier="prices"), storage_table=storage_table)
 
     assert node.local_persist_manager.storage_table is storage_table

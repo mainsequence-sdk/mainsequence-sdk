@@ -95,7 +95,7 @@ def test_api_data_node_build_from_identifier_uses_data_source_uid(monkeypatch):
     node = data_nodes.APIDataNode.build_from_identifier("prices")
 
     assert captured == {"identifier": "prices"}
-    assert node.storage_hash == "prices_table"
+    assert node.physical_table_name == "prices_table"
     assert node.data_source_uid == "data-source-uid"
     assert node.storage_table is storage_table
     assert not hasattr(node, "data_source_id")
@@ -118,7 +118,7 @@ def test_api_data_node_build_from_table_uid_uses_meta_table_uid(monkeypatch):
     node = data_nodes.APIDataNode.build_from_table_uid("table-uid")
 
     assert captured == {"uid": "table-uid"}
-    assert node.storage_hash == "prices_table"
+    assert node.physical_table_name == "prices_table"
     assert node.data_source_uid == "data-source-uid"
     assert node.storage_table is storage_table
     assert not hasattr(data_nodes.APIDataNode, "build_from_table_id")
@@ -143,7 +143,7 @@ def test_api_data_node_build_from_table_name_uses_physical_table_name(monkeypatc
     assert captured == {
         "physical_table_name": "prices_table",
     }
-    assert node.storage_hash == "prices_table"
+    assert node.physical_table_name == "prices_table"
     assert node.data_source_uid == "data-source-uid"
     assert node.storage_table is storage_table
 
@@ -157,7 +157,7 @@ def test_api_data_node_build_from_meta_table_falls_back_to_nested_data_source():
 
     node = data_nodes.APIDataNode.build_from_meta_table(storage_table)
 
-    assert node.storage_hash == "prices_table"
+    assert node.physical_table_name == "prices_table"
     assert node.data_source_uid == "data-source-uid"
     assert node.storage_table is storage_table
 
@@ -199,7 +199,7 @@ def test_api_data_node_local_persist_manager_receives_only_data_source_uid(monke
     node._set_local_persist_manager()
 
     assert captured == {
-        "storage_hash": "prices_hash",
+        "physical_table_name": "prices_hash",
         "data_source_uid": "data-source-uid",
     }
 

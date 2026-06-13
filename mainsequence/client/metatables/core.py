@@ -95,6 +95,13 @@ def _local_data_interface(class_type: str):
     raise ValueError(f"Unsupported local data source class_type: {class_type!r}")
 
 
+def _storage_physical_table_name(storage: Any) -> str:
+    table_name = getattr(storage, "physical_table_name", None)
+    if table_name not in (None, ""):
+        return str(table_name)
+    raise ValueError("MetaTable local storage operations require physical_table_name.")
+
+
 def _storage_time_indexed_contract(storage: Any) -> tuple[str, list[str], dict[str, Any]]:
     if hasattr(storage, "_require_time_indexed_table_contract"):
         return storage._require_time_indexed_table_contract()
@@ -401,10 +408,6 @@ class MetaTableForeignKeyPayload(BasePydanticModel):
         None,
         description="Public UID of the target MetaTable.",
     )
-    target_table_storage_hash: str | None = Field(
-        None,
-        description="Storage hash of the target MetaTable.",
-    )
     target_columns: list[str] = Field(
         default_factory=list,
         description="Target MetaTable physical column names.",
@@ -414,6 +417,15 @@ class MetaTableForeignKeyPayload(BasePydanticModel):
         default_factory=dict,
         description="Raw normalized contract fragment for this projected foreign key.",
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _strip_legacy_storage_hash(cls, value: Any) -> Any:
+        if isinstance(value, Mapping):
+            data = dict(value)
+            data.pop("target_table_storage_hash", None)
+            return data
+        return value
 
 
 class MetaTableStatementPayload(BasePydanticModel):
@@ -533,7 +545,6 @@ class MetaTableRequestFields(BasePydanticModel):
         ...,
         description="Public UID of the DynamicTableDataSource that owns this MetaTable.",
     )
-    storage_hash: str = Field(..., max_length=63, description="Canonical table storage hash.")
     table_contract: MetaTableContract | dict[str, Any]
     identifier: str | None = Field(
         default=None,
@@ -561,6 +572,15 @@ class MetaTableRequestFields(BasePydanticModel):
             self.table_contract = _normalize_contract_mapping(self.table_contract)
         return self
 
+    @model_validator(mode="before")
+    @classmethod
+    def _strip_legacy_storage_hash(cls, value: Any) -> Any:
+        if isinstance(value, Mapping):
+            data = dict(value)
+            data.pop("storage_hash", None)
+            return data
+        return value
+
 
 class MetaTableRegistrationRequest(MetaTableRequestFields):
     management_mode: MetaTableManagementMode
@@ -571,7 +591,15 @@ class MetaTableRegistrationRequest(MetaTableRequestFields):
 class MetaTableValidateContractRequest(BasePydanticModel):
     table_contract: MetaTableContract | dict[str, Any]
     management_mode: MetaTableManagementMode | None = None
-    storage_hash: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _strip_legacy_storage_hash(cls, value: Any) -> Any:
+        if isinstance(value, Mapping):
+            data = dict(value)
+            data.pop("storage_hash", None)
+            return data
+        return value
 
     @model_validator(mode="after")
     def _normalize_table_contract(self) -> MetaTableValidateContractRequest:
@@ -676,7 +704,6 @@ class ManagedMetaTableFinalizeTableResult(BasePydanticModel):
         None,
         description="Organization-global logical MetaTable identifier, when present.",
     )
-    storage_hash: str = Field(..., description="Canonical MetaTable storage hash.")
     physical_table_name: str | None = Field(
         None,
         description="Physical table name reconciled against the data source.",
@@ -729,7 +756,14 @@ class ManagedMetaTableFinalizeTableResult(BasePydanticModel):
     def _normalize_cadence(cls, value: str | None) -> str | None:
         return _normalize_time_indexed_cadence(value)
 
-    model_config = ConfigDict(extra="ignore")
+    @model_validator(mode="before")
+    @classmethod
+    def _strip_legacy_storage_hash(cls, value: Any) -> Any:
+        if isinstance(value, Mapping):
+            data = dict(value)
+            data.pop("storage_hash", None)
+            return data
+        return value
 
 
 class ManagedMetaTableFinalizeResponse(BasePydanticModel):
@@ -847,7 +881,7 @@ class DataSource(BasePydanticModel, BaseObjectOrm):
             storage = data_node_update.data_node_storage
             _local_data_interface(self.class_type).upsert(
                 df=serialized_data_frame,
-                table=getattr(storage, "physical_table_name", None) or storage.storage_hash,
+                table=_storage_physical_table_name(storage),
                 index_names=index_names,
                 time_index_name=time_index_name,
             )
@@ -888,7 +922,7 @@ class DataSource(BasePydanticModel, BaseObjectOrm):
         if self.class_type in LOCAL_DATA_SOURCE_CLASS_TYPES:
             db_interface = _local_data_interface(self.class_type)
             storage = data_node_update.data_node_storage
-            table_name = getattr(storage, "physical_table_name", None) or storage.storage_hash
+            table_name = _storage_physical_table_name(storage)
             time_index_name, index_names, _ = _storage_time_indexed_contract(storage)
 
             adjusted_start, adjusted_end, adjusted_dimension_range_map, _ = (
@@ -964,9 +998,7 @@ class DataSource(BasePydanticModel, BaseObjectOrm):
         if self.class_type in LOCAL_DATA_SOURCE_CLASS_TYPES:
             db_interface = _local_data_interface(self.class_type)
             storage = data_node_update.data_node_storage
-            table_name = getattr(storage, "physical_table_name", None) or getattr(
-                storage, "storage_hash", None
-            )
+            table_name = _storage_physical_table_name(storage)
             time_index_name, index_names, _ = _storage_time_indexed_contract(storage)
             return db_interface.time_index_minima(
                 table=table_name,
@@ -1133,7 +1165,6 @@ class DynamicTableDataSource(BasePydanticModel, BaseObjectOrm):
 class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, BaseObjectOrm):
     ENDPOINT: ClassVar[str] = "ts_manager/meta_table"
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
-        "storage_hash": ["in", "exact", "contains"],
         "identifier": ["in", "exact", "contains"],
         "uid": ["in", "exact"],
         "data_source__uid": ["in", "exact"],
@@ -1177,7 +1208,6 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
     uid: str | None = Field(None, description="Public uid of this MetaTable.")
     data_source: int | DynamicTableDataSource | dict[str, Any] | None = None
     data_source_uid: str | None = None
-    storage_hash: str = Field(..., max_length=63, description="Canonical table storage hash.")
     identifier: str | None = Field(
         default=None,
         description=(
@@ -1214,6 +1244,15 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
     registration: dict[str, Any] = Field(default_factory=dict)
 
     model_config = ConfigDict(populate_by_name=True)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _strip_legacy_storage_hash(cls, value: Any) -> Any:
+        if isinstance(value, Mapping):
+            data = dict(value)
+            data.pop("storage_hash", None)
+            return data
+        return value
 
     def _public_uid(self) -> str:
         if self.uid in (None, ""):
@@ -1338,11 +1377,6 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
         if response.status_code != 200:
             raise_for_response(response, payload=payload)
         return type(self)(**response.json())
-
-    @classmethod
-    def patch_by_hash(cls, storage_hash: str, *args, **kwargs):
-        metadata = cls.get(storage_hash=storage_hash)
-        return metadata.patch(*args, **kwargs)
 
     @classmethod
     def destroy_by_uid(
@@ -1819,7 +1853,7 @@ class UpdateNodeRef(TypedDict):
     uid: str
     node_type: str
     update_hash: str
-    remote_table_hash_id: str
+    physical_table_name: str | None
 
 
 def _require_public_uid(obj: Any, object_name: str) -> str:
@@ -1872,11 +1906,6 @@ class TimeIndexMetaTableRegistrationRequest(BasePydanticModel):
     model_config = ConfigDict(extra="forbid")
 
     data_source_uid: str = Field(..., description="Public uid of the storage data source")
-    storage_hash: str = Field(
-        ...,
-        max_length=63,
-        description="Canonical logical storage identity for the time-indexed MetaTable",
-    )
     identifier: str | None = Field(
         None,
         description=(
@@ -1923,6 +1952,7 @@ class TimeIndexMetaTableRegistrationRequest(BasePydanticModel):
         if not isinstance(value, Mapping):
             return value
         data = dict(value)
+        data.pop("storage_hash", None)
         forbidden = [
             field
             for field in ("columns", "index_names", "foreign_keys", "storage_layout")
@@ -2463,11 +2493,11 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
         return r.json()
 
     @classmethod
-    def get_upstream_nodes(cls, storage_hash, data_source_uid, timeout=None):
+    def get_upstream_nodes(cls, table_name, data_source_uid, timeout=None):
         s = cls.build_session()
         url = (
             cls.get_object_url("DataNode")
-            + f"/{storage_hash}/get_upstream_nodes?data_source_uid={data_source_uid}"
+            + f"/{table_name}/get_upstream_nodes?data_source_uid={data_source_uid}"
         )
         r = make_request(s=s, loaders=cls.LOADERS, r_type="GET", url=url, time_out=timeout)
         if r.status_code != 200:
@@ -2952,7 +2982,6 @@ class TableMetaData(BaseModel):
 class TimeIndexMetaTable(MetaTable):
     ENDPOINT: ClassVar[str] = "ts_manager/dynamic_table"
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
-        "storage_hash": ["in", "exact", "contains"],
         "identifier": ["in", "exact", "contains"],
         "uid": ["in", "exact"],
         "data_source__uid": ["in", "exact"],
@@ -3321,7 +3350,7 @@ class TimeIndexMetaTable(MetaTable):
                 related_resource = getattr(session_dynamic_data_source, "related_resource", None)
                 class_type = getattr(related_resource, "class_type", None)
             db_interface = _local_data_interface(class_type)
-            db_interface.drop_table(self.storage_hash)
+            db_interface.drop_table(self.physical_table_name)
 
         self.delete()
 
@@ -4731,7 +4760,7 @@ class PodDataSource:
             list_tables=True,
         )
         remote_table_names = [
-            getattr(t, "physical_table_name", None) or t.storage_hash for t in remote_node_storages
+            t.physical_table_name for t in remote_node_storages if t.physical_table_name
         ]
         db_interface = _local_data_interface(class_type)
         local_table_names = db_interface.list_tables()
@@ -4743,9 +4772,9 @@ class PodDataSource:
 
         tables_to_delete_remotely = set(remote_table_names) - set(local_table_names)
         for remote_table in remote_node_storages:
-            remote_physical_table_name = (
-                getattr(remote_table, "physical_table_name", None) or remote_table.storage_hash
-            )
+            remote_physical_table_name = getattr(remote_table, "physical_table_name", None)
+            if not remote_physical_table_name:
+                continue
             if remote_physical_table_name in tables_to_delete_remotely:
                 logger.debug(f"Deleting table remotely {remote_physical_table_name}")
                 if remote_table.protect_from_deletion:

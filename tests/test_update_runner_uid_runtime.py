@@ -59,7 +59,7 @@ def _update(uid: str):
     return SimpleNamespace(
         uid=uid,
         update_hash=f"{uid}-hash",
-        data_node_storage=SimpleNamespace(storage_hash=f"{uid}-storage"),
+        data_node_storage=SimpleNamespace(physical_table_name=f"{uid}-storage"),
         NODE_TYPE="local_time_serie",
         run_configuration={"uid": uid},
         ogm_dependencies_linked=True,
@@ -147,12 +147,12 @@ def test_update_runner_pre_update_uses_uid_payloads_and_maps():
             "uid": "dep-uid",
             "node_type": "local_time_serie",
             "update_hash": "dep-hash",
-            "remote_table_hash_id": "dep-storage",
+            "physical_table_name": "dep-storage",
         },
         {
             "uid": "head-uid",
             "update_hash": "head-uid-hash",
-            "remote_table_hash_id": "head-uid-storage",
+            "physical_table_name": "head-uid-storage",
             "node_type": "local_time_serie",
         },
     ]

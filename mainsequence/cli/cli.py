@@ -1489,7 +1489,7 @@ def _require_delete_verification(
 def _format_data_node_storage_delete_preview(storage: dict[str, object]) -> list[tuple[str, str]]:
     return [
         ("UID", str(storage.get("uid") or "-")),
-        ("Storage Hash", str(storage.get("storage_hash") or "-")),
+        ("Physical Table", str(storage.get("physical_table_name") or "-")),
         ("Identifier", str(storage.get("identifier") or "-")),
         ("Source Class", str(storage.get("source_class_name") or "-")),
         ("Data Source", _format_data_node_storage_data_source(storage.get("data_source"))),
@@ -1500,7 +1500,6 @@ def _format_data_node_storage_delete_preview(storage: dict[str, object]) -> list
 def _format_meta_table_delete_preview(meta_table: dict[str, object]) -> list[tuple[str, str]]:
     return [
         ("UID", str(meta_table.get("uid") or "-")),
-        ("Storage Hash", str(meta_table.get("storage_hash") or "-")),
         ("Identifier", str(meta_table.get("identifier") or "-")),
         ("Namespace", str(meta_table.get("namespace") or "-")),
         ("Physical Table", str(meta_table.get("physical_table_name") or "-")),
@@ -5372,7 +5371,6 @@ def _data_node_storage_list_impl(
             "Data Node Storages",
             [
                 "UID",
-                "Storage Hash",
                 "Physical Table",
                 "Source Class",
                 "Identifier",
@@ -5420,7 +5418,6 @@ def _meta_table_list_impl(
             "MetaTables",
             [
                 "UID",
-                "Storage Hash",
                 "Physical Table",
                 "Identifier",
                 "Namespace",
@@ -5440,7 +5437,6 @@ def _build_data_node_storage_rows(storages: list[dict[str, object]]) -> list[lis
         rows.append(
             [
                 str(storage.get("uid") or "-"),
-                str(storage.get("storage_hash") or "-"),
                 str(storage.get("physical_table_name") or "-"),
                 str(storage.get("source_class_name") or "-"),
                 str(storage.get("identifier") or "-"),
@@ -5457,7 +5453,6 @@ def _build_meta_table_rows(meta_tables: list[dict[str, object]]) -> list[list[st
         rows.append(
             [
                 str(meta_table.get("uid") or "-"),
-                str(meta_table.get("storage_hash") or "-"),
                 str(meta_table.get("physical_table_name") or "-"),
                 str(meta_table.get("identifier") or "-"),
                 str(meta_table.get("namespace") or "-"),
@@ -5536,7 +5531,6 @@ def _data_node_storage_search_impl(
             title,
             [
                 "UID",
-                "Storage Hash",
                 "Physical Table",
                 "Source Class",
                 "Identifier",
@@ -5575,7 +5569,6 @@ def _print_data_node_storage_search_section(
             title,
             [
                 "UID",
-                "Storage Hash",
                 "Physical Table",
                 "Source Class",
                 "Identifier",
@@ -6976,7 +6969,6 @@ def _data_node_storage_detail_impl(storage_uid: str, timeout: int | None) -> Non
         "Data Node Storage",
         [
             ("UID", str(storage.get("uid") or storage_uid)),
-            ("Storage Hash", str(storage.get("storage_hash") or "-")),
             ("Physical Table", str(storage.get("physical_table_name") or "-")),
             ("Identifier", str(storage.get("identifier") or "-")),
             ("Source Class", str(storage.get("source_class_name") or "-")),
@@ -7018,7 +7010,6 @@ def _meta_table_detail_impl(meta_table_uid: str, timeout: int | None) -> None:
         "MetaTable",
         [
             ("UID", str(meta_table.get("uid") or meta_table_uid)),
-            ("Storage Hash", str(meta_table.get("storage_hash") or "-")),
             ("Physical Table", str(meta_table.get("physical_table_name") or "-")),
             ("Identifier", str(meta_table.get("identifier") or "-")),
             ("Namespace", str(meta_table.get("namespace") or "-")),
@@ -7089,7 +7080,12 @@ def _data_node_storage_delete_impl(
         error(f"Data node storage fetch failed: {e}")
         raise typer.Exit(1) from e
 
-    verification_value = str(storage.get("storage_hash") or storage.get("uid") or storage_uid)
+    verification_value = str(
+        storage.get("physical_table_name") or storage.get("uid") or storage_uid
+    )
+    verification_label = (
+        "physical table name" if storage.get("physical_table_name") else "storage uid"
+    )
     _require_delete_verification(
         preview_title="Data Node Storage Delete Preview",
         preview_items=_format_data_node_storage_delete_preview(storage)
@@ -7100,7 +7096,7 @@ def _data_node_storage_delete_impl(
             ("override_protection", str(override_protection).lower()),
         ],
         verification_value=verification_value,
-        verification_label="storage hash" if storage.get("storage_hash") else "storage uid",
+        verification_label=verification_label,
     )
 
     try:
@@ -7137,13 +7133,16 @@ def _meta_table_delete_impl(
         raise typer.Exit(1) from e
 
     verification_value = str(
-        meta_table.get("storage_hash") or meta_table.get("uid") or meta_table_uid
+        meta_table.get("physical_table_name") or meta_table.get("uid") or meta_table_uid
+    )
+    verification_label = (
+        "physical table name" if meta_table.get("physical_table_name") else "MetaTable uid"
     )
     _require_delete_verification(
         preview_title="MetaTable Delete Preview",
         preview_items=_format_meta_table_delete_preview(meta_table),
         verification_value=verification_value,
-        verification_label="storage hash" if meta_table.get("storage_hash") else "MetaTable uid",
+        verification_label=verification_label,
     )
 
     try:
@@ -7775,7 +7774,7 @@ def data_node_storage_column_search_cmd(
     --------
     ```bash
     mainsequence data-node column-search weight
-    mainsequence data-node column-search close --filter storage_hash__contains=weights
+    mainsequence data-node column-search close --filter physical_table_name__contains=weights
     ```
     """
     filters = _resolve_cli_list_filters(
@@ -8247,7 +8246,7 @@ def _print_project_data_node_updates(
         storage = u.get("data_node_storage")
         if isinstance(storage, dict):
             storage_value = (
-                storage.get("storage_hash") or storage.get("uid") or storage.get("id") or "-"
+                storage.get("physical_table_name") or storage.get("uid") or storage.get("id") or "-"
             )
         else:
             storage_value = storage if storage is not None else "-"

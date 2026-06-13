@@ -21,7 +21,6 @@ from mainsequence.client.metatables import (
     SchemaManagementRequest,
     TimeIndexMetaTable,
 )
-from mainsequence.meta_tables.hashing import build_meta_table_storage_hash
 from mainsequence.meta_tables.sqlalchemy_contracts import (
     PlatformManagedMetaTable,
     PlatformTimeIndexMetaTable,
@@ -215,11 +214,6 @@ class AlembicVersionMetaTable:
         if not resolved_namespace:
             raise ValueError("AlembicVersionMetaTable requires a MetaTable namespace.")
 
-        storage_hash = build_meta_table_storage_hash(
-            namespace=resolved_namespace,
-            identifier=resolved_identifier,
-            schema=resolved_schema,
-        )
         resolved_data_source_uid = _resolve_model_data_source_uid(
             cls,
             data_source=data_source,
@@ -229,7 +223,6 @@ class AlembicVersionMetaTable:
         return MetaTableRegistrationRequest(
             data_source_uid=resolved_data_source_uid,
             management_mode="external_registered",
-            storage_hash=storage_hash,
             identifier=resolved_identifier,
             namespace=resolved_namespace,
             description=resolved_description,
@@ -914,16 +907,12 @@ def _collection_create_row_from_registration_request(
             "request data_source_uid; data-source ownership is table-scoped, "
             "not a provider-request default."
         )
-    storage_hash = getattr(request, "storage_hash", None)
-    if storage_hash in (None, ""):
-        raise ValueError("Alembic MetaTable collection-create requires storage_hash.")
     physical_table_name = _request_contract_physical_table_name(request)
     if physical_table_name in (None, ""):
         raise ValueError("Alembic MetaTable collection-create requires physical_table_name.")
 
     row: dict[str, Any] = {
         "data_source_uid": str(data_source_uid),
-        "storage_hash": str(storage_hash),
         "identifier": getattr(request, "identifier", None),
         "namespace": getattr(request, "namespace", None),
         "description": getattr(request, "description", None),
@@ -1257,7 +1246,6 @@ def _metatable_from_finalize_result(
     return resource_cls.model_construct(
         uid=item.meta_table_uid,
         data_source_uid=_resolve_model_data_source_uid(model),
-        storage_hash=item.storage_hash,
         identifier=item.identifier,
         management_mode="platform_managed",
         provisioning_status=item.provisioning_status,

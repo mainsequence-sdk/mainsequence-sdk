@@ -240,11 +240,11 @@ def _storage_table_identity_summary(storage_table: type[PlatformTimeIndexMetaTab
     if identifier not in (None, ""):
         parts.append(f"identifier={identifier!r}")
     try:
-        storage_hash = storage_table.get_storage_hash()
+        contract_hash = storage_table.get_storage_hash()
     except Exception:
-        storage_hash = None
-    if storage_hash not in (None, ""):
-        parts.append(f"storage_hash={storage_hash!r}")
+        contract_hash = None
+    if contract_hash not in (None, ""):
+        parts.append(f"contract_hash={contract_hash!r}")
     data_source_uid = storage_table.get_data_source_uid()
     if data_source_uid not in (None, ""):
         parts.append(f"model_data_source_uid={data_source_uid!r}")
@@ -264,7 +264,6 @@ def _time_index_meta_table_candidate_summary(meta_table: TimeIndexMetaTable) -> 
         "data_source_uid",
         "identifier",
         "physical_table_name",
-        "storage_hash",
         "provisioning_status",
     ):
         value = getattr(meta_table, attr, None)
@@ -602,7 +601,7 @@ class BasePersistManager:
                 db_interface = get_sqlite_interface_class()()
             else:
                 raise ValueError(f"Unsupported local DataSource class_type: {class_type!r}")
-            db_interface.drop_table(self.storage_metadata.storage_hash)
+            db_interface.drop_table(self.storage_metadata.physical_table_name)
 
         self.storage_metadata.delete()
 
@@ -648,21 +647,22 @@ class APIPersistManager:
     def __init__(
         self,
         *,
+        physical_table_name: str | None = None,
         storage_hash: str | None = None,
         data_source_uid: str,
     ):
         if data_source_uid in (None, ""):
             raise ValueError("APIPersistManager requires data_source_uid.")
         self.data_source_uid: str = str(data_source_uid)
-        self.storage_hash: str = storage_hash
+        self.physical_table_name: str | None = physical_table_name or storage_hash
 
-        logger.debug(f"Initializing Time Serie {self.storage_hash}  as APIDataNode")
+        logger.debug(f"Initializing Time Serie {self.physical_table_name} as APIDataNode")
 
         self._storage_table_future = Future()
         future_registry.add_future(self._storage_table_future)
         thread = threading.Thread(
             target=self._init_storage_table,
-            name=f"ApiStorageTableThread-{self.storage_hash}",
+            name=f"ApiStorageTableThread-{self.physical_table_name}",
             daemon=False,
         )
         thread.start()
@@ -676,7 +676,7 @@ class APIPersistManager:
     def _init_storage_table(self) -> None:
         try:
             result = TimeIndexMetaTable.get_or_none(
-                physical_table_name=self.storage_hash,
+                physical_table_name=self.physical_table_name,
                 data_source__uid=self.data_source_uid,
             )
             self._storage_table_future.set_result(result)

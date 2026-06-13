@@ -3265,7 +3265,7 @@ def test_project_get_data_node_updates(cli_mod, runner, monkeypatch):
             {
                 "id": 10,
                 "update_hash": "abc123",
-                "data_node_storage": {"id": 42, "storage_hash": "storage-xyz"},
+                "data_node_storage": {"id": 42, "physical_table_name": "storage-xyz"},
                 "update_details": {"id": 77},
             }
         ],
@@ -4962,7 +4962,6 @@ def test_list_data_node_storages_uses_client_model(cli_mod, monkeypatch):
                 types.SimpleNamespace(
                     model_dump=lambda *args, **kwargs: {
                         "uid": "data-node-storage-42",
-                        "storage_hash": "weights_daily",
                         "physical_table_name": "weights_daily_physical",
                         "source_class_name": "NodeWeights",
                         "identifier": "weights_daily",
@@ -4977,7 +4976,6 @@ def test_list_data_node_storages_uses_client_model(cli_mod, monkeypatch):
             return types.SimpleNamespace(
                 model_dump=lambda *args, **kwargs: {
                     "uid": uid,
-                    "storage_hash": "weights_daily",
                     "physical_table_name": "weights_daily_physical",
                     "source_class_name": "NodeWeights",
                     "identifier": "weights_daily",
@@ -4995,15 +4993,16 @@ def test_list_data_node_storages_uses_client_model(cli_mod, monkeypatch):
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
     monkeypatch.setitem(sys.modules, "mainsequence.client.metatables", fake_models)
 
-    out = api_mod.list_data_node_storages(filters={"storage_hash__contains": "weights"})
+    out = api_mod.list_data_node_storages(
+        filters={"physical_table_name__contains": "weights"}
+    )
     detail = api_mod.get_data_node_storage("data-node-storage-42")
-    assert captured["filters"][0] == {"storage_hash__contains": "weights"}
+    assert captured["filters"][0] == {"physical_table_name__contains": "weights"}
     assert captured["get"] == {"uid": "data-node-storage-42", "filters": {}, "timeout": None}
     assert captured["jwt"] == ("acc", "ref")
     assert out == [
         {
             "uid": "data-node-storage-42",
-            "storage_hash": "weights_daily",
             "physical_table_name": "weights_daily_physical",
             "source_class_name": "NodeWeights",
             "identifier": "weights_daily",
@@ -5011,7 +5010,7 @@ def test_list_data_node_storages_uses_client_model(cli_mod, monkeypatch):
         }
     ]
     assert detail["uid"] == "data-node-storage-42"
-    assert detail["storage_hash"] == "weights_daily"
+    assert detail["physical_table_name"] == "weights_daily_physical"
 
 
 def test_meta_table_api_uses_client_model(cli_mod, monkeypatch):
@@ -5051,7 +5050,6 @@ def test_meta_table_api_uses_client_model(cli_mod, monkeypatch):
                 types.SimpleNamespace(
                     model_dump=lambda *args, **kwargs: {
                         "uid": "meta-table-42",
-                        "storage_hash": "weights_daily",
                         "physical_table_name": "weights_daily",
                         "identifier": "weights",
                         "namespace": "pytest",
@@ -5068,7 +5066,7 @@ def test_meta_table_api_uses_client_model(cli_mod, monkeypatch):
                 def model_dump(self, mode="json"):
                     return {
                         "uid": uid,
-                        "storage_hash": "weights_daily",
+                        "physical_table_name": "weights_daily",
                         "identifier": "weights",
                     }
 
@@ -5095,7 +5093,7 @@ def test_meta_table_api_uses_client_model(cli_mod, monkeypatch):
     assert captured["delete"] == {"timeout": 13}
     assert captured["jwt"] == ("acc", "ref")
     assert out[0]["uid"] == "meta-table-42"
-    assert detail["storage_hash"] == "weights_daily"
+    assert detail["physical_table_name"] == "weights_daily"
     assert deleted["uid"] == "meta-table-42"
 
 
@@ -5225,7 +5223,7 @@ def test_data_node_storage_description_search_uses_client_model(cli_mod, monkeyp
                     types.SimpleNamespace(
                         model_dump=lambda *args, **kwargs: {
                             "uid": "data-node-storage-42",
-                            "storage_hash": "weights_daily",
+                            "physical_table_name": "weights_daily",
                             "identifier": "weights_daily",
                         }
                     )
@@ -5270,7 +5268,7 @@ def test_data_node_storage_description_search_uses_client_model(cli_mod, monkeyp
         "results": [
             {
                 "uid": "data-node-storage-42",
-                "storage_hash": "weights_daily",
+                "physical_table_name": "weights_daily",
                 "identifier": "weights_daily",
             }
         ],
@@ -5314,7 +5312,7 @@ def test_data_node_storage_column_search_uses_client_model(cli_mod, monkeypatch)
                 types.SimpleNamespace(
                     model_dump=lambda *args, **kwargs: {
                         "uid": "data-node-storage-43",
-                        "storage_hash": "prices_daily",
+                        "physical_table_name": "prices_daily",
                         "identifier": "prices_daily",
                     }
                 )
@@ -5330,15 +5328,18 @@ def test_data_node_storage_column_search_uses_client_model(cli_mod, monkeypatch)
     monkeypatch.setitem(sys.modules, "mainsequence.client.metatables", fake_models)
 
     out = api_mod.data_node_storage_column_search(
-        "close", filters={"storage_hash__contains": "prices"}
+        "close", filters={"physical_table_name__contains": "prices"}
     )
 
     assert captured["jwt"] == ("acc", "ref")
-    assert captured["search"] == {"q": "close", "filters": {"storage_hash__contains": "prices"}}
+    assert captured["search"] == {
+        "q": "close",
+        "filters": {"physical_table_name__contains": "prices"},
+    }
     assert out == [
         {
             "uid": "data-node-storage-43",
-            "storage_hash": "prices_daily",
+            "physical_table_name": "prices_daily",
             "identifier": "prices_daily",
         }
     ]
@@ -5444,7 +5445,7 @@ def test_delete_data_node_storage_uses_client_model(cli_mod, monkeypatch):
                 def model_dump(self, mode="python"):
                     return {
                         "uid": uid,
-                        "storage_hash": "weights_daily",
+                        "physical_table_name": "weights_daily",
                         "identifier": "weights_daily",
                     }
 
@@ -5499,7 +5500,7 @@ def test_delete_data_node_storage_uses_client_model(cli_mod, monkeypatch):
     assert captured["jwt"] == ("acc", "ref")
     assert out == {
         "uid": "data-node-storage-42",
-        "storage_hash": "weights_daily",
+        "physical_table_name": "weights_daily",
         "identifier": "weights_daily",
     }
 
@@ -6328,7 +6329,7 @@ def test_project_get_data_node_updates_defaults_to_env_project_id(
             {
                 "id": 10,
                 "update_hash": "abc123",
-                "data_node_storage": {"id": 42, "storage_hash": "storage-xyz"},
+                "data_node_storage": {"id": 42, "physical_table_name": "storage-xyz"},
                 "update_details": {"id": 77},
             }
         ]
@@ -7749,7 +7750,6 @@ def test_data_node_storage_list(cli_mod, runner, monkeypatch):
         lambda filters=None, timeout=None: [
             {
                 "uid": "data-node-storage-42",
-                "storage_hash": "weights_daily",
                 "physical_table_name": "weights_daily_physical",
                 "source_class_name": "NodeWeights",
                 "identifier": "weights_daily",
@@ -7788,7 +7788,6 @@ def test_meta_table_list_uses_canonical_command(cli_mod, runner, monkeypatch):
         return [
             {
                 "uid": "meta-table-42",
-                "storage_hash": "weights_daily",
                 "physical_table_name": "weights_daily_physical",
                 "identifier": "weights_daily",
                 "namespace": "pytest_weights",
@@ -7834,7 +7833,6 @@ def test_meta_table_detail(cli_mod, runner, monkeypatch):
         "get_meta_table",
         lambda meta_table_uid, timeout=None: {
             "uid": meta_table_uid,
-            "storage_hash": "weights_daily",
             "physical_table_name": "weights_daily_physical",
             "identifier": "weights_daily",
             "namespace": "pytest_weights",
@@ -8037,7 +8035,6 @@ def test_data_node_storage_description_search(cli_mod, runner, monkeypatch):
             "results": [
                 {
                     "uid": "data-node-storage-42",
-                    "storage_hash": "weights_daily",
                     "physical_table_name": "weights_daily_physical",
                     "source_class_name": "NodeWeights",
                     "identifier": "weights_daily",
@@ -8096,14 +8093,13 @@ def test_data_node_storage_column_search(cli_mod, runner, monkeypatch):
 
     def _parse(model_ref, entries):
         captured["entries"] = list(entries or [])
-        return {"storage_hash__contains": "weights"}
+        return {"physical_table_name__contains": "weights"}
 
     def _search(q, *, filters=None):
         captured["search"] = {"q": q, "filters": filters}
         return [
             {
                 "uid": "data-node-storage-43",
-                "storage_hash": "prices_daily",
                 "physical_table_name": "prices_daily_physical",
                 "source_class_name": "PriceBars",
                 "identifier": "prices_daily",
@@ -8116,11 +8112,20 @@ def test_data_node_storage_column_search(cli_mod, runner, monkeypatch):
 
     result = runner.invoke(
         cli_mod.app,
-        ["data-node", "column-search", "close", "--filter", "storage_hash__contains=weights"],
+        [
+            "data-node",
+            "column-search",
+            "close",
+            "--filter",
+            "physical_table_name__contains=weights",
+        ],
     )
     assert result.exit_code == 0
-    assert captured["entries"] == ["storage_hash__contains=weights"]
-    assert captured["search"] == {"q": "close", "filters": {"storage_hash__contains": "weights"}}
+    assert captured["entries"] == ["physical_table_name__contains=weights"]
+    assert captured["search"] == {
+        "q": "close",
+        "filters": {"physical_table_name__contains": "weights"},
+    }
     assert "Column Matches" in result.output
     assert "prices_d" in result.output
     assert 'Column Matches: 1 match(es) for "close"' in result.output
@@ -8163,7 +8168,6 @@ def test_data_node_storage_search_combines_description_and_column(cli_mod, runne
             "results": [
                 {
                     "uid": "data-node-storage-42",
-                    "storage_hash": "weights_daily",
                     "physical_table_name": "weights_daily_physical",
                     "source_class_name": "NodeWeights",
                     "identifier": "weights_daily",
@@ -8177,7 +8181,6 @@ def test_data_node_storage_search_combines_description_and_column(cli_mod, runne
         return [
             {
                 "uid": "data-node-storage-43",
-                "storage_hash": "prices_daily",
                 "physical_table_name": "prices_daily_physical",
                 "source_class_name": "PriceBars",
                 "identifier": "prices_daily",
@@ -8244,7 +8247,6 @@ def test_data_node_storage_detail(cli_mod, runner, monkeypatch):
         "get_data_node_storage",
         lambda storage_uid, timeout=None: {
             "uid": storage_uid,
-            "storage_hash": "weights_daily",
             "physical_table_name": "weights_daily_physical",
             "identifier": "weights_daily",
             "source_class_name": "NodeWeights",
@@ -8501,7 +8503,7 @@ def test_data_node_storage_delete_requires_typed_verification(cli_mod, runner, m
         "get_data_node_storage",
         lambda storage_uid, timeout=None: {
             "uid": storage_uid,
-            "storage_hash": "weights_daily",
+            "physical_table_name": "weights_daily_physical",
             "identifier": "weights_daily",
             "source_class_name": "NodeWeights",
             "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},
@@ -8514,7 +8516,7 @@ def test_data_node_storage_delete_requires_typed_verification(cli_mod, runner, m
         captured["kwargs"] = kwargs
         return {
             "uid": storage_uid,
-            "storage_hash": "weights_daily",
+            "physical_table_name": "weights_daily_physical",
             "identifier": "weights_daily",
             "source_class_name": "NodeWeights",
             "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},
@@ -8526,11 +8528,11 @@ def test_data_node_storage_delete_requires_typed_verification(cli_mod, runner, m
     result = runner.invoke(
         cli_mod.app,
         ["data-node", "delete", "data-node-storage-42", "--full-delete-selected"],
-        input="weights_daily\n",
+        input="weights_daily_physical\n",
     )
     assert result.exit_code == 0
     assert "Data Node Storage Delete Preview" in result.output
-    assert "Type storage hash 'weights_daily' to confirm deletion" in result.output
+    assert "Type physical table name 'weights_daily_physical' to confirm deletion" in result.output
     assert captured["storage_uid"] == "data-node-storage-42"
     assert captured["kwargs"]["full_delete_selected"] is True
     assert "Data node storage deleted: uid=data-node-storage-42" in result.output
@@ -8543,7 +8545,7 @@ def test_data_node_storage_delete_wrong_verification_cancels(cli_mod, runner, mo
         "get_data_node_storage",
         lambda storage_uid, timeout=None: {
             "uid": storage_uid,
-            "storage_hash": "weights_daily",
+            "physical_table_name": "weights_daily_physical",
             "identifier": "weights_daily",
             "source_class_name": "NodeWeights",
             "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},

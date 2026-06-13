@@ -222,6 +222,14 @@ def _configured_storage_hash(model_or_table):
     return sqlalchemy_contracts._configured_storage_hash_for_model(model_or_table)
 
 
+def _request_payload(request):
+    return request.model_dump(mode="json", exclude_none=True)
+
+
+def _assert_omits_storage_hash(request):
+    assert "storage_hash" not in _request_payload(request)
+
+
 def test_metatable_identifier_is_optional_with_pyproject(tmp_path, monkeypatch):
     (tmp_path / "pyproject.toml").write_text(
         '[project]\nname = "alpha-project"\n',
@@ -299,7 +307,7 @@ def test_platform_managed_registration_request_from_sqlalchemy_metadata():
 
     assert isinstance(request, MetaTableRegistrationRequest)
     assert request.management_mode == "platform_managed"
-    assert request.storage_hash == _configured_storage_hash(Account)
+    _assert_omits_storage_hash(request)
     assert request.identifier == "Account"
     assert request.namespace == "example.assets"
     assert request.provisioning == {"create_table": True, "if_not_exists": True}
@@ -693,6 +701,21 @@ def test_configured_storage_hash_ignores_logical_identifier():
     assert _configured_storage_hash(Account) == _configured_storage_hash(RenamedAccount)
 
 
+def test_configured_storage_hash_includes_physical_table_name():
+    account_table = FakeTable(
+        "example_assets__account",
+        columns=[FakeColumn("uid", Uuid(), nullable=False, primary_key=True)],
+    )
+    renamed_table = FakeTable(
+        "example_assets__account_v2",
+        columns=[FakeColumn("uid", Uuid(), nullable=False, primary_key=True)],
+    )
+    Account = _model_class("Account", account_table, identifier="Account")
+    RenamedAccount = _model_class("RenamedAccount", renamed_table, identifier="Account")
+
+    assert _configured_storage_hash(Account) != _configured_storage_hash(RenamedAccount)
+
+
 def test_legacy_schema_migration_bases_are_not_public():
     import mainsequence.meta_tables as meta_tables
 
@@ -799,7 +822,7 @@ def test_platform_managed_preserves_authored_physical_table_name():
     )
 
     assert request.management_mode == "platform_managed"
-    assert request.storage_hash == _configured_storage_hash(Asset)
+    _assert_omits_storage_hash(request)
     assert request.table_contract.physical.table_name == "example_assets__asset"
 
 
@@ -826,8 +849,8 @@ def test_platform_managed_metatable_build_request_uses_session_data_source(monke
     assert request.data_source_uid == "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
     assert request.identifier == "Account"
     assert request.description == "Account table"
-    assert request.storage_hash == _configured_storage_hash(Account)
-    assert request.storage_hash != table.name
+    _assert_omits_storage_hash(request)
+    assert _configured_storage_hash(Account) != table.name
 
 
 def test_platform_managed_metatable_does_not_use_physical_data_source_uid(monkeypatch):
@@ -928,7 +951,7 @@ def test_platform_managed_metatable_register_does_not_register_fk_targets_recurs
         return MetaTable.model_construct(
             uid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
             data_source_uid=request.data_source_uid,
-            storage_hash=request.storage_hash,
+            physical_table_name=request.table_contract.physical.table_name,
         )
 
     monkeypatch.setattr(
@@ -964,7 +987,7 @@ def test_platform_managed_register_reuses_local_registry(monkeypatch):
         return MetaTable.model_construct(
             uid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
             data_source_uid=request.data_source_uid,
-            storage_hash=request.storage_hash,
+            physical_table_name=request.table_contract.physical.table_name,
         )
 
     monkeypatch.setattr(
@@ -1034,7 +1057,7 @@ def test_platform_managed_register_ignores_foreign_key_cycles(monkeypatch):
         return MetaTable.model_construct(
             uid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
             data_source_uid=request.data_source_uid,
-            storage_hash=request.storage_hash,
+            physical_table_name=request.table_contract.physical.table_name,
         )
 
     monkeypatch.setattr(
@@ -1142,7 +1165,6 @@ def test_platform_managed_metatable_register_delegates_to_meta_table_register(mo
         return MetaTable.model_construct(
             uid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
             data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
-            storage_hash=request.storage_hash,
             physical_table_name="mt_aaaaaaaaaaaa4aaa8aaaaaaaaaaaaaaa",
         )
 
@@ -1162,12 +1184,12 @@ def test_platform_managed_metatable_register_delegates_to_meta_table_register(mo
     assert Account.get_meta_table() is registered
     assert Account.get_meta_table_uid() == "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
     assert Account.get_data_source_uid() == "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
-    assert Account.get_storage_hash() == captured["request"].storage_hash
+    assert Account.get_storage_hash() == _configured_storage_hash(Account)
     assert Account.get_physical_table_name() == "example_assets__account"
     assert Account.__table__.name == "example_assets__account"
     assert captured["timeout"] == 15
     assert captured["request"].data_source_uid == "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
-    assert captured["request"].storage_hash != Account.__table__.name
+    _assert_omits_storage_hash(captured["request"])
     assert captured["request"].table_contract.physical.table_name == "example_assets__account"
     assert not hasattr(Account, "bind_meta_table")
 
@@ -1216,8 +1238,8 @@ def test_time_index_meta_table_registration_request_uses_dynamic_contract():
     )
 
     assert isinstance(request, TimeIndexMetaTableRegistrationRequest)
-    assert request.storage_hash == _configured_storage_hash(AccountHoldings)
-    assert request.storage_hash != table.name
+    _assert_omits_storage_hash(request)
+    assert _configured_storage_hash(AccountHoldings) != table.name
     assert request.identifier == "AccountHoldings"
     assert request.namespace == "example.assets"
     assert request.description == "Account holdings data node storage"
@@ -1442,7 +1464,6 @@ def test_time_index_meta_table_register_posts_to_dynamic_table_endpoint(monkeypa
             return {
                 "uid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
                 "data_source_uid": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
-                "storage_hash": captured["payload"]["json"]["storage_hash"],
                 "identifier": "AccountHoldings",
                 "namespace": "example.assets",
                 "management_mode": "platform_managed",
@@ -1487,7 +1508,7 @@ def test_time_index_meta_table_register_posts_to_dynamic_table_endpoint(monkeypa
     assert AccountHoldings.get_meta_table() is registered
     assert AccountHoldings.get_time_index_meta_table() is registered
     assert AccountHoldings.get_meta_table_uid() == "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
-    assert AccountHoldings.get_storage_hash() == captured["payload"]["json"]["storage_hash"]
+    assert AccountHoldings.get_storage_hash() == _configured_storage_hash(AccountHoldings)
     assert AccountHoldings.get_physical_table_name() == "example_assets__account_holdings"
     assert AccountHoldings.__table__.name == "example_assets__account_holdings"
     assert captured["r_type"] == "POST"
@@ -1496,6 +1517,7 @@ def test_time_index_meta_table_register_posts_to_dynamic_table_endpoint(monkeypa
     assert captured["payload"]["json"]["data_source_uid"] == (
         "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
     )
+    assert "storage_hash" not in captured["payload"]["json"]
     assert captured["payload"]["json"]["time_index_name"] == "time_index"
     assert "index_names" not in captured["payload"]["json"]
     assert captured["payload"]["json"]["table_contract"]["authoring"]["time_indexed"][
@@ -1687,7 +1709,7 @@ def test_time_index_storage_name_hash_component_separates_identical_table_shapes
         RandomNumber,
         data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
     )
-    assert request.storage_hash == random_number_storage_hash
+    _assert_omits_storage_hash(request)
     assert request.table_contract["physical"]["table_name"] == table_a.name
     assert request.identifier == "daily_random_number_project"
     assert request.namespace == "mainsequence.examples"
@@ -1751,7 +1773,7 @@ def test_platform_managed_metatable_preserves_authored_tablename_with_sqlalchemy
         data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
     )
 
-    assert request.storage_hash == _configured_storage_hash(Asset)
+    _assert_omits_storage_hash(request)
     assert request.table_contract.physical.table_name == "example_assets__asset"
     assert not hasattr(request.table_contract, "indexes")
     assert not hasattr(request.table_contract, "foreign_keys")
@@ -1865,7 +1887,6 @@ def test_platform_managed_register_preserves_authored_sqlalchemy_table_name(
         return MetaTable.model_construct(
             uid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
             data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
-            storage_hash=request.storage_hash,
             physical_table_name=physical_table_name,
         )
 
@@ -1878,7 +1899,7 @@ def test_platform_managed_register_preserves_authored_sqlalchemy_table_name(
     with platform_managed_migration_registration_context():
         Account.register()
 
-    assert captured["request"].storage_hash == storage_hash
+    _assert_omits_storage_hash(captured["request"])
     assert captured["request"].table_contract.physical.table_name == "example_assets__account"
     assert Account.get_storage_hash() == storage_hash
     assert Account.get_physical_table_name() == "example_assets__account"
@@ -2009,7 +2030,7 @@ def test_time_index_meta_table_preserves_authored_tablename_with_sqlalchemy():
         data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
     )
 
-    assert request.storage_hash == _configured_storage_hash(AccountHoldings)
+    _assert_omits_storage_hash(request)
     assert request.time_index_name == "time_index"
     assert request.table_contract["physical"]["table_name"] == "example_assets__account_holdings"
     assert request.table_contract["authoring"]["time_indexed"]["index_names"] == [
@@ -2038,8 +2059,8 @@ def test_platform_managed_allows_authored_table_name_distinct_from_storage_hash(
         data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
     )
 
-    assert request.storage_hash == _configured_storage_hash(Asset)
-    assert request.storage_hash != "asset"
+    _assert_omits_storage_hash(request)
+    assert _configured_storage_hash(Asset) != "asset"
     assert request.table_contract.physical.table_name == "asset"
 
 
@@ -2056,6 +2077,7 @@ def test_external_registered_allows_physical_table_name_to_differ_from_storage_h
     )
 
     assert request.management_mode == "external_registered"
-    assert request.storage_hash != "asset"
+    _assert_omits_storage_hash(request)
+    assert _configured_storage_hash(Asset) != "asset"
     assert request.table_contract.physical.table_name == "asset"
     assert request.introspect is True

@@ -93,6 +93,31 @@ def _configured_storage_hash_for_model(
     hash_namespace: str | None = None,
     extra_hash_components: Mapping[str, Any] | None = None,
 ) -> str:
+    return compute_metatable_contract_hash(
+        model_or_table,
+        namespace=namespace,
+        schema=schema,
+        hash_namespace=hash_namespace,
+        extra_components=extra_hash_components,
+    )
+
+
+def compute_metatable_contract_hash(
+    model_or_table: Any,
+    *,
+    namespace: str | None = None,
+    schema: str | None = None,
+    hash_namespace: str | None = None,
+    include_table_name: bool = True,
+    extra_components: Mapping[str, Any] | None = None,
+) -> str:
+    """Compute an opt-in deterministic MetaTable contract fingerprint.
+
+    This is utility output, not a backend MetaTable identity. By default it
+    includes the authored physical table name so two same-shaped tables do not
+    collide merely because they share namespace and schema.
+    """
+
     table = _resolve_table(model_or_table)
     resolved_schema = _resolve_schema(table, schema=schema)
     resolved_namespace = _resolve_namespace(model_or_table, namespace=namespace)
@@ -102,12 +127,18 @@ def _configured_storage_hash_for_model(
     )
     resolved_extra_hash_components = _resolve_extra_hash_components(
         model_or_table,
-        extra_hash_components=extra_hash_components,
+        extra_hash_components=extra_components,
     )
+    table_storage_identity = _configured_table_storage_identity(model_or_table, table=table)
+    if include_table_name:
+        table_storage_identity = {
+            "physical_table_name": _table_name(table),
+            **table_storage_identity,
+        }
     return _build_configured_storage_hash(
         namespace=resolved_namespace,
         schema=resolved_schema,
-        table_storage_identity=_configured_table_storage_identity(model_or_table, table=table),
+        table_storage_identity=table_storage_identity,
         hash_namespace=resolved_hash_namespace,
         extra_hash_components=resolved_extra_hash_components,
     )
@@ -143,7 +174,6 @@ class PlatformManagedMetaTable:
     __metatable__: ClassVar[MetaTable | None] = None
     __metatable_uid__: ClassVar[str | None] = None
     __metatable_data_source_uid__: ClassVar[str | None] = None
-    __metatable_storage_hash__: ClassVar[str | None] = None
     __metatable_physical_table_name__: ClassVar[str | None] = None
     __metatable_description__: ClassVar[str | None] = None
     __metatable_labels__: ClassVar[Sequence[str] | None] = None
@@ -221,10 +251,10 @@ class PlatformManagedMetaTable:
         _registration_stack: tuple[str, ...] = (),
     ) -> MetaTable:
         _require_platform_managed_migration_registration_context(cls)
-        storage_hash = cls.get_storage_hash()
+        registration_key = _model_registration_key(cls)
         registry_meta_table = _begin_local_registration(
             cls,
-            storage_hash=storage_hash,
+            registration_key=registration_key,
             stack=_registration_stack,
         )
         if registry_meta_table is not None:
@@ -238,11 +268,11 @@ class PlatformManagedMetaTable:
             meta_table = MetaTable.register(request, timeout=timeout)
             cls._bind_meta_table(meta_table)
             _complete_local_registration(
-                storage_hash=storage_hash, model=cls, meta_table=meta_table
+                registration_key=registration_key, model=cls, meta_table=meta_table
             )
             return meta_table
         except Exception:
-            _clear_failed_local_registration(storage_hash=storage_hash, model=cls)
+            _clear_failed_local_registration(registration_key=registration_key, model=cls)
             raise
 
     @classmethod
@@ -250,7 +280,6 @@ class PlatformManagedMetaTable:
         """Attach an already-created backend MetaTable resource to this authoring model."""
         cls.__metatable__ = meta_table
         cls.__metatable_uid__ = _required_meta_table_uid(meta_table)
-        cls.__metatable_storage_hash__ = _meta_table_storage_hash(meta_table)
         cls.__metatable_physical_table_name__ = _bound_physical_table_name(cls, meta_table)
         cls.__metatable_data_source_uid__ = _required_meta_table_data_source_uid(meta_table)
         return meta_table
@@ -273,10 +302,7 @@ class PlatformManagedMetaTable:
 
     @classmethod
     def get_storage_hash(cls) -> str:
-        storage_hash = getattr(cls, "__metatable_storage_hash__", None)
-        if storage_hash not in (None, ""):
-            return str(storage_hash)
-        return _configured_storage_hash_for_model(cls)
+        return compute_metatable_contract_hash(cls)
 
     @classmethod
     def get_physical_table_name(cls) -> str | None:
@@ -400,10 +426,10 @@ class PlatformTimeIndexMetaTable(PlatformManagedMetaTable):
         from mainsequence.client.metatables import TimeIndexMetaTable
 
         _require_platform_managed_migration_registration_context(cls)
-        storage_hash = cls.get_storage_hash()
+        registration_key = _model_registration_key(cls)
         registry_meta_table = _begin_local_registration(
             cls,
-            storage_hash=storage_hash,
+            registration_key=registration_key,
             stack=_registration_stack,
         )
         if registry_meta_table is not None:
@@ -417,13 +443,13 @@ class PlatformTimeIndexMetaTable(PlatformManagedMetaTable):
             time_index_meta_table = TimeIndexMetaTable.register(request, timeout=timeout)
             cls._bind_meta_table(time_index_meta_table)
             _complete_local_registration(
-                storage_hash=storage_hash,
+                registration_key=registration_key,
                 model=cls,
                 meta_table=time_index_meta_table,
             )
             return time_index_meta_table
         except Exception:
-            _clear_failed_local_registration(storage_hash=storage_hash, model=cls)
+            _clear_failed_local_registration(registration_key=registration_key, model=cls)
             raise
 
 
@@ -490,14 +516,6 @@ def time_indexed_registration_request_from_sqlalchemy_model(
     resolved_identifier = resolve_metatable_identifier(model_or_table, identifier=identifier)
     resolved_namespace = _resolve_namespace(model_or_table, namespace=namespace)
     resolved_description = _resolve_description(model_or_table, description=description)
-    resolved_hash_namespace = _resolve_hash_namespace(
-        model_or_table,
-        hash_namespace=hash_namespace,
-    )
-    resolved_extra_hash_components = _resolve_extra_hash_components(
-        model_or_table,
-        extra_hash_components=extra_hash_components,
-    )
     resolved_time_index_name = _resolve_time_index_name(
         model_or_table,
         time_index_name=time_index_name,
@@ -519,21 +537,6 @@ def time_indexed_registration_request_from_sqlalchemy_model(
         index_names=resolved_index_names,
     )
 
-    configured_storage_hash = _build_configured_storage_hash(
-        namespace=resolved_namespace,
-        schema=resolved_schema,
-        table_storage_identity=_time_index_table_storage_identity(
-            table,
-            time_index_name=resolved_time_index_name,
-            index_names=resolved_index_names,
-            storage_layout=resolved_storage_layout,
-            cadence=resolved_cadence,
-        ),
-        hash_namespace=resolved_hash_namespace,
-        extra_hash_components=resolved_extra_hash_components,
-    )
-    storage_hash = _model_bound_storage_hash(model_or_table) or configured_storage_hash
-
     column_contracts = [
         _column_contract(column, ordinal_position=position).model_dump(
             mode="json",
@@ -553,7 +556,6 @@ def time_indexed_registration_request_from_sqlalchemy_model(
             data_source=data_source,
             data_source_uid=data_source_uid,
         ),
-        storage_hash=storage_hash,
         identifier=resolved_identifier,
         namespace=resolved_namespace,
         description=resolved_description,
@@ -619,23 +621,6 @@ def platform_managed_registration_request_from_sqlalchemy_model(
     resolved_identifier = resolve_metatable_identifier(model_or_table, identifier=identifier)
     resolved_namespace = _resolve_namespace(model_or_table, namespace=namespace)
     resolved_description = _resolve_description(model_or_table, description=description)
-    resolved_hash_namespace = _resolve_hash_namespace(
-        model_or_table,
-        hash_namespace=hash_namespace,
-    )
-    resolved_extra_hash_components = _resolve_extra_hash_components(
-        model_or_table,
-        extra_hash_components=extra_hash_components,
-    )
-    configured_storage_hash = _build_configured_storage_hash(
-        namespace=resolved_namespace,
-        schema=resolved_schema,
-        table_storage_identity=_table_storage_identity(table),
-        hash_namespace=resolved_hash_namespace,
-        extra_hash_components=resolved_extra_hash_components,
-    )
-    storage_hash = _model_bound_storage_hash(model_or_table) or configured_storage_hash
-
     table_contract = table_contract_from_sqlalchemy_model(
         model_or_table,
         schema=resolved_schema,
@@ -648,7 +633,6 @@ def platform_managed_registration_request_from_sqlalchemy_model(
             data_source_uid=data_source_uid,
         ),
         management_mode="platform_managed",
-        storage_hash=storage_hash,
         identifier=resolved_identifier,
         namespace=resolved_namespace,
         description=resolved_description,
@@ -676,7 +660,6 @@ def external_registered_registration_request_from_sqlalchemy_model(
     model_or_table: Any,
     *,
     data_source_uid: str,
-    storage_hash: str | None = None,
     identifier: str | None = None,
     namespace: str | None = None,
     description: str | None = None,
@@ -692,26 +675,9 @@ def external_registered_registration_request_from_sqlalchemy_model(
     resolved_identifier = resolve_metatable_identifier(model_or_table, identifier=identifier)
     resolved_namespace = _resolve_namespace(model_or_table, namespace=namespace)
     resolved_description = _resolve_description(model_or_table, description=description)
-    resolved_hash_namespace = _resolve_hash_namespace(
-        model_or_table,
-        hash_namespace=hash_namespace,
-    )
-    resolved_extra_hash_components = _resolve_extra_hash_components(
-        model_or_table,
-        extra_hash_components=extra_hash_components,
-    )
-    resolved_storage_hash = storage_hash or _build_configured_storage_hash(
-        namespace=resolved_namespace,
-        schema=resolved_schema,
-        table_storage_identity=_table_storage_identity(table),
-        hash_namespace=resolved_hash_namespace,
-        extra_hash_components=resolved_extra_hash_components,
-    )
-
     return MetaTableRegistrationRequest(
         data_source_uid=str(data_source_uid),
         management_mode="external_registered",
-        storage_hash=resolved_storage_hash,
         identifier=resolved_identifier,
         namespace=resolved_namespace,
         description=resolved_description,
@@ -880,23 +846,23 @@ def _resolve_model_data_source_uid(
 def _begin_local_registration(
     model: type[PlatformManagedMetaTable],
     *,
-    storage_hash: str,
+    registration_key: str,
     stack: tuple[str, ...],
 ) -> MetaTable | None:
-    state = _METATABLE_REGISTRATION_REGISTRY.get(storage_hash)
+    state = _METATABLE_REGISTRATION_REGISTRY.get(registration_key)
     if state is not None:
         if state.status == "registered" and state.meta_table is not None:
             model._bind_meta_table(state.meta_table)
             return state.meta_table
         if state.status == "in_progress":
-            cycle_path = (*state.stack, _registration_stack_label(model, storage_hash))
+            cycle_path = (*state.stack, _registration_stack_label(model, registration_key))
             raise ValueError(
                 "MetaTable recursive registration cycle detected: " + " -> ".join(cycle_path)
             )
 
     bound_meta_table = model.get_meta_table()
     if bound_meta_table is not None and model.get_meta_table_uid() is not None:
-        _METATABLE_REGISTRATION_REGISTRY[storage_hash] = _MetaTableRegistrationState(
+        _METATABLE_REGISTRATION_REGISTRY[registration_key] = _MetaTableRegistrationState(
             status="registered",
             model=model,
             meta_table=bound_meta_table,
@@ -904,8 +870,8 @@ def _begin_local_registration(
         )
         return bound_meta_table
 
-    current_stack = (*stack, _registration_stack_label(model, storage_hash))
-    _METATABLE_REGISTRATION_REGISTRY[storage_hash] = _MetaTableRegistrationState(
+    current_stack = (*stack, _registration_stack_label(model, registration_key))
+    _METATABLE_REGISTRATION_REGISTRY[registration_key] = _MetaTableRegistrationState(
         status="in_progress",
         model=model,
         meta_table=None,
@@ -916,13 +882,13 @@ def _begin_local_registration(
 
 def _complete_local_registration(
     *,
-    storage_hash: str,
+    registration_key: str,
     model: type[PlatformManagedMetaTable],
     meta_table: MetaTable,
 ) -> None:
-    state = _METATABLE_REGISTRATION_REGISTRY.get(storage_hash)
+    state = _METATABLE_REGISTRATION_REGISTRY.get(registration_key)
     stack = state.stack if state is not None else ()
-    _METATABLE_REGISTRATION_REGISTRY[storage_hash] = _MetaTableRegistrationState(
+    _METATABLE_REGISTRATION_REGISTRY[registration_key] = _MetaTableRegistrationState(
         status="registered",
         model=model,
         meta_table=meta_table,
@@ -932,17 +898,25 @@ def _complete_local_registration(
 
 def _clear_failed_local_registration(
     *,
-    storage_hash: str,
+    registration_key: str,
     model: type[PlatformManagedMetaTable],
 ) -> None:
-    state = _METATABLE_REGISTRATION_REGISTRY.get(storage_hash)
+    state = _METATABLE_REGISTRATION_REGISTRY.get(registration_key)
     if state is not None and state.status == "in_progress" and state.model is model:
-        _METATABLE_REGISTRATION_REGISTRY.pop(storage_hash, None)
+        _METATABLE_REGISTRATION_REGISTRY.pop(registration_key, None)
 
 
-def _registration_stack_label(model: type[Any], storage_hash: str) -> str:
+def _registration_stack_label(model: type[Any], registration_key: str) -> str:
     model_name = getattr(model, "__qualname__", getattr(model, "__name__", repr(model)))
-    return f"{model_name}({storage_hash})"
+    return f"{model_name}({registration_key})"
+
+
+def _model_registration_key(model_or_table: Any) -> str:
+    identifier = resolve_metatable_identifier(model_or_table)
+    if identifier not in (None, ""):
+        return f"identifier:{identifier}"
+    table = _resolve_table(model_or_table)
+    return f"table:{_resolve_schema(table)}.{_table_name(table)}"
 
 
 def _coerce_optional_uid(value: Any) -> str | None:
@@ -963,22 +937,6 @@ def _required_meta_table_uid(meta_table: MetaTable) -> str:
     if uid in (None, ""):
         raise ValueError("PlatformManagedMetaTable._bind_meta_table requires meta_table.uid.")
     return uid
-
-
-def _meta_table_storage_hash(meta_table: MetaTable) -> str | None:
-    storage_hash = getattr(meta_table, "storage_hash", None)
-    if storage_hash in (None, ""):
-        return None
-    return str(storage_hash)
-
-
-def _required_meta_table_storage_hash(meta_table: MetaTable) -> str:
-    storage_hash = _meta_table_storage_hash(meta_table)
-    if storage_hash in (None, ""):
-        raise ValueError(
-            "PlatformManagedMetaTable._bind_meta_table requires meta_table.storage_hash."
-        )
-    return storage_hash
 
 
 def _required_meta_table_data_source_uid(meta_table: MetaTable) -> str:
@@ -1002,13 +960,6 @@ def _bound_physical_table_name(cls: type[Any], meta_table: MetaTable) -> str | N
     if table is not None:
         return _table_name(table)
     return _meta_table_physical_table_name(meta_table)
-
-
-def _model_bound_storage_hash(model_or_table: Any) -> str | None:
-    storage_hash = getattr(model_or_table, "__metatable_storage_hash__", None)
-    if storage_hash not in (None, ""):
-        return str(storage_hash)
-    return None
 
 
 def resolve_metatable_identifier(
@@ -1785,6 +1736,7 @@ __all__ = [
     "DEFAULT_PLATFORM_MANAGED_PROVISIONING",
     "PlatformManagedMetaTable",
     "PlatformTimeIndexMetaTable",
+    "compute_metatable_contract_hash",
     "external_registered_registration_request_from_sqlalchemy_model",
     "platform_managed_migration_registration_context",
     "platform_managed_registration_request_from_sqlalchemy_model",
