@@ -2,7 +2,8 @@
 
 ## Status
 
-Superseded by ADR 0022 for Alembic-managed platform MetaTables.
+Superseded by ADR 0022 for Alembic-managed platform MetaTables and by ADR 0028
+for storage-hash identity.
 
 ## Context
 
@@ -38,7 +39,8 @@ Alembic-managed platform MetaTables.
 
 ADR 0022 replaces steps 2 and 5 for Alembic-managed models: the request includes
 the authored physical table name, and `_bind_meta_table(...)` binds MetaTable
-UID/storage metadata without mutating SQLAlchemy `Table.name`.
+UID and data-source metadata without mutating SQLAlchemy `Table.name`. ADR 0028
+removes `storage_hash` as a first-class MetaTable identity.
 
 The binding method is intentionally private. User code should not bind arbitrary
 MetaTable objects into SQLAlchemy models; doing so bypasses the register path and
@@ -52,13 +54,13 @@ back onto the declaring model.
 
 ## Consequences
 
-After ADR 0022, ordinary SQLAlchemy statements built from `Model.__table__`
-compile against the authored table name. SDK code that needs logical storage
-identity must call `Model.get_storage_hash()`, not read `Model.__table__.name`.
+After ADR 0028, SDK code that needs a deterministic contract fingerprint must
+call `compute_metatable_contract_hash(Model)`. `Model.__table__.name` remains
+the authored physical table name.
 
-Foreign-key auto-resolution for platform-managed registration resolves target
-tables by logical `storage_hash`. A fallback lookup by `physical_table_name` is
-kept for compatibility with already-bound or older client objects.
+Foreign-key metadata should use backend MetaTable UID when available and the
+authored target physical table name for SQL/Alembic binding. Hashing is only an
+explicit contract-fingerprint utility after ADR 0028.
 
 External-registered tables keep the old behavior: their SQLAlchemy table name is
 their physical table name and the contract includes `physical.table_name`.
@@ -67,15 +69,13 @@ their physical table name and the contract includes `physical.table_name`.
 
 - Make `bind_meta_table` private as `_bind_meta_table`.
 - Remove the public free-function platform-managed registration helper.
-- Store `__metatable_storage_hash__` and `__metatable_physical_table_name__`
-  during binding.
-- Retarget SQLAlchemy `Table.name`, `Table.fullname`, and metadata registry keys
-  during binding.
-- Preserve a logical fullname on the table for SDK storage-hash and FK contract
-  generation after the SQLAlchemy runtime name has been rebound.
-- Keep `get_storage_hash()` returning logical storage hash after binding.
+- Store MetaTable UID, data-source UID, and physical table name during binding.
+- Preserve the authored SQLAlchemy `Table.name`; do not retarget SQLAlchemy
+  metadata during binding for Alembic-managed tables.
+- Remove the mixin storage-hash convenience method; callers that need a
+  fingerprint use `compute_metatable_contract_hash(Model)` explicitly.
 - Add `get_physical_table_name()` for explicit physical-name access.
-- Omit `physical.table_name` from platform-managed registration contracts.
-- Resolve platform-managed FK targets by `storage_hash`, with physical-name
-  fallback for compatibility.
+- Include `physical.table_name` in platform-managed registration contracts.
+- Resolve platform-managed FK targets by MetaTable UID when bound and by
+  authored physical table name for SQL/Alembic binding.
 - Cover registration rebinding with SQLAlchemy compile tests.

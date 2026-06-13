@@ -221,8 +221,8 @@ The method must:
 9. bind each returned item back to its model by response order;
 10. preserve SQLAlchemy `Table.name` exactly as authored;
 11. leave SQLAlchemy FK/index names as authored by project metadata;
-12. bind `__metatable_uid__`, `__metatable_data_source_uid__`,
-   `__metatable_storage_hash__`, and `__metatable_physical_table_name__`.
+12. bind `__metatable_uid__`, `__metatable_data_source_uid__`, and
+   `__metatable_physical_table_name__`.
 
 After this step, Alembic autogenerate and Alembic upgrade must see the authored
 SQLAlchemy physical table names. Index names remain normal Alembic/SQLAlchemy

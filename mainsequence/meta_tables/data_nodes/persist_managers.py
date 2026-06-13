@@ -26,7 +26,7 @@ from mainsequence.client.metatables import (
 )
 from mainsequence.instrumentation import tracer
 from mainsequence.logconf import logger
-from mainsequence.meta_tables import PlatformTimeIndexMetaTable
+from mainsequence.meta_tables import PlatformTimeIndexMetaTable, compute_metatable_contract_hash
 
 from .. import future_registry
 
@@ -240,7 +240,7 @@ def _storage_table_identity_summary(storage_table: type[PlatformTimeIndexMetaTab
     if identifier not in (None, ""):
         parts.append(f"identifier={identifier!r}")
     try:
-        contract_hash = storage_table.get_storage_hash()
+        contract_hash = compute_metatable_contract_hash(storage_table)
     except Exception:
         contract_hash = None
     if contract_hash not in (None, ""):
