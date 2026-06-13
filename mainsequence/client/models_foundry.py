@@ -1071,8 +1071,3 @@ class Constant(ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
             new_constant = cls.create(name=k, value=v)
             created_constants.append(new_constant)
         return created_constants
-
-
-from . import metatables as _models_metatables  # noqa: E402
-
-_models_metatables.SessionDataSource.set_remote_db()

@@ -488,7 +488,8 @@ class MetaTableOperationScope(BasePydanticModel):
         except Exception as exc:
             raise ValueError(
                 "MetaTable compiled SQL scope requires data_source_uid or a "
-                "configured project/session default data source."
+                "configured project/session default data source. "
+                f"Default data source resolution failed: {exc}"
             ) from exc
 
         uid = getattr(data_source, "uid", None) or getattr(data_source, "data_source_uid", None)

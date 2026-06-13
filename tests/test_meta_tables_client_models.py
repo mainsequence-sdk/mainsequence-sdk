@@ -956,6 +956,34 @@ def test_compiled_sql_v1_scope_resolves_session_data_source(monkeypatch):
     )
 
 
+def test_compiled_sql_v1_scope_preserves_session_data_source_auth_failure(monkeypatch):
+    def _raise_auth_failure():
+        raise RuntimeError(
+            "Could not resolve the local project default data source because SDK "
+            "authentication/authorization failed."
+        )
+
+    monkeypatch.setattr(meta_table_models, "get_session_data_source", _raise_auth_failure)
+
+    with pytest.raises(ValidationError) as exc_info:
+        build_operation(
+            operation="select",
+            sql="SELECT asset.symbol FROM public.asset AS asset",
+            scope={
+                "tables": [
+                    {
+                        "metaTableUid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                        "alias": "asset",
+                    }
+                ]
+            },
+        )
+
+    message = str(exc_info.value)
+    assert "Default data source resolution failed" in message
+    assert "SDK authentication/authorization failed" in message
+
+
 def test_compiled_sql_v1_serializes_typed_temporal_parameters():
     operation = build_operation(
         operation="select",

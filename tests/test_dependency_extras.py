@@ -6,11 +6,29 @@ import pathlib
 import sys
 import types
 
+import pytest
+
+
+def _snapshot_mainsequence_modules() -> dict[str, types.ModuleType]:
+    return {
+        name: module
+        for name, module in sys.modules.items()
+        if name == "mainsequence" or name.startswith("mainsequence.")
+    }
+
 
 def _reset_mainsequence_modules() -> None:
     for name in tuple(sys.modules):
         if name == "mainsequence" or name.startswith("mainsequence."):
             sys.modules.pop(name, None)
+
+
+@pytest.fixture(autouse=True)
+def _restore_mainsequence_modules_after_import_test():
+    snapshot = _snapshot_mainsequence_modules()
+    yield
+    _reset_mainsequence_modules()
+    sys.modules.update(snapshot)
 
 
 def _seed_mainsequence_packages() -> None:
@@ -50,6 +68,26 @@ def test_core_client_import_does_not_require_duckdb(monkeypatch):
     assert hasattr(foundry_module, "Project")
     assert hasattr(metatables_module, "DynamicTableDataSource")
     assert not hasattr(foundry_module, "DynamicTableDataSource")
+
+
+def test_models_foundry_import_does_not_resolve_session_data_source(monkeypatch):
+    _reset_mainsequence_modules()
+    _seed_mainsequence_packages()
+
+    metatables_module = importlib.import_module("mainsequence.client.metatables")
+
+    def _fail_import_time_resolution():
+        raise AssertionError("models_foundry import must not resolve SessionDataSource")
+
+    monkeypatch.setattr(
+        metatables_module.SessionDataSource,
+        "set_remote_db",
+        _fail_import_time_resolution,
+    )
+
+    foundry_module = importlib.import_module("mainsequence.client.models_foundry")
+
+    assert hasattr(foundry_module, "Project")
 
 
 def test_duckdb_helper_points_to_local_data_extra(monkeypatch):
