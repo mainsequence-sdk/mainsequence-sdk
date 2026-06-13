@@ -44,7 +44,7 @@ from ..dtype_codec import (
     serialize_remote_parameters,
     token_to_pandas_series,
 )
-from ..exceptions import raise_for_response
+from ..exceptions import AuthenticationError, PermissionDeniedError, raise_for_response
 from ..utils import (
     TDAG_CONSTANTS,
     DateInfo,
@@ -4597,6 +4597,14 @@ def _build_local_pod_project_resolution() -> _PodProjectResolution:
         )
     try:
         project = Project.get(pk=running_project_uid)
+    except (AuthenticationError, PermissionDeniedError) as exc:
+        raise RuntimeError(
+            "Could not resolve the local project default data source because SDK "
+            "authentication/authorization failed while loading project "
+            f"{running_project_uid!r}. "
+            "Run `mainsequence login` or export MAINSEQUENCE_ACCESS_TOKEN / "
+            f"MAINSEQUENCE_REFRESH_TOKEN. Backend response: {exc}"
+        ) from exc
     except DoesNotExist:
         return _PodProjectResolution(
             project=None,
@@ -4778,7 +4786,15 @@ def get_session_data_source() -> Any:
         SessionDataSource.set_remote_db()
         data_source = getattr(SessionDataSource, "data_source", None)
     if getattr(data_source, "related_resource", None) is None:
-        raise Exception("This Pod does not have a default data source")
+        resolution = _resolve_local_pod_project()
+        detail = (resolution.detail or "No local pod project attached.").strip()
+        if detail and not detail.endswith("."):
+            detail += "."
+        raise RuntimeError(
+            "Could not resolve a session default data source. "
+            f"{detail} Run inside a configured Main Sequence project/session, "
+            "or pass data_source_uid explicitly."
+        )
     return data_source
 
 

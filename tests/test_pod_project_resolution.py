@@ -4,6 +4,7 @@ import pytest
 
 import mainsequence.client.metatables as models_metatables
 import mainsequence.client.models_foundry as models_foundry
+from mainsequence.client.exceptions import AuthenticationError
 from mainsequence.meta_tables.data_nodes import build_operations
 
 PROJECT_UID = "1d0530c0-65d1-4db0-856b-dc29d8260a09"
@@ -152,6 +153,41 @@ def test_set_remote_db_warns_once_for_lookup_failure(monkeypatch):
     assert "contract mismatch" in warnings[0]
     assert "Continuing without local pod project attachment." in warnings[0]
     assert debugs == []
+
+
+def test_resolve_local_pod_project_raises_auth_failure(monkeypatch):
+    monkeypatch.setenv("MAIN_SEQUENCE_PROJECT_UID", PROJECT_UID)
+    monkeypatch.delenv("MAIN_SEQUENCE_PROJECT_ID", raising=False)
+
+    def _project_get(*args, **kwargs):
+        raise AuthenticationError("No auth configured.")
+
+    monkeypatch.setattr(models_foundry.Project, "get", _project_get)
+
+    with pytest.raises(RuntimeError) as exc_info:
+        models_metatables._resolve_local_pod_project()
+
+    message = str(exc_info.value)
+    assert "SDK authentication/authorization failed" in message
+    assert f"project {PROJECT_UID!r}" in message
+    assert "mainsequence login" in message
+    assert "No auth configured." in message
+
+
+def test_get_session_data_source_reports_missing_project_uid(monkeypatch):
+    monkeypatch.delenv("MAIN_SEQUENCE_PROJECT_UID", raising=False)
+    monkeypatch.delenv("MAIN_SEQUENCE_PROJECT_ID", raising=False)
+    monkeypatch.setattr(models_metatables, "SessionDataSource", models_metatables.PodDataSource())
+    monkeypatch.setattr(models_metatables.logger, "debug", lambda message: None)
+
+    with pytest.raises(RuntimeError) as exc_info:
+        models_metatables.get_session_data_source()
+
+    message = str(exc_info.value)
+    assert "Could not resolve a session default data source." in message
+    assert "MAIN_SEQUENCE_PROJECT_UID is not configured." in message
+    assert "pass data_source_uid explicitly" in message
+    assert "This Pod does not have a default data source" not in message
 
 
 def test_data_source_create_duckdb_makes_creation_explicit(monkeypatch):
