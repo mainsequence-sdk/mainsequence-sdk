@@ -408,6 +408,10 @@ class MetaTableForeignKeyPayload(BasePydanticModel):
         None,
         description="Public UID of the target MetaTable.",
     )
+    target_table_physical_table_name: str | None = Field(
+        None,
+        description="Physical table name of the target MetaTable.",
+    )
     target_columns: list[str] = Field(
         default_factory=list,
         description="Target MetaTable physical column names.",

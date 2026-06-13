@@ -247,18 +247,36 @@ def test_metatable_accepts_projection_relation_fields():
                     "source_columns": ["account_uid"],
                     "target_table_uid": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
                     "target_table_storage_hash": "mt_account_hash",
+                    "target_table_physical_table_name": "example_assets__account",
                     "target_columns": ["uid"],
                     "on_delete": "cascade",
                     "contract_fragment": {},
                 }
             ],
-            incoming_fks=[],
+            incoming_fks=[
+                {
+                    "name": "price_asset_uid_fkey",
+                    "source_columns": ["asset_uid"],
+                    "target_table_uid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                    "target_table_physical_table_name": "example_assets__asset",
+                    "target_columns": ["uid"],
+                    "on_delete": "restrict",
+                    "contract_fragment": {},
+                }
+            ],
         )
     )
 
     assert meta_table.indexes_meta[0].name == "asset_symbol_idx"
     assert not hasattr(meta_table.foreign_keys[0], "target_table_storage_hash")
-    assert meta_table.incoming_fks == []
+    assert (
+        meta_table.foreign_keys[0].target_table_physical_table_name
+        == "example_assets__account"
+    )
+    assert (
+        meta_table.incoming_fks[0].target_table_physical_table_name
+        == "example_assets__asset"
+    )
 
 
 def test_meta_table_register_posts_contract_to_meta_table_endpoint(monkeypatch):
