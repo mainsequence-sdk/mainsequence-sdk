@@ -10897,7 +10897,7 @@ def test_project_update_agent_skills_overwrites_matching_folders(
     assert "namespace=mainsequence" in sentinel_content
     assert "pinned_version=4.4.3" in sentinel_content
     assert f"skills_path={(bundle_dir / 'skills').resolve()}" in sentinel_content
-    assert "Updated Agent Skills" in result.output
+    assert "Updated Scaffold Skills" in result.output
     assert "Pinned Version" in result.output
 
 

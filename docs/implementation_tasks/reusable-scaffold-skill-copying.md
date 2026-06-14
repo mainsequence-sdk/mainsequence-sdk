@@ -1,4 +1,4 @@
-# Implementation Task: Reusable Agent Skill Copying And Pin Sentinel
+# Implementation Task: Reusable Scaffold Skill Copying And Pin Sentinel
 
 Date: 2026-06-14
 
@@ -18,7 +18,7 @@ flow:
 That works for the SDK itself, but it is not reusable by extension libraries.
 For example, `ms-markets` should be able to ship its own packaged skills and
 offer a command that copies them into a project without reimplementing the copy
-rules or guessing where project agent skills live.
+rules or guessing where project scaffold skills live.
 
 There is also no project-local record of which installed library version last
 copied the managed skill folder. After a project updates its SDK or an extension
@@ -71,9 +71,9 @@ msm copy-msm-skills --path .
 or:
 
 ```python
-from mainsequence.agent_skills import copy_agent_skills
+from mainsequence.scaffold_skills import copy_scaffold_skills
 
-copy_agent_skills(
+copy_scaffold_skills(
     project_dir=project_dir,
     library_name="ms-markets",
     skills_path=installed_ms_markets_skills_path,
@@ -90,7 +90,7 @@ libraries do not need to import `mainsequence.cli.cli`.
 Proposed module:
 
 ```text
-mainsequence/agent_skills.py
+mainsequence/scaffold_skills.py
 ```
 
 Proposed public API:
@@ -103,19 +103,19 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-class AgentSkillCopyBlocked(RuntimeError):
+class ScaffoldSkillCopyBlocked(RuntimeError):
     """Raised when copying would target the library's own skill source."""
 
 
 @dataclass(frozen=True)
-class CopiedAgentSkill:
+class CopiedScaffoldSkill:
     name: str
     source: Path
     destination: Path
 
 
 @dataclass(frozen=True)
-class AgentSkillCopyResult:
+class ScaffoldSkillCopyResult:
     library_name: str
     namespace: str
     project_dir: Path
@@ -124,10 +124,10 @@ class AgentSkillCopyResult:
     sentinel_path: Path
     pinned_version: str
     dry_run: bool
-    copied: list[CopiedAgentSkill]
+    copied: list[CopiedScaffoldSkill]
 
 
-def copy_agent_skills(
+def copy_scaffold_skills(
     *,
     project_dir: Path,
     library_name: str,
@@ -138,7 +138,7 @@ def copy_agent_skills(
     dry_run: bool = False,
     protected_project_roots: Sequence[Path] = (),
     project_guard: Callable[[Path], str | None] | None = None,
-) -> AgentSkillCopyResult:
+) -> ScaffoldSkillCopyResult:
     ...
 ```
 
@@ -207,7 +207,7 @@ should detect the library's own `pyproject.toml`, expected source package
 directory, and existing managed skill namespace.
 
 The result should make blocked copies explicit in CLI code. A command may either
-let `AgentSkillCopyBlocked` fail the command or convert the block reason into a
+let `ScaffoldSkillCopyBlocked` fail the command or convert the block reason into a
 JSON payload like the existing `msm copy-msm-skills` command.
 
 ## Pin Sentinel
@@ -237,7 +237,7 @@ schema=1
 library_name=ms-markets
 namespace=ms_markets
 pinned_version=0.8.1
-skills_path=/project/.venv/lib/python3.12/site-packages/ms_markets/agent_skills
+skills_path=/project/.venv/lib/python3.12/site-packages/ms_markets/scaffold_skills
 copied_at_utc=2026-06-14T12:34:56Z
 command=msm copy-msm-skills
 ```
@@ -254,10 +254,10 @@ Refactor `project_update_agent_skills` so it:
 2. resolves the target project's installed `agent_scaffold` bundle as today;
 3. resolves the target project's installed `mainsequence` version from the same
    `.venv`;
-4. calls `copy_agent_skills(...)` with:
+4. calls `copy_scaffold_skills(...)` with:
 
    ```python
-   copy_agent_skills(
+   copy_scaffold_skills(
        project_dir=project_dir,
        library_name="mainsequence",
        namespace="mainsequence",
@@ -289,11 +289,11 @@ For `ms-markets`, the CLI would roughly do:
 from importlib import resources
 from importlib.metadata import version
 
-from mainsequence.agent_skills import copy_agent_skills
+from mainsequence.scaffold_skills import copy_scaffold_skills
 
 
-skills_path = resources.files("ms_markets").joinpath("agent_skills")
-result = copy_agent_skills(
+skills_path = resources.files("ms_markets").joinpath("scaffold_skills")
+result = copy_scaffold_skills(
     project_dir=project_dir,
     library_name="ms-markets",
     namespace="ms_markets",
@@ -319,22 +319,22 @@ It must not overwrite:
 
 ## Implementation Tasks
 
-- [x] Add `mainsequence/agent_skills.py`.
+- [x] Add `mainsequence/scaffold_skills.py`.
 - [x] Add dataclasses for copied item/result payloads.
-- [x] Add `AgentSkillCopyBlocked` with a clear block reason.
+- [x] Add `ScaffoldSkillCopyBlocked` with a clear block reason.
 - [x] Add namespace normalization and validation.
 - [x] Add generic source/destination overlap checks before any delete or copy.
 - [x] Add support for `protected_project_roots` and `project_guard`.
 - [x] Move `_copy_tree_overwrite(...)` or an equivalent private helper into the new
   module.
-- [x] Implement `copy_agent_skills(...)`.
+- [x] Implement `copy_scaffold_skills(...)`.
 - [x] Implement sentinel writing as an internal helper.
 - [x] Add a helper in CLI code to resolve an installed package version from the
   target project `.venv`, using the same interpreter that resolved the scaffold
   bundle.
 - [x] Make version resolution mandatory for `project_update_agent_skills`; do not
   copy skills when the version cannot be resolved.
-- [x] Refactor `project_update_agent_skills` to call `copy_agent_skills(...)`.
+- [x] Refactor `project_update_agent_skills` to call `copy_scaffold_skills(...)`.
 - [x] Extend CLI JSON output with:
   - `library_name`;
   - `namespace`;
@@ -369,7 +369,7 @@ Add focused tests for the reusable function:
 - [x] Blocks when source skill root is inside the destination root.
 - [x] Blocks when `project_dir` matches a protected project root.
 - [x] Blocks when `project_guard(project_dir)` returns a reason.
-- [x] Blocked paths raise `AgentSkillCopyBlocked` before any filesystem writes.
+- [x] Blocked paths raise `ScaffoldSkillCopyBlocked` before any filesystem writes.
 - [x] Rejects invalid namespaces.
 
 Update CLI tests:

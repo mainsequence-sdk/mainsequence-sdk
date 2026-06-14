@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import pytest
 
-from mainsequence.agent_skills import (
-    AgentSkillCopyBlocked,
-    copy_agent_skills,
-    normalize_agent_skill_namespace,
+from mainsequence.scaffold_skills import (
+    ScaffoldSkillCopyBlocked,
+    copy_scaffold_skills,
+    normalize_scaffold_skill_namespace,
 )
 
 
@@ -15,8 +15,8 @@ def _write_skill(skills_root, name: str, content: str = "skill") -> None:
     (skill_dir / "SKILL.md").write_text(content, encoding="utf-8")
 
 
-def test_copy_agent_skills_copies_namespace_and_writes_pin_sentinel(tmp_path):
-    skills_root = tmp_path / "package" / "agent_skills"
+def test_copy_scaffold_skills_copies_namespace_and_writes_pin_sentinel(tmp_path):
+    skills_root = tmp_path / "package" / "scaffold_skills"
     _write_skill(skills_root, "data_publishing", "new data skill")
     _write_skill(skills_root, "maintenance", "new maintenance skill")
     (skills_root / "README.md").write_text("not a skill", encoding="utf-8")
@@ -31,7 +31,7 @@ def test_copy_agent_skills_copies_namespace_and_writes_pin_sentinel(tmp_path):
     existing_managed.mkdir(parents=True)
     (existing_managed / "old.txt").write_text("removed", encoding="utf-8")
 
-    result = copy_agent_skills(
+    result = copy_scaffold_skills(
         project_dir=project_dir,
         library_name="ms-markets",
         namespace="ms_markets",
@@ -61,12 +61,12 @@ def test_copy_agent_skills_copies_namespace_and_writes_pin_sentinel(tmp_path):
     assert "command=msm copy-msm-skills" in sentinel_content
 
 
-def test_copy_agent_skills_dry_run_writes_nothing(tmp_path):
-    skills_root = tmp_path / "package" / "agent_skills"
+def test_copy_scaffold_skills_dry_run_writes_nothing(tmp_path):
+    skills_root = tmp_path / "package" / "scaffold_skills"
     _write_skill(skills_root, "data_publishing")
     project_dir = tmp_path / "project"
 
-    result = copy_agent_skills(
+    result = copy_scaffold_skills(
         project_dir=project_dir,
         library_name="mainsequence",
         skills_path=skills_root,
@@ -80,12 +80,12 @@ def test_copy_agent_skills_dry_run_writes_nothing(tmp_path):
 
 
 @pytest.mark.parametrize("version", [None, "", " ", "unknown", "none", "null"])
-def test_copy_agent_skills_requires_resolved_pinned_version(tmp_path, version):
-    skills_root = tmp_path / "package" / "agent_skills"
+def test_copy_scaffold_skills_requires_resolved_pinned_version(tmp_path, version):
+    skills_root = tmp_path / "package" / "scaffold_skills"
     _write_skill(skills_root, "data_publishing")
 
     with pytest.raises(ValueError, match="pinned_version"):
-        copy_agent_skills(
+        copy_scaffold_skills(
             project_dir=tmp_path / "project",
             library_name="mainsequence",
             skills_path=skills_root,
@@ -93,13 +93,13 @@ def test_copy_agent_skills_requires_resolved_pinned_version(tmp_path, version):
         )
 
 
-def test_copy_agent_skills_blocks_destination_source_overlap(tmp_path):
+def test_copy_scaffold_skills_blocks_destination_source_overlap(tmp_path):
     project_dir = tmp_path / "project"
     skills_root = project_dir / ".agents" / "skills" / "ms_markets"
     _write_skill(skills_root, "data_publishing")
 
-    with pytest.raises(AgentSkillCopyBlocked, match="overlap"):
-        copy_agent_skills(
+    with pytest.raises(ScaffoldSkillCopyBlocked, match="overlap"):
+        copy_scaffold_skills(
             project_dir=project_dir,
             library_name="ms-markets",
             namespace="ms_markets",
@@ -108,13 +108,13 @@ def test_copy_agent_skills_blocks_destination_source_overlap(tmp_path):
         )
 
 
-def test_copy_agent_skills_blocks_destination_inside_source(tmp_path):
+def test_copy_scaffold_skills_blocks_destination_inside_source(tmp_path):
     project_dir = tmp_path / "project"
     skills_root = project_dir / ".agents"
     _write_skill(skills_root, "data_publishing")
 
-    with pytest.raises(AgentSkillCopyBlocked, match="overlap"):
-        copy_agent_skills(
+    with pytest.raises(ScaffoldSkillCopyBlocked, match="overlap"):
+        copy_scaffold_skills(
             project_dir=project_dir,
             library_name="ms-markets",
             namespace="ms_markets",
@@ -123,13 +123,13 @@ def test_copy_agent_skills_blocks_destination_inside_source(tmp_path):
         )
 
 
-def test_copy_agent_skills_blocks_source_inside_destination(tmp_path):
+def test_copy_scaffold_skills_blocks_source_inside_destination(tmp_path):
     project_dir = tmp_path / "project"
     skills_root = project_dir / ".agents" / "skills" / "ms_markets" / "source"
     _write_skill(skills_root, "data_publishing")
 
-    with pytest.raises(AgentSkillCopyBlocked, match="overlap"):
-        copy_agent_skills(
+    with pytest.raises(ScaffoldSkillCopyBlocked, match="overlap"):
+        copy_scaffold_skills(
             project_dir=project_dir,
             library_name="ms-markets",
             namespace="ms_markets",
@@ -138,13 +138,13 @@ def test_copy_agent_skills_blocks_source_inside_destination(tmp_path):
         )
 
 
-def test_copy_agent_skills_blocks_protected_project_root(tmp_path):
-    skills_root = tmp_path / "package" / "agent_skills"
+def test_copy_scaffold_skills_blocks_protected_project_root(tmp_path):
+    skills_root = tmp_path / "package" / "scaffold_skills"
     _write_skill(skills_root, "data_publishing")
     project_dir = tmp_path / "ms-markets"
 
-    with pytest.raises(AgentSkillCopyBlocked, match="protected"):
-        copy_agent_skills(
+    with pytest.raises(ScaffoldSkillCopyBlocked, match="protected"):
+        copy_scaffold_skills(
             project_dir=project_dir,
             library_name="ms-markets",
             namespace="ms_markets",
@@ -154,12 +154,12 @@ def test_copy_agent_skills_blocks_protected_project_root(tmp_path):
         )
 
 
-def test_copy_agent_skills_blocks_project_guard_reason(tmp_path):
-    skills_root = tmp_path / "package" / "agent_skills"
+def test_copy_scaffold_skills_blocks_project_guard_reason(tmp_path):
+    skills_root = tmp_path / "package" / "scaffold_skills"
     _write_skill(skills_root, "data_publishing")
 
-    with pytest.raises(AgentSkillCopyBlocked, match="source checkout"):
-        copy_agent_skills(
+    with pytest.raises(ScaffoldSkillCopyBlocked, match="source checkout"):
+        copy_scaffold_skills(
             project_dir=tmp_path / "project",
             library_name="ms-markets",
             namespace="ms_markets",
@@ -170,10 +170,10 @@ def test_copy_agent_skills_blocks_project_guard_reason(tmp_path):
 
 
 @pytest.mark.parametrize("namespace", ["", "bad/name", "bad name", "../bad"])
-def test_normalize_agent_skill_namespace_rejects_invalid_names(namespace):
+def test_normalize_scaffold_skill_namespace_rejects_invalid_names(namespace):
     with pytest.raises(ValueError):
-        normalize_agent_skill_namespace(namespace)
+        normalize_scaffold_skill_namespace(namespace)
 
 
-def test_normalize_agent_skill_namespace_derives_package_style_name():
-    assert normalize_agent_skill_namespace("ms-markets") == "ms_markets"
+def test_normalize_scaffold_skill_namespace_derives_package_style_name():
+    assert normalize_scaffold_skill_namespace("ms-markets") == "ms_markets"

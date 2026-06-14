@@ -1,4 +1,4 @@
-"""Reusable helpers for copying packaged agent skills into projects.
+"""Reusable helpers for copying packaged scaffold skills into projects.
 
 Extension libraries can use this module to copy their own packaged skill bundle
 into `.agents/skills/<namespace>/` without depending on the Main Sequence CLI
@@ -21,12 +21,12 @@ _NAMESPACE_RE = re.compile(r"^[a-z0-9_]+$")
 _UNKNOWN_VERSIONS = {"", "unknown", "none", "null"}
 
 
-class AgentSkillCopyBlocked(RuntimeError):
+class ScaffoldSkillCopyBlocked(RuntimeError):
     """Raised before copying when a source/destination guard blocks the operation."""
 
 
 @dataclass(frozen=True)
-class CopiedAgentSkill:
+class CopiedScaffoldSkill:
     """One skill directory selected for copying."""
 
     name: str
@@ -35,8 +35,8 @@ class CopiedAgentSkill:
 
 
 @dataclass(frozen=True)
-class AgentSkillCopyResult:
-    """Result payload returned by `copy_agent_skills`."""
+class ScaffoldSkillCopyResult:
+    """Result payload returned by `copy_scaffold_skills`."""
 
     library_name: str
     namespace: str
@@ -46,10 +46,10 @@ class AgentSkillCopyResult:
     sentinel_path: Path
     pinned_version: str
     dry_run: bool
-    copied: list[CopiedAgentSkill]
+    copied: list[CopiedScaffoldSkill]
 
 
-def copy_agent_skills(
+def copy_scaffold_skills(
     *,
     project_dir: Path,
     library_name: str,
@@ -60,8 +60,8 @@ def copy_agent_skills(
     dry_run: bool = False,
     protected_project_roots: Sequence[Path] = (),
     project_guard: Callable[[Path], str | None] | None = None,
-) -> AgentSkillCopyResult:
-    """Copy packaged agent skills into a managed project skill namespace.
+) -> ScaffoldSkillCopyResult:
+    """Copy packaged scaffold skills into a managed project skill namespace.
 
     The helper copies each immediate child skill directory from `skills_path` to
     `<project_dir>/.agents/skills/<namespace>/`, overwriting only matching
@@ -79,12 +79,12 @@ def copy_agent_skills(
     """
 
     resolved_library_name = _validate_library_name(library_name)
-    resolved_namespace = normalize_agent_skill_namespace(namespace or resolved_library_name)
+    resolved_namespace = normalize_scaffold_skill_namespace(namespace or resolved_library_name)
     resolved_pinned_version = _validate_pinned_version(pinned_version)
     resolved_project_dir = project_dir.expanduser().resolve(strict=False)
     resolved_skills_path = skills_path.expanduser().resolve(strict=False)
     if not resolved_skills_path.is_dir():
-        raise FileNotFoundError(f"Agent skill source directory does not exist: {skills_path}")
+        raise FileNotFoundError(f"Scaffold skill source directory does not exist: {skills_path}")
 
     destination_root = (
         resolved_project_dir / ".agents" / "skills" / resolved_namespace
@@ -104,7 +104,7 @@ def copy_agent_skills(
     )
 
     copied = [
-        CopiedAgentSkill(
+        CopiedScaffoldSkill(
             name=source_dir.name,
             source=source_dir,
             destination=destination_root / source_dir.name,
@@ -119,7 +119,7 @@ def copy_agent_skills(
             destination_label=f"destination skill {item.name!r}",
         )
 
-    result = AgentSkillCopyResult(
+    result = ScaffoldSkillCopyResult(
         library_name=resolved_library_name,
         namespace=resolved_namespace,
         project_dir=resolved_project_dir,
@@ -144,13 +144,13 @@ def copy_agent_skills(
     return result
 
 
-def normalize_agent_skill_namespace(value: str) -> str:
-    """Normalize and validate a library-owned agent skill namespace."""
+def normalize_scaffold_skill_namespace(value: str) -> str:
+    """Normalize and validate a library-owned scaffold skill namespace."""
 
     namespace = value.strip().lower().replace("-", "_").replace(".", "_")
     if not namespace or not _NAMESPACE_RE.fullmatch(namespace):
         raise ValueError(
-            "Agent skill namespace must contain only lowercase ASCII letters, "
+            "Scaffold skill namespace must contain only lowercase ASCII letters, "
             "numbers, and underscores."
         )
     return namespace
@@ -190,7 +190,7 @@ def _copy_tree_overwrite(source: Path, destination: Path) -> None:
 
 
 def _write_pin_sentinel(
-    result: AgentSkillCopyResult,
+    result: ScaffoldSkillCopyResult,
     *,
     command: str | None,
     copied_at_utc: str,
@@ -225,7 +225,7 @@ def _check_project_guards(
     for protected_root in protected_project_roots:
         resolved_root = protected_root.expanduser().resolve(strict=False)
         if _same_or_inside(project_dir, resolved_root):
-            raise AgentSkillCopyBlocked(
+            raise ScaffoldSkillCopyBlocked(
                 "Blocked: target project is inside a protected library source checkout "
                 f"({resolved_root})."
             )
@@ -234,7 +234,7 @@ def _check_project_guards(
         return
     reason = project_guard(project_dir)
     if reason:
-        raise AgentSkillCopyBlocked(reason)
+        raise ScaffoldSkillCopyBlocked(reason)
 
 
 def _check_path_overlap(
@@ -250,8 +250,8 @@ def _check_path_overlap(
         resolved_source,
         resolved_destination,
     ):
-        raise AgentSkillCopyBlocked(
-            "Blocked: agent skill copy source and destination overlap "
+        raise ScaffoldSkillCopyBlocked(
+            "Blocked: scaffold skill copy source and destination overlap "
             f"({source_label}={resolved_source}, {destination_label}={resolved_destination})."
         )
 

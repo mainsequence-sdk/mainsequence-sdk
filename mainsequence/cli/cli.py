@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """
 mainsequence.cli.cli
 ====================
@@ -20,6 +18,8 @@ Parity with VS Code extension:
 
 All commands have docstrings so `--help` is useful.
 """
+
+from __future__ import annotations
 
 import dataclasses
 import datetime
@@ -45,8 +45,8 @@ import click
 import typer
 import yaml
 
-from ..agent_skills import AgentSkillCopyBlocked, copy_agent_skills
 from ..client.compute_validation import decimal_to_storage, parse_cpu_request, parse_memory_request
+from ..scaffold_skills import ScaffoldSkillCopyBlocked, copy_scaffold_skills
 from . import config as cfg
 from .api import (
     ApiError,
@@ -301,9 +301,9 @@ def _to_jsonable(value):
         return dataclasses.asdict(value)
     if isinstance(value, dict):
         return {str(key): _to_jsonable(item) for key, item in value.items()}
-    if isinstance(value, (list, tuple, set)):
+    if isinstance(value, list | tuple | set):
         return [_to_jsonable(item) for item in value]
-    if isinstance(value, (datetime.datetime, datetime.date, datetime.time)):
+    if isinstance(value, datetime.datetime | datetime.date | datetime.time):
         return value.isoformat()
     if isinstance(value, pathlib.Path):
         return str(value)
@@ -10263,7 +10263,7 @@ def project_jobs_run_cmd(
             }:
                 continue
             remaining.append(
-                (str(key), json.dumps(value) if isinstance(value, (dict, list)) else str(value))
+                (str(key), json.dumps(value) if isinstance(value, dict | list) else str(value))
             )
         print_kv("Job Run", rows + remaining)
 
@@ -11956,7 +11956,7 @@ def project_update_agent_skills(
         (source_checkout_root,) if source_checkout_root is not None else ()
     )
     try:
-        copy_result = copy_agent_skills(
+        copy_result = copy_scaffold_skills(
             project_dir=project_dir,
             library_name="mainsequence",
             namespace="mainsequence",
@@ -11965,7 +11965,7 @@ def project_update_agent_skills(
             command="mainsequence project update_agent_skills",
             protected_project_roots=protected_project_roots,
         )
-    except (AgentSkillCopyBlocked, FileNotFoundError, ValueError) as exc:
+    except (ScaffoldSkillCopyBlocked, FileNotFoundError, ValueError) as exc:
         error(str(exc))
         raise typer.Exit(1) from exc
 
@@ -11994,7 +11994,7 @@ def project_update_agent_skills(
 
     success("Updated .agents/skills/mainsequence from installed agent_scaffold bundle.")
     print_kv(
-        "Agent Skill Pin",
+        "Scaffold Skill Pin",
         [
             ("Library", copy_result.library_name),
             ("Namespace", copy_result.namespace),
@@ -12003,7 +12003,7 @@ def project_update_agent_skills(
         ],
     )
     print_table(
-        "Updated Agent Skills",
+        "Updated Scaffold Skills",
         ["Skill Folder", "Destination"],
         [[item["name"], str(item["destination"])] for item in updated],
     )
