@@ -45,6 +45,7 @@ import click
 import typer
 import yaml
 
+from ..agent_skills import AgentSkillCopyBlocked, copy_agent_skills
 from ..client.compute_validation import decimal_to_storage, parse_cpu_request, parse_memory_request
 from . import config as cfg
 from .api import (
@@ -1005,6 +1006,60 @@ def _project_agent_scaffold_bundle_dir(project_dir: pathlib.Path) -> pathlib.Pat
     return bundle_dir
 
 
+def _project_installed_package_version(project_dir: pathlib.Path, package_name: str) -> str:
+    """
+    Resolve an installed package version from the target project's local `.venv`.
+    """
+    try:
+        vp = ensure_venv(project_dir)
+    except Exception as exc:
+        error(f"Could not access the target project's .venv: {exc}")
+        raise typer.Exit(1) from exc
+
+    lookup = subprocess.run(
+        [
+            str(vp.python),
+            "-c",
+            (
+                "import importlib.metadata, sys; "
+                "sys.stdout.write(importlib.metadata.version(sys.argv[1]))"
+            ),
+            package_name,
+        ],
+        cwd=str(project_dir),
+        capture_output=True,
+        text=True,
+    )
+    if lookup.returncode != 0:
+        detail = (lookup.stderr or lookup.stdout or "").strip()
+        message = (
+            f"Could not resolve installed {package_name!r} version from the target "
+            "project's .venv. Run `mainsequence project update-sdk --path .` first."
+        )
+        if detail:
+            message = f"{message} ({detail})"
+        error(message)
+        raise typer.Exit(1)
+
+    resolved_version = (lookup.stdout or "").strip()
+    if not resolved_version:
+        error(
+            f"Could not resolve installed {package_name!r} version from the target "
+            "project's .venv."
+        )
+        raise typer.Exit(1)
+    return resolved_version
+
+
+def _mainsequence_source_checkout_root() -> pathlib.Path | None:
+    repo_root = pathlib.Path(__file__).resolve().parents[2]
+    if (repo_root / "pyproject.toml").is_file() and (
+        repo_root / "agent_scaffold" / "skills"
+    ).is_dir():
+        return repo_root
+    return None
+
+
 def _installed_agent_scaffold_bundle_dir() -> pathlib.Path:
     """
     Resolve the `agent_scaffold` bundle for the currently running CLI install.
@@ -1100,13 +1155,6 @@ def _resolve_installed_agent_scaffold_skill(skill_name: str) -> dict[str, pathli
     detail = f" Did you mean: {', '.join(suggestions)}?" if suggestions else ""
     error(f"Installed agent_scaffold skill not found: {skill_name}.{detail}")
     raise typer.Exit(1)
-
-
-def _copy_tree_overwrite(src: pathlib.Path, dst: pathlib.Path) -> None:
-    if dst.exists():
-        shutil.rmtree(dst)
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(src, dst)
 
 
 AGENTS_MD_MANAGED_BLOCK_START_PREFIX = "<!-- mainsequence-agent-scaffold:start"
@@ -11895,31 +11943,49 @@ def project_update_agent_skills(
     ```
     """
     project_dir = _resolve_project_dir(project_id, path)
-    destination_root = project_dir / ".agents" / "skills" / "mainsequence"
 
-    updated: list[dict[str, pathlib.Path]] = []
-    skills_dir = _project_agent_scaffold_bundle_dir(project_dir) / "skills"
+    scaffold_bundle_dir = _project_agent_scaffold_bundle_dir(project_dir)
+    skills_dir = scaffold_bundle_dir / "skills"
     if not skills_dir.exists() or not skills_dir.is_dir():
         error(f"Project-installed agent_scaffold bundle is missing skills/: {skills_dir}")
         raise typer.Exit(1)
-    for source_dir in sorted(skills_dir.iterdir(), key=lambda item: item.name):
-        if not source_dir.is_dir():
-            continue
-        if source_dir.name.startswith(".") or source_dir.name.startswith("__"):
-            continue
-        destination_dir = destination_root / source_dir.name
-        _copy_tree_overwrite(source_dir, destination_dir)
-        updated.append(
-            {
-                "name": source_dir.name,
-                "source": source_dir,
-                "destination": destination_dir,
-            }
+
+    pinned_version = _project_installed_package_version(project_dir, "mainsequence")
+    source_checkout_root = _mainsequence_source_checkout_root()
+    protected_project_roots = (
+        (source_checkout_root,) if source_checkout_root is not None else ()
+    )
+    try:
+        copy_result = copy_agent_skills(
+            project_dir=project_dir,
+            library_name="mainsequence",
+            namespace="mainsequence",
+            skills_path=skills_dir,
+            pinned_version=pinned_version,
+            command="mainsequence project update_agent_skills",
+            protected_project_roots=protected_project_roots,
         )
+    except (AgentSkillCopyBlocked, FileNotFoundError, ValueError) as exc:
+        error(str(exc))
+        raise typer.Exit(1) from exc
+
+    updated = [
+        {
+            "name": item.name,
+            "source": item.source,
+            "destination": item.destination,
+        }
+        for item in copy_result.copied
+    ]
 
     payload = {
         "project": project_dir,
-        "destination_root": destination_root,
+        "library_name": copy_result.library_name,
+        "namespace": copy_result.namespace,
+        "skills_path": copy_result.skills_path,
+        "destination_root": copy_result.destination_root,
+        "sentinel_path": copy_result.sentinel_path,
+        "pinned_version": copy_result.pinned_version,
         "updated_count": len(updated),
         "updated": updated,
     }
@@ -11927,6 +11993,15 @@ def project_update_agent_skills(
         return
 
     success("Updated .agents/skills/mainsequence from installed agent_scaffold bundle.")
+    print_kv(
+        "Agent Skill Pin",
+        [
+            ("Library", copy_result.library_name),
+            ("Namespace", copy_result.namespace),
+            ("Pinned Version", copy_result.pinned_version),
+            ("Sentinel", str(copy_result.sentinel_path)),
+        ],
+    )
     print_table(
         "Updated Agent Skills",
         ["Skill Folder", "Destination"],

@@ -25,6 +25,10 @@ installed Main Sequence scaffold files so the local CLI surface, `AGENTS.md`, an
 - `mainsequence project update AGENTS.md --path .`
 - `mainsequence project update_agent_skills --path .`
 
+After refreshing skills, `.agents/skills/mainsequence/PINNED_FROM.txt` records
+the installed SDK version that supplied the copied Main Sequence skills. Inspect
+that sentinel when checking whether the managed skills are current.
+
 Canonical Main Sequence documentation root:
 `https://mainsequence-sdk.github.io/mainsequence-sdk/`
 
@@ -210,7 +214,9 @@ For any non-trivial Main Sequence task:
 12. After updating the SDK, refresh the installed Main Sequence scaffold files:
     `mainsequence project update AGENTS.md --path .`
     `mainsequence project update_agent_skills --path .`
-13. Verify platform state with the CLI or platform tooling instead of guessing.
+13. Check `.agents/skills/mainsequence/PINNED_FROM.txt` when you need to verify
+    which SDK version supplied the copied Main Sequence skills.
+14. Verify platform state with the CLI or platform tooling instead of guessing.
 
 ## Orchestrator Rule
 

@@ -10872,6 +10872,11 @@ def test_project_update_agent_skills_overwrites_matching_folders(
     monkeypatch.setattr(
         cli_mod, "_project_agent_scaffold_bundle_dir", lambda project_dir: bundle_dir
     )
+    monkeypatch.setattr(
+        cli_mod,
+        "_project_installed_package_version",
+        lambda project_dir, package_name: "4.4.3",
+    )
 
     result = runner.invoke(cli_mod.app, ["project", "update_agent_skills", "--path", str(target)])
     assert result.exit_code == 0
@@ -10886,7 +10891,54 @@ def test_project_update_agent_skills_overwrites_matching_folders(
         encoding="utf-8"
     ) == "new maintenance skill"
     assert not (target / ".agents" / "skills" / "mainsequence" / "__pycache__").exists()
+    sentinel = target / ".agents" / "skills" / "mainsequence" / "PINNED_FROM.txt"
+    sentinel_content = sentinel.read_text(encoding="utf-8")
+    assert "library_name=mainsequence" in sentinel_content
+    assert "namespace=mainsequence" in sentinel_content
+    assert "pinned_version=4.4.3" in sentinel_content
+    assert f"skills_path={(bundle_dir / 'skills').resolve()}" in sentinel_content
     assert "Updated Agent Skills" in result.output
+    assert "Pinned Version" in result.output
+
+
+def test_project_update_agent_skills_json_reports_pin_sentinel(
+    cli_mod, runner, monkeypatch, tmp_path
+):
+    bundle_dir = tmp_path / "bundle"
+    (bundle_dir / "skills" / "data_publishing").mkdir(parents=True)
+    (bundle_dir / "skills" / "data_publishing" / "SKILL.md").write_text(
+        "new data skill", encoding="utf-8"
+    )
+    target = tmp_path / "project"
+    target.mkdir()
+
+    monkeypatch.setattr(
+        cli_mod, "_project_agent_scaffold_bundle_dir", lambda project_dir: bundle_dir
+    )
+    monkeypatch.setattr(
+        cli_mod,
+        "_project_installed_package_version",
+        lambda project_dir, package_name: "4.4.3",
+    )
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["project", "update_agent_skills", "--path", str(target), "--json"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    sentinel = target / ".agents" / "skills" / "mainsequence" / "PINNED_FROM.txt"
+    assert payload["library_name"] == "mainsequence"
+    assert payload["namespace"] == "mainsequence"
+    assert payload["pinned_version"] == "4.4.3"
+    assert payload["sentinel_path"] == str(sentinel.resolve())
+    assert payload["destination_root"] == str(
+        (target / ".agents" / "skills" / "mainsequence").resolve()
+    )
+    assert payload["updated_count"] == 1
+    assert payload["updated"][0]["name"] == "data_publishing"
+    assert "pinned_version=4.4.3" in sentinel.read_text(encoding="utf-8")
 
 
 def test_login_live_with_env_tokens(cli_mod, runner, monkeypatch):
