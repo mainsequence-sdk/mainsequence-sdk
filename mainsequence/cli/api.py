@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """
 mainsequence.cli.api
 ====================
@@ -13,6 +11,8 @@ This module is intentionally aligned with the VS Code extension implementation:
 
 Any behavioral differences vs the VS Code extension should be considered bugs.
 """
+
+from __future__ import annotations
 
 import importlib
 import json
@@ -3174,6 +3174,283 @@ def get_connection_instance(
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
         raise ApiError(f"Connection fetch failed: {e}") from e
+
+
+def _adapter_from_api_public_config_model():
+    module = importlib.import_module("mainsequence.client.command_center.connections")
+    return module.AdapterFromApiConnectionPublicConfig
+
+
+def _adapter_from_api_public_config_requested(
+    *,
+    public_config: dict[str, Any] | None,
+    api_base_url: str | None,
+    debug_api_base_url: str | None,
+    config_values: dict[str, Any] | None,
+    compiled_contract: dict[str, Any] | None,
+    contract_version: str | None,
+    request_timeout_ms: int | None,
+    query_cache_policy: str | None,
+    query_cache_ttl_ms: int | None,
+    dedupe_in_flight: bool | None,
+) -> bool:
+    return any(
+        value is not None
+        for value in (
+            public_config,
+            api_base_url,
+            debug_api_base_url,
+            config_values,
+            compiled_contract,
+            contract_version,
+            request_timeout_ms,
+            query_cache_policy,
+            query_cache_ttl_ms,
+            dedupe_in_flight,
+        )
+    )
+
+
+def _adapter_from_api_public_config_payload(
+    *,
+    public_config: dict[str, Any] | None = None,
+    api_base_url: str | None = None,
+    debug_api_base_url: str | None = None,
+    existing_public_config: dict[str, Any] | None = None,
+    config_values: dict[str, Any] | None = None,
+    compiled_contract: dict[str, Any] | None = None,
+    contract_version: str | None = None,
+    request_timeout_ms: int | None = None,
+    query_cache_policy: str | None = None,
+    query_cache_ttl_ms: int | None = None,
+    dedupe_in_flight: bool | None = None,
+) -> dict[str, Any]:
+    public_config_model = _adapter_from_api_public_config_model()
+    normalized_api_base_url = api_base_url.strip() if isinstance(api_base_url, str) else api_base_url
+    normalized_debug_api_base_url = (
+        debug_api_base_url.strip()
+        if isinstance(debug_api_base_url, str)
+        else debug_api_base_url
+    )
+    normalized_api_base_url = normalized_api_base_url or None
+    normalized_debug_api_base_url = normalized_debug_api_base_url or None
+
+    source_count = sum(
+        value is not None
+        for value in (public_config, normalized_api_base_url, normalized_debug_api_base_url)
+    )
+    if source_count > 1:
+        raise ApiError(
+            "Provide only one public config source: public_config, api_base_url, "
+            "or debug_api_base_url."
+        )
+
+    optional_kwargs: dict[str, Any] = {}
+    if config_values is not None:
+        optional_kwargs["config_values"] = dict(config_values)
+    if compiled_contract is not None:
+        optional_kwargs["compiled_contract"] = dict(compiled_contract)
+    if contract_version is not None:
+        optional_kwargs["contract_version"] = contract_version
+    if request_timeout_ms is not None:
+        optional_kwargs["request_timeout_ms"] = request_timeout_ms
+    if query_cache_policy is not None:
+        optional_kwargs["query_cache_policy"] = query_cache_policy
+    if query_cache_ttl_ms is not None:
+        optional_kwargs["query_cache_ttl_ms"] = query_cache_ttl_ms
+    if dedupe_in_flight is not None:
+        optional_kwargs["dedupe_in_flight"] = dedupe_in_flight
+
+    alias_updates = {
+        "configValues": config_values,
+        "compiledContract": compiled_contract,
+        "contractVersion": contract_version,
+        "requestTimeoutMs": request_timeout_ms,
+        "queryCachePolicy": query_cache_policy,
+        "queryCacheTtlMs": query_cache_ttl_ms,
+        "dedupeInFlight": dedupe_in_flight,
+    }
+
+    try:
+        if public_config is not None:
+            payload = dict(public_config)
+            payload.update({key: value for key, value in alias_updates.items() if value is not None})
+            config = public_config_model.model_validate(payload)
+        elif normalized_debug_api_base_url is not None:
+            config = public_config_model.direct(
+                debug_api_base_url=normalized_debug_api_base_url,
+                **optional_kwargs,
+            )
+        elif normalized_api_base_url is not None:
+            config = public_config_model.backend(
+                api_base_url=normalized_api_base_url,
+                **optional_kwargs,
+            )
+        else:
+            payload = dict(existing_public_config or {})
+            if not payload:
+                raise ApiError(
+                    "Adapter from API public config is required. Provide api_base_url, "
+                    "debug_api_base_url, or public_config."
+                )
+            payload.update({key: value for key, value in alias_updates.items() if value is not None})
+            config = public_config_model.model_validate(payload)
+    except ApiError:
+        raise
+    except Exception as e:
+        raise ApiError(f"Adapter from API public config is invalid: {e}") from e
+
+    return config.to_public_config()
+
+
+def create_adapter_from_api_connection(
+    *,
+    name: str,
+    description: str = "",
+    public_config: dict[str, Any] | None = None,
+    api_base_url: str | None = None,
+    debug_api_base_url: str | None = None,
+    secure_config: dict[str, Any] | None = None,
+    workspace_uid: str | None = None,
+    is_default: bool | None = None,
+    tags: list[str] | None = None,
+    config_values: dict[str, Any] | None = None,
+    compiled_contract: dict[str, Any] | None = None,
+    contract_version: str | None = None,
+    request_timeout_ms: int | None = None,
+    query_cache_policy: str | None = None,
+    query_cache_ttl_ms: int | None = None,
+    dedupe_in_flight: bool | None = None,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Create one command_center.adapter_from_api connection through the SDK client model.
+    """
+    public_config_payload = _adapter_from_api_public_config_payload(
+        public_config=public_config,
+        api_base_url=api_base_url,
+        debug_api_base_url=debug_api_base_url,
+        config_values=config_values,
+        compiled_contract=compiled_contract,
+        contract_version=contract_version,
+        request_timeout_ms=request_timeout_ms,
+        query_cache_policy=query_cache_policy,
+        query_cache_ttl_ms=query_cache_ttl_ms,
+        dedupe_in_flight=dedupe_in_flight,
+    )
+
+    try:
+        connection = _run_sdk_model_operation(
+            module_name="mainsequence.client.command_center.connections",
+            class_name="ConnectionInstance",
+            operation=lambda ClientConnectionInstance: ClientConnectionInstance.create_adapter_from_api(
+                name=name,
+                description=description,
+                public_config=public_config_payload,
+                secure_config=secure_config,
+                workspace_uid=workspace_uid,
+                is_default=is_default,
+                tags=tags,
+                timeout=timeout,
+            ),
+        )
+        return _sdk_object_to_dict(connection)
+    except Exception as e:
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"Adapter from API connection creation failed: {e}") from e
+
+
+def patch_adapter_from_api_connection(
+    connection_uid: str,
+    *,
+    name: str | None = None,
+    description: str | None = None,
+    public_config: dict[str, Any] | None = None,
+    api_base_url: str | None = None,
+    debug_api_base_url: str | None = None,
+    secure_config: dict[str, Any] | None = None,
+    workspace_uid: str | None = None,
+    is_default: bool | None = None,
+    tags: list[str] | None = None,
+    config_values: dict[str, Any] | None = None,
+    compiled_contract: dict[str, Any] | None = None,
+    contract_version: str | None = None,
+    request_timeout_ms: int | None = None,
+    query_cache_policy: str | None = None,
+    query_cache_ttl_ms: int | None = None,
+    dedupe_in_flight: bool | None = None,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Patch one command_center.adapter_from_api connection through the SDK client model.
+    """
+    patch_kwargs: dict[str, Any] = {}
+    if name is not None:
+        patch_kwargs["name"] = name
+    if description is not None:
+        patch_kwargs["description"] = description
+    if secure_config is not None:
+        patch_kwargs["secureConfig"] = secure_config
+    if workspace_uid is not None:
+        patch_kwargs["workspaceUid"] = workspace_uid
+    if is_default is not None:
+        patch_kwargs["isDefault"] = is_default
+    if tags is not None:
+        patch_kwargs["tags"] = list(tags)
+
+    public_config_requested = _adapter_from_api_public_config_requested(
+        public_config=public_config,
+        api_base_url=api_base_url,
+        debug_api_base_url=debug_api_base_url,
+        config_values=config_values,
+        compiled_contract=compiled_contract,
+        contract_version=contract_version,
+        request_timeout_ms=request_timeout_ms,
+        query_cache_policy=query_cache_policy,
+        query_cache_ttl_ms=query_cache_ttl_ms,
+        dedupe_in_flight=dedupe_in_flight,
+    )
+    if not patch_kwargs and not public_config_requested:
+        raise ApiError("Adapter from API connection patch payload is empty.")
+
+    try:
+
+        def _patch(ClientConnectionInstance):
+            connection = ClientConnectionInstance.get_adapter_from_api(
+                uid=str(connection_uid),
+                timeout=timeout,
+            )
+            resolved_patch_kwargs = dict(patch_kwargs)
+            if public_config_requested:
+                resolved_patch_kwargs["publicConfig"] = _adapter_from_api_public_config_payload(
+                    public_config=public_config,
+                    api_base_url=api_base_url,
+                    debug_api_base_url=debug_api_base_url,
+                    existing_public_config=getattr(connection, "public_config", None),
+                    config_values=config_values,
+                    compiled_contract=compiled_contract,
+                    contract_version=contract_version,
+                    request_timeout_ms=request_timeout_ms,
+                    query_cache_policy=query_cache_policy,
+                    query_cache_ttl_ms=query_cache_ttl_ms,
+                    dedupe_in_flight=dedupe_in_flight,
+                )
+            return connection.patch(**resolved_patch_kwargs)
+
+        connection = _run_sdk_model_operation(
+            module_name="mainsequence.client.command_center.connections",
+            class_name="ConnectionInstance",
+            operation=_patch,
+        )
+        return _sdk_object_to_dict(connection)
+    except Exception as e:
+        err_name = type(e).__name__
+        if err_name == "NotFoundError":
+            raise ApiError(f"Connection not found: {connection_uid}") from e
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"Adapter from API connection patch failed: {e}") from e
 
 
 def _serialize_sdk_search_response(payload: Any) -> dict[str, Any] | list[dict[str, Any]]:

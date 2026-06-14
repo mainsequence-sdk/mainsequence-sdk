@@ -25,6 +25,7 @@ There are two different contract surfaces to keep separate:
 ## What This Section Covers
 
 - [Workspaces](workspaces.md): how to think about workspace structure and when to mutate a single widget instead of rewriting the whole workspace
+- [Connections](connections.md): SDK helpers and strict validation for Command Center connection instances, including `command_center.adapter_from_api`
 - [Forms](forms.md): when an AppComponent should rely on the default argument resolution and when it should return a custom `EditableFormDefinition`
 - [Widget Data Contracts](widget_data_contracts.md): the exact response shapes some Main Sequence widgets expect when an API feeds them directly
 

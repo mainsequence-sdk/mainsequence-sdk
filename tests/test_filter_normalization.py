@@ -1366,13 +1366,12 @@ def test_agent_runtime_models_deserialize_backend_uid_payloads():
             "error_detail": "",
             "thread_id": "thread-123",
             "session_metadata": {"origin": "test"},
-            "bound_handles": [
-                {
-                    "handle_unique_id": "delegated-handle-1",
-                    "owner_user_uid": user_uid,
-                    "is_locked": False,
-                }
-            ],
+            "bound_handle": {
+                "uid": "44444444-4444-4444-8444-444444444444",
+                "handle_unique_id": "delegated-handle-1",
+                "owner_user_uid": user_uid,
+                "is_locked": False,
+            },
         }
     )
     assert session.uid == session_uid
@@ -1603,13 +1602,12 @@ def test_agent_get_or_create_session_with_handle_posts_stable_handle_contract(mo
                     "error_detail": "",
                     "thread_id": "",
                     "session_metadata": {"portfolio_uid": "portfolio-123"},
-                    "bound_handles": [
-                        {
-                            "handle_unique_id": "portfolio-review-q2-2026",
-                            "owner_user_uid": user_uid,
-                            "is_locked": False,
-                        }
-                    ],
+                    "bound_handle": {
+                        "uid": "44444444-4444-4444-8444-444444444444",
+                        "handle_unique_id": "portfolio-review-q2-2026",
+                        "owner_user_uid": user_uid,
+                        "is_locked": False,
+                    },
                 },
             }
 

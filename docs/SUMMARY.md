@@ -18,6 +18,7 @@
     - Command Center
         - [Overview](knowledge/command_center/index.md)
         - [Workspaces](knowledge/command_center/workspaces.md)
+        - [Connections](knowledge/command_center/connections.md)
         - [Forms](knowledge/command_center/forms.md)
         - [Widget Data Contracts](knowledge/command_center/widget_data_contracts.md)
     - MetaTables

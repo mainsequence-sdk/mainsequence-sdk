@@ -33,6 +33,72 @@ frontend/editor tooling or a future explicit transform, but the current backend 
 hot-path validate, extract JSONPath rows, coerce schemas, or reshape provider responses because a
 mapping exists.
 
+## Connection CLI And Transport Modes
+
+Use the Main Sequence CLI to create or update the Adapter from API connection instance that points
+Command Center at the provider API.
+
+Backend/deployed API mode:
+
+```bash
+mainsequence cc connection create-adapter-from-api \
+  --name "Provider API" \
+  --api-base-url https://api.example.com \
+  --workspace-uid <workspace-uid> \
+  --default
+```
+
+Direct local/tunnel development mode:
+
+```bash
+cloudflared tunnel --url http://127.0.0.1:8021
+
+mainsequence cc connection create-adapter-from-api \
+  --name "Provider API local" \
+  --debug-api-base-url https://example.trycloudflare.com \
+  --workspace-uid <workspace-uid> \
+  --default
+```
+
+Patch an existing Adapter from API connection:
+
+```bash
+mainsequence cc connection patch-adapter-from-api <connection-uid> \
+  --api-base-url https://api.example.com
+
+mainsequence cc connection patch-adapter-from-api <connection-uid> \
+  --debug-api-base-url https://example.trycloudflare.com
+```
+
+Inspect connection state:
+
+```bash
+mainsequence cc connection list --filter type_id=command_center.adapter_from_api
+mainsequence cc connection detail <connection-uid>
+```
+
+CLI characteristics:
+
+- `--api-base-url` creates backend mode public config with `apiBaseUrl`.
+- `--debug-api-base-url` creates direct mode public config with `transportMode=direct`,
+  `debugApiBaseUrl`, `compiledContractSource=direct`, and derived contract/OpenAPI URLs.
+- `--public-config-json` and `--public-config-file` accept a full publicConfig object when URL
+  options are not enough.
+- `--config-json` and `--config-file` set public non-secret `configValues`.
+- `--secure-config-json` and `--secure-config-file` send secret values as `secureConfig`; returned
+  connection details expose only `secureFields`, not the raw secret values.
+- `patch-adapter-from-api` must target an existing `command_center.adapter_from_api` connection; do
+  not use it for other connection types.
+- Do not include `applicationBindings` in Adapter from API public config. The
+  `AdapterFromApiConnectionPublicConfig` model rejects it.
+
+Direct mode is critical during development. It lets a workspace test the connection against a local
+API before any resource release or API deployment. Run the local API, expose it with a Cloudflare
+tunnel, create or patch the connection with `--debug-api-base-url`, and validate the workspace
+connection/query flow directly. This avoids constant API deployments while iterating on the
+contract, operation metadata, response shape, and widget behavior. Switch to `--api-base-url` only
+when the deployed API is ready to be the stable backend target.
+
 ## Scope
 
 This skill owns:
@@ -50,7 +116,7 @@ This skill does not own:
 
 - general FastAPI project structure
 - unrelated API routes for non-Command Center clients
-- Command Center connection instance creation
+- general Command Center connection management beyond the Adapter from API CLI workflow above
 - workspace layout or widget mounting
 - backend adapter runtime internals
 - resource release or deployment orchestration

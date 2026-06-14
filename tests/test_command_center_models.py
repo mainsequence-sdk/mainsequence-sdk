@@ -1,8 +1,11 @@
 import pytest
+from pydantic import ValidationError
 
 import mainsequence.client.base as base_mod
 import mainsequence.client.utils as client_utils
 from mainsequence.client.command_center import (
+    CONNECTION_TYPE_ADAPTER_FROM_API,
+    AdapterFromApiConnectionPublicConfig,
     ConnectionAccessMode,
     ConnectionInstance,
     ConnectionInstanceStatus,
@@ -495,6 +498,140 @@ def test_connection_instance_parses_backend_fields():
     assert connection.model_dump(by_alias=True)["publicConfig"] == {"host": "db.example.com"}
 
 
+def test_adapter_from_api_public_config_validates_current_direct_payload():
+    payload = {
+        "openApiUrl": "http://127.0.0.1:8021/openapi.json",
+        "configValues": {},
+        "transportMode": "direct",
+        "dedupeInFlight": True,
+        "contractVersion": "",
+        "debugApiBaseUrl": "http://127.0.0.1:8021",
+        "queryCacheTtlMs": 300000,
+        "queryCachePolicy": "safe",
+        "requestTimeoutMs": 30000,
+        "contractDefinitionUrl": (
+            "http://127.0.0.1:8021/.well-known/command-center/connection-contract"
+        ),
+        "compiledContractSource": "direct",
+        "compiledContractSourceUrl": (
+            "http://127.0.0.1:8021/.well-known/command-center/connection-contract"
+        ),
+    }
+
+    config = AdapterFromApiConnectionPublicConfig.model_validate(payload)
+
+    assert config.to_public_config() == payload
+
+
+def test_adapter_from_api_public_config_rejects_application_bindings():
+    with pytest.raises(ValidationError) as exc:
+        AdapterFromApiConnectionPublicConfig.model_validate(
+            {
+                "transportMode": "direct",
+                "debugApiBaseUrl": "http://127.0.0.1:8021",
+                "configValues": {},
+                "applicationBindings": [{"role": "primary-api", "appId": "main_sequence_markets"}],
+            }
+        )
+
+    assert "applicationBindings" in str(exc.value)
+
+
+def test_adapter_from_api_public_config_rejects_mismatched_direct_urls():
+    with pytest.raises(ValidationError) as exc:
+        AdapterFromApiConnectionPublicConfig.model_validate(
+            {
+                "transportMode": "direct",
+                "debugApiBaseUrl": "http://127.0.0.1:8021",
+                "configValues": {},
+                "openApiUrl": "http://127.0.0.1:8022/openapi.json",
+            }
+        )
+
+    assert "openApiUrl" in str(exc.value)
+
+
+def test_connection_instance_create_adapter_from_api_direct_uses_strict_payload(monkeypatch):
+    captured = {}
+
+    class FakeResponse:
+        status_code = 201
+
+        @staticmethod
+        def json():
+            return {
+                "uid": "adapter-from-api-debug",
+                "typeId": CONNECTION_TYPE_ADAPTER_FROM_API,
+                "typeVersion": 1,
+                "name": "Markets debug API",
+                "description": "",
+                "organizationUid": "organization-uid-7",
+                "workspaceUid": "11111111-1111-4111-8111-111111111111",
+                "publicConfig": captured["payload"]["json"]["publicConfig"],
+                "secureFields": {},
+                "status": "unknown",
+                "statusMessage": "",
+                "lastHealthCheckAt": None,
+                "isDefault": True,
+                "isSystem": False,
+                "tags": [],
+                "createdByUserUid": "user-uid-9",
+                "createdAt": "2026-04-04T10:00:00Z",
+                "updatedAt": "2026-04-04T10:30:00Z",
+            }
+
+    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
+        captured["r_type"] = r_type
+        captured["url"] = url
+        captured["payload"] = payload
+        captured["timeout"] = time_out
+        return FakeResponse()
+
+    monkeypatch.setattr(base_mod, "make_request", _fake_make_request)
+
+    connection = ConnectionInstance.create_adapter_from_api_direct(
+        name="Markets debug API",
+        debug_api_base_url="http://127.0.0.1:8021/",
+        workspace_uid="11111111-1111-4111-8111-111111111111",
+        is_default=True,
+        timeout=30,
+    )
+
+    assert connection.type_id == CONNECTION_TYPE_ADAPTER_FROM_API
+    assert captured == {
+        "r_type": "POST",
+        "url": f"{ConnectionInstance.get_object_url()}/",
+        "payload": {
+            "json": {
+                "typeId": CONNECTION_TYPE_ADAPTER_FROM_API,
+                "name": "Markets debug API",
+                "description": "",
+                "publicConfig": {
+                    "debugApiBaseUrl": "http://127.0.0.1:8021",
+                    "transportMode": "direct",
+                    "contractDefinitionUrl": (
+                        "http://127.0.0.1:8021/.well-known/command-center/connection-contract"
+                    ),
+                    "openApiUrl": "http://127.0.0.1:8021/openapi.json",
+                    "compiledContractSource": "direct",
+                    "compiledContractSourceUrl": (
+                        "http://127.0.0.1:8021/.well-known/command-center/connection-contract"
+                    ),
+                    "configValues": {},
+                    "contractVersion": "",
+                    "requestTimeoutMs": 30000,
+                    "queryCachePolicy": "safe",
+                    "queryCacheTtlMs": 300000,
+                    "dedupeInFlight": True,
+                },
+                "workspaceUid": "11111111-1111-4111-8111-111111111111",
+                "isDefault": True,
+            }
+        },
+        "timeout": 30,
+    }
+
+
 def test_connection_instance_filter_uses_backend_query_names(monkeypatch):
     captured = {}
 
@@ -617,6 +754,70 @@ def test_connection_instance_get_uses_uid_detail_lookup(monkeypatch):
         "r_type": "GET",
         "url": f"{ConnectionInstance.get_object_url()}/postgresql-database-primary/",
         "payload": {"params": {}},
+        "timeout": 18,
+    }
+
+
+def test_connection_instance_get_adapter_from_api_forces_type_filter(monkeypatch):
+    captured = {}
+
+    class FakeResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {
+                "results": [
+                    {
+                        "uid": "adapter-from-api-debug",
+                        "typeId": CONNECTION_TYPE_ADAPTER_FROM_API,
+                        "typeVersion": 1,
+                        "name": "Markets debug API",
+                        "description": "",
+                        "organizationUid": "organization-uid-7",
+                        "workspaceUid": "11111111-1111-4111-8111-111111111111",
+                        "publicConfig": {},
+                        "secureFields": {},
+                        "status": "unknown",
+                        "statusMessage": "",
+                        "lastHealthCheckAt": None,
+                        "isDefault": True,
+                        "isSystem": False,
+                        "tags": [],
+                        "createdByUserUid": "user-uid-9",
+                        "createdAt": "2026-04-04T10:00:00Z",
+                        "updatedAt": "2026-04-04T10:30:00Z",
+                    }
+                ],
+                "next": None,
+            }
+
+    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
+        captured["r_type"] = r_type
+        captured["url"] = url
+        captured["payload"] = payload
+        captured["timeout"] = time_out
+        return FakeResponse()
+
+    monkeypatch.setattr(base_mod, "make_request", _fake_make_request)
+
+    result = ConnectionInstance.get_adapter_from_api(
+        workspace_uid="11111111-1111-4111-8111-111111111111",
+        is_default=True,
+        timeout=18,
+    )
+
+    assert result.type_id == CONNECTION_TYPE_ADAPTER_FROM_API
+    assert captured == {
+        "r_type": "GET",
+        "url": f"{ConnectionInstance.get_object_url()}/",
+        "payload": {
+            "params": {
+                "type_id": CONNECTION_TYPE_ADAPTER_FROM_API,
+                "workspaceUid": "11111111-1111-4111-8111-111111111111",
+                "isDefault": True,
+            }
+        },
         "timeout": 18,
     }
 

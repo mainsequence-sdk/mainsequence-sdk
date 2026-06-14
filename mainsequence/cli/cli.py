@@ -83,6 +83,7 @@ from .api import (
     add_team_user_to_view,
     add_workspace_labels,
     allocate_agent_a2a_target_session,
+    create_adapter_from_api_connection,
     create_agent,
     create_constant,
     create_organization_team,
@@ -161,6 +162,7 @@ from .api import (
     list_team_users_can_view,
     list_workspaces,
     logout_cli_session,
+    patch_adapter_from_api_connection,
     prime_sync_project_after_commit_sdk,
     refresh_data_node_storage_search_index,
     remove_agent_team_from_edit,
@@ -3414,6 +3416,34 @@ def _parse_json_dict_option(raw_value: str, *, field_label: str) -> dict[str, ob
     return parsed
 
 
+def _load_json_yaml_object_file(file_path: pathlib.Path, *, field_label: str) -> dict[str, object]:
+    try:
+        payload = yaml.safe_load(file_path.read_text(encoding="utf-8"))
+    except FileNotFoundError as e:
+        raise ValueError(f"{field_label} file not found: {file_path}") from e
+    except Exception as e:
+        raise ValueError(f"Could not read {field_label} file {file_path}: {e}") from e
+
+    if not isinstance(payload, dict):
+        raise ValueError(f"{field_label} file must contain a JSON/YAML object at the top level.")
+    return dict(payload)
+
+
+def _parse_json_dict_option_or_file(
+    *,
+    raw_value: str | None,
+    file_path: pathlib.Path | None,
+    field_label: str,
+) -> dict[str, object] | None:
+    if raw_value is not None and file_path is not None:
+        raise ValueError(f"Provide either {field_label} JSON or {field_label} file, not both.")
+    if file_path is not None:
+        return _load_json_yaml_object_file(file_path, field_label=field_label)
+    if raw_value is not None:
+        return _parse_json_dict_option(raw_value, field_label=field_label)
+    return None
+
+
 def _format_agent_preview(agent_payload: dict[str, object]) -> list[tuple[str, str]]:
     labels = agent_payload.get("labels")
     return [
@@ -5385,6 +5415,201 @@ def _connection_detail_impl(
     print_kv("Connection Details", _format_connection_details(connection_payload))
 
 
+def _parse_adapter_from_api_cli_objects(
+    *,
+    public_config_json: str | None,
+    public_config_file: pathlib.Path | None,
+    config_json: str | None,
+    config_file: pathlib.Path | None,
+    secure_config_json: str | None,
+    secure_config_file: pathlib.Path | None,
+    compiled_contract_json: str | None,
+    compiled_contract_file: pathlib.Path | None,
+) -> tuple[
+    dict[str, object] | None,
+    dict[str, object] | None,
+    dict[str, object] | None,
+    dict[str, object] | None,
+]:
+    public_config = _parse_json_dict_option_or_file(
+        raw_value=public_config_json,
+        file_path=public_config_file,
+        field_label="public_config",
+    )
+    config_values = _parse_json_dict_option_or_file(
+        raw_value=config_json,
+        file_path=config_file,
+        field_label="config_values",
+    )
+    secure_config = _parse_json_dict_option_or_file(
+        raw_value=secure_config_json,
+        file_path=secure_config_file,
+        field_label="secure_config",
+    )
+    compiled_contract = _parse_json_dict_option_or_file(
+        raw_value=compiled_contract_json,
+        file_path=compiled_contract_file,
+        field_label="compiled_contract",
+    )
+    return public_config, config_values, secure_config, compiled_contract
+
+
+def _connection_create_adapter_from_api_impl(
+    *,
+    name: str,
+    description: str | None,
+    api_base_url: str | None,
+    debug_api_base_url: str | None,
+    public_config_json: str | None,
+    public_config_file: pathlib.Path | None,
+    config_json: str | None,
+    config_file: pathlib.Path | None,
+    secure_config_json: str | None,
+    secure_config_file: pathlib.Path | None,
+    compiled_contract_json: str | None,
+    compiled_contract_file: pathlib.Path | None,
+    workspace_uid: str | None,
+    is_default: bool | None,
+    tags: list[str] | None,
+    contract_version: str | None,
+    request_timeout_ms: int | None,
+    query_cache_policy: str | None,
+    query_cache_ttl_ms: int | None,
+    dedupe_in_flight: bool | None,
+    timeout: int | None,
+) -> None:
+    _require_login()
+    connection_name = name.strip()
+    if not connection_name:
+        error("Connection name is required.")
+        raise typer.Exit(1)
+
+    try:
+        public_config, config_values, secure_config, compiled_contract = (
+            _parse_adapter_from_api_cli_objects(
+                public_config_json=public_config_json,
+                public_config_file=public_config_file,
+                config_json=config_json,
+                config_file=config_file,
+                secure_config_json=secure_config_json,
+                secure_config_file=secure_config_file,
+                compiled_contract_json=compiled_contract_json,
+                compiled_contract_file=compiled_contract_file,
+            )
+        )
+        created = create_adapter_from_api_connection(
+            name=connection_name,
+            description=description or "",
+            public_config=public_config,
+            api_base_url=api_base_url,
+            debug_api_base_url=debug_api_base_url,
+            secure_config=secure_config,
+            workspace_uid=workspace_uid,
+            is_default=is_default,
+            tags=_parse_cli_csv_list(tags) if tags else None,
+            config_values=config_values,
+            compiled_contract=compiled_contract,
+            contract_version=contract_version,
+            request_timeout_ms=request_timeout_ms,
+            query_cache_policy=query_cache_policy,
+            query_cache_ttl_ms=query_cache_ttl_ms,
+            dedupe_in_flight=dedupe_in_flight,
+            timeout=timeout,
+        )
+    except ValueError as e:
+        error(str(e))
+        raise typer.Exit(1) from e
+    except ApiError as e:
+        error(f"Adapter from API connection creation failed: {e}")
+        raise typer.Exit(1) from e
+
+    if _emit_json(created):
+        return
+
+    success(f"Adapter from API connection created: {connection_name}")
+    print_kv("Connection", _format_connection_preview(created))
+    print_kv("Connection Details", _format_connection_details(created))
+
+
+def _connection_patch_adapter_from_api_impl(
+    *,
+    connection_uid: str,
+    name: str | None,
+    description: str | None,
+    api_base_url: str | None,
+    debug_api_base_url: str | None,
+    public_config_json: str | None,
+    public_config_file: pathlib.Path | None,
+    config_json: str | None,
+    config_file: pathlib.Path | None,
+    secure_config_json: str | None,
+    secure_config_file: pathlib.Path | None,
+    compiled_contract_json: str | None,
+    compiled_contract_file: pathlib.Path | None,
+    workspace_uid: str | None,
+    is_default: bool | None,
+    tags: list[str] | None,
+    contract_version: str | None,
+    request_timeout_ms: int | None,
+    query_cache_policy: str | None,
+    query_cache_ttl_ms: int | None,
+    dedupe_in_flight: bool | None,
+    timeout: int | None,
+) -> None:
+    _require_login()
+    connection_name = name.strip() if name is not None else None
+    if name is not None and not connection_name:
+        error("Connection name cannot be empty.")
+        raise typer.Exit(1)
+
+    try:
+        public_config, config_values, secure_config, compiled_contract = (
+            _parse_adapter_from_api_cli_objects(
+                public_config_json=public_config_json,
+                public_config_file=public_config_file,
+                config_json=config_json,
+                config_file=config_file,
+                secure_config_json=secure_config_json,
+                secure_config_file=secure_config_file,
+                compiled_contract_json=compiled_contract_json,
+                compiled_contract_file=compiled_contract_file,
+            )
+        )
+        updated = patch_adapter_from_api_connection(
+            connection_uid,
+            name=connection_name,
+            description=description,
+            public_config=public_config,
+            api_base_url=api_base_url,
+            debug_api_base_url=debug_api_base_url,
+            secure_config=secure_config,
+            workspace_uid=workspace_uid,
+            is_default=is_default,
+            tags=_parse_cli_csv_list(tags) if tags else None,
+            config_values=config_values,
+            compiled_contract=compiled_contract,
+            contract_version=contract_version,
+            request_timeout_ms=request_timeout_ms,
+            query_cache_policy=query_cache_policy,
+            query_cache_ttl_ms=query_cache_ttl_ms,
+            dedupe_in_flight=dedupe_in_flight,
+            timeout=timeout,
+        )
+    except ValueError as e:
+        error(str(e))
+        raise typer.Exit(1) from e
+    except ApiError as e:
+        error(f"Adapter from API connection patch failed: {e}")
+        raise typer.Exit(1) from e
+
+    if _emit_json(updated):
+        return
+
+    success(f"Adapter from API connection updated: uid={connection_uid}")
+    print_kv("Connection", _format_connection_preview(updated))
+    print_kv("Connection Details", _format_connection_details(updated))
+
+
 def _data_node_storage_list_impl(
     timeout: int | None,
     filter_entries: list[str] | None,
@@ -5926,6 +6151,260 @@ def connection_detail_cmd(
     Show one Command Center connection instance in detail.
     """
     _connection_detail_impl(connection_uid=connection_uid, timeout=timeout)
+
+
+@connection.command("create-adapter-from-api")
+@connection.command("create_adapter_from_api", hidden=True)
+def connection_create_adapter_from_api_cmd(
+    name: str = typer.Option(..., "--name", help="Connection display name."),
+    description: str | None = typer.Option(
+        None, "--description", help="Optional connection description."
+    ),
+    api_base_url: str | None = typer.Option(
+        None, "--api-base-url", help="Backend-mode upstream API base URL."
+    ),
+    debug_api_base_url: str | None = typer.Option(
+        None,
+        "--debug-api-base-url",
+        help="Direct-mode browser API base URL for local/tunnel development.",
+    ),
+    public_config_json: str | None = typer.Option(
+        None, "--public-config-json", help="Full publicConfig JSON object."
+    ),
+    public_config_file: pathlib.Path | None = typer.Option(
+        None,
+        "--public-config-file",
+        exists=True,
+        file_okay=True,
+        dir_okay=False,
+        readable=True,
+        resolve_path=True,
+        help="Path to a JSON/YAML publicConfig object.",
+    ),
+    config_json: str | None = typer.Option(
+        None,
+        "--config-json",
+        help="JSON object for non-secret configValues declared by the API contract.",
+    ),
+    config_file: pathlib.Path | None = typer.Option(
+        None,
+        "--config-file",
+        exists=True,
+        file_okay=True,
+        dir_okay=False,
+        readable=True,
+        resolve_path=True,
+        help="Path to a JSON/YAML configValues object.",
+    ),
+    secure_config_json: str | None = typer.Option(
+        None,
+        "--secure-config-json",
+        help="JSON object for secureConfig secret values. Values are not returned by detail.",
+    ),
+    secure_config_file: pathlib.Path | None = typer.Option(
+        None,
+        "--secure-config-file",
+        exists=True,
+        file_okay=True,
+        dir_okay=False,
+        readable=True,
+        resolve_path=True,
+        help="Path to a JSON/YAML secureConfig object.",
+    ),
+    compiled_contract_json: str | None = typer.Option(
+        None, "--compiled-contract-json", help="JSON object for compiledContract."
+    ),
+    compiled_contract_file: pathlib.Path | None = typer.Option(
+        None,
+        "--compiled-contract-file",
+        exists=True,
+        file_okay=True,
+        dir_okay=False,
+        readable=True,
+        resolve_path=True,
+        help="Path to a JSON/YAML compiledContract object.",
+    ),
+    workspace_uid: str | None = typer.Option(
+        None, "--workspace-uid", help="Optional workspace scope UID."
+    ),
+    is_default: bool | None = typer.Option(
+        None, "--default/--no-default", help="Set whether this is the default connection."
+    ),
+    tags: list[str] | None = typer.Option(
+        None, "--tag", help="Repeatable or comma-separated connection tag."
+    ),
+    contract_version: str | None = typer.Option(
+        None, "--contract-version", help="Optional API contract version pin."
+    ),
+    request_timeout_ms: int | None = typer.Option(
+        None, "--request-timeout-ms", help="Adapter upstream request timeout in milliseconds."
+    ),
+    query_cache_policy: str | None = typer.Option(
+        None, "--query-cache-policy", help="Adapter query cache policy: safe or disabled."
+    ),
+    query_cache_ttl_ms: int | None = typer.Option(
+        None, "--query-cache-ttl-ms", help="Adapter query cache TTL in milliseconds."
+    ),
+    dedupe_in_flight: bool | None = typer.Option(
+        None,
+        "--dedupe-in-flight/--no-dedupe-in-flight",
+        help="Enable or disable identical in-flight operation deduplication.",
+    ),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Create a command_center.adapter_from_api connection instance.
+    """
+    _connection_create_adapter_from_api_impl(
+        name=name,
+        description=description,
+        api_base_url=api_base_url,
+        debug_api_base_url=debug_api_base_url,
+        public_config_json=public_config_json,
+        public_config_file=public_config_file,
+        config_json=config_json,
+        config_file=config_file,
+        secure_config_json=secure_config_json,
+        secure_config_file=secure_config_file,
+        compiled_contract_json=compiled_contract_json,
+        compiled_contract_file=compiled_contract_file,
+        workspace_uid=workspace_uid,
+        is_default=is_default,
+        tags=tags,
+        contract_version=contract_version,
+        request_timeout_ms=request_timeout_ms,
+        query_cache_policy=query_cache_policy,
+        query_cache_ttl_ms=query_cache_ttl_ms,
+        dedupe_in_flight=dedupe_in_flight,
+        timeout=timeout,
+    )
+
+
+@connection.command("patch-adapter-from-api")
+@connection.command("patch_adapter_from_api", hidden=True)
+def connection_patch_adapter_from_api_cmd(
+    connection_uid: str = typer.Argument(
+        ..., help="Adapter from API connection stable unique identifier (`uid`)."
+    ),
+    name: str | None = typer.Option(None, "--name", help="New connection display name."),
+    description: str | None = typer.Option(None, "--description", help="New description."),
+    api_base_url: str | None = typer.Option(
+        None, "--api-base-url", help="Replace publicConfig with backend-mode API base URL."
+    ),
+    debug_api_base_url: str | None = typer.Option(
+        None,
+        "--debug-api-base-url",
+        help="Replace publicConfig with direct-mode browser API base URL.",
+    ),
+    public_config_json: str | None = typer.Option(
+        None, "--public-config-json", help="Replacement publicConfig JSON object."
+    ),
+    public_config_file: pathlib.Path | None = typer.Option(
+        None,
+        "--public-config-file",
+        exists=True,
+        file_okay=True,
+        dir_okay=False,
+        readable=True,
+        resolve_path=True,
+        help="Path to a replacement JSON/YAML publicConfig object.",
+    ),
+    config_json: str | None = typer.Option(
+        None,
+        "--config-json",
+        help="JSON object for configValues. Without URL options this patches existing publicConfig.",
+    ),
+    config_file: pathlib.Path | None = typer.Option(
+        None,
+        "--config-file",
+        exists=True,
+        file_okay=True,
+        dir_okay=False,
+        readable=True,
+        resolve_path=True,
+        help="Path to a JSON/YAML configValues object.",
+    ),
+    secure_config_json: str | None = typer.Option(
+        None, "--secure-config-json", help="Replacement secureConfig JSON object."
+    ),
+    secure_config_file: pathlib.Path | None = typer.Option(
+        None,
+        "--secure-config-file",
+        exists=True,
+        file_okay=True,
+        dir_okay=False,
+        readable=True,
+        resolve_path=True,
+        help="Path to a replacement JSON/YAML secureConfig object.",
+    ),
+    compiled_contract_json: str | None = typer.Option(
+        None, "--compiled-contract-json", help="JSON object for compiledContract."
+    ),
+    compiled_contract_file: pathlib.Path | None = typer.Option(
+        None,
+        "--compiled-contract-file",
+        exists=True,
+        file_okay=True,
+        dir_okay=False,
+        readable=True,
+        resolve_path=True,
+        help="Path to a JSON/YAML compiledContract object.",
+    ),
+    workspace_uid: str | None = typer.Option(
+        None, "--workspace-uid", help="New workspace scope UID."
+    ),
+    is_default: bool | None = typer.Option(
+        None, "--default/--no-default", help="Set whether this is the default connection."
+    ),
+    tags: list[str] | None = typer.Option(
+        None, "--tag", help="Repeatable or comma-separated replacement tag."
+    ),
+    contract_version: str | None = typer.Option(
+        None, "--contract-version", help="API contract version pin."
+    ),
+    request_timeout_ms: int | None = typer.Option(
+        None, "--request-timeout-ms", help="Adapter upstream request timeout in milliseconds."
+    ),
+    query_cache_policy: str | None = typer.Option(
+        None, "--query-cache-policy", help="Adapter query cache policy: safe or disabled."
+    ),
+    query_cache_ttl_ms: int | None = typer.Option(
+        None, "--query-cache-ttl-ms", help="Adapter query cache TTL in milliseconds."
+    ),
+    dedupe_in_flight: bool | None = typer.Option(
+        None,
+        "--dedupe-in-flight/--no-dedupe-in-flight",
+        help="Enable or disable identical in-flight operation deduplication.",
+    ),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Patch a command_center.adapter_from_api connection instance.
+    """
+    _connection_patch_adapter_from_api_impl(
+        connection_uid=connection_uid,
+        name=name,
+        description=description,
+        api_base_url=api_base_url,
+        debug_api_base_url=debug_api_base_url,
+        public_config_json=public_config_json,
+        public_config_file=public_config_file,
+        config_json=config_json,
+        config_file=config_file,
+        secure_config_json=secure_config_json,
+        secure_config_file=secure_config_file,
+        compiled_contract_json=compiled_contract_json,
+        compiled_contract_file=compiled_contract_file,
+        workspace_uid=workspace_uid,
+        is_default=is_default,
+        tags=tags,
+        contract_version=contract_version,
+        request_timeout_ms=request_timeout_ms,
+        query_cache_policy=query_cache_policy,
+        query_cache_ttl_ms=query_cache_ttl_ms,
+        dedupe_in_flight=dedupe_in_flight,
+        timeout=timeout,
+    )
 
 
 @agent.command("list")

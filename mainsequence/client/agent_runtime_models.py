@@ -590,9 +590,9 @@ class AgentSession(BaseObjectOrm, BasePydanticModel):
         default_factory=dict,
         description="Additional session metadata.",
     )
-    bound_handles: list[dict[str, Any]] = Field(
-        default_factory=list,
-        description="Agent session handles currently bound to this session.",
+    bound_handle: dict[str, Any] | None = Field(
+        None,
+        description="Agent session handle currently bound to this session, if any.",
     )
 
 __all__ = [

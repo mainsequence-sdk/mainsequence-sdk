@@ -1155,6 +1155,128 @@ def test_get_connection_instance_uses_uid_client_model(cli_mod, monkeypatch):
     assert out == {"uid": "warehouse-primary", "name": "Warehouse Primary"}
 
 
+def test_create_adapter_from_api_connection_uses_client_model(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {}
+
+    class FakeConnectionInstance:
+        def __init__(self, public_config):
+            self.public_config = public_config
+
+        def model_dump(self, mode="json"):
+            return {
+                "uid": "adapter-debug",
+                "name": "Markets debug API",
+                "type_id": "command_center.adapter_from_api",
+                "public_config": self.public_config,
+            }
+
+    def _run_sdk_model_operation(*, module_name, class_name, operation, project_id_env=None):
+        captured["module_name"] = module_name
+        captured["class_name"] = class_name
+
+        class _ClientConnectionInstance:
+            @classmethod
+            def create_adapter_from_api(cls, **kwargs):
+                captured["create_kwargs"] = kwargs
+                return FakeConnectionInstance(kwargs["public_config"])
+
+        return operation(_ClientConnectionInstance)
+
+    monkeypatch.setattr(api_mod, "_run_sdk_model_operation", _run_sdk_model_operation)
+
+    out = api_mod.create_adapter_from_api_connection(
+        name="Markets debug API",
+        debug_api_base_url="http://127.0.0.1:8021/",
+        workspace_uid="11111111-1111-4111-8111-111111111111",
+        is_default=True,
+        config_values={},
+        timeout=12,
+    )
+
+    public_config = captured["create_kwargs"]["public_config"]
+    assert captured["module_name"] == "mainsequence.client.command_center.connections"
+    assert captured["class_name"] == "ConnectionInstance"
+    assert captured["create_kwargs"]["name"] == "Markets debug API"
+    assert captured["create_kwargs"]["workspace_uid"] == "11111111-1111-4111-8111-111111111111"
+    assert captured["create_kwargs"]["is_default"] is True
+    assert captured["create_kwargs"]["timeout"] == 12
+    assert public_config["debugApiBaseUrl"] == "http://127.0.0.1:8021"
+    assert public_config["transportMode"] == "direct"
+    assert public_config["compiledContractSource"] == "direct"
+    assert out["uid"] == "adapter-debug"
+
+
+def test_patch_adapter_from_api_connection_uses_client_patch(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {}
+
+    class FakeConnectionInstance:
+        public_config = {
+            "apiBaseUrl": "https://old-api.example.com",
+            "contractDefinitionUrl": (
+                "https://old-api.example.com/.well-known/command-center/connection-contract"
+            ),
+            "openApiUrl": "https://old-api.example.com/openapi.json",
+            "configValues": {},
+        }
+
+        def patch(self, **kwargs):
+            captured["patch_kwargs"] = kwargs
+            patched_public_config = kwargs.get("publicConfig", self.public_config)
+            return FakePatchedConnection(patched_public_config)
+
+    class FakePatchedConnection:
+        def __init__(self, public_config):
+            self.public_config = public_config
+
+        def model_dump(self, mode="json"):
+            return {
+                "uid": "adapter-prod",
+                "name": "Markets API",
+                "type_id": "command_center.adapter_from_api",
+                "public_config": self.public_config,
+            }
+
+    def _run_sdk_model_operation(*, module_name, class_name, operation, project_id_env=None):
+        captured["module_name"] = module_name
+        captured["class_name"] = class_name
+
+        class _ClientConnectionInstance:
+            @classmethod
+            def get_adapter_from_api(cls, uid, timeout=None):
+                captured["uid"] = uid
+                captured["timeout"] = timeout
+                return FakeConnectionInstance()
+
+        return operation(_ClientConnectionInstance)
+
+    monkeypatch.setattr(api_mod, "_run_sdk_model_operation", _run_sdk_model_operation)
+
+    out = api_mod.patch_adapter_from_api_connection(
+        "adapter-prod",
+        name="Markets API",
+        config_values={"region": "mx"},
+        timeout=7,
+    )
+
+    assert captured["module_name"] == "mainsequence.client.command_center.connections"
+    assert captured["class_name"] == "ConnectionInstance"
+    assert captured["uid"] == "adapter-prod"
+    assert captured["timeout"] == 7
+    assert captured["patch_kwargs"]["name"] == "Markets API"
+    assert captured["patch_kwargs"]["publicConfig"]["apiBaseUrl"] == "https://old-api.example.com"
+    assert captured["patch_kwargs"]["publicConfig"]["configValues"] == {"region": "mx"}
+    assert out["public_config"]["configValues"] == {"region": "mx"}
+
+
+def test_patch_adapter_from_api_connection_rejects_empty_payload(cli_mod):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+
+    with pytest.raises(api_mod.ApiError, match="patch payload is empty"):
+        api_mod.patch_adapter_from_api_connection("adapter-prod")
+
+
 def test_connection_list(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(
@@ -1218,6 +1340,115 @@ def test_connection_detail(cli_mod, runner, monkeypatch):
     assert "Secure Fields" in result.output
     assert "Healthy." in result.output
     assert "warehouse-primary" in result.output
+
+
+def test_connection_create_adapter_from_api_cli_direct(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    captured = {}
+
+    def _create(**kwargs):
+        captured.update(kwargs)
+        return {
+            "uid": "adapter-debug",
+            "name": kwargs["name"],
+            "type_id": "command_center.adapter_from_api",
+            "type_version": 1,
+            "workspace_uid": kwargs["workspace_uid"],
+            "public_config": {
+                "debugApiBaseUrl": kwargs["debug_api_base_url"],
+                "transportMode": "direct",
+            },
+            "secure_fields": {},
+            "status": "unknown",
+            "is_default": kwargs["is_default"],
+            "is_system": False,
+        }
+
+    monkeypatch.setattr(cli_mod, "create_adapter_from_api_connection", _create)
+
+    result = runner.invoke(
+        cli_mod.app,
+        [
+            "cc",
+            "connection",
+            "create-adapter-from-api",
+            "--name",
+            "Markets local",
+            "--debug-api-base-url",
+            "https://markets-local.trycloudflare.com",
+            "--workspace-uid",
+            "11111111-1111-4111-8111-111111111111",
+            "--default",
+            "--config-json",
+            '{"region":"mx"}',
+            "--tag",
+            "debug,markets",
+            "--request-timeout-ms",
+            "30000",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured["name"] == "Markets local"
+    assert captured["debug_api_base_url"] == "https://markets-local.trycloudflare.com"
+    assert captured["workspace_uid"] == "11111111-1111-4111-8111-111111111111"
+    assert captured["is_default"] is True
+    assert captured["config_values"] == {"region": "mx"}
+    assert captured["tags"] == ["debug", "markets"]
+    assert captured["request_timeout_ms"] == 30000
+    assert "Adapter from API connection created" in result.output
+
+
+def test_connection_patch_adapter_from_api_cli_public_config_file(
+    cli_mod, runner, monkeypatch, tmp_path
+):
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    captured = {}
+    public_config_file = tmp_path / "public-config.yaml"
+    public_config_file.write_text(
+        yaml.safe_dump({"apiBaseUrl": "https://api.example.com"}),
+        encoding="utf-8",
+    )
+
+    def _patch(connection_uid, **kwargs):
+        captured["connection_uid"] = connection_uid
+        captured.update(kwargs)
+        return {
+            "uid": connection_uid,
+            "name": kwargs["name"],
+            "type_id": "command_center.adapter_from_api",
+            "type_version": 1,
+            "workspace_uid": "11111111-1111-4111-8111-111111111111",
+            "public_config": kwargs["public_config"],
+            "secure_fields": {},
+            "status": "unknown",
+            "is_default": kwargs["is_default"],
+            "is_system": False,
+        }
+
+    monkeypatch.setattr(cli_mod, "patch_adapter_from_api_connection", _patch)
+
+    result = runner.invoke(
+        cli_mod.app,
+        [
+            "cc",
+            "connection",
+            "patch-adapter-from-api",
+            "adapter-prod",
+            "--name",
+            "Markets API",
+            "--public-config-file",
+            str(public_config_file),
+            "--no-default",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured["connection_uid"] == "adapter-prod"
+    assert captured["name"] == "Markets API"
+    assert captured["public_config"] == {"apiBaseUrl": "https://api.example.com"}
+    assert captured["is_default"] is False
+    assert "Adapter from API connection updated" in result.output
 
 
 def test_list_agents_uses_client_model(cli_mod, monkeypatch):
