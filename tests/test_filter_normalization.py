@@ -1555,6 +1555,105 @@ def test_agent_a2a_allocation_sends_caller_session_uid(monkeypatch):
     }
 
 
+def test_agent_get_or_create_session_with_handle_posts_stable_handle_contract(monkeypatch):
+    captured = {}
+    agent_uid = "e0e75693-4110-464c-93e0-82c7fd9c9a23"
+    session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
+    user_uid = "fdf409f7-d16f-4f71-986b-9057db6c7eca"
+    agent = agent_models_mod.Agent(
+        uid=agent_uid,
+        name="Research Copilot",
+        agent_type="custom",
+        agent_unique_id="research-copilot",
+        description="Research assistant.",
+        agent_card=None,
+        llm_provider="openai",
+        llm_model="gpt-5.4",
+        llm_thinking="medium",
+    )
+
+    class FakeResponse:
+        status_code = 201
+        content = b'{"ok": true}'
+
+        @staticmethod
+        def json():
+            return {
+                "created": True,
+                "handle_unique_id": "portfolio-review-q2-2026",
+                "handle_uid": "6f91f6a7-d706-49c6-a910-8667aa0468a5",
+                "session": {
+                    "uid": session_uid,
+                    "agent_uid": agent_uid,
+                    "agent_name": "Research Copilot",
+                    "agent_type": "custom",
+                    "created_by_user_uid": user_uid,
+                    "parent_session_uid": None,
+                    "name": "Quarterly portfolio review",
+                    "status": "running",
+                    "runtime_state": "running",
+                    "working": True,
+                    "started_at": "2026-01-01T00:00:00Z",
+                    "ended_at": None,
+                    "llm_provider": "openai",
+                    "llm_model": "gpt-5.4",
+                    "llm_thinking": "",
+                    "engine_name": "codex",
+                    "runtime_config_snapshot": {},
+                    "error_detail": "",
+                    "thread_id": "",
+                    "session_metadata": {"portfolio_uid": "portfolio-123"},
+                    "bound_handles": [
+                        {
+                            "handle_unique_id": "portfolio-review-q2-2026",
+                            "owner_user_uid": user_uid,
+                            "is_locked": False,
+                        }
+                    ],
+                },
+            }
+
+    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
+        captured["r_type"] = r_type
+        captured["url"] = url
+        captured["payload"] = payload
+        captured["timeout"] = time_out
+        return FakeResponse()
+
+    monkeypatch.setattr(agent_models_mod, "make_request", _fake_make_request)
+
+    session = agent.get_or_create_session_with_handle(
+        handle_unique_id="portfolio-review-q2-2026",
+        name="Quarterly portfolio review",
+        llm_provider="openai",
+        llm_model="gpt-5.4",
+        llm_thinking="",
+        session_metadata={"portfolio_uid": "portfolio-123"},
+        timeout=13,
+    )
+
+    assert session.uid == session_uid
+    assert session.name == "Quarterly portfolio review"
+    assert captured == {
+        "r_type": "POST",
+        "url": (
+            f"{agent_models_mod.Agent.get_object_url()}/{agent_uid}/"
+            "get_or_create_session_with_handle/"
+        ),
+        "payload": {
+            "json": {
+                "handle_unique_id": "portfolio-review-q2-2026",
+                "name": "Quarterly portfolio review",
+                "llm_provider": "openai",
+                "llm_model": "gpt-5.4",
+                "llm_thinking": "",
+                "session_metadata": {"portfolio_uid": "portfolio-123"},
+            }
+        },
+        "timeout": 13,
+    }
+
+
 def _class_base_names_from_source(path: pathlib.Path) -> dict[str, list[str]]:
     tree = ast.parse(path.read_text(encoding="utf-8"))
     out: dict[str, list[str]] = {}

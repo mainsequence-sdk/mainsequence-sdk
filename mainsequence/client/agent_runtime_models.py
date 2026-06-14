@@ -318,6 +318,77 @@ class Agent(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
             raise_for_response(response, payload=payload)
         return response.json()
 
+    def get_or_create_session_with_handle(
+        self,
+        *,
+        handle_unique_id: str,
+        name: str | None = None,
+        llm_provider: str | None = None,
+        llm_model: str | None = None,
+        llm_thinking: str | None = None,
+        session_metadata: dict[str, Any] | None = None,
+        timeout=None,
+    ) -> AgentSession:
+        """
+        Get or create this user's reusable session slot for this Agent.
+
+        Hits:
+            POST <detail_url>get_or_create_session_with_handle/
+
+        Request contract:
+        - `handle_unique_id` is required and is the stable session-slot key scoped
+          by `(agent, authenticated user)`.
+        - `name` is optional display text for a newly created session.
+        - LLM fields are creation-time overrides only. If the handle already has a
+          current session, the backend returns that session unchanged.
+        - `session_metadata` is creation-time caller metadata.
+
+        The response is expected to contain either a top-level `session` object or a
+        direct AgentSession payload. The SDK returns the AgentSession object.
+        """
+        resolved_handle_unique_id = str(handle_unique_id or "").strip()
+        if not resolved_handle_unique_id:
+            raise ValueError("handle_unique_id is required")
+
+        body: dict[str, Any] = {
+            "handle_unique_id": resolved_handle_unique_id,
+        }
+        if name is not None:
+            body["name"] = str(name)
+        if llm_provider is not None:
+            body["llm_provider"] = str(llm_provider)
+        if llm_model is not None:
+            body["llm_model"] = str(llm_model)
+        if llm_thinking is not None:
+            body["llm_thinking"] = str(llm_thinking)
+        if session_metadata is not None:
+            body["session_metadata"] = session_metadata
+
+        url = f"{self.get_detail_url()}get_or_create_session_with_handle/"
+        payload = {"json": serialize_to_json(body)}
+        response = make_request(
+            s=self.build_session(),
+            loaders=self.LOADERS,
+            r_type="POST",
+            url=url,
+            payload=payload,
+            time_out=timeout,
+        )
+        if response.status_code not in (200, 201):
+            raise_for_response(response, payload=payload)
+
+        response_payload = response.json()
+        session_payload = (
+            response_payload.get("session")
+            if isinstance(response_payload, dict)
+            else response_payload
+        )
+        if not isinstance(session_payload, dict):
+            raise TypeError(
+                "get_or_create_session_with_handle response must include a session object"
+            )
+        return AgentSession(**session_payload)
+
     def get_latest_session(self, timeout=None):
         """
         Fetch the latest recorded session for this agent.
