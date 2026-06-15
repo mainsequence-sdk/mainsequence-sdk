@@ -1239,6 +1239,60 @@ def get_agent_latest_session(
         raise ApiError(f"Agent latest session fetch failed: {e}") from e
 
 
+def list_agent_sessions(
+    *,
+    timeout: int | None = None,
+    filters: dict[str, Any] | None = None,
+    agent_uid: str | None = None,
+    agent_unique_id: str | None = None,
+) -> list[dict[str, Any]]:
+    """
+    List agent sessions via SDK client model, optionally scoped to one agent.
+    """
+    if agent_uid and agent_unique_id:
+        raise ApiError("Pass either agent_uid or agent_unique_id, not both.")
+
+    session_filters = dict(filters or {})
+    if agent_uid:
+        session_filters["agent_uid"] = str(agent_uid)
+    elif agent_unique_id:
+        try:
+            agent = _run_sdk_model_operation(
+                module_name="mainsequence.client.agent_runtime_models",
+                class_name="Agent",
+                operation=lambda ClientAgent: ClientAgent.get_by_agent_unique_id(
+                    str(agent_unique_id), timeout=timeout
+                ),
+            )
+        except Exception as e:
+            err_name = type(e).__name__
+            if err_name in {"DoesNotExist", "NotFoundError"}:
+                raise ApiError(f"Agent not found for agent_unique_id={agent_unique_id!r}") from e
+            if isinstance(e, (ApiError, NotLoggedIn)):
+                raise
+            raise ApiError(f"Agent lookup failed for agent_unique_id={agent_unique_id!r}: {e}") from e
+
+        resolved_agent = _sdk_object_to_dict(agent)
+        resolved_agent_uid = str(resolved_agent.get("uid") or "").strip()
+        if not resolved_agent_uid:
+            raise ApiError(f"Agent lookup returned no uid for agent_unique_id={agent_unique_id!r}")
+        session_filters["agent_uid"] = resolved_agent_uid
+
+    try:
+        payload = _run_sdk_model_operation(
+            module_name="mainsequence.client.agent_runtime_models",
+            class_name="AgentSession",
+            operation=lambda ClientAgentSession: ClientAgentSession.filter(
+                timeout=timeout, **session_filters
+            ),
+        )
+        return [_sdk_object_to_dict(item) for item in list(payload or [])]
+    except Exception as e:
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"Agent sessions fetch failed: {e}") from e
+
+
 def get_agent_session(
     agent_session_uid: str,
     *,

@@ -130,6 +130,7 @@ from .api import (
     get_secret,
     get_workspace,
     list_agent_runs,
+    list_agent_sessions,
     list_agent_users_can_edit,
     list_agent_users_can_view,
     list_agents,
@@ -3948,6 +3949,82 @@ def _agent_get_latest_session_impl(
     print_kv("Agent Session Details", _format_agent_session_details(agent_session_payload))
 
 
+def _agent_session_list_impl(
+    *,
+    agent_uid: str | None,
+    agent_unique_id: str | None,
+    timeout: int | None,
+    filter_entries: list[str] | None,
+    show_filters: bool,
+) -> None:
+    filters = _resolve_cli_list_filters(
+        model_ref=AGENT_SESSION_MODEL_REF,
+        filter_entries=filter_entries,
+        show_filters=show_filters,
+        command_label="Agent Sessions",
+    )
+    if agent_uid and agent_unique_id:
+        error("Pass either `--agent-uid` or `--agent-unique-id`, not both.")
+        raise typer.Exit(1)
+    if (agent_uid or agent_unique_id) and any(
+        key in filters for key in ("agent_uid", "agent_uid__in")
+    ):
+        error(
+            "Do not pass `--filter agent_uid=...` with `--agent-uid` or "
+            "`--agent-unique-id`. Use only one agent scope."
+        )
+        raise typer.Exit(1)
+
+    _require_login()
+
+    try:
+        agent_sessions = list_agent_sessions(
+            timeout=timeout,
+            filters=filters,
+            agent_uid=agent_uid,
+            agent_unique_id=agent_unique_id,
+        )
+    except ApiError as e:
+        error(f"Agent sessions fetch failed: {e}")
+        raise typer.Exit(1) from e
+
+    if _emit_json(agent_sessions):
+        return
+
+    rows: list[list[str]] = []
+    for agent_session_payload in agent_sessions:
+        rows.append(
+            [
+                str(agent_session_payload.get("uid") or "-"),
+                str(agent_session_payload.get("agent_uid") or "-"),
+                str(
+                    agent_session_payload.get("agent_name")
+                    or agent_session_payload.get("agent_type")
+                    or "-"
+                ),
+                str(agent_session_payload.get("status") or "-"),
+                str(
+                    agent_session_payload.get("runtime_state")
+                    or agent_session_payload.get("engine_name")
+                    or "-"
+                ),
+                str(agent_session_payload.get("started_at") or "-"),
+                str(agent_session_payload.get("ended_at") or "-"),
+                str(agent_session_payload.get("name") or "-"),
+            ]
+        )
+
+    if rows:
+        print_table(
+            "Agent Sessions",
+            ["UID", "Agent UID", "Agent", "Status", "Runtime", "Started At", "Ended At", "Name"],
+            rows,
+        )
+    else:
+        info("No agent sessions.")
+    info(f"Total agent sessions: {len(agent_sessions)}")
+
+
 def _agent_session_detail_impl(
     *,
     agent_session_uid: str,
@@ -6672,6 +6749,51 @@ def agent_get_latest_session_cmd(
     ```
     """
     _agent_get_latest_session_impl(agent_uid=agent_uid, timeout=timeout)
+
+
+@agent_session_group.command("list")
+def agent_session_list_cmd(
+    agent_uid: str | None = pydantic_option(
+        AGENT_SESSION_MODEL_REF,
+        "agent_uid",
+        None,
+        "--agent-uid",
+        help="Agent UID to scope the session list.",
+    ),
+    agent_unique_id: str | None = pydantic_option(
+        AGENT_MODEL_REF,
+        "agent_unique_id",
+        None,
+        "--agent-unique-id",
+        help="Agent unique id to resolve before listing sessions.",
+    ),
+    filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
+    show_filters: bool = typer.Option(
+        False, "--show-filters", help="Show the filters supported by this list command and exit."
+    ),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    List agent sessions, optionally scoped to one agent.
+
+    Uses SDK client `AgentSession.filter()` as the single source of truth.
+
+    Examples
+    --------
+    ```bash
+    mainsequence agent session list
+    mainsequence agent session list --agent-uid e0e75693-4110-464c-93e0-82c7fd9c9a23
+    mainsequence agent session list --agent-unique-id research-copilot
+    mainsequence agent session list --agent-uid e0e75693-4110-464c-93e0-82c7fd9c9a23 --filter status=running
+    ```
+    """
+    _agent_session_list_impl(
+        agent_uid=agent_uid,
+        agent_unique_id=agent_unique_id,
+        timeout=timeout,
+        filter_entries=filter_entries,
+        show_filters=show_filters,
+    )
 
 
 @agent_session_group.command("detail")

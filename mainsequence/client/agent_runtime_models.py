@@ -48,6 +48,54 @@ class AgentSemanticSearchResult(BasePydanticModel):
     )
 
 
+class AgentRuntimeImageDriftCheck(BasePydanticModel):
+    key: str = Field(..., description="Machine-readable identifier for the drift check.")
+    label: str = Field(..., description="Human-readable label for the drift check.")
+    status: str = Field(..., description="Backend status for this drift check.")
+    has_drift: bool = Field(..., description="Whether this check detected runtime drift.")
+    matches: bool = Field(..., description="Whether the actual runtime state matches the expected state.")
+    reason: str = Field("", description="Machine-readable explanation for the status.")
+    message: str = Field("", description="Human-readable explanation for this drift check.")
+    autoheal_supported: bool = Field(
+        False,
+        description="Whether the backend can automatically repair this specific drift condition.",
+    )
+    autoheal_mode: str | None = Field(
+        None,
+        description="Backend repair mode for this check when automatic repair is supported.",
+    )
+    autoheal_message: str | None = Field(
+        None,
+        description="Human-readable automatic repair guidance for this check.",
+    )
+    expected_image_uri: str = Field("", description="Expected runtime image URI, when the check is image-based.")
+    actual_image_uri: str = Field("", description="Actual runtime image URI, when the check is image-based.")
+    expected_commit_hash: str = Field("", description="Expected project commit hash, when the check is commit-based.")
+    actual_commit_hash: str = Field("", description="Actual runtime commit hash, when the check is commit-based.")
+
+
+class AgentRuntimeImageDrift(BasePydanticModel):
+    agent_kind: str = Field(..., description="Runtime family that produced the drift payload.")
+    available: bool = Field(..., description="Whether drift information could be resolved.")
+    has_drift: bool = Field(..., description="Whether any included drift check is currently drifting.")
+    autoheal_available: bool = Field(
+        False,
+        description="Whether all currently drifting checks can be repaired automatically by the backend.",
+    )
+    autoheal_message: str | None = Field(
+        None,
+        description="Human-readable summary of automatic repair availability.",
+    )
+    checks: list[AgentRuntimeImageDriftCheck] = Field(
+        default_factory=list,
+        description="Individual runtime drift checks returned by the backend.",
+    )
+    detail: str | None = Field(
+        None,
+        description="Additional backend detail when drift information is unavailable or degraded.",
+    )
+
+
 class AgentSessionRuntimeAccess(BasePydanticModel):
     coding_agent_service_id: str = Field(
         ...,
@@ -69,6 +117,24 @@ class AgentSessionRuntimeAccess(BasePydanticModel):
         ...,
         description="Bearer token that authorizes calls to the coding-agent gateway.",
     )
+    is_ready: bool = Field(
+        False,
+        description="Whether the resolved coding-agent runtime is currently routable.",
+    )
+    knative_service_runtime_uid: str | None = Field(
+        None,
+        description="Public UID of the linked Knative service runtime, when the backend has one.",
+    )
+    image_drift: AgentRuntimeImageDrift | None = Field(
+        None,
+        description="Runtime image drift payload for the resolved coding-agent runtime.",
+    )
+
+    @property
+    def image_drift_dict(self) -> dict[str, Any] | None:
+        if self.image_drift is None:
+            return None
+        return self.image_drift.model_dump()
 
 
 class Agent(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
@@ -445,6 +511,7 @@ class AgentSession(BaseObjectOrm, BasePydanticModel):
     ENDPOINT: ClassVar[str] = "agents/v1/sessions"
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]] | None] = {
         "uid": ["exact", "in"],
+        "agent_uid": ["exact", "in"],
         "status": ["exact"],
         "search": ["exact"],
         "q": ["exact"],
@@ -452,6 +519,8 @@ class AgentSession(BaseObjectOrm, BasePydanticModel):
     FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
         "uid": "uid",
         "uid__in": "uid",
+        "agent_uid": "uid",
+        "agent_uid__in": "uid",
         "status": "str",
         "search": "str",
         "q": "str",
@@ -597,6 +666,8 @@ class AgentSession(BaseObjectOrm, BasePydanticModel):
 
 __all__ = [
     "Agent",
+    "AgentRuntimeImageDrift",
+    "AgentRuntimeImageDriftCheck",
     "AgentSemanticSearchResult",
     "AgentSessionRuntimeAccess",
     "UserOrchestratorAgentService",

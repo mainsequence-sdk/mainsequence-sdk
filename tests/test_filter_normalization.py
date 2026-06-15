@@ -1473,6 +1473,34 @@ def test_agent_session_runtime_access_uses_session_uid_route(monkeypatch):
                 "mode": "token",
                 "rpc_url": "https://runtime.main-sequence.app/rpc",
                 "token": "tok-secret",
+                "is_ready": True,
+                "knative_service_runtime_uid": "70c6efb9-8e80-4051-ad3a-f432b2c37f5a",
+                "image_drift": {
+                    "agent_kind": "astro_orchestrator",
+                    "available": True,
+                    "has_drift": False,
+                    "autoheal_available": False,
+                    "autoheal_message": "No automatic drift repair is needed.",
+                    "checks": [
+                        {
+                            "key": "orchestrator_image",
+                            "label": "Orchestrator image",
+                            "status": "match",
+                            "has_drift": False,
+                            "matches": True,
+                            "reason": "match",
+                            "message": "The runtime image matches the catalog image.",
+                            "autoheal_supported": True,
+                            "autoheal_mode": "request_driven_runtime_sync",
+                            "autoheal_message": "No runtime repair is needed.",
+                            "expected_image_uri": "registry.example/astro@sha256:expected",
+                            "actual_image_uri": "registry.example/astro@sha256:expected",
+                            "expected_commit_hash": "",
+                            "actual_commit_hash": "",
+                        }
+                    ],
+                    "detail": None,
+                },
             }
 
     def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
@@ -1487,6 +1515,11 @@ def test_agent_session_runtime_access_uses_session_uid_route(monkeypatch):
     access = agent_models_mod.AgentSession.resolve_runtime_access(session_uid, timeout=11)
 
     assert access.coding_agent_service_id == "svc-12"
+    assert access.is_ready is True
+    assert access.knative_service_runtime_uid == "70c6efb9-8e80-4051-ad3a-f432b2c37f5a"
+    assert access.image_drift is not None
+    assert access.image_drift.agent_kind == "astro_orchestrator"
+    assert access.image_drift.checks[0].key == "orchestrator_image"
     assert captured == {
         "r_type": "POST",
         "url": f"{agent_models_mod.AgentSession.get_object_url()}/{session_uid}/resolve_runtime_access/",

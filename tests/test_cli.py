@@ -1848,6 +1848,107 @@ def test_get_agent_latest_session_uses_client_model(cli_mod, monkeypatch):
     assert out["uid"] == session_uid
 
 
+def test_list_agent_sessions_uses_client_model(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {}
+    agent_uid = "e0e75693-4110-464c-93e0-82c7fd9c9a23"
+    session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
+
+    class FakeAgentSession:
+        @staticmethod
+        def model_dump(mode="json"):
+            return {
+                "uid": session_uid,
+                "agent_uid": agent_uid,
+                "status": "completed",
+                "llm_provider": "openai",
+                "llm_model": "gpt-5.4",
+                "engine_name": "codex",
+            }
+
+    def _run_sdk_model_operation(*, module_name, class_name, operation, project_id_env=None):
+        captured["module_name"] = module_name
+        captured["class_name"] = class_name
+
+        class _ClientAgentSession:
+            @classmethod
+            def filter(cls, timeout=None, **filters):
+                captured["timeout"] = timeout
+                captured["filters"] = filters
+                return [FakeAgentSession()]
+
+        return operation(_ClientAgentSession)
+
+    monkeypatch.setattr(api_mod, "_run_sdk_model_operation", _run_sdk_model_operation)
+
+    out = api_mod.list_agent_sessions(
+        timeout=18,
+        filters={"status": "completed"},
+        agent_uid=agent_uid,
+    )
+    assert captured == {
+        "module_name": "mainsequence.client.agent_runtime_models",
+        "class_name": "AgentSession",
+        "timeout": 18,
+        "filters": {"status": "completed", "agent_uid": agent_uid},
+    }
+    assert out == [FakeAgentSession().model_dump()]
+
+
+def test_list_agent_sessions_resolves_agent_unique_id(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {"calls": []}
+    agent_uid = "e0e75693-4110-464c-93e0-82c7fd9c9a23"
+    session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
+
+    class FakeAgent:
+        @staticmethod
+        def model_dump(mode="json"):
+            return {"uid": agent_uid, "agent_unique_id": "research-copilot"}
+
+    class FakeAgentSession:
+        @staticmethod
+        def model_dump(mode="json"):
+            return {"uid": session_uid, "agent_uid": agent_uid, "status": "running"}
+
+    def _run_sdk_model_operation(*, module_name, class_name, operation, project_id_env=None):
+        captured["calls"].append((module_name, class_name))
+        if class_name == "Agent":
+
+            class _ClientAgent:
+                @classmethod
+                def get_by_agent_unique_id(cls, agent_unique_id, timeout=None):
+                    captured["agent_unique_id"] = agent_unique_id
+                    captured["agent_timeout"] = timeout
+                    return FakeAgent()
+
+            return operation(_ClientAgent)
+
+        class _ClientAgentSession:
+            @classmethod
+            def filter(cls, timeout=None, **filters):
+                captured["session_timeout"] = timeout
+                captured["filters"] = filters
+                return [FakeAgentSession()]
+
+        return operation(_ClientAgentSession)
+
+    monkeypatch.setattr(api_mod, "_run_sdk_model_operation", _run_sdk_model_operation)
+
+    out = api_mod.list_agent_sessions(agent_unique_id="research-copilot", timeout=19)
+    assert captured == {
+        "calls": [
+            ("mainsequence.client.agent_runtime_models", "Agent"),
+            ("mainsequence.client.agent_runtime_models", "AgentSession"),
+        ],
+        "agent_unique_id": "research-copilot",
+        "agent_timeout": 19,
+        "session_timeout": 19,
+        "filters": {"agent_uid": agent_uid},
+    }
+    assert out == [FakeAgentSession().model_dump()]
+
+
 def test_get_agent_session_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
@@ -7383,6 +7484,59 @@ def test_agent_get_latest_session(cli_mod, runner, monkeypatch):
     assert "Summarize rates moves" in result.output
     assert "Bunds rallied 4bp." in result.output
     assert "prompt_tokens" in result.output
+
+
+def test_agent_session_list_scoped_by_agent_uid(cli_mod, runner, monkeypatch):
+    captured = {}
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    agent_uid = "e0e75693-4110-464c-93e0-82c7fd9c9a23"
+    session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
+
+    def _list_agent_sessions(*, timeout=None, filters=None, agent_uid=None, agent_unique_id=None):
+        captured["timeout"] = timeout
+        captured["filters"] = filters
+        captured["agent_uid"] = agent_uid
+        captured["agent_unique_id"] = agent_unique_id
+        return [
+            {
+                "uid": session_uid,
+                "agent_uid": agent_uid,
+                "agent_name": "Research Copilot",
+                "status": "running",
+                "runtime_state": "connected",
+                "started_at": "2026-04-11T09:15:00Z",
+                "name": "Rates check",
+            }
+        ]
+
+    monkeypatch.setattr(cli_mod, "list_agent_sessions", _list_agent_sessions)
+
+    result = runner.invoke(
+        cli_mod.app,
+        [
+            "agent",
+            "session",
+            "list",
+            "--agent-uid",
+            agent_uid,
+            "--filter",
+            "status=running",
+            "--timeout",
+            "12",
+        ],
+    )
+    assert result.exit_code == 0
+    assert captured == {
+        "timeout": 12,
+        "filters": {"status": "running"},
+        "agent_uid": agent_uid,
+        "agent_unique_id": None,
+    }
+    assert "Agent Sessions" in result.output
+    assert "3f1cc45" in result.output
+    assert "Copilot" in result.output
+    assert "connect" in result.output
+    assert "Total agent sessions: 1" in result.output
 
 
 def test_agent_session_detail(cli_mod, runner, monkeypatch):
