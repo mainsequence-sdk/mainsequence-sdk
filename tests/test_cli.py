@@ -2033,6 +2033,168 @@ def test_resolve_agent_session_runtime_access_uses_client_model(cli_mod, monkeyp
     assert out["coding_agent_id"] == "agent-rt-77"
 
 
+def test_wait_agent_session_runtime_ready_uses_client_model(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {}
+    session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
+
+    class FakeReady:
+        @staticmethod
+        def model_dump(mode="json"):
+            return {
+                "ready": True,
+                "attempts": 2,
+                "elapsed_seconds": 2.01,
+                "status_code": 200,
+                "detail": "",
+            }
+
+    def _run_sdk_model_operation(*, module_name, class_name, operation, project_id_env=None):
+        captured["module_name"] = module_name
+        captured["class_name"] = class_name
+
+        class _ClientAgentSession:
+            @classmethod
+            def wait_until_runtime_ready(
+                cls,
+                agent_session,
+                *,
+                timeout_seconds=60,
+                poll_interval_seconds=2,
+                timeout=None,
+            ):
+                captured["agent_session"] = agent_session
+                captured["timeout_seconds"] = timeout_seconds
+                captured["poll_interval_seconds"] = poll_interval_seconds
+                captured["timeout"] = timeout
+                return FakeReady()
+
+        return operation(_ClientAgentSession)
+
+    monkeypatch.setattr(api_mod, "_run_sdk_model_operation", _run_sdk_model_operation)
+
+    out = api_mod.wait_agent_session_runtime_ready(
+        session_uid,
+        timeout_seconds=60,
+        poll_interval_seconds=2,
+        timeout=20,
+    )
+    assert captured == {
+        "module_name": "mainsequence.client.agent_runtime_models",
+        "class_name": "AgentSession",
+        "agent_session": session_uid,
+        "timeout_seconds": 60,
+        "poll_interval_seconds": 2,
+        "timeout": 20,
+    }
+    assert out["ready"] is True
+
+
+def test_send_agent_session_a2a_chat_uses_client_model(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {}
+    session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
+
+    class FakeChat:
+        @staticmethod
+        def model_dump(mode="json"):
+            return {
+                "ok": True,
+                "ready": {
+                    "ready": True,
+                    "attempts": 1,
+                    "elapsed_seconds": 0.0,
+                    "status_code": 200,
+                    "detail": "",
+                },
+                "response": {"jsonrpc": "2.0", "id": "request-1", "result": {}},
+                "normalized": {
+                    "ok": True,
+                    "kind": "message",
+                    "state": None,
+                    "task_id": None,
+                    "context_id": None,
+                    "text": "Done.",
+                    "raw": {},
+                },
+            }
+
+    def _run_sdk_model_operation(*, module_name, class_name, operation, project_id_env=None):
+        captured["module_name"] = module_name
+        captured["class_name"] = class_name
+
+        class _ClientAgentSession:
+            @classmethod
+            def send_a2a_chat(cls, agent_session, **kwargs):
+                captured["agent_session"] = agent_session
+                captured["kwargs"] = kwargs
+                return FakeChat()
+
+        return operation(_ClientAgentSession)
+
+    monkeypatch.setattr(api_mod, "_run_sdk_model_operation", _run_sdk_model_operation)
+
+    out = api_mod.send_agent_session_a2a_chat(
+        session_uid,
+        message="Review the current portfolio drift.",
+        timeout=21,
+    )
+    assert captured["module_name"] == "mainsequence.client.agent_runtime_models"
+    assert captured["class_name"] == "AgentSession"
+    assert captured["agent_session"] == session_uid
+    assert captured["kwargs"]["message"] == "Review the current portfolio drift."
+    assert captured["kwargs"]["timeout"] == 21
+    assert out["normalized"]["text"] == "Done."
+
+
+def test_send_agent_a2a_message_uses_client_model(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {}
+    target_agent_uid = "e0e75693-4110-464c-93e0-82c7fd9c9a23"
+    caller_session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
+
+    def _run_sdk_model_operation(*, module_name, class_name, operation, project_id_env=None):
+        captured["module_name"] = module_name
+        captured["class_name"] = class_name
+
+        class _ClientAgent:
+            @classmethod
+            def get_by_uid(cls, uid, timeout=None):
+                captured["uid"] = uid
+                captured["lookup_timeout"] = timeout
+
+                class _Agent:
+                    def send_a2a_request(self, **kwargs):
+                        captured["send_kwargs"] = kwargs
+                        return {
+                            "handle_unique_id": "delegated-handle-1",
+                            "agent_session_uid": "ac9e221d-1cd6-464c-a253-e302754872c1",
+                            "normalized": {"text": "Done."},
+                        }
+
+                return _Agent()
+
+        return operation(_ClientAgent)
+
+    monkeypatch.setattr(api_mod, "_run_sdk_model_operation", _run_sdk_model_operation)
+
+    out = api_mod.send_agent_a2a_message(
+        target_agent_uid,
+        caller_agent_session_uid=caller_session_uid,
+        message="Review the current portfolio drift.",
+        handle_unique_id="delegated-handle-1",
+        timeout=22,
+    )
+    assert captured["module_name"] == "mainsequence.client.agent_runtime_models"
+    assert captured["class_name"] == "Agent"
+    assert captured["uid"] == target_agent_uid
+    assert captured["send_kwargs"]["caller_agent_session_uid"] == caller_session_uid
+    assert captured["send_kwargs"]["message"] == "Review the current portfolio drift."
+    assert captured["send_kwargs"]["handle_unique_id"] == "delegated-handle-1"
+    assert captured["send_kwargs"]["timeout"] == 22
+    assert out["normalized"]["text"] == "Done."
+
+
 def test_list_agent_users_can_view_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
@@ -5325,9 +5487,7 @@ def test_list_data_node_storages_uses_client_model(cli_mod, monkeypatch):
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
     monkeypatch.setitem(sys.modules, "mainsequence.client.metatables", fake_models)
 
-    out = api_mod.list_data_node_storages(
-        filters={"physical_table_name__contains": "weights"}
-    )
+    out = api_mod.list_data_node_storages(filters={"physical_table_name__contains": "weights"})
     detail = api_mod.get_data_node_storage("data-node-storage-42")
     assert captured["filters"][0] == {"physical_table_name__contains": "weights"}
     assert captured["get"] == {"uid": "data-node-storage-42", "filters": {}, "timeout": None}
@@ -7599,6 +7759,166 @@ def test_agent_session_resolve_runtime_access(cli_mod, runner, monkeypatch):
     assert "agent-rt-77" in result.output
     assert "https://runtime.main-sequence.app/rpc" in result.output
     assert "tok-secret" in result.output
+
+
+def test_agent_session_wait_runtime_ready(cli_mod, runner, monkeypatch):
+    captured = {}
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+
+    def _ready(agent_session_uid, *, timeout_seconds=60, poll_interval_seconds=2, timeout=None):
+        captured["agent_session_uid"] = agent_session_uid
+        captured["timeout_seconds"] = timeout_seconds
+        captured["poll_interval_seconds"] = poll_interval_seconds
+        captured["timeout"] = timeout
+        return {
+            "ready": True,
+            "attempts": 2,
+            "elapsed_seconds": 2.01,
+            "status_code": 200,
+            "detail": "",
+        }
+
+    monkeypatch.setattr(cli_mod, "wait_agent_session_runtime_ready", _ready)
+
+    result = runner.invoke(
+        cli_mod.app,
+        [
+            "agent",
+            "session",
+            "wait_runtime_ready",
+            "3f1cc452-43ec-49cb-b2ba-87dbac164d29",
+            "--timeout-seconds",
+            "60",
+            "--poll-interval-seconds",
+            "2",
+            "--timeout",
+            "23",
+        ],
+    )
+    assert result.exit_code == 0
+    assert captured == {
+        "agent_session_uid": "3f1cc452-43ec-49cb-b2ba-87dbac164d29",
+        "timeout_seconds": 60.0,
+        "poll_interval_seconds": 2.0,
+        "timeout": 23,
+    }
+    assert "Agent session runtime is ready" in result.output
+    assert "Attempts" in result.output
+
+
+def test_agent_session_a2a_chat(cli_mod, runner, monkeypatch):
+    captured = {}
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+
+    def _chat(agent_session_uid, **kwargs):
+        captured["agent_session_uid"] = agent_session_uid
+        captured["kwargs"] = kwargs
+        return {
+            "ok": True,
+            "ready": {
+                "ready": True,
+                "attempts": 1,
+                "elapsed_seconds": 0.0,
+                "status_code": 200,
+                "detail": "",
+            },
+            "response": {"jsonrpc": "2.0", "id": "request-1", "result": {}},
+            "normalized": {
+                "ok": True,
+                "kind": "message",
+                "state": None,
+                "task_id": None,
+                "context_id": None,
+                "text": "Done.",
+                "raw": {},
+            },
+        }
+
+    monkeypatch.setattr(cli_mod, "send_agent_session_a2a_chat", _chat)
+
+    result = runner.invoke(
+        cli_mod.app,
+        [
+            "agent",
+            "session",
+            "a2a_chat",
+            "3f1cc452-43ec-49cb-b2ba-87dbac164d29",
+            "--message",
+            "Review the current portfolio drift.",
+            "--timeout",
+            "24",
+        ],
+    )
+    assert result.exit_code == 0
+    assert captured["agent_session_uid"] == "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
+    assert captured["kwargs"]["message"] == "Review the current portfolio drift."
+    assert captured["kwargs"]["timeout"] == 24
+    assert "Agent session A2A chat sent" in result.output
+    assert "Done." in result.output
+
+
+def test_agent_a2a_send(cli_mod, runner, monkeypatch):
+    captured = {}
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    target_agent_uid = "e0e75693-4110-464c-93e0-82c7fd9c9a23"
+    caller_session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
+
+    def _send(target_agent_uid, **kwargs):
+        captured["target_agent_uid"] = target_agent_uid
+        captured["kwargs"] = kwargs
+        return {
+            "handle_unique_id": "delegated-handle-1",
+            "agent_session_uid": "ac9e221d-1cd6-464c-a253-e302754872c1",
+            "allocation_state": "created_new",
+            "chat": {
+                "ok": True,
+                "ready": {
+                    "ready": True,
+                    "attempts": 1,
+                    "elapsed_seconds": 0.0,
+                    "status_code": 200,
+                    "detail": "",
+                },
+                "response": {"jsonrpc": "2.0", "id": "request-1", "result": {}},
+                "normalized": {
+                    "ok": True,
+                    "kind": "message",
+                    "state": None,
+                    "task_id": None,
+                    "context_id": None,
+                    "text": "Done.",
+                    "raw": {},
+                },
+            },
+            "normalized": {"text": "Done."},
+        }
+
+    monkeypatch.setattr(cli_mod, "send_agent_a2a_message", _send)
+
+    result = runner.invoke(
+        cli_mod.app,
+        [
+            "agent",
+            "a2a",
+            "send",
+            target_agent_uid,
+            caller_session_uid,
+            "--message",
+            "Review the current portfolio drift.",
+            "--handle-unique-id",
+            "delegated-handle-1",
+            "--timeout",
+            "25",
+        ],
+    )
+    assert result.exit_code == 0
+    assert captured["target_agent_uid"] == target_agent_uid
+    assert captured["kwargs"]["caller_agent_session_uid"] == caller_session_uid
+    assert captured["kwargs"]["message"] == "Review the current portfolio drift."
+    assert captured["kwargs"]["handle_unique_id"] == "delegated-handle-1"
+    assert captured["kwargs"]["timeout"] == 25
+    assert "Agent A2A request sent" in result.output
+    assert "Done." in result.output
 
 
 def test_agent_delete_requires_typed_verification(cli_mod, runner, monkeypatch):

@@ -598,11 +598,7 @@ def get_logged_user_details() -> dict[str, Any]:
     try:
         who = authed("GET", AUTH_PATHS["ping"])
         data = who.json() if who.ok else {}
-        user_uid = (
-            data.get("uid")
-            or (data.get("user") or {}).get("uid")
-            or data.get("user_uid")
-        )
+        user_uid = data.get("uid") or (data.get("user") or {}).get("uid") or data.get("user_uid")
         if user_uid in (None, ""):
             raise ApiError("Could not determine the authenticated user uid.")
 
@@ -1270,7 +1266,9 @@ def list_agent_sessions(
                 raise ApiError(f"Agent not found for agent_unique_id={agent_unique_id!r}") from e
             if isinstance(e, (ApiError, NotLoggedIn)):
                 raise
-            raise ApiError(f"Agent lookup failed for agent_unique_id={agent_unique_id!r}: {e}") from e
+            raise ApiError(
+                f"Agent lookup failed for agent_unique_id={agent_unique_id!r}: {e}"
+            ) from e
 
         resolved_agent = _sdk_object_to_dict(agent)
         resolved_agent_uid = str(resolved_agent.get("uid") or "").strip()
@@ -1343,6 +1341,123 @@ def resolve_agent_session_runtime_access(
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
         raise ApiError(f"Agent session runtime access resolve failed: {e}") from e
+
+
+def wait_agent_session_runtime_ready(
+    agent_session_uid: str,
+    *,
+    timeout_seconds: float = 60,
+    poll_interval_seconds: float = 2,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Wait for one agent session runtime through SDK client model.
+    """
+    try:
+        ready = _run_sdk_model_operation(
+            module_name="mainsequence.client.agent_runtime_models",
+            class_name="AgentSession",
+            operation=lambda ClientAgentSession: ClientAgentSession.wait_until_runtime_ready(
+                str(agent_session_uid),
+                timeout_seconds=timeout_seconds,
+                poll_interval_seconds=poll_interval_seconds,
+                timeout=timeout,
+            ),
+        )
+        return _sdk_object_to_dict(ready)
+    except Exception as e:
+        err_name = type(e).__name__
+        if err_name == "NotFoundError":
+            raise ApiError(f"Agent session not found: {agent_session_uid}") from e
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"Agent session runtime readiness failed: {e}") from e
+
+
+def send_agent_session_a2a_chat(
+    agent_session_uid: str,
+    *,
+    message: str | None = None,
+    a2a_payload: dict[str, Any] | None = None,
+    wait_for_runtime: bool = True,
+    runtime_ready_timeout_seconds: float = 60,
+    runtime_ready_poll_interval_seconds: float = 2,
+    poll_task_until_stable: bool = True,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Send an A2A request to one existing agent session through SDK client model.
+    """
+    try:
+        chat = _run_sdk_model_operation(
+            module_name="mainsequence.client.agent_runtime_models",
+            class_name="AgentSession",
+            operation=lambda ClientAgentSession: ClientAgentSession.send_a2a_chat(
+                str(agent_session_uid),
+                message=message,
+                a2a_payload=a2a_payload,
+                wait_for_runtime=wait_for_runtime,
+                runtime_ready_timeout_seconds=runtime_ready_timeout_seconds,
+                runtime_ready_poll_interval_seconds=runtime_ready_poll_interval_seconds,
+                poll_task_until_stable=poll_task_until_stable,
+                timeout=timeout,
+            ),
+        )
+        return _sdk_object_to_dict(chat)
+    except Exception as e:
+        err_name = type(e).__name__
+        if err_name == "NotFoundError":
+            raise ApiError(f"Agent session not found: {agent_session_uid}") from e
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"Agent session A2A chat failed: {e}") from e
+
+
+def send_agent_a2a_message(
+    target_agent_uid: str,
+    *,
+    caller_agent_session_uid: str,
+    message: str | None = None,
+    a2a_payload: dict[str, Any] | None = None,
+    handle_unique_id: str | None = None,
+    wait_for_runtime: bool = True,
+    runtime_ready_timeout_seconds: float = 60,
+    runtime_ready_poll_interval_seconds: float = 2,
+    poll_task_until_stable: bool = True,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Allocate or reuse an A2A target session and send a backend-managed A2A request.
+    """
+    try:
+
+        def _send(ClientAgent):
+            agent = ClientAgent.get_by_uid(str(target_agent_uid), timeout=timeout)
+            return agent.send_a2a_request(
+                caller_agent_session_uid=str(caller_agent_session_uid),
+                message=message,
+                a2a_payload=a2a_payload,
+                handle_unique_id=handle_unique_id,
+                wait_for_runtime=wait_for_runtime,
+                runtime_ready_timeout_seconds=runtime_ready_timeout_seconds,
+                runtime_ready_poll_interval_seconds=runtime_ready_poll_interval_seconds,
+                poll_task_until_stable=poll_task_until_stable,
+                timeout=timeout,
+            )
+
+        payload = _run_sdk_model_operation(
+            module_name="mainsequence.client.agent_runtime_models",
+            class_name="Agent",
+            operation=_send,
+        )
+        return _sdk_object_to_dict(payload)
+    except Exception as e:
+        err_name = type(e).__name__
+        if err_name == "NotFoundError":
+            raise ApiError(f"Agent not found: {target_agent_uid}") from e
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"Agent A2A send failed: {e}") from e
 
 
 def list_agent_users_can_view(
@@ -3280,11 +3395,11 @@ def _adapter_from_api_public_config_payload(
     dedupe_in_flight: bool | None = None,
 ) -> dict[str, Any]:
     public_config_model = _adapter_from_api_public_config_model()
-    normalized_api_base_url = api_base_url.strip() if isinstance(api_base_url, str) else api_base_url
+    normalized_api_base_url = (
+        api_base_url.strip() if isinstance(api_base_url, str) else api_base_url
+    )
     normalized_debug_api_base_url = (
-        debug_api_base_url.strip()
-        if isinstance(debug_api_base_url, str)
-        else debug_api_base_url
+        debug_api_base_url.strip() if isinstance(debug_api_base_url, str) else debug_api_base_url
     )
     normalized_api_base_url = normalized_api_base_url or None
     normalized_debug_api_base_url = normalized_debug_api_base_url or None
@@ -3328,7 +3443,9 @@ def _adapter_from_api_public_config_payload(
     try:
         if public_config is not None:
             payload = dict(public_config)
-            payload.update({key: value for key, value in alias_updates.items() if value is not None})
+            payload.update(
+                {key: value for key, value in alias_updates.items() if value is not None}
+            )
             config = public_config_model.model_validate(payload)
         elif normalized_debug_api_base_url is not None:
             config = public_config_model.direct(
@@ -3347,7 +3464,9 @@ def _adapter_from_api_public_config_payload(
                     "Adapter from API public config is required. Provide api_base_url, "
                     "debug_api_base_url, or public_config."
                 )
-            payload.update({key: value for key, value in alias_updates.items() if value is not None})
+            payload.update(
+                {key: value for key, value in alias_updates.items() if value is not None}
+            )
             config = public_config_model.model_validate(payload)
     except ApiError:
         raise

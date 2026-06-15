@@ -4,7 +4,7 @@ import datetime
 from enum import Enum
 from typing import Any, ClassVar, Literal
 
-from pydantic import Field
+from pydantic import ConfigDict, Field
 
 from .base import BaseObjectOrm, BasePydanticModel, ShareableObjectMixin
 from .exceptions import ApiError, raise_for_response
@@ -53,7 +53,9 @@ class AgentRuntimeImageDriftCheck(BasePydanticModel):
     label: str = Field(..., description="Human-readable label for the drift check.")
     status: str = Field(..., description="Backend status for this drift check.")
     has_drift: bool = Field(..., description="Whether this check detected runtime drift.")
-    matches: bool = Field(..., description="Whether the actual runtime state matches the expected state.")
+    matches: bool = Field(
+        ..., description="Whether the actual runtime state matches the expected state."
+    )
     reason: str = Field("", description="Machine-readable explanation for the status.")
     message: str = Field("", description="Human-readable explanation for this drift check.")
     autoheal_supported: bool = Field(
@@ -68,16 +70,26 @@ class AgentRuntimeImageDriftCheck(BasePydanticModel):
         None,
         description="Human-readable automatic repair guidance for this check.",
     )
-    expected_image_uri: str = Field("", description="Expected runtime image URI, when the check is image-based.")
-    actual_image_uri: str = Field("", description="Actual runtime image URI, when the check is image-based.")
-    expected_commit_hash: str = Field("", description="Expected project commit hash, when the check is commit-based.")
-    actual_commit_hash: str = Field("", description="Actual runtime commit hash, when the check is commit-based.")
+    expected_image_uri: str = Field(
+        "", description="Expected runtime image URI, when the check is image-based."
+    )
+    actual_image_uri: str = Field(
+        "", description="Actual runtime image URI, when the check is image-based."
+    )
+    expected_commit_hash: str = Field(
+        "", description="Expected project commit hash, when the check is commit-based."
+    )
+    actual_commit_hash: str = Field(
+        "", description="Actual runtime commit hash, when the check is commit-based."
+    )
 
 
 class AgentRuntimeImageDrift(BasePydanticModel):
     agent_kind: str = Field(..., description="Runtime family that produced the drift payload.")
     available: bool = Field(..., description="Whether drift information could be resolved.")
-    has_drift: bool = Field(..., description="Whether any included drift check is currently drifting.")
+    has_drift: bool = Field(
+        ..., description="Whether any included drift check is currently drifting."
+    )
     autoheal_available: bool = Field(
         False,
         description="Whether all currently drifting checks can be repaired automatically by the backend.",
@@ -137,6 +149,56 @@ class AgentSessionRuntimeAccess(BasePydanticModel):
         return self.image_drift.model_dump()
 
 
+class AgentSessionRuntimeReady(BasePydanticModel):
+    model_config = ConfigDict(extra="allow")
+
+    ready: bool = Field(..., description="Whether the target runtime became ready.")
+    attempts: int = Field(..., description="Number of readiness attempts performed.")
+    elapsed_seconds: float = Field(..., description="Elapsed wall-clock seconds spent polling.")
+    status_code: int | None = Field(
+        None,
+        description="Last runtime status code observed by the backend readiness probe.",
+    )
+    detail: str = Field("", description="Backend readiness detail or timeout reason.")
+
+
+class AgentSessionA2ANormalizedResponse(BasePydanticModel):
+    model_config = ConfigDict(extra="allow")
+
+    ok: bool = Field(..., description="Whether the normalized A2A response is usable.")
+    kind: str | None = Field(None, description="Normalized A2A response kind.")
+    state: str | None = Field(
+        None, description="Normalized task state, when the response is task-like."
+    )
+    task_id: str | None = Field(None, description="Normalized A2A task identifier, when present.")
+    context_id: str | None = Field(
+        None, description="Normalized A2A context identifier, when present."
+    )
+    text: str = Field("", description="Best-effort normalized response text.")
+    raw: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Backend-provided raw normalization metadata.",
+    )
+
+
+class AgentSessionA2AChatResponse(BasePydanticModel):
+    model_config = ConfigDict(extra="allow")
+
+    ok: bool = Field(..., description="Whether the backend A2A transport completed successfully.")
+    ready: AgentSessionRuntimeReady | None = Field(
+        None,
+        description="Runtime readiness result when wait_for_runtime was enabled.",
+    )
+    response: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Raw A2A JSON-RPC response returned by the target runtime.",
+    )
+    normalized: AgentSessionA2ANormalizedResponse | None = Field(
+        None,
+        description="Backend-normalized A2A response summary.",
+    )
+
+
 class Agent(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
     ENDPOINT: ClassVar[str] = "agents/v1/agents"
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]] | None] = {
@@ -154,7 +216,9 @@ class Agent(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
     }
 
     uid: str | None = Field(None, description="Public UID of the agent resource.")
-    name: str = Field(..., description="Human-readable display name for the agent inside the organization.")
+    name: str = Field(
+        ..., description="Human-readable display name for the agent inside the organization."
+    )
     agent_type: str = Field(
         "custom",
         description="Stable machine-readable runtime or workflow classifier for the agent. This is not the display name.",
@@ -163,7 +227,9 @@ class Agent(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
         ...,
         description="Client-supplied organization-scoped stable identifier for the agent. Use this for deterministic existence checks and idempotent create flows.",
     )
-    description: str = Field("", description="Optional long-form description explaining what the agent is for.")
+    description: str = Field(
+        "", description="Optional long-form description explaining what the agent is for."
+    )
     agent_card: dict[str, Any] | None = Field(
         None,
         description="Optional structured agent card payload.",
@@ -300,8 +366,6 @@ class Agent(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
 
         return [AgentSemanticSearchResult(**item) for item in data]
 
-
-
     def allocate_a2a_target_session(
         self,
         *,
@@ -352,30 +416,26 @@ class Agent(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
             resolved_caller_session_uid = caller_agent_session_uid
 
         if resolved_caller_session_uid is None:
-            raise ValueError(
-                "caller_agent_session_uid must be an AgentSession or a session uid"
-            )
+            raise ValueError("caller_agent_session_uid must be an AgentSession or a session uid")
         resolved_caller_session_uid = type(self)._coerce_filter_uid(
             resolved_caller_session_uid,
             field_name="caller_agent_session_uid",
         )
 
-        resolved_handle_unique_id = str(handle_unique_id or '').strip()
+        resolved_handle_unique_id = str(handle_unique_id or "").strip()
 
         body = {
             "caller_agent_session_uid": resolved_caller_session_uid,
         }
         if resolved_handle_unique_id:
-            body['handle_unique_id'] = resolved_handle_unique_id
+            body["handle_unique_id"] = resolved_handle_unique_id
 
         url = f"{self.get_detail_url()}allocate-a2a-target-session/"
-        payload = {
-            'json': serialize_to_json(body)
-        }
+        payload = {"json": serialize_to_json(body)}
         response = make_request(
             s=self.build_session(),
             loaders=self.LOADERS,
-            r_type='POST',
+            r_type="POST",
             url=url,
             payload=payload,
             time_out=timeout,
@@ -478,6 +538,61 @@ class Agent(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
             raise_for_response(response, payload=payload)
         return AgentSession(**response.json())
 
+    def send_a2a_request(
+        self,
+        *,
+        caller_agent_session_uid: str | AgentSession,
+        message: str | None = None,
+        a2a_payload: dict[str, Any] | None = None,
+        handle_unique_id: str | None = None,
+        wait_for_runtime: bool = True,
+        runtime_ready: dict[str, Any] | None = None,
+        runtime_ready_timeout_seconds: float = 60,
+        runtime_ready_poll_interval_seconds: float = 2,
+        poll_task_until_stable: bool = True,
+        timeout=None,
+    ) -> dict[str, Any]:
+        """
+        Allocate or reuse a delegated target session and send an A2A request to it.
+
+        This is the high-level runtime helper for agent-to-agent communication. It keeps
+        runtime access tokens and readiness polling behind backend APIs.
+        """
+        allocation = self.allocate_a2a_target_session(
+            caller_agent_session_uid=caller_agent_session_uid,
+            handle_unique_id=handle_unique_id,
+            timeout=timeout,
+        )
+        session_payload = allocation.get("session")
+        allocated_session_uid = allocation.get("agent_session_uid")
+        if not allocated_session_uid and isinstance(session_payload, dict):
+            allocated_session_uid = session_payload.get("uid")
+        if not allocated_session_uid:
+            raise TypeError("A2A allocation response did not include agent_session_uid")
+
+        chat = AgentSession.send_a2a_chat(
+            str(allocated_session_uid),
+            message=message,
+            a2a_payload=a2a_payload,
+            wait_for_runtime=wait_for_runtime,
+            runtime_ready=runtime_ready,
+            runtime_ready_timeout_seconds=runtime_ready_timeout_seconds,
+            runtime_ready_poll_interval_seconds=runtime_ready_poll_interval_seconds,
+            poll_task_until_stable=poll_task_until_stable,
+            timeout=timeout,
+        )
+        chat_payload = chat.model_dump(mode="json")
+        return {
+            "handle_unique_id": allocation.get("handle_unique_id"),
+            "agent_session_uid": str(allocated_session_uid),
+            "allocation_state": allocation.get("allocation_state"),
+            "allocation": allocation,
+            "chat": chat_payload,
+            "ready": chat_payload.get("ready"),
+            "response": chat_payload.get("response"),
+            "normalized": chat_payload.get("normalized"),
+        }
+
 
 class UserOrchestratorAgentService(BaseObjectOrm, BasePydanticModel):
     ENDPOINT: ClassVar[str] = "agents/v1/user-orchestrator-agent-services"
@@ -486,10 +601,19 @@ class UserOrchestratorAgentService(BaseObjectOrm, BasePydanticModel):
     agent_uid: str | None = Field(None, description="Public UID of the resolved astro Agent.")
     user_uid: str | None = Field(None, description="Public UID of the owning user.")
     is_ready: bool = Field(False, description="Whether the service runtime is routable.")
-    automatic_deployment: bool = Field(False, description="Whether this coding-agent service is eligible for automatic deployment flows.")
-    orchestrator_image_has_drift: bool = Field(False, description="Whether the orchestrator image is stale.")
-    related_job: Any | None = Field(None, description="Backing job payload or UID when returned by the backend.")
-    knative_service_runtime: Any | None = Field(None, description="Backing Knative service runtime payload.")
+    automatic_deployment: bool = Field(
+        False,
+        description="Whether this coding-agent service is eligible for automatic deployment flows.",
+    )
+    orchestrator_image_has_drift: bool = Field(
+        False, description="Whether the orchestrator image is stale."
+    )
+    related_job: Any | None = Field(
+        None, description="Backing job payload or UID when returned by the backend."
+    )
+    knative_service_runtime: Any | None = Field(
+        None, description="Backing Knative service runtime payload."
+    )
     subdomain: str = Field("", description="Public subdomain for the service.")
 
 
@@ -499,11 +623,22 @@ class UserProjectExecutorAgentService(BaseObjectOrm, BasePydanticModel):
     uid: str | None = Field(None, description="Public UID of the project executor service.")
     agent_uid: str | None = Field(None, description="Public UID of the resolved executor Agent.")
     is_ready: bool = Field(False, description="Whether the executor runtime is currently ready.")
-    automatic_deployment: bool = Field(False, description="Whether this coding-agent service is eligible for automatic deployment flows.")
-    image_drift: dict[str, Any] | None = Field(None, description="Executor image drift status payload.")
-    project: Any | None = Field(None, description="Owning project payload or UID when returned by the backend.")
-    related_job: Any | None = Field(None, description="Backing job payload or UID when returned by the backend.")
-    knative_service_runtime: Any | None = Field(None, description="Backing Knative service runtime payload.")
+    automatic_deployment: bool = Field(
+        False,
+        description="Whether this coding-agent service is eligible for automatic deployment flows.",
+    )
+    image_drift: dict[str, Any] | None = Field(
+        None, description="Executor image drift status payload."
+    )
+    project: Any | None = Field(
+        None, description="Owning project payload or UID when returned by the backend."
+    )
+    related_job: Any | None = Field(
+        None, description="Backing job payload or UID when returned by the backend."
+    )
+    knative_service_runtime: Any | None = Field(
+        None, description="Backing Knative service runtime payload."
+    )
     subdomain: str = Field("", description="Public subdomain for the service.")
 
 
@@ -525,6 +660,10 @@ class AgentSession(BaseObjectOrm, BasePydanticModel):
         "search": "str",
         "q": "str",
     }
+
+    @classmethod
+    def _resolve_agent_session_uid(cls, agent_session: str | AgentSession) -> str:
+        return cls._coerce_filter_uid(agent_session, field_name="agent_session")
 
     @classmethod
     def resolve_runtime_access(
@@ -564,10 +703,117 @@ class AgentSession(BaseObjectOrm, BasePydanticModel):
             raise_for_response(response, payload=payload)
         return AgentSessionRuntimeAccess(**response.json())
 
+    @classmethod
+    def wait_until_runtime_ready(
+        cls,
+        agent_session: str | AgentSession,
+        *,
+        timeout_seconds: float = 60,
+        poll_interval_seconds: float = 2,
+        timeout=None,
+    ) -> AgentSessionRuntimeReady:
+        """
+        Wait for a session runtime to become routable through the backend readiness probe.
+
+        Hits:
+            POST <object_url>/<session_uid>/runtime_ready/
+        """
+        session_uid = cls._resolve_agent_session_uid(agent_session)
+        timeout_seconds = float(timeout_seconds)
+        poll_interval_seconds = float(poll_interval_seconds)
+        if timeout_seconds <= 0:
+            raise ValueError("timeout_seconds must be greater than 0")
+        if poll_interval_seconds <= 0:
+            raise ValueError("poll_interval_seconds must be greater than 0")
+
+        body = {
+            "timeout_seconds": timeout_seconds,
+            "poll_interval_seconds": poll_interval_seconds,
+        }
+        payload = {"json": serialize_to_json(body)}
+        url = f"{cls.get_object_url()}/{session_uid}/runtime_ready/"
+        response = make_request(
+            s=cls.build_session(),
+            loaders=cls.LOADERS,
+            r_type="POST",
+            url=url,
+            payload=payload,
+            time_out=timeout,
+        )
+        if response.status_code not in (200, 504):
+            raise_for_response(response, payload=payload)
+        return AgentSessionRuntimeReady(**response.json())
+
+    @classmethod
+    def send_a2a_chat(
+        cls,
+        agent_session: str | AgentSession,
+        *,
+        message: str | None = None,
+        a2a_payload: dict[str, Any] | None = None,
+        wait_for_runtime: bool = True,
+        runtime_ready: dict[str, Any] | None = None,
+        runtime_ready_timeout_seconds: float = 60,
+        runtime_ready_poll_interval_seconds: float = 2,
+        poll_task_until_stable: bool = True,
+        timeout=None,
+    ) -> AgentSessionA2AChatResponse:
+        """
+        Send an A2A request to a session through the backend-managed runtime transport.
+
+        Hits:
+            POST <object_url>/<session_uid>/a2a_chat/
+        """
+        session_uid = cls._resolve_agent_session_uid(agent_session)
+        normalized_message = None if message is None else str(message)
+        if normalized_message is not None and not normalized_message.strip():
+            raise ValueError("message must not be empty")
+        if (normalized_message is None) == (a2a_payload is None):
+            raise ValueError("Pass exactly one of message or a2a_payload")
+        if a2a_payload is not None and not isinstance(a2a_payload, dict):
+            raise TypeError("a2a_payload must be a JSON object")
+
+        body: dict[str, Any] = {
+            "wait_for_runtime": bool(wait_for_runtime),
+            "poll_task_until_stable": bool(poll_task_until_stable),
+        }
+        if normalized_message is not None:
+            body["message"] = normalized_message
+        else:
+            body["a2a_payload"] = a2a_payload
+
+        if runtime_ready is None and wait_for_runtime:
+            runtime_ready = {
+                "timeout_seconds": float(runtime_ready_timeout_seconds),
+                "poll_interval_seconds": float(runtime_ready_poll_interval_seconds),
+            }
+        if runtime_ready is not None:
+            body["runtime_ready"] = runtime_ready
+
+        payload = {"json": serialize_to_json(body)}
+        url = f"{cls.get_object_url()}/{session_uid}/a2a_chat/"
+        response = make_request(
+            s=cls.build_session(),
+            loaders=cls.LOADERS,
+            r_type="POST",
+            url=url,
+            payload=payload,
+            time_out=timeout,
+        )
+        if response.status_code != 200:
+            raise_for_response(response, payload=payload)
+        return AgentSessionA2AChatResponse(**response.json())
+
     uid: str | None = Field(None, description="Public UID of the agent session.")
-    agent_uid: str | None = Field(None, description="Public UID of the agent definition used for this session.")
-    created_by_user_uid: str | None = Field(None, description="Public UID of the actor who created the session.")
-    parent_session_uid: str | None = Field(None, description="Public UID of the parent session, if any.")
+    agent_uid: str | None = Field(
+        None, description="Public UID of the agent definition used for this session."
+    )
+    created_by_user_uid: str | None = Field(
+        None, description="Public UID of the actor who created the session."
+    )
+    parent_session_uid: str | None = Field(
+        None, description="Public UID of the parent session, if any."
+    )
     name: str = Field(
         "",
         description="Optional human-readable session name for UI and user-facing history.",
@@ -609,7 +855,9 @@ class AgentSession(BaseObjectOrm, BasePydanticModel):
         description="Lifecycle status of the session.",
     )
     runtime_state: str = Field("", description="Computed runtime state of the session.")
-    working: bool | None = Field(None, description="Whether the backend considers the session actively working.")
+    working: bool | None = Field(
+        None, description="Whether the backend considers the session actively working."
+    )
     started_at: datetime.datetime | None = Field(
         None,
         description="Timestamp when the session started.",
@@ -626,7 +874,9 @@ class AgentSession(BaseObjectOrm, BasePydanticModel):
         ...,
         description="Resolved LLM model actually used for this session. Unlike Agent defaults, this is intended to be the authoritative runtime record.",
     )
-    llm_thinking: str = Field("", description="Resolved thinking/reasoning setting used for this session.")
+    llm_thinking: str = Field(
+        "", description="Resolved thinking/reasoning setting used for this session."
+    )
     engine_name: str = Field(
         ...,
         description="Resolved higher-level runtime or engine actually used for this session. This records the wrapper above the raw model, such as the agent runtime, workflow engine, router, or orchestration layer.",
@@ -664,11 +914,15 @@ class AgentSession(BaseObjectOrm, BasePydanticModel):
         description="Agent session handle currently bound to this session, if any.",
     )
 
+
 __all__ = [
     "Agent",
     "AgentRuntimeImageDrift",
     "AgentRuntimeImageDriftCheck",
     "AgentSemanticSearchResult",
+    "AgentSessionA2AChatResponse",
+    "AgentSessionA2ANormalizedResponse",
+    "AgentSessionRuntimeReady",
     "AgentSessionRuntimeAccess",
     "UserOrchestratorAgentService",
     "UserProjectExecutorAgentService",

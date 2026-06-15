@@ -1528,6 +1528,281 @@ def test_agent_session_runtime_access_uses_session_uid_route(monkeypatch):
     }
 
 
+def test_agent_session_runtime_ready_posts_contract(monkeypatch):
+    captured = {}
+    session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
+
+    class FakeResponse:
+        status_code = 200
+        content = b'{"ready": true}'
+
+        @staticmethod
+        def json():
+            return {
+                "ready": True,
+                "attempts": 2,
+                "elapsed_seconds": 2.01,
+                "status_code": 200,
+                "detail": "",
+            }
+
+    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
+        captured["r_type"] = r_type
+        captured["url"] = url
+        captured["payload"] = payload
+        captured["timeout"] = time_out
+        return FakeResponse()
+
+    monkeypatch.setattr(agent_models_mod, "make_request", _fake_make_request)
+
+    ready = agent_models_mod.AgentSession.wait_until_runtime_ready(
+        session_uid,
+        timeout_seconds=60,
+        poll_interval_seconds=2,
+        timeout=13,
+    )
+
+    assert ready.ready is True
+    assert ready.attempts == 2
+    assert captured == {
+        "r_type": "POST",
+        "url": f"{agent_models_mod.AgentSession.get_object_url()}/{session_uid}/runtime_ready/",
+        "payload": {"json": {"timeout_seconds": 60.0, "poll_interval_seconds": 2.0}},
+        "timeout": 13,
+    }
+
+
+def test_agent_session_runtime_ready_returns_timeout_payload(monkeypatch):
+    session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
+
+    class FakeResponse:
+        status_code = 504
+        content = b'{"ready": false}'
+
+        @staticmethod
+        def json():
+            return {
+                "ready": False,
+                "attempts": 30,
+                "elapsed_seconds": 60.0,
+                "status_code": 503,
+                "detail": "runtime not ready",
+            }
+
+    monkeypatch.setattr(agent_models_mod, "make_request", lambda **kwargs: FakeResponse())
+
+    ready = agent_models_mod.AgentSession.wait_until_runtime_ready(session_uid, timeout=13)
+
+    assert ready.ready is False
+    assert ready.status_code == 503
+    assert ready.detail == "runtime not ready"
+
+
+def test_agent_session_a2a_chat_posts_plain_message_contract(monkeypatch):
+    captured = {}
+    session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
+
+    class FakeResponse:
+        status_code = 200
+        content = b'{"ok": true}'
+
+        @staticmethod
+        def json():
+            return {
+                "ok": True,
+                "ready": {
+                    "ready": True,
+                    "attempts": 1,
+                    "elapsed_seconds": 0.0,
+                    "status_code": 200,
+                    "detail": "",
+                },
+                "response": {
+                    "jsonrpc": "2.0",
+                    "id": "request-1",
+                    "result": {"kind": "message", "parts": [{"kind": "text", "text": "Done."}]},
+                },
+                "normalized": {
+                    "ok": True,
+                    "kind": "message",
+                    "state": None,
+                    "task_id": None,
+                    "context_id": None,
+                    "text": "Done.",
+                    "raw": {},
+                },
+            }
+
+    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
+        captured["r_type"] = r_type
+        captured["url"] = url
+        captured["payload"] = payload
+        captured["timeout"] = time_out
+        return FakeResponse()
+
+    monkeypatch.setattr(agent_models_mod, "make_request", _fake_make_request)
+
+    chat = agent_models_mod.AgentSession.send_a2a_chat(
+        session_uid,
+        message="Review the current portfolio drift.",
+        wait_for_runtime=True,
+        runtime_ready_timeout_seconds=60,
+        runtime_ready_poll_interval_seconds=2,
+        poll_task_until_stable=True,
+        timeout=14,
+    )
+
+    assert chat.ok is True
+    assert chat.normalized is not None
+    assert chat.normalized.text == "Done."
+    assert captured == {
+        "r_type": "POST",
+        "url": f"{agent_models_mod.AgentSession.get_object_url()}/{session_uid}/a2a_chat/",
+        "payload": {
+            "json": {
+                "wait_for_runtime": True,
+                "poll_task_until_stable": True,
+                "message": "Review the current portfolio drift.",
+                "runtime_ready": {
+                    "timeout_seconds": 60.0,
+                    "poll_interval_seconds": 2.0,
+                },
+            }
+        },
+        "timeout": 14,
+    }
+
+
+def test_agent_session_a2a_chat_posts_raw_payload_contract(monkeypatch):
+    captured = {}
+    session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
+    raw_payload = {
+        "jsonrpc": "2.0",
+        "id": "request-1",
+        "method": "message/send",
+        "params": {
+            "message": {
+                "kind": "message",
+                "messageId": "message-1",
+                "role": "user",
+                "parts": [{"kind": "text", "text": "Review the current portfolio drift."}],
+            }
+        },
+    }
+
+    class FakeResponse:
+        status_code = 200
+        content = b'{"ok": true}'
+
+        @staticmethod
+        def json():
+            return {
+                "ok": True,
+                "ready": None,
+                "response": {"jsonrpc": "2.0", "id": "request-1", "result": {}},
+                "normalized": {
+                    "ok": True,
+                    "kind": "message",
+                    "state": None,
+                    "task_id": None,
+                    "context_id": None,
+                    "text": "",
+                    "raw": {},
+                },
+            }
+
+    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
+        captured["payload"] = payload
+        return FakeResponse()
+
+    monkeypatch.setattr(agent_models_mod, "make_request", _fake_make_request)
+
+    agent_models_mod.AgentSession.send_a2a_chat(
+        session_uid,
+        a2a_payload=raw_payload,
+        wait_for_runtime=False,
+        poll_task_until_stable=False,
+    )
+
+    assert captured["payload"] == {
+        "json": {
+            "wait_for_runtime": False,
+            "poll_task_until_stable": False,
+            "a2a_payload": raw_payload,
+        }
+    }
+
+
+def test_agent_send_a2a_request_allocates_and_sends(monkeypatch):
+    captured = {}
+    agent_uid = "e0e75693-4110-464c-93e0-82c7fd9c9a23"
+    caller_session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
+    target_session_uid = "ac9e221d-1cd6-464c-a253-e302754872c1"
+    agent = agent_models_mod.Agent(
+        uid=agent_uid,
+        name="Research Copilot",
+        agent_type="custom",
+        agent_unique_id="research-copilot",
+        description="Research assistant.",
+        agent_card=None,
+        llm_provider="openai",
+        llm_model="gpt-5.4",
+        llm_thinking="medium",
+    )
+
+    def _fake_allocate(self, *, caller_agent_session_uid, handle_unique_id=None, timeout=None):
+        captured["caller_agent_session_uid"] = caller_agent_session_uid
+        captured["handle_unique_id"] = handle_unique_id
+        captured["allocate_timeout"] = timeout
+        return {
+            "handle_unique_id": handle_unique_id,
+            "agent_session_uid": target_session_uid,
+            "allocation_state": "reused_existing",
+            "session": {"uid": target_session_uid},
+        }
+
+    def _fake_send_chat(agent_session, **kwargs):
+        captured["agent_session"] = agent_session
+        captured["chat_kwargs"] = kwargs
+        return agent_models_mod.AgentSessionA2AChatResponse(
+            ok=True,
+            ready={
+                "ready": True,
+                "attempts": 1,
+                "elapsed_seconds": 0.0,
+                "status_code": 200,
+                "detail": "",
+            },
+            response={"jsonrpc": "2.0", "id": "request-1", "result": {}},
+            normalized={
+                "ok": True,
+                "kind": "message",
+                "state": None,
+                "task_id": None,
+                "context_id": None,
+                "text": "Done.",
+                "raw": {},
+            },
+        )
+
+    monkeypatch.setattr(agent_models_mod.Agent, "allocate_a2a_target_session", _fake_allocate)
+    monkeypatch.setattr(agent_models_mod.AgentSession, "send_a2a_chat", _fake_send_chat)
+
+    result = agent.send_a2a_request(
+        caller_agent_session_uid=caller_session_uid,
+        message="Review the current portfolio drift.",
+        handle_unique_id="delegated-handle-1",
+        timeout=15,
+    )
+
+    assert result["handle_unique_id"] == "delegated-handle-1"
+    assert result["agent_session_uid"] == target_session_uid
+    assert result["normalized"]["text"] == "Done."
+    assert captured["agent_session"] == target_session_uid
+    assert captured["chat_kwargs"]["message"] == "Review the current portfolio drift."
+    assert captured["chat_kwargs"]["timeout"] == 15
+
+
 def test_agent_a2a_allocation_sends_caller_session_uid(monkeypatch):
     captured = {}
     agent_uid = "e0e75693-4110-464c-93e0-82c7fd9c9a23"

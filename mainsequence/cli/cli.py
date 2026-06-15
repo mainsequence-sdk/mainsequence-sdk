@@ -205,10 +205,13 @@ from .api import (
     schedule_batch_project_jobs,
     search_projects,
     semantic_search_agents,
+    send_agent_a2a_message,
+    send_agent_session_a2a_chat,
     sync_project_after_commit,
     update_organization_team,
     update_workspace,
     validate_project_name,
+    wait_agent_session_runtime_ready,
 )
 from .browser_auth import BrowserAuthError, login_via_browser
 from .docker_utils import (
@@ -329,6 +332,7 @@ app = typer.Typer(
 )
 
 agent = typer.Typer(help="Agent commands")
+agent_a2a_group = typer.Typer(help="Agent-to-agent communication commands")
 agent_run_group = typer.Typer(help="Agent runtime commands")
 agent_session_group = typer.Typer(help="Agent session commands")
 constants = typer.Typer(help="Constant commands")
@@ -354,6 +358,7 @@ sdk = typer.Typer(help="SDK utilities (latest version, status)")
 skills = typer.Typer(help="Installed scaffold skill commands")
 
 app.add_typer(agent, name="agent")
+agent.add_typer(agent_a2a_group, name="a2a")
 agent.add_typer(agent_run_group, name="run")
 agent.add_typer(agent_session_group, name="session")
 app.add_typer(agent_run_group, name="agent_runtime", hidden=True)
@@ -1047,8 +1052,7 @@ def _project_installed_package_version(project_dir: pathlib.Path, package_name: 
     resolved_version = (lookup.stdout or "").strip()
     if not resolved_version:
         error(
-            f"Could not resolve installed {package_name!r} version from the target "
-            "project's .venv."
+            f"Could not resolve installed {package_name!r} version from the target project's .venv."
         )
         raise typer.Exit(1)
     return resolved_version
@@ -3445,6 +3449,24 @@ def _parse_json_dict_option_or_file(
     return None
 
 
+def _parse_text_option_or_file(
+    *,
+    raw_value: str | None,
+    file_path: pathlib.Path | None,
+    field_label: str,
+) -> str | None:
+    if raw_value is not None and file_path is not None:
+        raise ValueError(f"Provide either {field_label} text or {field_label} file, not both.")
+    if file_path is None:
+        return raw_value
+    try:
+        return file_path.read_text(encoding="utf-8")
+    except FileNotFoundError as e:
+        raise ValueError(f"{field_label} file not found: {file_path}") from e
+    except Exception as e:
+        raise ValueError(f"Could not read {field_label} file {file_path}: {e}") from e
+
+
 def _format_agent_preview(agent_payload: dict[str, object]) -> list[tuple[str, str]]:
     labels = agent_payload.get("labels")
     return [
@@ -3572,6 +3594,49 @@ def _format_agent_a2a_allocation_preview(
         ("Agent Session UID", str(allocation_payload.get("agent_session_uid") or "-")),
         ("Allocation State", str(allocation_payload.get("allocation_state") or "-")),
         ("Session", _format_agent_session_ref_label(session_payload)),
+    ]
+
+
+def _format_agent_runtime_ready_preview(
+    ready_payload: dict[str, object],
+) -> list[tuple[str, str]]:
+    return [
+        ("Ready", str(ready_payload.get("ready"))),
+        ("Attempts", str(ready_payload.get("attempts") or "-")),
+        ("Elapsed Seconds", str(ready_payload.get("elapsed_seconds") or "-")),
+        ("Status Code", str(ready_payload.get("status_code") or "-")),
+        ("Detail", str(ready_payload.get("detail") or "")),
+    ]
+
+
+def _format_agent_a2a_chat_preview(
+    chat_payload: dict[str, object],
+) -> list[tuple[str, str]]:
+    ready = chat_payload.get("ready") if isinstance(chat_payload.get("ready"), dict) else {}
+    normalized = (
+        chat_payload.get("normalized") if isinstance(chat_payload.get("normalized"), dict) else {}
+    )
+    return [
+        ("OK", str(chat_payload.get("ok"))),
+        ("Runtime Ready", str(ready.get("ready") if isinstance(ready, dict) else "-")),
+        ("Kind", str(normalized.get("kind") or "-") if isinstance(normalized, dict) else "-"),
+        ("State", str(normalized.get("state") or "-") if isinstance(normalized, dict) else "-"),
+        ("Task ID", str(normalized.get("task_id") or "-") if isinstance(normalized, dict) else "-"),
+        (
+            "Context ID",
+            str(normalized.get("context_id") or "-") if isinstance(normalized, dict) else "-",
+        ),
+        ("Text", str(normalized.get("text") or "-") if isinstance(normalized, dict) else "-"),
+    ]
+
+
+def _format_agent_a2a_send_preview(
+    send_payload: dict[str, object],
+) -> list[tuple[str, str]]:
+    return [
+        ("Handle Unique ID", str(send_payload.get("handle_unique_id") or "-")),
+        ("Agent Session UID", str(send_payload.get("agent_session_uid") or "-")),
+        ("Allocation State", str(send_payload.get("allocation_state") or "-")),
     ]
 
 
@@ -3947,6 +4012,166 @@ def _agent_get_latest_session_impl(
 
     print_kv("Agent Session", _format_agent_session_preview(agent_session_payload))
     print_kv("Agent Session Details", _format_agent_session_details(agent_session_payload))
+
+
+def _resolve_a2a_cli_request_payload(
+    *,
+    message: str | None,
+    message_file: pathlib.Path | None,
+    a2a_payload: str | None,
+    a2a_payload_file: pathlib.Path | None,
+) -> tuple[str | None, dict[str, object] | None]:
+    try:
+        resolved_message = _parse_text_option_or_file(
+            raw_value=message,
+            file_path=message_file,
+            field_label="message",
+        )
+        resolved_payload = _parse_json_dict_option_or_file(
+            raw_value=a2a_payload,
+            file_path=a2a_payload_file,
+            field_label="a2a_payload",
+        )
+    except ValueError as e:
+        error(str(e))
+        raise typer.Exit(1) from e
+
+    if resolved_message is not None and not resolved_message.strip():
+        error("message must not be empty.")
+        raise typer.Exit(1)
+    if (resolved_message is None) == (resolved_payload is None):
+        error(
+            "Pass exactly one of `--message`/`--message-file` or `--a2a-payload`/`--a2a-payload-file`."
+        )
+        raise typer.Exit(1)
+    return resolved_message, resolved_payload
+
+
+def _agent_a2a_send_impl(
+    *,
+    target_agent_uid: str,
+    caller_agent_session_uid: str,
+    message: str | None,
+    message_file: pathlib.Path | None,
+    a2a_payload: str | None,
+    a2a_payload_file: pathlib.Path | None,
+    handle_unique_id: str | None,
+    wait_for_runtime: bool,
+    runtime_ready_timeout_seconds: float,
+    runtime_ready_poll_interval_seconds: float,
+    poll_task_until_stable: bool,
+    timeout: int | None,
+) -> None:
+    resolved_message, resolved_payload = _resolve_a2a_cli_request_payload(
+        message=message,
+        message_file=message_file,
+        a2a_payload=a2a_payload,
+        a2a_payload_file=a2a_payload_file,
+    )
+    _require_login()
+
+    try:
+        send_payload = send_agent_a2a_message(
+            target_agent_uid,
+            caller_agent_session_uid=caller_agent_session_uid,
+            message=resolved_message,
+            a2a_payload=resolved_payload,
+            handle_unique_id=handle_unique_id,
+            wait_for_runtime=wait_for_runtime,
+            runtime_ready_timeout_seconds=runtime_ready_timeout_seconds,
+            runtime_ready_poll_interval_seconds=runtime_ready_poll_interval_seconds,
+            poll_task_until_stable=poll_task_until_stable,
+            timeout=timeout,
+        )
+    except ApiError as e:
+        error(f"Agent A2A send failed: {e}")
+        raise typer.Exit(1) from e
+
+    if _emit_json(send_payload):
+        return
+
+    success(f"Agent A2A request sent: target_agent_uid={target_agent_uid}")
+    print_kv("A2A Send", _format_agent_a2a_send_preview(send_payload))
+    chat_payload = send_payload.get("chat") if isinstance(send_payload.get("chat"), dict) else {}
+    if isinstance(chat_payload, dict):
+        print_kv("A2A Response", _format_agent_a2a_chat_preview(chat_payload))
+
+
+def _agent_session_wait_runtime_ready_impl(
+    *,
+    agent_session_uid: str,
+    timeout_seconds: float,
+    poll_interval_seconds: float,
+    timeout: int | None,
+) -> None:
+    _require_login()
+
+    try:
+        ready_payload = wait_agent_session_runtime_ready(
+            agent_session_uid,
+            timeout_seconds=timeout_seconds,
+            poll_interval_seconds=poll_interval_seconds,
+            timeout=timeout,
+        )
+    except ApiError as e:
+        error(f"Agent session runtime readiness failed: {e}")
+        raise typer.Exit(1) from e
+
+    if _emit_json(ready_payload):
+        if not ready_payload.get("ready"):
+            raise typer.Exit(1)
+        return
+
+    if ready_payload.get("ready"):
+        success(f"Agent session runtime is ready: session_uid={agent_session_uid}")
+    else:
+        error(f"Agent session runtime is not ready: session_uid={agent_session_uid}")
+    print_kv("Agent Session Runtime Ready", _format_agent_runtime_ready_preview(ready_payload))
+    if not ready_payload.get("ready"):
+        raise typer.Exit(1)
+
+
+def _agent_session_a2a_chat_impl(
+    *,
+    agent_session_uid: str,
+    message: str | None,
+    message_file: pathlib.Path | None,
+    a2a_payload: str | None,
+    a2a_payload_file: pathlib.Path | None,
+    wait_for_runtime: bool,
+    runtime_ready_timeout_seconds: float,
+    runtime_ready_poll_interval_seconds: float,
+    poll_task_until_stable: bool,
+    timeout: int | None,
+) -> None:
+    resolved_message, resolved_payload = _resolve_a2a_cli_request_payload(
+        message=message,
+        message_file=message_file,
+        a2a_payload=a2a_payload,
+        a2a_payload_file=a2a_payload_file,
+    )
+    _require_login()
+
+    try:
+        chat_payload = send_agent_session_a2a_chat(
+            agent_session_uid,
+            message=resolved_message,
+            a2a_payload=resolved_payload,
+            wait_for_runtime=wait_for_runtime,
+            runtime_ready_timeout_seconds=runtime_ready_timeout_seconds,
+            runtime_ready_poll_interval_seconds=runtime_ready_poll_interval_seconds,
+            poll_task_until_stable=poll_task_until_stable,
+            timeout=timeout,
+        )
+    except ApiError as e:
+        error(f"Agent session A2A chat failed: {e}")
+        raise typer.Exit(1) from e
+
+    if _emit_json(chat_payload):
+        return
+
+    success(f"Agent session A2A chat sent: session_uid={agent_session_uid}")
+    print_kv("A2A Response", _format_agent_a2a_chat_preview(chat_payload))
 
 
 def _agent_session_list_impl(
@@ -6726,6 +6951,96 @@ def agent_allocate_a2a_target_session_cmd(
     )
 
 
+@agent_a2a_group.command("send")
+def agent_a2a_send_cmd(
+    target_agent_uid: str = pydantic_argument(
+        AGENT_MODEL_REF,
+        "uid",
+        ...,
+        help="Target agent UID.",
+    ),
+    caller_agent_session_uid: str = pydantic_argument(
+        AGENT_SESSION_MODEL_REF,
+        "uid",
+        ...,
+        help="Caller agent session UID.",
+    ),
+    message: str | None = typer.Option(
+        None,
+        "--message",
+        help="Plain text message to send through backend-managed A2A transport.",
+    ),
+    message_file: pathlib.Path | None = typer.Option(
+        None,
+        "--message-file",
+        help="Path to a UTF-8 text file containing the plain A2A message.",
+    ),
+    a2a_payload: str | None = typer.Option(
+        None,
+        "--a2a-payload",
+        help="Raw A2A JSON-RPC payload as a JSON object string.",
+    ),
+    a2a_payload_file: pathlib.Path | None = typer.Option(
+        None,
+        "--a2a-payload-file",
+        help="Path to a JSON/YAML file containing the raw A2A JSON-RPC payload.",
+    ),
+    handle_unique_id: str | None = typer.Option(
+        None,
+        "--handle-unique-id",
+        help="Optional delegated-session handle to reuse an existing target session.",
+    ),
+    wait_for_runtime: bool = typer.Option(
+        True,
+        "--wait-for-runtime/--no-wait-for-runtime",
+        help="Ask the backend to wait until the target runtime is ready before sending.",
+    ),
+    runtime_ready_timeout_seconds: float = typer.Option(
+        60,
+        "--runtime-ready-timeout-seconds",
+        help="Maximum backend runtime readiness wait in seconds.",
+    ),
+    runtime_ready_poll_interval_seconds: float = typer.Option(
+        2,
+        "--runtime-ready-poll-interval-seconds",
+        help="Backend runtime readiness poll interval in seconds.",
+    ),
+    poll_task_until_stable: bool = typer.Option(
+        True,
+        "--poll-task-until-stable/--no-poll-task-until-stable",
+        help="Ask the backend to poll A2A task responses until stable.",
+    ),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Allocate or reuse a target session and send an A2A request through backend transport.
+
+    This is the normal CLI path for agent-to-agent communication. It does not expose
+    runtime RPC URLs or runtime bearer tokens.
+
+    Examples
+    --------
+    ```bash
+    mainsequence agent a2a send e0e75693-4110-464c-93e0-82c7fd9c9a23 3f1cc452-43ec-49cb-b2ba-87dbac164d29 --message "Review the current portfolio drift." --json
+    mainsequence agent a2a send e0e75693-4110-464c-93e0-82c7fd9c9a23 3f1cc452-43ec-49cb-b2ba-87dbac164d29 --message-file request.txt --handle-unique-id delegated-handle-1 --timeout 120 --json
+    ```
+    """
+    _agent_a2a_send_impl(
+        target_agent_uid=target_agent_uid,
+        caller_agent_session_uid=caller_agent_session_uid,
+        message=message,
+        message_file=message_file,
+        a2a_payload=a2a_payload,
+        a2a_payload_file=a2a_payload_file,
+        handle_unique_id=handle_unique_id,
+        wait_for_runtime=wait_for_runtime,
+        runtime_ready_timeout_seconds=runtime_ready_timeout_seconds,
+        runtime_ready_poll_interval_seconds=runtime_ready_poll_interval_seconds,
+        poll_task_until_stable=poll_task_until_stable,
+        timeout=timeout,
+    )
+
+
 @agent.command("get_latest_session")
 def agent_get_latest_session_cmd(
     agent_uid: str = pydantic_argument(
@@ -6793,6 +7108,104 @@ def agent_session_list_cmd(
         timeout=timeout,
         filter_entries=filter_entries,
         show_filters=show_filters,
+    )
+
+
+@agent_session_group.command("wait_runtime_ready")
+def agent_session_wait_runtime_ready_cmd(
+    agent_session_uid: str = pydantic_argument(
+        AGENT_SESSION_MODEL_REF, "uid", ..., help="Agent session UID."
+    ),
+    timeout_seconds: float = typer.Option(
+        60,
+        "--timeout-seconds",
+        help="Maximum backend runtime readiness wait in seconds.",
+    ),
+    poll_interval_seconds: float = typer.Option(
+        2,
+        "--poll-interval-seconds",
+        help="Backend runtime readiness poll interval in seconds.",
+    ),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Wait for one agent session runtime to become ready.
+
+    Uses SDK client `AgentSession.wait_until_runtime_ready()` and the backend
+    `runtime_ready/` endpoint. This does not expose runtime RPC URLs or bearer tokens.
+    """
+    _agent_session_wait_runtime_ready_impl(
+        agent_session_uid=agent_session_uid,
+        timeout_seconds=timeout_seconds,
+        poll_interval_seconds=poll_interval_seconds,
+        timeout=timeout,
+    )
+
+
+@agent_session_group.command("a2a_chat")
+def agent_session_a2a_chat_cmd(
+    agent_session_uid: str = pydantic_argument(
+        AGENT_SESSION_MODEL_REF, "uid", ..., help="Agent session UID."
+    ),
+    message: str | None = typer.Option(
+        None,
+        "--message",
+        help="Plain text message to send through backend-managed A2A transport.",
+    ),
+    message_file: pathlib.Path | None = typer.Option(
+        None,
+        "--message-file",
+        help="Path to a UTF-8 text file containing the plain A2A message.",
+    ),
+    a2a_payload: str | None = typer.Option(
+        None,
+        "--a2a-payload",
+        help="Raw A2A JSON-RPC payload as a JSON object string.",
+    ),
+    a2a_payload_file: pathlib.Path | None = typer.Option(
+        None,
+        "--a2a-payload-file",
+        help="Path to a JSON/YAML file containing the raw A2A JSON-RPC payload.",
+    ),
+    wait_for_runtime: bool = typer.Option(
+        True,
+        "--wait-for-runtime/--no-wait-for-runtime",
+        help="Ask the backend to wait until the target runtime is ready before sending.",
+    ),
+    runtime_ready_timeout_seconds: float = typer.Option(
+        60,
+        "--runtime-ready-timeout-seconds",
+        help="Maximum backend runtime readiness wait in seconds.",
+    ),
+    runtime_ready_poll_interval_seconds: float = typer.Option(
+        2,
+        "--runtime-ready-poll-interval-seconds",
+        help="Backend runtime readiness poll interval in seconds.",
+    ),
+    poll_task_until_stable: bool = typer.Option(
+        True,
+        "--poll-task-until-stable/--no-poll-task-until-stable",
+        help="Ask the backend to poll A2A task responses until stable.",
+    ),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Send an A2A request to an existing agent session through backend transport.
+
+    This is a lower-level command for diagnostics or when a target session already
+    exists. Normal delegated A2A should use `mainsequence agent a2a send`.
+    """
+    _agent_session_a2a_chat_impl(
+        agent_session_uid=agent_session_uid,
+        message=message,
+        message_file=message_file,
+        a2a_payload=a2a_payload,
+        a2a_payload_file=a2a_payload_file,
+        wait_for_runtime=wait_for_runtime,
+        runtime_ready_timeout_seconds=runtime_ready_timeout_seconds,
+        runtime_ready_poll_interval_seconds=runtime_ready_poll_interval_seconds,
+        poll_task_until_stable=poll_task_until_stable,
+        timeout=timeout,
     )
 
 
@@ -12553,9 +12966,7 @@ def project_update_agent_skills(
 
     pinned_version = _project_installed_package_version(project_dir, "mainsequence")
     source_checkout_root = _mainsequence_source_checkout_root()
-    protected_project_roots = (
-        (source_checkout_root,) if source_checkout_root is not None else ()
-    )
+    protected_project_roots = (source_checkout_root,) if source_checkout_root is not None else ()
     try:
         copy_result = copy_scaffold_skills(
             project_dir=project_dir,
