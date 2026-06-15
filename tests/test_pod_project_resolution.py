@@ -25,6 +25,7 @@ def _project_payload_public() -> dict:
         "project_name": "Markets Repository",
         "data_source": {
             "uid": DATA_SOURCE_UID,
+            "backend_can_add_fields": "ignored",
             "related_resource": {
                 "uid": DATA_SOURCE_UID,
                 "data_source_uid": DATA_SOURCE_UID,
@@ -32,6 +33,8 @@ def _project_payload_public() -> dict:
                 "organization_uid": ORGANIZATION_UID,
                 "class_type": "timescale_db_remote",
                 "status": "AVAILABLE",
+                "storage_access_mode": "read_write",
+                "backend_can_add_nested_fields": "ignored",
             },
             "related_resource_class_type": "timescale_db_remote",
         },
@@ -39,6 +42,7 @@ def _project_payload_public() -> dict:
         "is_initialized": True,
         "created_by": "user-4",
         "labels": ["markets"],
+        "backend_can_add_project_fields": "ignored",
     }
 
 
@@ -53,6 +57,40 @@ def test_project_deserializes_public_uid_serializer_payload():
     assert project.data_source.related_resource.data_source_uid == DATA_SOURCE_UID
     assert project.data_source.related_resource.organization_uid == ORGANIZATION_UID
     assert project.data_source.related_resource.class_type == "timescale_db_remote"
+    assert project.data_source.related_resource.storage_access_mode == "read_write"
+    assert project.data_source.related_resource.allows_runtime_reads is True
+    assert project.data_source.related_resource.allows_runtime_writes is True
+
+
+def test_project_deserializes_nullable_datasource_related_resource_edge_case():
+    payload = _project_payload_public()
+    payload["data_source"]["related_resource"] = {
+        "uid": None,
+        "data_source_uid": None,
+        "display_name": None,
+        "organization_uid": None,
+        "class_type": None,
+        "status": None,
+        "storage_access_mode": None,
+    }
+
+    project = models_foundry.Project(**payload)
+
+    assert project.data_source is not None
+    assert project.data_source.related_resource is not None
+    assert project.data_source.related_resource.storage_access_mode is None
+    assert project.data_source.related_resource.allows_runtime_reads is False
+    assert project.data_source.related_resource.allows_runtime_writes is False
+
+
+def test_project_deserializes_null_datasource_related_resource_edge_case():
+    payload = _project_payload_public()
+    payload["data_source"]["related_resource"] = None
+
+    project = models_foundry.Project(**payload)
+
+    assert project.data_source is not None
+    assert project.data_source.related_resource is None
 
 
 def test_data_node_update_get_or_create_uses_current_project_uid(monkeypatch):

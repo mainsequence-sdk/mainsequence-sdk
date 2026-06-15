@@ -10,7 +10,7 @@ from uuid import UUID
 import pandas as pd
 import yaml
 from cachetools import TTLCache, cachedmethod
-from pydantic import Field, SecretStr
+from pydantic import ConfigDict, Field, SecretStr
 
 from mainsequence.logconf import logger
 
@@ -143,6 +143,8 @@ class ProjectQuickSearchResult(BasePydanticModel):
 
 
 class Project(LabelableObjectMixin, ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
+    model_config = ConfigDict(extra="allow")
+
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
         "project_name": ["in", "exact", "contains"],
         "uid": ["in", "exact"],

@@ -142,6 +142,7 @@ MetaTableSchemaManagementMode = Literal[
     "external_registered",
 ]
 MetaTableOperation = Literal["select", "insert", "update", "delete", "upsert"]
+StorageAccessMode = Literal["read_write", "read_only", "disabled"]
 COMPILED_SQL_V1 = "compiled-sql.v1"
 MetaTableCompiledSQLVersion = Literal["compiled-sql.v1"]
 MetaTableCompiledSQLDialect = Literal["postgresql"]
@@ -792,6 +793,8 @@ class ManagedMetaTableFinalizeResponse(BasePydanticModel):
 
 
 class DataSource(BasePydanticModel, BaseObjectOrm):
+    model_config = ConfigDict(extra="allow")
+
     uid: str | None = Field(
         None,
         description="Public uid of the data source.",
@@ -801,7 +804,7 @@ class DataSource(BasePydanticModel, BaseObjectOrm):
         description="Compatibility alias for the public data source uid.",
     )
     id: int | None = Field(None, description="The unique identifier of the Local Disk Source Lake")
-    display_name: str
+    display_name: str | None = None
     organization: int | None = Field(
         None, description="The unique identifier of the Local Disk Source Lake"
     )
@@ -809,11 +812,26 @@ class DataSource(BasePydanticModel, BaseObjectOrm):
         None,
         description="Public uid of the owning organization.",
     )
-    class_type: str
-    status: str
+    class_type: str | None = None
+    status: str | None = None
+    storage_access_mode: StorageAccessMode | None = Field(
+        default="read_write",
+        description="Runtime storage access gate: read_write, read_only, or disabled.",
+    )
     extra_arguments: dict | None = None
 
     STATUS_AVAILABLE: ClassVar[str] = "AVAILABLE"
+    STORAGE_ACCESS_MODE_READ_WRITE: ClassVar[str] = "read_write"
+    STORAGE_ACCESS_MODE_READ_ONLY: ClassVar[str] = "read_only"
+    STORAGE_ACCESS_MODE_DISABLED: ClassVar[str] = "disabled"
+
+    @property
+    def allows_runtime_reads(self) -> bool:
+        return self.storage_access_mode in {"read_write", "read_only"}
+
+    @property
+    def allows_runtime_writes(self) -> bool:
+        return self.storage_access_mode == "read_write"
 
     @classmethod
     def get_or_create_duck_db(cls, time_out=None, *args, **kwargs):
@@ -1019,6 +1037,8 @@ class DataSource(BasePydanticModel, BaseObjectOrm):
 
 
 class DynamicTableDataSource(BasePydanticModel, BaseObjectOrm):
+    model_config = ConfigDict(extra="allow", use_enum_values=True)
+
     uid: str | None = Field(
         None,
         description="Public uid of the dynamic table data source.",
@@ -1027,15 +1047,14 @@ class DynamicTableDataSource(BasePydanticModel, BaseObjectOrm):
         None,
         description="Backend numeric row identifier of the time-indexed data source.",
     )
-    related_resource: DataSource
-    related_resource_class_type: str
-
-    class Config:
-        use_enum_values = True
+    related_resource: DataSource | None = None
+    related_resource_class_type: str | None = None
 
     def model_dump_json(self, **json_dumps_kwargs) -> str:
         dump = self.model_dump()
-        dump["related_resource"] = self.related_resource.model_dump()
+        dump["related_resource"] = (
+            self.related_resource.model_dump() if self.related_resource is not None else None
+        )
         return json.dumps(dump, **json_dumps_kwargs)
 
     def _public_uid(self) -> str:
