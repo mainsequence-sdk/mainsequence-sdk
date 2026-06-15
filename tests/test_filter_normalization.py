@@ -1673,6 +1673,48 @@ def test_agent_session_a2a_chat_posts_plain_message_contract(monkeypatch):
     }
 
 
+def test_agent_session_a2a_chat_accepts_raw_sse_response(monkeypatch):
+    session_uid = "0b2701a1-e777-4cfe-8437-b94025f00069"
+    raw_sse = 'retry: 1000\n\nid: 1\nevent: message\ndata: {"text":"alive"}\n\ndata: [DONE]\n\n'
+
+    class FakeResponse:
+        status_code = 200
+        content = b'{"ok": true}'
+
+        @staticmethod
+        def json():
+            return {
+                "ok": True,
+                "ready": {
+                    "ready": True,
+                    "attempts": 1,
+                    "elapsed_seconds": 0.0,
+                    "status_code": 200,
+                    "detail": "",
+                },
+                "response": raw_sse,
+                "normalized": {
+                    "ok": True,
+                    "kind": "message",
+                    "state": None,
+                    "task_id": None,
+                    "context_id": None,
+                    "text": "alive",
+                    "raw": raw_sse,
+                },
+            }
+
+    monkeypatch.setattr(agent_models_mod, "make_request", lambda **kwargs: FakeResponse())
+
+    chat = agent_models_mod.AgentSession.send_a2a_chat(session_uid, message="Are you alive")
+
+    assert chat.ok is True
+    assert chat.response == raw_sse
+    assert chat.normalized is not None
+    assert chat.normalized.raw == raw_sse
+    assert chat.normalized.text == "alive"
+
+
 def test_agent_session_a2a_chat_posts_raw_payload_contract(monkeypatch):
     captured = {}
     session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"

@@ -175,9 +175,9 @@ class AgentSessionA2ANormalizedResponse(BasePydanticModel):
         None, description="Normalized A2A context identifier, when present."
     )
     text: str = Field("", description="Best-effort normalized response text.")
-    raw: dict[str, Any] = Field(
+    raw: Any = Field(
         default_factory=dict,
-        description="Backend-provided raw normalization metadata.",
+        description="Backend-provided raw normalization metadata or raw transport content.",
     )
 
 
@@ -189,9 +189,9 @@ class AgentSessionA2AChatResponse(BasePydanticModel):
         None,
         description="Runtime readiness result when wait_for_runtime was enabled.",
     )
-    response: dict[str, Any] = Field(
+    response: Any = Field(
         default_factory=dict,
-        description="Raw A2A JSON-RPC response returned by the target runtime.",
+        description="Raw A2A JSON-RPC response or raw transport content returned by the target runtime.",
     )
     normalized: AgentSessionA2ANormalizedResponse | None = Field(
         None,
