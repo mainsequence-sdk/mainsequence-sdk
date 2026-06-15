@@ -164,8 +164,10 @@ Route those concerns to the adjacent skills below.
   `.agents/skills/mainsequence/command_center/connections/SKILL.md`
 - Workspace widgets and binding:
   `.agents/skills/mainsequence/command_center/workspace_builder/SKILL.md`
+- Table/pro-table output contracts and `meta.tableVisuals` metadata:
+  `.agents/skills/mainsequence/command_center/widgets/tables/SKILL.md`
 - AppComponent form-driven actions:
-  `.agents/skills/mainsequence/command_center/app_components/SKILL.md`
+  `.agents/skills/mainsequence/command_center/widgets/app_components/SKILL.md`
 - API mock/prototype validation before deployment:
   `.agents/skills/mainsequence/command_center/api_mock_prototyping/SKILL.md`
 - FastAPI resources, images, jobs, and releases:

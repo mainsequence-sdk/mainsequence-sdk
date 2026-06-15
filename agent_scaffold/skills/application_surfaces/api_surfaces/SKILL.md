@@ -51,7 +51,11 @@ This skill must not claim ownership of:
 - Command Center workspaces:
   `.agents/skills/mainsequence/command_center/workspace_builder/SKILL.md`
 - AppComponents and custom forms:
-  `.agents/skills/mainsequence/command_center/app_components/SKILL.md`
+  `.agents/skills/mainsequence/command_center/widgets/app_components/SKILL.md`
+- Command Center table/pro-table response contracts:
+  `.agents/skills/mainsequence/command_center/widgets/tables/SKILL.md`
+- Command Center tabular transform consumers:
+  `.agents/skills/mainsequence/command_center/widgets/tabular_transform/SKILL.md`
 - Adapter from API provider-side Command Center connection endpoints:
   `.agents/skills/mainsequence/command_center/adapter_from_api/SKILL.md`
 - predeployment mock API contract validation:
@@ -69,14 +73,18 @@ This skill must not claim ownership of:
 4. `docs/knowledge/fastapi/index.md`
 5. `docs/knowledge/command_center/widget_data_contracts.md`
 6. `docs/knowledge/command_center/forms.md`
-7. `.agents/skills/mainsequence/command_center/app_components/SKILL.md`
+7. `.agents/skills/mainsequence/command_center/widgets/app_components/SKILL.md`
 
 Also load:
 
 8. `.agents/skills/mainsequence/command_center/workspace_builder/SKILL.md` when the API is tied to mounted widgets, workspace payloads, or workspace mutation
-9. `.agents/skills/mainsequence/command_center/adapter_from_api/SKILL.md` when the API must be consumed through a Command Center Adapter from API connection
-10. `.agents/skills/mainsequence/command_center/api_mock_prototyping/SKILL.md` when the contract should be validated in AppComponent mock mode before backend deployment
-11. `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md` when the API must become usable from Command Center or an AppComponent
+9. `.agents/skills/mainsequence/command_center/widgets/tables/SKILL.md` when the API returns
+   `core.tabular_frame@v1`, `meta.tableVisuals`, or table/pro-table widget-facing data
+10. `.agents/skills/mainsequence/command_center/widgets/tabular_transform/SKILL.md` when the API
+    response will be reshaped by `core__tabular-transform`
+11. `.agents/skills/mainsequence/command_center/adapter_from_api/SKILL.md` when the API must be consumed through a Command Center Adapter from API connection
+12. `.agents/skills/mainsequence/command_center/api_mock_prototyping/SKILL.md` when the contract should be validated in AppComponent mock mode before backend deployment
+13. `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md` when the API must become usable from Command Center or an AppComponent
 
 Do not wait for the user to say "Command Center" explicitly if the API is being built as a platform UI surface. That is the default assumption in Main Sequence projects.
 
@@ -138,7 +146,7 @@ In a Main Sequence project, assume API work is for Command Center unless the use
 That means:
 
 - prefer widget-facing contracts by default
-- load `.agents/skills/mainsequence/command_center/app_components/SKILL.md`
+- load `.agents/skills/mainsequence/command_center/widgets/app_components/SKILL.md`
 - also load `.agents/skills/mainsequence/command_center/workspace_builder/SKILL.md` when the API is coupled to mounted workspace widgets or workspace payloads
 - load `.agents/skills/mainsequence/command_center/adapter_from_api/SKILL.md` when the API will be consumed by connection-first workspace dataflow
 - try to use the existing Command Center SDK response model before inventing a new response shape

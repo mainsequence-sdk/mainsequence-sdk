@@ -47,6 +47,8 @@ This skill must not claim ownership of:
 
 - Command Center workspaces:
   `.agents/skills/mainsequence/command_center/workspace_builder/SKILL.md`
+- Command Center table/pro-table output contracts and table visual metadata:
+  `.agents/skills/mainsequence/command_center/widgets/tables/SKILL.md`
 - predeployment mock API contract validation:
   `.agents/skills/mainsequence/command_center/api_mock_prototyping/SKILL.md`
 - APIs and FastAPI:
@@ -71,17 +73,19 @@ This skill must not claim ownership of:
 2. `docs/knowledge/command_center/forms.md`
 3. `docs/knowledge/command_center/widget_data_contracts.md`
 4. `mainsequence/client/command_center/app_component.py`
-5. `.agents/skills/mainsequence/command_center/adapter_from_api/SKILL.md` when API-shaped data must become a connection-backed tabular dataset
-6. `.agents/skills/mainsequence/command_center/connections/SKILL.md` when AppComponent output will be consumed by generic tabular widgets or must align with connection-first dataflow
+5. `.agents/skills/mainsequence/command_center/widgets/tables/SKILL.md` when AppComponent output will feed
+   a table/pro-table widget or needs `core.tabular_frame@v1` plus table visual metadata
+6. `.agents/skills/mainsequence/command_center/adapter_from_api/SKILL.md` when API-shaped data must become a connection-backed tabular dataset
+7. `.agents/skills/mainsequence/command_center/connections/SKILL.md` when AppComponent output will be consumed by generic tabular widgets or must align with connection-first dataflow
 
 If the AppComponent is backed by project APIs, also read:
 
-7. `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
-8. `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
+8. `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
+9. `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
 
 If the task is about validating the API contract before deployment, also read:
 
-9. `.agents/skills/mainsequence/command_center/api_mock_prototyping/SKILL.md`
+10. `.agents/skills/mainsequence/command_center/api_mock_prototyping/SKILL.md`
 
 ## Inputs This Skill Needs
 

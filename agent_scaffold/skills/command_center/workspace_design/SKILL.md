@@ -34,7 +34,12 @@ This skill must not claim ownership of:
 - Workspace JSON creation, export/versioning, and widget mutation:
   `.agents/skills/mainsequence/command_center/workspace_builder/SKILL.md`
 - AppComponent custom forms and widget input contracts:
-  `.agents/skills/mainsequence/command_center/app_components/SKILL.md`
+  `.agents/skills/mainsequence/command_center/widgets/app_components/SKILL.md`
+- Table/pro-table contracts, table visual metadata, formulas, selection, and live update behavior:
+  `.agents/skills/mainsequence/command_center/widgets/tables/SKILL.md`
+- Tabular transform widget contracts for projection, filtering, aggregate, pivot, unpivot, computed
+  columns, and seed/live update bindings:
+  `.agents/skills/mainsequence/command_center/widgets/tabular_transform/SKILL.md`
 - Connection-backed data access and query contract selection:
   `.agents/skills/mainsequence/command_center/connections/SKILL.md`
 - APIs and FastAPI:
@@ -55,7 +60,11 @@ This skill must not claim ownership of:
 3. `docs/knowledge/command_center/workspaces.md`
 4. `docs/knowledge/command_center/widget_data_contracts.md`
 5. `docs/knowledge/command_center/forms.md` when the design may need an AppComponent
-6. `.agents/skills/mainsequence/command_center/workspace_builder/SKILL.md` only after the design is ready for execution
+6. `.agents/skills/mainsequence/command_center/widgets/tables/SKILL.md` when the design needs a
+   table/pro-table contract, table visual metadata, formulas, selection, or live updates
+7. `.agents/skills/mainsequence/command_center/widgets/tabular_transform/SKILL.md` when the design
+   needs a `core__tabular-transform` widget
+8. `.agents/skills/mainsequence/command_center/workspace_builder/SKILL.md` only after the design is ready for execution
 
 The widget registry is the source of truth for which widget types are actually available.
 

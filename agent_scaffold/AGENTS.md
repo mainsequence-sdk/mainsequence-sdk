@@ -191,7 +191,13 @@ Typical routing:
 - Command Center workspace JSON creation/update and mounted widget mutation:
   `.agents/skills/mainsequence/command_center/workspace_builder/SKILL.md`
 - AppComponents, custom forms, and widget input or output contracts:
-  `.agents/skills/mainsequence/command_center/app_components/SKILL.md`
+  `.agents/skills/mainsequence/command_center/widgets/app_components/SKILL.md`
+- Command Center table/pro-table widgets, tabular frames, table visual metadata, formulas,
+  selections, and live merge mappings:
+  `.agents/skills/mainsequence/command_center/widgets/tables/SKILL.md`
+- Command Center tabular transform widgets, projection, filtering, aggregate, pivot, unpivot,
+  computed columns, and seed/live update bindings:
+  `.agents/skills/mainsequence/command_center/widgets/tabular_transform/SKILL.md`
 - predeployment AppComponent/API contract testing through `apiTargetMode: "mock-json"`:
   `.agents/skills/mainsequence/command_center/api_mock_prototyping/SKILL.md`
 - jobs, schedules, images, project resources, releases, and Artifacts:

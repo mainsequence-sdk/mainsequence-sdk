@@ -29,10 +29,10 @@ The Command Center SDK client is split by responsibility:
 - `mainsequence.client.command_center.connections`: connection type and connection instance APIs,
   including Adapter from API public config validation
 - `mainsequence.client.command_center.contracts`: provider-facing contract models and helpers for
-  Adapter from API, response mappings, tabular frames, and UI contracts
+  Adapter from API, response mappings, tabular frames, table visual metadata, and UI contracts
 - `mainsequence.client.command_center.providers`: convenience builders for provider-side contracts
-- `mainsequence.client.command_center.widgets`: widget payload, binding, registry, and
-  connection-query helpers
+- `mainsequence.client.command_center.widgets`: widget payload, table/pro-table props, tabular
+  transform props, binding, registry, and connection-query helpers
 - `mainsequence.client.command_center.workspaces`: workspace document and mounted-widget payload
   helpers
 - `mainsequence.client.command_center.workspace`: workspace create, fetch, update, and

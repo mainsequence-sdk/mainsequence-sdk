@@ -60,7 +60,7 @@ Do not let this skill become a domain manual.
 - Command Center workspace creation and widget mounting:
   `.agents/skills/mainsequence/command_center/workspace_builder/SKILL.md`
 - AppComponents, custom forms, and widget-facing API contracts:
-  `.agents/skills/mainsequence/command_center/app_components/SKILL.md`
+  `.agents/skills/mainsequence/command_center/widgets/app_components/SKILL.md`
 - project-state reconciliation and local history under `.agents/`:
   `.agents/skills/mainsequence/maintenance/local_journal/SKILL.md`
 - project status audits, blocker analysis, and upstream SDK assessment:

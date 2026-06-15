@@ -53,10 +53,14 @@ This skill must not claim ownership of:
   `.agents/skills/mainsequence/command_center/workspace_design/SKILL.md`
 - Workspace JSON creation and widget mutation:
   `.agents/skills/mainsequence/command_center/workspace_builder/SKILL.md`
+- Table/pro-table consumer contracts, table visual metadata, selection, and live update behavior:
+  `.agents/skills/mainsequence/command_center/widgets/tables/SKILL.md`
+- Tabular transform consumer contracts and source/live update bindings:
+  `.agents/skills/mainsequence/command_center/widgets/tabular_transform/SKILL.md`
 - Adapter from API connection workflow:
   `.agents/skills/mainsequence/command_center/adapter_from_api/SKILL.md`
 - AppComponent forms and action API contracts:
-  `.agents/skills/mainsequence/command_center/app_components/SKILL.md`
+  `.agents/skills/mainsequence/command_center/widgets/app_components/SKILL.md`
 - API implementation:
   `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
 - Jobs, images, resources, and releases:
@@ -74,10 +78,16 @@ This skill must not claim ownership of:
      response-mapping metadata
    - `mainsequence/client/command_center/contracts/tabular.py` when building or checking canonical
      tabular frames
+   - `mainsequence/client/command_center/contracts/table_visuals.py` when table-specific visual
+     defaults travel with `meta.tableVisuals`
    - `mainsequence/client/command_center/providers/adapter_from_api.py` when a provider should use
      SDK contract builders
    - `mainsequence/client/command_center/widgets/connection_query.py` when creating
      connection-query source widget payloads
+   - `mainsequence/client/command_center/widgets/tabular_transform.py` when a connection-backed
+     flow needs a `core__tabular-transform` widget
+   - `mainsequence/client/command_center/widgets/bindings.py` when binding seed data or live updates
+     into the transform
 2. Widget registry detail for the source and consumer widgets:
    - `mainsequence cc registered_widget_type list --json`
    - `mainsequence cc registered_widget_type detail <WIDGET_ID> --json`

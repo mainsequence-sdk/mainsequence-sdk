@@ -46,7 +46,7 @@ This skill must not claim ownership of:
 - Command Center workspaces:
   `.agents/skills/mainsequence/command_center/workspace_builder/SKILL.md`
 - AppComponents and custom forms for widgets:
-  `.agents/skills/mainsequence/command_center/app_components/SKILL.md`
+  `.agents/skills/mainsequence/command_center/widgets/app_components/SKILL.md`
 - jobs, images, project resources, and releases:
   `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
 - DataNodes:

@@ -64,6 +64,18 @@ Use these generic SDK models for canonical tabular output:
 These models keep the API boundary explicit and let FastAPI validate the response before Command
 Center consumes it.
 
+Table-specific helpers live in:
+
+```python
+mainsequence.client.command_center.contracts.tabular
+mainsequence.client.command_center.contracts.table_visuals
+mainsequence.client.command_center.widgets.table
+```
+
+Use `contracts.tabular` for `make_tabular_frame` and field/source helpers. Use
+`contracts.table_visuals` only for source-owned table display defaults that should travel with the
+frame under `meta.tableVisuals`. Use `widgets.table` for persisted table/pro-table widget props.
+
 ## Minimal Example
 
 ```python
@@ -181,6 +193,35 @@ frame = TabularFrameResponse(
 
 `timeUnit` defaults to `ms` and `timezone` defaults to `UTC`.
 
+## Table Visual Metadata
+
+When a tabular frame is meant for table or pro-table consumers, the data source may include
+source-owned display defaults under `meta.tableVisuals`.
+
+```python
+from mainsequence.client.command_center.contracts.table_visuals import (
+    make_table_visual_column,
+    make_table_visuals,
+)
+from mainsequence.client.command_center.contracts.tabular import make_tabular_frame
+
+
+frame = make_tabular_frame(
+    rows=[{"asset": "BTC", "price": 101.25, "change": 0.015}],
+    columns=["asset", "price", "change"],
+    table_visuals=make_table_visuals(
+        {
+            "price": make_table_visual_column(format="currency", decimals=2),
+            "change": make_table_visual_column(format="percent", decimals=2),
+        }
+    ),
+)
+```
+
+`meta.tableVisuals` is source-owned metadata. It is appropriate for stable source semantics such as
+labels, numeric formats, decimal defaults, threshold hints, and heatmap/bar/gauge hints. It should
+not contain workspace-local overrides, credentials, connection ids, or runtime view state.
+
 ## Adapter From API
 
 Adapter from API providers can either:
@@ -201,5 +242,6 @@ Before claiming an API returns canonical Command Center tabular data, verify:
 - every row is an object keyed by column name
 - `fields` describes important schema and formatting details
 - `meta.timeSeries` is present for time-aware consumers
+- `meta.tableVisuals`, when present, contains only source-owned table display defaults
 - source-specific fields live in `source.context`
 - no widget-specific or source-specific fields are added at the top level

@@ -49,7 +49,7 @@ If the user is still in the discovery process and does not yet know what data ex
 - Command Center workspaces:
   `.agents/skills/mainsequence/command_center/workspace_builder/SKILL.md`
 - AppComponents and custom forms:
-  `.agents/skills/mainsequence/command_center/app_components/SKILL.md`
+  `.agents/skills/mainsequence/command_center/widgets/app_components/SKILL.md`
 - Jobs, images, resources, and releases:
   `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
 

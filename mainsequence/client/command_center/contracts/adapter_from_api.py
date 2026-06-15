@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from .response_mapping import AdapterResponseMapping
 
 AdapterFromApiMethod = Literal["GET", "POST", "PUT", "PATCH", "DELETE"]
-AdapterFromApiOperationKind = Literal["query", "action", "health"]
+AdapterFromApiOperationKind = Literal["health", "query", "mutation", "action"]
 AdapterFromApiVariableType = Literal["string", "number", "boolean", "select", "json"]
 AdapterFromApiParameterLocation = Literal["path", "query", "header"]
 
@@ -20,7 +20,7 @@ class AdapterFromApiAdapterMetadata(AdapterFromApiBaseModel):
     type: Literal["adapter-from-api"] = "adapter-from-api"
     id: str
     title: str
-    description: str | None = None
+    description: str
 
 
 class AdapterFromApiOpenApiMetadata(AdapterFromApiBaseModel):
@@ -32,17 +32,16 @@ class AdapterFromApiOpenApiMetadata(AdapterFromApiBaseModel):
 class AdapterFromApiConfigVariable(AdapterFromApiBaseModel):
     key: str
     label: str
-    type: AdapterFromApiVariableType = "string"
+    type: AdapterFromApiVariableType
     required: bool = False
-    default: Any = None
     description: str | None = None
-    options: list[dict[str, Any]] | None = None
+    default: Any = None
+    choices: list[dict[str, Any]] | None = None
 
 
 class AdapterFromApiSecretInjection(AdapterFromApiBaseModel):
     type: str
-    name: str | None = None
-    prefix: str | None = None
+    name: str
 
 
 class AdapterFromApiSecretVariable(AdapterFromApiBaseModel):
@@ -50,55 +49,57 @@ class AdapterFromApiSecretVariable(AdapterFromApiBaseModel):
     label: str
     type: Literal["secret"] = "secret"
     required: bool = True
-    injection: AdapterFromApiSecretInjection
     description: str | None = None
+    injection: AdapterFromApiSecretInjection
+
+
+class AdapterFromApiHealth(AdapterFromApiBaseModel):
+    operation_id: str = Field(alias="operationId")
+    expected_status: int = Field(alias="expectedStatus")
+    timeout_ms: int = Field(alias="timeoutMs")
+
+
+class AdapterFromApiOperationCache(AdapterFromApiBaseModel):
+    enabled: bool
+    ttl_seconds: int | None = Field(default=None, alias="ttlSeconds")
 
 
 class AdapterFromApiParameter(AdapterFromApiBaseModel):
     name: str
-    location: AdapterFromApiParameterLocation = Field(default="query", alias="in")
-    label: str | None = None
-    description: str | None = None
-    type: AdapterFromApiVariableType = "string"
+    in_: AdapterFromApiParameterLocation | str = Field(alias="in")
     required: bool = False
-    default: Any = None
-    enum: list[Any] | None = None
+    type: AdapterFromApiVariableType | str | None = None
+    description: str | None = None
+    schema_: dict[str, Any] | None = Field(default=None, alias="schema")
 
 
 class AdapterFromApiRequestBody(AdapterFromApiBaseModel):
-    model_config = ConfigDict(extra="forbid", populate_by_name=True, serialize_by_alias=True)
-
     required: bool = False
-    contentType: str = "application/json"
+    content_types: list[str] = Field(default_factory=lambda: ["application/json"], alias="contentTypes")
     schema_: dict[str, Any] | None = Field(default=None, alias="schema")
-    description: str | None = None
-
-    @property
-    def schema(self) -> dict[str, Any] | None:
-        return self.schema_
-
-
-class AdapterFromApiOperationCache(AdapterFromApiBaseModel):
-    enabled: bool = True
-    ttlSeconds: int | None = None
-    dedupe: bool = True
+    schema_ref: str | None = Field(default=None, alias="schemaRef")
 
 
 class AdapterFromApiOperation(AdapterFromApiBaseModel):
-    operationId: str
+    operation_id: str = Field(alias="operationId")
     label: str
-    description: str = ""
-    method: AdapterFromApiMethod = "GET"
+    description: str
+    method: AdapterFromApiMethod | str
     path: str
-    kind: AdapterFromApiOperationKind = "query"
-    capabilities: list[str] = Field(default_factory=lambda: ["query"])
-    requiresTimeRange: bool = False
-    supportsVariables: bool = True
-    supportsMaxRows: bool = True
+    kind: AdapterFromApiOperationKind
+    capabilities: list[str]
+    requires_time_range: bool = Field(alias="requiresTimeRange")
+    supports_variables: bool = Field(alias="supportsVariables")
+    supports_max_rows: bool = Field(alias="supportsMaxRows")
     parameters: list[AdapterFromApiParameter] = Field(default_factory=list)
-    requestBody: AdapterFromApiRequestBody | None = None
-    responseMappings: list[AdapterResponseMapping] = Field(default_factory=list)
-    cache: AdapterFromApiOperationCache = Field(default_factory=AdapterFromApiOperationCache)
+    request_body: AdapterFromApiRequestBody | None = Field(default=None, alias="requestBody")
+    response_mappings: list[AdapterResponseMapping] = Field(
+        default_factory=list,
+        alias="responseMappings",
+    )
+    cache: AdapterFromApiOperationCache
+    response_contract: str = Field(alias="responseContract")
+    response_model: str | None = Field(default=None, alias="responseModel")
 
     @field_validator("method", mode="before")
     @classmethod
@@ -115,25 +116,28 @@ class AdapterFromApiOperation(AdapterFromApiBaseModel):
         return value
 
 
-class AdapterFromApiHealth(AdapterFromApiBaseModel):
-    operationId: str = "health"
-    expectedStatus: int = 200
-    timeoutMs: int = 5000
-
-
 class AdapterFromApiConnectionContract(AdapterFromApiBaseModel):
-    contractVersion: int = 1
+    contract_version: int = Field(alias="contractVersion")
     adapter: AdapterFromApiAdapterMetadata
     openapi: AdapterFromApiOpenApiMetadata
-    configVariables: list[AdapterFromApiConfigVariable] = Field(default_factory=list)
-    secretVariables: list[AdapterFromApiSecretVariable] = Field(default_factory=list)
-    availableOperations: list[AdapterFromApiOperation] = Field(default_factory=list)
+    config_variables: list[AdapterFromApiConfigVariable] = Field(
+        default_factory=list,
+        alias="configVariables",
+    )
+    secret_variables: list[AdapterFromApiSecretVariable] = Field(
+        default_factory=list,
+        alias="secretVariables",
+    )
+    available_operations: list[AdapterFromApiOperation] = Field(
+        default_factory=list,
+        alias="availableOperations",
+    )
     health: AdapterFromApiHealth
 
     @model_validator(mode="after")
     def _validate_health_operation(self) -> AdapterFromApiConnectionContract:
-        operation_ids = {operation.operationId for operation in self.availableOperations}
-        if self.health.operationId not in operation_ids:
+        operation_ids = {operation.operation_id for operation in self.available_operations}
+        if self.health.operation_id not in operation_ids:
             raise ValueError("health.operationId must reference an operation in availableOperations.")
         return self
 
@@ -142,18 +146,22 @@ def make_adapter_from_api_contract(
     *,
     adapter_id: str,
     title: str,
+    description: str,
     openapi_url: str,
     operations: list[AdapterFromApiOperation],
-    health_operation_id: str = "health",
-    description: str | None = None,
+    health_operation_id: str,
     config_variables: list[AdapterFromApiConfigVariable] | None = None,
     secret_variables: list[AdapterFromApiSecretVariable] | None = None,
+    contract_version: int = 1,
     openapi_version: str = "3.1.0",
     openapi_checksum: str | None = None,
+    expected_status: int = 200,
+    timeout_ms: int = 5000,
 ) -> AdapterFromApiConnectionContract:
     """Build the strict well-known Adapter from API discovery contract."""
 
     return AdapterFromApiConnectionContract(
+        contract_version=contract_version,
         adapter=AdapterFromApiAdapterMetadata(
             id=adapter_id,
             title=title,
@@ -164,10 +172,14 @@ def make_adapter_from_api_contract(
             version=openapi_version,
             checksum=openapi_checksum,
         ),
-        configVariables=config_variables or [],
-        secretVariables=secret_variables or [],
-        availableOperations=operations,
-        health=AdapterFromApiHealth(operationId=health_operation_id),
+        config_variables=config_variables or [],
+        secret_variables=secret_variables or [],
+        available_operations=operations,
+        health=AdapterFromApiHealth(
+            operation_id=health_operation_id,
+            expected_status=expected_status,
+            timeout_ms=timeout_ms,
+        ),
     )
 
 

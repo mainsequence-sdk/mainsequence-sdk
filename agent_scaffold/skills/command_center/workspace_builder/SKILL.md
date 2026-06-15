@@ -51,7 +51,13 @@ This skill must not claim ownership of:
 - Workspace design, widget selection, and visualization strategy:
   `.agents/skills/mainsequence/command_center/workspace_design/SKILL.md`
 - AppComponents and custom forms:
-  `.agents/skills/mainsequence/command_center/app_components/SKILL.md`
+  `.agents/skills/mainsequence/command_center/widgets/app_components/SKILL.md`
+- Table/pro-table payloads, tabular frame contracts, table visual metadata, formulas, selection,
+  and live merge mappings:
+  `.agents/skills/mainsequence/command_center/widgets/tables/SKILL.md`
+- Tabular transform payloads, projection, filtering, aggregate, pivot, unpivot, computed columns,
+  and seed/live update bindings:
+  `.agents/skills/mainsequence/command_center/widgets/tabular_transform/SKILL.md`
 - Connection-backed data access and query contract selection:
   `.agents/skills/mainsequence/command_center/connections/SKILL.md`
 - predeployment mock API contract validation:
@@ -88,6 +94,8 @@ This skill must not claim ownership of:
    - `widgets/connection_query.py` when mounting connection-query source widgets
    - `widgets/bindings.py` when wiring widget outputs into downstream inputs
    - `widgets/registry.py` when checking declared widget contracts from registry payloads
+   - `widgets/table.py` when mounting or validating table/pro-table widget props
+   - `widgets/tabular_transform.py` when mounting or validating `core__tabular-transform` props
    - `workspaces/documents.py` when drafting workspace document payloads
    - `workspaces/mounted_widgets.py` when drafting mounted widget payloads
 4. `docs/knowledge/command_center/workspaces.md`
@@ -100,6 +108,10 @@ If the workspace contains AppComponent widgets, also read:
 8. `docs/knowledge/command_center/widget_data_contracts.md`
 9. `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md` when mounted widgets depend on project APIs that must be usable from Command Center
 10. `.agents/skills/mainsequence/command_center/api_mock_prototyping/SKILL.md` when the workspace should validate an AppComponent/API contract in `mock-json` mode before deployment
+11. `.agents/skills/mainsequence/command_center/widgets/tables/SKILL.md` when a table/pro-table widget
+    needs exact props, formulas, selection outputs, live merge mappings, or `meta.tableVisuals`
+12. `.agents/skills/mainsequence/command_center/widgets/tabular_transform/SKILL.md` when a
+    `core__tabular-transform` widget needs exact props or seed/live update bindings
 
 ## Command Center Mental Model
 
@@ -235,6 +247,8 @@ Use this source order strictly:
    - `mainsequence/client/command_center/widgets/connection_query.py` for connection-query source
      payloads
    - `mainsequence/client/command_center/widgets/bindings.py` for widget input/output bindings
+   - `mainsequence/client/command_center/widgets/table.py` for table/pro-table props
+   - `mainsequence/client/command_center/widgets/tabular_transform.py` for tabular transform props
    - `mainsequence/client/command_center/workspaces/documents.py` and
      `mainsequence/client/command_center/workspaces/mounted_widgets.py` for workspace and mounted
      widget payload helpers
@@ -325,6 +339,9 @@ Use:
   instances and operation ids
 - `widgets/bindings.py` for binding downstream widget inputs to upstream output ports
 - `widgets/registry.py` for declared contract checks against registry payloads
+- `widgets/table.py` for table/pro-table payloads, column schema, formulas, selection, and live
+  merge mappings
+- `widgets/tabular_transform.py` for `core__tabular-transform` payloads and transform mode props
 - `workspaces/documents.py` and `workspaces/mounted_widgets.py` for schema-light workspace and
   mounted-widget payload drafts
 
@@ -404,7 +421,7 @@ Prefer explicit source widgets:
 
 - `connection-query` for request/response datasets
 - `connection-stream-query` for streaming or incremental paths
-- `tabular-transform` when analytical reshaping is needed before presentation
+- `core__tabular-transform` when analytical reshaping is needed before presentation
 
 One source widget can feed several consumers. Reuse one source when the same query drives several
 tables, charts, statistics, curves, or agent contexts.
@@ -648,7 +665,7 @@ Supported lightweight transform steps:
 
 Binding transforms are only for selecting one array item or extracting a nested field before
 compatibility is evaluated. Do not use binding transforms for analytical reshaping. Use a
-`tabular-transform` widget for projection, aggregate, pivot, unpivot, filtering, joining, or other
+`core__tabular-transform` widget for projection, aggregate, pivot, unpivot, filtering, or other
 visible data operations.
 
 Do not describe bindings loosely as “widget A uses widget B”. In this platform, bindings are always

@@ -63,22 +63,50 @@ def make_tabular_field(
     key: str,
     *,
     label: str | None = None,
-    type: TabularFrameFieldType = "string",
-    nullable: bool = True,
-    provenance: TabularFrameFieldProvenance | None = None,
+    type: TabularFrameFieldType | str = "string",
+    description: str | None = None,
+    nullable: bool | None = True,
+    native_type: str | None = None,
+    provenance: TabularFrameFieldProvenance | str | None = None,
+    derived_from: Sequence[str] | None = None,
 ) -> TabularFrameFieldResponse:
     """Build a generic field descriptor for core.tabular_frame@v1."""
 
-    payload: dict[str, Any] = {
-        "key": key,
-        "type": type,
-        "nullable": nullable,
-    }
-    if label is not None:
-        payload["label"] = label
-    if provenance is not None:
-        payload["provenance"] = provenance
-    return TabularFrameFieldResponse(**payload)
+    return TabularFrameFieldResponse(
+        key=key,
+        label=label,
+        description=description,
+        type=type,
+        nullable=nullable,
+        nativeType=native_type,
+        provenance=provenance,
+        derivedFrom=list(derived_from) if derived_from is not None else None,
+    )
+
+
+def build_tabular_field(
+    *,
+    key: str,
+    field_type: TabularFrameFieldType | str,
+    label: str | None = None,
+    description: str | None = None,
+    nullable: bool | None = None,
+    native_type: str | None = None,
+    provenance: TabularFrameFieldProvenance | str | None = "backend",
+    derived_from: Sequence[str] | None = None,
+) -> TabularFrameFieldResponse:
+    """Compatibility alias using the historical field_type argument name."""
+
+    return make_tabular_field(
+        key,
+        label=label,
+        type=field_type,
+        description=description,
+        nullable=nullable,
+        native_type=native_type,
+        provenance=provenance,
+        derived_from=derived_from,
+    )
 
 
 def infer_tabular_fields(
@@ -115,14 +143,12 @@ def make_tabular_source(
 ) -> TabularFrameSourceResponse:
     """Build a source descriptor while keeping runtime details in context."""
 
-    payload: dict[str, Any] = {"kind": kind}
-    if id is not None:
-        payload["id"] = id
-    if label is not None:
-        payload["label"] = label
-    if context is not None:
-        payload["context"] = dict(context)
-    return TabularFrameSourceResponse(**payload)
+    return TabularFrameSourceResponse(
+        kind=kind,
+        id=id,
+        label=label,
+        context=dict(context) if context is not None else None,
+    )
 
 
 def make_time_series_meta(
@@ -159,7 +185,7 @@ def make_tabular_frame(
     rows: Sequence[TabularRow],
     columns: Sequence[str] | None = None,
     fields: Sequence[TabularFieldInput] | None = None,
-    status: TabularFrameStatus = "ready",
+    status: TabularFrameStatus | str = "ready",
     error: str | None = None,
     meta: TabularFrameMetaResponse | Mapping[str, Any] | None = None,
     source: TabularFrameSourceResponse | Mapping[str, Any] | None = None,
@@ -177,7 +203,9 @@ def make_tabular_frame(
     normalized_fields: list[TabularFrameFieldResponse] | None = None
     if fields is not None:
         normalized_fields = [
-            field if isinstance(field, TabularFrameFieldResponse) else TabularFrameFieldResponse(**dict(field))
+            field
+            if isinstance(field, TabularFrameFieldResponse)
+            else TabularFrameFieldResponse.model_validate(field)
             for field in fields
         ]
     elif infer_fields:
@@ -185,14 +213,16 @@ def make_tabular_frame(
 
     normalized_meta = None
     if meta is not None:
-        normalized_meta = meta if isinstance(meta, TabularFrameMetaResponse) else TabularFrameMetaResponse(**dict(meta))
+        normalized_meta = (
+            meta if isinstance(meta, TabularFrameMetaResponse) else TabularFrameMetaResponse.model_validate(meta)
+        )
 
     normalized_source = None
     if source is not None:
         normalized_source = (
             source
             if isinstance(source, TabularFrameSourceResponse)
-            else TabularFrameSourceResponse(**dict(source))
+            else TabularFrameSourceResponse.model_validate(source)
         )
 
     return TabularFrameResponse(
@@ -203,6 +233,29 @@ def make_tabular_frame(
         fields=normalized_fields,
         meta=normalized_meta,
         source=normalized_source,
+    )
+
+
+def build_tabular_frame(
+    *,
+    columns: Sequence[str],
+    rows: Sequence[TabularRow],
+    fields: Sequence[TabularFieldInput] | None = None,
+    meta: TabularFrameMetaResponse | Mapping[str, Any] | None = None,
+    source: TabularFrameSourceResponse | Mapping[str, Any] | None = None,
+    status: TabularFrameStatus | str = "ready",
+    error: str | None = None,
+) -> TabularFrameResponse:
+    """Compatibility alias for project helpers that used build_* names."""
+
+    return make_tabular_frame(
+        columns=columns,
+        rows=rows,
+        fields=fields,
+        meta=meta,
+        source=source,
+        status=status,
+        error=error,
     )
 
 
@@ -219,6 +272,8 @@ __all__ = [
     "TabularFrameStatus",
     "TabularRow",
     "TabularTimeSeriesMetaResponse",
+    "build_tabular_field",
+    "build_tabular_frame",
     "infer_tabular_field_type",
     "infer_tabular_fields",
     "make_tabular_field",

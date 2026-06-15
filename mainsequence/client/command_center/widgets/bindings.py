@@ -29,7 +29,7 @@ def make_widget_input_binding(
     contract: str = CORE_TABULAR_FRAME_CONTRACT,
     extra: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Build a serializable widget input binding declaration."""
+    """Build a generic serializable widget input binding declaration."""
 
     binding: dict[str, Any] = {
         "input": input_name,
@@ -44,23 +44,35 @@ def make_widget_input_binding(
     return binding
 
 
+def make_dataset_binding(
+    *,
+    source_widget_id: str,
+    source_output_id: str = "dataset",
+) -> dict[str, Any]:
+    """Build the current workspace binding shape for a dataset output."""
+
+    return {
+        "sourceWidgetId": source_widget_id,
+        "sourceOutputId": source_output_id,
+    }
+
+
 def bind_tabular_seed_data(
     *,
-    source_widget_uid: str,
-    source_output: str = "dataset",
+    source_widget_id: str,
+    source_output_id: str = "dataset",
 ) -> dict[str, Any]:
     """Bind a tabular dataset source to a consumer input named seedData."""
 
-    return make_widget_input_binding(
-        input_name="seedData",
-        source_widget_uid=source_widget_uid,
-        source_output=source_output,
-        contract=CORE_TABULAR_FRAME_CONTRACT,
+    return make_dataset_binding(
+        source_widget_id=source_widget_id,
+        source_output_id=source_output_id,
     )
 
 
 __all__ = [
     "bind_tabular_seed_data",
+    "make_dataset_binding",
     "make_widget_input_binding",
     "make_widget_output_ref",
 ]
