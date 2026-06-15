@@ -22,6 +22,22 @@ There are two different contract surfaces to keep separate:
 - input contracts, such as `EditableFormDefinition`, when a widget needs a specialized form
 - output contracts, such as the models in `mainsequence.client.command_center.data_models`, when an API should feed a Main Sequence widget directly
 
+## SDK Helper Layout
+
+The Command Center SDK client is split by responsibility:
+
+- `mainsequence.client.command_center.connections`: connection type and connection instance APIs,
+  including Adapter from API public config validation
+- `mainsequence.client.command_center.contracts`: provider-facing contract models and helpers for
+  Adapter from API, response mappings, tabular frames, and UI contracts
+- `mainsequence.client.command_center.providers`: convenience builders for provider-side contracts
+- `mainsequence.client.command_center.widgets`: widget payload, binding, registry, and
+  connection-query helpers
+- `mainsequence.client.command_center.workspaces`: workspace document and mounted-widget payload
+  helpers
+- `mainsequence.client.command_center.workspace`: workspace create, fetch, update, and
+  widget-scoped mutation methods
+
 ## What This Section Covers
 
 - [Workspaces](workspaces.md): how to think about workspace structure and when to mutate a single widget instead of rewriting the whole workspace

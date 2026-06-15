@@ -17,17 +17,25 @@ uses them to update only the Main Sequence section below.
 <!-- mainsequence-agent-scaffold:start schema=1 source=agent_scaffold -->
 ## Main Sequence Instructions
 
-Before any non-trivial Main Sequence work, update the project SDK first and then refresh the
-installed Main Sequence scaffold files so the local CLI surface, `AGENTS.md`, and
-`.agents/skills/mainsequence/` match the installed SDK version:
+Before any non-trivial Main Sequence work, update the project SDK first, then compare the
+installed SDK version with the managed skills pin:
 
 - `mainsequence project update-sdk --path .`
+
+After the SDK update, inspect `.agents/skills/mainsequence/PINNED_FROM.txt`.
+Its `pinned_version=...` value records the SDK version that supplied the copied
+Main Sequence skills. Compare that value with the installed SDK version reported
+by `mainsequence --version`.
+
+Refresh the managed scaffold only when `PINNED_FROM.txt` is missing or its
+`pinned_version` differs from the installed SDK version:
+
 - `mainsequence project update AGENTS.md --path .`
 - `mainsequence project update_agent_skills --path .`
 
-After refreshing skills, `.agents/skills/mainsequence/PINNED_FROM.txt` records
-the installed SDK version that supplied the copied Main Sequence skills. Inspect
-that sentinel when checking whether the managed skills are current.
+If `pinned_version` already matches the installed SDK version, do not refresh
+`AGENTS.md` or `.agents/skills/mainsequence/` as a startup ritual; continue with
+the task.
 
 Canonical Main Sequence documentation root:
 `https://mainsequence-sdk.github.io/mainsequence-sdk/`
@@ -211,12 +219,15 @@ For any non-trivial Main Sequence task:
     `mainsequence project open-signed-terminal <PROJECT_ID>`
 11. Before proceeding with non-trivial Main Sequence work, update the project SDK:
     `mainsequence project update-sdk --path .`
-12. After updating the SDK, refresh the installed Main Sequence scaffold files:
+12. After updating the SDK, compare `mainsequence --version` with
+    `.agents/skills/mainsequence/PINNED_FROM.txt` field `pinned_version=...`.
+13. If `PINNED_FROM.txt` is missing or `pinned_version` differs from the installed
+    SDK version, refresh the managed scaffold files:
     `mainsequence project update AGENTS.md --path .`
     `mainsequence project update_agent_skills --path .`
-13. Check `.agents/skills/mainsequence/PINNED_FROM.txt` when you need to verify
-    which SDK version supplied the copied Main Sequence skills.
-14. Verify platform state with the CLI or platform tooling instead of guessing.
+14. If `pinned_version` already matches the installed SDK version, do not refresh
+    `AGENTS.md` or `.agents/skills/mainsequence/` as a startup ritual.
+15. Verify platform state with the CLI or platform tooling instead of guessing.
 
 ## Orchestrator Rule
 

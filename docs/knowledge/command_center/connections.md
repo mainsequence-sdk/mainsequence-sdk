@@ -34,6 +34,19 @@ The stable connection type id is:
 CONNECTION_TYPE_ADAPTER_FROM_API == "command_center.adapter_from_api"
 ```
 
+Related SDK helper modules:
+
+- `mainsequence.client.command_center.contracts.adapter_from_api` defines the well-known provider
+  contract models, operation models, config variable models, and secret variable models.
+- `mainsequence.client.command_center.providers.adapter_from_api` provides convenience builders such
+  as `make_health_operation`, `make_query_operation`, and `make_provider_contract`.
+- `mainsequence.client.command_center.contracts.response_mapping` provides
+  `make_tabular_response_mapping` for optional provider-native response mapping metadata.
+- `mainsequence.client.command_center.contracts.tabular` provides `make_tabular_frame` and related
+  helpers for building canonical `core.tabular_frame@v1` responses.
+- `mainsequence.client.command_center.widgets.connection_query` provides
+  `make_connection_query_payload` for source widgets that query a connection instance.
+
 ## Direct Mode Public Config
 
 Direct mode is used when the browser runtime owns debug API calls. The SDK validates the same strict

@@ -85,6 +85,11 @@ This skill must not claim ownership of:
    - `connections.py` when source widgets depend on backend-owned connections
    - `data_models.py`
    - `app_component.py` when the workspace contains AppComponent widgets or editable form payloads
+   - `widgets/connection_query.py` when mounting connection-query source widgets
+   - `widgets/bindings.py` when wiring widget outputs into downstream inputs
+   - `widgets/registry.py` when checking declared widget contracts from registry payloads
+   - `workspaces/documents.py` when drafting workspace document payloads
+   - `workspaces/mounted_widgets.py` when drafting mounted widget payloads
 4. `docs/knowledge/command_center/workspaces.md`
 5. the local Main Sequence docs/models/examples in this repository that define the widget payloads being mounted
 6. the current CLI docs if the task uses CLI workflow
@@ -227,6 +232,12 @@ Use this source order strictly:
    - `mainsequence/client/command_center/workspace.py`
    - `mainsequence/client/command_center/data_models.py`
    - `mainsequence/client/command_center/app_component.py` when relevant
+   - `mainsequence/client/command_center/widgets/connection_query.py` for connection-query source
+     payloads
+   - `mainsequence/client/command_center/widgets/bindings.py` for widget input/output bindings
+   - `mainsequence/client/command_center/workspaces/documents.py` and
+     `mainsequence/client/command_center/workspaces/mounted_widgets.py` for workspace and mounted
+     widget payload helpers
    - use these before any broader repository exploration
 3. Repository docs/models third
    - local docs, examples, payload builders, and typed models
@@ -310,6 +321,12 @@ Use:
 - `data_models.py` for `TabularFrameResponse`, the SDK canonical `core.tabular_frame@v1` model,
   plus field schema, frame metadata, and source context rules
 - `app_component.py` for editable form structures relevant to workspace-mounted AppComponent workflows
+- `widgets/connection_query.py` for source widget query payloads that reference connection
+  instances and operation ids
+- `widgets/bindings.py` for binding downstream widget inputs to upstream output ports
+- `widgets/registry.py` for declared contract checks against registry payloads
+- `workspaces/documents.py` and `workspaces/mounted_widgets.py` for schema-light workspace and
+  mounted-widget payload drafts
 
 Treat these SDK models as the first concrete client interaction surface.
 

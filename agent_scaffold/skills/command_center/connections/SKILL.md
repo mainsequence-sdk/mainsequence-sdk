@@ -24,6 +24,11 @@ connection instance and query model are known.
 ## This Skill Can Do
 
 - discover connection types and instances through `mainsequence.client.command_center.connections`
+- use `mainsequence.client.command_center.widgets.connection_query` for connection-query source
+  widget payload drafts
+- use `mainsequence.client.command_center.contracts.*` and
+  `mainsequence.client.command_center.providers.*` when validating Adapter from API provider
+  contracts
 - decide whether an existing connection instance can support the requested workspace data
 - inspect `ConnectionType.queryModels` and `usageGuidance`
 - verify that a query model can publish the required output contract
@@ -63,6 +68,16 @@ This skill must not claim ownership of:
    - `mainsequence/client/command_center/connections.py`
    - `mainsequence/client/command_center/data_models.py` when validating `core.tabular_frame@v1`
      output shape
+   - `mainsequence/client/command_center/contracts/adapter_from_api.py` when validating provider
+     discovery contracts
+   - `mainsequence/client/command_center/contracts/response_mapping.py` when validating
+     response-mapping metadata
+   - `mainsequence/client/command_center/contracts/tabular.py` when building or checking canonical
+     tabular frames
+   - `mainsequence/client/command_center/providers/adapter_from_api.py` when a provider should use
+     SDK contract builders
+   - `mainsequence/client/command_center/widgets/connection_query.py` when creating
+     connection-query source widget payloads
 2. Widget registry detail for the source and consumer widgets:
    - `mainsequence cc registered_widget_type list --json`
    - `mainsequence cc registered_widget_type detail <WIDGET_ID> --json`

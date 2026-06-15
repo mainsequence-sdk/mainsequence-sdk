@@ -99,6 +99,39 @@ connection/query flow directly. This avoids constant API deployments while itera
 contract, operation metadata, response shape, and widget behavior. Switch to `--api-base-url` only
 when the deployed API is ready to be the stable backend target.
 
+## SDK Helper Modules
+
+Provider code should use the Command Center SDK helpers instead of hand-building the well-known
+contract when the project can depend on `mainsequence-sdk`:
+
+```python
+from mainsequence.client.command_center.contracts.adapter_from_api import (
+    AdapterFromApiConfigVariable,
+    AdapterFromApiParameter,
+    AdapterFromApiSecretInjection,
+    AdapterFromApiSecretVariable,
+)
+from mainsequence.client.command_center.contracts.response_mapping import (
+    make_tabular_response_mapping,
+)
+from mainsequence.client.command_center.contracts.tabular import make_tabular_frame
+from mainsequence.client.command_center.providers.adapter_from_api import (
+    make_health_operation,
+    make_provider_contract,
+    make_query_operation,
+)
+```
+
+Use:
+
+- `contracts.adapter_from_api` for strict provider contract, operation, config variable, and secret
+  variable models
+- `providers.adapter_from_api` for `make_health_operation`, `make_query_operation`, and
+  `make_provider_contract`
+- `contracts.response_mapping` for optional `responseMappings` metadata
+- `contracts.tabular` for canonical `core.tabular_frame@v1` response helpers such as
+  `make_tabular_frame`
+
 ## Scope
 
 This skill owns:
@@ -330,6 +363,7 @@ For FastAPI providers in Main Sequence repos, full canonical frame endpoints mus
 
 ```python
 from mainsequence.client.command_center.data_models import TabularFrameResponse
+from mainsequence.client.command_center.contracts.tabular import make_tabular_frame
 ```
 
 Declare `response_model=TabularFrameResponse` instead of recreating the canonical frame shape
@@ -420,7 +454,9 @@ Before implementing or revising an API for Adapter from API consumption, decide:
 
 For a FastAPI provider:
 
-- define strict Pydantic models for the Command Center contract
+- use the SDK provider helpers in `mainsequence.client.command_center.providers.adapter_from_api`
+  and strict models in `mainsequence.client.command_center.contracts.adapter_from_api` when the
+  dependency is available
 - set explicit `operation_id` values on routes
 - expose `GET /.well-known/command-center/connection-contract`
 - expose a zero-argument health route
