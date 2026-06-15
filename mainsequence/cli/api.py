@@ -1413,53 +1413,6 @@ def send_agent_session_a2a_chat(
         raise ApiError(f"Agent session A2A chat failed: {e}") from e
 
 
-def send_agent_a2a_message(
-    target_agent_uid: str,
-    *,
-    caller_agent_session_uid: str,
-    message: str | None = None,
-    a2a_payload: dict[str, Any] | None = None,
-    handle_unique_id: str | None = None,
-    wait_for_runtime: bool = True,
-    runtime_ready_timeout_seconds: float = 60,
-    runtime_ready_poll_interval_seconds: float = 2,
-    poll_task_until_stable: bool = True,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    """
-    Allocate or reuse an A2A target session and send a backend-managed A2A request.
-    """
-    try:
-
-        def _send(ClientAgent):
-            agent = ClientAgent.get_by_uid(str(target_agent_uid), timeout=timeout)
-            return agent.send_a2a_request(
-                caller_agent_session_uid=str(caller_agent_session_uid),
-                message=message,
-                a2a_payload=a2a_payload,
-                handle_unique_id=handle_unique_id,
-                wait_for_runtime=wait_for_runtime,
-                runtime_ready_timeout_seconds=runtime_ready_timeout_seconds,
-                runtime_ready_poll_interval_seconds=runtime_ready_poll_interval_seconds,
-                poll_task_until_stable=poll_task_until_stable,
-                timeout=timeout,
-            )
-
-        payload = _run_sdk_model_operation(
-            module_name="mainsequence.client.agent_runtime_models",
-            class_name="Agent",
-            operation=_send,
-        )
-        return _sdk_object_to_dict(payload)
-    except Exception as e:
-        err_name = type(e).__name__
-        if err_name == "NotFoundError":
-            raise ApiError(f"Agent not found: {target_agent_uid}") from e
-        if isinstance(e, (ApiError, NotLoggedIn)):
-            raise
-        raise ApiError(f"Agent A2A send failed: {e}") from e
-
-
 def list_agent_users_can_view(
     agent_uid: str,
     *,

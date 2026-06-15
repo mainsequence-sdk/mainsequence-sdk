@@ -538,61 +538,6 @@ class Agent(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
             raise_for_response(response, payload=payload)
         return AgentSession(**response.json())
 
-    def send_a2a_request(
-        self,
-        *,
-        caller_agent_session_uid: str | AgentSession,
-        message: str | None = None,
-        a2a_payload: dict[str, Any] | None = None,
-        handle_unique_id: str | None = None,
-        wait_for_runtime: bool = True,
-        runtime_ready: dict[str, Any] | None = None,
-        runtime_ready_timeout_seconds: float = 60,
-        runtime_ready_poll_interval_seconds: float = 2,
-        poll_task_until_stable: bool = True,
-        timeout=None,
-    ) -> dict[str, Any]:
-        """
-        Allocate or reuse a delegated target session and send an A2A request to it.
-
-        This is the high-level runtime helper for agent-to-agent communication. It keeps
-        runtime access tokens and readiness polling behind backend APIs.
-        """
-        allocation = self.allocate_a2a_target_session(
-            caller_agent_session_uid=caller_agent_session_uid,
-            handle_unique_id=handle_unique_id,
-            timeout=timeout,
-        )
-        session_payload = allocation.get("session")
-        allocated_session_uid = allocation.get("agent_session_uid")
-        if not allocated_session_uid and isinstance(session_payload, dict):
-            allocated_session_uid = session_payload.get("uid")
-        if not allocated_session_uid:
-            raise TypeError("A2A allocation response did not include agent_session_uid")
-
-        chat = AgentSession.send_a2a_chat(
-            str(allocated_session_uid),
-            message=message,
-            a2a_payload=a2a_payload,
-            wait_for_runtime=wait_for_runtime,
-            runtime_ready=runtime_ready,
-            runtime_ready_timeout_seconds=runtime_ready_timeout_seconds,
-            runtime_ready_poll_interval_seconds=runtime_ready_poll_interval_seconds,
-            poll_task_until_stable=poll_task_until_stable,
-            timeout=timeout,
-        )
-        chat_payload = chat.model_dump(mode="json")
-        return {
-            "handle_unique_id": allocation.get("handle_unique_id"),
-            "agent_session_uid": str(allocated_session_uid),
-            "allocation_state": allocation.get("allocation_state"),
-            "allocation": allocation,
-            "chat": chat_payload,
-            "ready": chat_payload.get("ready"),
-            "response": chat_payload.get("response"),
-            "normalized": chat_payload.get("normalized"),
-        }
-
 
 class UserOrchestratorAgentService(BaseObjectOrm, BasePydanticModel):
     ENDPOINT: ClassVar[str] = "agents/v1/user-orchestrator-agent-services"

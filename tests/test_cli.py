@@ -2147,54 +2147,6 @@ def test_send_agent_session_a2a_chat_uses_client_model(cli_mod, monkeypatch):
     assert out["normalized"]["text"] == "Done."
 
 
-def test_send_agent_a2a_message_uses_client_model(cli_mod, monkeypatch):
-    api_mod = importlib.import_module("mainsequence.cli.api")
-    captured = {}
-    target_agent_uid = "e0e75693-4110-464c-93e0-82c7fd9c9a23"
-    caller_session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
-
-    def _run_sdk_model_operation(*, module_name, class_name, operation, project_id_env=None):
-        captured["module_name"] = module_name
-        captured["class_name"] = class_name
-
-        class _ClientAgent:
-            @classmethod
-            def get_by_uid(cls, uid, timeout=None):
-                captured["uid"] = uid
-                captured["lookup_timeout"] = timeout
-
-                class _Agent:
-                    def send_a2a_request(self, **kwargs):
-                        captured["send_kwargs"] = kwargs
-                        return {
-                            "handle_unique_id": "delegated-handle-1",
-                            "agent_session_uid": "ac9e221d-1cd6-464c-a253-e302754872c1",
-                            "normalized": {"text": "Done."},
-                        }
-
-                return _Agent()
-
-        return operation(_ClientAgent)
-
-    monkeypatch.setattr(api_mod, "_run_sdk_model_operation", _run_sdk_model_operation)
-
-    out = api_mod.send_agent_a2a_message(
-        target_agent_uid,
-        caller_agent_session_uid=caller_session_uid,
-        message="Review the current portfolio drift.",
-        handle_unique_id="delegated-handle-1",
-        timeout=22,
-    )
-    assert captured["module_name"] == "mainsequence.client.agent_runtime_models"
-    assert captured["class_name"] == "Agent"
-    assert captured["uid"] == target_agent_uid
-    assert captured["send_kwargs"]["caller_agent_session_uid"] == caller_session_uid
-    assert captured["send_kwargs"]["message"] == "Review the current portfolio drift."
-    assert captured["send_kwargs"]["handle_unique_id"] == "delegated-handle-1"
-    assert captured["send_kwargs"]["timeout"] == 22
-    assert out["normalized"]["text"] == "Done."
-
-
 def test_list_agent_users_can_view_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
@@ -7854,70 +7806,6 @@ def test_agent_session_a2a_chat(cli_mod, runner, monkeypatch):
     assert captured["kwargs"]["message"] == "Review the current portfolio drift."
     assert captured["kwargs"]["timeout"] == 24
     assert "Agent session A2A chat sent" in result.output
-    assert "Done." in result.output
-
-
-def test_agent_a2a_send(cli_mod, runner, monkeypatch):
-    captured = {}
-    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
-    target_agent_uid = "e0e75693-4110-464c-93e0-82c7fd9c9a23"
-    caller_session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
-
-    def _send(target_agent_uid, **kwargs):
-        captured["target_agent_uid"] = target_agent_uid
-        captured["kwargs"] = kwargs
-        return {
-            "handle_unique_id": "delegated-handle-1",
-            "agent_session_uid": "ac9e221d-1cd6-464c-a253-e302754872c1",
-            "allocation_state": "created_new",
-            "chat": {
-                "ok": True,
-                "ready": {
-                    "ready": True,
-                    "attempts": 1,
-                    "elapsed_seconds": 0.0,
-                    "status_code": 200,
-                    "detail": "",
-                },
-                "response": {"jsonrpc": "2.0", "id": "request-1", "result": {}},
-                "normalized": {
-                    "ok": True,
-                    "kind": "message",
-                    "state": None,
-                    "task_id": None,
-                    "context_id": None,
-                    "text": "Done.",
-                    "raw": {},
-                },
-            },
-            "normalized": {"text": "Done."},
-        }
-
-    monkeypatch.setattr(cli_mod, "send_agent_a2a_message", _send)
-
-    result = runner.invoke(
-        cli_mod.app,
-        [
-            "agent",
-            "a2a",
-            "send",
-            target_agent_uid,
-            caller_session_uid,
-            "--message",
-            "Review the current portfolio drift.",
-            "--handle-unique-id",
-            "delegated-handle-1",
-            "--timeout",
-            "25",
-        ],
-    )
-    assert result.exit_code == 0
-    assert captured["target_agent_uid"] == target_agent_uid
-    assert captured["kwargs"]["caller_agent_session_uid"] == caller_session_uid
-    assert captured["kwargs"]["message"] == "Review the current portfolio drift."
-    assert captured["kwargs"]["handle_unique_id"] == "delegated-handle-1"
-    assert captured["kwargs"]["timeout"] == 25
-    assert "Agent A2A request sent" in result.output
     assert "Done." in result.output
 
 

@@ -1,6 +1,6 @@
 ---
 name: a2a_communication
-description: Canonical guidance for discovering other agents and communicating with them through Main Sequence's backend-managed A2A flow.
+description: Canonical guidance for discovering other agents and communicating with them through Main Sequence's session-scoped A2A flow.
 ---
 
 # A2A Communication
@@ -10,31 +10,41 @@ candidates, or send a request to another agent through Main Sequence's A2A flow.
 
 ## Canonical Rule
 
-The normal A2A path is backend-managed. Do not manually extract runtime RPC URLs,
-runtime bearer tokens, or call target runtime health/chat endpoints with `curl`.
+A2A transport is session-scoped.
 
-Use:
+If you already have the target `AgentSession` UID, send to that session directly:
 
-- CLI: `mainsequence agent a2a send ...`
-- Python: `Agent.send_a2a_request(...)`
+```bash
+mainsequence agent session a2a_chat <target_agent_session_uid> --message "..." --json
+```
 
-Only use `mainsequence agent session resolve_runtime_access ...` for low-level runtime
-debugging.
+Do not pass the target agent UID when sending to an existing session. The session is
+already bound to its agent.
+
+Only these backend A2A transport endpoints are part of this skill:
+
+- `POST /orm/api/agents/v1/sessions/{session_uid}/runtime_ready/`
+- `POST /orm/api/agents/v1/sessions/{session_uid}/a2a_chat/`
+
+Do not invent wrapper endpoints or wrapper commands. Do not manually extract runtime RPC
+URLs, runtime bearer tokens, or call target runtime health/chat endpoints with `curl`.
 
 ## When To Use
 
 - When the user asks which agents can help.
 - When another agent may be better suited to answer or assist.
 - Before starting an A2A discovery flow.
-- Before starting an A2A request flow.
+- Before sending an A2A request to an existing target session.
 - When a request explicitly arrives through the A2A channel.
 
 ## Core Invariants
 
 - A2A does not expand your role or scope.
 - Use `mainsequence agent search ... --json` as the canonical discovery source.
-- Use backend-managed A2A helpers for communication.
-- Persist and reuse `handle_unique_id` for retries in the same delegated conversation.
+- Use `mainsequence agent session a2a_chat ...` as the canonical CLI send command.
+- Use `AgentSession.send_a2a_chat(...)` as the canonical Python send helper.
+- Use `mainsequence agent session wait_runtime_ready ...` only when you need an explicit
+  readiness check separate from sending.
 - Do not expose or copy runtime bearer tokens into prompts, logs, or user-facing answers.
 
 ## Discovery Flow
@@ -60,6 +70,38 @@ mainsequence agent search "<discoveryPrompt>" --limit 10 --json
    Include agent name, stable unique id, and a short summary of relevant skills or
    capabilities.
 
+## Getting A Target Session
+
+If you already have the target session UID, skip this section.
+
+If no target session exists yet, allocate or reuse one explicitly:
+
+```bash
+mainsequence agent allocate_a2a_target_session \
+  <target_agent_uid> \
+  <caller_agent_session_uid> \
+  --json
+```
+
+For retries or reconnects in the same delegated conversation, reuse the returned
+`handle_unique_id`:
+
+```bash
+mainsequence agent allocate_a2a_target_session \
+  <target_agent_uid> \
+  <caller_agent_session_uid> \
+  --handle-unique-id <handle_unique_id> \
+  --json
+```
+
+The allocation response includes:
+
+- `handle_unique_id`: persist this for retries in the same delegated conversation
+- `agent_session_uid`: use this as `<target_agent_session_uid>` for A2A chat
+- `session`: the target backend `AgentSession` payload
+
+Allocation is separate from sending. Do not combine these into a fake one-step command.
+
 ## Communication Flow With CLI
 
 1. Decide whether actual A2A communication is needed.
@@ -67,39 +109,23 @@ mainsequence agent search "<discoveryPrompt>" --limit 10 --json
    confirmation before sending the A2A request.
 3. Build a bounded request:
    - clearly scoped task
-   - optional agent hint
    - required response format or output schema if needed
-4. Discover and select the target agent through the discovery flow above.
-5. Send the request through the backend-managed CLI command:
+4. Ensure you have the target session UID.
+5. Send the request through the backend-managed session command:
 
 ```bash
-mainsequence agent a2a send \
-  <target_agent_uid> \
-  <caller_agent_session_uid> \
+mainsequence agent session a2a_chat \
+  <target_agent_session_uid> \
   --message "Review the current portfolio drift." \
   --timeout 120 \
   --json
 ```
 
-For a retry or reconnect in the same delegated conversation, reuse the returned
-`handle_unique_id`:
+For raw A2A JSON-RPC:
 
 ```bash
-mainsequence agent a2a send \
-  <target_agent_uid> \
-  <caller_agent_session_uid> \
-  --handle-unique-id <handle_unique_id> \
-  --message "Review the current portfolio drift." \
-  --timeout 120 \
-  --json
-```
-
-For raw A2A JSON-RPC, use:
-
-```bash
-mainsequence agent a2a send \
-  <target_agent_uid> \
-  <caller_agent_session_uid> \
+mainsequence agent session a2a_chat \
+  <target_agent_session_uid> \
   --a2a-payload-file request.json \
   --timeout 120 \
   --json
@@ -107,8 +133,7 @@ mainsequence agent a2a send \
 
 The command handles:
 
-- target session allocation or reuse
-- runtime readiness waiting
+- optional runtime readiness waiting
 - backend transport to the target runtime
 - task polling until stable when enabled
 - normalized response extraction
@@ -121,32 +146,27 @@ Do not manually call:
 
 ## Communication Flow With Python
 
-Use the SDK helper when running inside an agent runtime or project code:
+Use the session-scoped SDK helper when running inside an agent runtime or project code:
 
 ```python
-from mainsequence.client.agent_runtime_models import Agent
+from mainsequence.client.agent_runtime_models import AgentSession
 
-target_agent = Agent.get_by_uid(target_agent_uid)
-
-result = target_agent.send_a2a_request(
-    caller_agent_session_uid=caller_agent_session_uid,
+result = AgentSession.send_a2a_chat(
+    target_agent_session_uid,
     message="Review the current portfolio drift.",
-    handle_unique_id=existing_handle_unique_id,
     runtime_ready_timeout_seconds=60,
     runtime_ready_poll_interval_seconds=2,
     timeout=120,
 )
 
-handle_unique_id = result["handle_unique_id"]
-target_session_uid = result["agent_session_uid"]
-text = (result.get("normalized") or {}).get("text", "")
+text = result.normalized.text if result.normalized is not None else ""
 ```
 
 For raw A2A JSON-RPC:
 
 ```python
-result = target_agent.send_a2a_request(
-    caller_agent_session_uid=caller_agent_session_uid,
+result = AgentSession.send_a2a_chat(
+    target_agent_session_uid,
     a2a_payload={
         "jsonrpc": "2.0",
         "id": "request-1",
@@ -169,46 +189,72 @@ result = target_agent.send_a2a_request(
 )
 ```
 
-## Direct Session Diagnostics
+If no target session exists yet in Python, allocation is still a separate step:
 
-Use these only when you already have a target session or when debugging transport behavior.
+```python
+from mainsequence.client.agent_runtime_models import Agent, AgentSession
 
-Wait for runtime readiness through the backend:
+target_agent = Agent.get_by_uid(target_agent_uid)
+allocation = target_agent.allocate_a2a_target_session(
+    caller_agent_session_uid=caller_agent_session_uid,
+    handle_unique_id=existing_handle_unique_id,
+    timeout=120,
+)
+
+target_session_uid = allocation["agent_session_uid"]
+result = AgentSession.send_a2a_chat(
+    target_session_uid,
+    message="Review the current portfolio drift.",
+    timeout=120,
+)
+```
+
+## Runtime Readiness
+
+Normally, `a2a_chat` asks the backend to wait for runtime readiness before sending.
+
+Use an explicit readiness check only when debugging or when you need to separate readiness
+from message sending:
 
 ```bash
 mainsequence agent session wait_runtime_ready \
-  <agent_session_uid> \
+  <target_agent_session_uid> \
   --timeout-seconds 60 \
   --poll-interval-seconds 2 \
   --json
 ```
 
-Send to an existing target session through the backend:
+Python equivalent:
 
-```bash
-mainsequence agent session a2a_chat \
-  <agent_session_uid> \
-  --message "Review the current portfolio drift." \
-  --timeout 120 \
-  --json
+```python
+from mainsequence.client.agent_runtime_models import AgentSession
+
+ready = AgentSession.wait_until_runtime_ready(
+    target_agent_session_uid,
+    timeout_seconds=60,
+    poll_interval_seconds=2,
+    timeout=120,
+)
 ```
 
-Low-level runtime access debugging:
+## Low-Level Runtime Debugging
+
+Use runtime access resolution only for debugging:
 
 ```bash
-mainsequence agent session resolve_runtime_access <agent_session_uid> --json
+mainsequence agent session resolve_runtime_access <target_agent_session_uid> --json
 ```
 
 This returns runtime access metadata and is not the normal communication path.
 
 ## Handle Reuse
 
-`handle_unique_id` is the stable delegated-conversation reuse key.
+`handle_unique_id` is the stable delegated-conversation reuse key returned by allocation.
 
-- If the delegated conversation is new, omit `--handle-unique-id`.
+- If the delegated conversation is new, omit `--handle-unique-id` during allocation.
 - The backend generates and returns a new `handle_unique_id`; persist it immediately.
 - If you retry because of timeout, disconnect, readiness delay, stream restart, or runtime
-  error recovery, resend the same `handle_unique_id`.
+  error recovery, allocate again with the same `handle_unique_id`.
 - Reusing the same handle tells the backend to return the same delegated `AgentSession`.
 - Allocate a fresh handle only when you intentionally want a new delegated conversation.
 
@@ -219,9 +265,11 @@ This returns runtime access metadata and is not the normal communication path.
 3. Parse the JSON output.
 4. Normalize candidates.
 5. Select the preferred candidate.
-6. Send with `mainsequence agent a2a send ... --json` or `Agent.send_a2a_request(...)`.
-7. Persist `handle_unique_id` from the response for retries.
-8. Treat `normalized.text` as the primary concise target-agent answer when present.
+6. Get or allocate the target session UID.
+7. Send with `mainsequence agent session a2a_chat <target_agent_session_uid> ... --json`
+   or `AgentSession.send_a2a_chat(...)`.
+8. Persist `handle_unique_id` from allocation for retries.
+9. Treat `normalized.text` as the primary concise target-agent answer when present.
 
 ## Role-Specific Behavior
 
@@ -250,3 +298,4 @@ This returns runtime access metadata and is not the normal communication path.
 - Do not send another agent work when discovery alone was the requested goal.
 - Do not manually extract `rpc_url` or `token` for normal A2A communication.
 - Do not call target runtime `/health` or `/api/a2a/chat` directly for normal A2A communication.
+- Do not invent one-step commands that require both target agent UID and target session behavior.

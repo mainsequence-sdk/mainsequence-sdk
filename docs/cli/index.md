@@ -142,7 +142,6 @@ mainsequence agent detail e0e75693-4110-464c-93e0-82c7fd9c9a23
 mainsequence agent create "Research Copilot" --agent-unique-id research-copilot --description "Desk agent"
 mainsequence agent get_or_create "Research Copilot" --agent-unique-id research-copilot --description "Desk agent"
 mainsequence agent session list --agent-unique-id research-copilot
-mainsequence agent a2a send e0e75693-4110-464c-93e0-82c7fd9c9a23 3f1cc452-43ec-49cb-b2ba-87dbac164d29 --message "Review the current portfolio drift." --json
 mainsequence agent allocate_a2a_target_session e0e75693-4110-464c-93e0-82c7fd9c9a23 3f1cc452-43ec-49cb-b2ba-87dbac164d29
 mainsequence agent allocate_a2a_target_session e0e75693-4110-464c-93e0-82c7fd9c9a23 3f1cc452-43ec-49cb-b2ba-87dbac164d29 --handle-unique-id delegated-handle-1
 mainsequence agent get_latest_session e0e75693-4110-464c-93e0-82c7fd9c9a23
@@ -366,11 +365,11 @@ mainsequence skills path workspace_builder --json
 - `mainsequence organization teams can_view` and `can_edit` inspect team access through the SDK `Team.can_view()` and `Team.can_edit()` paths.
 - `mainsequence organization teams add_to_view`, `add_to_edit`, `remove_from_view`, and `remove_from_edit` mutate explicit user access on teams through the SDK `Team` permission-action paths.
 - `mainsequence agent list`, `detail`, `create`, `get_or_create`, `allocate_a2a_target_session`, `get_latest_session`, and `delete` use the SDK client `mainsequence.client.agent_runtime_models.Agent` paths.
-- `mainsequence agent a2a send` uses `Agent.send_a2a_request(...)` to allocate/reuse a delegated target session and send the A2A request through backend-managed transport. It does not expose runtime RPC URLs or runtime bearer tokens.
 - `mainsequence agent session list`, `detail`, `wait_runtime_ready`, `a2a_chat`, and `resolve_runtime_access` use the SDK client `mainsequence.client.agent_runtime_models.AgentSession` path.
 - `mainsequence agent session list --agent-uid <AGENT_UID>` lists sessions for one agent directly; `mainsequence agent session list --agent-unique-id <AGENT_UNIQUE_ID>` resolves the agent first and then lists its sessions.
 - `mainsequence agent session wait_runtime_ready <SESSION_UID>` calls `POST /orm/api/agents/v1/sessions/<SESSION_UID>/runtime_ready/`.
 - `mainsequence agent session a2a_chat <SESSION_UID>` calls `POST /orm/api/agents/v1/sessions/<SESSION_UID>/a2a_chat/`.
+- `mainsequence agent session a2a_chat <SESSION_UID>` is the normal A2A send command. If no target session exists yet, first call `mainsequence agent allocate_a2a_target_session` and then pass the returned `agent_session_uid`.
 - `mainsequence agent session resolve_runtime_access` is a low-level runtime debugging command, not the normal A2A communication path.
 - `mainsequence agent can_view` and `can_edit` inspect agent sharing through the SDK `ShareableObjectMixin` access-state paths on `Agent`.
 - `mainsequence agent add_to_view`, `add_to_edit`, `remove_from_view`, and `remove_from_edit` mutate explicit user access on agents through the SDK `ShareableObjectMixin` permission-action paths.
