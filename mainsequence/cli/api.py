@@ -38,6 +38,8 @@ CLI_BROWSER_CLIENT_ID = "mainsequence-cli"
 
 S = requests.Session()
 S.headers.update({"Content-Type": "application/json"})
+
+DEFAULT_AGENT_RUNTIME_READY_TIMEOUT_SECONDS = 900.0
 _UNSET = object()
 
 
@@ -421,10 +423,23 @@ def _format_env_value(value: Any) -> str:
 
 
 def _sdk_object_to_dict(obj: Any) -> dict[str, Any]:
+    def _strip_client_metadata(value: Any) -> Any:
+        if isinstance(value, dict):
+            return {
+                key: _strip_client_metadata(item)
+                for key, item in value.items()
+                if key != "orm_class"
+            }
+        if isinstance(value, list):
+            return [_strip_client_metadata(item) for item in value]
+        if isinstance(value, tuple):
+            return [_strip_client_metadata(item) for item in value]
+        return value
+
     if isinstance(obj, dict):
-        return dict(obj)
+        return _strip_client_metadata(dict(obj))
     if hasattr(obj, "model_dump"):
-        return obj.model_dump(mode="json")
+        return _strip_client_metadata(obj.model_dump(mode="json"))
     if hasattr(obj, "uid"):
         return {"uid": getattr(obj, "uid", None)}
     return {"id": getattr(obj, "id", None)}
@@ -1320,6 +1335,7 @@ def get_agent_session(
 def resolve_agent_session_runtime_access(
     agent_session_uid: str,
     *,
+    wait_for_runtime: bool = False,
     timeout: int | None = None,
 ) -> dict[str, Any]:
     """
@@ -1330,7 +1346,9 @@ def resolve_agent_session_runtime_access(
             module_name="mainsequence.client.agent_runtime_models",
             class_name="AgentSession",
             operation=lambda ClientAgentSession: ClientAgentSession.resolve_runtime_access(
-                str(agent_session_uid), timeout=timeout
+                str(agent_session_uid),
+                wait_for_runtime=wait_for_runtime,
+                timeout=timeout,
             ),
         )
         return _sdk_object_to_dict(runtime_access)
@@ -1346,8 +1364,7 @@ def resolve_agent_session_runtime_access(
 def wait_agent_session_runtime_ready(
     agent_session_uid: str,
     *,
-    timeout_seconds: float = 60,
-    poll_interval_seconds: float = 2,
+    timeout_seconds: float = DEFAULT_AGENT_RUNTIME_READY_TIMEOUT_SECONDS,
     timeout: int | None = None,
 ) -> dict[str, Any]:
     """
@@ -1360,7 +1377,6 @@ def wait_agent_session_runtime_ready(
             operation=lambda ClientAgentSession: ClientAgentSession.wait_until_runtime_ready(
                 str(agent_session_uid),
                 timeout_seconds=timeout_seconds,
-                poll_interval_seconds=poll_interval_seconds,
                 timeout=timeout,
             ),
         )
@@ -1380,13 +1396,16 @@ def send_agent_session_a2a_chat(
     message: str | None = None,
     a2a_payload: dict[str, Any] | None = None,
     wait_for_runtime: bool = True,
-    runtime_ready_timeout_seconds: float = 60,
-    runtime_ready_poll_interval_seconds: float = 2,
-    poll_task_until_stable: bool = True,
+    runtime_ready_timeout_seconds: float = DEFAULT_AGENT_RUNTIME_READY_TIMEOUT_SECONDS,
+    poll_task_until_stable: bool | None = None,
+    runtime_turn_timeout_seconds: float | None = None,
+    omit_reasoning: bool | None = None,
+    response_format: dict[str, Any] | None = None,
+    json_repair: dict[str, Any] | None = None,
     timeout: int | None = None,
 ) -> dict[str, Any]:
     """
-    Send an A2A request to one existing agent session through SDK client model.
+    Send an A2A request through the legacy backend compatibility endpoint.
     """
     try:
         chat = _run_sdk_model_operation(
@@ -1398,8 +1417,11 @@ def send_agent_session_a2a_chat(
                 a2a_payload=a2a_payload,
                 wait_for_runtime=wait_for_runtime,
                 runtime_ready_timeout_seconds=runtime_ready_timeout_seconds,
-                runtime_ready_poll_interval_seconds=runtime_ready_poll_interval_seconds,
                 poll_task_until_stable=poll_task_until_stable,
+                runtime_turn_timeout_seconds=runtime_turn_timeout_seconds,
+                omit_reasoning=omit_reasoning,
+                response_format=response_format,
+                json_repair=json_repair,
                 timeout=timeout,
             ),
         )
@@ -1411,6 +1433,150 @@ def send_agent_session_a2a_chat(
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
         raise ApiError(f"Agent session A2A chat failed: {e}") from e
+
+
+def send_agent_session_a2a_message(
+    agent_session_uid: str,
+    *,
+    message: str,
+    strict_dictionary: bool = False,
+    json_repair_attempts: int = 3,
+    history_length: int = 0,
+    return_immediately: bool = False,
+    wait_for_runtime: bool = True,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Send one standard A2A message through the target session runtime.
+    """
+    try:
+        payload = _run_sdk_model_operation(
+            module_name="mainsequence.client.agent_runtime_models",
+            class_name="AgentSession",
+            operation=lambda ClientAgentSession: ClientAgentSession.send_a2a_message(
+                str(agent_session_uid),
+                message=message,
+                strict_dictionary=strict_dictionary,
+                json_repair_attempts=json_repair_attempts,
+                history_length=history_length,
+                return_immediately=return_immediately,
+                wait_for_runtime=wait_for_runtime,
+                timeout=timeout,
+            ),
+        )
+        return _sdk_object_to_dict(payload)
+    except Exception as e:
+        err_name = type(e).__name__
+        if err_name == "NotFoundError":
+            raise ApiError(f"Agent session not found: {agent_session_uid}") from e
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"Agent session A2A message send failed: {e}") from e
+
+
+def chat_agent_session_runtime(
+    agent_session_uid: str,
+    *,
+    message: str,
+    runtime_access: dict[str, Any] | None = None,
+    wait_for_runtime: bool = True,
+    runtime_turn_timeout_seconds: float | None = None,
+    omit_reasoning: bool | None = True,
+    response_format: dict[str, Any] | None = None,
+    json_repair: dict[str, Any] | None = None,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Send one message through the resolved A2A runtime chat stream.
+    """
+    operation_kwargs: dict[str, Any] = {
+        "message": message,
+        "wait_for_runtime": wait_for_runtime,
+        "runtime_turn_timeout_seconds": runtime_turn_timeout_seconds,
+        "omit_reasoning": omit_reasoning,
+        "response_format": response_format,
+        "json_repair": json_repair,
+        "timeout": timeout,
+    }
+    if runtime_access is not None:
+        operation_kwargs["runtime_access"] = runtime_access
+    try:
+        payload = _run_sdk_model_operation(
+            module_name="mainsequence.client.agent_runtime_models",
+            class_name="AgentSession",
+            operation=lambda ClientAgentSession: ClientAgentSession.a2a_chat(
+                str(agent_session_uid),
+                **operation_kwargs,
+            ),
+        )
+        return _sdk_object_to_dict(payload)
+    except Exception as e:
+        err_name = type(e).__name__
+        if err_name == "NotFoundError":
+            raise ApiError(f"Agent session not found: {agent_session_uid}") from e
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"Agent session runtime chat failed: {e}") from e
+
+
+def cancel_agent_session_runtime(
+    agent_session_uid: str,
+    *,
+    reason: str = "client_requested",
+    message: str | None = None,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Cancel the active turn on the resolved A2A runtime.
+    """
+    try:
+        payload = _run_sdk_model_operation(
+            module_name="mainsequence.client.agent_runtime_models",
+            class_name="AgentSession",
+            operation=lambda ClientAgentSession: ClientAgentSession.cancel_runtime(
+                str(agent_session_uid),
+                reason=reason,
+                message=message,
+                timeout=timeout,
+            ),
+        )
+        return _sdk_object_to_dict(payload)
+    except Exception as e:
+        err_name = type(e).__name__
+        if err_name == "NotFoundError":
+            raise ApiError(f"Agent session not found: {agent_session_uid}") from e
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"Agent session runtime cancel failed: {e}") from e
+
+
+def detach_agent_session_runtime(
+    agent_session_uid: str,
+    *,
+    reason: str = "client_done",
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Detach the resolved A2A runtime for one agent session.
+    """
+    try:
+        payload = _run_sdk_model_operation(
+            module_name="mainsequence.client.agent_runtime_models",
+            class_name="AgentSession",
+            operation=lambda ClientAgentSession: ClientAgentSession.detach_runtime(
+                str(agent_session_uid),
+                reason=reason,
+                timeout=timeout,
+            ),
+        )
+        return _sdk_object_to_dict(payload)
+    except Exception as e:
+        err_name = type(e).__name__
+        if err_name == "NotFoundError":
+            raise ApiError(f"Agent session not found: {agent_session_uid}") from e
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"Agent session runtime detach failed: {e}") from e
 
 
 def list_agent_users_can_view(

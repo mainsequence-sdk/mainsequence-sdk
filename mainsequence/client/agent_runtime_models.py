@@ -1,14 +1,25 @@
 from __future__ import annotations
 
 import datetime
+import json
+import uuid
 from enum import Enum
-from typing import Any, ClassVar, Literal
+from typing import Any, ClassVar
 
+import requests
 from pydantic import ConfigDict, Field
 
 from .base import BaseObjectOrm, BasePydanticModel, ShareableObjectMixin
 from .exceptions import ApiError, raise_for_response
 from .utils import make_request, serialize_to_json
+
+DEFAULT_AGENT_RUNTIME_READY_TIMEOUT_SECONDS = 900.0
+DEFAULT_AGENT_SESSION_LONG_REQUEST_TIMEOUT = (5.0, None)
+STANDARD_A2A_MESSAGE_SEND_PATH = "/api/a2a/v1/message:send"
+STANDARD_A2A_CONTENT_TYPE = "application/a2a+json"
+STANDARD_A2A_OUTPUT_CONTRACT_METADATA_KEY = (
+    "https://mainsequence.ai/a2a/extensions/output-contract/v1"
+)
 
 
 class AgentSessionStatus(str, Enum):
@@ -108,17 +119,28 @@ class AgentRuntimeImageDrift(BasePydanticModel):
     )
 
 
+class AgentRuntimePaths(BasePydanticModel):
+    model_config = ConfigDict(extra="allow")
+
+    chat: str | None = Field(None, description="Runtime-relative deprecated A2A chat path.")
+    session: str | None = Field(None, description="Runtime-relative session path.")
+    cancel: str | None = Field(None, description="Runtime-relative turn cancellation path.")
+    detach: str | None = Field(None, description="Runtime-relative detach path.")
+
+
 class AgentSessionRuntimeAccess(BasePydanticModel):
-    coding_agent_service_id: str = Field(
-        ...,
+    model_config = ConfigDict(extra="allow")
+
+    coding_agent_service_id: str | None = Field(
+        None,
         description="Identifier of the backing coding-agent service that owns the runtime.",
     )
-    coding_agent_id: str = Field(
-        ...,
+    coding_agent_id: str | None = Field(
+        None,
         description="Stable coding-agent routing identifier presented to the gateway.",
     )
-    mode: Literal["token"] = Field(
-        ...,
+    mode: str = Field(
+        "token",
         description="Runtime access mode. Currently only token-based gateway access is supported.",
     )
     rpc_url: str = Field(
@@ -132,6 +154,14 @@ class AgentSessionRuntimeAccess(BasePydanticModel):
     is_ready: bool = Field(
         False,
         description="Whether the resolved coding-agent runtime is currently routable.",
+    )
+    ready: Any | None = Field(
+        None,
+        description="Backend readiness metadata returned by runtime access resolution.",
+    )
+    runtime_paths: AgentRuntimePaths = Field(
+        default_factory=AgentRuntimePaths,
+        description="Runtime-relative paths returned by the control plane.",
     )
     knative_service_runtime_uid: str | None = Field(
         None,
@@ -179,6 +209,10 @@ class AgentSessionA2ANormalizedResponse(BasePydanticModel):
         default_factory=dict,
         description="Backend-provided raw normalization metadata or raw transport content.",
     )
+    events: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Parsed A2A/SSE events when the backend returned a raw event stream.",
+    )
 
 
 class AgentSessionA2AChatResponse(BasePydanticModel):
@@ -197,6 +231,185 @@ class AgentSessionA2AChatResponse(BasePydanticModel):
         None,
         description="Backend-normalized A2A response summary.",
     )
+
+
+def _parse_sse_events(raw_sse: str) -> list[dict[str, Any]]:
+    events: list[dict[str, Any]] = []
+    current: dict[str, Any] = {}
+    data_lines: list[str] = []
+
+    def _flush() -> None:
+        nonlocal current, data_lines
+        if not current and not data_lines:
+            return
+        event = dict(current)
+        if data_lines:
+            data_text = "\n".join(data_lines)
+            if data_text == "[DONE]":
+                event["done"] = True
+                event["data"] = "[DONE]"
+            else:
+                try:
+                    event["data"] = json.loads(data_text)
+                except Exception:
+                    event["data"] = data_text
+        events.append(event)
+        current = {}
+        data_lines = []
+
+    for raw_line in raw_sse.splitlines():
+        line = raw_line.rstrip("\r")
+        if line == "":
+            _flush()
+            continue
+        if line.startswith(":"):
+            continue
+        if ":" in line:
+            field, value = line.split(":", 1)
+            value = value[1:] if value.startswith(" ") else value
+        else:
+            field, value = line, ""
+        if field == "data":
+            data_lines.append(value)
+        elif field in {"id", "event", "retry"}:
+            current[field] = value
+    _flush()
+    return events
+
+
+def _extract_text_from_sse_events(events: list[dict[str, Any]]) -> str:
+    chunks: list[str] = []
+    for event in events:
+        data = event.get("data")
+        if not isinstance(data, dict):
+            continue
+        text_delta = data.get("textDelta")
+        if isinstance(text_delta, str):
+            chunks.append(text_delta)
+            continue
+        text = data.get("text")
+        if isinstance(text, str):
+            chunks.append(text)
+            continue
+        result = data.get("result")
+        if isinstance(result, dict):
+            parts = result.get("parts")
+            if isinstance(parts, list):
+                for part in parts:
+                    if isinstance(part, dict) and isinstance(part.get("text"), str):
+                        chunks.append(part["text"])
+    return "".join(chunks)
+
+
+def _looks_like_sse_payload(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    return "\ndata:" in value or value.startswith("data:") or "\nevent:" in value
+
+
+def _normalize_a2a_chat_response_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    normalized_payload = dict(payload)
+    response_value = normalized_payload.get("response")
+    normalized = normalized_payload.get("normalized")
+    if not isinstance(normalized, dict):
+        normalized = {}
+
+    raw_sse = response_value if _looks_like_sse_payload(response_value) else None
+    if raw_sse is None:
+        raw_value = normalized.get("raw")
+        raw_sse = raw_value if _looks_like_sse_payload(raw_value) else None
+    if raw_sse is None:
+        text_value = normalized.get("text")
+        raw_sse = text_value if _looks_like_sse_payload(text_value) else None
+    if raw_sse is None:
+        return normalized_payload
+
+    events = _parse_sse_events(raw_sse)
+    extracted_text = _extract_text_from_sse_events(events)
+    normalized_payload["response"] = {
+        "kind": "sse",
+        "raw": raw_sse,
+        "events": events,
+    }
+    normalized["events"] = events
+    normalized["raw"] = {
+        "kind": "sse",
+        "raw": raw_sse,
+        "events": events,
+    }
+    if extracted_text:
+        normalized["text"] = extracted_text
+    normalized_payload["normalized"] = normalized
+    return normalized_payload
+
+
+def _join_runtime_url(rpc_url: str, runtime_path: str) -> str:
+    if not isinstance(rpc_url, str) or not rpc_url.strip():
+        raise ApiError("Runtime access response is missing rpc_url.")
+    if not isinstance(runtime_path, str) or not runtime_path.strip():
+        raise ApiError("Runtime access response is missing a runtime path.")
+    if runtime_path.startswith(("http://", "https://")):
+        return runtime_path
+    return f"{rpc_url.rstrip('/')}/{runtime_path.lstrip('/')}"
+
+
+def _parse_json_text(value: str) -> Any | None:
+    stripped = value.strip()
+    if not stripped:
+        return None
+    try:
+        return json.loads(stripped)
+    except Exception:
+        return None
+
+
+def _normalize_runtime_chat_response(
+    *,
+    agent_session_uid: str,
+    response: requests.Response,
+) -> dict[str, Any]:
+    content_type = (response.headers.get("Content-Type") or "").lower()
+    if "application/json" in content_type:
+        payload = response.json()
+        text = ""
+        parsed_json = payload
+        if isinstance(payload, dict):
+            normalized = payload.get("normalized")
+            if isinstance(normalized, dict) and isinstance(normalized.get("text"), str):
+                text = normalized["text"]
+                parsed_json = _parse_json_text(text)
+            elif isinstance(payload.get("text"), str):
+                text = payload["text"]
+                parsed_json = _parse_json_text(text)
+        return {
+            "ok": True,
+            "agent_session_uid": agent_session_uid,
+            "status_code": response.status_code,
+            "events": [],
+            "text": text,
+            "json": parsed_json,
+            "response": payload,
+        }
+
+    raw = response.text
+    events = _parse_sse_events(raw)
+    text = _extract_text_from_sse_events(events)
+    parsed_json = _parse_json_text(text) if text else None
+    return {
+        "ok": True,
+        "agent_session_uid": agent_session_uid,
+        "status_code": response.status_code,
+        "events": events,
+        "text": text,
+        "json": parsed_json,
+        "response": {
+            "kind": "sse",
+            "raw": raw,
+            "events": events,
+            "text": text,
+            "json": parsed_json,
+        },
+    }
 
 
 class Agent(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
@@ -252,6 +465,10 @@ class Agent(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
     configuration: dict[str, Any] = Field(
         default_factory=dict,
         description="Additional agent configuration unrelated to runtime resolution.",
+    )
+    metadata: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Additional backend metadata for the agent.",
     )
 
     last_session_at: datetime.datetime | None = Field(
@@ -589,6 +806,7 @@ class UserProjectExecutorAgentService(BaseObjectOrm, BasePydanticModel):
 
 class AgentSession(BaseObjectOrm, BasePydanticModel):
     ENDPOINT: ClassVar[str] = "agents/v1/sessions"
+    _RUNTIME_ACCESS_CACHE: ClassVar[dict[str, AgentSessionRuntimeAccess]] = {}
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]] | None] = {
         "uid": ["exact", "in"],
         "agent_uid": ["exact", "in"],
@@ -611,10 +829,491 @@ class AgentSession(BaseObjectOrm, BasePydanticModel):
         return cls._coerce_filter_uid(agent_session, field_name="agent_session")
 
     @classmethod
+    def _coerce_runtime_access(
+        cls,
+        runtime_access: AgentSessionRuntimeAccess | dict[str, Any],
+    ) -> AgentSessionRuntimeAccess:
+        if isinstance(runtime_access, AgentSessionRuntimeAccess):
+            access = runtime_access
+        elif isinstance(runtime_access, dict):
+            access = AgentSessionRuntimeAccess(**runtime_access)
+        else:
+            raise TypeError("runtime_access must be an AgentSessionRuntimeAccess or dict")
+        cls._runtime_url(access, "chat")
+        return access
+
+    @classmethod
+    def cache_runtime_access(
+        cls,
+        agent_session: str | AgentSession,
+        runtime_access: AgentSessionRuntimeAccess | dict[str, Any],
+    ) -> AgentSessionRuntimeAccess:
+        session_uid = cls._resolve_agent_session_uid(agent_session)
+        access = cls._coerce_runtime_access(runtime_access)
+        cls._RUNTIME_ACCESS_CACHE[session_uid] = access
+        return access
+
+    @classmethod
+    def get_cached_runtime_access(
+        cls,
+        agent_session: str | AgentSession,
+    ) -> AgentSessionRuntimeAccess | None:
+        session_uid = cls._resolve_agent_session_uid(agent_session)
+        return cls._RUNTIME_ACCESS_CACHE.get(session_uid)
+
+    @classmethod
+    def clear_cached_runtime_access(
+        cls,
+        agent_session: str | AgentSession,
+    ) -> None:
+        session_uid = cls._resolve_agent_session_uid(agent_session)
+        cls._RUNTIME_ACCESS_CACHE.pop(session_uid, None)
+
+    @classmethod
+    def _require_runtime_access(
+        cls,
+        agent_session: str | AgentSession,
+        runtime_access: AgentSessionRuntimeAccess | dict[str, Any] | None,
+    ) -> AgentSessionRuntimeAccess:
+        if runtime_access is not None:
+            return cls.cache_runtime_access(agent_session, runtime_access)
+        cached = cls.get_cached_runtime_access(agent_session)
+        if cached is None:
+            raise ApiError(
+                "Runtime access has not been resolved for this agent session. "
+                "Call AgentSession.resolve_runtime_access(...) first and reuse the returned access."
+            )
+        return cached
+
+    @classmethod
+    def _resolve_runtime_access_for_chat(
+        cls,
+        agent_session: str | AgentSession,
+        runtime_access: AgentSessionRuntimeAccess | dict[str, Any] | None,
+        *,
+        wait_for_runtime: bool,
+        timeout=None,
+    ) -> AgentSessionRuntimeAccess:
+        session_uid = cls._resolve_agent_session_uid(agent_session)
+        if runtime_access is not None:
+            access = cls._coerce_runtime_access(runtime_access)
+            if not wait_for_runtime or access.is_ready:
+                cls._RUNTIME_ACCESS_CACHE[session_uid] = access
+                return access
+            cls.clear_cached_runtime_access(session_uid)
+            return cls.resolve_runtime_access(
+                session_uid,
+                wait_for_runtime=True,
+                timeout=timeout,
+            )
+
+        cached = cls.get_cached_runtime_access(session_uid)
+        if cached is not None:
+            if not wait_for_runtime or cached.is_ready:
+                return cached
+            cls.clear_cached_runtime_access(session_uid)
+
+        return cls.resolve_runtime_access(
+            session_uid,
+            wait_for_runtime=wait_for_runtime,
+            timeout=timeout,
+        )
+
+    @classmethod
+    def _backend_runtime_ready_request(
+        cls,
+        *,
+        agent_session: str | AgentSession,
+        timeout_seconds: float,
+        timeout=None,
+    ) -> dict[str, Any]:
+        session_uid = cls._resolve_agent_session_uid(agent_session)
+        payload = {"json": serialize_to_json({"timeout_seconds": float(timeout_seconds)})}
+        url = f"{cls.get_object_url()}/{session_uid}/runtime_ready/"
+        response = make_request(
+            s=cls.build_session(),
+            loaders=cls.LOADERS,
+            r_type="POST",
+            url=url,
+            payload=payload,
+            time_out=timeout,
+        )
+        if response.status_code not in (200, 504):
+            raise_for_response(response, payload=payload)
+        data = response.json()
+        if not isinstance(data, dict):
+            raise TypeError("Agent session runtime readiness response must be a JSON object")
+        return data
+
+    @staticmethod
+    def _build_runtime_chat_body(
+        *,
+        message: str | None = None,
+        a2a_payload: dict[str, Any] | None = None,
+        poll_task_until_stable: bool | None = None,
+        runtime_turn_timeout_seconds: float | None = None,
+        omit_reasoning: bool | None = None,
+        response_format: dict[str, Any] | None = None,
+        json_repair: dict[str, Any] | None = None,
+        runtime_request_fields: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        body = dict(runtime_request_fields or {})
+        normalized_message = None if message is None else str(message)
+        if normalized_message is not None and not normalized_message.strip():
+            raise ValueError("message must not be empty")
+        if normalized_message is not None and a2a_payload is not None:
+            raise ValueError("Pass exactly one of message or a2a_payload")
+        if a2a_payload is not None and not isinstance(a2a_payload, dict):
+            raise TypeError("a2a_payload must be a JSON object")
+        if runtime_turn_timeout_seconds is not None and runtime_turn_timeout_seconds <= 0:
+            raise ValueError("runtime_turn_timeout_seconds must be greater than 0")
+        if response_format is not None and not isinstance(response_format, dict):
+            raise TypeError("response_format must be a JSON object")
+        if json_repair is not None and not isinstance(json_repair, dict):
+            raise TypeError("json_repair must be a JSON object")
+
+        if normalized_message is not None:
+            body["message"] = normalized_message
+        elif a2a_payload is not None:
+            body["a2a_payload"] = a2a_payload
+        elif "message" not in body and "a2a_payload" not in body:
+            raise ValueError("Pass exactly one of message or a2a_payload")
+
+        if poll_task_until_stable is not None:
+            body["poll_task_until_stable"] = bool(poll_task_until_stable)
+        if runtime_turn_timeout_seconds is not None:
+            body["runtime_turn_timeout_seconds"] = runtime_turn_timeout_seconds
+        if omit_reasoning is not None:
+            body["omit_reasoning"] = bool(omit_reasoning)
+        if response_format is not None:
+            body["response_format"] = response_format
+        if json_repair is not None:
+            body["json_repair"] = json_repair
+        return body
+
+    @classmethod
+    def _runtime_url(cls, access: AgentSessionRuntimeAccess, path_name: str) -> str:
+        runtime_paths = access.runtime_paths
+        runtime_path = getattr(runtime_paths, path_name, None)
+        if not runtime_path:
+            raise ApiError(f"Runtime access response is missing runtime_paths.{path_name}.")
+        return _join_runtime_url(access.rpc_url, runtime_path)
+
+    @classmethod
+    def _post_runtime(
+        cls,
+        access: AgentSessionRuntimeAccess,
+        *,
+        path_name: str,
+        body: dict[str, Any],
+        accept: str,
+        timeout=None,
+    ) -> requests.Response:
+        url = cls._runtime_url(access, path_name)
+        request_timeout = DEFAULT_AGENT_SESSION_LONG_REQUEST_TIMEOUT if timeout is None else timeout
+        headers = {
+            "Authorization": f"Bearer {access.token}",
+            "Content-Type": "application/json",
+            "Accept": accept,
+        }
+        return requests.post(
+            url,
+            headers=headers,
+            json=serialize_to_json(body),
+            timeout=request_timeout,
+        )
+
+    @staticmethod
+    def _runtime_json_payload(response: requests.Response, *, payload: dict[str, Any]) -> dict[str, Any]:
+        if not (200 <= response.status_code < 300):
+            raise_for_response(response, payload=payload)
+        try:
+            data = response.json()
+        except Exception as exc:
+            raise ApiError(
+                "Runtime response must be a JSON object.",
+                response=response,
+                payload=payload,
+            ) from exc
+        if not isinstance(data, dict):
+            raise TypeError("Runtime response must be a JSON object")
+        return data
+
+    @staticmethod
+    def _build_standard_a2a_message_send_body(
+        *,
+        agent_session_uid: str,
+        message: str,
+        strict_dictionary: bool = False,
+        json_repair_attempts: int = 3,
+        history_length: int = 0,
+        return_immediately: bool = False,
+    ) -> dict[str, Any]:
+        normalized_message = str(message)
+        if not normalized_message.strip():
+            raise ValueError("message must not be empty")
+        if history_length < 0:
+            raise ValueError("history_length must be greater than or equal to 0")
+        if json_repair_attempts < 1:
+            raise ValueError("json_repair_attempts must be greater than 0")
+
+        accepted_output_modes = ["application/json"] if strict_dictionary else ["text/plain"]
+        body: dict[str, Any] = {
+            "message": {
+                "messageId": f"msg-{uuid.uuid4()}",
+                "role": "ROLE_USER",
+                "contextId": agent_session_uid,
+                "parts": [{"text": normalized_message}],
+            },
+            "configuration": {
+                "acceptedOutputModes": accepted_output_modes,
+                "historyLength": int(history_length),
+                "returnImmediately": bool(return_immediately),
+            },
+        }
+        if strict_dictionary:
+            body["metadata"] = {
+                STANDARD_A2A_OUTPUT_CONTRACT_METADATA_KEY: {
+                    "response_format": {
+                        "type": "dictionary",
+                        "strict": True,
+                    },
+                    "jsonRepairAttempts": int(json_repair_attempts),
+                }
+            }
+        return body
+
+    @classmethod
+    def _post_standard_a2a_message(
+        cls,
+        access: AgentSessionRuntimeAccess,
+        *,
+        body: dict[str, Any],
+        timeout=None,
+    ) -> requests.Response:
+        url = _join_runtime_url(access.rpc_url, STANDARD_A2A_MESSAGE_SEND_PATH)
+        request_timeout = DEFAULT_AGENT_SESSION_LONG_REQUEST_TIMEOUT if timeout is None else timeout
+        headers = {
+            "Authorization": f"Bearer {access.token}",
+            "Content-Type": STANDARD_A2A_CONTENT_TYPE,
+            "Accept": STANDARD_A2A_CONTENT_TYPE,
+        }
+        return requests.post(
+            url,
+            headers=headers,
+            data=json.dumps(serialize_to_json(body)),
+            timeout=request_timeout,
+        )
+
+    @staticmethod
+    def extract_a2a_message_text(payload: dict[str, Any]) -> str:
+        message = payload.get("message")
+        if not isinstance(message, dict):
+            return ""
+        parts = message.get("parts")
+        if not isinstance(parts, list):
+            return ""
+        chunks: list[str] = []
+        for part in parts:
+            if isinstance(part, dict) and isinstance(part.get("text"), str):
+                chunks.append(part["text"])
+        return "".join(chunks)
+
+    @classmethod
+    def send_a2a_message(
+        cls,
+        agent_session: str | AgentSession,
+        *,
+        message: str,
+        strict_dictionary: bool = False,
+        json_repair_attempts: int = 3,
+        history_length: int = 0,
+        return_immediately: bool = False,
+        wait_for_runtime: bool = True,
+        timeout=None,
+    ) -> dict[str, Any]:
+        """
+        Send one standard A2A message to the runtime for this agent session.
+        """
+        session_uid = cls._resolve_agent_session_uid(agent_session)
+        body = cls._build_standard_a2a_message_send_body(
+            agent_session_uid=session_uid,
+            message=message,
+            strict_dictionary=strict_dictionary,
+            json_repair_attempts=json_repair_attempts,
+            history_length=history_length,
+            return_immediately=return_immediately,
+        )
+        access = cls.resolve_runtime_access(
+            session_uid,
+            wait_for_runtime=wait_for_runtime,
+            cache=False,
+            timeout=timeout,
+        )
+        response = cls._post_standard_a2a_message(
+            access,
+            body=body,
+            timeout=timeout,
+        )
+        if not (200 <= response.status_code < 300):
+            raise_for_response(response, payload=body)
+        try:
+            payload = response.json()
+        except Exception as exc:
+            raise ApiError(
+                "Standard A2A response must be a JSON object.",
+                response=response,
+                payload=body,
+            ) from exc
+        if not isinstance(payload, dict):
+            raise TypeError("Standard A2A response must be a JSON object")
+        return payload
+
+    @classmethod
+    def a2a_chat(
+        cls,
+        agent_session: str | AgentSession,
+        *,
+        message: str | None = None,
+        a2a_payload: dict[str, Any] | None = None,
+        runtime_access: AgentSessionRuntimeAccess | dict[str, Any] | None = None,
+        wait_for_runtime: bool = True,
+        poll_task_until_stable: bool | None = None,
+        runtime_turn_timeout_seconds: float | None = None,
+        omit_reasoning: bool | None = None,
+        response_format: dict[str, Any] | None = None,
+        json_repair: dict[str, Any] | None = None,
+        timeout=None,
+        **runtime_request_fields: Any,
+    ) -> dict[str, Any]:
+        """
+        Resolve runtime access when needed and send one A2A chat request directly
+        to the runtime.
+        """
+        session_uid = cls._resolve_agent_session_uid(agent_session)
+        body = cls._build_runtime_chat_body(
+            message=message,
+            a2a_payload=a2a_payload,
+            poll_task_until_stable=poll_task_until_stable,
+            runtime_turn_timeout_seconds=runtime_turn_timeout_seconds,
+            omit_reasoning=omit_reasoning,
+            response_format=response_format,
+            json_repair=json_repair,
+            runtime_request_fields=runtime_request_fields,
+        )
+        access = cls._resolve_runtime_access_for_chat(
+            session_uid,
+            runtime_access,
+            wait_for_runtime=wait_for_runtime,
+            timeout=timeout,
+        )
+        response = cls._post_runtime(
+            access,
+            path_name="chat",
+            body=body,
+            accept="text/event-stream",
+            timeout=timeout,
+        )
+        if response.status_code == 401:
+            cls.clear_cached_runtime_access(session_uid)
+        if not (200 <= response.status_code < 300):
+            raise_for_response(response, payload=body)
+        return _normalize_runtime_chat_response(
+            agent_session_uid=session_uid,
+            response=response,
+        )
+
+    @classmethod
+    def chat_runtime(
+        cls,
+        agent_session: str | AgentSession,
+        *,
+        message: str,
+        runtime_access: AgentSessionRuntimeAccess | dict[str, Any] | None = None,
+        wait_for_runtime: bool = True,
+        runtime_turn_timeout_seconds: float | None = None,
+        omit_reasoning: bool | None = True,
+        response_format: dict[str, Any] | None = None,
+        json_repair: dict[str, Any] | None = None,
+        timeout=None,
+        **runtime_request_fields: Any,
+    ) -> dict[str, Any]:
+        """
+        Send one message through the resolved A2A runtime chat stream.
+        """
+        return cls.a2a_chat(
+            agent_session,
+            message=message,
+            runtime_access=runtime_access,
+            wait_for_runtime=wait_for_runtime,
+            runtime_turn_timeout_seconds=runtime_turn_timeout_seconds,
+            omit_reasoning=omit_reasoning,
+            response_format=response_format,
+            json_repair=json_repair,
+            timeout=timeout,
+            **runtime_request_fields,
+        )
+
+    @classmethod
+    def cancel_runtime(
+        cls,
+        agent_session: str | AgentSession,
+        *,
+        reason: str = "client_requested",
+        message: str | None = None,
+        timeout=None,
+    ) -> dict[str, Any]:
+        """
+        Cancel the active turn on the resolved A2A runtime.
+        """
+        session_uid = cls._resolve_agent_session_uid(agent_session)
+        body = {"reason": reason}
+        if message is not None:
+            body["message"] = message
+        access = cls._require_runtime_access(session_uid, None)
+        response = cls._post_runtime(
+            access,
+            path_name="cancel",
+            body=body,
+            accept="application/json",
+            timeout=timeout,
+        )
+        if response.status_code == 401:
+            cls.clear_cached_runtime_access(session_uid)
+        return cls._runtime_json_payload(response, payload=body)
+
+    @classmethod
+    def detach_runtime(
+        cls,
+        agent_session: str | AgentSession,
+        *,
+        reason: str = "client_done",
+        timeout=None,
+    ) -> dict[str, Any]:
+        """
+        Detach the resolved A2A runtime for one agent session.
+        """
+        session_uid = cls._resolve_agent_session_uid(agent_session)
+        body = {"reason": reason}
+        access = cls._require_runtime_access(session_uid, None)
+        response = cls._post_runtime(
+            access,
+            path_name="detach",
+            body=body,
+            accept="application/json",
+            timeout=timeout,
+        )
+        if response.status_code == 401:
+            cls.clear_cached_runtime_access(session_uid)
+        return cls._runtime_json_payload(response, payload=body)
+
+    @classmethod
     def resolve_runtime_access(
         cls,
         agent_session: str | AgentSession,
         *,
+        wait_for_runtime: bool = False,
+        cache: bool = True,
         timeout=None,
     ) -> AgentSessionRuntimeAccess:
         """
@@ -634,7 +1333,8 @@ class AgentSession(BaseObjectOrm, BasePydanticModel):
             raise ValueError("agent_session must be an AgentSession or a session uid")
         session_uid = cls._coerce_filter_uid(session_uid, field_name="agent_session")
 
-        payload: dict[str, Any] = {}
+        body = {"wait_for_runtime": True} if wait_for_runtime else {}
+        payload: dict[str, Any] = {"json": serialize_to_json(body)}
         url = f"{cls.get_object_url()}/{session_uid}/resolve_runtime_access/"
         response = make_request(
             s=cls.build_session(),
@@ -646,15 +1346,20 @@ class AgentSession(BaseObjectOrm, BasePydanticModel):
         )
         if response.status_code != 200:
             raise_for_response(response, payload=payload)
-        return AgentSessionRuntimeAccess(**response.json())
+        data = response.json()
+        if not isinstance(data, dict):
+            raise TypeError("Agent session runtime access response must be a JSON object")
+        access = AgentSessionRuntimeAccess(**data)
+        if cache:
+            cls.cache_runtime_access(session_uid, access)
+        return access
 
     @classmethod
     def wait_until_runtime_ready(
         cls,
         agent_session: str | AgentSession,
         *,
-        timeout_seconds: float = 60,
-        poll_interval_seconds: float = 2,
+        timeout_seconds: float = DEFAULT_AGENT_RUNTIME_READY_TIMEOUT_SECONDS,
         timeout=None,
     ) -> AgentSessionRuntimeReady:
         """
@@ -665,25 +1370,22 @@ class AgentSession(BaseObjectOrm, BasePydanticModel):
         """
         session_uid = cls._resolve_agent_session_uid(agent_session)
         timeout_seconds = float(timeout_seconds)
-        poll_interval_seconds = float(poll_interval_seconds)
         if timeout_seconds <= 0:
             raise ValueError("timeout_seconds must be greater than 0")
-        if poll_interval_seconds <= 0:
-            raise ValueError("poll_interval_seconds must be greater than 0")
 
         body = {
             "timeout_seconds": timeout_seconds,
-            "poll_interval_seconds": poll_interval_seconds,
         }
         payload = {"json": serialize_to_json(body)}
         url = f"{cls.get_object_url()}/{session_uid}/runtime_ready/"
+        request_timeout = DEFAULT_AGENT_SESSION_LONG_REQUEST_TIMEOUT if timeout is None else timeout
         response = make_request(
             s=cls.build_session(),
             loaders=cls.LOADERS,
             r_type="POST",
             url=url,
             payload=payload,
-            time_out=timeout,
+            time_out=request_timeout,
         )
         if response.status_code not in (200, 504):
             raise_for_response(response, payload=payload)
@@ -697,14 +1399,16 @@ class AgentSession(BaseObjectOrm, BasePydanticModel):
         message: str | None = None,
         a2a_payload: dict[str, Any] | None = None,
         wait_for_runtime: bool = True,
-        runtime_ready: dict[str, Any] | None = None,
-        runtime_ready_timeout_seconds: float = 60,
-        runtime_ready_poll_interval_seconds: float = 2,
-        poll_task_until_stable: bool = True,
+        runtime_ready_timeout_seconds: float = DEFAULT_AGENT_RUNTIME_READY_TIMEOUT_SECONDS,
+        poll_task_until_stable: bool | None = None,
+        runtime_turn_timeout_seconds: float | None = None,
+        omit_reasoning: bool | None = None,
+        response_format: dict[str, Any] | None = None,
+        json_repair: dict[str, Any] | None = None,
         timeout=None,
     ) -> AgentSessionA2AChatResponse:
         """
-        Send an A2A request to a session through the backend-managed runtime transport.
+        Compatibility/debug helper for the backend A2A transport endpoint.
 
         Hits:
             POST <object_url>/<session_uid>/a2a_chat/
@@ -717,37 +1421,52 @@ class AgentSession(BaseObjectOrm, BasePydanticModel):
             raise ValueError("Pass exactly one of message or a2a_payload")
         if a2a_payload is not None and not isinstance(a2a_payload, dict):
             raise TypeError("a2a_payload must be a JSON object")
+        if runtime_turn_timeout_seconds is not None and runtime_turn_timeout_seconds <= 0:
+            raise ValueError("runtime_turn_timeout_seconds must be greater than 0")
+        if response_format is not None and not isinstance(response_format, dict):
+            raise TypeError("response_format must be a JSON object")
+        if json_repair is not None and not isinstance(json_repair, dict):
+            raise TypeError("json_repair must be a JSON object")
 
         body: dict[str, Any] = {
             "wait_for_runtime": bool(wait_for_runtime),
-            "poll_task_until_stable": bool(poll_task_until_stable),
         }
+        if poll_task_until_stable is not None:
+            body["poll_task_until_stable"] = bool(poll_task_until_stable)
         if normalized_message is not None:
             body["message"] = normalized_message
         else:
             body["a2a_payload"] = a2a_payload
 
-        if runtime_ready is None and wait_for_runtime:
-            runtime_ready = {
-                "timeout_seconds": float(runtime_ready_timeout_seconds),
-                "poll_interval_seconds": float(runtime_ready_poll_interval_seconds),
-            }
-        if runtime_ready is not None:
-            body["runtime_ready"] = runtime_ready
+        if wait_for_runtime:
+            body["runtime_ready_timeout_seconds"] = float(runtime_ready_timeout_seconds)
+        if runtime_turn_timeout_seconds is not None:
+            body["runtime_turn_timeout_seconds"] = float(runtime_turn_timeout_seconds)
+        if omit_reasoning is not None:
+            body["omit_reasoning"] = bool(omit_reasoning)
+        if response_format is not None:
+            body["response_format"] = response_format
+        if json_repair is not None:
+            body["json_repair"] = json_repair
 
         payload = {"json": serialize_to_json(body)}
         url = f"{cls.get_object_url()}/{session_uid}/a2a_chat/"
+        request_timeout = DEFAULT_AGENT_SESSION_LONG_REQUEST_TIMEOUT if timeout is None else timeout
         response = make_request(
             s=cls.build_session(),
             loaders=cls.LOADERS,
             r_type="POST",
             url=url,
             payload=payload,
-            time_out=timeout,
+            time_out=request_timeout,
         )
         if response.status_code != 200:
             raise_for_response(response, payload=payload)
-        return AgentSessionA2AChatResponse(**response.json())
+        response_payload = response.json()
+        if not isinstance(response_payload, dict):
+            raise TypeError("a2a_chat response must be a JSON object")
+        response_payload = _normalize_a2a_chat_response_payload(response_payload)
+        return AgentSessionA2AChatResponse(**response_payload)
 
     uid: str | None = Field(None, description="Public UID of the agent session.")
     agent_uid: str | None = Field(

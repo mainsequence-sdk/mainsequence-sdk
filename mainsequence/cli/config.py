@@ -53,6 +53,7 @@ SESSION_OVERRIDES_DIR = CFG_DIR / "session_overrides"
 # Deprecated compatibility constant kept for cleanup of legacy installs.
 TOKENS_JSON = CFG_DIR / "token.json"
 AUTH_JSON = CFG_DIR / "auth.json"
+RUNTIME_ACCESS_CACHE_JSON = CFG_DIR / "runtime_access_cache.json"
 
 # Session-scoped auth environment variables (no token file persistence).
 ENV_USERNAME = "MAINSEQUENCE_USERNAME"
@@ -63,6 +64,7 @@ LEGACY_ENV_ACCESS = "MAIN_SEQUENCE_USER_TOKEN"
 LEGACY_ENV_REFRESH = "MAIN_SEQUENCE_REFRESH_TOKEN"
 KEYCHAIN_SERVICE = "MainSequenceCLI.auth"
 KEYCHAIN_ACCOUNT = "default"
+DEFAULT_RUNTIME_ACCESS_CACHE_TTL_SECONDS = 900
 
 DEFAULTS = {
     "backend_url": os.environ.get(CANONICAL_BACKEND_ENV, f"{STANDARD_BACKEND_URL}/"),
@@ -300,6 +302,134 @@ def _auth_backend_key(backend: str | None = None) -> str:
     Return the normalized backend key used for auth persistence scoping.
     """
     return normalize_backend_url(backend or backend_url())
+
+
+def _runtime_access_cache_key(agent_session_uid: str, backend: str | None = None) -> str:
+    backend_key = _auth_backend_key(backend)
+    raw = f"{backend_key}|{str(agent_session_uid).strip()}"
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _read_runtime_access_cache() -> dict:
+    data = read_json(RUNTIME_ACCESS_CACHE_JSON, {})
+    if not isinstance(data, dict):
+        return {"version": 1, "entries": {}}
+    entries = data.get("entries")
+    if not isinstance(entries, dict):
+        entries = {}
+    return {"version": 1, "entries": entries}
+
+
+def _write_runtime_access_cache(data: dict) -> None:
+    write_json(RUNTIME_ACCESS_CACHE_JSON, data)
+    if os.name == "posix":
+        try:
+            os.chmod(RUNTIME_ACCESS_CACHE_JSON, 0o600)
+        except Exception:
+            pass
+
+
+def _iso_utc_from_epoch(value: float) -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(value))
+
+
+def get_runtime_access_cache_entry(
+    agent_session_uid: str,
+    *,
+    backend: str | None = None,
+) -> dict | None:
+    """
+    Return a non-expired cached runtime-access entry for one agent session.
+    """
+    key = _runtime_access_cache_key(agent_session_uid, backend)
+    cache = _read_runtime_access_cache()
+    entry = cache["entries"].get(key)
+    if not isinstance(entry, dict):
+        return None
+
+    expires_at = entry.get("expires_at_epoch")
+    if isinstance(expires_at, (int, float)) and expires_at <= time.time():
+        cache["entries"].pop(key, None)
+        _write_runtime_access_cache(cache)
+        return None
+
+    access = entry.get("access")
+    if not isinstance(access, dict):
+        cache["entries"].pop(key, None)
+        _write_runtime_access_cache(cache)
+        return None
+
+    return dict(entry)
+
+
+def get_runtime_access_cache(
+    agent_session_uid: str,
+    *,
+    backend: str | None = None,
+) -> dict | None:
+    """
+    Return only the cached runtime-access payload for one agent session.
+    """
+    entry = get_runtime_access_cache_entry(agent_session_uid, backend=backend)
+    if not entry:
+        return None
+    access = entry.get("access")
+    return dict(access) if isinstance(access, dict) else None
+
+
+def save_runtime_access_cache(
+    agent_session_uid: str,
+    access_payload: dict,
+    *,
+    backend: str | None = None,
+    ttl_seconds: int | float | None = DEFAULT_RUNTIME_ACCESS_CACHE_TTL_SECONDS,
+) -> dict:
+    """
+    Cache runtime access for repeated CLI sends to the same agent session.
+    """
+    if not isinstance(access_payload, dict):
+        raise TypeError("access_payload must be a dict")
+
+    now = time.time()
+    expires_at_epoch = None if ttl_seconds is None else now + float(ttl_seconds)
+    entry = {
+        "backend_url": _auth_backend_key(backend),
+        "agent_session_uid": str(agent_session_uid),
+        "cached_at_epoch": now,
+        "cached_at": _iso_utc_from_epoch(now),
+        "expires_at_epoch": expires_at_epoch,
+        "expires_at": _iso_utc_from_epoch(expires_at_epoch) if expires_at_epoch else None,
+        "access": dict(access_payload),
+    }
+    cache = _read_runtime_access_cache()
+    cache["entries"][_runtime_access_cache_key(agent_session_uid, backend)] = entry
+    _write_runtime_access_cache(cache)
+    return dict(entry)
+
+
+def clear_runtime_access_cache(
+    agent_session_uid: str | None = None,
+    *,
+    backend: str | None = None,
+) -> bool:
+    """
+    Clear cached runtime access for one session, or all cached runtime access.
+    """
+    try:
+        if not RUNTIME_ACCESS_CACHE_JSON.exists():
+            return True
+        if agent_session_uid is None:
+            RUNTIME_ACCESS_CACHE_JSON.unlink()
+            return True
+        cache = _read_runtime_access_cache()
+        cache["entries"].pop(_runtime_access_cache_key(agent_session_uid, backend), None)
+        if cache["entries"]:
+            _write_runtime_access_cache(cache)
+        else:
+            RUNTIME_ACCESS_CACHE_JSON.unlink()
+        return True
+    except Exception:
+        return False
 
 
 def _keychain_account_for_backend(backend: str | None = None) -> str:

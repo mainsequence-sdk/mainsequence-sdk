@@ -2013,8 +2013,9 @@ def test_resolve_agent_session_runtime_access_uses_client_model(cli_mod, monkeyp
 
         class _ClientAgentSession:
             @classmethod
-            def resolve_runtime_access(cls, agent_session, timeout=None):
+            def resolve_runtime_access(cls, agent_session, *, wait_for_runtime=False, timeout=None):
                 captured["agent_session"] = agent_session
+                captured["wait_for_runtime"] = wait_for_runtime
                 captured["timeout"] = timeout
                 return FakeRuntimeAccess()
 
@@ -2027,6 +2028,7 @@ def test_resolve_agent_session_runtime_access_uses_client_model(cli_mod, monkeyp
         "module_name": "mainsequence.client.agent_runtime_models",
         "class_name": "AgentSession",
         "agent_session": session_uid,
+        "wait_for_runtime": False,
         "timeout": 19,
     }
     assert out["coding_agent_service_id"] == "svc-12"
@@ -2042,6 +2044,7 @@ def test_wait_agent_session_runtime_ready_uses_client_model(cli_mod, monkeypatch
         @staticmethod
         def model_dump(mode="json"):
             return {
+                "orm_class": "AgentSessionRuntimeReady",
                 "ready": True,
                 "attempts": 2,
                 "elapsed_seconds": 2.01,
@@ -2060,12 +2063,10 @@ def test_wait_agent_session_runtime_ready_uses_client_model(cli_mod, monkeypatch
                 agent_session,
                 *,
                 timeout_seconds=60,
-                poll_interval_seconds=2,
                 timeout=None,
             ):
                 captured["agent_session"] = agent_session
                 captured["timeout_seconds"] = timeout_seconds
-                captured["poll_interval_seconds"] = poll_interval_seconds
                 captured["timeout"] = timeout
                 return FakeReady()
 
@@ -2076,7 +2077,6 @@ def test_wait_agent_session_runtime_ready_uses_client_model(cli_mod, monkeypatch
     out = api_mod.wait_agent_session_runtime_ready(
         session_uid,
         timeout_seconds=60,
-        poll_interval_seconds=2,
         timeout=20,
     )
     assert captured == {
@@ -2084,10 +2084,10 @@ def test_wait_agent_session_runtime_ready_uses_client_model(cli_mod, monkeypatch
         "class_name": "AgentSession",
         "agent_session": session_uid,
         "timeout_seconds": 60,
-        "poll_interval_seconds": 2,
         "timeout": 20,
     }
     assert out["ready"] is True
+    assert "orm_class" not in out
 
 
 def test_send_agent_session_a2a_chat_uses_client_model(cli_mod, monkeypatch):
@@ -2099,8 +2099,10 @@ def test_send_agent_session_a2a_chat_uses_client_model(cli_mod, monkeypatch):
         @staticmethod
         def model_dump(mode="json"):
             return {
+                "orm_class": "AgentSessionA2AChatResponse",
                 "ok": True,
                 "ready": {
+                    "orm_class": "AgentSessionRuntimeReady",
                     "ready": True,
                     "attempts": 1,
                     "elapsed_seconds": 0.0,
@@ -2109,6 +2111,7 @@ def test_send_agent_session_a2a_chat_uses_client_model(cli_mod, monkeypatch):
                 },
                 "response": {"jsonrpc": "2.0", "id": "request-1", "result": {}},
                 "normalized": {
+                    "orm_class": "AgentSessionA2ANormalizedResponse",
                     "ok": True,
                     "kind": "message",
                     "state": None,
@@ -2137,14 +2140,119 @@ def test_send_agent_session_a2a_chat_uses_client_model(cli_mod, monkeypatch):
     out = api_mod.send_agent_session_a2a_chat(
         session_uid,
         message="Review the current portfolio drift.",
+        runtime_turn_timeout_seconds=900,
+        omit_reasoning=True,
+        response_format={"type": "json_object", "strict": True},
+        json_repair={"attempts": 3},
         timeout=21,
     )
     assert captured["module_name"] == "mainsequence.client.agent_runtime_models"
     assert captured["class_name"] == "AgentSession"
     assert captured["agent_session"] == session_uid
     assert captured["kwargs"]["message"] == "Review the current portfolio drift."
+    assert captured["kwargs"]["runtime_turn_timeout_seconds"] == 900
+    assert captured["kwargs"]["omit_reasoning"] is True
+    assert captured["kwargs"]["response_format"] == {"type": "json_object", "strict": True}
+    assert captured["kwargs"]["json_repair"] == {"attempts": 3}
     assert captured["kwargs"]["timeout"] == 21
     assert out["normalized"]["text"] == "Done."
+    assert "orm_class" not in out
+    assert "orm_class" not in out["ready"]
+    assert "orm_class" not in out["normalized"]
+
+
+def test_send_agent_session_a2a_message_uses_client_model(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {}
+    session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
+
+    def _run_sdk_model_operation(*, module_name, class_name, operation, project_id_env=None):
+        captured["module_name"] = module_name
+        captured["class_name"] = class_name
+
+        class _ClientAgentSession:
+            @classmethod
+            def send_a2a_message(cls, agent_session, **kwargs):
+                captured["agent_session"] = agent_session
+                captured["kwargs"] = kwargs
+                return {
+                    "message": {
+                        "messageId": "msg-runtime-output",
+                        "role": "ROLE_AGENT",
+                        "contextId": agent_session,
+                        "parts": [{"text": "Done."}],
+                    }
+                }
+
+        return operation(_ClientAgentSession)
+
+    monkeypatch.setattr(api_mod, "_run_sdk_model_operation", _run_sdk_model_operation)
+
+    out = api_mod.send_agent_session_a2a_message(
+        session_uid,
+        message="Return JSON.",
+        strict_dictionary=True,
+        json_repair_attempts=3,
+        timeout=21,
+    )
+
+    assert captured["module_name"] == "mainsequence.client.agent_runtime_models"
+    assert captured["class_name"] == "AgentSession"
+    assert captured["agent_session"] == session_uid
+    assert captured["kwargs"]["message"] == "Return JSON."
+    assert captured["kwargs"]["strict_dictionary"] is True
+    assert captured["kwargs"]["json_repair_attempts"] == 3
+    assert captured["kwargs"]["wait_for_runtime"] is True
+    assert "omit_reasoning" not in captured["kwargs"]
+    assert out["message"]["parts"] == [{"text": "Done."}]
+
+
+def test_chat_agent_session_runtime_uses_direct_runtime_helper(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {}
+    session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
+
+    def _run_sdk_model_operation(*, module_name, class_name, operation, project_id_env=None):
+        captured["module_name"] = module_name
+        captured["class_name"] = class_name
+
+        class _ClientAgentSession:
+            @classmethod
+            def a2a_chat(cls, agent_session, **kwargs):
+                captured["agent_session"] = agent_session
+                captured["kwargs"] = kwargs
+                return {
+                    "ok": True,
+                    "agent_session_uid": agent_session,
+                    "events": [],
+                    "text": '{"ok": true}',
+                    "json": {"ok": True},
+                }
+
+        return operation(_ClientAgentSession)
+
+    monkeypatch.setattr(api_mod, "_run_sdk_model_operation", _run_sdk_model_operation)
+
+    out = api_mod.chat_agent_session_runtime(
+        session_uid,
+        message="Return JSON.",
+        runtime_turn_timeout_seconds=900,
+        omit_reasoning=True,
+        response_format={"type": "json_object", "strict": True},
+        json_repair={"attempts": 3},
+        timeout=21,
+    )
+
+    assert captured["module_name"] == "mainsequence.client.agent_runtime_models"
+    assert captured["class_name"] == "AgentSession"
+    assert captured["agent_session"] == session_uid
+    assert captured["kwargs"]["message"] == "Return JSON."
+    assert captured["kwargs"]["runtime_turn_timeout_seconds"] == 900
+    assert captured["kwargs"]["omit_reasoning"] is True
+    assert captured["kwargs"]["response_format"] == {"type": "json_object", "strict": True}
+    assert captured["kwargs"]["json_repair"] == {"attempts": 3}
+    assert captured["kwargs"]["timeout"] == 21
+    assert out["json"] == {"ok": True}
 
 
 def test_list_agent_users_can_view_uses_client_model(cli_mod, monkeypatch):
@@ -7684,24 +7792,40 @@ def test_agent_session_detail(cli_mod, runner, monkeypatch):
 
 
 def test_agent_session_resolve_runtime_access(cli_mod, runner, monkeypatch):
+    captured = {}
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
-    monkeypatch.setattr(
-        cli_mod,
-        "resolve_agent_session_runtime_access",
-        lambda agent_session_uid, timeout=None: {
+    def _resolve(agent_session_uid, *, wait_for_runtime=False, timeout=None):
+        captured["agent_session_uid"] = agent_session_uid
+        captured["wait_for_runtime"] = wait_for_runtime
+        captured["timeout"] = timeout
+        return {
             "coding_agent_service_id": "svc-12",
             "coding_agent_id": "agent-rt-77",
             "mode": "token",
             "rpc_url": "https://runtime.main-sequence.app/rpc",
             "token": "tok-secret",
-        },
-    )
+        }
+
+    monkeypatch.setattr(cli_mod, "resolve_agent_session_runtime_access", _resolve)
 
     result = runner.invoke(
         cli_mod.app,
-        ["agent", "session", "resolve_runtime_access", "3f1cc452-43ec-49cb-b2ba-87dbac164d29"],
+        [
+            "agent",
+            "session",
+            "resolve_runtime_access",
+            "3f1cc452-43ec-49cb-b2ba-87dbac164d29",
+            "--wait-for-runtime",
+            "--timeout",
+            "60",
+        ],
     )
     assert result.exit_code == 0
+    assert captured == {
+        "agent_session_uid": "3f1cc452-43ec-49cb-b2ba-87dbac164d29",
+        "wait_for_runtime": True,
+        "timeout": 60,
+    }
     assert (
         "Agent session runtime access resolved: session_uid=3f1cc452-43ec-49cb-b2ba-87dbac164d29"
         in result.output
@@ -7713,14 +7837,109 @@ def test_agent_session_resolve_runtime_access(cli_mod, runner, monkeypatch):
     assert "tok-secret" in result.output
 
 
+def test_agent_session_runtime_resolve_caches_without_printing_credentials(
+    cli_mod, runner, monkeypatch
+):
+    captured = {}
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+
+    def _resolve(agent_session_uid, *, wait_for_runtime=False, timeout=None):
+        captured["agent_session_uid"] = agent_session_uid
+        captured["wait_for_runtime"] = wait_for_runtime
+        captured["timeout"] = timeout
+        return {
+            "mode": "token",
+            "rpc_url": "https://runtime.main-sequence.app/rpc",
+            "token": "tok-secret",
+            "is_ready": True,
+            "runtime_paths": {"chat": "/api/a2a/chat"},
+        }
+
+    def _save(agent_session_uid, access_payload, *, ttl_seconds):
+        captured["saved_session_uid"] = agent_session_uid
+        captured["saved_access_payload"] = access_payload
+        captured["ttl_seconds"] = ttl_seconds
+        return {
+            "cached_at": "2026-06-17T00:00:00Z",
+            "expires_at": "2026-06-17T00:15:00Z",
+        }
+
+    monkeypatch.setattr(cli_mod, "resolve_agent_session_runtime_access", _resolve)
+    monkeypatch.setattr(cli_mod.cfg, "save_runtime_access_cache", _save)
+
+    result = runner.invoke(
+        cli_mod.app,
+        [
+            "agent",
+            "session",
+            "runtime",
+            "resolve",
+            "3f1cc452-43ec-49cb-b2ba-87dbac164d29",
+            "--timeout",
+            "60",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["cached"] is True
+    assert payload["is_ready"] is True
+    assert captured["agent_session_uid"] == "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
+    assert captured["wait_for_runtime"] is True
+    assert captured["timeout"] == 60
+    assert captured["saved_session_uid"] == "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
+    assert "tok-secret" not in result.output
+    assert payload["rpc_url"] == "https://runtime.main-sequence.app/rpc"
+    assert payload["token_cached"] is True
+
+
+def test_agent_session_runtime_resolve_refuses_non_ready_wait_result(
+    cli_mod, runner, monkeypatch
+):
+    captured = {}
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+
+    def _resolve(agent_session_uid, *, wait_for_runtime=False, timeout=None):
+        captured["wait_for_runtime"] = wait_for_runtime
+        return {
+            "mode": "token",
+            "rpc_url": "https://runtime.main-sequence.app/rpc",
+            "token": "tok-secret",
+            "is_ready": False,
+            "ready": {"detail": "Runtime deployment failed."},
+            "runtime_paths": {"chat": "/api/a2a/chat"},
+        }
+
+    def _save(*args, **kwargs):
+        raise AssertionError("non-ready runtime access must not be cached")
+
+    monkeypatch.setattr(cli_mod, "resolve_agent_session_runtime_access", _resolve)
+    monkeypatch.setattr(cli_mod.cfg, "save_runtime_access_cache", _save)
+
+    result = runner.invoke(
+        cli_mod.app,
+        [
+            "agent",
+            "session",
+            "runtime",
+            "resolve",
+            "3f1cc452-43ec-49cb-b2ba-87dbac164d29",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert captured["wait_for_runtime"] is True
+    assert "Runtime deployment failed." in result.output
+
+
 def test_agent_session_wait_runtime_ready(cli_mod, runner, monkeypatch):
     captured = {}
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
 
-    def _ready(agent_session_uid, *, timeout_seconds=60, poll_interval_seconds=2, timeout=None):
+    def _ready(agent_session_uid, *, timeout_seconds=60, timeout=None):
         captured["agent_session_uid"] = agent_session_uid
         captured["timeout_seconds"] = timeout_seconds
-        captured["poll_interval_seconds"] = poll_interval_seconds
         captured["timeout"] = timeout
         return {
             "ready": True,
@@ -7741,8 +7960,6 @@ def test_agent_session_wait_runtime_ready(cli_mod, runner, monkeypatch):
             "3f1cc452-43ec-49cb-b2ba-87dbac164d29",
             "--timeout-seconds",
             "60",
-            "--poll-interval-seconds",
-            "2",
             "--timeout",
             "23",
         ],
@@ -7751,11 +7968,43 @@ def test_agent_session_wait_runtime_ready(cli_mod, runner, monkeypatch):
     assert captured == {
         "agent_session_uid": "3f1cc452-43ec-49cb-b2ba-87dbac164d29",
         "timeout_seconds": 60.0,
-        "poll_interval_seconds": 2.0,
         "timeout": 23,
     }
     assert "Agent session runtime is ready" in result.output
     assert "Attempts" in result.output
+
+
+def test_agent_session_wait_runtime_ready_json(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+
+    def _ready(agent_session_uid, *, timeout_seconds=60, poll_interval_seconds=2, timeout=None):
+        return {
+            "orm_class": "AgentSessionRuntimeReady",
+            "ready": True,
+            "attempts": 2,
+            "elapsed_seconds": 2.01,
+            "status_code": 200,
+            "detail": "",
+        }
+
+    monkeypatch.setattr(cli_mod, "wait_agent_session_runtime_ready", _ready)
+
+    result = runner.invoke(
+        cli_mod.app,
+        [
+            "agent",
+            "session",
+            "wait_runtime_ready",
+            "3f1cc452-43ec-49cb-b2ba-87dbac164d29",
+            "--json",
+        ],
+    )
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["ready"] is True
+    assert payload["attempts"] == 2
+    assert "orm_class" not in payload
+    assert "Agent session runtime is ready" not in result.output
 
 
 def test_agent_session_a2a_chat(cli_mod, runner, monkeypatch):
@@ -7797,6 +8046,8 @@ def test_agent_session_a2a_chat(cli_mod, runner, monkeypatch):
             "3f1cc452-43ec-49cb-b2ba-87dbac164d29",
             "--message",
             "Review the current portfolio drift.",
+            "--runtime-turn-timeout-seconds",
+            "900",
             "--timeout",
             "24",
         ],
@@ -7804,9 +8055,175 @@ def test_agent_session_a2a_chat(cli_mod, runner, monkeypatch):
     assert result.exit_code == 0
     assert captured["agent_session_uid"] == "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
     assert captured["kwargs"]["message"] == "Review the current portfolio drift."
+    assert captured["kwargs"]["runtime_turn_timeout_seconds"] == 900.0
+    assert captured["kwargs"]["omit_reasoning"] is True
+    assert captured["kwargs"]["response_format"] is None
+    assert captured["kwargs"]["json_repair"] is None
     assert captured["kwargs"]["timeout"] == 24
     assert "Agent session A2A chat sent" in result.output
     assert "Done." in result.output
+
+
+def test_agent_session_a2a_chat_json(cli_mod, runner, monkeypatch):
+    captured = {}
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+
+    def _chat(agent_session_uid, **kwargs):
+        captured["kwargs"] = kwargs
+        return {
+            "orm_class": "AgentSessionA2AChatResponse",
+            "ok": True,
+            "ready": {
+                "orm_class": "AgentSessionRuntimeReady",
+                "ready": True,
+                "attempts": 1,
+                "elapsed_seconds": 0.0,
+                "status_code": 200,
+                "detail": "",
+            },
+            "response": {"jsonrpc": "2.0", "id": "request-1", "result": {}},
+            "normalized": {
+                "orm_class": "AgentSessionA2ANormalizedResponse",
+                "ok": True,
+                "kind": "message",
+                "state": None,
+                "task_id": None,
+                "context_id": None,
+                "text": "Done.",
+                "raw": {},
+            },
+        }
+
+    monkeypatch.setattr(cli_mod, "send_agent_session_a2a_chat", _chat)
+
+    result = runner.invoke(
+        cli_mod.app,
+        [
+            "agent",
+            "session",
+            "a2a_chat",
+            "3f1cc452-43ec-49cb-b2ba-87dbac164d29",
+            "--message",
+            "Review the current portfolio drift.",
+            "--include-reasoning",
+            "--strict-json-response",
+            "--json-repair-attempts",
+            "3",
+            "--json",
+        ],
+    )
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["ok"] is True
+    assert payload["normalized"]["text"] == "Done."
+    assert captured["kwargs"]["omit_reasoning"] is False
+    assert captured["kwargs"]["response_format"] == {"type": "json_object", "strict": True}
+    assert captured["kwargs"]["json_repair"] == {"attempts": 3}
+    assert "orm_class" not in payload
+    assert "orm_class" not in payload["ready"]
+    assert "orm_class" not in payload["normalized"]
+    assert "Agent session A2A chat sent" not in result.output
+
+
+def test_agent_session_a2a_send_always_returns_json(cli_mod, runner, monkeypatch):
+    captured = {}
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+
+    def _send(agent_session_uid, **kwargs):
+        captured["agent_session_uid"] = agent_session_uid
+        captured["kwargs"] = kwargs
+        return {
+            "message": {
+                "messageId": "msg-runtime-output",
+                "role": "ROLE_AGENT",
+                "contextId": agent_session_uid,
+                "parts": [{"text": '{"ok": true}'}],
+            }
+        }
+
+    monkeypatch.setattr(cli_mod, "send_agent_session_a2a_message", _send)
+
+    result = runner.invoke(
+        cli_mod.app,
+        [
+            "agent",
+            "session",
+            "a2a",
+            "send",
+            "3f1cc452-43ec-49cb-b2ba-87dbac164d29",
+            "--message",
+            "Return JSON.",
+            "--strict-dictionary",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["message"]["parts"] == [{"text": '{"ok": true}'}]
+    assert captured["agent_session_uid"] == "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
+    assert captured["kwargs"]["message"] == "Return JSON."
+    assert captured["kwargs"]["strict_dictionary"] is True
+    assert captured["kwargs"]["json_repair_attempts"] == 3
+    assert captured["kwargs"]["history_length"] == 0
+    assert captured["kwargs"]["return_immediately"] is False
+    assert captured["kwargs"]["wait_for_runtime"] is True
+    assert "omit_reasoning" not in captured["kwargs"]
+
+
+def test_agent_session_runtime_chat_json(cli_mod, runner, monkeypatch):
+    captured = {}
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    cached_access = {
+        "rpc_url": "https://runtime.main-sequence.app/rpc",
+        "token": "tok-secret",
+        "runtime_paths": {"chat": "/api/a2a/chat"},
+    }
+    monkeypatch.setattr(cli_mod.cfg, "get_runtime_access_cache", lambda agent_session_uid: cached_access)
+
+    def _chat(agent_session_uid, **kwargs):
+        captured["agent_session_uid"] = agent_session_uid
+        captured["kwargs"] = kwargs
+        return {
+            "ok": True,
+            "agent_session_uid": agent_session_uid,
+            "events": [
+                {"event": "message", "data": {"type": "text-delta", "textDelta": '{"ok":true}'}}
+            ],
+            "text": '{"ok":true}',
+            "json": {"ok": True},
+        }
+
+    monkeypatch.setattr(cli_mod, "chat_agent_session_runtime", _chat)
+
+    result = runner.invoke(
+        cli_mod.app,
+        [
+            "agent",
+            "session",
+            "runtime",
+            "chat",
+            "3f1cc452-43ec-49cb-b2ba-87dbac164d29",
+            "--message",
+            "Return JSON.",
+            "--strict-json-response",
+            "--runtime-turn-timeout-seconds",
+            "900",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["ok"] is True
+    assert payload["json"] == {"ok": True}
+    assert captured["agent_session_uid"] == "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
+    assert captured["kwargs"]["message"] == "Return JSON."
+    assert captured["kwargs"]["runtime_access"] == cached_access
+    assert captured["kwargs"]["wait_for_runtime"] is True
+    assert captured["kwargs"]["runtime_turn_timeout_seconds"] == 900.0
+    assert captured["kwargs"]["omit_reasoning"] is True
+    assert captured["kwargs"]["response_format"] == {"type": "json_object", "strict": True}
+    assert captured["kwargs"]["json_repair"] == {"attempts": 3}
 
 
 def test_agent_delete_requires_typed_verification(cli_mod, runner, monkeypatch):
