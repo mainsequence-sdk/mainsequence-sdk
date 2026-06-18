@@ -461,7 +461,6 @@ def test_data_node_storage_run_query_posts_plain_text_sql(monkeypatch):
     class FakeResponse:
         status_code = 200
         content = b'{"ok": true}'
-        content = b'{"ok": true}'
 
         @staticmethod
         def json():
