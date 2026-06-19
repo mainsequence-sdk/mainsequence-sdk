@@ -84,8 +84,6 @@ from .api import (
     add_team_user_to_view,
     add_workspace_labels,
     allocate_agent_a2a_target_session,
-    cancel_agent_session_runtime,
-    chat_agent_session_runtime,
     create_adapter_from_api_connection,
     create_agent,
     create_constant,
@@ -109,7 +107,6 @@ from .api import (
     delete_resource_release,
     delete_secret,
     delete_workspace,
-    detach_agent_session_runtime,
     get_agent,
     get_agent_latest_session,
     get_agent_run,
@@ -201,7 +198,6 @@ from .api import (
     remove_team_user_from_view,
     remove_workspace_labels,
     repo_name_from_git_url,
-    resolve_agent_session_runtime_access,
     resolve_project,
     run_data_node_storage_query,
     run_meta_table_query,
@@ -210,13 +206,11 @@ from .api import (
     schedule_batch_project_jobs,
     search_projects,
     semantic_search_agents,
-    send_agent_session_a2a_chat,
     send_agent_session_a2a_message,
     sync_project_after_commit,
     update_organization_team,
     update_workspace,
     validate_project_name,
-    wait_agent_session_runtime_ready,
 )
 from .browser_auth import BrowserAuthError, login_via_browser
 from .docker_utils import (
@@ -346,7 +340,6 @@ agent = typer.Typer(help="Agent commands")
 agent_run_group = typer.Typer(help="Agent runtime commands")
 agent_session_group = typer.Typer(help="Agent session commands")
 agent_session_a2a_group = typer.Typer(help="Agent session A2A commands")
-agent_session_runtime_group = typer.Typer(help="Agent session runtime commands")
 constants = typer.Typer(help="Constant commands")
 secrets = typer.Typer(help="Secret commands")
 cc = typer.Typer(help="Command Center commands")
@@ -373,7 +366,6 @@ app.add_typer(agent, name="agent")
 agent.add_typer(agent_run_group, name="run")
 agent.add_typer(agent_session_group, name="session")
 agent_session_group.add_typer(agent_session_a2a_group, name="a2a")
-agent_session_group.add_typer(agent_session_runtime_group, name="runtime")
 app.add_typer(agent_run_group, name="agent_runtime", hidden=True)
 app.add_typer(agent_run_group, name="agent-runtime", hidden=True)
 app.add_typer(constants, name="constants")
@@ -3610,71 +3602,6 @@ def _format_agent_a2a_allocation_preview(
     ]
 
 
-def _format_agent_runtime_ready_preview(
-    ready_payload: dict[str, object],
-) -> list[tuple[str, str]]:
-    return [
-        ("Ready", str(ready_payload.get("ready"))),
-        ("Attempts", str(ready_payload.get("attempts") or "-")),
-        ("Elapsed Seconds", str(ready_payload.get("elapsed_seconds") or "-")),
-        ("Status Code", str(ready_payload.get("status_code") or "-")),
-        ("Detail", str(ready_payload.get("detail") or "")),
-    ]
-
-
-def _format_agent_a2a_chat_preview(
-    chat_payload: dict[str, object],
-) -> list[tuple[str, str]]:
-    ready = chat_payload.get("ready") if isinstance(chat_payload.get("ready"), dict) else {}
-    normalized = (
-        chat_payload.get("normalized") if isinstance(chat_payload.get("normalized"), dict) else {}
-    )
-    return [
-        ("OK", str(chat_payload.get("ok"))),
-        ("Runtime Ready", str(ready.get("ready") if isinstance(ready, dict) else "-")),
-        ("Kind", str(normalized.get("kind") or "-") if isinstance(normalized, dict) else "-"),
-        ("State", str(normalized.get("state") or "-") if isinstance(normalized, dict) else "-"),
-        ("Task ID", str(normalized.get("task_id") or "-") if isinstance(normalized, dict) else "-"),
-        (
-            "Context ID",
-            str(normalized.get("context_id") or "-") if isinstance(normalized, dict) else "-",
-        ),
-        ("Text", str(normalized.get("text") or "-") if isinstance(normalized, dict) else "-"),
-    ]
-
-
-def _format_agent_session_runtime_preview(
-    runtime_payload: dict[str, object],
-) -> list[tuple[str, str]]:
-    runner = runtime_payload.get("runner")
-    runner_payload = runner if isinstance(runner, dict) else {}
-    preflight = runtime_payload.get("preflight")
-    preflight_payload = preflight if isinstance(preflight, dict) else {}
-    return [
-        ("OK", str(runtime_payload.get("ok"))),
-        ("Agent Session UID", str(runtime_payload.get("agent_session_uid") or "-")),
-        ("State", str(runtime_payload.get("state") or "-")),
-        ("Runner Kind", str(runner_payload.get("kind") or "-")),
-        ("Runner State", str(runner_payload.get("state") or "-")),
-        ("Runner Ready", str(runner_payload.get("ready") if runner_payload else "-")),
-        ("Preflight Ready", str(preflight_payload.get("ready") if preflight_payload else "-")),
-        ("Updated At", str(runtime_payload.get("updated_at") or "-")),
-        ("Last Error", str(runtime_payload.get("last_error") or "-")),
-    ]
-
-
-def _format_agent_session_runtime_chat_preview(
-    chat_payload: dict[str, object],
-) -> list[tuple[str, str]]:
-    return [
-        ("OK", str(chat_payload.get("ok"))),
-        ("Agent Session UID", str(chat_payload.get("agent_session_uid") or "-")),
-        ("Text", str(chat_payload.get("text") or "-")),
-        ("JSON", _format_json_value(chat_payload.get("json"))),
-        ("Events", str(len(chat_payload.get("events") or []))),
-    ]
-
-
 def _agent_list_impl(
     timeout: int | None,
     filter_entries: list[str] | None,
@@ -4049,154 +3976,6 @@ def _agent_get_latest_session_impl(
     print_kv("Agent Session Details", _format_agent_session_details(agent_session_payload))
 
 
-def _resolve_a2a_cli_request_payload(
-    *,
-    message: str | None,
-    message_file: pathlib.Path | None,
-    a2a_payload: str | None,
-    a2a_payload_file: pathlib.Path | None,
-) -> tuple[str | None, dict[str, object] | None]:
-    try:
-        resolved_message = _parse_text_option_or_file(
-            raw_value=message,
-            file_path=message_file,
-            field_label="message",
-        )
-        resolved_payload = _parse_json_dict_option_or_file(
-            raw_value=a2a_payload,
-            file_path=a2a_payload_file,
-            field_label="a2a_payload",
-        )
-    except ValueError as e:
-        error(str(e))
-        raise typer.Exit(1) from e
-
-    if resolved_message is not None and not resolved_message.strip():
-        error("message must not be empty.")
-        raise typer.Exit(1)
-    if (resolved_message is None) == (resolved_payload is None):
-        error(
-            "Pass exactly one of `--message`/`--message-file` or `--a2a-payload`/`--a2a-payload-file`."
-        )
-        raise typer.Exit(1)
-    return resolved_message, resolved_payload
-
-
-def _agent_session_wait_runtime_ready_impl(
-    *,
-    agent_session_uid: str,
-    timeout_seconds: float,
-    poll_interval_seconds: float,
-    timeout: int | None,
-    json_output: bool = False,
-) -> None:
-    _require_login()
-    runtime_access_payload = cfg.get_runtime_access_cache(agent_session_uid)
-    if runtime_access_payload is None:
-        error(
-            "Runtime access is not resolved for this agent session. "
-            f"Run: mainsequence agent session runtime resolve {agent_session_uid}"
-        )
-        raise typer.Exit(1)
-
-    try:
-        ready_payload = wait_agent_session_runtime_ready(
-            agent_session_uid,
-            runtime_access=runtime_access_payload,
-            timeout_seconds=timeout_seconds,
-            poll_interval_seconds=poll_interval_seconds,
-            timeout=timeout,
-        )
-    except ApiError as e:
-        error(f"Agent session runtime readiness failed: {e}")
-        raise typer.Exit(1) from e
-
-    if _emit_json(ready_payload, force=json_output):
-        if not ready_payload.get("ready"):
-            raise typer.Exit(1)
-        return
-
-    if ready_payload.get("ready"):
-        success(f"Agent session runtime is ready: session_uid={agent_session_uid}")
-    else:
-        error(f"Agent session runtime is not ready: session_uid={agent_session_uid}")
-    print_kv("Agent Session Runtime Ready", _format_agent_runtime_ready_preview(ready_payload))
-    if not ready_payload.get("ready"):
-        raise typer.Exit(1)
-
-
-def _agent_session_a2a_chat_impl(
-    *,
-    agent_session_uid: str,
-    message: str | None,
-    message_file: pathlib.Path | None,
-    a2a_payload: str | None,
-    a2a_payload_file: pathlib.Path | None,
-    wait_for_runtime: bool,
-    runtime_ready_timeout_seconds: float,
-    poll_task_until_stable: bool | None,
-    runtime_turn_timeout_seconds: float | None,
-    omit_reasoning: bool,
-    strict_json_response: bool,
-    json_repair_attempts: int | None,
-    timeout: int | None,
-    json_output: bool = False,
-) -> None:
-    resolved_message, resolved_payload = _resolve_a2a_cli_request_payload(
-        message=message,
-        message_file=message_file,
-        a2a_payload=a2a_payload,
-        a2a_payload_file=a2a_payload_file,
-    )
-    _require_login()
-
-    if json_repair_attempts is not None and json_repair_attempts < 1:
-        error("--json-repair-attempts must be greater than 0.")
-        raise typer.Exit(1)
-    if runtime_turn_timeout_seconds is not None and runtime_turn_timeout_seconds <= 0:
-        error("--runtime-turn-timeout-seconds must be greater than 0.")
-        raise typer.Exit(1)
-
-    response_format_payload: dict[str, object] | None = None
-    json_repair_payload: dict[str, object] | None = None
-    if strict_json_response:
-        response_format_payload = {
-            "type": "json_object",
-            "strict": True,
-        }
-        json_repair_payload = {
-            "attempts": json_repair_attempts if json_repair_attempts is not None else 3,
-        }
-    elif json_repair_attempts is not None:
-        json_repair_payload = {
-            "attempts": json_repair_attempts,
-        }
-
-    try:
-        chat_payload = send_agent_session_a2a_chat(
-            agent_session_uid,
-            message=resolved_message,
-            a2a_payload=resolved_payload,
-            wait_for_runtime=wait_for_runtime,
-            runtime_ready_timeout_seconds=runtime_ready_timeout_seconds,
-            poll_task_until_stable=poll_task_until_stable,
-            runtime_turn_timeout_seconds=runtime_turn_timeout_seconds,
-            omit_reasoning=omit_reasoning,
-            response_format=response_format_payload,
-            json_repair=json_repair_payload,
-            timeout=timeout,
-        )
-    except ApiError as e:
-        error(f"Agent session A2A chat failed: {e}")
-        raise typer.Exit(1) from e
-
-    if _emit_json(chat_payload, force=json_output):
-        return
-
-    success(f"Agent session A2A chat sent: session_uid={agent_session_uid}")
-    print_kv("A2A Response", _format_agent_a2a_chat_preview(chat_payload))
-
-
 def _extract_standard_a2a_message_text(payload: dict[str, object]) -> str:
     response_message = payload.get("message")
     if not isinstance(response_message, dict):
@@ -4259,222 +4038,6 @@ def _agent_session_a2a_send_impl(
         raise typer.Exit(1) from e
 
     typer.echo(json.dumps(response_payload, indent=2))
-
-
-def _safe_runtime_access_cache_summary(
-    *,
-    agent_session_uid: str,
-    access_payload: dict[str, object],
-    cache_entry: dict[str, object],
-) -> dict[str, object]:
-    runtime_paths = access_payload.get("runtime_paths")
-    return {
-        "agent_session_uid": agent_session_uid,
-        "cached": True,
-        "is_ready": bool(access_payload.get("is_ready")),
-        "mode": access_payload.get("mode") or "-",
-        "rpc_url": access_payload.get("rpc_url") or "",
-        "token_cached": bool(access_payload.get("token")),
-        "runtime_paths": runtime_paths if isinstance(runtime_paths, dict) else {},
-        "cached_at": cache_entry.get("cached_at"),
-        "expires_at": cache_entry.get("expires_at"),
-    }
-
-
-def _agent_session_runtime_resolve_impl(
-    *,
-    agent_session_uid: str,
-    cache_ttl_seconds: float,
-    runtime_ready_timeout_seconds: float,
-    poll_interval_seconds: float,
-    timeout: int | None,
-    json_output: bool = False,
-) -> None:
-    if cache_ttl_seconds <= 0:
-        error("--cache-ttl-seconds must be greater than 0.")
-        raise typer.Exit(1)
-    if runtime_ready_timeout_seconds <= 0:
-        error("--runtime-ready-timeout-seconds must be greater than 0.")
-        raise typer.Exit(1)
-    if poll_interval_seconds <= 0:
-        error("--poll-interval-seconds must be greater than 0.")
-        raise typer.Exit(1)
-
-    _require_login()
-
-    try:
-        runtime_access_payload = resolve_agent_session_runtime_access(
-            agent_session_uid,
-            wait_for_runtime=False,
-            timeout=timeout,
-        )
-        ready_payload = wait_agent_session_runtime_ready(
-            agent_session_uid,
-            runtime_access=runtime_access_payload,
-            timeout_seconds=runtime_ready_timeout_seconds,
-            poll_interval_seconds=poll_interval_seconds,
-            timeout=timeout,
-        )
-        if not bool(ready_payload.get("ready")):
-            raise ApiError(str(ready_payload.get("detail") or "Runtime session is not ready."))
-        runtime_access_payload["is_ready"] = True
-        runtime_access_payload["ready"] = ready_payload
-        cache_entry = cfg.save_runtime_access_cache(
-            agent_session_uid,
-            runtime_access_payload,
-            ttl_seconds=cache_ttl_seconds,
-        )
-    except ApiError as e:
-        error(f"Agent session runtime access resolve failed: {e}")
-        raise typer.Exit(1) from e
-
-    safe_payload = _safe_runtime_access_cache_summary(
-        agent_session_uid=agent_session_uid,
-        access_payload=runtime_access_payload,
-        cache_entry=cache_entry,
-    )
-    if _emit_json(safe_payload, force=json_output):
-        return
-
-    success(f"Agent session runtime access cached: session_uid={agent_session_uid}")
-    print_kv(
-        "Agent Session Runtime Cache",
-        [
-            ("Agent Session UID", str(safe_payload.get("agent_session_uid") or "-")),
-            ("Ready", str(safe_payload.get("is_ready"))),
-            ("Mode", str(safe_payload.get("mode") or "-")),
-            ("RPC URL", str(safe_payload.get("rpc_url") or "-")),
-            ("Token Cached", str(safe_payload.get("token_cached"))),
-            ("Cached At", str(safe_payload.get("cached_at") or "-")),
-            ("Expires At", str(safe_payload.get("expires_at") or "-")),
-        ],
-    )
-
-
-def _agent_session_runtime_chat_impl(
-    *,
-    agent_session_uid: str,
-    message: str | None,
-    message_file: pathlib.Path | None,
-    runtime_turn_timeout_seconds: float | None,
-    omit_reasoning: bool,
-    strict_json_response: bool,
-    json_repair_attempts: int | None,
-    timeout: int | None,
-    json_output: bool = False,
-) -> None:
-    try:
-        resolved_message = _parse_text_option_or_file(
-            raw_value=message,
-            file_path=message_file,
-            field_label="message",
-        )
-    except ValueError as e:
-        error(str(e))
-        raise typer.Exit(1) from e
-    if resolved_message is None or not resolved_message.strip():
-        error("message is required.")
-        raise typer.Exit(1)
-    if json_repair_attempts is not None and json_repair_attempts < 1:
-        error("--json-repair-attempts must be greater than 0.")
-        raise typer.Exit(1)
-    if runtime_turn_timeout_seconds is not None and runtime_turn_timeout_seconds <= 0:
-        error("--runtime-turn-timeout-seconds must be greater than 0.")
-        raise typer.Exit(1)
-
-    _require_login()
-    runtime_access_payload = cfg.get_runtime_access_cache(agent_session_uid)
-
-    response_format_payload: dict[str, object] | None = None
-    json_repair_payload: dict[str, object] | None = None
-    if strict_json_response:
-        response_format_payload = {"type": "json_object", "strict": True}
-        json_repair_payload = {
-            "attempts": json_repair_attempts if json_repair_attempts is not None else 3,
-        }
-    elif json_repair_attempts is not None:
-        json_repair_payload = {"attempts": json_repair_attempts}
-
-    try:
-        chat_payload = chat_agent_session_runtime(
-            agent_session_uid,
-            message=resolved_message,
-            runtime_access=runtime_access_payload,
-            wait_for_runtime=True,
-            runtime_turn_timeout_seconds=runtime_turn_timeout_seconds,
-            omit_reasoning=omit_reasoning,
-            response_format=response_format_payload,
-            json_repair=json_repair_payload,
-            timeout=timeout,
-        )
-    except ApiError as e:
-        if "401" in str(e) or "unauthorized" in str(e).lower():
-            cfg.clear_runtime_access_cache(agent_session_uid)
-            error(
-                "Cached runtime access was rejected. "
-                f"Run: mainsequence agent session runtime resolve {agent_session_uid}"
-            )
-            raise typer.Exit(1) from e
-        error(f"Agent session runtime chat failed: {e}")
-        raise typer.Exit(1) from e
-
-    if _emit_json(chat_payload, force=json_output):
-        return
-
-    success(f"Agent session runtime chat sent: session_uid={agent_session_uid}")
-    print_kv("Agent Session Runtime Chat", _format_agent_session_runtime_chat_preview(chat_payload))
-
-
-def _agent_session_runtime_cancel_impl(
-    *,
-    agent_session_uid: str,
-    reason: str,
-    message: str | None,
-    timeout: int | None,
-    json_output: bool = False,
-) -> None:
-    _require_login()
-    try:
-        runtime_payload = cancel_agent_session_runtime(
-            agent_session_uid,
-            reason=reason,
-            message=message,
-            timeout=timeout,
-        )
-    except ApiError as e:
-        error(f"Agent session runtime cancel failed: {e}")
-        raise typer.Exit(1) from e
-
-    if _emit_json(runtime_payload, force=json_output):
-        return
-
-    success(f"Agent session runtime cancel requested: session_uid={agent_session_uid}")
-    print_kv("Agent Session Runtime", _format_agent_session_runtime_preview(runtime_payload))
-
-
-def _agent_session_runtime_detach_impl(
-    *,
-    agent_session_uid: str,
-    reason: str,
-    timeout: int | None,
-    json_output: bool = False,
-) -> None:
-    _require_login()
-    try:
-        runtime_payload = detach_agent_session_runtime(
-            agent_session_uid,
-            reason=reason,
-            timeout=timeout,
-        )
-    except ApiError as e:
-        error(f"Agent session runtime detach failed: {e}")
-        raise typer.Exit(1) from e
-
-    if _emit_json(runtime_payload, force=json_output):
-        return
-
-    success(f"Agent session runtime detached: session_uid={agent_session_uid}")
-    print_kv("Agent Session Runtime", _format_agent_session_runtime_preview(runtime_payload))
 
 
 def _agent_session_list_impl(
@@ -4571,43 +4134,6 @@ def _agent_session_detail_impl(
 
     print_kv("Agent Session", _format_agent_session_preview(agent_session_payload))
     print_kv("Agent Session Details", _format_agent_session_details(agent_session_payload))
-
-
-def _agent_session_resolve_runtime_access_impl(
-    *,
-    agent_session_uid: str,
-    wait_for_runtime: bool,
-    timeout: int | None,
-) -> None:
-    _require_login()
-
-    try:
-        runtime_access_payload = resolve_agent_session_runtime_access(
-            agent_session_uid,
-            wait_for_runtime=wait_for_runtime,
-            timeout=timeout,
-        )
-    except ApiError as e:
-        error(f"Agent session runtime access resolve failed: {e}")
-        raise typer.Exit(1) from e
-
-    if _emit_json(runtime_access_payload):
-        return
-
-    success(f"Agent session runtime access resolved: session_uid={agent_session_uid}")
-    print_kv(
-        "Agent Session Runtime Access",
-        [
-            (
-                "Coding Agent Service ID",
-                str(runtime_access_payload.get("coding_agent_service_id") or "-"),
-            ),
-            ("Coding Agent ID", str(runtime_access_payload.get("coding_agent_id") or "-")),
-            ("Mode", str(runtime_access_payload.get("mode") or "-")),
-            ("RPC URL", str(runtime_access_payload.get("rpc_url") or "-")),
-            ("Token", str(runtime_access_payload.get("token") or "-")),
-        ],
-    )
 
 
 def _agent_run_list_impl(
@@ -7328,39 +6854,6 @@ def agent_session_list_cmd(
     )
 
 
-@agent_session_group.command("wait_runtime_ready")
-def agent_session_wait_runtime_ready_cmd(
-    agent_session_uid: str = pydantic_argument(
-        AGENT_SESSION_MODEL_REF, "uid", ..., help="Agent session UID."
-    ),
-    timeout_seconds: float = typer.Option(
-        300,
-        "--timeout-seconds",
-        help="Maximum runtime readiness wait in seconds.",
-    ),
-    poll_interval_seconds: float = typer.Option(
-        10,
-        "--poll-interval-seconds",
-        help="Seconds between runtime readiness polls.",
-    ),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-    json_output: bool = typer.Option(False, "--json", help="Emit JSON output."),
-):
-    """
-    Wait for one agent session runtime to become ready.
-
-    Uses cached runtime access and polls the runtime session-status path directly.
-    This does not expose runtime RPC URLs or bearer tokens.
-    """
-    _agent_session_wait_runtime_ready_impl(
-        agent_session_uid=agent_session_uid,
-        timeout_seconds=timeout_seconds,
-        poll_interval_seconds=poll_interval_seconds,
-        timeout=timeout,
-        json_output=json_output,
-    )
-
-
 @agent_session_a2a_group.command("send")
 def agent_session_a2a_send_cmd(
     agent_session_uid: str = pydantic_argument(
@@ -7413,233 +6906,6 @@ def agent_session_a2a_send_cmd(
     )
 
 
-@agent_session_group.command("a2a_chat")
-def agent_session_a2a_chat_cmd(
-    agent_session_uid: str = pydantic_argument(
-        AGENT_SESSION_MODEL_REF, "uid", ..., help="Agent session UID."
-    ),
-    message: str | None = typer.Option(
-        None,
-        "--message",
-        help="Plain text message to send through the legacy backend A2A transport.",
-    ),
-    message_file: pathlib.Path | None = typer.Option(
-        None,
-        "--message-file",
-        help="Path to a UTF-8 text file containing the plain A2A message.",
-    ),
-    a2a_payload: str | None = typer.Option(
-        None,
-        "--a2a-payload",
-        help="Raw A2A JSON-RPC payload as a JSON object string.",
-    ),
-    a2a_payload_file: pathlib.Path | None = typer.Option(
-        None,
-        "--a2a-payload-file",
-        help="Path to a JSON/YAML file containing the raw A2A JSON-RPC payload.",
-    ),
-    wait_for_runtime: bool = typer.Option(
-        True,
-        "--wait-for-runtime/--no-wait-for-runtime",
-        help="Ask the backend to wait until the target runtime is ready before sending.",
-    ),
-    runtime_ready_timeout_seconds: float = typer.Option(
-        300,
-        "--runtime-ready-timeout-seconds",
-        help="Maximum runtime readiness wait in seconds.",
-    ),
-    poll_task_until_stable: bool | None = typer.Option(
-        None,
-        "--poll-task-until-stable/--no-poll-task-until-stable",
-        help="Optionally ask the backend to poll A2A task responses until stable.",
-    ),
-    runtime_turn_timeout_seconds: float | None = typer.Option(
-        None,
-        "--runtime-turn-timeout-seconds",
-        help="Maximum runtime turn timeout in seconds for the target A2A chat call.",
-    ),
-    omit_reasoning: bool = typer.Option(
-        True,
-        "--omit-reasoning/--include-reasoning",
-        help="Ask the runtime to omit reasoning/thinking events from the A2A chat stream.",
-    ),
-    strict_json_response: bool = typer.Option(
-        False,
-        "--strict-json-response",
-        help="Ask the assistant to make the final text payload a strict JSON object.",
-    ),
-    json_repair_attempts: int | None = typer.Option(
-        None,
-        "--json-repair-attempts",
-        help="Runtime JSON repair attempts. Defaults to 3 with --strict-json-response.",
-    ),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-    json_output: bool = typer.Option(False, "--json", help="Emit JSON output."),
-):
-    """
-    Send an A2A request to an existing agent session through the legacy backend transport.
-
-    Prefer `mainsequence agent session runtime chat` for normal A2A sends.
-
-    `--strict-json-response` guarantees the final assistant text payload is valid JSON.
-    The HTTP response remains the backend compatibility envelope.
-    """
-    _agent_session_a2a_chat_impl(
-        agent_session_uid=agent_session_uid,
-        message=message,
-        message_file=message_file,
-        a2a_payload=a2a_payload,
-        a2a_payload_file=a2a_payload_file,
-        wait_for_runtime=wait_for_runtime,
-        runtime_ready_timeout_seconds=runtime_ready_timeout_seconds,
-        poll_task_until_stable=poll_task_until_stable,
-        runtime_turn_timeout_seconds=runtime_turn_timeout_seconds,
-        omit_reasoning=omit_reasoning,
-        strict_json_response=strict_json_response,
-        json_repair_attempts=json_repair_attempts,
-        timeout=timeout,
-        json_output=json_output,
-    )
-
-
-@agent_session_runtime_group.command("chat")
-def agent_session_runtime_chat_cmd(
-    agent_session_uid: str = pydantic_argument(
-        AGENT_SESSION_MODEL_REF, "uid", ..., help="Agent session UID."
-    ),
-    message: str | None = typer.Option(
-        None,
-        "--message",
-        help="Plain text message to send through the A2A runtime.",
-    ),
-    message_file: pathlib.Path | None = typer.Option(
-        None,
-        "--message-file",
-        help="Path to a UTF-8 text file containing the runtime chat message.",
-    ),
-    runtime_turn_timeout_seconds: float | None = typer.Option(
-        None,
-        "--runtime-turn-timeout-seconds",
-        help="Maximum runtime turn timeout in seconds for the target A2A chat call.",
-    ),
-    omit_reasoning: bool = typer.Option(
-        True,
-        "--omit-reasoning/--include-reasoning",
-        help="Ask the runtime to omit reasoning/thinking events from the A2A chat stream.",
-    ),
-    strict_json_response: bool = typer.Option(
-        False,
-        "--strict-json-response",
-        help="Ask the assistant to make the final text payload a strict JSON object.",
-    ),
-    json_repair_attempts: int | None = typer.Option(
-        None,
-        "--json-repair-attempts",
-        help="Runtime JSON repair attempts. Defaults to 3 with --strict-json-response.",
-    ),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-    json_output: bool = typer.Option(False, "--json", help="Emit JSON output."),
-):
-    """
-    Send one message through the A2A runtime.
-
-    The runtime returns an SSE stream. With `--json`, the CLI emits parsed events plus
-    the final accumulated assistant text and parsed JSON when available.
-    """
-    _agent_session_runtime_chat_impl(
-        agent_session_uid=agent_session_uid,
-        message=message,
-        message_file=message_file,
-        runtime_turn_timeout_seconds=runtime_turn_timeout_seconds,
-        omit_reasoning=omit_reasoning,
-        strict_json_response=strict_json_response,
-        json_repair_attempts=json_repair_attempts,
-        timeout=timeout,
-        json_output=json_output,
-    )
-
-
-@agent_session_runtime_group.command("resolve")
-def agent_session_runtime_resolve_cmd(
-    agent_session_uid: str = pydantic_argument(
-        AGENT_SESSION_MODEL_REF, "uid", ..., help="Agent session UID."
-    ),
-    cache_ttl_seconds: float = typer.Option(
-        cfg.DEFAULT_RUNTIME_ACCESS_CACHE_TTL_SECONDS,
-        "--cache-ttl-seconds",
-        help="Seconds to keep the resolved runtime access in the CLI cache.",
-    ),
-    runtime_ready_timeout_seconds: float = typer.Option(
-        300,
-        "--runtime-ready-timeout-seconds",
-        help="Maximum runtime readiness wait in seconds before caching access.",
-    ),
-    poll_interval_seconds: float = typer.Option(
-        10,
-        "--poll-interval-seconds",
-        help="Seconds between runtime readiness polls.",
-    ),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-    json_output: bool = typer.Option(False, "--json", help="Emit JSON output."),
-):
-    """
-    Resolve runtime access, poll the runtime until ready, and cache access.
-
-    This command does not print runtime credentials. Use it before multiple
-    `mainsequence agent session a2a send` calls to the same session.
-    """
-    _agent_session_runtime_resolve_impl(
-        agent_session_uid=agent_session_uid,
-        cache_ttl_seconds=cache_ttl_seconds,
-        runtime_ready_timeout_seconds=runtime_ready_timeout_seconds,
-        poll_interval_seconds=poll_interval_seconds,
-        timeout=timeout,
-        json_output=json_output,
-    )
-
-
-@agent_session_runtime_group.command("cancel")
-def agent_session_runtime_cancel_cmd(
-    agent_session_uid: str = pydantic_argument(
-        AGENT_SESSION_MODEL_REF, "uid", ..., help="Agent session UID."
-    ),
-    reason: str = typer.Option("client_requested", "--reason", help="Cancellation reason."),
-    message: str | None = typer.Option(None, "--message", help="Optional cancellation message."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-    json_output: bool = typer.Option(False, "--json", help="Emit JSON output."),
-):
-    """
-    Cancel the active turn on an A2A runtime.
-    """
-    _agent_session_runtime_cancel_impl(
-        agent_session_uid=agent_session_uid,
-        reason=reason,
-        message=message,
-        timeout=timeout,
-        json_output=json_output,
-    )
-
-
-@agent_session_runtime_group.command("detach")
-def agent_session_runtime_detach_cmd(
-    agent_session_uid: str = pydantic_argument(
-        AGENT_SESSION_MODEL_REF, "uid", ..., help="Agent session UID."
-    ),
-    reason: str = typer.Option("client_done", "--reason", help="Detach reason."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-    json_output: bool = typer.Option(False, "--json", help="Emit JSON output."),
-):
-    """
-    Detach the A2A runtime for one agent session.
-    """
-    _agent_session_runtime_detach_impl(
-        agent_session_uid=agent_session_uid,
-        reason=reason,
-        timeout=timeout,
-        json_output=json_output,
-    )
-
-
 @agent_session_group.command("detail")
 def agent_session_detail_cmd(
     agent_session_uid: str = pydantic_argument(
@@ -7660,38 +6926,6 @@ def agent_session_detail_cmd(
     ```
     """
     _agent_session_detail_impl(agent_session_uid=agent_session_uid, timeout=timeout)
-
-
-@agent_session_group.command("resolve_runtime_access")
-def agent_session_resolve_runtime_access_cmd(
-    agent_session_uid: str = pydantic_argument(
-        AGENT_SESSION_MODEL_REF, "uid", ..., help="Agent session UID."
-    ),
-    wait_for_runtime: bool = typer.Option(
-        False,
-        "--wait-for-runtime/--no-wait-for-runtime",
-        help="Ask the SDK to poll the runtime until it is ready before returning access.",
-    ),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    """
-    Resolve runtime access for one agent session.
-
-    Uses SDK client `AgentSession.resolve_runtime_access()` as the single source of truth.
-
-    Examples
-    --------
-    ```bash
-    mainsequence agent session resolve_runtime_access 3f1cc452-43ec-49cb-b2ba-87dbac164d29
-    mainsequence agent session resolve_runtime_access 3f1cc452-43ec-49cb-b2ba-87dbac164d29 --wait-for-runtime
-    mainsequence agent session resolve_runtime_access 3f1cc452-43ec-49cb-b2ba-87dbac164d29 --timeout 60
-    ```
-    """
-    _agent_session_resolve_runtime_access_impl(
-        agent_session_uid=agent_session_uid,
-        wait_for_runtime=wait_for_runtime,
-        timeout=timeout,
-    )
 
 
 @agent.command("can_view")

@@ -1083,6 +1083,47 @@ def test_compile_sqlalchemy_statement_emits_temporal_parameter_types():
     assert operation.statement.parameters["seen_at"] == "2026-05-28T12:30:00Z"
 
 
+def test_compile_sqlalchemy_statement_emits_temporal_parameter_types_for_expanding_in():
+    sqlalchemy = pytest.importorskip("sqlalchemy")
+
+    table = sqlalchemy.table(
+        "asset",
+        sqlalchemy.column("time_index", sqlalchemy.DateTime(timezone=True)),
+    )
+    timestamps = [
+        datetime.datetime(2026, 5, 28, tzinfo=datetime.UTC),
+        datetime.datetime(2026, 5, 29, tzinfo=datetime.UTC),
+        datetime.datetime(2026, 5, 30, tzinfo=datetime.UTC),
+        datetime.datetime(2026, 5, 31, tzinfo=datetime.UTC),
+    ]
+    statement = sqlalchemy.select(table.c.time_index).where(table.c.time_index.in_(timestamps))
+
+    operation = compile_sqlalchemy_statement(
+        statement,
+        operation="select",
+        data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+        scope_tables=[
+            {
+                "metaTableUid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                "alias": "asset",
+            }
+        ],
+    )
+
+    assert operation.statement.parameter_types == {
+        "time_index_1_1": "timestamp with time zone",
+        "time_index_1_2": "timestamp with time zone",
+        "time_index_1_3": "timestamp with time zone",
+        "time_index_1_4": "timestamp with time zone",
+    }
+    assert operation.statement.parameters == {
+        "time_index_1_1": "2026-05-28T00:00:00Z",
+        "time_index_1_2": "2026-05-29T00:00:00Z",
+        "time_index_1_3": "2026-05-30T00:00:00Z",
+        "time_index_1_4": "2026-05-31T00:00:00Z",
+    }
+
+
 def test_compile_sqlalchemy_statement_rejects_naive_datetime_bind_types():
     sqlalchemy = pytest.importorskip("sqlalchemy")
 

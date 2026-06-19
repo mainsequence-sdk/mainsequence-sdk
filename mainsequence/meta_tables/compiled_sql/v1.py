@@ -128,16 +128,35 @@ def compile_sqlalchemy_statement(
 def _compiled_sqlalchemy_parameter_types(compiled: Any) -> dict[str, str]:
     parameter_types: dict[str, str] = {}
     bind_names = getattr(compiled, "bind_names", {}) or {}
+    parameters = getattr(compiled, "params", {}) or {}
     for bind_parameter, rendered_name in bind_names.items():
-        if rendered_name not in getattr(compiled, "params", {}):
-            continue
         column_type = getattr(bind_parameter, "type", None)
         if column_type is None:
             continue
         token = sqlalchemy_type_to_token(column_type, remote=True)
         if token in {DATE, TIMESTAMP_TZ}:
-            parameter_types[str(rendered_name)] = token
+            for parameter_name in _rendered_sqlalchemy_parameter_names(
+                rendered_name,
+                parameters,
+            ):
+                parameter_types[parameter_name] = token
     return parameter_types
+
+
+def _rendered_sqlalchemy_parameter_names(
+    rendered_name: Any,
+    parameters: Mapping[str, Any],
+) -> list[str]:
+    rendered_name = str(rendered_name)
+    if rendered_name in parameters:
+        return [rendered_name]
+
+    expanded_prefix = f"{rendered_name}_"
+    return [
+        str(parameter_name)
+        for parameter_name in parameters
+        if str(parameter_name).startswith(expanded_prefix)
+    ]
 
 
 __all__ = [
