@@ -83,6 +83,10 @@ mainsequence agent session a2a send \
 - Parse the CLI output as the standard A2A JSON response.
 - Consume only `message.parts` from the A2A response.
 - Do not depend on reasoning, tool traces, runtime paths, or transport metadata.
+- If a send times out or disconnects and must be retried, reuse the same
+  `--message-id` value so the target can treat it as the same logical message.
+- If the CLI generated the message id and the send failed, reuse the
+  `A2A message id for exact retry` value printed with the error.
 
 ## Deterministic Execution Path
 

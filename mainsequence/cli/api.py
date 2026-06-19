@@ -24,7 +24,14 @@ from urllib.parse import urlencode
 
 import requests
 
-from .config import backend_url, get_tokens, save_tokens
+from .config import (
+    backend_url,
+    clear_runtime_access_cache,
+    get_runtime_access_cache,
+    get_tokens,
+    save_runtime_access_cache,
+    save_tokens,
+)
 
 AUTH_PATHS = {
     "authorize": "/auth/cli/authorize/",
@@ -39,7 +46,8 @@ CLI_BROWSER_CLIENT_ID = "mainsequence-cli"
 S = requests.Session()
 S.headers.update({"Content-Type": "application/json"})
 
-DEFAULT_AGENT_RUNTIME_READY_TIMEOUT_SECONDS = 900.0
+DEFAULT_AGENT_RUNTIME_READY_TIMEOUT_SECONDS = 300.0
+DEFAULT_AGENT_RUNTIME_READY_POLL_INTERVAL_SECONDS = 10.0
 _UNSET = object()
 
 
@@ -1336,6 +1344,8 @@ def resolve_agent_session_runtime_access(
     agent_session_uid: str,
     *,
     wait_for_runtime: bool = False,
+    runtime_ready_timeout_seconds: float = DEFAULT_AGENT_RUNTIME_READY_TIMEOUT_SECONDS,
+    poll_interval_seconds: float = DEFAULT_AGENT_RUNTIME_READY_POLL_INTERVAL_SECONDS,
     timeout: int | None = None,
 ) -> dict[str, Any]:
     """
@@ -1348,6 +1358,8 @@ def resolve_agent_session_runtime_access(
             operation=lambda ClientAgentSession: ClientAgentSession.resolve_runtime_access(
                 str(agent_session_uid),
                 wait_for_runtime=wait_for_runtime,
+                runtime_ready_timeout_seconds=runtime_ready_timeout_seconds,
+                poll_interval_seconds=poll_interval_seconds,
                 timeout=timeout,
             ),
         )
@@ -1364,7 +1376,9 @@ def resolve_agent_session_runtime_access(
 def wait_agent_session_runtime_ready(
     agent_session_uid: str,
     *,
+    runtime_access: dict[str, Any] | None = None,
     timeout_seconds: float = DEFAULT_AGENT_RUNTIME_READY_TIMEOUT_SECONDS,
+    poll_interval_seconds: float = DEFAULT_AGENT_RUNTIME_READY_POLL_INTERVAL_SECONDS,
     timeout: int | None = None,
 ) -> dict[str, Any]:
     """
@@ -1376,7 +1390,9 @@ def wait_agent_session_runtime_ready(
             class_name="AgentSession",
             operation=lambda ClientAgentSession: ClientAgentSession.wait_until_runtime_ready(
                 str(agent_session_uid),
+                runtime_access=runtime_access,
                 timeout_seconds=timeout_seconds,
+                poll_interval_seconds=poll_interval_seconds,
                 timeout=timeout,
             ),
         )
@@ -1439,28 +1455,29 @@ def send_agent_session_a2a_message(
     agent_session_uid: str,
     *,
     message: str,
+    message_id: str | None = None,
     strict_dictionary: bool = False,
     json_repair_attempts: int = 3,
-    history_length: int = 0,
     return_immediately: bool = False,
-    wait_for_runtime: bool = True,
     timeout: int | None = None,
 ) -> dict[str, Any]:
     """
     Send one standard A2A message through the target session runtime.
     """
     try:
+        cached_runtime_access = get_runtime_access_cache(str(agent_session_uid))
         payload = _run_sdk_model_operation(
             module_name="mainsequence.client.agent_runtime_models",
             class_name="AgentSession",
-            operation=lambda ClientAgentSession: ClientAgentSession.send_a2a_message(
-                str(agent_session_uid),
+            operation=lambda ClientAgentSession: _send_agent_session_a2a_message_with_cache(
+                ClientAgentSession,
+                agent_session_uid=str(agent_session_uid),
                 message=message,
+                message_id=message_id,
+                cached_runtime_access=cached_runtime_access,
                 strict_dictionary=strict_dictionary,
                 json_repair_attempts=json_repair_attempts,
-                history_length=history_length,
                 return_immediately=return_immediately,
-                wait_for_runtime=wait_for_runtime,
                 timeout=timeout,
             ),
         )
@@ -1471,7 +1488,43 @@ def send_agent_session_a2a_message(
             raise ApiError(f"Agent session not found: {agent_session_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
+        if "401" in str(e) or "403" in str(e) or "unauthorized" in str(e).lower():
+            clear_runtime_access_cache(str(agent_session_uid))
         raise ApiError(f"Agent session A2A message send failed: {e}") from e
+
+
+def _send_agent_session_a2a_message_with_cache(
+    ClientAgentSession,
+    *,
+    agent_session_uid: str,
+    message: str,
+    message_id: str | None,
+    cached_runtime_access: dict[str, Any] | None,
+    strict_dictionary: bool,
+    json_repair_attempts: int,
+    return_immediately: bool,
+    timeout: int | None,
+):
+    if cached_runtime_access is not None:
+        ClientAgentSession.cache_runtime_access(agent_session_uid, cached_runtime_access)
+
+    payload = ClientAgentSession.send_a2a_message(
+        agent_session_uid,
+        message=message,
+        message_id=message_id,
+        strict_dictionary=strict_dictionary,
+        json_repair_attempts=json_repair_attempts,
+        return_immediately=return_immediately,
+        timeout=timeout,
+    )
+
+    resolved_access = ClientAgentSession.get_cached_runtime_access(agent_session_uid)
+    if resolved_access is not None:
+        save_runtime_access_cache(
+            agent_session_uid,
+            _sdk_object_to_dict(resolved_access),
+        )
+    return payload
 
 
 def chat_agent_session_runtime(
@@ -4684,6 +4737,36 @@ def run_data_node_storage_query(
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
         raise ApiError(f"Data node query failed: {e}") from e
+
+
+def run_meta_table_query(
+    meta_table_uid: str,
+    sql: str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Run a raw SQL query against one MetaTable via SDK client model.
+    """
+    try:
+
+        def _run_query(ClientMetaTable):
+            meta_table = ClientMetaTable.get(uid=str(meta_table_uid), timeout=timeout)
+            payload = meta_table.run_query(sql, timeout=timeout)
+            return dict(payload) if isinstance(payload, dict) else {"ok": True, "results": payload}
+
+        return _run_sdk_model_operation(
+            module_name="mainsequence.client.metatables",
+            class_name="MetaTable",
+            operation=_run_query,
+        )
+    except Exception as e:
+        err_name = type(e).__name__
+        if err_name == "NotFoundError":
+            raise ApiError(f"MetaTable not found: {meta_table_uid}") from e
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"MetaTable query failed: {e}") from e
 
 
 def delete_data_node_storage(

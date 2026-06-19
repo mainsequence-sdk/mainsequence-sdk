@@ -224,6 +224,36 @@ mutation.
 Read-only raw SQL remains separate. Writable MetaTable operations should use
 compiled operation envelopes with declared scope.
 
+### Read-Only Raw SQL
+
+Use `MetaTable.run_query(...)` for direct read-only inspection of one MetaTable.
+This path is for diagnostics and exploration, not for reusable application
+operations.
+
+The SDK uses:
+
+- `POST /orm/api/ts_manager/meta_table/{meta_table_uid}/run_query/`
+
+Request contract:
+
+- the request body is a JSON string containing the SQL
+- do not send JSON like `{ "sql": "SELECT ..." }`
+
+Example:
+
+```python
+import mainsequence.client as msc
+
+meta_table = msc.MetaTable.get(uid="<META_TABLE_UID>")
+result = meta_table.run_query("SELECT * FROM public.some_table LIMIT 100")
+```
+
+CLI:
+
+```bash
+mainsequence meta-table run_query <META_TABLE_UID> "SELECT * FROM public.some_table LIMIT 100"
+```
+
 ## Writes
 
 The same protocol family supports `insert`, `update`, `upsert`, and `delete`

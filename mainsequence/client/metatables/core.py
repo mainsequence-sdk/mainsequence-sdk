@@ -1674,23 +1674,35 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
 
         cls = type(self)
         url = f"{cls.get_object_url().rstrip('/')}/{self._public_uid()}/run_query/"
-        session = cls.build_session()
-        old_content_type = session.headers.get("Content-Type")
-        session.headers["Content-Type"] = "text/plain"
-        try:
+        if cls.ENDPOINT == "ts_manager/dynamic_table":
+            session = cls.build_session()
+            old_content_type = session.headers.get("Content-Type")
+            session.headers["Content-Type"] = "text/plain"
+            try:
+                response = make_request(
+                    s=session,
+                    loaders=cls.LOADERS,
+                    r_type="POST",
+                    url=url,
+                    payload={"data": sql},
+                    time_out=timeout,
+                )
+            finally:
+                if old_content_type is None:
+                    session.headers.pop("Content-Type", None)
+                else:
+                    session.headers["Content-Type"] = old_content_type
+            error_payload = {"data": sql}
+        else:
             response = make_request(
-                s=session,
+                s=cls.build_session(),
                 loaders=cls.LOADERS,
                 r_type="POST",
                 url=url,
-                payload={"data": sql},
+                payload={"json": sql},
                 time_out=timeout,
             )
-        finally:
-            if old_content_type is None:
-                session.headers.pop("Content-Type", None)
-            else:
-                session.headers["Content-Type"] = old_content_type
+            error_payload = {"json": sql}
 
         try:
             data = response.json()
@@ -1700,7 +1712,7 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
         if isinstance(data, dict) and "ok" in data:
             return data
 
-        raise_for_response(response, payload={"data": sql})
+        raise_for_response(response, payload=error_payload)
         return response.json()
 
     @classmethod
@@ -1735,11 +1747,11 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
         if filters:
             body.update(filters)
 
-        payload = {"json": serialize_to_json(body)}
+        payload = {"params": serialize_to_json(body)}
         response = make_request(
             s=cls.build_session(),
             loaders=cls.LOADERS,
-            r_type="POST",
+            r_type="GET",
             url=f"{cls.get_object_url().rstrip('/')}/description-search/",
             payload=payload,
         )

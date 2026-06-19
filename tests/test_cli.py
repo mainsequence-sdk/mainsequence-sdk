@@ -2013,9 +2013,19 @@ def test_resolve_agent_session_runtime_access_uses_client_model(cli_mod, monkeyp
 
         class _ClientAgentSession:
             @classmethod
-            def resolve_runtime_access(cls, agent_session, *, wait_for_runtime=False, timeout=None):
+            def resolve_runtime_access(
+                cls,
+                agent_session,
+                *,
+                wait_for_runtime=False,
+                runtime_ready_timeout_seconds=300,
+                poll_interval_seconds=10,
+                timeout=None,
+            ):
                 captured["agent_session"] = agent_session
                 captured["wait_for_runtime"] = wait_for_runtime
+                captured["runtime_ready_timeout_seconds"] = runtime_ready_timeout_seconds
+                captured["poll_interval_seconds"] = poll_interval_seconds
                 captured["timeout"] = timeout
                 return FakeRuntimeAccess()
 
@@ -2029,6 +2039,8 @@ def test_resolve_agent_session_runtime_access_uses_client_model(cli_mod, monkeyp
         "class_name": "AgentSession",
         "agent_session": session_uid,
         "wait_for_runtime": False,
+        "runtime_ready_timeout_seconds": 300.0,
+        "poll_interval_seconds": 10.0,
         "timeout": 19,
     }
     assert out["coding_agent_service_id"] == "svc-12"
@@ -2062,11 +2074,15 @@ def test_wait_agent_session_runtime_ready_uses_client_model(cli_mod, monkeypatch
                 cls,
                 agent_session,
                 *,
+                runtime_access=None,
                 timeout_seconds=60,
+                poll_interval_seconds=10,
                 timeout=None,
             ):
                 captured["agent_session"] = agent_session
+                captured["runtime_access"] = runtime_access
                 captured["timeout_seconds"] = timeout_seconds
+                captured["poll_interval_seconds"] = poll_interval_seconds
                 captured["timeout"] = timeout
                 return FakeReady()
 
@@ -2076,14 +2092,21 @@ def test_wait_agent_session_runtime_ready_uses_client_model(cli_mod, monkeypatch
 
     out = api_mod.wait_agent_session_runtime_ready(
         session_uid,
+        runtime_access={"rpc_url": "https://runtime.main-sequence.app/rpc", "token": "tok-secret"},
         timeout_seconds=60,
+        poll_interval_seconds=3,
         timeout=20,
     )
     assert captured == {
         "module_name": "mainsequence.client.agent_runtime_models",
         "class_name": "AgentSession",
         "agent_session": session_uid,
+        "runtime_access": {
+            "rpc_url": "https://runtime.main-sequence.app/rpc",
+            "token": "tok-secret",
+        },
         "timeout_seconds": 60,
+        "poll_interval_seconds": 3,
         "timeout": 20,
     }
     assert out["ready"] is True
@@ -2166,11 +2189,45 @@ def test_send_agent_session_a2a_message_uses_client_model(cli_mod, monkeypatch):
     captured = {}
     session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
 
+    monkeypatch.setattr(
+        api_mod,
+        "get_runtime_access_cache",
+        lambda agent_session_uid: {
+            "rpc_url": "https://runtime.main-sequence.app/rpc",
+            "token": "tok-secret",
+        },
+    )
+
+    def _save_cache(agent_session_uid, access_payload):
+        captured["saved_cache"] = {
+            "agent_session_uid": agent_session_uid,
+            "access_payload": access_payload,
+        }
+        return {}
+
+    monkeypatch.setattr(api_mod, "save_runtime_access_cache", _save_cache)
+
     def _run_sdk_model_operation(*, module_name, class_name, operation, project_id_env=None):
         captured["module_name"] = module_name
         captured["class_name"] = class_name
 
         class _ClientAgentSession:
+            _cached_runtime_access = None
+
+            @classmethod
+            def cache_runtime_access(cls, agent_session, runtime_access):
+                captured["cached_runtime_access"] = {
+                    "agent_session": agent_session,
+                    "runtime_access": runtime_access,
+                }
+                cls._cached_runtime_access = runtime_access
+                return runtime_access
+
+            @classmethod
+            def get_cached_runtime_access(cls, agent_session):
+                captured["get_cached_runtime_access"] = agent_session
+                return cls._cached_runtime_access
+
             @classmethod
             def send_a2a_message(cls, agent_session, **kwargs):
                 captured["agent_session"] = agent_session
@@ -2191,6 +2248,7 @@ def test_send_agent_session_a2a_message_uses_client_model(cli_mod, monkeypatch):
     out = api_mod.send_agent_session_a2a_message(
         session_uid,
         message="Return JSON.",
+        message_id="msg-client-1",
         strict_dictionary=True,
         json_repair_attempts=3,
         timeout=21,
@@ -2199,11 +2257,19 @@ def test_send_agent_session_a2a_message_uses_client_model(cli_mod, monkeypatch):
     assert captured["module_name"] == "mainsequence.client.agent_runtime_models"
     assert captured["class_name"] == "AgentSession"
     assert captured["agent_session"] == session_uid
+    assert captured["cached_runtime_access"] == {
+        "agent_session": session_uid,
+        "runtime_access": {
+            "rpc_url": "https://runtime.main-sequence.app/rpc",
+            "token": "tok-secret",
+        },
+    }
     assert captured["kwargs"]["message"] == "Return JSON."
+    assert captured["kwargs"]["message_id"] == "msg-client-1"
     assert captured["kwargs"]["strict_dictionary"] is True
     assert captured["kwargs"]["json_repair_attempts"] == 3
-    assert captured["kwargs"]["wait_for_runtime"] is True
     assert "omit_reasoning" not in captured["kwargs"]
+    assert captured["saved_cache"]["agent_session_uid"] == session_uid
     assert out["message"]["parts"] == [{"text": "Done."}]
 
 
@@ -7851,8 +7917,22 @@ def test_agent_session_runtime_resolve_caches_without_printing_credentials(
             "mode": "token",
             "rpc_url": "https://runtime.main-sequence.app/rpc",
             "token": "tok-secret",
-            "is_ready": True,
-            "runtime_paths": {"chat": "/api/a2a/chat"},
+            "is_ready": False,
+            "runtime_paths": {"session": "/api/a2a/sessions/3f1cc452-43ec-49cb-b2ba-87dbac164d29/runtime"},
+        }
+
+    def _ready(agent_session_uid, *, runtime_access=None, timeout_seconds=300, poll_interval_seconds=10, timeout=None):
+        captured["ready_session_uid"] = agent_session_uid
+        captured["ready_runtime_access"] = runtime_access
+        captured["ready_timeout_seconds"] = timeout_seconds
+        captured["ready_poll_interval_seconds"] = poll_interval_seconds
+        captured["ready_timeout"] = timeout
+        return {
+            "ready": True,
+            "attempts": 2,
+            "elapsed_seconds": 2.01,
+            "status_code": 200,
+            "detail": "Runtime session is ready.",
         }
 
     def _save(agent_session_uid, access_payload, *, ttl_seconds):
@@ -7865,6 +7945,7 @@ def test_agent_session_runtime_resolve_caches_without_printing_credentials(
         }
 
     monkeypatch.setattr(cli_mod, "resolve_agent_session_runtime_access", _resolve)
+    monkeypatch.setattr(cli_mod, "wait_agent_session_runtime_ready", _ready)
     monkeypatch.setattr(cli_mod.cfg, "save_runtime_access_cache", _save)
 
     result = runner.invoke(
@@ -7877,6 +7958,10 @@ def test_agent_session_runtime_resolve_caches_without_printing_credentials(
             "3f1cc452-43ec-49cb-b2ba-87dbac164d29",
             "--timeout",
             "60",
+            "--runtime-ready-timeout-seconds",
+            "120",
+            "--poll-interval-seconds",
+            "3",
             "--json",
         ],
     )
@@ -7886,9 +7971,16 @@ def test_agent_session_runtime_resolve_caches_without_printing_credentials(
     assert payload["cached"] is True
     assert payload["is_ready"] is True
     assert captured["agent_session_uid"] == "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
-    assert captured["wait_for_runtime"] is True
+    assert captured["wait_for_runtime"] is False
     assert captured["timeout"] == 60
+    assert captured["ready_session_uid"] == "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
+    assert captured["ready_runtime_access"]["token"] == "tok-secret"
+    assert captured["ready_timeout_seconds"] == 120.0
+    assert captured["ready_poll_interval_seconds"] == 3.0
+    assert captured["ready_timeout"] == 60
     assert captured["saved_session_uid"] == "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
+    assert captured["saved_access_payload"]["is_ready"] is True
+    assert captured["saved_access_payload"]["ready"]["ready"] is True
     assert "tok-secret" not in result.output
     assert payload["rpc_url"] == "https://runtime.main-sequence.app/rpc"
     assert payload["token_cached"] is True
@@ -7907,14 +7999,24 @@ def test_agent_session_runtime_resolve_refuses_non_ready_wait_result(
             "rpc_url": "https://runtime.main-sequence.app/rpc",
             "token": "tok-secret",
             "is_ready": False,
-            "ready": {"detail": "Runtime deployment failed."},
-            "runtime_paths": {"chat": "/api/a2a/chat"},
+            "runtime_paths": {"session": "/api/a2a/sessions/3f1cc452-43ec-49cb-b2ba-87dbac164d29/runtime"},
+        }
+
+    def _ready(*args, **kwargs):
+        captured["ready_called"] = True
+        return {
+            "ready": False,
+            "attempts": 30,
+            "elapsed_seconds": 60.0,
+            "status_code": 503,
+            "detail": "Runtime deployment failed.",
         }
 
     def _save(*args, **kwargs):
         raise AssertionError("non-ready runtime access must not be cached")
 
     monkeypatch.setattr(cli_mod, "resolve_agent_session_runtime_access", _resolve)
+    monkeypatch.setattr(cli_mod, "wait_agent_session_runtime_ready", _ready)
     monkeypatch.setattr(cli_mod.cfg, "save_runtime_access_cache", _save)
 
     result = runner.invoke(
@@ -7929,17 +8031,33 @@ def test_agent_session_runtime_resolve_refuses_non_ready_wait_result(
     )
 
     assert result.exit_code == 1
-    assert captured["wait_for_runtime"] is True
+    assert captured["wait_for_runtime"] is False
+    assert captured["ready_called"] is True
     assert "Runtime deployment failed." in result.output
 
 
 def test_agent_session_wait_runtime_ready(cli_mod, runner, monkeypatch):
     captured = {}
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    cached_access = {
+        "rpc_url": "https://runtime.main-sequence.app/rpc",
+        "token": "tok-secret",
+        "runtime_paths": {"session": "/api/a2a/sessions/3f1cc452-43ec-49cb-b2ba-87dbac164d29/runtime"},
+    }
+    monkeypatch.setattr(cli_mod.cfg, "get_runtime_access_cache", lambda agent_session_uid: cached_access)
 
-    def _ready(agent_session_uid, *, timeout_seconds=60, timeout=None):
+    def _ready(
+        agent_session_uid,
+        *,
+        runtime_access=None,
+        timeout_seconds=60,
+        poll_interval_seconds=10,
+        timeout=None,
+    ):
         captured["agent_session_uid"] = agent_session_uid
+        captured["runtime_access"] = runtime_access
         captured["timeout_seconds"] = timeout_seconds
+        captured["poll_interval_seconds"] = poll_interval_seconds
         captured["timeout"] = timeout
         return {
             "ready": True,
@@ -7960,6 +8078,8 @@ def test_agent_session_wait_runtime_ready(cli_mod, runner, monkeypatch):
             "3f1cc452-43ec-49cb-b2ba-87dbac164d29",
             "--timeout-seconds",
             "60",
+            "--poll-interval-seconds",
+            "4",
             "--timeout",
             "23",
         ],
@@ -7967,7 +8087,9 @@ def test_agent_session_wait_runtime_ready(cli_mod, runner, monkeypatch):
     assert result.exit_code == 0
     assert captured == {
         "agent_session_uid": "3f1cc452-43ec-49cb-b2ba-87dbac164d29",
+        "runtime_access": cached_access,
         "timeout_seconds": 60.0,
+        "poll_interval_seconds": 4.0,
         "timeout": 23,
     }
     assert "Agent session runtime is ready" in result.output
@@ -7976,8 +8098,21 @@ def test_agent_session_wait_runtime_ready(cli_mod, runner, monkeypatch):
 
 def test_agent_session_wait_runtime_ready_json(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    cached_access = {
+        "rpc_url": "https://runtime.main-sequence.app/rpc",
+        "token": "tok-secret",
+        "runtime_paths": {"session": "/api/a2a/sessions/3f1cc452-43ec-49cb-b2ba-87dbac164d29/runtime"},
+    }
+    monkeypatch.setattr(cli_mod.cfg, "get_runtime_access_cache", lambda agent_session_uid: cached_access)
 
-    def _ready(agent_session_uid, *, timeout_seconds=60, poll_interval_seconds=2, timeout=None):
+    def _ready(
+        agent_session_uid,
+        *,
+        runtime_access=None,
+        timeout_seconds=60,
+        poll_interval_seconds=10,
+        timeout=None,
+    ):
         return {
             "orm_class": "AgentSessionRuntimeReady",
             "ready": True,
@@ -8153,6 +8288,8 @@ def test_agent_session_a2a_send_always_returns_json(cli_mod, runner, monkeypatch
             "3f1cc452-43ec-49cb-b2ba-87dbac164d29",
             "--message",
             "Return JSON.",
+            "--message-id",
+            "msg-client-1",
             "--strict-dictionary",
         ],
     )
@@ -8162,12 +8299,107 @@ def test_agent_session_a2a_send_always_returns_json(cli_mod, runner, monkeypatch
     assert payload["message"]["parts"] == [{"text": '{"ok": true}'}]
     assert captured["agent_session_uid"] == "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
     assert captured["kwargs"]["message"] == "Return JSON."
+    assert captured["kwargs"]["message_id"] == "msg-client-1"
     assert captured["kwargs"]["strict_dictionary"] is True
     assert captured["kwargs"]["json_repair_attempts"] == 3
-    assert captured["kwargs"]["history_length"] == 0
     assert captured["kwargs"]["return_immediately"] is False
-    assert captured["kwargs"]["wait_for_runtime"] is True
     assert "omit_reasoning" not in captured["kwargs"]
+
+
+def test_agent_session_a2a_send_does_not_duplicate_error_prefix(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+
+    def _send(*args, **kwargs):
+        raise cli_mod.ApiError("Agent session A2A message send failed: 502 POST runtime")
+
+    monkeypatch.setattr(cli_mod, "send_agent_session_a2a_message", _send)
+
+    result = runner.invoke(
+        cli_mod.app,
+        [
+            "agent",
+            "session",
+            "a2a",
+            "send",
+            "3f1cc452-43ec-49cb-b2ba-87dbac164d29",
+            "--message",
+            "Return JSON.",
+        ],
+    )
+
+    assert result.exit_code == 1
+    combined_output = result.output + (result.stderr or "")
+    assert "Agent session A2A message send failed: 502 POST runtime" in combined_output
+    assert (
+        "Agent session A2A message send failed: Agent session A2A message send failed"
+        not in combined_output
+    )
+
+
+def test_agent_session_a2a_send_does_not_require_runtime_resolve(cli_mod, runner, monkeypatch):
+    called = {}
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+
+    def _send(*args, **kwargs):
+        called["send"] = True
+        return {
+            "message": {
+                "messageId": "msg-runtime-output",
+                "role": "ROLE_AGENT",
+                "contextId": args[0],
+                "parts": [{"text": "Done."}],
+            }
+        }
+
+    monkeypatch.setattr(cli_mod, "send_agent_session_a2a_message", _send)
+
+    result = runner.invoke(
+        cli_mod.app,
+        [
+            "agent",
+            "session",
+            "a2a",
+            "send",
+            "3f1cc452-43ec-49cb-b2ba-87dbac164d29",
+            "--message",
+            "Return JSON.",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert called == {"send": True}
+    assert "Runtime access is not resolved for this agent session" not in result.output
+    assert "runtime resolve" not in result.output
+
+
+def test_agent_session_a2a_send_reports_runtime_auth_error_without_resolve_instruction(
+    cli_mod, runner, monkeypatch
+):
+    session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+
+    def _send(*args, **kwargs):
+        raise cli_mod.ApiError("401 POST runtime: unauthorized")
+
+    monkeypatch.setattr(cli_mod, "send_agent_session_a2a_message", _send)
+
+    result = runner.invoke(
+        cli_mod.app,
+        [
+            "agent",
+            "session",
+            "a2a",
+            "send",
+            session_uid,
+            "--message",
+            "Return JSON.",
+        ],
+    )
+
+    assert result.exit_code == 1
+    combined_output = result.output + (result.stderr or "")
+    assert "401 POST runtime: unauthorized" in combined_output
+    assert f"mainsequence agent session runtime resolve {session_uid}" not in combined_output
 
 
 def test_agent_session_runtime_chat_json(cli_mod, runner, monkeypatch):
@@ -9141,7 +9373,7 @@ def test_data_node_storage_column_search(cli_mod, runner, monkeypatch):
     assert 'Column Matches: 1 match(es) for "close"' in result.output
 
 
-def test_data_node_storage_search_combines_description_and_column(cli_mod, runner, monkeypatch):
+def test_data_node_storage_search_defaults_to_description(cli_mod, runner, monkeypatch):
     captured = {}
 
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
@@ -9186,21 +9418,15 @@ def test_data_node_storage_search_combines_description_and_column(cli_mod, runne
             ],
         }
 
-    def _column(q, *, filters=None):
-        captured["column"] = {"q": q, "filters": filters}
-        return [
-            {
-                "uid": "data-node-storage-43",
-                "physical_table_name": "prices_daily_physical",
-                "source_class_name": "PriceBars",
-                "identifier": "prices_daily",
-                "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},
-            }
-        ]
-
     monkeypatch.setattr(cli_mod, "parse_cli_model_filters", _parse)
     monkeypatch.setattr(cli_mod, "data_node_storage_description_search", _description)
-    monkeypatch.setattr(cli_mod, "data_node_storage_column_search", _column)
+    monkeypatch.setattr(
+        cli_mod,
+        "data_node_storage_column_search",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("column search should not run by default")
+        ),
+    )
 
     result = runner.invoke(
         cli_mod.app,
@@ -9219,6 +9445,86 @@ def test_data_node_storage_search_combines_description_and_column(cli_mod, runne
     assert captured["description"]["q"] == "close price"
     assert captured["description"]["q_embedding"] == [0.1, 0.2]
     assert captured["description"]["filters"] == {"data_source__id": "2"}
+    assert "Description Matches" in result.output
+    assert "Column Matches" not in result.output
+    assert 'Total search matches for "close price": 1' in result.output
+
+
+def test_data_node_storage_search_both_mode_combines_description_and_column(
+    cli_mod, runner, monkeypatch
+):
+    captured = {}
+
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+
+    def _parse(model_ref, entries):
+        captured["entries"] = list(entries or [])
+        return {}
+
+    def _description(
+        q,
+        *,
+        q_embedding=None,
+        trigram_k=200,
+        embed_k=200,
+        w_trgm=0.65,
+        w_emb=0.35,
+        embedding_model="default",
+        filters=None,
+    ):
+        captured["description"] = {
+            "q": q,
+            "q_embedding": q_embedding,
+            "filters": filters,
+        }
+        return {
+            "count": 2,
+            "next": None,
+            "previous": None,
+            "results": [
+                {
+                    "uid": "data-node-storage-42",
+                    "physical_table_name": "weights_daily_physical",
+                    "identifier": "weights_daily",
+                }
+            ],
+        }
+
+    def _column(q, *, filters=None):
+        captured["column"] = {"q": q, "filters": filters}
+        return [
+            {
+                "uid": "data-node-storage-43",
+                "physical_table_name": "prices_daily_physical",
+                "identifier": "prices_daily",
+            }
+        ]
+
+    monkeypatch.setattr(cli_mod, "parse_cli_model_filters", _parse)
+    monkeypatch.setattr(cli_mod, "data_node_storage_description_search", _description)
+    monkeypatch.setattr(cli_mod, "data_node_storage_column_search", _column)
+
+    result = runner.invoke(
+        cli_mod.app,
+        [
+            "data_node",
+            "search",
+            "close price",
+            "--mode",
+            "both",
+            "--data-source-id",
+            "2",
+            "--q-embedding",
+            "0.1,0.2",
+        ],
+    )
+    assert result.exit_code == 0
+    assert captured["entries"] == []
+    assert captured["description"] == {
+        "q": "close price",
+        "q_embedding": [0.1, 0.2],
+        "filters": {"data_source__id": "2"},
+    }
     assert captured["column"] == {"q": "close price", "filters": {"data_source__id": "2"}}
     assert "Description Matches" in result.output
     assert "Column Matches" in result.output
@@ -9348,6 +9654,57 @@ def test_run_data_node_storage_query_uses_client_model(cli_mod, monkeypatch):
     assert out["results"] == [{"value": 1}]
 
 
+def test_run_meta_table_query_uses_client_model(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {}
+
+    def _run_sdk_model_operation(*, module_name, class_name, operation, project_id_env=None):
+        captured["module_name"] = module_name
+        captured["class_name"] = class_name
+
+        class _ClientMetaTable:
+            @classmethod
+            def get(cls, uid, timeout=None):
+                captured["uid"] = uid
+                captured["timeout"] = timeout
+
+                class _MetaTable:
+                    def run_query(self, sql, *, timeout=None):
+                        captured["sql"] = sql
+                        captured["query_timeout"] = timeout
+                        return {
+                            "ok": True,
+                            "query_id": "query-789",
+                            "meta_table_uid": uid,
+                            "results": [{"value": 2}],
+                            "truncated": False,
+                            "max_rows": 1000,
+                            "row_count": 1,
+                            "error": None,
+                        }
+
+                return _MetaTable()
+
+        return operation(_ClientMetaTable)
+
+    monkeypatch.setattr(api_mod, "_run_sdk_model_operation", _run_sdk_model_operation)
+
+    out = api_mod.run_meta_table_query(
+        "meta-table-42", "SELECT 2 AS value", timeout=16
+    )
+    assert captured == {
+        "module_name": "mainsequence.client.metatables",
+        "class_name": "MetaTable",
+        "uid": "meta-table-42",
+        "timeout": 16,
+        "sql": "SELECT 2 AS value",
+        "query_timeout": 16,
+    }
+    assert out["ok"] is True
+    assert out["meta_table_uid"] == "meta-table-42"
+    assert out["results"] == [{"value": 2}]
+
+
 def test_data_node_storage_run_query(cli_mod, runner, monkeypatch):
     captured = {}
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
@@ -9383,6 +9740,43 @@ def test_data_node_storage_run_query(cli_mod, runner, monkeypatch):
     assert "Data Node Query" in result.output
     assert "query-456" in result.output
     assert '"value": 1' in result.output
+
+
+def test_meta_table_run_query(cli_mod, runner, monkeypatch):
+    captured = {}
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+
+    def _run_query(meta_table_uid, sql, *, timeout=None):
+        captured["meta_table_uid"] = meta_table_uid
+        captured["sql"] = sql
+        captured["timeout"] = timeout
+        return {
+            "ok": True,
+            "query_id": "query-789",
+            "meta_table_uid": meta_table_uid,
+            "results": [{"value": 2}],
+            "truncated": False,
+            "max_rows": 1000,
+            "row_count": 1,
+            "error": None,
+        }
+
+    monkeypatch.setattr(cli_mod, "run_meta_table_query", _run_query)
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["meta-table", "run_query", "meta-table-42", "SELECT 2 AS value", "--timeout", "15"],
+    )
+    assert result.exit_code == 0
+    assert captured == {
+        "meta_table_uid": "meta-table-42",
+        "sql": "SELECT 2 AS value",
+        "timeout": 15,
+    }
+    assert "MetaTable query completed: uid=meta-table-42" in result.output
+    assert "MetaTable Query" in result.output
+    assert "query-789" in result.output
+    assert '"value": 2' in result.output
 
 
 def test_data_node_storage_refresh_search_index(cli_mod, runner, monkeypatch):

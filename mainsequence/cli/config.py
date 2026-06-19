@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """
 mainsequence.cli.config
 =======================
@@ -11,6 +9,8 @@ with persistent storage via OS keychain on supported platforms and a
 CLI-managed local auth store elsewhere.
 """
 
+from __future__ import annotations
+
 import hashlib
 import ipaddress
 import json
@@ -21,6 +21,7 @@ import shutil
 import subprocess
 import sys
 import time
+from datetime import UTC
 
 from mainsequence.defaults import CANONICAL_BACKEND_ENV, STANDARD_BACKEND_URL
 
@@ -64,7 +65,8 @@ LEGACY_ENV_ACCESS = "MAIN_SEQUENCE_USER_TOKEN"
 LEGACY_ENV_REFRESH = "MAIN_SEQUENCE_REFRESH_TOKEN"
 KEYCHAIN_SERVICE = "MainSequenceCLI.auth"
 KEYCHAIN_ACCOUNT = "default"
-DEFAULT_RUNTIME_ACCESS_CACHE_TTL_SECONDS = 900
+DEFAULT_RUNTIME_ACCESS_CACHE_TTL_SECONDS = 60
+RUNTIME_ACCESS_CACHE_EXPIRY_SKEW_SECONDS = 30
 
 DEFAULTS = {
     "backend_url": os.environ.get(CANONICAL_BACKEND_ENV, f"{STANDARD_BACKEND_URL}/"),
@@ -304,9 +306,20 @@ def _auth_backend_key(backend: str | None = None) -> str:
     return normalize_backend_url(backend or backend_url())
 
 
+def _runtime_access_user_key() -> str:
+    tokens = get_tokens()
+    username = str(tokens.get("username") or "").strip()
+    if username:
+        return f"username:{username}"
+    access = str(tokens.get("access") or "").strip()
+    if access:
+        return f"access:{hashlib.sha256(access.encode('utf-8')).hexdigest()}"
+    return "anonymous"
+
+
 def _runtime_access_cache_key(agent_session_uid: str, backend: str | None = None) -> str:
     backend_key = _auth_backend_key(backend)
-    raw = f"{backend_key}|{str(agent_session_uid).strip()}"
+    raw = f"{backend_key}|{_runtime_access_user_key()}|{str(agent_session_uid).strip()}"
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
@@ -331,6 +344,26 @@ def _write_runtime_access_cache(data: dict) -> None:
 
 def _iso_utc_from_epoch(value: float) -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(value))
+
+
+def _parse_iso_utc_to_epoch(value: object) -> float | None:
+    if not isinstance(value, str):
+        return None
+    raw = value.strip()
+    if not raw:
+        return None
+    if raw.endswith("Z"):
+        raw = f"{raw[:-1]}+00:00"
+    try:
+        # Imported as module-free parsing to keep config.py dependency-light.
+        from datetime import datetime
+
+        parsed = datetime.fromisoformat(raw)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=UTC)
+        return parsed.timestamp()
+    except Exception:
+        return None
 
 
 def get_runtime_access_cache_entry(
@@ -391,7 +424,11 @@ def save_runtime_access_cache(
         raise TypeError("access_payload must be a dict")
 
     now = time.time()
-    expires_at_epoch = None if ttl_seconds is None else now + float(ttl_seconds)
+    payload_expires_at = _parse_iso_utc_to_epoch(access_payload.get("expires_at"))
+    if payload_expires_at is not None:
+        expires_at_epoch = max(now, payload_expires_at - RUNTIME_ACCESS_CACHE_EXPIRY_SKEW_SECONDS)
+    else:
+        expires_at_epoch = None if ttl_seconds is None else now + float(ttl_seconds)
     entry = {
         "backend_url": _auth_backend_key(backend),
         "agent_session_uid": str(agent_session_uid),

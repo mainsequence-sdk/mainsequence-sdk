@@ -447,6 +447,43 @@ def test_persist_manager_update_lookup_uses_storage_uid_not_data_source_uid():
     assert "remote_table__data_source__uid" not in lookup
 
 
+def test_persist_manager_missing_update_warning_names_data_node_update():
+    warnings = []
+
+    class UpdateResource:
+        @staticmethod
+        def get_or_none(**kwargs):
+            return None
+
+    class ExplicitStoragePersistManager(BasePersistManager):
+        UPDATE_CLASS = UpdateResource
+
+    meta_table = _meta_table(
+        uid="platform-meta-table-uid",
+        data_source_uid="platform-data-source-uid",
+        physical_table_name="canonical_prices_table",
+    )
+    storage_table = _platform_storage_model(meta_table)
+    manager = ExplicitStoragePersistManager(
+        update_hash=None,
+        storage_table=storage_table,
+    )
+    manager.update_hash = "importvalmer_f59da5843b77a34711b2e5e7cb94927b"
+    manager.logger = SimpleNamespace(warning=warnings.append)
+
+    manager.set_data_node_update_lazy(force_registry=True)
+    assert manager._data_node_update_future is not None
+    assert manager._data_node_update_future.result(timeout=5) is None
+
+    assert warnings == [
+        "DataNodeUpdate importvalmer_f59da5843b77a34711b2e5e7cb94927b "
+        "for MetaTable platform-meta-table-uid "
+        "(physical_table_name=canonical_prices_table) not found in backend"
+    ]
+    assert "TimeSeries" not in warnings[0]
+    assert "platform-data-source-uid" not in warnings[0]
+
+
 def test_persist_manager_preserves_storage_table_during_update_lookup():
     stale_response_storage = _meta_table(
         uid="stale-meta-table-uid",

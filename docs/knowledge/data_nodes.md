@@ -436,14 +436,15 @@ Avoid logging secrets.
 
 Good metadata is not just for humans reading code. It also powers search and discovery across published data nodes.
 
-`TimeIndexMetaTable` now exposes two complementary search paths:
+`TimeIndexMetaTable` exposes separate discovery and lookup paths:
 
 - `description_search(q, ...)`
 - `column_search(q, ...)`
 
 Use them differently:
 
-- `description_search(...)` is for natural-language discovery:
+- `description_search(...)` is the default semantic discovery path for published
+  `DataNode` storage and `MetaTable` metadata:
   - "close price"
   - "daily allocation weights"
   - "crypto funding rates"
@@ -456,12 +457,12 @@ Use them differently:
 
 This search hits:
 
-- `POST <object_url>/description-search/`
+- `GET <object_url>/description-search/?q=...`
 
 Server behavior:
 
 - if `q_embedding` is omitted, the server generates it from `q`
-- results may come back either paginated or non-paginated
+- results are returned as paginated metadata with `count`, `next`, `previous`, and `results`
 
 The ranking blends two signals:
 
@@ -492,7 +493,44 @@ results = msc.TimeIndexMetaTable.description_search(
 CLI equivalent:
 
 ```bash
-mainsequence data_node search "daily close price" --mode description --data-source-id 2
+mainsequence data_node search "daily close price" --data-source-id 2
+```
+
+The CLI also exposes the ranking knobs:
+
+```bash
+mainsequence data-node search "daily btc price table" \
+  --trigram-k 200 \
+  --embed-k 200 \
+  --w-trgm 0.65 \
+  --w-emb 0.35
+```
+
+The response shape is metadata, not raw table rows:
+
+```json
+{
+  "count": 2,
+  "next": null,
+  "previous": null,
+  "results": [
+    {
+      "orm_class": "TimeIndexMetaTable",
+      "uid": "0b0f5733-b1ee-4d09-b51f-9e29073007fd",
+      "data_source_uid": "864e7c22-482a-464a-8758-0d3408abd77f",
+      "identifier": "ms_markets__externalpricests__mainsequence_examples",
+      "namespace": "mainsequence.examples",
+      "description": "...",
+      "physical_table_name": "ms_markets__externalpricests__mainsequence_examples",
+      "table_contract": {},
+      "columns": [],
+      "indexes_meta": [],
+      "foreign_keys": [],
+      "cadence": "1d",
+      "time_indexed_profile": {}
+    }
+  ]
+}
 ```
 
 #### `column_search(...)`
@@ -504,6 +542,7 @@ This search hits:
 Extra keyword arguments are passed through as normal DRF filters, which makes it useful when you want to constrain the search to a known area such as one data source or one identifier family.
 
 Use this when the user remembers a column name or schema fragment, but not the data node name.
+Do not use this as the default semantic dataset discovery path.
 
 Example:
 

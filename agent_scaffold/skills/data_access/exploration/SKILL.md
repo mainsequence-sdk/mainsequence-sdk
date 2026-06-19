@@ -92,21 +92,80 @@ For platform discovery, start with the `mainsequence` CLI.
 
 Discovery priority:
 
-- use search first when the surface supports search
-- use list and filters when the surface does not support search
+- use semantic description search first when the user describes a dataset in natural language
+- use list and filters only when the user already knows a structured field to constrain by
+- use column lookup only when the user is specifically searching for a schema or column name
 - use detail only after you have identified the candidate object you want to inspect
 
-Typical commands include:
+Semantic description discovery searches `MetaTable` metadata rows through:
+
+- `GET /orm/api/ts_manager/meta_table/description-search/?q=<text>`
+
+The same discovery surface applies to `MetaTable` metadata and to published
+`DataNode` storage tables, because `DataNode` storage is represented by
+`TimeIndexMetaTable` metadata.
+
+Typical semantic discovery commands:
 
 - `mainsequence data-node search "<keyword>"`
-- `mainsequence data-node search "<keyword>" --mode description`
-- `mainsequence data-node search "<keyword>" --mode column`
-- `mainsequence data-node search "<keyword>" --show-filters`
-- `mainsequence data-node search "<keyword>" --filter KEY=VALUE`
+
+Optional ranking knobs for description discovery:
+
+- `--trigram-k 200`
+- `--embed-k 200`
+- `--w-trgm 0.65`
+- `--w-emb 0.35`
+
+The response is paginated metadata:
+
+```json
+{
+  "count": 2,
+  "next": null,
+  "previous": null,
+  "results": [
+    {
+      "orm_class": "TimeIndexMetaTable",
+      "uid": "0b0f5733-b1ee-4d09-b51f-9e29073007fd",
+      "data_source_uid": "864e7c22-482a-464a-8758-0d3408abd77f",
+      "identifier": "ms_markets__externalpricests__mainsequence_examples",
+      "namespace": "mainsequence.examples",
+      "description": "...",
+      "physical_table_name": "ms_markets__externalpricests__mainsequence_examples",
+      "table_contract": {},
+      "columns": [],
+      "indexes_meta": [],
+      "foreign_keys": [],
+      "cadence": "1d",
+      "time_indexed_profile": {}
+    }
+  ]
+}
+```
+
+Structured filtering is a different path. Use it only when you already know the
+field to filter by:
+
 - `mainsequence data-node list`
 - `mainsequence data-node list --show-filters`
 - `mainsequence data-node list --filter KEY=VALUE`
 - `mainsequence data-node detail <DATA_NODE_STORAGE_UID>`
+
+Column lookup is also a different path. Use it only for schema-name discovery,
+not as the default dataset discovery flow:
+
+- `mainsequence data-node search "<column-name>" --mode column`
+
+Raw SQL inspection is only for targeted exploration after you have a UID:
+
+- `mainsequence meta-table run_query <META_TABLE_UID> "SELECT * FROM public.some_table LIMIT 100"`
+- `mainsequence data-node run_query <DATA_NODE_STORAGE_UID> "SELECT * FROM public.some_table LIMIT 100"`
+
+Use the MetaTable command for `MetaTable` UIDs. Use the DataNode command only
+for `DataNode` storage UIDs. Do not confuse the two surfaces.
+
+For direct SDK/backend usage, MetaTable raw SQL is sent as a JSON string body,
+not as an object. Do not send `{ "sql": "SELECT ..." }`.
 
 ### 2. Stop at discovery boundaries
 
@@ -117,7 +176,8 @@ Do not define code-level read patterns here.
 For `DataNode` discovery specifically:
 
 - start with `mainsequence data-node search`
-- use `mainsequence data-node list` when you need broader enumeration or structured filters
+- use `mainsequence data-node list` only when you need broader enumeration or structured filters
+- use `mainsequence data-node search "<column-name>" --mode column` only for schema-name lookup
 - use `mainsequence data-node detail` only after search or list identified the target storage
 
 ### 3. Report platform objects with evidence

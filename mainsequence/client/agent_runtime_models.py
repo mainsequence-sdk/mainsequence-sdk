@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime
 import json
+import time
 import uuid
 from enum import Enum
 from typing import Any, ClassVar
@@ -13,8 +14,12 @@ from .base import BaseObjectOrm, BasePydanticModel, ShareableObjectMixin
 from .exceptions import ApiError, raise_for_response
 from .utils import make_request, serialize_to_json
 
-DEFAULT_AGENT_RUNTIME_READY_TIMEOUT_SECONDS = 900.0
+DEFAULT_AGENT_RUNTIME_READY_TIMEOUT_SECONDS = 300.0
+DEFAULT_AGENT_RUNTIME_READY_POLL_INTERVAL_SECONDS = 10.0
+DEFAULT_AGENT_RUNTIME_READY_REQUEST_TIMEOUT = (5.0, 10.0)
 DEFAULT_AGENT_SESSION_LONG_REQUEST_TIMEOUT = (5.0, None)
+DEFAULT_AGENT_RUNTIME_ACCESS_CACHE_TTL_SECONDS = 60.0
+DEFAULT_AGENT_RUNTIME_ACCESS_CACHE_EXPIRY_SKEW_SECONDS = 30.0
 STANDARD_A2A_MESSAGE_SEND_PATH = "/api/a2a/v1/message:send"
 STANDARD_A2A_CONTENT_TYPE = "application/a2a+json"
 STANDARD_A2A_OUTPUT_CONTRACT_METADATA_KEY = (
@@ -96,10 +101,10 @@ class AgentRuntimeImageDriftCheck(BasePydanticModel):
 
 
 class AgentRuntimeImageDrift(BasePydanticModel):
-    agent_kind: str = Field(..., description="Runtime family that produced the drift payload.")
-    available: bool = Field(..., description="Whether drift information could be resolved.")
+    agent_kind: str = Field("", description="Runtime family that produced the drift payload.")
+    available: bool = Field(True, description="Whether drift information could be resolved.")
     has_drift: bool = Field(
-        ..., description="Whether any included drift check is currently drifting."
+        False, description="Whether any included drift check is currently drifting."
     )
     autoheal_available: bool = Field(
         False,
@@ -151,6 +156,10 @@ class AgentSessionRuntimeAccess(BasePydanticModel):
         ...,
         description="Bearer token that authorizes calls to the coding-agent gateway.",
     )
+    expires_at: str | None = Field(
+        None,
+        description="UTC expiry timestamp for this runtime access token, when returned by the backend.",
+    )
     is_ready: bool = Field(
         False,
         description="Whether the resolved coding-agent runtime is currently routable.",
@@ -187,7 +196,7 @@ class AgentSessionRuntimeReady(BasePydanticModel):
     elapsed_seconds: float = Field(..., description="Elapsed wall-clock seconds spent polling.")
     status_code: int | None = Field(
         None,
-        description="Last runtime status code observed by the backend readiness probe.",
+        description="Last runtime status code observed by the SDK readiness poll.",
     )
     detail: str = Field("", description="Backend readiness detail or timeout reason.")
 
@@ -806,7 +815,7 @@ class UserProjectExecutorAgentService(BaseObjectOrm, BasePydanticModel):
 
 class AgentSession(BaseObjectOrm, BasePydanticModel):
     ENDPOINT: ClassVar[str] = "agents/v1/sessions"
-    _RUNTIME_ACCESS_CACHE: ClassVar[dict[str, AgentSessionRuntimeAccess]] = {}
+    _RUNTIME_ACCESS_CACHE: ClassVar[dict[str, tuple[float | None, AgentSessionRuntimeAccess]]] = {}
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]] | None] = {
         "uid": ["exact", "in"],
         "agent_uid": ["exact", "in"],
@@ -839,8 +848,37 @@ class AgentSession(BaseObjectOrm, BasePydanticModel):
             access = AgentSessionRuntimeAccess(**runtime_access)
         else:
             raise TypeError("runtime_access must be an AgentSessionRuntimeAccess or dict")
-        cls._runtime_url(access, "chat")
         return access
+
+    @staticmethod
+    def _parse_runtime_access_expires_at(expires_at: str | None) -> float | None:
+        if not expires_at:
+            return None
+        raw = str(expires_at).strip()
+        if not raw:
+            return None
+        if raw.endswith("Z"):
+            raw = f"{raw[:-1]}+00:00"
+        try:
+            parsed = datetime.datetime.fromisoformat(raw)
+        except ValueError:
+            return None
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=datetime.UTC)
+        return parsed.timestamp()
+
+    @classmethod
+    def _runtime_access_cache_expiry_epoch(
+        cls,
+        access: AgentSessionRuntimeAccess,
+    ) -> float | None:
+        expires_at_epoch = cls._parse_runtime_access_expires_at(access.expires_at)
+        if expires_at_epoch is not None:
+            return max(
+                time.time(),
+                expires_at_epoch - DEFAULT_AGENT_RUNTIME_ACCESS_CACHE_EXPIRY_SKEW_SECONDS,
+            )
+        return time.time() + DEFAULT_AGENT_RUNTIME_ACCESS_CACHE_TTL_SECONDS
 
     @classmethod
     def cache_runtime_access(
@@ -850,7 +888,10 @@ class AgentSession(BaseObjectOrm, BasePydanticModel):
     ) -> AgentSessionRuntimeAccess:
         session_uid = cls._resolve_agent_session_uid(agent_session)
         access = cls._coerce_runtime_access(runtime_access)
-        cls._RUNTIME_ACCESS_CACHE[session_uid] = access
+        cls._RUNTIME_ACCESS_CACHE[session_uid] = (
+            cls._runtime_access_cache_expiry_epoch(access),
+            access,
+        )
         return access
 
     @classmethod
@@ -859,7 +900,14 @@ class AgentSession(BaseObjectOrm, BasePydanticModel):
         agent_session: str | AgentSession,
     ) -> AgentSessionRuntimeAccess | None:
         session_uid = cls._resolve_agent_session_uid(agent_session)
-        return cls._RUNTIME_ACCESS_CACHE.get(session_uid)
+        cached = cls._RUNTIME_ACCESS_CACHE.get(session_uid)
+        if cached is None:
+            return None
+        expires_at_epoch, access = cached
+        if expires_at_epoch is not None and expires_at_epoch <= time.time():
+            cls._RUNTIME_ACCESS_CACHE.pop(session_uid, None)
+            return None
+        return access
 
     @classmethod
     def clear_cached_runtime_access(
@@ -886,6 +934,24 @@ class AgentSession(BaseObjectOrm, BasePydanticModel):
         return cached
 
     @classmethod
+    def _resolve_runtime_access_for_message_send(
+        cls,
+        agent_session: str | AgentSession,
+        *,
+        timeout=None,
+    ) -> AgentSessionRuntimeAccess:
+        session_uid = cls._resolve_agent_session_uid(agent_session)
+        cached = cls.get_cached_runtime_access(session_uid)
+        if cached is not None:
+            return cached
+        return cls.resolve_runtime_access(
+            session_uid,
+            wait_for_runtime=False,
+            cache=True,
+            timeout=timeout,
+        )
+
+    @classmethod
     def _resolve_runtime_access_for_chat(
         cls,
         agent_session: str | AgentSession,
@@ -898,8 +964,7 @@ class AgentSession(BaseObjectOrm, BasePydanticModel):
         if runtime_access is not None:
             access = cls._coerce_runtime_access(runtime_access)
             if not wait_for_runtime or access.is_ready:
-                cls._RUNTIME_ACCESS_CACHE[session_uid] = access
-                return access
+                return cls.cache_runtime_access(session_uid, access)
             cls.clear_cached_runtime_access(session_uid)
             return cls.resolve_runtime_access(
                 session_uid,
@@ -918,32 +983,6 @@ class AgentSession(BaseObjectOrm, BasePydanticModel):
             wait_for_runtime=wait_for_runtime,
             timeout=timeout,
         )
-
-    @classmethod
-    def _backend_runtime_ready_request(
-        cls,
-        *,
-        agent_session: str | AgentSession,
-        timeout_seconds: float,
-        timeout=None,
-    ) -> dict[str, Any]:
-        session_uid = cls._resolve_agent_session_uid(agent_session)
-        payload = {"json": serialize_to_json({"timeout_seconds": float(timeout_seconds)})}
-        url = f"{cls.get_object_url()}/{session_uid}/runtime_ready/"
-        response = make_request(
-            s=cls.build_session(),
-            loaders=cls.LOADERS,
-            r_type="POST",
-            url=url,
-            payload=payload,
-            time_out=timeout,
-        )
-        if response.status_code not in (200, 504):
-            raise_for_response(response, payload=payload)
-        data = response.json()
-        if not isinstance(data, dict):
-            raise TypeError("Agent session runtime readiness response must be a JSON object")
-        return data
 
     @staticmethod
     def _build_runtime_chat_body(
@@ -1023,6 +1062,27 @@ class AgentSession(BaseObjectOrm, BasePydanticModel):
             timeout=request_timeout,
         )
 
+    @classmethod
+    def _get_runtime(
+        cls,
+        access: AgentSessionRuntimeAccess,
+        *,
+        path_name: str,
+        accept: str = "application/json",
+        timeout=None,
+    ) -> requests.Response:
+        url = cls._runtime_url(access, path_name)
+        request_timeout = DEFAULT_AGENT_RUNTIME_READY_REQUEST_TIMEOUT if timeout is None else timeout
+        headers = {
+            "Authorization": f"Bearer {access.token}",
+            "Accept": accept,
+        }
+        return requests.get(
+            url,
+            headers=headers,
+            timeout=request_timeout,
+        )
+
     @staticmethod
     def _runtime_json_payload(response: requests.Response, *, payload: dict[str, Any]) -> dict[str, Any]:
         if not (200 <= response.status_code < 300):
@@ -1040,34 +1100,147 @@ class AgentSession(BaseObjectOrm, BasePydanticModel):
         return data
 
     @staticmethod
+    def _runtime_status_is_ready(payload: dict[str, Any]) -> bool:
+        runner = payload.get("runner")
+        preflight = payload.get("preflight")
+        return (
+            payload.get("ok") is True
+            and payload.get("state") == "ready"
+            and isinstance(runner, dict)
+            and runner.get("ready") is True
+            and isinstance(preflight, dict)
+            and preflight.get("ready") is True
+        )
+
+    @staticmethod
+    def _runtime_status_failure_detail(payload: dict[str, Any]) -> str | None:
+        last_error = payload.get("last_error")
+        if last_error:
+            return str(last_error)
+        state = payload.get("state")
+        if state in {"failed", "error", "detached"}:
+            return f"Runtime session entered terminal state: {state}"
+        return None
+
+    @staticmethod
+    def _runtime_status_response_payload(response: requests.Response) -> dict[str, Any]:
+        if response.status_code in (503, 504):
+            try:
+                data = response.json()
+                if isinstance(data, dict):
+                    return data
+            except Exception:
+                pass
+            return {
+                "ok": False,
+                "state": "starting",
+                "detail": getattr(response, "text", "") or "runtime not ready",
+            }
+        if not (200 <= response.status_code < 300):
+            raise_for_response(response, payload={})
+        try:
+            data = response.json()
+        except Exception as exc:
+            raise ApiError("Runtime status response must be a JSON object.") from exc
+        if not isinstance(data, dict):
+            raise TypeError("Runtime status response must be a JSON object")
+        return data
+
+    @classmethod
+    def wait_for_runtime_access_ready(
+        cls,
+        runtime_access: AgentSessionRuntimeAccess | dict[str, Any],
+        *,
+        timeout_seconds: float = DEFAULT_AGENT_RUNTIME_READY_TIMEOUT_SECONDS,
+        poll_interval_seconds: float = DEFAULT_AGENT_RUNTIME_READY_POLL_INTERVAL_SECONDS,
+        timeout=None,
+    ) -> AgentSessionRuntimeReady:
+        access = cls._coerce_runtime_access(runtime_access)
+        timeout_seconds = float(timeout_seconds)
+        poll_interval_seconds = float(poll_interval_seconds)
+        if timeout_seconds <= 0:
+            raise ValueError("timeout_seconds must be greater than 0")
+        if poll_interval_seconds <= 0:
+            raise ValueError("poll_interval_seconds must be greater than 0")
+
+        started_at = time.monotonic()
+        deadline = started_at + timeout_seconds
+        attempts = 0
+        last_status_code: int | None = None
+        last_detail = "runtime not ready"
+
+        while True:
+            attempts += 1
+            try:
+                response = cls._get_runtime(access, path_name="session", timeout=timeout)
+                last_status_code = response.status_code
+                payload = cls._runtime_status_response_payload(response)
+            except requests.RequestException as exc:
+                payload = {
+                    "ok": False,
+                    "state": "starting",
+                    "detail": str(exc) or "runtime status request failed",
+                }
+            elapsed = time.monotonic() - started_at
+
+            if cls._runtime_status_is_ready(payload):
+                return AgentSessionRuntimeReady(
+                    ready=True,
+                    attempts=attempts,
+                    elapsed_seconds=round(elapsed, 3),
+                    status_code=last_status_code,
+                    detail="Runtime session is ready.",
+                    status=payload,
+                )
+
+            failure_detail = cls._runtime_status_failure_detail(payload)
+            if failure_detail is not None:
+                raise ApiError(failure_detail)
+
+            detail = payload.get("detail") or payload.get("message")
+            if isinstance(detail, str) and detail.strip():
+                last_detail = detail
+
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return AgentSessionRuntimeReady(
+                    ready=False,
+                    attempts=attempts,
+                    elapsed_seconds=round(time.monotonic() - started_at, 3),
+                    status_code=last_status_code,
+                    detail=last_detail,
+                )
+            time.sleep(min(poll_interval_seconds, remaining))
+
+    @staticmethod
     def _build_standard_a2a_message_send_body(
         *,
         agent_session_uid: str,
         message: str,
+        message_id: str | None = None,
         strict_dictionary: bool = False,
         json_repair_attempts: int = 3,
-        history_length: int = 0,
         return_immediately: bool = False,
     ) -> dict[str, Any]:
         normalized_message = str(message)
         if not normalized_message.strip():
             raise ValueError("message must not be empty")
-        if history_length < 0:
-            raise ValueError("history_length must be greater than or equal to 0")
         if json_repair_attempts < 1:
             raise ValueError("json_repair_attempts must be greater than 0")
+        normalized_message_id = str(message_id).strip() if message_id is not None else ""
+        if not normalized_message_id:
+            normalized_message_id = f"msg-{uuid.uuid4()}"
 
         accepted_output_modes = ["application/json"] if strict_dictionary else ["text/plain"]
         body: dict[str, Any] = {
             "message": {
-                "messageId": f"msg-{uuid.uuid4()}",
+                "messageId": normalized_message_id,
                 "role": "ROLE_USER",
                 "contextId": agent_session_uid,
                 "parts": [{"text": normalized_message}],
             },
             "configuration": {
                 "acceptedOutputModes": accepted_output_modes,
-                "historyLength": int(history_length),
                 "returnImmediately": bool(return_immediately),
             },
         }
@@ -1125,11 +1298,10 @@ class AgentSession(BaseObjectOrm, BasePydanticModel):
         agent_session: str | AgentSession,
         *,
         message: str,
+        message_id: str | None = None,
         strict_dictionary: bool = False,
         json_repair_attempts: int = 3,
-        history_length: int = 0,
         return_immediately: bool = False,
-        wait_for_runtime: bool = True,
         timeout=None,
     ) -> dict[str, Any]:
         """
@@ -1139,22 +1311,32 @@ class AgentSession(BaseObjectOrm, BasePydanticModel):
         body = cls._build_standard_a2a_message_send_body(
             agent_session_uid=session_uid,
             message=message,
+            message_id=message_id,
             strict_dictionary=strict_dictionary,
             json_repair_attempts=json_repair_attempts,
-            history_length=history_length,
             return_immediately=return_immediately,
         )
-        access = cls.resolve_runtime_access(
-            session_uid,
-            wait_for_runtime=wait_for_runtime,
-            cache=False,
-            timeout=timeout,
-        )
+        access = cls._resolve_runtime_access_for_message_send(session_uid, timeout=timeout)
         response = cls._post_standard_a2a_message(
             access,
             body=body,
             timeout=timeout,
         )
+        if response.status_code in (401, 403):
+            cls.clear_cached_runtime_access(session_uid)
+            access = cls.resolve_runtime_access(
+                session_uid,
+                wait_for_runtime=False,
+                cache=True,
+                timeout=timeout,
+            )
+            response = cls._post_standard_a2a_message(
+                access,
+                body=body,
+                timeout=timeout,
+            )
+            if response.status_code in (401, 403):
+                cls.clear_cached_runtime_access(session_uid)
         if not (200 <= response.status_code < 300):
             raise_for_response(response, payload=body)
         try:
@@ -1314,6 +1496,8 @@ class AgentSession(BaseObjectOrm, BasePydanticModel):
         *,
         wait_for_runtime: bool = False,
         cache: bool = True,
+        runtime_ready_timeout_seconds: float = DEFAULT_AGENT_RUNTIME_READY_TIMEOUT_SECONDS,
+        poll_interval_seconds: float = DEFAULT_AGENT_RUNTIME_READY_POLL_INTERVAL_SECONDS,
         timeout=None,
     ) -> AgentSessionRuntimeAccess:
         """
@@ -1333,7 +1517,7 @@ class AgentSession(BaseObjectOrm, BasePydanticModel):
             raise ValueError("agent_session must be an AgentSession or a session uid")
         session_uid = cls._coerce_filter_uid(session_uid, field_name="agent_session")
 
-        body = {"wait_for_runtime": True} if wait_for_runtime else {}
+        body: dict[str, Any] = {}
         payload: dict[str, Any] = {"json": serialize_to_json(body)}
         url = f"{cls.get_object_url()}/{session_uid}/resolve_runtime_access/"
         response = make_request(
@@ -1350,6 +1534,16 @@ class AgentSession(BaseObjectOrm, BasePydanticModel):
         if not isinstance(data, dict):
             raise TypeError("Agent session runtime access response must be a JSON object")
         access = AgentSessionRuntimeAccess(**data)
+        if wait_for_runtime:
+            ready = cls.wait_for_runtime_access_ready(
+                access,
+                timeout_seconds=runtime_ready_timeout_seconds,
+                poll_interval_seconds=poll_interval_seconds,
+                timeout=timeout,
+            )
+            if not ready.ready:
+                raise ApiError(ready.detail or "Runtime session did not become ready.")
+            access.is_ready = True
         if cache:
             cls.cache_runtime_access(session_uid, access)
         return access
@@ -1359,37 +1553,22 @@ class AgentSession(BaseObjectOrm, BasePydanticModel):
         cls,
         agent_session: str | AgentSession,
         *,
+        runtime_access: AgentSessionRuntimeAccess | dict[str, Any] | None = None,
         timeout_seconds: float = DEFAULT_AGENT_RUNTIME_READY_TIMEOUT_SECONDS,
+        poll_interval_seconds: float = DEFAULT_AGENT_RUNTIME_READY_POLL_INTERVAL_SECONDS,
         timeout=None,
     ) -> AgentSessionRuntimeReady:
         """
-        Wait for a session runtime to become routable through the backend readiness probe.
-
-        Hits:
-            POST <object_url>/<session_uid>/runtime_ready/
+        Wait for a session runtime to become routable by polling the runtime.
         """
         session_uid = cls._resolve_agent_session_uid(agent_session)
-        timeout_seconds = float(timeout_seconds)
-        if timeout_seconds <= 0:
-            raise ValueError("timeout_seconds must be greater than 0")
-
-        body = {
-            "timeout_seconds": timeout_seconds,
-        }
-        payload = {"json": serialize_to_json(body)}
-        url = f"{cls.get_object_url()}/{session_uid}/runtime_ready/"
-        request_timeout = DEFAULT_AGENT_SESSION_LONG_REQUEST_TIMEOUT if timeout is None else timeout
-        response = make_request(
-            s=cls.build_session(),
-            loaders=cls.LOADERS,
-            r_type="POST",
-            url=url,
-            payload=payload,
-            time_out=request_timeout,
+        access = cls._require_runtime_access(session_uid, runtime_access)
+        return cls.wait_for_runtime_access_ready(
+            access,
+            timeout_seconds=timeout_seconds,
+            poll_interval_seconds=poll_interval_seconds,
+            timeout=timeout,
         )
-        if response.status_code not in (200, 504):
-            raise_for_response(response, payload=payload)
-        return AgentSessionRuntimeReady(**response.json())
 
     @classmethod
     def send_a2a_chat(

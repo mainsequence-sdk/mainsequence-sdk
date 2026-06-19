@@ -144,7 +144,6 @@ mainsequence agent get_or_create "Research Copilot" --agent-unique-id research-c
 mainsequence agent session list --agent-unique-id research-copilot
 mainsequence agent get_latest_session e0e75693-4110-464c-93e0-82c7fd9c9a23
 mainsequence agent session a2a send 3f1cc452-43ec-49cb-b2ba-87dbac164d29 --message "Return a JSON object with summary and next_action." --strict-dictionary
-mainsequence agent session runtime cancel 3f1cc452-43ec-49cb-b2ba-87dbac164d29 --reason client_requested --json
 mainsequence agent session detail 3f1cc452-43ec-49cb-b2ba-87dbac164d29
 mainsequence agent can_view e0e75693-4110-464c-93e0-82c7fd9c9a23
 mainsequence agent can_edit e0e75693-4110-464c-93e0-82c7fd9c9a23
@@ -201,6 +200,7 @@ mainsequence organization teams add_to_edit 9 7
 mainsequence organization teams remove_from_view 9 7
 mainsequence organization teams remove_from_edit 9 7
 mainsequence organization teams delete 9
+mainsequence meta-table run_query <META_TABLE_UID> "SELECT 1 AS ok"
 mainsequence data-node list
 mainsequence data-node list --show-filters
 mainsequence data-node list --filter namespace=pytest_alice
@@ -208,7 +208,6 @@ mainsequence data-node list --filter uid__in=<DATA_NODE_STORAGE_UID>
 mainsequence data-node list --data-source-id 2
 mainsequence data_node search "close price"
 mainsequence data-node search "close price" --data-source-id 2
-mainsequence data-node search "node weights" --mode description
 mainsequence data-node search close --mode column
 mainsequence data-node detail <DATA_NODE_STORAGE_UID>
 mainsequence data-node run_query <DATA_NODE_STORAGE_UID> "SELECT 1 AS ok"
@@ -363,11 +362,11 @@ mainsequence skills path workspace_builder --json
 - `mainsequence organization teams can_view` and `can_edit` inspect team access through the SDK `Team.can_view()` and `Team.can_edit()` paths.
 - `mainsequence organization teams add_to_view`, `add_to_edit`, `remove_from_view`, and `remove_from_edit` mutate explicit user access on teams through the SDK `Team` permission-action paths.
 - `mainsequence agent list`, `detail`, `create`, `get_or_create`, `get_latest_session`, and `delete` use the SDK client `mainsequence.client.agent_runtime_models.Agent` paths.
-- `mainsequence agent session list`, `detail`, and `runtime ...` commands use the SDK client `mainsequence.client.agent_runtime_models.AgentSession` path.
+- `mainsequence agent session list` and `detail` use the SDK client `mainsequence.client.agent_runtime_models.AgentSession` path.
 - `mainsequence agent session list --agent-uid <AGENT_UID>` lists sessions for one agent directly; `mainsequence agent session list --agent-unique-id <AGENT_UNIQUE_ID>` resolves the agent first and then lists its sessions.
-- `mainsequence agent session a2a send <SESSION_UID> --message "..."` sends a standard A2A message and always returns the standard A2A JSON response.
+- `mainsequence agent session a2a send <SESSION_UID> --message "..."` resolves runtime access internally, sends a standard A2A message, and always returns the standard A2A JSON response.
 - `mainsequence agent session a2a send <SESSION_UID> --message "..." --strict-dictionary` requests a strict JSON dictionary using the standard A2A output contract.
-- `mainsequence agent session runtime cancel <SESSION_UID>` cancels the active runtime turn.
+- `mainsequence agent session a2a send <SESSION_UID> --message "..." --message-id <MESSAGE_ID>` reuses an exact A2A message id for retrying the same logical message. If a send fails after the CLI generated an id, the CLI prints the id to reuse.
 - `mainsequence agent can_view` and `can_edit` inspect agent sharing through the SDK `ShareableObjectMixin` access-state paths on `Agent`.
 - `mainsequence agent add_to_view`, `add_to_edit`, `remove_from_view`, and `remove_from_edit` mutate explicit user access on agents through the SDK `ShareableObjectMixin` permission-action paths.
 - `mainsequence agent add_team_to_view`, `add_team_to_edit`, `remove_team_from_view`, and `remove_team_from_edit` mutate explicit team access on agents through the SDK `ShareableObjectMixin` team-action paths.
@@ -393,13 +392,14 @@ mainsequence skills path workspace_builder --json
 - `mainsequence data-node list --show-filters` prints the filters exposed by `TimeIndexMetaTable.FILTERSET_FIELDS` and the expected value shapes from `FILTER_VALUE_NORMALIZERS`.
 - `mainsequence data-node list --filter namespace=...` is the first-class CLI form for narrowing data node storages by storage namespace.
 - `mainsequence data-node list --data-source-id 2` is the first-class shortcut for the common `data_source__id` filter.
-- `mainsequence data-node search` is the public search command for data nodes. It can search descriptions, columns, or both through the SDK client `TimeIndexMetaTable.description_search()` and `TimeIndexMetaTable.column_search()` paths.
-- `mainsequence data-node search --mode description` only uses `TimeIndexMetaTable.description_search()`.
-- `mainsequence data-node search --mode column` only uses `TimeIndexMetaTable.column_search()`.
-- `mainsequence data-node search --data-source-id 2` is the first-class shortcut for filtering search results by data source.
-- `mainsequence data-node search` supports the same `--filter KEY=VALUE` and `--show-filters` pattern as `data-node list`, based on `TimeIndexMetaTable.FILTERSET_FIELDS` and `FILTER_VALUE_NORMALIZERS`.
+- `mainsequence data-node search` is the public semantic discovery command for data nodes and MetaTable metadata. It uses `TimeIndexMetaTable.description_search()` against `/orm/api/ts_manager/meta_table/description-search/?q=<text>`.
+- `mainsequence data-node search --data-source-id 2` narrows semantic discovery results by data source.
+- `mainsequence data-node search --trigram-k 200 --embed-k 200 --w-trgm 0.65 --w-emb 0.35` tunes description-search ranking.
+- `mainsequence data-node list --filter KEY=VALUE` and `mainsequence data-node list --show-filters` are the structured filtering path. Do not treat list filters as semantic discovery.
+- `mainsequence data-node search --mode column` uses `TimeIndexMetaTable.column_search()` for schema or column-name lookup. Do not use it as the default dataset discovery path.
 - `mainsequence data-node detail` fetches one storage through `TimeIndexMetaTable.get()` and renders its configuration in the terminal, including the backend-derived `storage_layout` and `physical_index_plan` when the source table configuration exposes them.
 - `mainsequence data-node run_query` executes `TimeIndexMetaTable.run_query()` against one storage uid and prints the backend query envelope.
+- `mainsequence meta-table run_query` executes `MetaTable.run_query()` against one MetaTable uid and prints the backend query envelope. The SDK sends raw SQL as a JSON string body, not as `{ "sql": ... }`.
 - `mainsequence data-node refresh-search-index` calls the SDK instance method `TimeIndexMetaTable.refresh_table_search_index()` for one storage and prints the backend response in the terminal.
 - `mainsequence data-node add-label` and `remove-label` mutate `TimeIndexMetaTable` labels through the SDK `LabelableObjectMixin` path. Labels are organizational metadata only and do not affect runtime behavior or functionality.
 - `mainsequence project search "<QUERY>"` is the first-class CLI command for finding existing projects before creation or local setup. Use it for fuzzy discovery, then use `mainsequence project validate-name "<PROJECT_NAME>"` for the exact create-time availability check.

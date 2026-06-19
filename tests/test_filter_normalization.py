@@ -512,6 +512,67 @@ def test_data_node_storage_run_query_posts_plain_text_sql(monkeypatch):
     assert session.headers == {"Content-Type": "application/json"}
 
 
+def test_meta_table_run_query_posts_json_sql(monkeypatch):
+    from mainsequence.client import metatables as models_metatables
+
+    captured = {}
+    session = SimpleNamespace(headers={"Content-Type": "application/json"})
+
+    class FakeResponse:
+        status_code = 200
+        content = b'{"ok": true}'
+
+        @staticmethod
+        def json():
+            return {
+                "ok": True,
+                "query_id": "abc123",
+                "meta_table_uid": "b14db80b-64b7-4390-8483-5377510de505",
+                "results": [{"column_a": "value", "column_b": 10}],
+                "truncated": False,
+                "max_rows": 1000,
+                "row_count": 1,
+                "error": None,
+            }
+
+    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
+        captured["headers"] = dict(s.headers)
+        captured["r_type"] = r_type
+        captured["url"] = url
+        captured["payload"] = payload
+        captured["timeout"] = time_out
+        return FakeResponse()
+
+    monkeypatch.setattr(models_metatables, "make_request", _fake_make_request)
+    monkeypatch.setattr(
+        models_metatables.MetaTable, "build_session", classmethod(lambda cls: session)
+    )
+
+    meta_table = models_metatables.MetaTable(
+        uid="b14db80b-64b7-4390-8483-5377510de505",
+        data_source_uid="data-source-uid",
+        storage_hash="asset_storage",
+        management_mode="platform_managed",
+        physical_table_name="asset_storage",
+    )
+
+    result = meta_table.run_query("SELECT * FROM asset LIMIT 100", timeout=30)
+
+    assert result["ok"] is True
+    assert result["meta_table_uid"] == "b14db80b-64b7-4390-8483-5377510de505"
+    assert captured == {
+        "headers": {"Content-Type": "application/json"},
+        "r_type": "POST",
+        "url": (
+            f"{models_metatables.MetaTable.get_object_url()}/"
+            "b14db80b-64b7-4390-8483-5377510de505/run_query/"
+        ),
+        "payload": {"json": "SELECT * FROM asset LIMIT 100"},
+        "timeout": 30,
+    }
+    assert session.headers == {"Content-Type": "application/json"}
+
+
 def test_data_node_storage_run_query_returns_structured_error_envelope(monkeypatch):
     from mainsequence.client import metatables as models_metatables
 
@@ -1533,7 +1594,53 @@ def test_agent_session_runtime_access_uses_session_uid_route(monkeypatch):
     }
 
 
-def test_agent_session_runtime_ready_posts_contract(monkeypatch):
+def test_agent_session_runtime_access_accepts_minimal_image_drift(monkeypatch):
+    session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
+
+    class FakeResponse:
+        status_code = 200
+        content = b'{"ok": true}'
+
+        @staticmethod
+        def json():
+            return {
+                "coding_agent_service_id": "39",
+                "coding_agent_id": "astro-orchestrator",
+                "mode": "token",
+                "rpc_url": "https://runtime.main-sequence.app/rpc",
+                "token": "tok-secret",
+                "is_ready": True,
+                "knative_service_runtime_uid": "70c6efb9-8e80-4051-ad3a-f432b2c37f5a",
+                "image_drift": {
+                    "has_drift": False,
+                    "detail": None,
+                },
+                "reconciliation": {
+                    "queued": False,
+                    "reason": "not_required",
+                },
+                "runtime_paths": {
+                    "session": f"/api/a2a/sessions/{session_uid}/runtime",
+                    "chat": f"/api/a2a/sessions/{session_uid}/runtime/chat",
+                    "cancel": f"/api/a2a/sessions/{session_uid}/runtime/cancel",
+                    "detach": f"/api/a2a/sessions/{session_uid}/runtime/detach",
+                },
+            }
+
+    monkeypatch.setattr(agent_models_mod, "make_request", lambda **kwargs: FakeResponse())
+
+    access = agent_models_mod.AgentSession.resolve_runtime_access(session_uid, timeout=11)
+
+    assert access.image_drift is not None
+    assert access.image_drift.has_drift is False
+    assert access.image_drift.detail is None
+    assert access.model_dump()["reconciliation"] == {
+        "queued": False,
+        "reason": "not_required",
+    }
+
+
+def test_agent_session_runtime_ready_polls_runtime_session_path(monkeypatch):
     captured = {}
     session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
 
@@ -1544,67 +1651,160 @@ def test_agent_session_runtime_ready_posts_contract(monkeypatch):
         @staticmethod
         def json():
             return {
+                "ok": True,
+                "state": "ready",
+                "runner": {"ready": True},
+                "preflight": {"ready": True},
                 "ready": True,
-                "attempts": 2,
-                "elapsed_seconds": 2.01,
-                "status_code": 200,
-                "detail": "",
             }
 
-    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
-        captured["r_type"] = r_type
+    def _fake_get(url, *, headers, timeout):
         captured["url"] = url
-        captured["payload"] = payload
-        captured["timeout"] = time_out
+        captured["headers"] = headers
+        captured["timeout"] = timeout
         return FakeResponse()
 
-    monkeypatch.setattr(agent_models_mod, "make_request", _fake_make_request)
+    monkeypatch.setattr(agent_models_mod.requests, "get", _fake_get)
 
     ready = agent_models_mod.AgentSession.wait_until_runtime_ready(
         session_uid,
+        runtime_access={
+            "rpc_url": "https://runtime.main-sequence.app/rpc",
+            "token": "tok-secret",
+            "runtime_paths": {
+                "session": f"/api/a2a/sessions/{session_uid}/runtime",
+            },
+        },
         timeout_seconds=60,
+        poll_interval_seconds=10,
         timeout=13,
     )
 
     assert ready.ready is True
-    assert ready.attempts == 2
+    assert ready.attempts == 1
     assert captured == {
-        "r_type": "POST",
-        "url": f"{agent_models_mod.AgentSession.get_object_url()}/{session_uid}/runtime_ready/",
-        "payload": {"json": {"timeout_seconds": 60.0}},
+        "url": "https://runtime.main-sequence.app/rpc/api/a2a/sessions/"
+        "3f1cc452-43ec-49cb-b2ba-87dbac164d29/runtime",
+        "headers": {
+            "Authorization": "Bearer tok-secret",
+            "Accept": "application/json",
+        },
         "timeout": 13,
     }
+
+
+def test_agent_session_runtime_ready_uses_finite_default_request_timeout(monkeypatch):
+    captured = {}
+    session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
+
+    class FakeResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {
+                "ok": True,
+                "state": "ready",
+                "runner": {"ready": True},
+                "preflight": {"ready": True},
+            }
+
+    def _fake_get(url, *, headers, timeout):
+        captured["timeout"] = timeout
+        return FakeResponse()
+
+    monkeypatch.setattr(agent_models_mod.requests, "get", _fake_get)
+
+    ready = agent_models_mod.AgentSession.wait_until_runtime_ready(
+        session_uid,
+        runtime_access={
+            "rpc_url": "https://runtime.main-sequence.app/rpc",
+            "token": "tok-secret",
+            "runtime_paths": {
+                "session": f"/api/a2a/sessions/{session_uid}/runtime",
+            },
+        },
+        timeout_seconds=60,
+        poll_interval_seconds=10,
+    )
+
+    assert ready.ready is True
+    assert captured["timeout"] == agent_models_mod.DEFAULT_AGENT_RUNTIME_READY_REQUEST_TIMEOUT
 
 
 def test_agent_session_runtime_ready_returns_timeout_payload(monkeypatch):
     session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
 
     class FakeResponse:
-        status_code = 504
-        content = b'{"ready": false}'
+        status_code = 200
+        content = b'{"ok": true}'
 
         @staticmethod
         def json():
             return {
-                "ready": False,
-                "attempts": 30,
-                "elapsed_seconds": 60.0,
-                "status_code": 503,
+                "ok": True,
+                "state": "starting",
+                "runner": {"state": "not_started", "ready": False},
+                "preflight": {"ready": False},
                 "detail": "runtime not ready",
             }
 
-    monkeypatch.setattr(agent_models_mod, "make_request", lambda **kwargs: FakeResponse())
+    monkeypatch.setattr(
+        agent_models_mod.requests,
+        "get",
+        lambda url, *, headers, timeout: FakeResponse(),
+    )
 
-    ready = agent_models_mod.AgentSession.wait_until_runtime_ready(session_uid, timeout=13)
+    ready = agent_models_mod.AgentSession.wait_until_runtime_ready(
+        session_uid,
+        runtime_access={
+            "rpc_url": "https://runtime.main-sequence.app/rpc",
+            "token": "tok-secret",
+            "runtime_paths": {
+                "session": f"/api/a2a/sessions/{session_uid}/runtime",
+            },
+        },
+        timeout_seconds=0.01,
+        poll_interval_seconds=0.01,
+        timeout=13,
+    )
 
     assert ready.ready is False
-    assert ready.status_code == 503
+    assert ready.status_code == 200
     assert ready.detail == "runtime not ready"
 
 
-def test_agent_session_send_a2a_message_posts_standard_contract(monkeypatch):
-    captured = {"resolve": {}, "runtime": {}}
+def test_agent_session_runtime_ready_treats_request_timeout_as_not_ready(monkeypatch):
     session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
+
+    def _fake_get(url, *, headers, timeout):
+        raise agent_models_mod.requests.Timeout("runtime status request timed out")
+
+    monkeypatch.setattr(agent_models_mod.requests, "get", _fake_get)
+
+    ready = agent_models_mod.AgentSession.wait_until_runtime_ready(
+        session_uid,
+        runtime_access={
+            "rpc_url": "https://runtime.main-sequence.app/rpc",
+            "token": "tok-secret",
+            "runtime_paths": {
+                "session": f"/api/a2a/sessions/{session_uid}/runtime",
+            },
+        },
+        timeout_seconds=0.01,
+        poll_interval_seconds=0.01,
+    )
+
+    assert ready.ready is False
+    assert ready.status_code is None
+    assert "runtime status request timed out" in ready.detail
+
+
+def test_agent_session_send_a2a_message_posts_standard_contract(monkeypatch):
+    captured = {"resolve_count": 0, "runtime": {}}
+    session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
+
+    agent_models_mod.AgentSession.clear_cached_runtime_access(session_uid)
 
     class FakeResolveResponse:
         status_code = 200
@@ -1615,7 +1815,7 @@ def test_agent_session_send_a2a_message_posts_standard_contract(monkeypatch):
             return {
                 "rpc_url": "https://runtime.main-sequence.app/rpc",
                 "token": "tok-secret",
-                "is_ready": True,
+                "expires_at": "2999-01-01T00:00:00Z",
             }
 
     class FakeRuntimeResponse:
@@ -1635,6 +1835,7 @@ def test_agent_session_send_a2a_message_posts_standard_contract(monkeypatch):
             }
 
     def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
+        captured["resolve_count"] += 1
         captured["resolve"] = {
             "r_type": r_type,
             "url": url,
@@ -1666,13 +1867,14 @@ def test_agent_session_send_a2a_message_posts_standard_contract(monkeypatch):
         timeout=15,
     )
 
-    assert payload["message"]["parts"] == [{"text": "I can analyze workspaces."}]
+    assert captured["resolve_count"] == 1
     assert captured["resolve"] == {
         "r_type": "POST",
         "url": f"{agent_models_mod.AgentSession.get_object_url()}/{session_uid}/resolve_runtime_access/",
-        "payload": {"json": {"wait_for_runtime": True}},
+        "payload": {"json": {}},
         "timeout": 15,
     }
+    assert payload["message"]["parts"] == [{"text": "I can analyze workspaces."}]
     assert captured["runtime"]["url"] == (
         "https://runtime.main-sequence.app/rpc/api/a2a/v1/message:send"
     )
@@ -1689,7 +1891,6 @@ def test_agent_session_send_a2a_message_posts_standard_contract(monkeypatch):
         },
         "configuration": {
             "acceptedOutputModes": ["text/plain"],
-            "historyLength": 0,
             "returnImmediately": False,
         },
     }
@@ -1697,11 +1898,14 @@ def test_agent_session_send_a2a_message_posts_standard_contract(monkeypatch):
 
 
 def test_agent_session_send_a2a_message_posts_strict_dictionary_contract(monkeypatch):
-    captured = {}
+    captured = {"resolve_count": 0}
     session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
+
+    agent_models_mod.AgentSession.clear_cached_runtime_access(session_uid)
 
     class FakeResolveResponse:
         status_code = 200
+        content = b'{"ok": true}'
 
         @staticmethod
         def json():
@@ -1725,12 +1929,15 @@ def test_agent_session_send_a2a_message_posts_strict_dictionary_contract(monkeyp
                 }
             }
 
-    monkeypatch.setattr(agent_models_mod, "make_request", lambda **kwargs: FakeResolveResponse())
+    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
+        captured["resolve_count"] += 1
+        return FakeResolveResponse()
 
     def _fake_post(url, *, headers, data, timeout):
         captured["data"] = data
         return FakeRuntimeResponse()
 
+    monkeypatch.setattr(agent_models_mod, "make_request", _fake_make_request)
     monkeypatch.setattr(agent_models_mod.requests, "post", _fake_post)
     monkeypatch.setattr(
         agent_models_mod.uuid,
@@ -1745,6 +1952,7 @@ def test_agent_session_send_a2a_message_posts_strict_dictionary_contract(monkeyp
         json_repair_attempts=3,
     )
 
+    assert captured["resolve_count"] == 1
     request_body = json.loads(captured["data"])
     assert request_body["configuration"]["acceptedOutputModes"] == ["application/json"]
     assert request_body["metadata"] == {
@@ -1757,6 +1965,75 @@ def test_agent_session_send_a2a_message_posts_strict_dictionary_contract(monkeyp
         }
     }
     assert "omit_reasoning" not in captured["data"]
+
+
+def test_agent_session_send_a2a_message_refreshes_access_and_reuses_body(monkeypatch):
+    captured = {"resolve_count": 0, "runtime_bodies": []}
+    session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
+    agent_models_mod.AgentSession.clear_cached_runtime_access(session_uid)
+
+    class FakeResolveResponse:
+        status_code = 200
+        content = b'{"ok": true}'
+
+        @staticmethod
+        def json():
+            captured["resolve_count"] += 1
+            return {
+                "rpc_url": "https://runtime.main-sequence.app/rpc",
+                "token": f"tok-secret-{captured['resolve_count']}",
+            }
+
+    class FakeUnauthorizedResponse:
+        status_code = 401
+        headers = {"Content-Type": "application/a2a+json"}
+        text = '{"error":"unauthorized"}'
+
+        @staticmethod
+        def json():
+            return {"error": "unauthorized"}
+
+    class FakeRuntimeResponse:
+        status_code = 200
+        headers = {"Content-Type": "application/a2a+json"}
+        text = ""
+
+        @staticmethod
+        def json():
+            return {
+                "message": {
+                    "messageId": "msg-runtime-output",
+                    "role": "ROLE_AGENT",
+                    "contextId": session_uid,
+                    "parts": [{"text": "Done."}],
+                }
+            }
+
+    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
+        return FakeResolveResponse()
+
+    def _fake_post(url, *, headers, data, timeout):
+        captured["runtime_bodies"].append(data)
+        captured.setdefault("tokens", []).append(headers["Authorization"])
+        if len(captured["runtime_bodies"]) == 1:
+            return FakeUnauthorizedResponse()
+        return FakeRuntimeResponse()
+
+    monkeypatch.setattr(agent_models_mod, "make_request", _fake_make_request)
+    monkeypatch.setattr(agent_models_mod.requests, "post", _fake_post)
+
+    payload = agent_models_mod.AgentSession.send_a2a_message(
+        session_uid,
+        message="Retry safely.",
+        message_id="msg-client-retry-1",
+    )
+
+    assert payload["message"]["parts"] == [{"text": "Done."}]
+    assert captured["resolve_count"] == 2
+    assert captured["runtime_bodies"][0] == captured["runtime_bodies"][1]
+    request_body = json.loads(captured["runtime_bodies"][0])
+    assert request_body["message"]["messageId"] == "msg-client-retry-1"
+    assert captured["tokens"] == ["Bearer tok-secret-1", "Bearer tok-secret-2"]
 
 
 def test_agent_session_a2a_chat_resolves_access_and_posts_to_runtime(monkeypatch):
@@ -1775,8 +2052,21 @@ def test_agent_session_a2a_chat_resolves_access_and_posts_to_runtime(monkeypatch
                 "token": "tok-secret",
                 "is_ready": True,
                 "runtime_paths": {
+                    "session": f"/api/a2a/sessions/{session_uid}/runtime",
                     "chat": chat_path,
                 },
+            }
+
+    class FakeStatusResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {
+                "ok": True,
+                "state": "ready",
+                "runner": {"ready": True},
+                "preflight": {"ready": True},
             }
 
     class FakeRuntimeResponse:
@@ -1809,6 +2099,7 @@ def test_agent_session_a2a_chat_resolves_access_and_posts_to_runtime(monkeypatch
 
     monkeypatch.setattr(agent_models_mod, "make_request", _fake_make_request)
     monkeypatch.setattr(agent_models_mod.requests, "post", _fake_post)
+    monkeypatch.setattr(agent_models_mod.requests, "get", lambda *args, **kwargs: FakeStatusResponse())
 
     access = agent_models_mod.AgentSession.resolve_runtime_access(
         session_uid,
@@ -1834,7 +2125,7 @@ def test_agent_session_a2a_chat_resolves_access_and_posts_to_runtime(monkeypatch
     assert captured["resolve"] == {
         "r_type": "POST",
         "url": f"{agent_models_mod.AgentSession.get_object_url()}/{session_uid}/resolve_runtime_access/",
-        "payload": {"json": {"wait_for_runtime": True}},
+        "payload": {"json": {}},
         "timeout": 15,
     }
     assert captured["runtime"]["url"] == f"https://runtime.main-sequence.app/rpc{chat_path}"
@@ -1881,8 +2172,21 @@ def test_agent_session_a2a_chat_auto_resolves_access_when_cache_missing(monkeypa
                 "token": "tok-secret",
                 "is_ready": True,
                 "runtime_paths": {
+                    "session": f"/api/a2a/sessions/{session_uid}/runtime",
                     "chat": chat_path,
                 },
+            }
+
+    class FakeStatusResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {
+                "ok": True,
+                "state": "ready",
+                "runner": {"ready": True},
+                "preflight": {"ready": True},
             }
 
     class FakeRuntimeResponse:
@@ -1910,6 +2214,7 @@ def test_agent_session_a2a_chat_auto_resolves_access_when_cache_missing(monkeypa
 
     monkeypatch.setattr(agent_models_mod, "make_request", _fake_make_request)
     monkeypatch.setattr(agent_models_mod.requests, "post", _fake_post)
+    monkeypatch.setattr(agent_models_mod.requests, "get", lambda *args, **kwargs: FakeStatusResponse())
 
     payload = agent_models_mod.AgentSession.a2a_chat(
         session_uid,
@@ -1921,7 +2226,7 @@ def test_agent_session_a2a_chat_auto_resolves_access_when_cache_missing(monkeypa
     assert captured["resolve"] == {
         "r_type": "POST",
         "url": f"{agent_models_mod.AgentSession.get_object_url()}/{session_uid}/resolve_runtime_access/",
-        "payload": {"json": {"wait_for_runtime": True}},
+        "payload": {"json": {}},
         "timeout": 17,
     }
     assert captured["runtime"]["url"] == f"https://runtime.main-sequence.app/rpc{chat_path}"

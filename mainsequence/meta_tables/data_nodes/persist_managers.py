@@ -419,9 +419,11 @@ class BasePersistManager:
                     )
                 )
                 if result is None:
+                    meta_table_uid = self.storage_table.get_meta_table_uid()
+                    physical_table_name = _storage_table_physical_table_name(self.storage_table)
                     self.logger.warning(
-                        f"TimeSeries {self.update_hash} with data source "
-                        f"{self.storage_table.get_data_source_uid()} not found in backend"
+                        f"DataNodeUpdate {self.update_hash} for MetaTable {meta_table_uid} "
+                        f"(physical_table_name={physical_table_name}) not found in backend"
                     )
                 new_future.set_result(result)
             except Exception as exc:

@@ -37,6 +37,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import uuid
 from decimal import ROUND_UP, Decimal
 from enum import Enum as PyEnum
 from textwrap import dedent
@@ -203,6 +204,7 @@ from .api import (
     resolve_agent_session_runtime_access,
     resolve_project,
     run_data_node_storage_query,
+    run_meta_table_query,
     run_project_job,
     safe_slug,
     schedule_batch_project_jobs,
@@ -4084,15 +4086,25 @@ def _agent_session_wait_runtime_ready_impl(
     *,
     agent_session_uid: str,
     timeout_seconds: float,
+    poll_interval_seconds: float,
     timeout: int | None,
     json_output: bool = False,
 ) -> None:
     _require_login()
+    runtime_access_payload = cfg.get_runtime_access_cache(agent_session_uid)
+    if runtime_access_payload is None:
+        error(
+            "Runtime access is not resolved for this agent session. "
+            f"Run: mainsequence agent session runtime resolve {agent_session_uid}"
+        )
+        raise typer.Exit(1)
 
     try:
         ready_payload = wait_agent_session_runtime_ready(
             agent_session_uid,
+            runtime_access=runtime_access_payload,
             timeout_seconds=timeout_seconds,
+            poll_interval_seconds=poll_interval_seconds,
             timeout=timeout,
         )
     except ApiError as e:
@@ -4206,7 +4218,7 @@ def _agent_session_a2a_send_impl(
     message_file: pathlib.Path | None,
     strict_dictionary: bool,
     json_repair_attempts: int,
-    history_length: int,
+    message_id: str | None,
     return_immediately: bool,
     timeout: int | None,
 ) -> None:
@@ -4225,9 +4237,9 @@ def _agent_session_a2a_send_impl(
     if json_repair_attempts < 1:
         error("--json-repair-attempts must be greater than 0.")
         raise typer.Exit(1)
-    if history_length < 0:
-        error("--history-length must be greater than or equal to 0.")
-        raise typer.Exit(1)
+    effective_message_id = str(message_id).strip() if message_id is not None else ""
+    if not effective_message_id:
+        effective_message_id = f"msg-{uuid.uuid4()}"
 
     _require_login()
 
@@ -4235,15 +4247,15 @@ def _agent_session_a2a_send_impl(
         response_payload = send_agent_session_a2a_message(
             agent_session_uid,
             message=resolved_message,
+            message_id=effective_message_id,
             strict_dictionary=strict_dictionary,
             json_repair_attempts=json_repair_attempts,
-            history_length=history_length,
             return_immediately=return_immediately,
-            wait_for_runtime=True,
             timeout=timeout,
         )
     except ApiError as e:
-        error(f"Agent session A2A message send failed: {e}")
+        error(str(e))
+        error(f"A2A message id for exact retry: {effective_message_id}")
         raise typer.Exit(1) from e
 
     typer.echo(json.dumps(response_payload, indent=2))
@@ -4272,13 +4284,20 @@ def _safe_runtime_access_cache_summary(
 def _agent_session_runtime_resolve_impl(
     *,
     agent_session_uid: str,
-    wait_for_runtime: bool,
     cache_ttl_seconds: float,
+    runtime_ready_timeout_seconds: float,
+    poll_interval_seconds: float,
     timeout: int | None,
     json_output: bool = False,
 ) -> None:
     if cache_ttl_seconds <= 0:
         error("--cache-ttl-seconds must be greater than 0.")
+        raise typer.Exit(1)
+    if runtime_ready_timeout_seconds <= 0:
+        error("--runtime-ready-timeout-seconds must be greater than 0.")
+        raise typer.Exit(1)
+    if poll_interval_seconds <= 0:
+        error("--poll-interval-seconds must be greater than 0.")
         raise typer.Exit(1)
 
     _require_login()
@@ -4286,17 +4305,20 @@ def _agent_session_runtime_resolve_impl(
     try:
         runtime_access_payload = resolve_agent_session_runtime_access(
             agent_session_uid,
-            wait_for_runtime=wait_for_runtime,
+            wait_for_runtime=False,
             timeout=timeout,
         )
-        if wait_for_runtime and not bool(runtime_access_payload.get("is_ready")):
-            ready_detail = runtime_access_payload.get("ready")
-            detail = ""
-            if isinstance(ready_detail, dict):
-                detail = str(ready_detail.get("detail") or "")
-            if not detail:
-                detail = "Runtime access resolved, but the runtime is not ready."
-            raise ApiError(detail)
+        ready_payload = wait_agent_session_runtime_ready(
+            agent_session_uid,
+            runtime_access=runtime_access_payload,
+            timeout_seconds=runtime_ready_timeout_seconds,
+            poll_interval_seconds=poll_interval_seconds,
+            timeout=timeout,
+        )
+        if not bool(ready_payload.get("ready")):
+            raise ApiError(str(ready_payload.get("detail") or "Runtime session is not ready."))
+        runtime_access_payload["is_ready"] = True
+        runtime_access_payload["ready"] = ready_payload
         cache_entry = cfg.save_runtime_access_cache(
             agent_session_uid,
             runtime_access_payload,
@@ -5051,6 +5073,7 @@ def _print_storage_query_payload(title: str, payload: dict[str, object]) -> None
         [
             ("OK", str(payload.get("ok"))),
             ("Query ID", str(payload.get("query_id") or "-")),
+            ("MetaTable UID", str(payload.get("meta_table_uid") or "-")),
             ("Dynamic Table UID", str(payload.get("dynamic_table_uid") or "-")),
             ("Row Count", str(payload.get("row_count") or 0)),
             ("Truncated", str(payload.get("truncated"))),
@@ -7311,9 +7334,14 @@ def agent_session_wait_runtime_ready_cmd(
         AGENT_SESSION_MODEL_REF, "uid", ..., help="Agent session UID."
     ),
     timeout_seconds: float = typer.Option(
-        900,
+        300,
         "--timeout-seconds",
-        help="Maximum backend runtime readiness wait in seconds.",
+        help="Maximum runtime readiness wait in seconds.",
+    ),
+    poll_interval_seconds: float = typer.Option(
+        10,
+        "--poll-interval-seconds",
+        help="Seconds between runtime readiness polls.",
     ),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
     json_output: bool = typer.Option(False, "--json", help="Emit JSON output."),
@@ -7321,12 +7349,13 @@ def agent_session_wait_runtime_ready_cmd(
     """
     Wait for one agent session runtime to become ready.
 
-    Uses SDK client `AgentSession.wait_until_runtime_ready()` and the backend
-    `runtime_ready/` endpoint. This does not expose runtime RPC URLs or bearer tokens.
+    Uses cached runtime access and polls the runtime session-status path directly.
+    This does not expose runtime RPC URLs or bearer tokens.
     """
     _agent_session_wait_runtime_ready_impl(
         agent_session_uid=agent_session_uid,
         timeout_seconds=timeout_seconds,
+        poll_interval_seconds=poll_interval_seconds,
         timeout=timeout,
         json_output=json_output,
     )
@@ -7357,10 +7386,10 @@ def agent_session_a2a_send_cmd(
         "--json-repair-attempts",
         help="JSON repair attempts for --strict-dictionary.",
     ),
-    history_length: int = typer.Option(
-        0,
-        "--history-length",
-        help="Number of prior messages requested from runtime history.",
+    message_id: str | None = typer.Option(
+        None,
+        "--message-id",
+        help="Stable A2A message.messageId to reuse for an exact retry.",
     ),
     return_immediately: bool = typer.Option(
         False,
@@ -7378,7 +7407,7 @@ def agent_session_a2a_send_cmd(
         message_file=message_file,
         strict_dictionary=strict_dictionary,
         json_repair_attempts=json_repair_attempts,
-        history_length=history_length,
+        message_id=message_id,
         return_immediately=return_immediately,
         timeout=timeout,
     )
@@ -7415,9 +7444,9 @@ def agent_session_a2a_chat_cmd(
         help="Ask the backend to wait until the target runtime is ready before sending.",
     ),
     runtime_ready_timeout_seconds: float = typer.Option(
-        900,
+        300,
         "--runtime-ready-timeout-seconds",
-        help="Maximum backend runtime readiness wait in seconds.",
+        help="Maximum runtime readiness wait in seconds.",
     ),
     poll_task_until_stable: bool | None = typer.Option(
         None,
@@ -7535,29 +7564,35 @@ def agent_session_runtime_resolve_cmd(
     agent_session_uid: str = pydantic_argument(
         AGENT_SESSION_MODEL_REF, "uid", ..., help="Agent session UID."
     ),
-    wait_for_runtime: bool = typer.Option(
-        True,
-        "--wait-for-runtime/--no-wait-for-runtime",
-        help="Ask Django to wait until the runtime is ready before caching access.",
-    ),
     cache_ttl_seconds: float = typer.Option(
         cfg.DEFAULT_RUNTIME_ACCESS_CACHE_TTL_SECONDS,
         "--cache-ttl-seconds",
         help="Seconds to keep the resolved runtime access in the CLI cache.",
     ),
+    runtime_ready_timeout_seconds: float = typer.Option(
+        300,
+        "--runtime-ready-timeout-seconds",
+        help="Maximum runtime readiness wait in seconds before caching access.",
+    ),
+    poll_interval_seconds: float = typer.Option(
+        10,
+        "--poll-interval-seconds",
+        help="Seconds between runtime readiness polls.",
+    ),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
     json_output: bool = typer.Option(False, "--json", help="Emit JSON output."),
 ):
     """
-    Resolve and cache runtime access for repeated sends to one agent session.
+    Resolve runtime access, poll the runtime until ready, and cache access.
 
     This command does not print runtime credentials. Use it before multiple
-    `mainsequence agent session runtime chat` sends to the same session.
+    `mainsequence agent session a2a send` calls to the same session.
     """
     _agent_session_runtime_resolve_impl(
         agent_session_uid=agent_session_uid,
-        wait_for_runtime=wait_for_runtime,
         cache_ttl_seconds=cache_ttl_seconds,
+        runtime_ready_timeout_seconds=runtime_ready_timeout_seconds,
+        poll_interval_seconds=poll_interval_seconds,
         timeout=timeout,
         json_output=json_output,
     )
@@ -7635,7 +7670,7 @@ def agent_session_resolve_runtime_access_cmd(
     wait_for_runtime: bool = typer.Option(
         False,
         "--wait-for-runtime/--no-wait-for-runtime",
-        help="Ask Django to wait until the runtime is ready before returning access.",
+        help="Ask the SDK to poll the runtime until it is ready before returning access.",
     ),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
@@ -8502,6 +8537,35 @@ def _meta_table_detail_impl(meta_table_uid: str, timeout: int | None) -> None:
     )
 
 
+def _meta_table_run_query_impl(
+    *,
+    meta_table_uid: str,
+    sql: str,
+    timeout: int | None,
+) -> None:
+    _require_login()
+
+    try:
+        payload = run_meta_table_query(meta_table_uid, sql, timeout=timeout)
+    except ApiError as e:
+        error(f"MetaTable query failed: {e}")
+        raise typer.Exit(1) from e
+
+    ok = bool(payload.get("ok"))
+    if _emit_json(payload):
+        if not ok:
+            raise typer.Exit(1)
+        return
+
+    if ok:
+        success(f"MetaTable query completed: uid={meta_table_uid}")
+    else:
+        error(f"MetaTable query failed: uid={meta_table_uid}")
+    _print_storage_query_payload("MetaTable Query", payload)
+    if not ok:
+        raise typer.Exit(1)
+
+
 def _data_node_storage_run_query_impl(
     *,
     storage_uid: str,
@@ -8659,6 +8723,20 @@ def meta_table_detail_cmd(
     Show one MetaTable and render its table contract in the terminal.
     """
     _meta_table_detail_impl(meta_table_uid=meta_table_uid, timeout=timeout)
+
+
+@meta_table_group.command("run_query")
+def meta_table_run_query_cmd(
+    meta_table_uid: str = typer.Argument(..., help="MetaTable UID."),
+    sql: str = typer.Argument(..., help="Raw SQL query to run."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Run a raw SQL query against one MetaTable.
+
+    Sends the SQL as a JSON string body to the backend, not as an object.
+    """
+    _meta_table_run_query_impl(meta_table_uid=meta_table_uid, sql=sql, timeout=timeout)
 
 
 @meta_table_group.command("delete")
@@ -9034,9 +9112,12 @@ def data_node_storage_search_cmd(
         ..., help="Natural-language query to match against data node descriptions."
     ),
     mode: str = typer.Option(
-        "both",
+        "description",
         "--mode",
-        help="Search scope: description, column, or both.",
+        help=(
+            "Search scope. Default is semantic description discovery. "
+            "Use column only for schema-name lookup, or both when explicitly needed."
+        ),
     ),
     data_source_id: int | None = typer.Option(
         None, "--data-source-id", help="Filter by data source ID."
@@ -9057,20 +9138,25 @@ def data_node_storage_search_cmd(
     ),
     filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
     show_filters: bool = typer.Option(
-        False, "--show-filters", help="Show the filters supported by this search command and exit."
+        False,
+        "--show-filters",
+        help="Show structured filters that can narrow this search and exit.",
     ),
 ):
     """
-    Search data node storages by description metadata, column metadata, or both.
+    Search data node storages through MetaTable metadata.
 
-    Uses SDK client `TimeIndexMetaTable.description_search()` and
-    `TimeIndexMetaTable.column_search()` as the single sources of truth.
+    Default search uses `TimeIndexMetaTable.description_search()`, backed by
+    `/orm/api/ts_manager/meta_table/description-search/`. Column mode is a
+    separate schema lookup path and filters narrow results; they are not the
+    semantic discovery path itself.
 
     Examples
     --------
     ```bash
     mainsequence data_node search "close price"
-    mainsequence data-node search "node weights" --mode description --data-source-id 2
+    mainsequence data-node search "node weights" --data-source-id 2
+    mainsequence data-node search "close" --mode column
     mainsequence data-node search "node weights" --q-embedding 0.1,0.2,0.3
     ```
     """
@@ -9179,11 +9265,13 @@ def data_node_storage_description_search_cmd(
     ),
     filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
     show_filters: bool = typer.Option(
-        False, "--show-filters", help="Show the filters supported by this search command and exit."
+        False,
+        "--show-filters",
+        help="Show structured filters that can narrow this search and exit.",
     ),
 ):
     """
-    Backward-compatible alias for `mainsequence data-node search --mode description`.
+    Hidden alias for semantic description discovery.
     """
     parsed_embedding = _parse_cli_embedding(q_embedding)
     filters = _resolve_cli_list_filters(
@@ -9230,7 +9318,9 @@ def data_node_storage_column_search_cmd(
     ),
     filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
     show_filters: bool = typer.Option(
-        False, "--show-filters", help="Show the filters supported by this search command and exit."
+        False,
+        "--show-filters",
+        help="Show structured filters that can narrow this column lookup and exit.",
     ),
 ):
     """
