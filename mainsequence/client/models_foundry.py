@@ -134,12 +134,6 @@ class ProjectQuickSearchResult(BasePydanticModel):
         description="Configured repository branch for the matching project.",
         json_schema_extra={"label": "Repository Branch"},
     )
-    cluster_uid: str | None = Field(
-        None,
-        title="Cluster UID",
-        description="Public UID of the cluster associated with the matching project, when present.",
-        json_schema_extra={"label": "Cluster UID"},
-    )
 
 
 class Project(LabelableObjectMixin, ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
