@@ -139,9 +139,8 @@ Most frequently used flows:
 # Agents
 mainsequence agent list
 mainsequence agent detail e0e75693-4110-464c-93e0-82c7fd9c9a23
-mainsequence agent create "Research Copilot" --agent-unique-id research-copilot --description "Desk agent"
-mainsequence agent get_or_create "Research Copilot" --agent-unique-id research-copilot --description "Desk agent"
-mainsequence agent session list --agent-unique-id research-copilot
+mainsequence agent create "Research Copilot" --description "Desk agent"
+mainsequence agent session list --agent-uid e0e75693-4110-464c-93e0-82c7fd9c9a23
 mainsequence agent get_latest_session e0e75693-4110-464c-93e0-82c7fd9c9a23
 mainsequence agent session a2a send 3f1cc452-43ec-49cb-b2ba-87dbac164d29 --message "Return a JSON object with summary and next_action." --strict-dictionary
 mainsequence agent session detail 3f1cc452-43ec-49cb-b2ba-87dbac164d29
@@ -361,9 +360,9 @@ mainsequence skills path workspace_builder --json
 - `mainsequence organization teams create`, `edit`, and `delete` use the SDK client `Team.create()`, `Team.patch()`, and `Team.delete()` paths.
 - `mainsequence organization teams can_view` and `can_edit` inspect team access through the SDK `Team.can_view()` and `Team.can_edit()` paths.
 - `mainsequence organization teams add_to_view`, `add_to_edit`, `remove_from_view`, and `remove_from_edit` mutate explicit user access on teams through the SDK `Team` permission-action paths.
-- `mainsequence agent list`, `detail`, `create`, `get_or_create`, `get_latest_session`, and `delete` use the SDK client `mainsequence.client.agent_runtime_models.Agent` paths.
+- `mainsequence agent list`, `detail`, `create`, `get_latest_session`, and `delete` use the SDK client `mainsequence.client.agent_runtime_models.Agent` paths.
 - `mainsequence agent session list` and `detail` use the SDK client `mainsequence.client.agent_runtime_models.AgentSession` path.
-- `mainsequence agent session list --agent-uid <AGENT_UID>` lists sessions for one agent directly; `mainsequence agent session list --agent-unique-id <AGENT_UNIQUE_ID>` resolves the agent first and then lists its sessions.
+- `mainsequence agent session list --agent-uid <AGENT_UID>` lists sessions for one agent directly.
 - `mainsequence agent session a2a send <SESSION_UID> --message "..."` resolves runtime access internally, sends a standard A2A message, and always returns the standard A2A JSON response.
 - `mainsequence agent session a2a send <SESSION_UID> --message "..." --strict-dictionary` requests a strict JSON dictionary using the standard A2A output contract.
 - `mainsequence agent session a2a send <SESSION_UID> --message "..." --message-id <MESSAGE_ID>` reuses an exact A2A message id for retrying the same logical message. If a send fails after the CLI generated an id, the CLI prints the id to reuse.

@@ -1459,10 +1459,9 @@ def test_list_agents_uses_client_model(cli_mod, monkeypatch):
         def __init__(self, uid, name):
             self.uid = uid
             self.name = name
-            self.agent_unique_id = "research-copilot"
 
         def model_dump(self, mode="json"):
-            return {"uid": self.uid, "name": self.name, "agent_unique_id": self.agent_unique_id}
+            return {"uid": self.uid, "name": self.name}
 
     def _run_sdk_model_operation(*, module_name, class_name, operation, project_id_env=None):
         captured["module_name"] = module_name
@@ -1490,7 +1489,6 @@ def test_list_agents_uses_client_model(cli_mod, monkeypatch):
         {
             "uid": "e0e75693-4110-464c-93e0-82c7fd9c9a23",
             "name": "Research Copilot",
-            "agent_unique_id": "research-copilot",
         }
     ]
 
@@ -1503,7 +1501,6 @@ def test_semantic_search_agents_uses_client_model(cli_mod, monkeypatch):
         def __init__(self):
             self.uid = "e0e75693-4110-464c-93e0-82c7fd9c9a23"
             self.name = "Research Copilot"
-            self.agent_unique_id = "research-copilot"
             self.description = "Searchable data research agent."
             self.semantic_score = 0.91
             self.text_score = 0.74
@@ -1513,7 +1510,6 @@ def test_semantic_search_agents_uses_client_model(cli_mod, monkeypatch):
             return {
                 "uid": self.uid,
                 "name": self.name,
-                "agent_unique_id": self.agent_unique_id,
                 "description": self.description,
                 "semantic_score": self.semantic_score,
                 "text_score": self.text_score,
@@ -1552,7 +1548,6 @@ def test_semantic_search_agents_uses_client_model(cli_mod, monkeypatch):
         {
             "uid": "e0e75693-4110-464c-93e0-82c7fd9c9a23",
             "name": "Research Copilot",
-            "agent_unique_id": "research-copilot",
             "description": "Searchable data research agent.",
             "semantic_score": 0.91,
             "text_score": 0.74,
@@ -1571,7 +1566,6 @@ def test_create_agent_uses_client_model(cli_mod, monkeypatch):
             return {
                 "uid": "e0e75693-4110-464c-93e0-82c7fd9c9a23",
                 "name": "Research Copilot",
-                "agent_unique_id": "research-copilot",
             }
 
     def _run_sdk_model_operation(*, module_name, class_name, operation, project_id_env=None):
@@ -1591,7 +1585,6 @@ def test_create_agent_uses_client_model(cli_mod, monkeypatch):
 
     out = api_mod.create_agent(
         name="Research Copilot",
-        agent_unique_id="research-copilot",
         description="Desk agent",
         status="active",
         labels=["research", "desk"],
@@ -1609,7 +1602,6 @@ def test_create_agent_uses_client_model(cli_mod, monkeypatch):
         "timeout": 14,
         "create_kwargs": {
             "name": "Research Copilot",
-            "agent_unique_id": "research-copilot",
             "description": "Desk agent",
             "status": "active",
             "labels": ["research", "desk"],
@@ -1635,7 +1627,6 @@ def test_get_agent_uses_agent_uid_detail_route(cli_mod, monkeypatch):
             return {
                 "uid": agent_uid,
                 "name": "Research Copilot",
-                "agent_unique_id": "research-copilot",
             }
 
     def _run_sdk_model_operation(*, module_name, class_name, operation, project_id_env=None):
@@ -1661,70 +1652,6 @@ def test_get_agent_uses_agent_uid_detail_route(cli_mod, monkeypatch):
         "timeout": 12,
     }
     assert out["uid"] == agent_uid
-
-
-def test_get_or_create_agent_uses_client_model(cli_mod, monkeypatch):
-    api_mod = importlib.import_module("mainsequence.cli.api")
-    captured = {}
-
-    class FakeAgent:
-        @staticmethod
-        def model_dump(mode="json"):
-            return {
-                "uid": "e0e75693-4110-464c-93e0-82c7fd9c9a23",
-                "name": "Research Copilot",
-                "agent_unique_id": "research-copilot",
-                "status": "active",
-            }
-
-    def _run_sdk_model_operation(*, module_name, class_name, operation, project_id_env=None):
-        captured["module_name"] = module_name
-        captured["class_name"] = class_name
-
-        class _ClientAgent:
-            @classmethod
-            def get_or_create(cls, timeout=None, **kwargs):
-                captured["timeout"] = timeout
-                captured["get_or_create_kwargs"] = kwargs
-                return FakeAgent()
-
-        return operation(_ClientAgent)
-
-    monkeypatch.setattr(api_mod, "_run_sdk_model_operation", _run_sdk_model_operation)
-
-    out = api_mod.get_or_create_agent(
-        name="Research Copilot",
-        agent_unique_id="research-copilot",
-        description="Desk agent",
-        status="active",
-        labels=["research", "desk"],
-        llm_provider="openai",
-        llm_model="gpt-5.4",
-        engine_name="codex",
-        runtime_config={"temperature": 0},
-        configuration={"mode": "analysis"},
-        metadata={"owner": "quant"},
-        timeout=14,
-    )
-    assert captured == {
-        "module_name": "mainsequence.client.agent_runtime_models",
-        "class_name": "Agent",
-        "timeout": 14,
-        "get_or_create_kwargs": {
-            "name": "Research Copilot",
-            "agent_unique_id": "research-copilot",
-            "description": "Desk agent",
-            "status": "active",
-            "labels": ["research", "desk"],
-            "llm_provider": "openai",
-            "llm_model": "gpt-5.4",
-            "engine_name": "codex",
-            "runtime_config": {"temperature": 0},
-            "configuration": {"mode": "analysis"},
-            "metadata": {"owner": "quant"},
-        },
-    }
-    assert out["uid"] == "e0e75693-4110-464c-93e0-82c7fd9c9a23"
 
 
 def test_allocate_agent_a2a_target_session_uses_client_model(cli_mod, monkeypatch):
@@ -1891,60 +1818,6 @@ def test_list_agent_sessions_uses_client_model(cli_mod, monkeypatch):
         "class_name": "AgentSession",
         "timeout": 18,
         "filters": {"status": "completed", "agent_uid": agent_uid},
-    }
-    assert out == [FakeAgentSession().model_dump()]
-
-
-def test_list_agent_sessions_resolves_agent_unique_id(cli_mod, monkeypatch):
-    api_mod = importlib.import_module("mainsequence.cli.api")
-    captured = {"calls": []}
-    agent_uid = "e0e75693-4110-464c-93e0-82c7fd9c9a23"
-    session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
-
-    class FakeAgent:
-        @staticmethod
-        def model_dump(mode="json"):
-            return {"uid": agent_uid, "agent_unique_id": "research-copilot"}
-
-    class FakeAgentSession:
-        @staticmethod
-        def model_dump(mode="json"):
-            return {"uid": session_uid, "agent_uid": agent_uid, "status": "running"}
-
-    def _run_sdk_model_operation(*, module_name, class_name, operation, project_id_env=None):
-        captured["calls"].append((module_name, class_name))
-        if class_name == "Agent":
-
-            class _ClientAgent:
-                @classmethod
-                def get_by_agent_unique_id(cls, agent_unique_id, timeout=None):
-                    captured["agent_unique_id"] = agent_unique_id
-                    captured["agent_timeout"] = timeout
-                    return FakeAgent()
-
-            return operation(_ClientAgent)
-
-        class _ClientAgentSession:
-            @classmethod
-            def filter(cls, timeout=None, **filters):
-                captured["session_timeout"] = timeout
-                captured["filters"] = filters
-                return [FakeAgentSession()]
-
-        return operation(_ClientAgentSession)
-
-    monkeypatch.setattr(api_mod, "_run_sdk_model_operation", _run_sdk_model_operation)
-
-    out = api_mod.list_agent_sessions(agent_unique_id="research-copilot", timeout=19)
-    assert captured == {
-        "calls": [
-            ("mainsequence.client.agent_runtime_models", "Agent"),
-            ("mainsequence.client.agent_runtime_models", "AgentSession"),
-        ],
-        "agent_unique_id": "research-copilot",
-        "agent_timeout": 19,
-        "session_timeout": 19,
-        "filters": {"agent_uid": agent_uid},
     }
     assert out == [FakeAgentSession().model_dump()]
 
@@ -7182,7 +7055,6 @@ def test_agent_list(cli_mod, runner, monkeypatch):
         lambda timeout=None, filters=None: [
             {
                 "uid": "e0e75693-4110-464c-93e0-82c7fd9c9a23",
-                "agent_unique_id": "research-copilot",
                 "name": "Research Copilot",
                 "status": "active",
                 "labels": ["research", "desk"],
@@ -7197,10 +7069,8 @@ def test_agent_list(cli_mod, runner, monkeypatch):
     result = runner.invoke(cli_mod.app, ["agent", "list"])
     assert result.exit_code == 0
     assert "Agents" in result.output
-    assert "Unique" in result.output
-    assert "resear" in result.output
-    assert "ch-cop" in result.output
-    assert "ilot" in result.output
+    assert "UID" in result.output
+    assert "e0e756" in result.output
     assert "Resear" in result.output
     assert "Copilo" in result.output
     assert "Total agents: 1" in result.output
@@ -7214,7 +7084,6 @@ def test_agent_list_json(cli_mod, runner, monkeypatch):
         lambda timeout=None, filters=None: [
             {
                 "uid": "e0e75693-4110-464c-93e0-82c7fd9c9a23",
-                "agent_unique_id": "research-copilot",
                 "name": "Research Copilot",
                 "status": "active",
                 "labels": ["research", "desk"],
@@ -7230,7 +7099,6 @@ def test_agent_list_json(cli_mod, runner, monkeypatch):
     assert result.exit_code == 0
     payload = json.loads(result.output)
     assert payload[0]["uid"] == "e0e75693-4110-464c-93e0-82c7fd9c9a23"
-    assert payload[0]["agent_unique_id"] == "research-copilot"
     assert payload[0]["llm_model"] == "gpt-5.4"
 
 
@@ -7250,7 +7118,6 @@ def test_agent_search(cli_mod, runner, monkeypatch):
             {
                 "uid": "e0e75693-4110-464c-93e0-82c7fd9c9a23",
                 "name": "Research Copilot",
-                "agent_unique_id": "research-copilot",
                 "description": "Searchable data research agent.",
                 "semantic_score": 0.91,
                 "text_score": 0.74,
@@ -7279,11 +7146,10 @@ def test_agent_search(cli_mod, runner, monkeypatch):
         "timeout": 17,
     }
     assert "Agent Search Results" in result.output
-    assert "Unique ID" in result.output
+    assert "UID" in result.output
     assert "Research" in result.output
     assert "Copilot" in result.output
-    assert "research-cop" in result.output
-    assert "ilot" in result.output
+    assert "e0e756" in result.output
     assert "0.85" in result.output
     assert 'Agent search matches for "data research": 1' in result.output
 
@@ -7297,7 +7163,6 @@ def test_agent_search_json(cli_mod, runner, monkeypatch):
             {
                 "uid": "e0e75693-4110-464c-93e0-82c7fd9c9a23",
                 "name": "Research Copilot",
-                "agent_unique_id": "research-copilot",
                 "description": "Searchable data research agent.",
                 "semantic_score": 0.91,
                 "text_score": 0.74,
@@ -7310,7 +7175,6 @@ def test_agent_search_json(cli_mod, runner, monkeypatch):
     assert result.exit_code == 0
     payload = json.loads(result.output)
     assert payload[0]["uid"] == "e0e75693-4110-464c-93e0-82c7fd9c9a23"
-    assert payload[0]["agent_unique_id"] == "research-copilot"
     assert payload[0]["combined_score"] == 0.85
 
 
@@ -7338,8 +7202,6 @@ def test_agent_create_parses_json_fields(cli_mod, runner, monkeypatch):
             "agent",
             "create",
             "Research Copilot",
-            "--agent-unique-id",
-            "research-copilot",
             "--description",
             "Desk agent",
             "--status",
@@ -7362,71 +7224,12 @@ def test_agent_create_parses_json_fields(cli_mod, runner, monkeypatch):
     )
     assert result.exit_code == 0
     assert captured["name"] == "Research Copilot"
-    assert captured["agent_unique_id"] == "research-copilot"
     assert captured["status"] == "active"
     assert captured["labels"] == ["research", "desk"]
     assert captured["runtime_config"] == {"temperature": 0}
     assert captured["configuration"] == {"mode": "analysis"}
     assert captured["metadata"] == {"owner": "quant"}
     assert "Agent created: Research Copilot" in result.output
-
-
-def test_agent_get_or_create_parses_json_fields(cli_mod, runner, monkeypatch):
-    captured = {}
-    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
-
-    def _get_or_create(**kwargs):
-        captured.update(kwargs)
-        return {
-            "uid": "e0e75693-4110-464c-93e0-82c7fd9c9a23",
-            "name": kwargs["name"],
-            "agent_unique_id": kwargs["agent_unique_id"],
-            "status": kwargs.get("status") or "draft",
-            "labels": kwargs.get("labels") or [],
-            "llm_provider": kwargs.get("llm_provider") or "",
-            "llm_model": kwargs.get("llm_model") or "",
-            "engine_name": kwargs.get("engine_name") or "",
-        }
-
-    monkeypatch.setattr(cli_mod, "get_or_create_agent", _get_or_create)
-
-    result = runner.invoke(
-        cli_mod.app,
-        [
-            "agent",
-            "get_or_create",
-            "Research Copilot",
-            "--agent-unique-id",
-            "research-copilot",
-            "--description",
-            "Desk agent",
-            "--status",
-            "active",
-            "--label",
-            "research,desk",
-            "--llm-provider",
-            "openai",
-            "--llm-model",
-            "gpt-5.4",
-            "--engine-name",
-            "codex",
-            "--runtime-config",
-            '{"temperature":0}',
-            "--configuration",
-            '{"mode":"analysis"}',
-            "--metadata",
-            '{"owner":"quant"}',
-        ],
-    )
-    assert result.exit_code == 0
-    assert captured["name"] == "Research Copilot"
-    assert captured["agent_unique_id"] == "research-copilot"
-    assert captured["status"] == "active"
-    assert captured["labels"] == ["research", "desk"]
-    assert captured["runtime_config"] == {"temperature": 0}
-    assert captured["configuration"] == {"mode": "analysis"}
-    assert captured["metadata"] == {"owner": "quant"}
-    assert "Agent resolved via get_or_create: Research Copilot" in result.output
 
 
 def test_agent_detail_uses_agent_uid(cli_mod, runner, monkeypatch):
@@ -7439,7 +7242,6 @@ def test_agent_detail_uses_agent_uid(cli_mod, runner, monkeypatch):
         captured["timeout"] = timeout
         return {
             "uid": agent_uid,
-            "agent_unique_id": "research-copilot",
             "name": "Research Copilot",
             "status": "active",
             "labels": ["research"],
@@ -7455,7 +7257,6 @@ def test_agent_detail_uses_agent_uid(cli_mod, runner, monkeypatch):
     assert captured == {"agent_uid": agent_uid, "timeout": 11}
     assert "Agent" in result.output
     assert agent_uid[:8] in result.output
-    assert "research-copilot" in result.output
 
 
 def test_agent_allocate_a2a_target_session(cli_mod, runner, monkeypatch):
@@ -7537,11 +7338,10 @@ def test_agent_session_list_scoped_by_agent_uid(cli_mod, runner, monkeypatch):
     agent_uid = "e0e75693-4110-464c-93e0-82c7fd9c9a23"
     session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
 
-    def _list_agent_sessions(*, timeout=None, filters=None, agent_uid=None, agent_unique_id=None):
+    def _list_agent_sessions(*, timeout=None, filters=None, agent_uid=None):
         captured["timeout"] = timeout
         captured["filters"] = filters
         captured["agent_uid"] = agent_uid
-        captured["agent_unique_id"] = agent_unique_id
         return [
             {
                 "uid": session_uid,
@@ -7575,7 +7375,6 @@ def test_agent_session_list_scoped_by_agent_uid(cli_mod, runner, monkeypatch):
         "timeout": 12,
         "filters": {"status": "running"},
         "agent_uid": agent_uid,
-        "agent_unique_id": None,
     }
     assert "Agent Sessions" in result.output
     assert "3f1cc45" in result.output
@@ -7783,7 +7582,6 @@ def test_agent_delete_requires_typed_verification(cli_mod, runner, monkeypatch):
         "get_agent",
         lambda agent_uid, timeout=None: {
             "uid": agent_uid,
-            "agent_unique_id": "research-copilot",
             "name": "Research Copilot",
             "status": "active",
             "labels": ["research"],
@@ -7795,7 +7593,6 @@ def test_agent_delete_requires_typed_verification(cli_mod, runner, monkeypatch):
         captured["timeout"] = timeout
         return {
             "uid": agent_uid,
-            "agent_unique_id": "research-copilot",
             "name": "Research Copilot",
             "status": "active",
             "labels": ["research"],

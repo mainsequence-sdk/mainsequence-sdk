@@ -118,7 +118,6 @@ from .api import (
     get_data_node_storage,
     get_logged_user_details,
     get_meta_table,
-    get_or_create_agent,
     get_organization_team,
     get_project,
     get_project_data_node_updates,
@@ -3476,7 +3475,6 @@ def _format_agent_preview(agent_payload: dict[str, object]) -> list[tuple[str, s
     labels = agent_payload.get("labels")
     return [
         ("UID", str(agent_payload.get("uid") or "-")),
-        ("Unique ID", str(agent_payload.get("agent_unique_id") or "-")),
         ("Name", str(agent_payload.get("name") or "-")),
         ("Description", str(agent_payload.get("description") or "-")),
         ("Status", str(agent_payload.get("status") or "-")),
@@ -3501,9 +3499,7 @@ def _format_agent_details(agent_payload: dict[str, object]) -> list[tuple[str, s
 
 def _format_agent_ref_label(agent_ref: object) -> str:
     if isinstance(agent_ref, dict):
-        return str(
-            agent_ref.get("name") or agent_ref.get("agent_unique_id") or agent_ref.get("uid") or "-"
-        )
+        return str(agent_ref.get("name") or agent_ref.get("uid") or "-")
     return str(agent_ref or "-")
 
 
@@ -3630,7 +3626,6 @@ def _agent_list_impl(
         rows.append(
             [
                 str(agent_payload.get("uid") or "-"),
-                str(agent_payload.get("agent_unique_id") or "-"),
                 str(agent_payload.get("name") or "-"),
                 str(agent_payload.get("status") or "-"),
                 ", ".join(str(item) for item in labels)
@@ -3648,7 +3643,6 @@ def _agent_list_impl(
             "Agents",
             [
                 "UID",
-                "Unique ID",
                 "Name",
                 "Status",
                 "Labels",
@@ -3709,7 +3703,7 @@ def _agent_search_impl(
     for result in results:
         rows.append(
             [
-                str(result.get("agent_unique_id") or "-"),
+                str(result.get("uid") or "-"),
                 str(result.get("name") or "-"),
                 str(
                     result.get("combined_score")
@@ -3729,7 +3723,7 @@ def _agent_search_impl(
     if rows:
         print_table(
             "Agent Search Results",
-            ["Unique ID", "Name", "Combined", "Semantic", "Text", "Description"],
+            ["UID", "Name", "Combined", "Semantic", "Text", "Description"],
             rows,
         )
     else:
@@ -3740,7 +3734,6 @@ def _agent_search_impl(
 def _agent_create_impl(
     *,
     name: str | None,
-    agent_unique_id: str | None,
     description: str | None,
     status_value: str | None,
     labels: list[str] | None,
@@ -3759,12 +3752,6 @@ def _agent_create_impl(
     ).strip()
     if not agent_name:
         error("Agent name is required.")
-        raise typer.Exit(1)
-    unique_id = (agent_unique_id or "").strip() or typer.prompt(
-        pydantic_prompt_text(AGENT_MODEL_REF, "agent_unique_id")
-    ).strip()
-    if not unique_id:
-        error("Agent unique id is required.")
         raise typer.Exit(1)
 
     try:
@@ -3790,7 +3777,6 @@ def _agent_create_impl(
     try:
         created = create_agent(
             name=agent_name,
-            agent_unique_id=unique_id,
             description=description,
             status=status_value,
             labels=_parse_cli_csv_list(labels),
@@ -3811,82 +3797,6 @@ def _agent_create_impl(
 
     success(f"Agent created: {agent_name}")
     print_kv("Created Agent", _format_agent_preview(created))
-
-
-def _agent_get_or_create_impl(
-    *,
-    name: str | None,
-    agent_unique_id: str | None,
-    description: str | None,
-    status_value: str | None,
-    labels: list[str] | None,
-    llm_provider: str | None,
-    llm_model: str | None,
-    engine_name: str | None,
-    runtime_config: str | None,
-    configuration: str | None,
-    metadata: str | None,
-    timeout: int | None,
-) -> None:
-    _require_login()
-
-    agent_name = (name or "").strip() or typer.prompt(
-        pydantic_prompt_text(AGENT_MODEL_REF, "name")
-    ).strip()
-    if not agent_name:
-        error("Agent name is required.")
-        raise typer.Exit(1)
-    unique_id = (agent_unique_id or "").strip() or typer.prompt(
-        pydantic_prompt_text(AGENT_MODEL_REF, "agent_unique_id")
-    ).strip()
-    if not unique_id:
-        error("Agent unique id is required.")
-        raise typer.Exit(1)
-
-    try:
-        runtime_config_payload = (
-            _parse_json_dict_option(runtime_config, field_label="runtime_config")
-            if runtime_config is not None
-            else None
-        )
-        configuration_payload = (
-            _parse_json_dict_option(configuration, field_label="configuration")
-            if configuration is not None
-            else None
-        )
-        metadata_payload = (
-            _parse_json_dict_option(metadata, field_label="metadata")
-            if metadata is not None
-            else None
-        )
-    except ValueError as e:
-        error(str(e))
-        raise typer.Exit(1) from e
-
-    try:
-        created = get_or_create_agent(
-            name=agent_name,
-            agent_unique_id=unique_id,
-            description=description,
-            status=status_value,
-            labels=_parse_cli_csv_list(labels),
-            llm_provider=llm_provider,
-            llm_model=llm_model,
-            engine_name=engine_name,
-            runtime_config=runtime_config_payload,
-            configuration=configuration_payload,
-            metadata=metadata_payload,
-            timeout=timeout,
-        )
-    except ApiError as e:
-        error(f"Agent get_or_create failed: {e}")
-        raise typer.Exit(1) from e
-
-    if _emit_json(created):
-        return
-
-    success(f"Agent resolved via get_or_create: {agent_name}")
-    print_kv("Resolved Agent", _format_agent_preview(created))
 
 
 def _agent_delete_impl(
@@ -4043,7 +3953,6 @@ def _agent_session_a2a_send_impl(
 def _agent_session_list_impl(
     *,
     agent_uid: str | None,
-    agent_unique_id: str | None,
     timeout: int | None,
     filter_entries: list[str] | None,
     show_filters: bool,
@@ -4054,15 +3963,10 @@ def _agent_session_list_impl(
         show_filters=show_filters,
         command_label="Agent Sessions",
     )
-    if agent_uid and agent_unique_id:
-        error("Pass either `--agent-uid` or `--agent-unique-id`, not both.")
-        raise typer.Exit(1)
-    if (agent_uid or agent_unique_id) and any(
-        key in filters for key in ("agent_uid", "agent_uid__in")
-    ):
+    if agent_uid and any(key in filters for key in ("agent_uid", "agent_uid__in")):
         error(
-            "Do not pass `--filter agent_uid=...` with `--agent-uid` or "
-            "`--agent-unique-id`. Use only one agent scope."
+            "Do not pass `--filter agent_uid=...` with `--agent-uid`. "
+            "Use only one agent scope."
         )
         raise typer.Exit(1)
 
@@ -4073,7 +3977,6 @@ def _agent_session_list_impl(
             timeout=timeout,
             filters=filters,
             agent_uid=agent_uid,
-            agent_unique_id=agent_unique_id,
         )
     except ApiError as e:
         error(f"Agent sessions fetch failed: {e}")
@@ -6606,9 +6509,6 @@ def agent_search_cmd(
 @agent.command("create")
 def agent_create_cmd(
     name: str | None = pydantic_argument(AGENT_MODEL_REF, "name", None),
-    agent_unique_id: str | None = pydantic_option(
-        AGENT_MODEL_REF, "agent_unique_id", None, "--agent-unique-id"
-    ),
     description: str | None = pydantic_option(
         AGENT_MODEL_REF, "description", None, "--description"
     ),
@@ -6651,69 +6551,6 @@ def agent_create_cmd(
     """
     _agent_create_impl(
         name=name,
-        agent_unique_id=agent_unique_id,
-        description=description,
-        status_value=status_value,
-        labels=labels,
-        llm_provider=llm_provider,
-        llm_model=llm_model,
-        engine_name=engine_name,
-        runtime_config=runtime_config,
-        configuration=configuration,
-        metadata=metadata,
-        timeout=timeout,
-    )
-
-
-@agent.command("get_or_create")
-def agent_get_or_create_cmd(
-    name: str | None = pydantic_argument(AGENT_MODEL_REF, "name", None),
-    agent_unique_id: str | None = pydantic_option(
-        AGENT_MODEL_REF, "agent_unique_id", None, "--agent-unique-id"
-    ),
-    description: str | None = pydantic_option(
-        AGENT_MODEL_REF, "description", None, "--description"
-    ),
-    status_value: str | None = typer.Option(
-        None,
-        "--status",
-        help="Lifecycle status for the agent. One of: draft, active, archived.",
-    ),
-    labels: list[str] | None = typer.Option(
-        None, "--label", help="Repeatable or comma-separated agent label."
-    ),
-    llm_provider: str | None = pydantic_option(
-        AGENT_MODEL_REF, "llm_provider", None, "--llm-provider"
-    ),
-    llm_model: str | None = pydantic_option(AGENT_MODEL_REF, "llm_model", None, "--llm-model"),
-    engine_name: str | None = typer.Option(
-        None,
-        "--engine-name",
-        help="Optional execution engine name to store on the agent.",
-    ),
-    runtime_config: str | None = typer.Option(
-        None,
-        "--runtime-config",
-        help="Runtime config JSON object to store on the agent.",
-    ),
-    configuration: str | None = typer.Option(
-        None,
-        "--configuration",
-        help="Additional configuration JSON object to store on the agent.",
-    ),
-    metadata: str | None = typer.Option(
-        None,
-        "--metadata",
-        help="Additional metadata JSON object to store on the agent.",
-    ),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    """
-    Get or create one agent by deterministic unique id.
-    """
-    _agent_get_or_create_impl(
-        name=name,
-        agent_unique_id=agent_unique_id,
         description=description,
         status_value=status_value,
         labels=labels,
@@ -6818,13 +6655,6 @@ def agent_session_list_cmd(
         "--agent-uid",
         help="Agent UID to scope the session list.",
     ),
-    agent_unique_id: str | None = pydantic_option(
-        AGENT_MODEL_REF,
-        "agent_unique_id",
-        None,
-        "--agent-unique-id",
-        help="Agent unique id to resolve before listing sessions.",
-    ),
     filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
     show_filters: bool = typer.Option(
         False, "--show-filters", help="Show the filters supported by this list command and exit."
@@ -6841,13 +6671,11 @@ def agent_session_list_cmd(
     ```bash
     mainsequence agent session list
     mainsequence agent session list --agent-uid e0e75693-4110-464c-93e0-82c7fd9c9a23
-    mainsequence agent session list --agent-unique-id research-copilot
     mainsequence agent session list --agent-uid e0e75693-4110-464c-93e0-82c7fd9c9a23 --filter status=running
     ```
     """
     _agent_session_list_impl(
         agent_uid=agent_uid,
-        agent_unique_id=agent_unique_id,
         timeout=timeout,
         filter_entries=filter_entries,
         show_filters=show_filters,

@@ -42,10 +42,6 @@ class AgentSemanticSearchResult(BasePydanticModel):
         "",
         description="Stable machine-readable runtime or workflow type of the matched agent.",
     )
-    agent_unique_id: str = Field(
-        ...,
-        description="Organization-scoped stable identifier of the matched agent.",
-    )
     description: str = Field(
         "",
         description="Short description returned by semantic search for the matched agent.",
@@ -425,14 +421,12 @@ class Agent(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
     ENDPOINT: ClassVar[str] = "agents/v1/agents"
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]] | None] = {
         "uid": ["exact", "in"],
-        "agent_unique_id": ["exact"],
         "agent_type": ["exact"],
         "search": ["exact"],
     }
     FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
         "uid": "uid",
         "uid__in": "uid",
-        "agent_unique_id": "str",
         "agent_type": "str",
         "search": "str",
     }
@@ -444,10 +438,6 @@ class Agent(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
     agent_type: str = Field(
         "custom",
         description="Stable machine-readable runtime or workflow classifier for the agent. This is not the display name.",
-    )
-    agent_unique_id: str = Field(
-        ...,
-        description="Client-supplied organization-scoped stable identifier for the agent. Use this for deterministic existence checks and idempotent create flows.",
     )
     description: str = Field(
         "", description="Optional long-form description explaining what the agent is for."
@@ -496,51 +486,6 @@ class Agent(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
         None,
         description="Service-level automatic deployment flag for the resolved typed coding-agent service.",
     )
-
-    @classmethod
-    def get_by_agent_unique_id(cls, agent_unique_id: str, *, timeout=None) -> Agent:
-        """
-        Resolve an Agent by its deterministic organization-scoped key.
-
-        The backend detail route is UID-based, but `agent_unique_id` is the
-        user-controlled key used for idempotent agent creation and CLI lookup.
-        """
-        normalized_agent_unique_id = str(agent_unique_id or "").strip()
-        if not normalized_agent_unique_id:
-            raise ValueError("agent_unique_id is required")
-
-        candidates = cls.filter(
-            timeout=timeout,
-            agent_unique_id=normalized_agent_unique_id,
-        )
-        if not candidates:
-            from .utils import DoesNotExist
-
-            raise DoesNotExist(
-                f"No {cls.class_name()} found matching agent_unique_id={normalized_agent_unique_id!r}"
-            )
-        if len(candidates) > 1:
-            raise ApiError(
-                f"Multiple agents returned for agent_unique_id={normalized_agent_unique_id!r}"
-            )
-        return candidates[0]
-
-    @classmethod
-    def get_or_create(cls, timeout=None, **kwargs):
-        data = serialize_to_json(kwargs)
-        payload = {"json": data}
-        url = f"{cls.get_object_url()}/get_or_create/"
-        response = make_request(
-            s=cls.build_session(),
-            loaders=cls.LOADERS,
-            r_type="POST",
-            url=url,
-            payload=payload,
-            time_out=timeout,
-        )
-        if response.status_code not in (200, 201):
-            raise_for_response(response, payload=payload)
-        return cls(**response.json())
 
     @classmethod
     def semantic_search(

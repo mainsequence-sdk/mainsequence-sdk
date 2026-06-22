@@ -1371,7 +1371,6 @@ def test_agent_runtime_models_deserialize_backend_uid_payloads():
             "uid": agent_uid,
             "name": "Research Copilot",
             "agent_type": "custom",
-            "agent_unique_id": "research-copilot",
             "description": "Research assistant.",
             "agent_card": {"name": "Research Copilot"},
             "llm_provider": "openai",
@@ -1386,7 +1385,6 @@ def test_agent_runtime_models_deserialize_backend_uid_payloads():
         }
     )
     assert agent.uid == agent_uid
-    assert agent.agent_unique_id == "research-copilot"
     assert agent.has_agent_service is True
     assert agent.agent_service_uid == service_uid
     assert agent.agent_service_automatic_deployment is True
@@ -1396,7 +1394,6 @@ def test_agent_runtime_models_deserialize_backend_uid_payloads():
             "uid": agent_uid,
             "name": "Research Copilot",
             "agent_type": "custom",
-            "agent_unique_id": "research-copilot",
             "description": "Research assistant.",
             "semantic_score": 0.91,
             "text_score": 0.74,
@@ -1468,54 +1465,6 @@ def test_agent_runtime_models_deserialize_backend_uid_payloads():
     )
     assert executor.uid == service_uid
     assert executor.agent_uid == agent_uid
-
-
-def test_agent_get_by_agent_unique_id_filters_by_deterministic_key(monkeypatch):
-    captured = {}
-    agent_uid = "e0e75693-4110-464c-93e0-82c7fd9c9a23"
-
-    class FakeResponse:
-        status_code = 200
-        content = b'{"ok": true}'
-
-        @staticmethod
-        def json():
-            return [
-                {
-                    "uid": agent_uid,
-                    "name": "Research Copilot",
-                    "agent_type": "custom",
-                    "agent_unique_id": "research-copilot",
-                    "description": "Research assistant.",
-                    "agent_card": None,
-                    "llm_provider": "openai",
-                    "llm_model": "gpt-5.4",
-                    "llm_thinking": "medium",
-                    "runtime_config": {},
-                    "configuration": {},
-                    "metadata": {},
-                    "last_session_at": None,
-                }
-            ]
-
-    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
-        captured["r_type"] = r_type
-        captured["url"] = url
-        captured["payload"] = payload
-        captured["timeout"] = time_out
-        return FakeResponse()
-
-    monkeypatch.setattr(base_mod, "make_request", _fake_make_request)
-
-    agent = agent_models_mod.Agent.get_by_agent_unique_id("research-copilot", timeout=10)
-
-    assert agent.uid == agent_uid
-    assert captured == {
-        "r_type": "GET",
-        "url": f"{agent_models_mod.Agent.get_object_url()}/",
-        "payload": {"params": {"agent_unique_id": "research-copilot"}},
-        "timeout": 10,
-    }
 
 
 def test_agent_session_runtime_access_uses_session_uid_route(monkeypatch):
@@ -2600,7 +2549,6 @@ def test_agent_a2a_allocation_sends_caller_session_uid(monkeypatch):
         uid=agent_uid,
         name="Research Copilot",
         agent_type="custom",
-        agent_unique_id="research-copilot",
         description="Research assistant.",
         agent_card=None,
         llm_provider="openai",
@@ -2659,7 +2607,6 @@ def test_agent_get_or_create_session_with_handle_posts_stable_handle_contract(mo
         uid=agent_uid,
         name="Research Copilot",
         agent_type="custom",
-        agent_unique_id="research-copilot",
         description="Research assistant.",
         agent_card=None,
         llm_provider="openai",
