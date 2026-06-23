@@ -5,8 +5,8 @@ description: Canonical guidance for discovering agents and sending session-scope
 
 # A2A Communication
 
-Use this skill when you need to discover another agent or send a bounded A2A
-request to an existing target `AgentSession`.
+Use this skill when you need to discover another agent, create or resolve a
+target `AgentSession`, and send a bounded A2A request.
 
 ## Canonical CLI Path
 
@@ -17,7 +17,7 @@ internally and sends a standard A2A message.
 
 - When the user asks which agents can help.
 - When another agent may be better suited to answer or assist.
-- Before sending a request to an existing target agent session.
+- Before sending a request to a target agent session.
 - When a request explicitly arrives through the A2A channel.
 
 ## Core Rules
@@ -42,13 +42,40 @@ mainsequence agent search "<discoveryPrompt>" --limit 10 --json
 4. Treat the CLI output as authoritative.
 5. Prefer the highest `combined_score` when present.
 6. If the user asked only which agents are available, summarize the candidates and stop.
-   Include agent name, stable unique id, and a short capability summary.
+   Include agent name, agent UID, and a short capability summary.
 
 ## Target Session
 
-Use an existing target `AgentSession` UID. If the target session UID is not
-available, get it from the active task context or ask for it before sending A2A
-messages.
+After selecting the target agent, create or resolve a target session:
+
+```bash
+mainsequence agent session get_or_create \
+  <target_agent_uid> \
+  --handle-unique-id <stable_handle_unique_id> \
+  --name "<human_readable_session_name>" \
+  --json
+```
+
+Use the returned session `uid` as the target `AgentSession` UID.
+
+If this A2A request originates from an existing caller session, include the
+parent session UID:
+
+```bash
+mainsequence agent session get_or_create \
+  <target_agent_uid> \
+  --handle-unique-id <stable_handle_unique_id> \
+  --parent-session-uid <caller_agent_session_uid> \
+  --name "<human_readable_session_name>" \
+  --json
+```
+
+Handle rules:
+
+- Repetitive workflow: use a stable semantic handle, for example `portfolio-review-q2-2026`.
+- One-off delegation: use a fresh task-specific handle, for example `a2a-risk-summary-<uuid>`.
+- Retry of the same session creation step: reuse the same handle.
+- New user turn in the same target session: reuse the returned session UID, not a new handle.
 
 ## Send A2A Chat
 
@@ -93,9 +120,10 @@ mainsequence agent session a2a send \
 1. Build the discovery prompt.
 2. Run `mainsequence agent search "<discoveryPrompt>" --limit <n> --json`.
 3. Select the target agent.
-4. Get the target `AgentSession` UID.
-5. Run `mainsequence agent session a2a send <target_agent_session_uid> ...`.
-6. Parse `message.parts` from the CLI output.
+4. Create or resolve the target session with `mainsequence agent session get_or_create`.
+5. Use the returned session `uid`.
+6. Run `mainsequence agent session a2a send <target_agent_session_uid> ...`.
+7. Parse `message.parts` from the CLI output.
 
 ## Role-Specific Behavior
 

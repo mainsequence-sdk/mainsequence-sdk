@@ -1141,59 +1141,40 @@ def delete_agent(
         raise ApiError(f"Agent deletion failed: {e}") from e
 
 
-def allocate_agent_a2a_target_session(
+def get_or_create_agent_session(
     agent_uid: str,
     *,
-    caller_agent_session_uid: str,
+    session_uid: str | None = None,
     handle_unique_id: str | None = None,
+    name: str | None = None,
+    parent_session_uid: str | None = None,
+    llm_provider: str | None = None,
+    llm_model: str | None = None,
+    llm_thinking: str | None = None,
     timeout: int | None = None,
 ) -> dict[str, Any]:
     """
-    Allocate or reuse the delegated A2A target session for one agent via SDK client model.
+    Get an existing session by UID, or get/create one by handle via SDK client model.
     """
     try:
 
-        def _allocate(ClientAgent):
+        def _get_or_create(ClientAgent):
             agent = ClientAgent.get_by_uid(str(agent_uid), timeout=timeout)
-            return agent.allocate_a2a_target_session(
-                caller_agent_session_uid=str(caller_agent_session_uid),
+            return agent.get_or_create_session(
+                session_uid=session_uid,
                 handle_unique_id=handle_unique_id,
+                name=name,
+                parent_session_uid=parent_session_uid,
+                llm_provider=llm_provider,
+                llm_model=llm_model,
+                llm_thinking=llm_thinking,
                 timeout=timeout,
             )
-
-        payload = _run_sdk_model_operation(
-            module_name="mainsequence.client.agent_runtime_models",
-            class_name="Agent",
-            operation=_allocate,
-        )
-        return _sdk_object_to_dict(payload)
-    except Exception as e:
-        err_name = type(e).__name__
-        if err_name == "NotFoundError":
-            raise ApiError(f"Agent not found: {agent_uid}") from e
-        if isinstance(e, (ApiError, NotLoggedIn)):
-            raise
-        raise ApiError(f"Agent A2A target session allocation failed: {e}") from e
-
-
-def get_agent_latest_session(
-    agent_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    """
-    Retrieve the latest session for one agent via SDK client model.
-    """
-    try:
-
-        def _get_latest(ClientAgent):
-            agent = ClientAgent.get_by_uid(str(agent_uid), timeout=timeout)
-            return agent.get_latest_session(timeout=timeout)
 
         session = _run_sdk_model_operation(
             module_name="mainsequence.client.agent_runtime_models",
             class_name="Agent",
-            operation=_get_latest,
+            operation=_get_or_create,
         )
         return _sdk_object_to_dict(session)
     except Exception as e:
@@ -1202,7 +1183,7 @@ def get_agent_latest_session(
             raise ApiError(f"Agent not found: {agent_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Agent latest session fetch failed: {e}") from e
+        raise ApiError(f"Agent session get-or-create failed: {e}") from e
 
 
 def list_agent_sessions(

@@ -1654,127 +1654,6 @@ def test_get_agent_uses_agent_uid_detail_route(cli_mod, monkeypatch):
     assert out["uid"] == agent_uid
 
 
-def test_allocate_agent_a2a_target_session_uses_client_model(cli_mod, monkeypatch):
-    api_mod = importlib.import_module("mainsequence.cli.api")
-    captured = {}
-    caller_session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
-    target_session_uid = "ac9e221d-1cd6-464c-a253-e302754872c1"
-
-    class FakeAgentSession:
-        @staticmethod
-        def model_dump(mode="json"):
-            return {
-                "uid": target_session_uid,
-                "agent_uid": "e0e75693-4110-464c-93e0-82c7fd9c9a23",
-                "status": "pending",
-                "llm_provider": "openai",
-                "llm_model": "gpt-5.4",
-                "engine_name": "codex",
-            }
-
-    def _run_sdk_model_operation(*, module_name, class_name, operation, project_id_env=None):
-        captured["module_name"] = module_name
-        captured["class_name"] = class_name
-
-        class _ClientAgent:
-            @classmethod
-            def get_by_uid(cls, uid, timeout=None):
-                captured["uid"] = uid
-                captured["timeout"] = timeout
-
-                class _Agent:
-                    def allocate_a2a_target_session(
-                        self,
-                        *,
-                        caller_agent_session_uid,
-                        handle_unique_id=None,
-                        timeout=None,
-                    ):
-                        captured["caller_agent_session_uid"] = caller_agent_session_uid
-                        captured["handle_unique_id"] = handle_unique_id
-                        captured["allocate_timeout"] = timeout
-                        return {
-                            "handle_unique_id": "delegated-handle-1",
-                            "agent_session_uid": target_session_uid,
-                            "allocation_state": "created_new",
-                            "session": FakeAgentSession().model_dump(),
-                        }
-
-                return _Agent()
-
-        return operation(_ClientAgent)
-
-    monkeypatch.setattr(api_mod, "_run_sdk_model_operation", _run_sdk_model_operation)
-
-    out = api_mod.allocate_agent_a2a_target_session(
-        "e0e75693-4110-464c-93e0-82c7fd9c9a23",
-        caller_agent_session_uid=caller_session_uid,
-        handle_unique_id="delegated-handle-1",
-        timeout=16,
-    )
-    assert captured == {
-        "module_name": "mainsequence.client.agent_runtime_models",
-        "class_name": "Agent",
-        "uid": "e0e75693-4110-464c-93e0-82c7fd9c9a23",
-        "timeout": 16,
-        "caller_agent_session_uid": caller_session_uid,
-        "handle_unique_id": "delegated-handle-1",
-        "allocate_timeout": 16,
-    }
-    assert out["agent_session_uid"] == target_session_uid
-    assert out["allocation_state"] == "created_new"
-    assert out["handle_unique_id"] == "delegated-handle-1"
-
-
-def test_get_agent_latest_session_uses_client_model(cli_mod, monkeypatch):
-    api_mod = importlib.import_module("mainsequence.cli.api")
-    captured = {}
-    session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
-
-    class FakeAgentSession:
-        @staticmethod
-        def model_dump(mode="json"):
-            return {
-                "uid": session_uid,
-                "agent_uid": "e0e75693-4110-464c-93e0-82c7fd9c9a23",
-                "status": "completed",
-                "llm_provider": "openai",
-                "llm_model": "gpt-5.4",
-                "engine_name": "codex",
-            }
-
-    def _run_sdk_model_operation(*, module_name, class_name, operation, project_id_env=None):
-        captured["module_name"] = module_name
-        captured["class_name"] = class_name
-
-        class _ClientAgent:
-            @classmethod
-            def get_by_uid(cls, uid, timeout=None):
-                captured["uid"] = uid
-                captured["timeout"] = timeout
-
-                class _Agent:
-                    def get_latest_session(self, timeout=None):
-                        captured["get_latest_session_timeout"] = timeout
-                        return FakeAgentSession()
-
-                return _Agent()
-
-        return operation(_ClientAgent)
-
-    monkeypatch.setattr(api_mod, "_run_sdk_model_operation", _run_sdk_model_operation)
-
-    out = api_mod.get_agent_latest_session("e0e75693-4110-464c-93e0-82c7fd9c9a23", timeout=17)
-    assert captured == {
-        "module_name": "mainsequence.client.agent_runtime_models",
-        "class_name": "Agent",
-        "uid": "e0e75693-4110-464c-93e0-82c7fd9c9a23",
-        "timeout": 17,
-        "get_latest_session_timeout": 17,
-    }
-    assert out["uid"] == session_uid
-
-
 def test_list_agent_sessions_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
@@ -1820,6 +1699,81 @@ def test_list_agent_sessions_uses_client_model(cli_mod, monkeypatch):
         "filters": {"status": "completed", "agent_uid": agent_uid},
     }
     assert out == [FakeAgentSession().model_dump()]
+
+
+def test_get_or_create_agent_session_uses_client_model(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {}
+    agent_uid = "e0e75693-4110-464c-93e0-82c7fd9c9a23"
+    session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
+    parent_session_uid = "33333333-3333-4333-8333-333333333333"
+
+    class FakeAgentSession:
+        @staticmethod
+        def model_dump(mode="json"):
+            return {
+                "uid": session_uid,
+                "agent_uid": agent_uid,
+                "agent_name": "Research Copilot",
+                "parent_session_uid": parent_session_uid,
+                "name": "Quarterly portfolio review",
+                "status": "running",
+                "llm_provider": "openai",
+                "llm_model": "gpt-5.4",
+                "engine_name": "codex",
+                "bound_handle": {"handle_unique_id": "portfolio-review-q2-2026"},
+            }
+
+    def _run_sdk_model_operation(*, module_name, class_name, operation, project_id_env=None):
+        captured["module_name"] = module_name
+        captured["class_name"] = class_name
+
+        class _ClientAgent:
+            @classmethod
+            def get_by_uid(cls, uid, timeout=None):
+                captured["agent_uid"] = uid
+                captured["get_timeout"] = timeout
+
+                class _Agent:
+                    @staticmethod
+                    def get_or_create_session(**kwargs):
+                        captured["kwargs"] = kwargs
+                        return FakeAgentSession()
+
+                return _Agent()
+
+        return operation(_ClientAgent)
+
+    monkeypatch.setattr(api_mod, "_run_sdk_model_operation", _run_sdk_model_operation)
+
+    out = api_mod.get_or_create_agent_session(
+        agent_uid,
+        handle_unique_id="portfolio-review-q2-2026",
+        name="Quarterly portfolio review",
+        parent_session_uid=parent_session_uid,
+        llm_provider="openai",
+        llm_model="gpt-5.4",
+        llm_thinking="",
+        timeout=18,
+    )
+    assert captured == {
+        "module_name": "mainsequence.client.agent_runtime_models",
+        "class_name": "Agent",
+        "agent_uid": agent_uid,
+        "get_timeout": 18,
+        "kwargs": {
+            "session_uid": None,
+            "handle_unique_id": "portfolio-review-q2-2026",
+            "name": "Quarterly portfolio review",
+            "parent_session_uid": parent_session_uid,
+            "llm_provider": "openai",
+            "llm_model": "gpt-5.4",
+            "llm_thinking": "",
+            "timeout": 18,
+        },
+    }
+    assert out["uid"] == session_uid
+    assert out["bound_handle"]["handle_unique_id"] == "portfolio-review-q2-2026"
 
 
 def test_get_agent_session_uses_client_model(cli_mod, monkeypatch):
@@ -7259,79 +7213,6 @@ def test_agent_detail_uses_agent_uid(cli_mod, runner, monkeypatch):
     assert agent_uid[:8] in result.output
 
 
-def test_agent_allocate_a2a_target_session(cli_mod, runner, monkeypatch):
-    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
-    agent_uid = "e0e75693-4110-464c-93e0-82c7fd9c9a23"
-    monkeypatch.setattr(
-        cli_mod,
-        "allocate_agent_a2a_target_session",
-        lambda agent_uid, caller_agent_session_uid, handle_unique_id=None, timeout=None: {
-            "handle_unique_id": handle_unique_id or "delegated-handle-1",
-            "agent_session_uid": "3f1cc452-43ec-49cb-b2ba-87dbac164d29",
-            "allocation_state": "created_new",
-            "session": {
-                "uid": "3f1cc452-43ec-49cb-b2ba-87dbac164d29",
-                "agent_uid": "e0e75693-4110-464c-93e0-82c7fd9c9a23",
-                "status": "pending",
-                "started_at": "2026-04-11T09:15:00Z",
-                "llm_provider": "openai",
-                "llm_model": "gpt-5.4",
-                "engine_name": "codex",
-                "thread_id": "thread-123",
-                "runtime_config_snapshot": {"temperature": 0},
-                "session_metadata": {
-                    "origin": "cli",
-                    "caller_agent_session_uid": caller_agent_session_uid,
-                    "handle_unique_id": handle_unique_id or "delegated-handle-1",
-                },
-            },
-        },
-    )
-
-    result = runner.invoke(
-        cli_mod.app,
-        ["agent", "allocate_a2a_target_session", agent_uid, "3f1cc452-43ec-49cb-b2ba-87dbac164d29"],
-    )
-    assert result.exit_code == 0
-    assert f"Agent A2A target session allocated: agent_uid={agent_uid}" in result.output
-    assert "A2A Target Session Allocation" in result.output
-    assert "delegated-handle-1" in result.output
-    assert "created_new" in result.output
-    assert "Agent Session Details" in result.output
-    assert "thread-123" in result.output
-    assert "temperature" in result.output
-
-
-def test_agent_get_latest_session(cli_mod, runner, monkeypatch):
-    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
-    agent_uid = "e0e75693-4110-464c-93e0-82c7fd9c9a23"
-    monkeypatch.setattr(
-        cli_mod,
-        "get_agent_latest_session",
-        lambda agent_uid, timeout=None: {
-            "uid": "3f1cc452-43ec-49cb-b2ba-87dbac164d29",
-            "agent_uid": agent_uid,
-            "status": "completed",
-            "started_at": "2026-04-11T09:15:00Z",
-            "ended_at": "2026-04-11T09:16:00Z",
-            "llm_provider": "openai",
-            "llm_model": "gpt-5.4",
-            "engine_name": "codex",
-            "input_text": "Summarize rates moves",
-            "output_text": "Bunds rallied 4bp.",
-            "usage_summary": {"prompt_tokens": 100},
-            "session_metadata": {"origin": "cli"},
-        },
-    )
-
-    result = runner.invoke(cli_mod.app, ["agent", "get_latest_session", agent_uid])
-    assert result.exit_code == 0
-    assert "Agent Session Details" in result.output
-    assert "Summarize rates moves" in result.output
-    assert "Bunds rallied 4bp." in result.output
-    assert "prompt_tokens" in result.output
-
-
 def test_agent_session_list_scoped_by_agent_uid(cli_mod, runner, monkeypatch):
     captured = {}
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
@@ -7383,6 +7264,95 @@ def test_agent_session_list_scoped_by_agent_uid(cli_mod, runner, monkeypatch):
     assert "Total agent sessions: 1" in result.output
 
 
+def test_agent_session_get_or_create_by_handle(cli_mod, runner, monkeypatch):
+    captured = {}
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    agent_uid = "e0e75693-4110-464c-93e0-82c7fd9c9a23"
+    session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
+    parent_session_uid = "33333333-3333-4333-8333-333333333333"
+
+    def _get_or_create_agent_session(agent_uid_arg, **kwargs):
+        captured["agent_uid"] = agent_uid_arg
+        captured["kwargs"] = kwargs
+        return {
+            "uid": session_uid,
+            "agent_uid": agent_uid,
+            "agent_name": "Research Copilot",
+            "parent_session_uid": parent_session_uid,
+            "name": "Quarterly portfolio review",
+            "status": "running",
+            "llm_provider": "openai",
+            "llm_model": "gpt-5.4",
+            "engine_name": "codex",
+            "bound_handle": {"handle_unique_id": "portfolio-review-q2-2026"},
+        }
+
+    monkeypatch.setattr(cli_mod, "get_or_create_agent_session", _get_or_create_agent_session)
+
+    result = runner.invoke(
+        cli_mod.app,
+        [
+            "agent",
+            "session",
+            "get_or_create",
+            agent_uid,
+            "--handle-unique-id",
+            "portfolio-review-q2-2026",
+            "--name",
+            "Quarterly portfolio review",
+            "--parent-session-uid",
+            parent_session_uid,
+            "--llm-provider",
+            "openai",
+            "--llm-model",
+            "gpt-5.4",
+            "--llm-thinking",
+            "",
+            "--timeout",
+            "12",
+            "--json",
+        ],
+    )
+    assert result.exit_code == 0
+    assert captured == {
+        "agent_uid": agent_uid,
+        "kwargs": {
+            "session_uid": None,
+            "handle_unique_id": "portfolio-review-q2-2026",
+            "name": "Quarterly portfolio review",
+            "parent_session_uid": parent_session_uid,
+            "llm_provider": "openai",
+            "llm_model": "gpt-5.4",
+            "llm_thinking": "",
+            "timeout": 12,
+        },
+    }
+    payload = json.loads(result.output)
+    assert payload["uid"] == session_uid
+    assert payload["bound_handle"]["handle_unique_id"] == "portfolio-review-q2-2026"
+
+
+def test_agent_session_get_or_create_requires_one_lookup_key(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+
+    result = runner.invoke(
+        cli_mod.app,
+        [
+            "agent",
+            "session",
+            "get_or_create",
+            "e0e75693-4110-464c-93e0-82c7fd9c9a23",
+            "--session-uid",
+            "3f1cc452-43ec-49cb-b2ba-87dbac164d29",
+            "--handle-unique-id",
+            "portfolio-review-q2-2026",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "Provide exactly one of --session-uid or --handle-unique-id." in result.output
+
+
 def test_agent_session_detail(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(
@@ -7417,8 +7387,6 @@ def test_agent_session_detail(cli_mod, runner, monkeypatch):
 
 def test_removed_agent_session_runtime_commands_are_not_available(cli_mod, runner):
     removed_commands = [
-        ["agent", "session", "wait_runtime_ready", "3f1cc452-43ec-49cb-b2ba-87dbac164d29"],
-        ["agent", "session", "a2a_chat", "3f1cc452-43ec-49cb-b2ba-87dbac164d29"],
         ["agent", "session", "runtime", "resolve", "3f1cc452-43ec-49cb-b2ba-87dbac164d29"],
         ["agent", "session", "runtime", "chat", "3f1cc452-43ec-49cb-b2ba-87dbac164d29"],
         ["agent", "session", "runtime", "cancel", "3f1cc452-43ec-49cb-b2ba-87dbac164d29"],

@@ -38,14 +38,8 @@ Content-Type: application/a2a+json
 Accept: application/a2a+json
 ```
 
-The SDK must not call:
-
-```http
-POST /api/a2a/sessions/{agent_session_uid}/runtime
-GET /api/a2a/sessions/{agent_session_uid}/runtime
-```
-
-The SDK must not poll runtime readiness for standard A2A sends.
+The SDK must not call legacy runtime attach/status endpoints or poll runtime
+readiness for standard A2A sends.
 
 ## Request Shape
 

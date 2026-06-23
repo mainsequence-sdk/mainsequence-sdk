@@ -83,7 +83,6 @@ from .api import (
     add_team_user_to_edit,
     add_team_user_to_view,
     add_workspace_labels,
-    allocate_agent_a2a_target_session,
     create_adapter_from_api_connection,
     create_agent,
     create_constant,
@@ -108,7 +107,6 @@ from .api import (
     delete_secret,
     delete_workspace,
     get_agent,
-    get_agent_latest_session,
     get_agent_run,
     get_agent_session,
     get_connection_instance,
@@ -118,6 +116,7 @@ from .api import (
     get_data_node_storage,
     get_logged_user_details,
     get_meta_table,
+    get_or_create_agent_session,
     get_organization_team,
     get_project,
     get_project_data_node_updates,
@@ -3543,12 +3542,6 @@ def _format_agent_run_details(agent_run_payload: dict[str, object]) -> list[tupl
     ]
 
 
-def _format_agent_session_ref_label(session_ref: object) -> str:
-    if isinstance(session_ref, dict):
-        return str(session_ref.get("uid") or "-")
-    return str(session_ref or "-")
-
-
 def _format_agent_session_preview(
     agent_session_payload: dict[str, object],
 ) -> list[tuple[str, str]]:
@@ -3583,18 +3576,7 @@ def _format_agent_session_details(
         ),
         ("Usage Summary", _format_json_value(agent_session_payload.get("usage_summary"))),
         ("Session Metadata", _format_json_value(agent_session_payload.get("session_metadata"))),
-    ]
-
-
-def _format_agent_a2a_allocation_preview(
-    allocation_payload: dict[str, object],
-) -> list[tuple[str, str]]:
-    session_payload = allocation_payload.get("session")
-    return [
-        ("Handle Unique ID", str(allocation_payload.get("handle_unique_id") or "-")),
-        ("Agent Session UID", str(allocation_payload.get("agent_session_uid") or "-")),
-        ("Allocation State", str(allocation_payload.get("allocation_state") or "-")),
-        ("Session", _format_agent_session_ref_label(session_payload)),
+        ("Bound Handle", _format_json_value(agent_session_payload.get("bound_handle"))),
     ]
 
 
@@ -3833,59 +3815,6 @@ def _agent_delete_impl(
     print_kv("Deleted Agent", _format_agent_preview(deleted))
 
 
-def _agent_allocate_a2a_target_session_impl(
-    *,
-    agent_uid: str,
-    caller_agent_session_uid: str,
-    handle_unique_id: str | None,
-    timeout: int | None,
-) -> None:
-    _require_login()
-
-    try:
-        allocation_payload = allocate_agent_a2a_target_session(
-            agent_uid,
-            caller_agent_session_uid=caller_agent_session_uid,
-            handle_unique_id=handle_unique_id,
-            timeout=timeout,
-        )
-    except ApiError as e:
-        error(f"Agent A2A target session allocation failed: {e}")
-        raise typer.Exit(1) from e
-
-    if _emit_json(allocation_payload):
-        return
-
-    success(f"Agent A2A target session allocated: agent_uid={agent_uid}")
-    print_kv(
-        "A2A Target Session Allocation", _format_agent_a2a_allocation_preview(allocation_payload)
-    )
-    session_payload = allocation_payload.get("session")
-    if isinstance(session_payload, dict):
-        print_kv("Agent Session", _format_agent_session_preview(session_payload))
-        print_kv("Agent Session Details", _format_agent_session_details(session_payload))
-
-
-def _agent_get_latest_session_impl(
-    *,
-    agent_uid: str,
-    timeout: int | None,
-) -> None:
-    _require_login()
-
-    try:
-        agent_session_payload = get_agent_latest_session(agent_uid, timeout=timeout)
-    except ApiError as e:
-        error(f"Agent latest session fetch failed: {e}")
-        raise typer.Exit(1) from e
-
-    if _emit_json(agent_session_payload):
-        return
-
-    print_kv("Agent Session", _format_agent_session_preview(agent_session_payload))
-    print_kv("Agent Session Details", _format_agent_session_details(agent_session_payload))
-
-
 def _extract_standard_a2a_message_text(payload: dict[str, object]) -> str:
     response_message = payload.get("message")
     if not isinstance(response_message, dict):
@@ -3948,6 +3877,64 @@ def _agent_session_a2a_send_impl(
         raise typer.Exit(1) from e
 
     typer.echo(json.dumps(response_payload, indent=2))
+
+
+def _agent_session_get_or_create_impl(
+    *,
+    agent_uid: str,
+    session_uid: str | None,
+    handle_unique_id: str | None,
+    name: str | None,
+    parent_session_uid: str | None,
+    llm_provider: str | None,
+    llm_model: str | None,
+    llm_thinking: str | None,
+    timeout: int | None,
+) -> None:
+    resolved_session_uid = str(session_uid or "").strip() if session_uid is not None else ""
+    resolved_handle_unique_id = (
+        str(handle_unique_id or "").strip() if handle_unique_id is not None else ""
+    )
+    if bool(resolved_session_uid) == bool(resolved_handle_unique_id):
+        error("Provide exactly one of --session-uid or --handle-unique-id.")
+        raise typer.Exit(1)
+
+    creation_options = {
+        "--name": name,
+        "--parent-session-uid": parent_session_uid,
+        "--llm-provider": llm_provider,
+        "--llm-model": llm_model,
+        "--llm-thinking": llm_thinking,
+    }
+    if resolved_session_uid and any(value is not None for value in creation_options.values()):
+        provided = ", ".join(key for key, value in creation_options.items() if value is not None)
+        error(f"Creation options require --handle-unique-id, not --session-uid: {provided}.")
+        raise typer.Exit(1)
+
+    _require_login()
+
+    try:
+        agent_session_payload = get_or_create_agent_session(
+            agent_uid,
+            session_uid=resolved_session_uid or None,
+            handle_unique_id=resolved_handle_unique_id or None,
+            name=name,
+            parent_session_uid=parent_session_uid,
+            llm_provider=llm_provider,
+            llm_model=llm_model,
+            llm_thinking=llm_thinking,
+            timeout=timeout,
+        )
+    except ApiError as e:
+        error(f"Agent session get-or-create failed: {e}")
+        raise typer.Exit(1) from e
+
+    if _emit_json(agent_session_payload):
+        return
+
+    success(f"Agent session resolved: uid={agent_session_payload.get('uid') or '-'}")
+    print_kv("Agent Session", _format_agent_session_preview(agent_session_payload))
+    print_kv("Agent Session Details", _format_agent_session_details(agent_session_payload))
 
 
 def _agent_session_list_impl(
@@ -6580,72 +6567,6 @@ def agent_delete_cmd(
     _agent_delete_impl(agent_uid=agent_uid, timeout=timeout)
 
 
-@agent.command("allocate_a2a_target_session")
-def agent_allocate_a2a_target_session_cmd(
-    agent_uid: str = pydantic_argument(
-        AGENT_MODEL_REF,
-        "uid",
-        ...,
-        help="Agent UID.",
-    ),
-    caller_agent_session_uid: str = pydantic_argument(
-        AGENT_SESSION_MODEL_REF,
-        "uid",
-        ...,
-        help="Caller agent session UID.",
-    ),
-    handle_unique_id: str | None = typer.Option(
-        None,
-        "--handle-unique-id",
-        help="Optional delegated-session handle to reuse an existing target session on retries.",
-    ),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    """
-    Allocate or reuse the delegated A2A target session for one agent.
-
-    Uses SDK client `Agent.allocate_a2a_target_session()` as the single source of truth.
-
-    Examples
-    --------
-    ```bash
-    mainsequence agent allocate_a2a_target_session e0e75693-4110-464c-93e0-82c7fd9c9a23 3f1cc452-43ec-49cb-b2ba-87dbac164d29
-    mainsequence agent allocate_a2a_target_session e0e75693-4110-464c-93e0-82c7fd9c9a23 3f1cc452-43ec-49cb-b2ba-87dbac164d29 --handle-unique-id delegated-handle-1 --timeout 60
-    ```
-    """
-    _agent_allocate_a2a_target_session_impl(
-        agent_uid=agent_uid,
-        caller_agent_session_uid=caller_agent_session_uid,
-        handle_unique_id=handle_unique_id,
-        timeout=timeout,
-    )
-
-
-@agent.command("get_latest_session")
-def agent_get_latest_session_cmd(
-    agent_uid: str = pydantic_argument(
-        AGENT_MODEL_REF,
-        "uid",
-        ...,
-        help="Agent UID.",
-    ),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    """
-    Retrieve the latest session recorded for one agent.
-
-    Uses SDK client `Agent.get_latest_session()` as the single source of truth.
-
-    Examples
-    --------
-    ```bash
-    mainsequence agent get_latest_session e0e75693-4110-464c-93e0-82c7fd9c9a23
-    mainsequence agent get_latest_session e0e75693-4110-464c-93e0-82c7fd9c9a23 --timeout 60
-    ```
-    """
-    _agent_get_latest_session_impl(agent_uid=agent_uid, timeout=timeout)
-
-
 @agent_session_group.command("list")
 def agent_session_list_cmd(
     agent_uid: str | None = pydantic_option(
@@ -6679,6 +6600,78 @@ def agent_session_list_cmd(
         timeout=timeout,
         filter_entries=filter_entries,
         show_filters=show_filters,
+    )
+
+
+@agent_session_group.command("get_or_create")
+def agent_session_get_or_create_cmd(
+    agent_uid: str = pydantic_argument(
+        AGENT_MODEL_REF,
+        "uid",
+        ...,
+        help="Agent UID.",
+    ),
+    session_uid: str | None = pydantic_option(
+        AGENT_SESSION_MODEL_REF,
+        "uid",
+        None,
+        "--session-uid",
+        help="Existing agent session UID to resolve for this agent.",
+    ),
+    handle_unique_id: str | None = typer.Option(
+        None,
+        "--handle-unique-id",
+        help="Reusable session handle key to get or create a session.",
+    ),
+    name: str | None = typer.Option(
+        None,
+        "--name",
+        help="Human-readable session display name used when creating a handle-backed session.",
+    ),
+    parent_session_uid: str | None = typer.Option(
+        None,
+        "--parent-session-uid",
+        help="Parent or origin agent session UID used when creating a handle-backed session.",
+    ),
+    llm_provider: str | None = typer.Option(
+        None,
+        "--llm-provider",
+        help="Session LLM provider override used when creating a handle-backed session.",
+    ),
+    llm_model: str | None = typer.Option(
+        None,
+        "--llm-model",
+        help="Session LLM model override used when creating a handle-backed session.",
+    ),
+    llm_thinking: str | None = typer.Option(
+        None,
+        "--llm-thinking",
+        help="Session thinking/reasoning override used when creating a handle-backed session.",
+    ),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Get an existing agent session by UID, or get/create one by handle.
+
+    Sends exactly one lookup key to the backend: `session_uid` or `handle_unique_id`.
+
+    Examples
+    --------
+    ```bash
+    mainsequence agent session get_or_create e0e75693-4110-464c-93e0-82c7fd9c9a23 --session-uid 3f1cc452-43ec-49cb-b2ba-87dbac164d29
+    mainsequence agent session get_or_create e0e75693-4110-464c-93e0-82c7fd9c9a23 --handle-unique-id portfolio-review-q2-2026 --name "Quarterly portfolio review"
+    ```
+    """
+    _agent_session_get_or_create_impl(
+        agent_uid=agent_uid,
+        session_uid=session_uid,
+        handle_unique_id=handle_unique_id,
+        name=name,
+        parent_session_uid=parent_session_uid,
+        llm_provider=llm_provider,
+        llm_model=llm_model,
+        llm_thinking=llm_thinking,
+        timeout=timeout,
     )
 
 

@@ -1474,11 +1474,6 @@ def test_agent_session_runtime_access_uses_session_uid_route(monkeypatch):
                 "rpc_url": "https://runtime.main-sequence.app/rpc",
                 "token": "tok-secret",
                 "is_ready": True,
-                "runtime_paths": {
-                    "chat": "/api/a2a/sessions/3f1cc452-43ec-49cb-b2ba-87dbac164d29/runtime/chat",
-                    "cancel": "/api/a2a/sessions/3f1cc452-43ec-49cb-b2ba-87dbac164d29/runtime/cancel",
-                    "detach": "/api/a2a/sessions/3f1cc452-43ec-49cb-b2ba-87dbac164d29/runtime/detach",
-                },
                 "knative_service_runtime_uid": "70c6efb9-8e80-4051-ad3a-f432b2c37f5a",
                 "image_drift": {
                     "agent_kind": "astro_orchestrator",
@@ -1558,12 +1553,6 @@ def test_agent_session_runtime_access_accepts_minimal_image_drift(monkeypatch):
                     "queued": False,
                     "reason": "not_required",
                 },
-                "runtime_paths": {
-                    "session": f"/api/a2a/sessions/{session_uid}/runtime",
-                    "chat": f"/api/a2a/sessions/{session_uid}/runtime/chat",
-                    "cancel": f"/api/a2a/sessions/{session_uid}/runtime/cancel",
-                    "detach": f"/api/a2a/sessions/{session_uid}/runtime/detach",
-                },
             }
 
     monkeypatch.setattr(agent_models_mod, "make_request", lambda **kwargs: FakeResponse())
@@ -1577,166 +1566,6 @@ def test_agent_session_runtime_access_accepts_minimal_image_drift(monkeypatch):
         "queued": False,
         "reason": "not_required",
     }
-
-
-def test_agent_session_runtime_ready_polls_runtime_session_path(monkeypatch):
-    captured = {}
-    session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
-
-    class FakeResponse:
-        status_code = 200
-        content = b'{"ready": true}'
-
-        @staticmethod
-        def json():
-            return {
-                "ok": True,
-                "state": "ready",
-                "runner": {"ready": True},
-                "preflight": {"ready": True},
-                "ready": True,
-            }
-
-    def _fake_get(url, *, headers, timeout):
-        captured["url"] = url
-        captured["headers"] = headers
-        captured["timeout"] = timeout
-        return FakeResponse()
-
-    monkeypatch.setattr(agent_models_mod.requests, "get", _fake_get)
-
-    ready = agent_models_mod.AgentSession.wait_until_runtime_ready(
-        session_uid,
-        runtime_access={
-            "rpc_url": "https://runtime.main-sequence.app/rpc",
-            "token": "tok-secret",
-            "runtime_paths": {
-                "session": f"/api/a2a/sessions/{session_uid}/runtime",
-            },
-        },
-        timeout_seconds=60,
-        poll_interval_seconds=10,
-        timeout=13,
-    )
-
-    assert ready.ready is True
-    assert ready.attempts == 1
-    assert captured == {
-        "url": "https://runtime.main-sequence.app/rpc/api/a2a/sessions/"
-        "3f1cc452-43ec-49cb-b2ba-87dbac164d29/runtime",
-        "headers": {
-            "Authorization": "Bearer tok-secret",
-            "Accept": "application/json",
-        },
-        "timeout": 13,
-    }
-
-
-def test_agent_session_runtime_ready_uses_finite_default_request_timeout(monkeypatch):
-    captured = {}
-    session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
-
-    class FakeResponse:
-        status_code = 200
-
-        @staticmethod
-        def json():
-            return {
-                "ok": True,
-                "state": "ready",
-                "runner": {"ready": True},
-                "preflight": {"ready": True},
-            }
-
-    def _fake_get(url, *, headers, timeout):
-        captured["timeout"] = timeout
-        return FakeResponse()
-
-    monkeypatch.setattr(agent_models_mod.requests, "get", _fake_get)
-
-    ready = agent_models_mod.AgentSession.wait_until_runtime_ready(
-        session_uid,
-        runtime_access={
-            "rpc_url": "https://runtime.main-sequence.app/rpc",
-            "token": "tok-secret",
-            "runtime_paths": {
-                "session": f"/api/a2a/sessions/{session_uid}/runtime",
-            },
-        },
-        timeout_seconds=60,
-        poll_interval_seconds=10,
-    )
-
-    assert ready.ready is True
-    assert captured["timeout"] == agent_models_mod.DEFAULT_AGENT_RUNTIME_READY_REQUEST_TIMEOUT
-
-
-def test_agent_session_runtime_ready_returns_timeout_payload(monkeypatch):
-    session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
-
-    class FakeResponse:
-        status_code = 200
-        content = b'{"ok": true}'
-
-        @staticmethod
-        def json():
-            return {
-                "ok": True,
-                "state": "starting",
-                "runner": {"state": "not_started", "ready": False},
-                "preflight": {"ready": False},
-                "detail": "runtime not ready",
-            }
-
-    monkeypatch.setattr(
-        agent_models_mod.requests,
-        "get",
-        lambda url, *, headers, timeout: FakeResponse(),
-    )
-
-    ready = agent_models_mod.AgentSession.wait_until_runtime_ready(
-        session_uid,
-        runtime_access={
-            "rpc_url": "https://runtime.main-sequence.app/rpc",
-            "token": "tok-secret",
-            "runtime_paths": {
-                "session": f"/api/a2a/sessions/{session_uid}/runtime",
-            },
-        },
-        timeout_seconds=0.01,
-        poll_interval_seconds=0.01,
-        timeout=13,
-    )
-
-    assert ready.ready is False
-    assert ready.status_code == 200
-    assert ready.detail == "runtime not ready"
-
-
-def test_agent_session_runtime_ready_treats_request_timeout_as_not_ready(monkeypatch):
-    session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
-
-    def _fake_get(url, *, headers, timeout):
-        raise agent_models_mod.requests.Timeout("runtime status request timed out")
-
-    monkeypatch.setattr(agent_models_mod.requests, "get", _fake_get)
-
-    ready = agent_models_mod.AgentSession.wait_until_runtime_ready(
-        session_uid,
-        runtime_access={
-            "rpc_url": "https://runtime.main-sequence.app/rpc",
-            "token": "tok-secret",
-            "runtime_paths": {
-                "session": f"/api/a2a/sessions/{session_uid}/runtime",
-            },
-        },
-        timeout_seconds=0.01,
-        poll_interval_seconds=0.01,
-    )
-
-    assert ready.ready is False
-    assert ready.status_code is None
-    assert "runtime status request timed out" in ready.detail
 
 
 def test_agent_session_send_a2a_message_posts_standard_contract(monkeypatch):
@@ -1975,623 +1804,11 @@ def test_agent_session_send_a2a_message_refreshes_access_and_reuses_body(monkeyp
     assert captured["tokens"] == ["Bearer tok-secret-1", "Bearer tok-secret-2"]
 
 
-def test_agent_session_a2a_chat_resolves_access_and_posts_to_runtime(monkeypatch):
-    captured = {"resolve": {}, "resolve_count": 0, "runtime": {}}
-    session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
-    chat_path = f"/api/a2a/sessions/{session_uid}/runtime/chat"
-
-    class FakeResolveResponse:
-        status_code = 200
-        content = b'{"ok": true}'
-
-        @staticmethod
-        def json():
-            return {
-                "rpc_url": "https://runtime.main-sequence.app/rpc",
-                "token": "tok-secret",
-                "is_ready": True,
-                "runtime_paths": {
-                    "session": f"/api/a2a/sessions/{session_uid}/runtime",
-                    "chat": chat_path,
-                },
-            }
-
-    class FakeStatusResponse:
-        status_code = 200
-
-        @staticmethod
-        def json():
-            return {
-                "ok": True,
-                "state": "ready",
-                "runner": {"ready": True},
-                "preflight": {"ready": True},
-            }
-
-    class FakeRuntimeResponse:
-        status_code = 200
-        headers = {"Content-Type": "text/event-stream"}
-        text = (
-            'retry: 1000\n\n'
-            'id: 1\nevent: message\ndata: {"type":"text-delta","textDelta":"{\\"ok\\":true}"}\n\n'
-            "data: [DONE]\n\n"
-        )
-
-    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
-        captured["resolve_count"] += 1
-        captured["resolve"] = {
-            "r_type": r_type,
-            "url": url,
-            "payload": payload,
-            "timeout": time_out,
-        }
-        return FakeResolveResponse()
-
-    def _fake_post(url, *, headers, json, timeout):
-        captured["runtime"] = {
-            "url": url,
-            "headers": headers,
-            "json": json,
-            "timeout": timeout,
-        }
-        return FakeRuntimeResponse()
-
-    monkeypatch.setattr(agent_models_mod, "make_request", _fake_make_request)
-    monkeypatch.setattr(agent_models_mod.requests, "post", _fake_post)
-    monkeypatch.setattr(agent_models_mod.requests, "get", lambda *args, **kwargs: FakeStatusResponse())
-
-    access = agent_models_mod.AgentSession.resolve_runtime_access(
-        session_uid,
-        wait_for_runtime=True,
-        timeout=15,
-    )
-    payload = agent_models_mod.AgentSession.a2a_chat(
-        session_uid,
-        message="Return JSON.",
-        runtime_access=access,
-        runtime_turn_timeout_seconds=900,
-        omit_reasoning=True,
-        response_format={"type": "json_object", "strict": True},
-        json_repair={"attempts": 3},
-        tools=[{"name": "portfolio_lookup"}],
-        metadata={"source": "test"},
-        timeout=15,
-    )
-
-    assert payload["ok"] is True
-    assert payload["text"] == '{"ok":true}'
-    assert payload["json"] == {"ok": True}
-    assert captured["resolve"] == {
-        "r_type": "POST",
-        "url": f"{agent_models_mod.AgentSession.get_object_url()}/{session_uid}/resolve_runtime_access/",
-        "payload": {"json": {}},
-        "timeout": 15,
-    }
-    assert captured["runtime"]["url"] == f"https://runtime.main-sequence.app/rpc{chat_path}"
-    assert captured["runtime"]["headers"]["Authorization"] == "Bearer tok-secret"
-    assert captured["runtime"]["headers"]["Accept"] == "text/event-stream"
-    assert captured["runtime"]["json"] == {
-        "tools": [{"name": "portfolio_lookup"}],
-        "metadata": {"source": "test"},
-        "message": "Return JSON.",
-        "runtime_turn_timeout_seconds": 900,
-        "omit_reasoning": True,
-        "response_format": {"type": "json_object", "strict": True},
-        "json_repair": {"attempts": 3},
-    }
-    assert "runtime_ready_timeout_seconds" not in captured["runtime"]["json"]
-    assert captured["runtime"]["timeout"] == 15
-    assert captured["resolve_count"] == 1
-
-    payload = agent_models_mod.AgentSession.a2a_chat(
-        session_uid,
-        message="Return JSON again.",
-        timeout=15,
-    )
-
-    assert payload["ok"] is True
-    assert captured["resolve_count"] == 1
-    assert captured["runtime"]["json"]["message"] == "Return JSON again."
-
-
-def test_agent_session_a2a_chat_auto_resolves_access_when_cache_missing(monkeypatch):
-    captured = {"resolve": {}, "runtime": {}}
-    session_uid = "4f1cc452-43ec-49cb-b2ba-87dbac164d29"
-    chat_path = f"/api/a2a/sessions/{session_uid}/runtime/chat"
-    agent_models_mod.AgentSession.clear_cached_runtime_access(session_uid)
-
-    class FakeResolveResponse:
-        status_code = 200
-        content = b'{"ok": true}'
-
-        @staticmethod
-        def json():
-            return {
-                "rpc_url": "https://runtime.main-sequence.app/rpc",
-                "token": "tok-secret",
-                "is_ready": True,
-                "runtime_paths": {
-                    "session": f"/api/a2a/sessions/{session_uid}/runtime",
-                    "chat": chat_path,
-                },
-            }
-
-    class FakeStatusResponse:
-        status_code = 200
-
-        @staticmethod
-        def json():
-            return {
-                "ok": True,
-                "state": "ready",
-                "runner": {"ready": True},
-                "preflight": {"ready": True},
-            }
-
-    class FakeRuntimeResponse:
-        status_code = 200
-        headers = {"Content-Type": "text/event-stream"}
-        text = 'id: 1\nevent: message\ndata: {"type":"finish"}\n\ndata: [DONE]\n\n'
-
-    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
-        captured["resolve"] = {
-            "r_type": r_type,
-            "url": url,
-            "payload": payload,
-            "timeout": time_out,
-        }
-        return FakeResolveResponse()
-
-    def _fake_post(url, *, headers, json, timeout):
-        captured["runtime"] = {
-            "url": url,
-            "headers": headers,
-            "json": json,
-            "timeout": timeout,
-        }
-        return FakeRuntimeResponse()
-
-    monkeypatch.setattr(agent_models_mod, "make_request", _fake_make_request)
-    monkeypatch.setattr(agent_models_mod.requests, "post", _fake_post)
-    monkeypatch.setattr(agent_models_mod.requests, "get", lambda *args, **kwargs: FakeStatusResponse())
-
-    payload = agent_models_mod.AgentSession.a2a_chat(
-        session_uid,
-        message="Return JSON.",
-        timeout=17,
-    )
-
-    assert payload["ok"] is True
-    assert captured["resolve"] == {
-        "r_type": "POST",
-        "url": f"{agent_models_mod.AgentSession.get_object_url()}/{session_uid}/resolve_runtime_access/",
-        "payload": {"json": {}},
-        "timeout": 17,
-    }
-    assert captured["runtime"]["url"] == f"https://runtime.main-sequence.app/rpc{chat_path}"
-    assert captured["runtime"]["headers"]["Authorization"] == "Bearer tok-secret"
-    assert captured["runtime"]["json"] == {"message": "Return JSON."}
-
-
-def test_agent_session_cancel_runtime_posts_to_resolved_runtime(monkeypatch):
-    captured = {"resolve": [], "runtime": []}
-    session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
-    cancel_path = f"/api/a2a/sessions/{session_uid}/runtime/cancel"
-
-    class FakeResolveResponse:
-        status_code = 200
-        content = b'{"ok": true}'
-
-        @staticmethod
-        def json():
-            return {
-                "rpc_url": "https://runtime.main-sequence.app/rpc",
-                "token": "tok-secret",
-                "runtime_paths": {
-                    "chat": f"/api/a2a/sessions/{session_uid}/runtime/chat",
-                    "cancel": cancel_path,
-                },
-            }
-
-    class FakeRuntimeResponse:
-        headers = {"Content-Type": "application/json"}
-        text = ""
-
-        def __init__(self, status_code: int, payload: dict[str, object]):
-            self.status_code = status_code
-            self._payload = payload
-
-        def json(self):
-            return self._payload
-
-    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
-        captured["resolve"].append(
-            {"r_type": r_type, "url": url, "payload": payload, "timeout": time_out}
-        )
-        return FakeResolveResponse()
-
-    def _fake_post(url, *, headers, json, timeout):
-        captured["runtime"].append(
-            {"url": url, "headers": headers, "json": json, "timeout": timeout}
-        )
-        return FakeRuntimeResponse(200, {"ok": True, "state": "cancelling"})
-
-    monkeypatch.setattr(agent_models_mod, "make_request", _fake_make_request)
-    monkeypatch.setattr(agent_models_mod.requests, "post", _fake_post)
-
-    agent_models_mod.AgentSession.resolve_runtime_access(session_uid, timeout=22)
-    payload = agent_models_mod.AgentSession.cancel_runtime(
-        session_uid,
-        reason="client_requested",
-        message="Stop this turn.",
-        timeout=22,
-    )
-
-    assert payload == {"ok": True, "state": "cancelling"}
-    assert len(captured["resolve"]) == 1
-    assert all(item["payload"] == {"json": {}} for item in captured["resolve"])
-    assert captured["runtime"][0]["headers"]["Authorization"] == "Bearer tok-secret"
-    assert captured["runtime"][0]["url"] == f"https://runtime.main-sequence.app/rpc{cancel_path}"
-    assert captured["runtime"][0]["json"] == {
-        "reason": "client_requested",
-        "message": "Stop this turn.",
-    }
-
-
-def test_agent_session_detach_runtime_posts_to_runtime(monkeypatch):
-    captured = {"resolve": {}, "runtime": {}}
-    session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
-    detach_path = f"/api/a2a/sessions/{session_uid}/runtime/detach"
-
-    class FakeResolveResponse:
-        status_code = 200
-        content = b'{"ok": true}'
-
-        @staticmethod
-        def json():
-            return {
-                "rpc_url": "https://runtime.main-sequence.app/rpc",
-                "token": "tok-secret",
-                "runtime_paths": {
-                    "chat": f"/api/a2a/sessions/{session_uid}/runtime/chat",
-                    "detach": detach_path,
-                },
-            }
-
-    class FakeRuntimeResponse:
-        status_code = 200
-        headers = {"Content-Type": "application/json"}
-        text = ""
-
-        @staticmethod
-        def json():
-            return {"ok": True, "state": "detached"}
-
-    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
-        captured["resolve"] = {
-            "r_type": r_type,
-            "url": url,
-            "payload": payload,
-            "timeout": time_out,
-        }
-        return FakeResolveResponse()
-
-    def _fake_post(url, *, headers, json, timeout):
-        captured["runtime"] = {
-            "url": url,
-            "headers": headers,
-            "json": json,
-            "timeout": timeout,
-        }
-        return FakeRuntimeResponse()
-
-    monkeypatch.setattr(agent_models_mod, "make_request", _fake_make_request)
-    monkeypatch.setattr(agent_models_mod.requests, "post", _fake_post)
-
-    agent_models_mod.AgentSession.resolve_runtime_access(session_uid, timeout=23)
-    payload = agent_models_mod.AgentSession.detach_runtime(
-        session_uid,
-        reason="client_done",
-        timeout=23,
-    )
-
-    assert payload == {"ok": True, "state": "detached"}
-    assert captured["resolve"]["payload"] == {"json": {}}
-    assert captured["runtime"]["url"] == f"https://runtime.main-sequence.app/rpc{detach_path}"
-    assert captured["runtime"]["headers"]["Authorization"] == "Bearer tok-secret"
-    assert captured["runtime"]["json"] == {"reason": "client_done"}
-
-
-def test_agent_session_a2a_chat_posts_plain_message_contract(monkeypatch):
-    captured = {}
-    session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
-
-    class FakeResponse:
-        status_code = 200
-        content = b'{"ok": true}'
-
-        @staticmethod
-        def json():
-            return {
-                "ok": True,
-                "ready": {
-                    "ready": True,
-                    "attempts": 1,
-                    "elapsed_seconds": 0.0,
-                    "status_code": 200,
-                    "detail": "",
-                },
-                "response": {
-                    "jsonrpc": "2.0",
-                    "id": "request-1",
-                    "result": {"kind": "message", "parts": [{"kind": "text", "text": "Done."}]},
-                },
-                "normalized": {
-                    "ok": True,
-                    "kind": "message",
-                    "state": None,
-                    "task_id": None,
-                    "context_id": None,
-                    "text": "Done.",
-                    "raw": {},
-                },
-            }
-
-    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
-        captured["r_type"] = r_type
-        captured["url"] = url
-        captured["payload"] = payload
-        captured["timeout"] = time_out
-        return FakeResponse()
-
-    monkeypatch.setattr(agent_models_mod, "make_request", _fake_make_request)
-
-    chat = agent_models_mod.AgentSession.send_a2a_chat(
-        session_uid,
-        message="Review the current portfolio drift.",
-        wait_for_runtime=True,
-        runtime_ready_timeout_seconds=60,
-        poll_task_until_stable=True,
-        runtime_turn_timeout_seconds=900,
-        timeout=14,
-    )
-
-    assert chat.ok is True
-    assert chat.normalized is not None
-    assert chat.normalized.text == "Done."
-    assert captured == {
-        "r_type": "POST",
-        "url": f"{agent_models_mod.AgentSession.get_object_url()}/{session_uid}/a2a_chat/",
-        "payload": {
-            "json": {
-                "wait_for_runtime": True,
-                "poll_task_until_stable": True,
-                "message": "Review the current portfolio drift.",
-                "runtime_ready_timeout_seconds": 60.0,
-                "runtime_turn_timeout_seconds": 900.0,
-            }
-        },
-        "timeout": 14,
-    }
-
-
-def test_agent_session_a2a_chat_accepts_raw_sse_response(monkeypatch):
-    session_uid = "0b2701a1-e777-4cfe-8437-b94025f00069"
-    raw_sse = 'retry: 1000\n\nid: 1\nevent: message\ndata: {"text":"alive"}\n\ndata: [DONE]\n\n'
-
-    class FakeResponse:
-        status_code = 200
-        content = b'{"ok": true}'
-
-        @staticmethod
-        def json():
-            return {
-                "ok": True,
-                "ready": {
-                    "ready": True,
-                    "attempts": 1,
-                    "elapsed_seconds": 0.0,
-                    "status_code": 200,
-                    "detail": "",
-                },
-                "response": raw_sse,
-                "normalized": {
-                    "ok": True,
-                    "kind": "message",
-                    "state": None,
-                    "task_id": None,
-                    "context_id": None,
-                    "text": "alive",
-                    "raw": raw_sse,
-                },
-            }
-
-    monkeypatch.setattr(agent_models_mod, "make_request", lambda **kwargs: FakeResponse())
-
-    chat = agent_models_mod.AgentSession.send_a2a_chat(session_uid, message="Are you alive")
-
-    assert chat.ok is True
-    assert isinstance(chat.response, dict)
-    assert chat.response["kind"] == "sse"
-    assert chat.response["raw"] == raw_sse
-    assert chat.response["events"][1]["data"] == {"text": "alive"}
-    assert chat.normalized is not None
-    assert chat.normalized.raw == chat.response
-    assert chat.normalized.events == chat.response["events"]
-    assert chat.normalized.text == "alive"
-
-
-def test_agent_session_a2a_chat_posts_strict_json_options(monkeypatch):
-    captured = {}
-    session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
-
-    class FakeResponse:
-        status_code = 200
-        content = b'{"ok": true}'
-
-        @staticmethod
-        def json():
-            return {
-                "ok": True,
-                "ready": None,
-                "response": {"jsonrpc": "2.0", "id": "request-1", "result": {}},
-                "normalized": {
-                    "ok": True,
-                    "kind": "message",
-                    "state": None,
-                    "task_id": None,
-                    "context_id": None,
-                    "text": '{"ok": true}',
-                    "raw": {},
-                },
-            }
-
-    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
-        captured["payload"] = payload
-        return FakeResponse()
-
-    monkeypatch.setattr(agent_models_mod, "make_request", _fake_make_request)
-
-    agent_models_mod.AgentSession.send_a2a_chat(
-        session_uid,
-        message="Return JSON.",
-        runtime_turn_timeout_seconds=900,
-        omit_reasoning=True,
-        response_format={"type": "json_object", "strict": True},
-        json_repair={"attempts": 3},
-    )
-
-    assert captured["payload"]["json"]["runtime_turn_timeout_seconds"] == 900.0
-    assert captured["payload"]["json"]["omit_reasoning"] is True
-    assert captured["payload"]["json"]["response_format"] == {
-        "type": "json_object",
-        "strict": True,
-    }
-    assert captured["payload"]["json"]["json_repair"] == {"attempts": 3}
-
-
-def test_agent_session_a2a_chat_posts_raw_payload_contract(monkeypatch):
-    captured = {}
-    session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
-    raw_payload = {
-        "jsonrpc": "2.0",
-        "id": "request-1",
-        "method": "message/send",
-        "params": {
-            "message": {
-                "kind": "message",
-                "messageId": "message-1",
-                "role": "user",
-                "parts": [{"kind": "text", "text": "Review the current portfolio drift."}],
-            }
-        },
-    }
-
-    class FakeResponse:
-        status_code = 200
-        content = b'{"ok": true}'
-
-        @staticmethod
-        def json():
-            return {
-                "ok": True,
-                "ready": None,
-                "response": {"jsonrpc": "2.0", "id": "request-1", "result": {}},
-                "normalized": {
-                    "ok": True,
-                    "kind": "message",
-                    "state": None,
-                    "task_id": None,
-                    "context_id": None,
-                    "text": "",
-                    "raw": {},
-                },
-            }
-
-    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
-        captured["payload"] = payload
-        return FakeResponse()
-
-    monkeypatch.setattr(agent_models_mod, "make_request", _fake_make_request)
-
-    agent_models_mod.AgentSession.send_a2a_chat(
-        session_uid,
-        a2a_payload=raw_payload,
-        wait_for_runtime=False,
-        poll_task_until_stable=False,
-    )
-
-    assert captured["payload"] == {
-        "json": {
-            "wait_for_runtime": False,
-            "poll_task_until_stable": False,
-            "a2a_payload": raw_payload,
-        }
-    }
-
-
-def test_agent_a2a_allocation_sends_caller_session_uid(monkeypatch):
-    captured = {}
-    agent_uid = "e0e75693-4110-464c-93e0-82c7fd9c9a23"
-    caller_session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
-    target_session_uid = "ac9e221d-1cd6-464c-a253-e302754872c1"
-    agent = agent_models_mod.Agent(
-        uid=agent_uid,
-        name="Research Copilot",
-        agent_type="custom",
-        description="Research assistant.",
-        agent_card=None,
-        llm_provider="openai",
-        llm_model="gpt-5.4",
-        llm_thinking="medium",
-    )
-
-    class FakeResponse:
-        status_code = 201
-        content = b'{"ok": true}'
-
-        @staticmethod
-        def json():
-            return {
-                "handle_unique_id": "delegated-handle-1",
-                "agent_session_uid": target_session_uid,
-                "allocation_state": "created_new",
-                "session": {"uid": target_session_uid},
-            }
-
-    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
-        captured["r_type"] = r_type
-        captured["url"] = url
-        captured["payload"] = payload
-        captured["timeout"] = time_out
-        return FakeResponse()
-
-    monkeypatch.setattr(agent_models_mod, "make_request", _fake_make_request)
-
-    allocation = agent.allocate_a2a_target_session(
-        caller_agent_session_uid=caller_session_uid,
-        handle_unique_id="delegated-handle-1",
-        timeout=12,
-    )
-
-    assert allocation["agent_session_uid"] == target_session_uid
-    assert captured == {
-        "r_type": "POST",
-        "url": f"{agent_models_mod.Agent.get_object_url()}/{agent_uid}/allocate-a2a-target-session/",
-        "payload": {
-            "json": {
-                "caller_agent_session_uid": caller_session_uid,
-                "handle_unique_id": "delegated-handle-1",
-            }
-        },
-        "timeout": 12,
-    }
-
-
-def test_agent_get_or_create_session_with_handle_posts_stable_handle_contract(monkeypatch):
+def test_agent_get_or_create_session_posts_new_contract(monkeypatch):
     captured = {}
     agent_uid = "e0e75693-4110-464c-93e0-82c7fd9c9a23"
     session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
+    parent_session_uid = "33333333-3333-4333-8333-333333333333"
     user_uid = "fdf409f7-d16f-4f71-986b-9057db6c7eca"
     agent = agent_models_mod.Agent(
         uid=agent_uid,
@@ -2611,36 +1828,31 @@ def test_agent_get_or_create_session_with_handle_posts_stable_handle_contract(mo
         @staticmethod
         def json():
             return {
-                "created": True,
-                "handle_unique_id": "portfolio-review-q2-2026",
-                "handle_uid": "6f91f6a7-d706-49c6-a910-8667aa0468a5",
-                "session": {
-                    "uid": session_uid,
-                    "agent_uid": agent_uid,
-                    "agent_name": "Research Copilot",
-                    "agent_type": "custom",
-                    "created_by_user_uid": user_uid,
-                    "parent_session_uid": None,
-                    "name": "Quarterly portfolio review",
-                    "status": "running",
-                    "runtime_state": "running",
-                    "working": True,
-                    "started_at": "2026-01-01T00:00:00Z",
-                    "ended_at": None,
-                    "llm_provider": "openai",
-                    "llm_model": "gpt-5.4",
-                    "llm_thinking": "",
-                    "engine_name": "codex",
-                    "runtime_config_snapshot": {},
-                    "error_detail": "",
-                    "thread_id": "",
-                    "session_metadata": {"portfolio_uid": "portfolio-123"},
-                    "bound_handle": {
-                        "uid": "44444444-4444-4444-8444-444444444444",
-                        "handle_unique_id": "portfolio-review-q2-2026",
-                        "owner_user_uid": user_uid,
-                        "is_locked": False,
-                    },
+                "uid": session_uid,
+                "agent_uid": agent_uid,
+                "agent_name": "Research Copilot",
+                "agent_type": "custom",
+                "created_by_user_uid": user_uid,
+                "parent_session_uid": parent_session_uid,
+                "name": "Quarterly portfolio review",
+                "status": "running",
+                "runtime_state": "running",
+                "working": True,
+                "started_at": "2026-01-01T00:00:00Z",
+                "ended_at": None,
+                "llm_provider": "openai",
+                "llm_model": "gpt-5.4",
+                "llm_thinking": "",
+                "engine_name": "codex",
+                "runtime_config_snapshot": {},
+                "error_detail": "",
+                "thread_id": "",
+                "session_metadata": {},
+                "bound_handle": {
+                    "uid": "44444444-4444-4444-8444-444444444444",
+                    "handle_unique_id": "portfolio-review-q2-2026",
+                    "owner_user_uid": user_uid,
+                    "is_locked": False,
                 },
             }
 
@@ -2653,35 +1865,93 @@ def test_agent_get_or_create_session_with_handle_posts_stable_handle_contract(mo
 
     monkeypatch.setattr(agent_models_mod, "make_request", _fake_make_request)
 
-    session = agent.get_or_create_session_with_handle(
+    session = agent.get_or_create_session(
         handle_unique_id="portfolio-review-q2-2026",
         name="Quarterly portfolio review",
+        parent_session_uid=parent_session_uid,
         llm_provider="openai",
         llm_model="gpt-5.4",
         llm_thinking="",
-        session_metadata={"portfolio_uid": "portfolio-123"},
         timeout=13,
     )
 
     assert session.uid == session_uid
     assert session.name == "Quarterly portfolio review"
+    assert session.parent_session_uid == parent_session_uid
     assert captured == {
         "r_type": "POST",
         "url": (
             f"{agent_models_mod.Agent.get_object_url()}/{agent_uid}/"
-            "get_or_create_session_with_handle/"
+            "sessions/get_or_create_session/"
         ),
         "payload": {
             "json": {
                 "handle_unique_id": "portfolio-review-q2-2026",
                 "name": "Quarterly portfolio review",
+                "parent_session_uid": parent_session_uid,
                 "llm_provider": "openai",
                 "llm_model": "gpt-5.4",
                 "llm_thinking": "",
-                "session_metadata": {"portfolio_uid": "portfolio-123"},
             }
         },
         "timeout": 13,
+    }
+
+
+def test_agent_get_or_create_session_by_uid_sends_only_session_uid(monkeypatch):
+    captured = {}
+    agent_uid = "e0e75693-4110-464c-93e0-82c7fd9c9a23"
+    session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
+    agent = agent_models_mod.Agent(
+        uid=agent_uid,
+        name="Research Copilot",
+        agent_type="custom",
+        description="Research assistant.",
+        agent_card=None,
+        llm_provider="openai",
+        llm_model="gpt-5.4",
+        llm_thinking="medium",
+    )
+
+    class FakeResponse:
+        status_code = 200
+        content = b'{"ok": true}'
+
+        @staticmethod
+        def json():
+            return {
+                "uid": session_uid,
+                "agent_uid": agent_uid,
+                "agent_name": "Research Copilot",
+                "agent_type": "custom",
+                "name": "Existing session",
+                "status": "running",
+                "llm_provider": "openai",
+                "llm_model": "gpt-5.4",
+                "llm_thinking": "",
+                "bound_handle": None,
+            }
+
+    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
+        captured["r_type"] = r_type
+        captured["url"] = url
+        captured["payload"] = payload
+        captured["timeout"] = time_out
+        return FakeResponse()
+
+    monkeypatch.setattr(agent_models_mod, "make_request", _fake_make_request)
+
+    session = agent.get_or_create_session(session_uid=session_uid, timeout=9)
+
+    assert session.uid == session_uid
+    assert captured == {
+        "r_type": "POST",
+        "url": (
+            f"{agent_models_mod.Agent.get_object_url()}/{agent_uid}/"
+            "sessions/get_or_create_session/"
+        ),
+        "payload": {"json": {"session_uid": session_uid}},
+        "timeout": 9,
     }
 
 
