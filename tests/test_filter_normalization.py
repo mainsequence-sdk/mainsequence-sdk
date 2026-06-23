@@ -1436,35 +1436,25 @@ def test_agent_runtime_models_deserialize_backend_uid_payloads():
     assert session.agent_uid == agent_uid
     assert session.name == "Research follow-up"
 
-    orchestrator = agent_models_mod.UserOrchestratorAgentService.model_validate(
+    service = agent_models_mod.CodingAgentService.model_validate(
         {
             "uid": service_uid,
             "agent_uid": agent_uid,
-            "is_ready": True,
-            "orchestrator_image_has_drift": False,
-            "user_uid": user_uid,
-            "related_job": {"uid": "job-uid"},
-            "knative_service_runtime": {"uid": "runtime-uid"},
-            "subdomain": "astro-jose",
-        }
-    )
-    assert orchestrator.uid == service_uid
-    assert orchestrator.agent_uid == agent_uid
-
-    executor = agent_models_mod.UserProjectExecutorAgentService.model_validate(
-        {
-            "uid": service_uid,
-            "agent_uid": agent_uid,
+            "agent_type": "project-executor",
+            "scope": {"kind": "project", "project_uid": "project-uid"},
             "is_ready": True,
             "image_drift": {"has_drift": False, "checks": []},
-            "project": {"uid": "project-uid"},
-            "related_job": {"uid": "job-uid"},
-            "knative_service_runtime": {"uid": "runtime-uid"},
+            "related_job_uid": "job-uid",
+            "knative_service_runtime_uid": "runtime-uid",
+            "automatic_deployment": True,
             "subdomain": "executor-project",
         }
     )
-    assert executor.uid == service_uid
-    assert executor.agent_uid == agent_uid
+    assert service.uid == service_uid
+    assert service.agent_uid == agent_uid
+    assert service.agent_type == "project-executor"
+    assert service.scope["project_uid"] == "project-uid"
+
 
 
 def test_agent_session_runtime_access_uses_session_uid_route(monkeypatch):

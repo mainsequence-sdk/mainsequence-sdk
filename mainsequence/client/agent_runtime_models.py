@@ -710,52 +710,198 @@ class Agent(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
         return AgentSession(**response.json())
 
 
-class UserOrchestratorAgentService(BaseObjectOrm, BasePydanticModel):
-    ENDPOINT: ClassVar[str] = "agents/v1/user-orchestrator-agent-services"
+class CodingAgentService(BaseObjectOrm, BasePydanticModel):
+    ENDPOINT: ClassVar[str] = "agents/v1/coding-agent-services"
+    FILTERSET_FIELDS: ClassVar[dict[str, list[str]] | None] = {
+        "uid": ["exact", "in"],
+        "agent_uid": ["exact"],
+        "agent_type": ["exact"],
+        "scope_kind": ["exact"],
+        "user_uid": ["exact"],
+        "project_uid": ["exact"],
+        "automatic_deployment": ["exact"],
+    }
+    FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
+        "uid": "uid",
+        "uid__in": "uid",
+        "agent_uid": "uid",
+        "agent_type": "str",
+        "scope_kind": "str",
+        "user_uid": "uid",
+        "project_uid": "uid",
+        "automatic_deployment": "bool",
+    }
 
-    uid: str | None = Field(None, description="Public UID of the orchestrator agent service.")
-    agent_uid: str | None = Field(None, description="Public UID of the resolved astro Agent.")
-    user_uid: str | None = Field(None, description="Public UID of the owning user.")
+    uid: str | None = Field(None, description="Public UID of the coding-agent service.")
+    agent_uid: str | None = Field(None, description="Public UID of the owning Agent.")
+    agent_type: str | None = Field(
+        None,
+        description="Agent runtime type, such as astro-orchestrator or project-executor.",
+    )
+    scope: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Typed scope projection, for example {kind: user, user_uid} or {kind: project, project_uid}.",
+    )
     is_ready: bool = Field(False, description="Whether the service runtime is routable.")
     automatic_deployment: bool = Field(
         False,
         description="Whether this coding-agent service is eligible for automatic deployment flows.",
     )
-    orchestrator_image_has_drift: bool = Field(
-        False, description="Whether the orchestrator image is stale."
-    )
-    related_job: Any | None = Field(
-        None, description="Backing job payload or UID when returned by the backend."
-    )
-    knative_service_runtime: Any | None = Field(
-        None, description="Backing Knative service runtime payload."
-    )
-    subdomain: str = Field("", description="Public subdomain for the service.")
-
-
-class UserProjectExecutorAgentService(BaseObjectOrm, BasePydanticModel):
-    ENDPOINT: ClassVar[str] = "agents/v1/project-executor-agent-services"
-
-    uid: str | None = Field(None, description="Public UID of the project executor service.")
-    agent_uid: str | None = Field(None, description="Public UID of the resolved executor Agent.")
-    is_ready: bool = Field(False, description="Whether the executor runtime is currently ready.")
-    automatic_deployment: bool = Field(
-        False,
-        description="Whether this coding-agent service is eligible for automatic deployment flows.",
-    )
     image_drift: dict[str, Any] | None = Field(
-        None, description="Executor image drift status payload."
+        None, description="Runtime image drift status payload."
     )
-    project: Any | None = Field(
-        None, description="Owning project payload or UID when returned by the backend."
+    related_job_uid: str | None = Field(
+        None, description="Public UID of the backing job, if attached."
     )
-    related_job: Any | None = Field(
-        None, description="Backing job payload or UID when returned by the backend."
+    knative_service_runtime_uid: str | None = Field(
+        None, description="Public UID of the backing Knative service runtime, if attached."
     )
-    knative_service_runtime: Any | None = Field(
-        None, description="Backing Knative service runtime payload."
-    )
-    subdomain: str = Field("", description="Public subdomain for the service.")
+    subdomain: str | None = Field(None, description="Public subdomain for the service.")
+
+    @classmethod
+    def _post_collection_action(
+        cls,
+        action_name: str,
+        body: dict[str, Any],
+        *,
+        timeout=None,
+        expected_statuses: tuple[int, ...] = (200,),
+    ) -> Any:
+        payload = {"json": serialize_to_json(body)}
+        url = f"{cls.get_object_url().rstrip('/')}/{action_name.strip('/')}/"
+        response = make_request(
+            s=cls.build_session(),
+            loaders=cls.LOADERS,
+            r_type="POST",
+            url=url,
+            payload=payload,
+            time_out=timeout,
+        )
+        if response.status_code not in expected_statuses:
+            raise_for_response(response, payload=payload)
+        return response.json()
+
+    @classmethod
+    def resolve(
+        cls,
+        *,
+        agent_type: str,
+        user_uid: str | None = None,
+        project_uid: str | None = None,
+        timeout=None,
+    ) -> CodingAgentService:
+        body: dict[str, Any] = {"agent_type": str(agent_type)}
+        if user_uid is not None:
+            body["user_uid"] = cls._coerce_filter_uid(user_uid, field_name="user_uid")
+        if project_uid is not None:
+            body["project_uid"] = cls._coerce_filter_uid(project_uid, field_name="project_uid")
+        return cls(**cls._post_collection_action("resolve", body, timeout=timeout))
+
+    @classmethod
+    def resolve_user_orchestrator(
+        cls,
+        *,
+        user_uid: str,
+        timeout=None,
+    ) -> CodingAgentService:
+        return cls.resolve(
+            agent_type="astro-orchestrator",
+            user_uid=user_uid,
+            timeout=timeout,
+        )
+
+    @classmethod
+    def resolve_project_executor(
+        cls,
+        *,
+        project_uid: str,
+        timeout=None,
+    ) -> CodingAgentService:
+        return cls.resolve(
+            agent_type="project-executor",
+            project_uid=project_uid,
+            timeout=timeout,
+        )
+
+    @classmethod
+    def deploy_current_project_version(
+        cls,
+        *,
+        project_uid: str,
+        timeout=None,
+    ) -> dict[str, Any]:
+        resolved_project_uid = cls._coerce_filter_uid(project_uid, field_name="project_uid")
+        return cls._post_collection_action(
+            f"project/{resolved_project_uid}/deploy-current-version",
+            {},
+            timeout=timeout,
+            expected_statuses=(200, 201, 202),
+        )
+
+    @classmethod
+    def deploy_project(
+        cls,
+        *,
+        project_uid: str,
+        llm_provider: str | None = None,
+        llm_model: str | None = None,
+        llm_thinking: str | None = None,
+        automatic_deployment: bool | None = None,
+        cpu_request: str | None = None,
+        cpu_limit: str | None = None,
+        memory_request: str | None = None,
+        memory_limit: str | None = None,
+        gpu_request: str | None = None,
+        gpu_type: str | None = None,
+        spot: bool | None = None,
+        timeout=None,
+        **extra: Any,
+    ) -> dict[str, Any]:
+        resolved_project_uid = cls._coerce_filter_uid(project_uid, field_name="project_uid")
+        body: dict[str, Any] = {
+            key: value
+            for key, value in {
+                "llm_provider": llm_provider,
+                "llm_model": llm_model,
+                "llm_thinking": llm_thinking,
+                "automatic_deployment": automatic_deployment,
+                "cpu_request": cpu_request,
+                "cpu_limit": cpu_limit,
+                "memory_request": memory_request,
+                "memory_limit": memory_limit,
+                "gpu_request": gpu_request,
+                "gpu_type": gpu_type,
+                "spot": spot,
+                **extra,
+            }.items()
+            if value is not None
+        }
+        return cls._post_collection_action(
+            f"project/{resolved_project_uid}/deploy",
+            body,
+            timeout=timeout,
+            expected_statuses=(200, 201, 202),
+        )
+
+    def reconcile_runtime(
+        self,
+        *,
+        reason: str | None = None,
+        timeout=None,
+    ) -> dict[str, Any]:
+        body = {} if reason is None else {"reason": str(reason)}
+        payload = {"json": serialize_to_json(body)}
+        response = make_request(
+            s=type(self).build_session(),
+            loaders=type(self).LOADERS,
+            r_type="POST",
+            url=self.get_action_url("reconcile-runtime"),
+            payload=payload,
+            time_out=timeout,
+        )
+        if response.status_code not in (200, 202):
+            raise_for_response(response, payload=payload)
+        return response.json()
 
 
 class AgentSession(BaseObjectOrm, BasePydanticModel):
@@ -1712,8 +1858,7 @@ __all__ = [
     "AgentSessionA2ANormalizedResponse",
     "AgentSessionRuntimeReady",
     "AgentSessionRuntimeAccess",
-    "UserOrchestratorAgentService",
-    "UserProjectExecutorAgentService",
+    "CodingAgentService",
     "AgentSession",
     "AgentSessionStatus",
 ]
