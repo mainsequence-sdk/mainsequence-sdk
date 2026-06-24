@@ -423,7 +423,6 @@ class CodingAgentService(BaseObjectOrm, BasePydanticModel):
     knative_service_runtime_uid: str | None = Field(
         None, description="Public UID of the backing Knative service runtime, if attached."
     )
-    subdomain: str | None = Field(None, description="Public subdomain for the service.")
 
     @classmethod
     def _post_collection_action(

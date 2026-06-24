@@ -1447,7 +1447,6 @@ def test_agent_runtime_models_deserialize_backend_uid_payloads():
             "related_job_uid": "job-uid",
             "knative_service_runtime_uid": "runtime-uid",
             "automatic_deployment": True,
-            "subdomain": "executor-project",
         }
     )
     assert service.uid == service_uid
