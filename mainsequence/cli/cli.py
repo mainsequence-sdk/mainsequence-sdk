@@ -3898,6 +3898,8 @@ def _agent_session_a2a_send_impl(
     parent_session_uid: str | None,
     message: str | None,
     message_file: pathlib.Path | None,
+    files: list[pathlib.Path] | None,
+    media_types: list[str] | None,
     strict_dictionary: bool,
     json_repair_attempts: int,
     message_id: str | None,
@@ -3919,6 +3921,20 @@ def _agent_session_a2a_send_impl(
     if json_repair_attempts < 1:
         error("--json-repair-attempts must be greater than 0.")
         raise typer.Exit(1)
+    attachment_paths = list(files or [])
+    attachment_media_types = list(media_types or [])
+    if attachment_media_types and len(attachment_media_types) != len(attachment_paths):
+        error("--media-type must be provided once per --file when used.")
+        raise typer.Exit(1)
+    attachments = [
+        {
+            "path": str(path),
+            "media_type": attachment_media_types[index]
+            if attachment_media_types
+            else "application/pdf",
+        }
+        for index, path in enumerate(attachment_paths)
+    ]
     effective_message_id = str(message_id).strip() if message_id is not None else ""
     if not effective_message_id:
         effective_message_id = f"msg-{uuid.uuid4()}"
@@ -3936,6 +3952,7 @@ def _agent_session_a2a_send_impl(
         response_payload = send_agent_session_a2a_message(
             agent_session_uid,
             message=resolved_message,
+            files=attachments,
             message_id=effective_message_id,
             strict_dictionary=strict_dictionary,
             json_repair_attempts=json_repair_attempts,
@@ -6779,6 +6796,16 @@ def agent_session_a2a_send_cmd(
         "--message-file",
         help="Path to a UTF-8 text file containing the A2A message.",
     ),
+    files: list[pathlib.Path] | None = typer.Option(
+        None,
+        "--file",
+        help="Inline file attachment to send as an A2A raw part.",
+    ),
+    media_types: list[str] | None = typer.Option(
+        None,
+        "--media-type",
+        help="Media type for each --file. Defaults to application/pdf.",
+    ),
     strict_dictionary: bool = typer.Option(
         False,
         "--strict-dictionary",
@@ -6811,6 +6838,8 @@ def agent_session_a2a_send_cmd(
         parent_session_uid=parent_session_uid,
         message=message,
         message_file=message_file,
+        files=files,
+        media_types=media_types,
         strict_dictionary=strict_dictionary,
         json_repair_attempts=json_repair_attempts,
         message_id=message_id,

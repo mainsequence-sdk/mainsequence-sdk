@@ -139,6 +139,33 @@ mainsequence agent session a2a send \
   --strict-dictionary
 ```
 
+## Send Files
+
+A2A can send inline files as raw parts. For PDFs, use `--file`; the CLI reads
+the file bytes, enforces the 15 MiB inline limit, base64 encodes the bytes, and
+sends the part with `filename` and `mediaType`.
+
+```bash
+mainsequence agent session a2a send \
+  <target_agent_session_uid> \
+  --message "Please summarize this PDF." \
+  --file report.pdf \
+  --media-type application/pdf
+```
+
+The same handle shortcut works with files:
+
+```bash
+mainsequence agent session a2a send \
+  portfolios \
+  --message "Please summarize this PDF." \
+  --file report.pdf \
+  --media-type application/pdf
+```
+
+For retries of the exact same message and file attachment, reuse the same
+`--message-id`.
+
 ## Python Usage
 
 In Python, use the backend handle to get or create the target session, then
@@ -178,6 +205,23 @@ response = AgentSession.send_a2a_message(
 )
 ```
 
+To send a PDF, pass a file attachment. The SDK reads the raw bytes, enforces the
+15 MiB inline limit, base64 encodes them, and sends `filename` plus `mediaType`:
+
+```python
+response = AgentSession.send_a2a_message(
+    session.uid,
+    message="Please summarize this PDF.",
+    files=[
+        {
+            "path": "report.pdf",
+            "media_type": "application/pdf",
+            "filename": "report.pdf",
+        }
+    ],
+)
+```
+
 Reusable helper:
 
 ```python
@@ -190,6 +234,7 @@ def send_to_agent_handle(
     message: str,
     *,
     name: str | None = None,
+    files: list[dict[str, str]] | None = None,
     strict_dictionary: bool = False,
 ):
     agent = Agent.get_by_uid(target_agent_uid)
@@ -201,6 +246,7 @@ def send_to_agent_handle(
     return AgentSession.send_a2a_message(
         session.uid,  # The SDK sends this as A2A message.contextId.
         message=message,
+        files=files,
         strict_dictionary=strict_dictionary,
     )
 ```

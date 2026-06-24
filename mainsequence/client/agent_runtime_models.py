@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import base64
 import datetime
 import json
+import pathlib
 import time
 import uuid
 from enum import Enum
@@ -22,6 +24,7 @@ STANDARD_A2A_CONTENT_TYPE = "application/a2a+json"
 STANDARD_A2A_OUTPUT_CONTRACT_METADATA_KEY = (
     "https://mainsequence.ai/a2a/extensions/output-contract/v1"
 )
+MAX_INLINE_A2A_FILE_BYTES = 15 * 1024 * 1024
 
 
 class AgentSessionStatus(str, Enum):
@@ -712,6 +715,7 @@ class AgentSession(BaseObjectOrm, BasePydanticModel):
         *,
         agent_session_uid: str,
         message: str,
+        files: list[Any] | None = None,
         message_id: str | None = None,
         strict_dictionary: bool = False,
         json_repair_attempts: int = 3,
@@ -727,12 +731,16 @@ class AgentSession(BaseObjectOrm, BasePydanticModel):
             normalized_message_id = f"msg-{uuid.uuid4()}"
 
         accepted_output_modes = ["application/json"] if strict_dictionary else ["text/plain"]
+        parts: list[dict[str, Any]] = [{"text": normalized_message}]
+        for file_spec in files or []:
+            parts.append(AgentSession._build_standard_a2a_raw_file_part(file_spec))
+
         body: dict[str, Any] = {
             "message": {
                 "messageId": normalized_message_id,
                 "role": "ROLE_USER",
                 "contextId": agent_session_uid,
-                "parts": [{"text": normalized_message}],
+                "parts": parts,
             },
             "configuration": {
                 "acceptedOutputModes": accepted_output_modes,
@@ -750,6 +758,46 @@ class AgentSession(BaseObjectOrm, BasePydanticModel):
                 }
             }
         return body
+
+    @staticmethod
+    def _build_standard_a2a_raw_file_part(file_spec: Any) -> dict[str, Any]:
+        if isinstance(file_spec, (str, pathlib.Path)):
+            path = pathlib.Path(file_spec).expanduser()
+            media_type = "application/pdf" if path.suffix.lower() == ".pdf" else ""
+            filename = path.name
+        elif isinstance(file_spec, dict):
+            raw_path = file_spec.get("path")
+            if raw_path is None:
+                raise ValueError("A2A file attachment requires a path")
+            path = pathlib.Path(str(raw_path)).expanduser()
+            media_type = str(
+                file_spec.get("media_type") or file_spec.get("mediaType") or ""
+            ).strip()
+            if not media_type and path.suffix.lower() == ".pdf":
+                media_type = "application/pdf"
+            filename = str(file_spec.get("filename") or path.name).strip()
+        else:
+            raise TypeError("A2A file attachment must be a path or dict")
+
+        if not media_type:
+            raise ValueError(f"A2A file attachment '{path}' requires media_type")
+        if not filename:
+            raise ValueError(f"A2A file attachment '{path}' requires filename")
+
+        file_bytes = path.read_bytes()
+        if len(file_bytes) > MAX_INLINE_A2A_FILE_BYTES:
+            size_mib = len(file_bytes) / (1024 * 1024)
+            limit_mib = MAX_INLINE_A2A_FILE_BYTES / (1024 * 1024)
+            raise ValueError(
+                f"A2A attachment '{filename}' is {size_mib:.1f} MiB; "
+                f"inline attachments are limited to {limit_mib:.0f} MiB."
+            )
+
+        return {
+            "raw": base64.b64encode(file_bytes).decode("ascii"),
+            "filename": filename,
+            "mediaType": media_type,
+        }
 
     @classmethod
     def _post_standard_a2a_message(
@@ -793,6 +841,7 @@ class AgentSession(BaseObjectOrm, BasePydanticModel):
         agent_session: str | AgentSession,
         *,
         message: str,
+        files: list[Any] | None = None,
         message_id: str | None = None,
         strict_dictionary: bool = False,
         json_repair_attempts: int = 3,
@@ -806,6 +855,7 @@ class AgentSession(BaseObjectOrm, BasePydanticModel):
         body = cls._build_standard_a2a_message_send_body(
             agent_session_uid=session_uid,
             message=message,
+            files=files,
             message_id=message_id,
             strict_dictionary=strict_dictionary,
             json_repair_attempts=json_repair_attempts,
