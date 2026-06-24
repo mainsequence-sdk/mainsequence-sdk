@@ -55,6 +55,7 @@ SESSION_OVERRIDES_DIR = CFG_DIR / "session_overrides"
 TOKENS_JSON = CFG_DIR / "token.json"
 AUTH_JSON = CFG_DIR / "auth.json"
 RUNTIME_ACCESS_CACHE_JSON = CFG_DIR / "runtime_access_cache.json"
+A2A_HANDLE_CACHE_JSON = CFG_DIR / "a2a_handle_cache.json"
 
 # Session-scoped auth environment variables (no token file persistence).
 ENV_USERNAME = "MAINSEQUENCE_USERNAME"
@@ -467,6 +468,78 @@ def clear_runtime_access_cache(
         return True
     except Exception:
         return False
+
+
+def _a2a_handle_cache_key(handle_unique_id: str, backend: str | None = None) -> str:
+    backend_key = _auth_backend_key(backend)
+    raw = f"{backend_key}|{_runtime_access_user_key()}|{str(handle_unique_id).strip()}"
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _read_a2a_handle_cache() -> dict:
+    data = read_json(A2A_HANDLE_CACHE_JSON, {})
+    if not isinstance(data, dict):
+        return {"version": 1, "entries": {}}
+    entries = data.get("entries")
+    if not isinstance(entries, dict):
+        entries = {}
+    return {"version": 1, "entries": entries}
+
+
+def _write_a2a_handle_cache(data: dict) -> None:
+    write_json(A2A_HANDLE_CACHE_JSON, data)
+    if os.name == "posix":
+        try:
+            os.chmod(A2A_HANDLE_CACHE_JSON, 0o600)
+        except Exception:
+            pass
+
+
+def get_a2a_handle_cache(
+    handle_unique_id: str,
+    *,
+    backend: str | None = None,
+) -> dict | None:
+    """
+    Return a cached A2A handle mapping scoped by backend and current user.
+    """
+    handle = str(handle_unique_id or "").strip()
+    if not handle:
+        return None
+    cache = _read_a2a_handle_cache()
+    entry = cache["entries"].get(_a2a_handle_cache_key(handle, backend))
+    return dict(entry) if isinstance(entry, dict) else None
+
+
+def save_a2a_handle_cache(
+    handle_unique_id: str,
+    *,
+    agent_uid: str,
+    agent_session_uid: str,
+    name: str | None = None,
+    backend: str | None = None,
+) -> dict:
+    """
+    Cache an A2A handle to the backend AgentSession UID it resolves to.
+    """
+    handle = str(handle_unique_id or "").strip()
+    if not handle:
+        raise ValueError("handle_unique_id is required")
+
+    now = time.time()
+    entry = {
+        "backend_url": _auth_backend_key(backend),
+        "handle_unique_id": handle,
+        "agent_uid": str(agent_uid),
+        "agent_session_uid": str(agent_session_uid),
+        "name": str(name) if name is not None else None,
+        "cached_at_epoch": now,
+        "cached_at": _iso_utc_from_epoch(now),
+    }
+    cache = _read_a2a_handle_cache()
+    cache["entries"][_a2a_handle_cache_key(handle, backend)] = entry
+    _write_a2a_handle_cache(cache)
+    return dict(entry)
 
 
 def _keychain_account_for_backend(backend: str | None = None) -> str:

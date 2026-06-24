@@ -3829,9 +3829,73 @@ def _extract_standard_a2a_message_text(payload: dict[str, object]) -> str:
     return "".join(chunks)
 
 
+def _looks_like_uuid(value: str) -> bool:
+    try:
+        uuid.UUID(str(value))
+        return True
+    except (TypeError, ValueError):
+        return False
+
+
+def _resolve_agent_session_uid_or_handle(
+    target: str,
+    *,
+    target_agent_uid: str | None,
+    name: str | None,
+    parent_session_uid: str | None,
+    timeout: int | None,
+) -> str:
+    resolved_target = str(target or "").strip()
+    if not resolved_target:
+        error("agent session UID or handle is required.")
+        raise typer.Exit(1)
+    if _looks_like_uuid(resolved_target):
+        return resolved_target
+
+    resolved_agent_uid = str(target_agent_uid or "").strip()
+    if not resolved_agent_uid:
+        cached = cfg.get_a2a_handle_cache(resolved_target)
+        cached_session_uid = str((cached or {}).get("agent_session_uid") or "").strip()
+        if cached_session_uid:
+            return cached_session_uid
+        error(
+            f"No cached A2A session for handle '{resolved_target}'. "
+            "Pass --target-agent-uid once to create or resolve it."
+        )
+        raise typer.Exit(1)
+
+    try:
+        agent_session_payload = get_or_create_agent_session(
+            resolved_agent_uid,
+            handle_unique_id=resolved_target,
+            name=name,
+            parent_session_uid=parent_session_uid,
+            timeout=timeout,
+        )
+    except ApiError as e:
+        error(f"Agent session handle resolution failed: {e}")
+        raise typer.Exit(1) from e
+
+    agent_session_uid = str(agent_session_payload.get("uid") or "").strip()
+    if not agent_session_uid:
+        error("Agent session handle resolution did not return a session UID.")
+        raise typer.Exit(1)
+
+    cfg.save_a2a_handle_cache(
+        resolved_target,
+        agent_uid=resolved_agent_uid,
+        agent_session_uid=agent_session_uid,
+        name=name,
+    )
+    return agent_session_uid
+
+
 def _agent_session_a2a_send_impl(
     *,
-    agent_session_uid: str,
+    agent_session_uid_or_handle: str,
+    target_agent_uid: str | None,
+    name: str | None,
+    parent_session_uid: str | None,
     message: str | None,
     message_file: pathlib.Path | None,
     strict_dictionary: bool,
@@ -3860,6 +3924,13 @@ def _agent_session_a2a_send_impl(
         effective_message_id = f"msg-{uuid.uuid4()}"
 
     _require_login()
+    agent_session_uid = _resolve_agent_session_uid_or_handle(
+        agent_session_uid_or_handle,
+        target_agent_uid=target_agent_uid,
+        name=name,
+        parent_session_uid=parent_session_uid,
+        timeout=timeout,
+    )
 
     try:
         response_payload = send_agent_session_a2a_message(
@@ -6677,8 +6748,26 @@ def agent_session_get_or_create_cmd(
 
 @agent_session_a2a_group.command("send")
 def agent_session_a2a_send_cmd(
-    agent_session_uid: str = pydantic_argument(
-        AGENT_SESSION_MODEL_REF, "uid", ..., help="Agent session UID."
+    agent_session_uid_or_handle: str = pydantic_argument(
+        AGENT_SESSION_MODEL_REF,
+        "uid",
+        ...,
+        help="Agent session UID, or cached A2A handle.",
+    ),
+    target_agent_uid: str | None = typer.Option(
+        None,
+        "--target-agent-uid",
+        help="Target agent UID used to create or resolve a handle on first use.",
+    ),
+    name: str | None = typer.Option(
+        None,
+        "--name",
+        help="Optional session name used only when resolving a handle with --target-agent-uid.",
+    ),
+    parent_session_uid: str | None = typer.Option(
+        None,
+        "--parent-session-uid",
+        help="Optional parent session UID used only when resolving a handle with --target-agent-uid.",
     ),
     message: str | None = typer.Option(
         None,
@@ -6713,10 +6802,13 @@ def agent_session_a2a_send_cmd(
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
-    Send one standard A2A message to an existing agent session.
+    Send one standard A2A message to an existing session UID or cached handle.
     """
     _agent_session_a2a_send_impl(
-        agent_session_uid=agent_session_uid,
+        agent_session_uid_or_handle=agent_session_uid_or_handle,
+        target_agent_uid=target_agent_uid,
+        name=name,
+        parent_session_uid=parent_session_uid,
         message=message,
         message_file=message_file,
         strict_dictionary=strict_dictionary,
