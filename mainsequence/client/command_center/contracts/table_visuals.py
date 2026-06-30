@@ -42,6 +42,7 @@ TableFrameVisualColumnFormat = Literal[
     "percent",
     "volume",
     "currency",
+    "datetime",
     "formula",
 ]
 TableFrameVisualColumnKind = Literal["sparkline", "bar", "heatmap"]
@@ -85,6 +86,8 @@ class TableFrameVisualColumnMetadata(ContractBaseModel):
         default=None,
         alias="formulaResultFormat",
     )
+    date_time_input_format: str | None = Field(default=None, alias="dateTimeInputFormat")
+    date_time_output_format: str | None = Field(default=None, alias="dateTimeOutputFormat")
     decimals: int | None = None
     visible: bool | None = None
     color_scale: TableFrameColorScaleMetadata | None = Field(default=None, alias="colorScale")

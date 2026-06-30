@@ -16,7 +16,7 @@ from .base import BaseObjectOrm, BasePydanticModel, ShareableObjectMixin
 from .exceptions import ApiError, raise_for_response
 from .utils import make_request, serialize_to_json
 
-DEFAULT_AGENT_SESSION_LONG_REQUEST_TIMEOUT = (5.0, None)
+DEFAULT_AGENT_SESSION_LONG_REQUEST_TIMEOUT = (5.0, 900.0)
 DEFAULT_AGENT_RUNTIME_ACCESS_CACHE_TTL_SECONDS = 60.0
 DEFAULT_AGENT_RUNTIME_ACCESS_CACHE_EXPIRY_SKEW_SECONDS = 30.0
 STANDARD_A2A_MESSAGE_SEND_PATH = "/api/a2a/v1/message:send"
