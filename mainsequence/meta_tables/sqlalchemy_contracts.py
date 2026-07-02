@@ -167,6 +167,7 @@ class PlatformManagedMetaTable:
     __metatable__: ClassVar[MetaTable | None] = None
     __metatable_uid__: ClassVar[str | None] = None
     __metatable_data_source_uid__: ClassVar[str | None] = None
+    __metatable_physical_schema__: ClassVar[str | None] = None
     __metatable_physical_table_name__: ClassVar[str | None] = None
     __metatable_description__: ClassVar[str | None] = None
     __metatable_labels__: ClassVar[Sequence[str] | None] = None
@@ -265,6 +266,7 @@ class PlatformManagedMetaTable:
         """Attach an already-created backend MetaTable resource to this authoring model."""
         cls.__metatable__ = meta_table
         cls.__metatable_uid__ = _required_meta_table_uid(meta_table)
+        cls.__metatable_physical_schema__ = _bound_physical_schema(cls, meta_table)
         cls.__metatable_physical_table_name__ = _bound_physical_table_name(cls, meta_table)
         cls.__metatable_data_source_uid__ = _required_meta_table_data_source_uid(meta_table)
         return meta_table
@@ -291,6 +293,16 @@ class PlatformManagedMetaTable:
         if physical_table_name not in (None, ""):
             return str(physical_table_name)
         return None
+
+    @classmethod
+    def get_physical_schema(cls) -> str | None:
+        physical_schema = getattr(cls, "__metatable_physical_schema__", None)
+        if physical_schema not in (None, ""):
+            return str(physical_schema)
+        table = _optional_sqlalchemy_table(cls)
+        if table is None:
+            return None
+        return _physical_schema_from_table(table)
 
 
 class PlatformTimeIndexMetaTable(PlatformManagedMetaTable):
@@ -528,6 +540,7 @@ def time_indexed_registration_request_from_sqlalchemy_model(
             data_source=data_source,
             data_source_uid=data_source_uid,
         ),
+        physical_schema=resolved_schema,
         identifier=resolved_identifier,
         namespace=resolved_namespace,
         description=resolved_description,
@@ -601,6 +614,7 @@ def platform_managed_registration_request_from_sqlalchemy_model(
             data_source=data_source,
             data_source_uid=data_source_uid,
         ),
+        physical_schema=resolved_schema,
         management_mode="platform_managed",
         identifier=resolved_identifier,
         namespace=resolved_namespace,
@@ -644,6 +658,7 @@ def external_registered_registration_request_from_sqlalchemy_model(
     resolved_description = _resolve_description(model_or_table, description=description)
     return MetaTableRegistrationRequest(
         data_source_uid=str(data_source_uid),
+        physical_schema=resolved_schema,
         management_mode="external_registered",
         identifier=resolved_identifier,
         namespace=resolved_namespace,
@@ -920,6 +935,48 @@ def _meta_table_physical_table_name(meta_table: MetaTable) -> str | None:
     if physical_table_name in (None, ""):
         return None
     return str(physical_table_name)
+
+
+def _meta_table_physical_schema(meta_table: MetaTable) -> str | None:
+    physical_schema = getattr(meta_table, "physical_schema", None)
+    if physical_schema not in (None, ""):
+        return str(physical_schema)
+    table_contract = getattr(meta_table, "table_contract", None)
+    if isinstance(table_contract, Mapping):
+        physical = table_contract.get("physical")
+        if isinstance(physical, Mapping):
+            contract_schema = physical.get("schema") or physical.get("schema_")
+            if contract_schema not in (None, ""):
+                return str(contract_schema)
+    elif table_contract is not None:
+        physical = getattr(table_contract, "physical", None)
+        contract_schema = getattr(physical, "schema_", None)
+        if contract_schema not in (None, ""):
+            return str(contract_schema)
+    return None
+
+
+def _physical_schema_from_table(table: Any) -> str:
+    return _resolve_schema(table)
+
+
+def _physical_identity_from_model(model_or_table: Any) -> tuple[str, str]:
+    table = _resolve_table(model_or_table)
+    return _physical_schema_from_table(table), _table_name(table)
+
+
+def _physical_identity_from_metatable(meta_table: MetaTable) -> tuple[str, str] | None:
+    table_name = _meta_table_physical_table_name(meta_table)
+    if table_name is None:
+        return None
+    return (_meta_table_physical_schema(meta_table) or DEFAULT_POSTGRES_SCHEMA, table_name)
+
+
+def _bound_physical_schema(cls: type[Any], meta_table: MetaTable) -> str | None:
+    table = _optional_sqlalchemy_table(cls)
+    if table is not None:
+        return _physical_schema_from_table(table)
+    return _meta_table_physical_schema(meta_table)
 
 
 def _bound_physical_table_name(cls: type[Any], meta_table: MetaTable) -> str | None:
@@ -1704,4 +1761,7 @@ __all__ = [
     "resolve_metatable_identifier",
     "table_contract_from_sqlalchemy_model",
     "time_indexed_registration_request_from_sqlalchemy_model",
+    "_physical_identity_from_metatable",
+    "_physical_identity_from_model",
+    "_physical_schema_from_table",
 ]

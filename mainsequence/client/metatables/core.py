@@ -229,6 +229,46 @@ def _normalize_contract_mapping(contract: Mapping[str, Any]) -> dict[str, Any]:
     return normalized
 
 
+def _contract_physical_mapping(contract: Any) -> Any:
+    if isinstance(contract, Mapping):
+        return contract.get("physical")
+    return getattr(contract, "physical", None)
+
+
+def _contract_physical_schema(contract: Any) -> str | None:
+    physical = _contract_physical_mapping(contract)
+    if isinstance(physical, Mapping):
+        value = (
+            physical.get("schema")
+            or physical.get("schema_")
+            or physical.get("physical_schema")
+        )
+    else:
+        value = getattr(physical, "schema_", None) or getattr(
+            physical,
+            "physical_schema",
+            None,
+        )
+    if value in (None, ""):
+        return None
+    return str(value)
+
+
+def _set_contract_physical_schema(contract: Any, schema: str) -> Any:
+    if isinstance(contract, Mapping):
+        normalized = dict(contract)
+        physical = normalized.get("physical")
+        physical_mapping = dict(physical) if isinstance(physical, Mapping) else {}
+        physical_mapping["schema"] = schema
+        normalized["physical"] = physical_mapping
+        return normalized
+
+    physical = getattr(contract, "physical", None)
+    if physical is not None and hasattr(physical, "schema_"):
+        physical.schema_ = schema
+    return contract
+
+
 def _temporal_parameter_names(parameters: dict[str, Any] | list[Any]) -> set[str]:
     if isinstance(parameters, Mapping):
         items = parameters.items()
@@ -246,8 +286,10 @@ class MetaTablePhysicalContract(BasePydanticModel):
         default=None,
         alias="schema",
         serialization_alias="schema",
-        exclude=True,
-        description=("Input-only schema alias. MetaTable uses the data source default schema."),
+        description=(
+            "Physical database schema. This is part of MetaTable physical identity "
+            "together with data_source_uid and table_name."
+        ),
     )
     table_name: str | None = Field(
         default=None,
@@ -257,7 +299,7 @@ class MetaTablePhysicalContract(BasePydanticModel):
         ),
     )
 
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(populate_by_name=True, serialize_by_alias=True)
 
 
 class MetaTableColumnContract(BasePydanticModel):
@@ -413,6 +455,10 @@ class MetaTableForeignKeyPayload(BasePydanticModel):
         None,
         description="Physical table name of the target MetaTable.",
     )
+    target_table_physical_schema: str | None = Field(
+        None,
+        description="Physical schema of the target MetaTable.",
+    )
     target_columns: list[str] = Field(
         default_factory=list,
         description="Target MetaTable physical column names.",
@@ -550,6 +596,14 @@ class MetaTableRequestFields(BasePydanticModel):
         ...,
         description="Public UID of the DynamicTableDataSource that owns this MetaTable.",
     )
+    physical_schema: str | None = Field(
+        None,
+        description=(
+            "Physical database schema. This is part of the MetaTable physical "
+            "identity and must match table_contract.physical.schema when both "
+            "are provided."
+        ),
+    )
     table_contract: MetaTableContract | dict[str, Any]
     identifier: str | None = Field(
         default=None,
@@ -575,6 +629,19 @@ class MetaTableRequestFields(BasePydanticModel):
     def _normalize_table_contract(self) -> MetaTableRequestFields:
         if isinstance(self.table_contract, Mapping):
             self.table_contract = _normalize_contract_mapping(self.table_contract)
+        contract_schema = _contract_physical_schema(self.table_contract)
+        if self.physical_schema not in (None, "") and contract_schema not in (None, ""):
+            if str(self.physical_schema) != str(contract_schema):
+                raise ValueError(
+                    "physical_schema must match table_contract.physical.schema."
+                )
+        if self.physical_schema in (None, "") and contract_schema not in (None, ""):
+            self.physical_schema = str(contract_schema)
+        elif self.physical_schema not in (None, "") and contract_schema in (None, ""):
+            self.table_contract = _set_contract_physical_schema(
+                self.table_contract,
+                str(self.physical_schema),
+            )
         return self
 
     @model_validator(mode="before")
@@ -712,6 +779,10 @@ class ManagedMetaTableFinalizeTableResult(BasePydanticModel):
     physical_table_name: str | None = Field(
         None,
         description="Physical table name reconciled against the data source.",
+    )
+    physical_schema: str | None = Field(
+        None,
+        description="Physical schema reconciled against the data source.",
     )
     previous_provisioning_status: str = Field(
         ...,
@@ -1200,6 +1271,7 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
         "provisioning_status": ["exact", "in"],
         "schema_management_mode": ["exact", "in"],
         "migration_provider_key": ["exact", "in"],
+        "physical_schema": ["exact", "in"],
         "physical_table_name": ["exact", "contains", "in"],
         "labels": ["exact", "in", "contains"],
     }
@@ -1208,6 +1280,8 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
         "uid__in": "str",
         "data_source__uid": "uid",
         "data_source__uid__in": "uid",
+        "physical_schema": "str",
+        "physical_schema__in": "str",
         "labels": "str",
         "labels__in": "str",
         "labels__contains": "str",
@@ -1254,6 +1328,7 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
     migration_provider_key: str | None = None
     alembic_version_meta_table_uid: str | None = None
     alembic_revision: str | None = None
+    physical_schema: str | None = None
     physical_table_name: str
     table_contract: dict[str, Any] = Field(default_factory=dict)
     contract_version: str = "relational-table.v1"
@@ -1945,6 +2020,13 @@ class TimeIndexMetaTableRegistrationRequest(BasePydanticModel):
     model_config = ConfigDict(extra="forbid")
 
     data_source_uid: str = Field(..., description="Public uid of the storage data source")
+    physical_schema: str | None = Field(
+        None,
+        description=(
+            "Physical database schema. This must match table_contract.physical.schema "
+            "when both are provided."
+        ),
+    )
     identifier: str | None = Field(
         None,
         description=(
@@ -2026,6 +2108,23 @@ class TimeIndexMetaTableRegistrationRequest(BasePydanticModel):
         normalized_contract.setdefault("physical", {})
         data["table_contract"] = normalized_contract
         return data
+
+    @model_validator(mode="after")
+    def _normalize_physical_schema(self) -> TimeIndexMetaTableRegistrationRequest:
+        contract_schema = _contract_physical_schema(self.table_contract)
+        if self.physical_schema not in (None, "") and contract_schema not in (None, ""):
+            if str(self.physical_schema) != str(contract_schema):
+                raise ValueError(
+                    "physical_schema must match table_contract.physical.schema."
+                )
+        if self.physical_schema in (None, "") and contract_schema not in (None, ""):
+            self.physical_schema = str(contract_schema)
+        elif self.physical_schema not in (None, "") and contract_schema in (None, ""):
+            self.table_contract = _set_contract_physical_schema(
+                self.table_contract,
+                str(self.physical_schema),
+            )
+        return self
 
     @field_validator("cadence")
     @classmethod
@@ -3025,6 +3124,7 @@ class TimeIndexMetaTable(MetaTable):
         "uid": ["in", "exact"],
         "data_source__uid": ["in", "exact"],
         "namespace": ["exact", "contains", "in", "isnull"],
+        "physical_schema": ["exact", "in"],
         "physical_table_name": ["exact", "contains", "in"],
         "labels": ["exact", "in", "contains"],
     }
@@ -3033,6 +3133,8 @@ class TimeIndexMetaTable(MetaTable):
         "uid__in": "uid",
         "data_source__uid": "uid",
         "data_source__uid__in": "uid",
+        "physical_schema": "str",
+        "physical_schema__in": "str",
         "labels": "str",
         "labels__in": "str",
         "labels__contains": "str",

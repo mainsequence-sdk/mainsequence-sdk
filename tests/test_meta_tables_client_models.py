@@ -85,6 +85,25 @@ def test_metatable_identifier_field_descriptions_state_org_global_uniqueness():
     assert expected in meta_table_models.TableMetaData.model_fields["identifier"].description
 
 
+def test_meta_table_contract_default_dump_serializes_physical_schema_alias():
+    contract = meta_table_models.MetaTableContract(
+        physical=meta_table_models.MetaTablePhysicalContract(
+            schema_="analytics",
+            table_name="example_assets__asset",
+        ),
+        columns=[],
+    )
+
+    payload = contract.model_dump(mode="json", exclude_none=True)
+
+    assert payload["physical"] == {
+        "orm_class": "MetaTablePhysicalContract",
+        "schema": "analytics",
+        "table_name": "example_assets__asset",
+    }
+    assert "schema_" not in payload["physical"]
+
+
 def test_meta_table_bulk_create_posts_raw_collection_payload(monkeypatch):
     captured = {}
 
@@ -303,6 +322,7 @@ def test_meta_table_register_posts_contract_to_meta_table_endpoint(monkeypatch):
         namespace="example.assets",
         table_contract=meta_table_models.MetaTableContract(
             physical=meta_table_models.MetaTablePhysicalContract(
+                schema_="analytics",
                 table_name="mt_example_assets_asset_80390fee13",
             ),
             columns=[
@@ -322,7 +342,9 @@ def test_meta_table_register_posts_contract_to_meta_table_endpoint(monkeypatch):
     assert table.registration == {"created": True, "mode": "platform_managed"}
     assert captured["r_type"] == "POST"
     assert captured["url"].endswith("/ts_manager/meta_table/register/")
+    assert captured["payload"]["json"]["physical_schema"] == "analytics"
     assert captured["payload"]["json"]["table_contract"]["physical"] == {
+        "schema": "analytics",
         "table_name": "mt_example_assets_asset_80390fee13",
     }
     assert "foreign_keys" not in captured["payload"]["json"]["table_contract"]
@@ -331,6 +353,22 @@ def test_meta_table_register_posts_contract_to_meta_table_endpoint(monkeypatch):
         "create_table": True,
         "if_not_exists": True,
     }
+
+
+def test_meta_table_registration_rejects_physical_schema_mismatch():
+    with pytest.raises(ValidationError, match="physical_schema must match"):
+        meta_table_models.MetaTableRegistrationRequest(
+            data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+            physical_schema="analytics",
+            management_mode="platform_managed",
+            table_contract=meta_table_models.MetaTableContract(
+                physical=meta_table_models.MetaTablePhysicalContract(
+                    schema_="public",
+                    table_name="mt_example_assets_asset_80390fee13",
+                ),
+                columns=[],
+            ),
+        )
 
 
 def test_meta_table_filter_by_body_posts_identifier_filters(monkeypatch):
@@ -684,6 +722,7 @@ def test_meta_table_finalize_managed_posts_finalize_payload(monkeypatch):
                         "meta_table_uid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
                         "identifier": "Asset",
                         "storage_hash": "mt_asset_hash",
+                        "physical_schema": "analytics",
                         "physical_table_name": "mt_asset_physical",
                         "previous_provisioning_status": "reserved",
                         "provisioning_status": "active",
@@ -723,6 +762,7 @@ def test_meta_table_finalize_managed_posts_finalize_payload(monkeypatch):
 
     assert response.ok is True
     assert response.tables[0].provisioning_status == "active"
+    assert response.tables[0].physical_schema == "analytics"
     assert response.tables[0].deleted is False
     assert captured["r_type"] == "POST"
     assert captured["url"].endswith("/ts_manager/meta_table/finalize-managed/")

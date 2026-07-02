@@ -478,7 +478,8 @@ def test_persist_manager_missing_update_warning_names_data_node_update():
     assert warnings == [
         "DataNodeUpdate importvalmer_f59da5843b77a34711b2e5e7cb94927b "
         "for MetaTable platform-meta-table-uid "
-        "(physical_table_name=canonical_prices_table) not found in backend"
+        "(physical_schema=public, physical_table_name=canonical_prices_table) "
+        "not found in backend"
     ]
     assert "TimeSeries" not in warnings[0]
     assert "platform-data-source-uid" not in warnings[0]

@@ -1579,6 +1579,7 @@ def test_ensure_registered_storage_table_rejects_unbound_storage(monkeypatch):
         table,
         index_names=["time_index", "asset_uid"],
     )
+    AssetSnapshots.__metatable_data_source_uid__ = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
     monkeypatch.setattr(
         TimeIndexMetaTable,
         "filter_by_body",
@@ -1604,10 +1605,12 @@ def test_ensure_registered_storage_table_binds_existing_time_index_meta_table(mo
         table,
         index_names=["time_index", "asset_uid"],
     )
+    AssetSnapshots.__metatable_data_source_uid__ = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
     backend_metadata = TimeIndexMetaTable.model_construct(
         uid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
         storage_hash="storage-hash",
+        physical_schema="public",
         physical_table_name="example_assets__asset_snapshots",
     )
     captured = {}
@@ -1629,6 +1632,8 @@ def test_ensure_registered_storage_table_binds_existing_time_index_meta_table(mo
     assert AssetSnapshots.get_time_index_meta_table() is backend_metadata
     assert AssetSnapshots.get_meta_table_uid() == "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
     assert captured == {
+        "data_source__uid": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+        "physical_schema__in": ["public"],
         "physical_table_name__in": ["example_assets__asset_snapshots"],
         "limit": 20,
     }
@@ -1645,16 +1650,19 @@ def test_ensure_registered_storage_table_reports_duplicate_matches(monkeypatch):
         table,
         index_names=["time_index", "asset_uid"],
     )
+    AssetSnapshots.__metatable_data_source_uid__ = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
     first = TimeIndexMetaTable.model_construct(
         uid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
         storage_hash="storage-hash",
+        physical_schema="public",
         physical_table_name="example_assets__asset_snapshots",
     )
     second = TimeIndexMetaTable.model_construct(
         uid="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
-        data_source_uid="eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+        data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
         storage_hash="storage-hash",
+        physical_schema="public",
         physical_table_name="example_assets__asset_snapshots",
     )
 

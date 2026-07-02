@@ -26,6 +26,8 @@ from mainsequence.meta_tables.sqlalchemy_contracts import (
     PlatformTimeIndexMetaTable,
     _ensure_time_index_unique_grain_index,
     _normalize_table_default_schema,
+    _physical_identity_from_metatable,
+    _physical_identity_from_model,
     _resolve_model_data_source_uid,
     _resolve_table,
     _resolve_time_index_name,
@@ -222,6 +224,7 @@ class AlembicVersionMetaTable:
 
         return MetaTableRegistrationRequest(
             data_source_uid=resolved_data_source_uid,
+            physical_schema=resolved_schema,
             management_mode="external_registered",
             identifier=resolved_identifier,
             namespace=resolved_namespace,
@@ -230,7 +233,10 @@ class AlembicVersionMetaTable:
             labels=list(labels or []),
             introspect=introspect,
             table_contract=MetaTableContract(
-                physical=MetaTablePhysicalContract(table_name=resolved_table_name),
+                physical=MetaTablePhysicalContract(
+                    schema_=resolved_schema,
+                    table_name=resolved_table_name,
+                ),
                 columns=[
                     {
                         "name": resolved_column_name,
@@ -515,18 +521,34 @@ class AlembicMetaTableMigration:
                 f"active={response.active_count} reserved={response.reserved_count} "
                 f"failed={response.failed_count}."
             )
-        finalized_by_table_name = {item.physical_table_name or "": item for item in response.tables}
         finalized_by_uid = {item.meta_table_uid: item for item in response.tables}
+        finalized_by_identity = {
+            identity: item
+            for item in response.tables
+            if (identity := _finalize_result_physical_identity(item)) is not None
+        }
+        prepared_uid_by_model = {
+            model: meta_table_uid
+            for model, meta_table_uid in zip(
+                self.metatable_models,
+                prepared.meta_table_uids,
+                strict=False,
+            )
+        }
         if on_metatable_finalize_status is not None:
             for item in response.tables:
                 if _finalize_table_failed(item):
                     on_metatable_finalize_status(_finalize_failure_message(item))
         finalized_by_model: dict[type[Any], MetaTable] = {}
         for model in self.metatable_models:
-            table_name = _migration_table_name(model)
-            item = finalized_by_table_name.get(table_name) or finalized_by_uid.get(
-                str(getattr(model, "get_meta_table_uid", lambda: "")())
+            model_uid = str(
+                prepared_uid_by_model.get(model)
+                or getattr(model, "get_meta_table_uid", lambda: "")()
+                or ""
             )
+            item = finalized_by_uid.get(model_uid)
+            if item is None:
+                item = finalized_by_identity.get(_physical_identity_from_model(model))
             if item is not None:
                 finalized_meta_table = _metatable_from_finalize_result(model, item)
                 _bind_model_to_existing_metatable(model, finalized_meta_table)
@@ -580,14 +602,20 @@ class AlembicMetaTableMigration:
 
         ordered_models = list(dict.fromkeys(self.metatable_models))
         target_table_names = {model: _migration_table_name(model) for model in ordered_models}
+        target_identities = {
+            model: _migration_physical_identity(model, data_source_uid=data_source_uid)
+            for model in ordered_models
+        }
         with platform_managed_migration_registration_context():
-            existing_by_table_name = _get_metatables_by_model_table_name(
+            existing_by_identity = _get_metatables_by_model_physical_identity(
                 ordered_models,
+                data_source_uid=data_source_uid,
                 timeout=timeout,
             )
             if on_metatable_reservation_status is not None:
                 on_metatable_reservation_status(
-                    f"Found existing MetaTables by table name count={len(existing_by_table_name)}."
+                    "Found existing MetaTables by physical identity "
+                    f"count={len(existing_by_identity)}."
                 )
             pending_by_resource: dict[
                 type[MetaTable],
@@ -595,7 +623,8 @@ class AlembicMetaTableMigration:
             ] = {}
             for model in ordered_models:
                 table_name = target_table_names[model]
-                existing_meta_table = existing_by_table_name.get(table_name)
+                physical_identity = target_identities[model]
+                existing_meta_table = existing_by_identity.get(physical_identity)
                 if existing_meta_table is not None:
                     provisioning_status = _meta_table_provisioning_status(existing_meta_table)
                     if provisioning_status in {"active", "reserved"}:
@@ -606,12 +635,13 @@ class AlembicMetaTableMigration:
                             if on_metatable_reservation_status is not None:
                                 on_metatable_reservation_status(
                                     "Reusing existing reserved MetaTable "
-                                    f"table_name={table_name}."
+                                    f"{_format_physical_identity(physical_identity)}."
                                 )
                         continue
                     raise RuntimeError(
                         "Cannot prepare Alembic MetaTable reservation because "
-                        f"table_name={table_name} already exists with unsupported "
+                        f"{_format_physical_identity(physical_identity)} already exists "
+                        "with unsupported "
                         f"provisioning_status={provisioning_status!r}."
                     )
                 else:
@@ -905,7 +935,9 @@ def _collection_create_row_from_registration_request(
             "request data_source_uid; data-source ownership is table-scoped, "
             "not a provider-request default."
         )
-    physical_table_name = _request_contract_physical_table_name(request)
+    physical_schema, physical_table_name = _request_contract_physical_identity(request)
+    if physical_schema in (None, ""):
+        raise ValueError("Alembic MetaTable collection-create requires physical_schema.")
     if physical_table_name in (None, ""):
         raise ValueError("Alembic MetaTable collection-create requires physical_table_name.")
 
@@ -923,6 +955,7 @@ def _collection_create_row_from_registration_request(
         "migration_provider_key": migration_provider_key,
         "alembic_version_meta_table_uid": alembic_version_meta_table_uid,
         "alembic_revision": alembic_revision,
+        "physical_schema": str(physical_schema),
         "physical_table_name": str(physical_table_name),
         "protect_from_deletion": bool(getattr(request, "protect_from_deletion", False)),
         "table_contract": _collection_create_table_contract_payload(
@@ -943,38 +976,44 @@ def _collection_create_row_from_registration_request(
 
 def _collection_create_table_contract_payload(table_contract: Any) -> dict[str, Any]:
     if isinstance(table_contract, MetaTableContract):
-        payload = table_contract.model_dump(mode="json", exclude_none=True)
+        payload = table_contract.model_dump(mode="json", by_alias=True, exclude_none=True)
     elif hasattr(table_contract, "model_dump"):
-        payload = table_contract.model_dump(mode="json", exclude_none=True)
+        payload = table_contract.model_dump(mode="json", by_alias=True, exclude_none=True)
     elif isinstance(table_contract, Mapping):
         payload = dict(table_contract)
     else:
         raise TypeError("Alembic MetaTable collection-create requires table_contract.")
 
-    physical = payload.get("physical")
-    if hasattr(physical, "model_dump"):
-        physical_payload = physical.model_dump(mode="json", exclude_none=True)
-    elif isinstance(physical, Mapping):
-        physical_payload = dict(physical)
-    else:
-        physical_payload = None
-    if physical_payload is not None:
-        for schema_key in ("schema", "schema_", "table_schema", "schema_name"):
-            physical_payload.pop(schema_key, None)
-        payload["physical"] = physical_payload
     return payload
 
 
-def _request_contract_physical_table_name(request: Any) -> str | None:
+def _request_contract_physical_identity(request: Any) -> tuple[str | None, str | None]:
     table_contract = getattr(request, "table_contract", None)
+    physical_schema = getattr(request, "physical_schema", None)
     if isinstance(table_contract, MetaTableContract):
-        return table_contract.physical.table_name
+        contract_schema = table_contract.physical.schema_
+        return (
+            str(physical_schema or contract_schema) if physical_schema or contract_schema else None,
+            table_contract.physical.table_name,
+        )
     if isinstance(table_contract, Mapping):
         physical = table_contract.get("physical")
         if isinstance(physical, Mapping):
-            value = physical.get("table_name")
-            return str(value) if value not in (None, "") else None
-    return None
+            schema_value = (
+                physical_schema
+                or physical.get("schema")
+                or physical.get("schema_")
+                or physical.get("physical_schema")
+            )
+            table_value = physical.get("table_name")
+            return (
+                str(schema_value) if schema_value not in (None, "") else None,
+                str(table_value) if table_value not in (None, "") else None,
+            )
+    return (
+        str(physical_schema) if physical_schema not in (None, "") else None,
+        None,
+    )
 
 
 def _bound_meta_table_for_model(model: type[Any]) -> MetaTable | None:
@@ -1099,73 +1138,103 @@ def _migration_table_name(model: type[Any]) -> str:
     return str(table_name)
 
 
-def _get_metatables_by_model_table_name(
+def _migration_physical_identity(
+    model: type[Any],
+    *,
+    data_source_uid: str,
+) -> tuple[str, str, str]:
+    schema, table_name = _physical_identity_from_model(model)
+    return str(data_source_uid), schema, table_name
+
+
+def _format_physical_identity(identity: tuple[str, str, str]) -> str:
+    data_source_uid, schema, table_name = identity
+    return (
+        f"data_source_uid={data_source_uid} "
+        f"physical_schema={schema} "
+        f"physical_table_name={table_name}"
+    )
+
+
+def _get_metatables_by_model_physical_identity(
     models: Sequence[type[Any]],
     *,
+    data_source_uid: str,
     timeout: int | float | tuple[float, float] | None = None,
-) -> dict[str, MetaTable]:
-    table_names_by_resource: dict[type[MetaTable], list[str]] = {}
+) -> dict[tuple[str, str, str], MetaTable]:
+    identities_by_resource: dict[type[MetaTable], list[tuple[str, str, str]]] = {}
     for model in models:
-        table_names_by_resource.setdefault(
+        identities_by_resource.setdefault(
             _metatable_resource_class_for_model(model),
             [],
-        ).append(_migration_table_name(model))
+        ).append(_migration_physical_identity(model, data_source_uid=data_source_uid))
 
-    resolved: dict[str, Any] = {}
-    for meta_table_cls, table_names in table_names_by_resource.items():
-        matches = _get_metatables_by_table_name(
-            table_names,
+    resolved: dict[tuple[str, str, str], Any] = {}
+    for meta_table_cls, identities in identities_by_resource.items():
+        matches = _get_metatables_by_physical_identity(
+            identities,
             timeout=timeout,
             meta_table_cls=meta_table_cls,
         )
-        duplicate_table_names = set(resolved).intersection(matches)
-        if duplicate_table_names:
-            duplicate_list = ", ".join(sorted(duplicate_table_names))
+        duplicate_identities = set(resolved).intersection(matches)
+        if duplicate_identities:
+            duplicate_list = "; ".join(
+                _format_physical_identity(identity) for identity in sorted(duplicate_identities)
+            )
             raise ValueError(
-                "MetaTable physical table names are not unique across provider models: "
+                "MetaTable physical identities are not unique across provider models: "
                 f"{duplicate_list}."
             )
         resolved.update(matches)
     return resolved
 
 
-def _get_metatables_by_table_name(
-    table_names: Sequence[str],
+def _get_metatables_by_physical_identity(
+    identities: Sequence[tuple[str, str, str]],
     *,
     timeout: int | float | tuple[float, float] | None = None,
     meta_table_cls: type[MetaTable] = MetaTable,
-) -> dict[str, MetaTable]:
-    unique_table_names = list(dict.fromkeys(str(table_name) for table_name in table_names))
-    if not unique_table_names:
+) -> dict[tuple[str, str, str], MetaTable]:
+    unique_identities = list(dict.fromkeys(identities))
+    if not unique_identities:
         return {}
 
+    data_source_uids = list(dict.fromkeys(identity[0] for identity in unique_identities))
+    schemas = list(dict.fromkeys(identity[1] for identity in unique_identities))
+    table_names = list(dict.fromkeys(identity[2] for identity in unique_identities))
     matches = meta_table_cls.filter_by_body(
         timeout=timeout,
-        physical_table_name__in=unique_table_names,
-        limit=max(len(unique_table_names), 1),
+        data_source__uid__in=data_source_uids,
+        physical_schema__in=schemas,
+        physical_table_name__in=table_names,
+        limit=max(
+            len(unique_identities) * len(data_source_uids) * len(schemas),
+            len(unique_identities),
+            1,
+        ),
     )
     if not matches:
         return {}
 
-    matched_by_table_name: dict[str, MetaTable] = {}
+    target_identities = set(unique_identities)
+    matched_by_identity: dict[tuple[str, str, str], MetaTable] = {}
     for meta_table in matches:
-        table_name = _meta_table_physical_table_name(meta_table)
-        if table_name is None:
-            if len(unique_table_names) == 1:
-                table_name = unique_table_names[0]
-            else:
-                raise ValueError(
-                    f"Backend returned a {meta_table_cls.__name__} row without "
-                    "physical_table_name while resolving migration provider models "
-                    "by table name."
-                )
-        if table_name in matched_by_table_name:
+        identity = _meta_table_full_physical_identity(meta_table)
+        if identity is None:
             raise ValueError(
-                f"MetaTable physical table name {table_name!r} is not unique; "
-                "found multiple catalog rows."
+                f"Backend returned a {meta_table_cls.__name__} row without complete "
+                "physical identity while resolving migration provider models."
             )
-        matched_by_table_name[table_name] = meta_table
-    return matched_by_table_name
+        if identity not in target_identities:
+            continue
+        if identity in matched_by_identity:
+            raise ValueError(
+                "MetaTable physical identity "
+                f"{_format_physical_identity(identity)} is not unique; found multiple "
+                "catalog rows."
+            )
+        matched_by_identity[identity] = meta_table
+    return matched_by_identity
 
 
 def _meta_table_identifier(meta_table: MetaTable) -> str | None:
@@ -1182,6 +1251,38 @@ def _meta_table_physical_table_name(meta_table: MetaTable) -> str | None:
     return str(physical_table_name)
 
 
+def _meta_table_physical_schema(meta_table: MetaTable) -> str | None:
+    identity = _physical_identity_from_metatable(meta_table)
+    if identity is None:
+        return None
+    return identity[0]
+
+
+def _meta_table_data_source_uid(meta_table: MetaTable) -> str | None:
+    data_source_uid = getattr(meta_table, "data_source_uid", None)
+    if data_source_uid not in (None, ""):
+        return str(data_source_uid)
+    data_source = getattr(meta_table, "data_source", None)
+    if isinstance(data_source, Mapping):
+        uid = data_source.get("uid") or data_source.get("data_source_uid")
+    else:
+        uid = getattr(data_source, "uid", None) or getattr(data_source, "data_source_uid", None)
+    if uid in (None, ""):
+        return None
+    return str(uid)
+
+
+def _meta_table_full_physical_identity(
+    meta_table: MetaTable,
+) -> tuple[str, str, str] | None:
+    data_source_uid = _meta_table_data_source_uid(meta_table)
+    identity = _physical_identity_from_metatable(meta_table)
+    if data_source_uid in (None, "") or identity is None:
+        return None
+    schema, table_name = identity
+    return data_source_uid, schema, table_name
+
+
 def _meta_table_provisioning_status(meta_table: MetaTable) -> str | None:
     provisioning_status = meta_table.provisioning_status
     if provisioning_status in (None, ""):
@@ -1196,6 +1297,18 @@ def _meta_table_uid(meta_table: MetaTable) -> str | None:
     return str(uid)
 
 
+def _finalize_result_physical_identity(
+    item: ManagedMetaTableFinalizeTableResult,
+) -> tuple[str, str] | None:
+    table_name = item.physical_table_name
+    if table_name in (None, ""):
+        return None
+    schema = item.physical_schema
+    if schema in (None, ""):
+        return None
+    return str(schema), str(table_name)
+
+
 def _finalize_table_failed(item: ManagedMetaTableFinalizeTableResult) -> bool:
     return (
         item.provisioning_status != "active"
@@ -1206,11 +1319,13 @@ def _finalize_table_failed(item: ManagedMetaTableFinalizeTableResult) -> bool:
 
 def _finalize_failure_message(item: ManagedMetaTableFinalizeTableResult) -> str:
     identifier = item.identifier or item.meta_table_uid or "<unknown>"
+    physical_schema = item.physical_schema or "no-physical-schema"
     physical_table_name = item.physical_table_name or "no-physical-table"
     parts = [
         "Finalize-managed table failed",
         f"identifier={identifier}",
-        f"physical_table={physical_table_name}",
+        f"physical_schema={physical_schema}",
+        f"physical_table_name={physical_table_name}",
         f"provisioning_status={item.provisioning_status}",
         f"physical_table_exists={item.physical_table_exists}",
         f"finalized={item.finalized}",
@@ -1251,6 +1366,7 @@ def _metatable_from_finalize_result(
         schema_management_mode=item.schema_management_mode or "backend_managed",
         migration_provider_key=item.migration_provider_key,
         alembic_version_meta_table_uid=item.alembic_version_meta_table_uid,
+        physical_schema=item.physical_schema,
         physical_table_name=item.physical_table_name,
         table_kind=item.table_kind,
         time_indexed=item.time_indexed,

@@ -134,6 +134,8 @@ class DataAccessMixin:
 
 
 class APIDataNode(DataAccessMixin):
+    LEGACY_DEFAULT_PHYSICAL_SCHEMA = "public"
+
     @staticmethod
     def _require_data_source_uid(data_source: Any, *, context: str) -> str:
         if isinstance(data_source, dict):
@@ -173,6 +175,24 @@ class APIDataNode(DataAccessMixin):
         return str(table_name)
 
     @classmethod
+    def _storage_table_physical_schema(cls, storage_table: Any) -> str:
+        if isinstance(storage_table, dict):
+            physical_schema = storage_table.get("physical_schema")
+            table_contract = storage_table.get("table_contract")
+        else:
+            physical_schema = getattr(storage_table, "physical_schema", None)
+            table_contract = getattr(storage_table, "table_contract", None)
+        if physical_schema not in (None, ""):
+            return str(physical_schema)
+        if isinstance(table_contract, dict):
+            physical = table_contract.get("physical") or {}
+            if isinstance(physical, dict):
+                contract_schema = physical.get("schema") or physical.get("schema_")
+                if contract_schema not in (None, ""):
+                    return str(contract_schema)
+        return cls.LEGACY_DEFAULT_PHYSICAL_SCHEMA
+
+    @classmethod
     def build_from_local_time_serie(cls, source_table: "DataNodeUpdate") -> "APIDataNode":
         physical_table_name = getattr(source_table, "physical_table_name", None) or getattr(
             getattr(source_table, "data_node_storage", None),
@@ -202,6 +222,7 @@ class APIDataNode(DataAccessMixin):
                 storage_table,
                 context=context,
             ),
+            physical_schema=cls._storage_table_physical_schema(storage_table),
             physical_table_name=cls._require_physical_table_name(
                 storage_table,
                 context=context,
@@ -215,22 +236,55 @@ class APIDataNode(DataAccessMixin):
         return cls.build_from_meta_table(storage_table)
 
     @classmethod
-    def build_from_table_name(cls, table_name: str) -> "APIDataNode":
+    def build_from_physical_identity(
+        cls,
+        *,
+        schema: str,
+        table_name: str,
+        data_source_uid: str | None = None,
+    ) -> "APIDataNode":
+        if schema in (None, ""):
+            raise ValueError("APIDataNode.build_from_physical_identity requires schema.")
+        filters = {
+            "physical_schema": str(schema),
+            "physical_table_name": table_name,
+        }
+        if data_source_uid not in (None, ""):
+            filters["data_source__uid"] = str(data_source_uid)
         storage_table = TimeIndexMetaTable.get_or_none(
-            physical_table_name=table_name,
+            **filters,
         )
         if storage_table is None:
             raise DoesNotExist(
                 "No TimeIndexMetaTable found matching "
-                f"{{'physical_table_name': {table_name!r}}}"
+                f"{{'physical_schema': {schema!r}, 'physical_table_name': {table_name!r}}}"
             )
         return cls.build_from_meta_table(storage_table)
+
+    @classmethod
+    def build_from_table_name(
+        cls,
+        table_name: str,
+        *,
+        schema: str = LEGACY_DEFAULT_PHYSICAL_SCHEMA,
+        data_source_uid: str | None = None,
+    ) -> "APIDataNode":
+        logger.warning(
+            "APIDataNode.build_from_table_name is ambiguous across schemas; "
+            "use build_from_physical_identity(schema=..., table_name=...) instead."
+        )
+        return cls.build_from_physical_identity(
+            schema=schema,
+            table_name=table_name,
+            data_source_uid=data_source_uid,
+        )
 
     def __init__(
         self,
         data_source_uid: str,
         physical_table_name: str | None = None,
         *,
+        physical_schema: str | None = None,
         storage_hash: str | None = None,
         data_source_local_lake: DataSource | None = None,
         storage_table: MetaTable | None = None,
@@ -255,6 +309,7 @@ class APIDataNode(DataAccessMixin):
         if resolved_physical_table_name in (None, ""):
             raise ValueError("APIDataNode requires physical_table_name.")
         self.data_source_uid = str(data_source_uid)
+        self.physical_schema = str(physical_schema or self.LEGACY_DEFAULT_PHYSICAL_SCHEMA)
         self.physical_table_name = str(resolved_physical_table_name)
         self.storage_table = storage_table
         self.data_source = data_source_local_lake
@@ -321,6 +376,7 @@ class APIDataNode(DataAccessMixin):
         self._verify_local_data_source()
         self._local_persist_manager = APIPersistManager(
             physical_table_name=self.physical_table_name,
+            physical_schema=self.physical_schema,
             data_source_uid=self.data_source_uid,
         )
         storage_table = self._local_persist_manager.storage_table

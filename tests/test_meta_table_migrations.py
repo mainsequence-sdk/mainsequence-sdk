@@ -51,6 +51,7 @@ def _reserved_metatable(
     uid: str,
     identifier: str,
     physical_table_name: str,
+    physical_schema: str = "public",
     namespace: str = "example.assets",
 ) -> MetaTable:
     return resource_cls.model_construct(
@@ -65,10 +66,11 @@ def _reserved_metatable(
         migration_namespace="markets",
         migration_provider_key="sample:markets",
         alembic_version_meta_table_uid="registry-meta-table-uid",
+        physical_schema=physical_schema,
         physical_table_name=physical_table_name,
         table_contract={
             "version": "relational-table.v1",
-            "physical": {"table_name": physical_table_name},
+            "physical": {"schema": physical_schema, "table_name": physical_table_name},
             "columns": [],
         },
     )
@@ -842,7 +844,8 @@ def test_finalize_metatable_catalog_surfaces_missing_physical_tables(monkeypatch
         "Finalize-managed response ok=False finalized=0 active=0 reserved=1 failed=1.",
         (
             "Finalize-managed table failed identifier=markets.Asset "
-            "physical_table=example_assets__asset provisioning_status=reserved "
+            "physical_schema=no-physical-schema "
+            "physical_table_name=example_assets__asset provisioning_status=reserved "
             "physical_table_exists=False finalized=False "
             'error={"code": "physical_table_missing"}'
         ),
@@ -1144,8 +1147,10 @@ def test_prepare_for_alembic_preserves_authored_table_names(monkeypatch):
         assert "indexes" not in rows[1]["table_contract"]
         assert "foreign_keys" not in rows[0]["table_contract"]
         assert "foreign_keys" not in rows[1]["table_contract"]
-        assert "schema" not in rows[0]["table_contract"]["physical"]
-        assert "schema" not in rows[1]["table_contract"]["physical"]
+        assert rows[0]["physical_schema"] == "public"
+        assert rows[1]["physical_schema"] == "public"
+        assert rows[0]["table_contract"]["physical"]["schema"] == "public"
+        assert rows[1]["table_contract"]["physical"]["schema"] == "public"
 
         response_tables = []
         for table in rows:
@@ -1209,8 +1214,10 @@ def test_prepare_for_alembic_preserves_authored_table_names(monkeypatch):
     assert next(iter(Asset.__table__.foreign_key_constraints)).name == "asset_account_uid_fkey"
     assert "indexes" not in reserved_payloads[1]["table_contract"]
     assert "foreign_keys" not in reserved_payloads[1]["table_contract"]
-    assert "schema" not in reserved_payloads[0]["table_contract"]["physical"]
-    assert "schema" not in reserved_payloads[1]["table_contract"]["physical"]
+    assert reserved_payloads[0]["physical_schema"] == "public"
+    assert reserved_payloads[1]["physical_schema"] == "public"
+    assert reserved_payloads[0]["table_contract"]["physical"]["schema"] == "public"
+    assert reserved_payloads[1]["table_contract"]["physical"]["schema"] == "public"
     assert "schema_management" not in reserved_payloads[0]
     assert reserved_payloads[0]["protect_from_deletion"] is False
 
@@ -1257,7 +1264,8 @@ def test_prepare_for_alembic_does_not_resolve_foreign_key_targets(monkeypatch):
         assert "storage_hash" not in rows[0]
         assert "indexes" not in rows[0]["table_contract"]
         assert "foreign_keys" not in rows[0]["table_contract"]
-        assert "schema" not in rows[0]["table_contract"]["physical"]
+        assert rows[0]["physical_schema"] == "public"
+        assert rows[0]["table_contract"]["physical"]["schema"] == "public"
         assert "schema_management" not in rows[0]
         return [
             _reserved_metatable(
@@ -1453,7 +1461,15 @@ def test_prepare_for_alembic_reuses_existing_reserved_table_name(monkeypatch):
 
     def fake_filter_by_body(**kwargs):
         filter_calls.append(kwargs)
-        assert set(kwargs) == {"timeout", "physical_table_name__in", "limit"}
+        assert set(kwargs) == {
+            "timeout",
+            "data_source__uid__in",
+            "physical_schema__in",
+            "physical_table_name__in",
+            "limit",
+        }
+        assert kwargs["data_source__uid__in"] == ["data-source-uid"]
+        assert kwargs["physical_schema__in"] == ["public"]
         assert kwargs["physical_table_name__in"] == [
             "example_assets__account",
             "example_assets__asset",
@@ -1490,7 +1506,8 @@ def test_prepare_for_alembic_reuses_existing_reserved_table_name(monkeypatch):
         assert all(table["is_alembic_managed"] is True for table in rows)
         assert "indexes" not in rows[0]["table_contract"]
         assert "foreign_keys" not in rows[0]["table_contract"]
-        assert "schema" not in rows[0]["table_contract"]["physical"]
+        assert rows[0]["physical_schema"] == "public"
+        assert rows[0]["table_contract"]["physical"]["schema"] == "public"
         assert all("schema_management" not in table for table in rows)
         return [
             _reserved_metatable(
@@ -1531,7 +1548,8 @@ def test_prepare_for_alembic_reuses_existing_reserved_table_name(monkeypatch):
     assert Account.__table__.name == "example_assets__account"
     assert Asset.__table__.name == "example_assets__asset"
     assert (
-        "Reusing existing reserved MetaTable table_name=example_assets__account."
+        "Reusing existing reserved MetaTable data_source_uid=data-source-uid "
+        "physical_schema=public physical_table_name=example_assets__account."
     ) in reservation_statuses
 
 
@@ -1567,7 +1585,15 @@ def test_prepare_for_alembic_reserves_already_staged_existing_rows(monkeypatch):
         symbol: Mapped[str] = mapped_column(String(64), nullable=False)
 
     def fake_filter_by_body(**kwargs):
-        assert set(kwargs) == {"timeout", "physical_table_name__in", "limit"}
+        assert set(kwargs) == {
+            "timeout",
+            "data_source__uid__in",
+            "physical_schema__in",
+            "physical_table_name__in",
+            "limit",
+        }
+        assert kwargs["data_source__uid__in"] == ["data-source-uid"]
+        assert kwargs["physical_schema__in"] == ["public"]
         assert kwargs["physical_table_name__in"] == [
             "example_assets__account",
             "example_assets__asset",

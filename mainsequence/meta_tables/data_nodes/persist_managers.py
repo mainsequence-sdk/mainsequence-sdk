@@ -31,10 +31,13 @@ from mainsequence.meta_tables import PlatformTimeIndexMetaTable, compute_metatab
 from .. import future_registry
 
 _STORAGE_TABLE_LOOKUP_LIMIT = 20
+_LEGACY_POSTGRES_SCHEMA = "public"
 
 
 @dataclass(frozen=True)
 class _StorageTableLookupResult:
+    data_source_uid: str | None
+    physical_schema: str | None
     table_name: str | None
     filters: dict[str, Any]
     matches: list[TimeIndexMetaTable]
@@ -144,21 +147,51 @@ def _registered_storage_table_lookup(
     storage_table: type[PlatformTimeIndexMetaTable],
 ) -> _StorageTableLookupResult:
     table_name = _storage_table_physical_table_name(storage_table)
-    if table_name:
+    physical_schema = _storage_table_physical_schema(storage_table)
+    data_source_uid = storage_table.get_data_source_uid()
+    if table_name and physical_schema and data_source_uid:
         filters = {
+            "data_source__uid": data_source_uid,
+            "physical_schema__in": [physical_schema],
             "physical_table_name__in": [table_name],
             "limit": _STORAGE_TABLE_LOOKUP_LIMIT,
         }
-        matches = TimeIndexMetaTable.filter_by_body(
-            **filters,
-        )
+        raw_matches = TimeIndexMetaTable.filter_by_body(**filters)
+        matches = [
+            match
+            for match in raw_matches
+            if _time_index_meta_table_identity(match)
+            == (data_source_uid, physical_schema, table_name)
+        ]
         return _StorageTableLookupResult(
+            data_source_uid=data_source_uid,
+            physical_schema=physical_schema,
             table_name=table_name,
             filters=filters,
             matches=matches,
         )
 
-    return _StorageTableLookupResult(table_name=None, filters={}, matches=[])
+    return _StorageTableLookupResult(
+        data_source_uid=data_source_uid,
+        physical_schema=physical_schema,
+        table_name=table_name,
+        filters={},
+        matches=[],
+    )
+
+
+def _storage_table_physical_schema(
+    storage_table: type[PlatformTimeIndexMetaTable],
+) -> str | None:
+    schema_getter = getattr(storage_table, "get_physical_schema", None)
+    physical_schema = schema_getter() if callable(schema_getter) else None
+    if physical_schema not in (None, ""):
+        return str(physical_schema)
+    table = getattr(storage_table, "__table__", None)
+    table_schema = getattr(table, "schema", None)
+    if table_schema not in (None, ""):
+        return str(table_schema)
+    return _LEGACY_POSTGRES_SCHEMA
 
 
 def _storage_table_physical_table_name(
@@ -175,8 +208,9 @@ def _storage_table_physical_table_name(
 
 
 def _storage_table_lookup_label(storage_table: type[PlatformTimeIndexMetaTable]) -> str:
+    physical_schema = _storage_table_physical_schema(storage_table) or "<unknown-schema>"
     table_name = _storage_table_physical_table_name(storage_table) or "<unknown-table>"
-    return f"{storage_table.__name__}(table={table_name})"
+    return f"{storage_table.__name__}(schema={physical_schema}, table={table_name})"
 
 
 def _unbound_storage_table_message(
@@ -202,6 +236,16 @@ def _unbound_storage_table_message(
     if lookup_result.table_name is None:
         return (
             f"{message} The SDK could not determine a physical table name from "
+            "the storage model, so no backend catalog lookup was possible."
+        )
+    if lookup_result.physical_schema is None:
+        return (
+            f"{message} The SDK could not determine a physical schema from "
+            "the storage model, so no backend catalog lookup was possible."
+        )
+    if lookup_result.data_source_uid is None:
+        return (
+            f"{message} The SDK could not determine a data-source UID from "
             "the storage model, so no backend catalog lookup was possible."
         )
 
@@ -248,6 +292,12 @@ def _storage_table_identity_summary(storage_table: type[PlatformTimeIndexMetaTab
     data_source_uid = storage_table.get_data_source_uid()
     if data_source_uid not in (None, ""):
         parts.append(f"model_data_source_uid={data_source_uid!r}")
+    physical_schema = _storage_table_physical_schema(storage_table)
+    if physical_schema not in (None, ""):
+        parts.append(f"physical_schema={physical_schema!r}")
+    table_name = _storage_table_physical_table_name(storage_table)
+    if table_name not in (None, ""):
+        parts.append(f"physical_table_name={table_name!r}")
     if not parts:
         return "Storage identity is incomplete."
     return "Storage identity: " + ", ".join(parts) + "."
@@ -262,6 +312,7 @@ def _time_index_meta_table_candidate_summary(meta_table: TimeIndexMetaTable) -> 
     for attr in (
         "uid",
         "data_source_uid",
+        "physical_schema",
         "identifier",
         "physical_table_name",
         "provisioning_status",
@@ -270,6 +321,35 @@ def _time_index_meta_table_candidate_summary(meta_table: TimeIndexMetaTable) -> 
         if value not in (None, ""):
             parts.append(f"{attr}={value}")
     return "{" + ", ".join(parts) + "}" if parts else "{unidentified TimeIndexMetaTable}"
+
+
+def _time_index_meta_table_identity(
+    meta_table: TimeIndexMetaTable,
+) -> tuple[str, str, str] | None:
+    data_source_uid = getattr(meta_table, "data_source_uid", None)
+    if data_source_uid in (None, ""):
+        data_source = getattr(meta_table, "data_source", None)
+        if isinstance(data_source, dict):
+            data_source_uid = data_source.get("uid") or data_source.get("data_source_uid")
+        else:
+            data_source_uid = getattr(data_source, "uid", None) or getattr(
+                data_source,
+                "data_source_uid",
+                None,
+            )
+    physical_schema = getattr(meta_table, "physical_schema", None)
+    if physical_schema in (None, ""):
+        table_contract = getattr(meta_table, "table_contract", None)
+        if isinstance(table_contract, dict):
+            physical = table_contract.get("physical") or {}
+            if isinstance(physical, dict):
+                physical_schema = physical.get("schema") or physical.get("schema_")
+    if physical_schema in (None, ""):
+        physical_schema = _LEGACY_POSTGRES_SCHEMA
+    table_name = getattr(meta_table, "physical_table_name", None)
+    if data_source_uid in (None, "") or table_name in (None, ""):
+        return None
+    return str(data_source_uid), str(physical_schema), str(table_name)
 
 
 class BasePersistManager:
@@ -420,10 +500,12 @@ class BasePersistManager:
                 )
                 if result is None:
                     meta_table_uid = self.storage_table.get_meta_table_uid()
+                    physical_schema = _storage_table_physical_schema(self.storage_table)
                     physical_table_name = _storage_table_physical_table_name(self.storage_table)
                     self.logger.warning(
                         f"DataNodeUpdate {self.update_hash} for MetaTable {meta_table_uid} "
-                        f"(physical_table_name={physical_table_name}) not found in backend"
+                        f"(physical_schema={physical_schema}, "
+                        f"physical_table_name={physical_table_name}) not found in backend"
                     )
                 new_future.set_result(result)
             except Exception as exc:
@@ -650,15 +732,20 @@ class APIPersistManager:
         self,
         *,
         physical_table_name: str | None = None,
+        physical_schema: str | None = None,
         storage_hash: str | None = None,
         data_source_uid: str,
     ):
         if data_source_uid in (None, ""):
             raise ValueError("APIPersistManager requires data_source_uid.")
         self.data_source_uid: str = str(data_source_uid)
+        self.physical_schema: str = str(physical_schema or _LEGACY_POSTGRES_SCHEMA)
         self.physical_table_name: str | None = physical_table_name or storage_hash
 
-        logger.debug(f"Initializing Time Serie {self.physical_table_name} as APIDataNode")
+        logger.debug(
+            "Initializing APIDataNode storage "
+            f"{self.physical_schema}.{self.physical_table_name}"
+        )
 
         self._storage_table_future = Future()
         future_registry.add_future(self._storage_table_future)
@@ -678,6 +765,7 @@ class APIPersistManager:
     def _init_storage_table(self) -> None:
         try:
             result = TimeIndexMetaTable.get_or_none(
+                physical_schema=self.physical_schema,
                 physical_table_name=self.physical_table_name,
                 data_source__uid=self.data_source_uid,
             )

@@ -141,6 +141,7 @@ def test_api_data_node_build_from_table_name_uses_physical_table_name(monkeypatc
     node = data_nodes.APIDataNode.build_from_table_name("prices_table")
 
     assert captured == {
+        "physical_schema": "public",
         "physical_table_name": "prices_table",
     }
     assert node.physical_table_name == "prices_table"
@@ -179,6 +180,7 @@ def test_api_persist_manager_resolves_storage_by_table_name_and_data_source(monk
 
     assert manager.storage_table is storage_table
     assert captured == {
+        "physical_schema": "public",
         "physical_table_name": "prices_table",
         "data_source__uid": "data-source-uid",
     }
@@ -200,6 +202,7 @@ def test_api_data_node_local_persist_manager_receives_only_data_source_uid(monke
 
     assert captured == {
         "physical_table_name": "prices_hash",
+        "physical_schema": "public",
         "data_source_uid": "data-source-uid",
     }
 

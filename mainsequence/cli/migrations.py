@@ -260,6 +260,9 @@ def _contract_physical_table_name(item: Any) -> Any:
 
 
 def _contract_physical_schema(item: Any) -> Any:
+    physical_schema = _item_value(item, "physical_schema")
+    if physical_schema not in (None, ""):
+        return physical_schema
     contract = _item_value(item, "table_contract")
     if contract is None:
         return None
@@ -323,6 +326,7 @@ def _metatable_message(
         or model_name
     )
     uid = _item_value(item, "meta_table_uid") or _item_value(item, "uid")
+    physical_schema = _contract_physical_schema(item)
     physical_table_name = _item_value(item, "physical_table_name") or _contract_physical_table_name(
         item
     )
@@ -341,6 +345,8 @@ def _metatable_message(
         parts.append(f"model={model_name}")
     if uid not in (None, ""):
         parts.append(f"uid={uid}")
+    if physical_schema not in (None, ""):
+        parts.append(f"physical_schema={physical_schema}")
     if physical_table_name not in (None, ""):
         parts.append(f"physical_table={physical_table_name}")
     if provisioning_status not in (None, ""):
