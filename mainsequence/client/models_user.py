@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from contextvars import ContextVar
 from typing import Any, ClassVar, Literal
 
-from pydantic import Field
+from pydantic import ConfigDict, Field, field_validator
 
 from mainsequence.defaults import STANDARD_BACKEND_URL
 from mainsequence.logconf import logger
@@ -175,12 +175,8 @@ class Organization(UserApiBaseObjectOrm, BasePydanticModel):
 
 
 class Group(BasePydanticModel):
-    id: int = Field(
-        ...,
-        title="Group ID",
-        description="Unique identifier of the permission group.",
-        examples=[3],
-    )
+    model_config = ConfigDict(extra="ignore")
+
     name: str = Field(
         ...,
         title="Group Name",
@@ -188,8 +184,12 @@ class Group(BasePydanticModel):
         examples=["Data Managers"],
     )
 
-    normalized_name:str = Field()
-
+    normalized_name: str = Field(
+        ...,
+        title="Normalized Group Name",
+        description="Stable normalized permission group name returned by the user details API.",
+        examples=["data_managers"],
+    )
 
 
 class UserSummary(BasePydanticModel):
@@ -269,6 +269,23 @@ class ShareableTeamSummary(BasePydanticModel):
         title="Member Count",
         description="Number of members currently in the team.",
         examples=[5],
+    )
+
+
+class UserTeamSummary(BasePydanticModel):
+    model_config = ConfigDict(extra="ignore")
+
+    uid: str = Field(
+        ...,
+        title="Organization Team UID",
+        description="Stable public unique identifier of the organization team.",
+        examples=["3f1cc452-43ec-49cb-b2ba-87dbac164d29"],
+    )
+    name: str | None = Field(
+        None,
+        title="Team Name",
+        description="Human-readable organization team name when returned by the user details API.",
+        examples=["Research"],
     )
 
 
@@ -1050,20 +1067,45 @@ class User(UserApiBaseObjectOrm, BasePydanticModel):
     )
     user_permissions: list[int] = Field(
         default_factory=list,
+        exclude=True,
         title="User Permissions",
-        description="Direct permission ids assigned to the user.",
+        description="Legacy internal permission ids accepted only for older auth payloads.",
         examples=[[101, 202]],
     )
-    organization_teams: list[int | Team | dict[str, Any]] = Field(
+    organization_teams: list[UserTeamSummary | Team | str] = Field(
         default_factory=list,
         title="Organization Teams",
-        description="Organization team identifiers or fully-expanded team objects for the user.",
-        examples=[[9, 12]],
+        description="Organization team UIDs or nested team summaries for the user.",
+        examples=[[{"uid": "3f1cc452-43ec-49cb-b2ba-87dbac164d29", "name": "Research"}]],
     )
 
     @property
     def effective_plan(self) -> Any | None:
         return self.plan if self.plan is not None else self.active_plan_type
+
+    @field_validator("user_permissions", mode="before")
+    @classmethod
+    def _normalize_legacy_user_permissions(cls, value):
+        if value is None:
+            return []
+        return value
+
+    @field_validator("organization_teams", mode="before")
+    @classmethod
+    def _normalize_organization_team_references(cls, value):
+        if value is None:
+            return []
+        if not isinstance(value, list):
+            return value
+
+        normalized = []
+        for item in value:
+            if isinstance(item, int):
+                continue
+            if isinstance(item, dict):
+                item = {key: val for key, val in item.items() if key != "id"}
+            normalized.append(item)
+        return normalized
 
     @classmethod
     def _build_request_bound_identity_user(
