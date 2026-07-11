@@ -45,7 +45,7 @@ This skill must not claim ownership of:
 - DataNode producer implementation
 - MetaTable schema design
 - FastAPI route design
-- Streamlit dashboard implementation
+- Streamlit dashboard design or implementation
 - workspace document structure
 
 ## Route Adjacent Work
@@ -58,10 +58,12 @@ This skill must not claim ownership of:
   `.agents/skills/mainsequence/data_publishing/meta_tables/SKILL.md`
 - APIs and FastAPI:
   `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
-- Streamlit dashboards:
-  `.agents/skills/mainsequence/dashboards/streamlit/SKILL.md`
+- Streamlit dashboard deployment:
+  `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
 - Command Center workspaces:
   `.agents/skills/mainsequence/command_center/workspace_builder/SKILL.md`
+
+Streamlit dashboard implementation is app-owned project code. This skill only reasons about access to deployed resources such as `ResourceRelease`.
 
 ## Read First
 

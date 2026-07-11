@@ -39,7 +39,7 @@ This skill must not claim ownership of:
 - workspace document creation or mutation
 - AppComponent custom form design
 - job creation, scheduling, image pinning, or releases
-- Streamlit dashboard implementation
+- Streamlit dashboard design or implementation
 - non-FastAPI API framework choices for Main Sequence project APIs
 
 ## Route Adjacent Work
@@ -62,8 +62,8 @@ This skill must not claim ownership of:
   `.agents/skills/mainsequence/command_center/api_mock_prototyping/SKILL.md`
 - Jobs, images, resources, and releases:
   `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
-- Streamlit dashboards:
-  `.agents/skills/mainsequence/dashboards/streamlit/SKILL.md`
+
+Streamlit dashboard implementation is app-owned project code, not a Main Sequence platform skill. Route Streamlit deployment only through orchestration and releases.
 
 ## Read First
 

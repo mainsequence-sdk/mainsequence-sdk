@@ -48,8 +48,8 @@ This skill must not claim ownership of:
   `.agents/skills/mainsequence/data_publishing/meta_tables/SKILL.md`
 - Jobs, images, resources, and releases:
   `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
-- Streamlit dashboards:
-  `.agents/skills/mainsequence/dashboards/streamlit/SKILL.md`
+
+Streamlit dashboard design and implementation are app-owned project work, not a Main Sequence Command Center or platform scaffold skill. Route only Streamlit dashboard deployment or release verification to orchestration and releases.
 
 ## Read First
 

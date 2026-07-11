@@ -42,7 +42,7 @@ This skill must not claim ownership of:
 - jobs, schedules, images, resources, or releases
 - RBAC or sharing semantics
 - domain assets, translation tables, or construction logic
-- Streamlit dashboard implementation
+- Streamlit dashboard design or implementation
 - pricing-runtime semantics
 
 Do not let this skill become a domain manual.
@@ -65,12 +65,12 @@ Do not let this skill become a domain manual.
   `.agents/skills/mainsequence/maintenance/local_journal/SKILL.md`
 - project status audits, blocker analysis, and upstream SDK assessment:
   `.agents/skills/mainsequence/maintenance/bug_auditor/SKILL.md`
-- jobs, schedules, artifacts, images, resources, and releases:
+- jobs, schedules, artifacts, images, resources, releases, and Streamlit dashboard deployment:
   `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
 - RBAC and sharing:
   `.agents/skills/mainsequence/platform_operations/access_control_and_sharing/SKILL.md`
-- Streamlit dashboards:
-  `.agents/skills/mainsequence/dashboards/streamlit/SKILL.md`
+
+Streamlit dashboard design and implementation are app-owned project work, not a separate Main Sequence scaffold skill. Route only platform deployment of an already-authored Streamlit dashboard to orchestration and releases.
 
 ## Read First
 

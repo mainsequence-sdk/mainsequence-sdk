@@ -51,12 +51,14 @@ This skill discovers and identifies data. It does not publish, redesign, or defi
   `.agents/skills/mainsequence/data_publishing/meta_tables/SKILL.md`
 - FastAPI or application-facing implementation:
   `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
-- Streamlit dashboards:
-  `.agents/skills/mainsequence/dashboards/streamlit/SKILL.md`
+- Streamlit dashboard deployment:
+  `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
 - Command Center surfaces:
   `.agents/skills/mainsequence/command_center/workspace_builder/SKILL.md`
 - blocker and failure analysis:
   `.agents/skills/mainsequence/maintenance/bug_auditor/SKILL.md`
+
+Streamlit dashboard implementation is app-owned project code, not a Main Sequence scaffold skill.
 
 ## Read First
 

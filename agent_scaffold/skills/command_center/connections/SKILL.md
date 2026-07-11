@@ -45,7 +45,7 @@ This skill must not claim ownership of:
 - AppComponent custom forms or action contracts
 - generic FastAPI endpoint design
 - backend resource and release creation
-- Streamlit dashboards
+- Streamlit dashboard design or implementation
 
 ## Route Adjacent Work
 

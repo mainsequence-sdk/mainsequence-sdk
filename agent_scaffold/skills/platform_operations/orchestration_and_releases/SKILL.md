@@ -1,6 +1,6 @@
 ---
 name: mainsequence-orchestration-and-releases
-description: Use this skill when the task is about operational execution in a Main Sequence project. This skill owns jobs, schedules, batch scheduling files, project images, run inspection, project resources, releases, and Artifacts as operational inputs. It does not own DataNode producer design, MetaTable schema design, API route contracts, or RBAC policy.
+description: Use this skill when the task is about operational execution in a Main Sequence project. This skill owns jobs, schedules, batch scheduling files, project images, run inspection, project resources, releases, Streamlit dashboard deployment, and Artifacts as operational inputs. It does not own DataNode producer design, MetaTable schema design, API route contracts, Streamlit dashboard design, or RBAC policy.
 ---
 
 # Main Sequence Orchestration And Releases
@@ -16,6 +16,7 @@ This skill is for:
 - images
 - project resources
 - releases
+- Streamlit dashboard deployment as `streamlit_dashboard` releases
 - operational logs and run inspection
 - Artifacts as job inputs or outputs
 
@@ -30,6 +31,7 @@ This skill is for:
 - freeze jobs to a project image
 - inspect job runs and logs
 - reason about project resources and resource releases
+- create or review Streamlit dashboard deployment through project resources and `streamlit_dashboard` releases
 - review Artifact-based workflows in operational pipelines
 
 ## This Skill Must Not Claim
@@ -41,6 +43,7 @@ This skill must not claim ownership of:
 - FastAPI route contracts
 - RBAC or sharing policy
 - Streamlit dashboard implementation details
+- Streamlit layout, styling, sidebar/session behavior, page structure, or UI helper design
 
 ## Route Adjacent Work
 
@@ -54,20 +57,22 @@ This skill must not claim ownership of:
   `.agents/skills/mainsequence/command_center/api_mock_prototyping/SKILL.md`
 - RBAC and sharing:
   `.agents/skills/mainsequence/platform_operations/access_control_and_sharing/SKILL.md`
-- Streamlit dashboards:
-  `.agents/skills/mainsequence/dashboards/streamlit/SKILL.md`
 
 ## Read First
 
 1. `docs/tutorial/scheduling_jobs.md`
 2. `docs/knowledge/infrastructure/scheduling_jobs.md`
 3. `docs/knowledge/infrastructure/artifacts.md`
+4. `docs/tutorial/dashboards/streamlit/streamlit_integration_2.md` when deploying or verifying a Streamlit dashboard
+5. `docs/knowledge/dashboards/streamlit/index.md` when deployment metadata or SDK/dashboard boundary questions matter
 
-If the task touches deployed dashboards or APIs, also read the relevant domain skill/docs before changing the operational workflow.
+If the task touches deployed FastAPI APIs, also read the relevant API skill/docs before changing the operational workflow.
+
+If the task asks to design, build, style, or restructure a Streamlit app, do not treat that as Main Sequence platform skill work. Streamlit implementation is app-owned project code. This skill only owns deployment and verification of an already-authored dashboard.
 
 If the task is about publishing a Command Center-facing API mainly to test AppComponent UX, bindings, or request/response contracts, read:
 
-4. `.agents/skills/mainsequence/command_center/api_mock_prototyping/SKILL.md`
+6. `.agents/skills/mainsequence/command_center/api_mock_prototyping/SKILL.md`
 
 Do that before building an image or creating a FastAPI `ResourceRelease`.
 
@@ -78,6 +83,7 @@ Before changing orchestration or release behavior, collect or infer:
 - the execution target:
   - `execution_path`
   - app entrypoint
+  - Streamlit `app.py` resource path when deploying a dashboard
 - whether the job is:
   - manual
   - interval
@@ -89,8 +95,10 @@ Before changing orchestration or release behavior, collect or infer:
 - whether the workflow is:
   - direct CLI/client job creation
   - repository-managed batch scheduling
+  - Streamlit dashboard release creation
 - whether Artifact inputs or outputs are part of the run
 - whether the job should be reproducible against a pinned image
+- for Streamlit dashboard deployment, the `README.md` resource next to `app.py`
 
 If the execution target or image strategy is unclear, stop before scheduling anything.
 
@@ -104,6 +112,7 @@ For every non-trivial orchestration task, decide:
 4. Is strict batch sync appropriate or dangerous?
 5. Does the workflow depend on Artifacts?
 6. Is the task actually a release/resource problem instead of only a job problem?
+7. For Streamlit dashboard deployment, do the selected app resource, README resource, and project image all refer to the intended pushed commit?
 
 ## Build Rules
 
@@ -175,7 +184,25 @@ For deployed dashboards, APIs, or agents:
 - the release must exist
 - the release must point at the intended image or resource version
 
-### 6.1 Do not publish an API just to test AppComponent contracts
+### 6.1 Streamlit dashboard deployment is a release workflow
+
+Main Sequence owns the deployment boundary for Streamlit dashboards, not the dashboard UI design.
+
+For Streamlit dashboard deployment:
+
+- the dashboard `app.py` must already exist in the repository
+- the dashboard `README.md` must exist next to `app.py`
+- both files must be committed and pushed
+- the project image must be built from the intended pushed commit
+- `mainsequence project project_resource list` must discover the dashboard app and README resources
+- create the release with `mainsequence project project_resource create_dashboard`
+- the dashboard release kind is `streamlit_dashboard`
+
+Do not prescribe Streamlit page layout, styling, sidebar/session patterns, or helper/component architecture. Those are application-owned implementation details.
+
+Validate the deployment path, not the Streamlit design.
+
+### 6.2 Do not publish an API just to test AppComponent contracts
 
 If the goal is to validate Command Center AppComponent UX, request rendering, response rendering, published outputs, or downstream bindings, do not jump straight to:
 
@@ -203,6 +230,7 @@ When reviewing an orchestration task, look for:
 - unsafe use of `--strict`
 - workflows depending on laptop-specific file paths instead of Artifacts
 - image or release work being used as a substitute for predeployment AppComponent/API contract validation
+- Streamlit dashboard deployment work drifting into app design or UI implementation ownership
 - tasks that are really resource/release problems rather than simple job problems
 
 ## Validation Checklist
@@ -219,6 +247,7 @@ Do not claim success until you have checked:
 - the job exists after creation or sync
 - runs and logs were inspected when execution success matters
 - resources and releases were verified when deployment success matters
+- Streamlit dashboard releases use the intended app resource, README resource, image, and `streamlit_dashboard` release kind
 - Command Center-facing API publishing is not being used just to test AppComponent UX that should have been validated first in `mock-json` mode
 
 If the workflow uses `scheduled_jobs.yaml`, also check:

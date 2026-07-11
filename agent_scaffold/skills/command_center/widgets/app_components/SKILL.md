@@ -1,6 +1,6 @@
 ---
 name: command-center-app-components
-description: Use this skill when the task is about AppComponent widgets in a Main Sequence project. This skill owns AppComponent generated request forms, response-side editable-form and notification UI contracts, dynamic request/response binding contracts, and the boundary between AppComponent responses and widget-facing output contracts, including requiring generic tabular consumers to receive core.tabular_frame@v1 instead of ad hoc AppComponent JSON. Before changing AppComponent payloads or contracts, verify the target widget in the Command Center registry through the CLI. Source order is strict: registry detail first, SDK client models second, local Main Sequence repository docs/models third only if the first two still leave something unresolved. Main Sequence is platform-first: if an AppComponent depends on a project API, that API must already exist as a FastAPI project resource and have a corresponding FastAPI ResourceRelease before the AppComponent is considered usable from Command Center. Resource and release creation belong to the orchestration-and-releases skill. It does not own workspace layout, generic FastAPI design, or Streamlit dashboards.
+description: Use this skill when the task is about AppComponent widgets in a Main Sequence project. This skill owns AppComponent generated request forms, response-side editable-form and notification UI contracts, dynamic request/response binding contracts, and the boundary between AppComponent responses and widget-facing output contracts, including requiring generic tabular consumers to receive core.tabular_frame@v1 instead of ad hoc AppComponent JSON. Before changing AppComponent payloads or contracts, verify the target widget in the Command Center registry through the CLI. Source order is strict: registry detail first, SDK client models second, local Main Sequence repository docs/models third only if the first two still leave something unresolved. Main Sequence is platform-first: if an AppComponent depends on a project API, that API must already exist as a FastAPI project resource and have a corresponding FastAPI ResourceRelease before the AppComponent is considered usable from Command Center. Resource and release creation belong to the orchestration-and-releases skill. It does not own workspace layout, generic FastAPI design, or Streamlit dashboard design or implementation.
 ---
 
 # Command Center AppComponents
@@ -40,7 +40,7 @@ This skill must not claim ownership of:
 - generic FastAPI route architecture
 - tabular or operational data producer design
 - MetaTable schema design
-- Streamlit dashboard implementation
+- Streamlit dashboard design or implementation
 - scheduling, image pinning, resources, or releases
 
 ## Route Adjacent Work
@@ -61,8 +61,8 @@ This skill must not claim ownership of:
   `.agents/skills/mainsequence/data_publishing/meta_tables/SKILL.md`
 - Jobs, images, resources, and releases:
   `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
-- Streamlit dashboards:
-  `.agents/skills/mainsequence/dashboards/streamlit/SKILL.md`
+
+Streamlit dashboard implementation is app-owned project code, not an AppComponent or Main Sequence platform skill. Route Streamlit dashboard deployment or release verification to orchestration and releases.
 
 ## Read First
 

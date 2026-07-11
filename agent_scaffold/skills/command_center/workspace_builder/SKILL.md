@@ -1,6 +1,6 @@
 ---
 name: command-center-workspace-builder
-description: Use this skill when the task is about creating, updating, validating, or reviewing Main Sequence Command Center workspaces after the workspace design is known. This skill owns workspace documents, widget instance payload resolution, safe mutation, shared versus user state, widget-scoped mutation, connection-backed source widget mounting, and grounding those decisions against the richer widget-type registry contract plus the SDK command_center client models. Use workspace_design first when the task is still about deciding which widgets, layout, narrative, or visualization strategy should express the user intent; use command-center-connections first when source data or query contracts are unresolved. Source order is strict: registry detail first, SDK client models second, local Main Sequence repository docs/models third only when the first two still leave instance payload questions unresolved. Main Sequence is platform-first: if a mounted widget or AppComponent depends on a project API, that API must already exist as a FastAPI project resource and have a corresponding FastAPI ResourceRelease before the workspace flow is considered usable. Resource and release creation belong to the orchestration-and-releases skill. It does not own AppComponent form contracts, API implementation, workspace design, or Streamlit dashboards.
+description: Use this skill when the task is about creating, updating, validating, or reviewing Main Sequence Command Center workspaces after the workspace design is known. This skill owns workspace documents, widget instance payload resolution, safe mutation, shared versus user state, widget-scoped mutation, connection-backed source widget mounting, and grounding those decisions against the richer widget-type registry contract plus the SDK command_center client models. Use workspace_design first when the task is still about deciding which widgets, layout, narrative, or visualization strategy should express the user intent; use command-center-connections first when source data or query contracts are unresolved. Source order is strict: registry detail first, SDK client models second, local Main Sequence repository docs/models third only when the first two still leave instance payload questions unresolved. Main Sequence is platform-first: if a mounted widget or AppComponent depends on a project API, that API must already exist as a FastAPI project resource and have a corresponding FastAPI ResourceRelease before the workspace flow is considered usable. Resource and release creation belong to the orchestration-and-releases skill. It does not own AppComponent form contracts, API implementation, workspace design, or Streamlit dashboard design or implementation.
 ---
 
 # Command Center Workspace Builder
@@ -42,7 +42,7 @@ This skill must not claim ownership of:
 - AppComponent custom input forms
 - widget-facing API response contracts
 - generic FastAPI or backend API implementation
-- Streamlit dashboard implementation
+- Streamlit dashboard design or implementation
 - tabular or operational data producer design
 - MetaTable schema design
 
@@ -66,10 +66,10 @@ This skill must not claim ownership of:
   `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
 - Jobs, images, resources, and releases:
   `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
-- Streamlit dashboards:
-  `.agents/skills/mainsequence/dashboards/streamlit/SKILL.md`
 - MetaTables:
   `.agents/skills/mainsequence/data_publishing/meta_tables/SKILL.md`
+
+Streamlit dashboard implementation is app-owned project code, not a Main Sequence workspace skill. Route Streamlit dashboard deployment or release verification to orchestration and releases.
 
 ## Read First
 
