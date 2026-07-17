@@ -1445,7 +1445,7 @@ def test_agent_runtime_models_deserialize_backend_uid_payloads():
             "is_ready": True,
             "image_drift": {"has_drift": False, "checks": []},
             "related_job_uid": "job-uid",
-            "knative_service_runtime_uid": "runtime-uid",
+            "service_runtime_uid": "runtime-uid",
             "automatic_deployment": True,
         }
     )
@@ -1453,7 +1453,8 @@ def test_agent_runtime_models_deserialize_backend_uid_payloads():
     assert service.agent_uid == agent_uid
     assert service.agent_type == "project-executor"
     assert service.scope["project_uid"] == "project-uid"
-
+    assert service.service_runtime_uid == "runtime-uid"
+    assert service.knative_service_runtime_uid == "runtime-uid"
 
 
 def test_agent_session_runtime_access_uses_session_uid_route(monkeypatch):
@@ -1473,7 +1474,7 @@ def test_agent_session_runtime_access_uses_session_uid_route(monkeypatch):
                 "rpc_url": "https://runtime.main-sequence.app/rpc",
                 "token": "tok-secret",
                 "is_ready": True,
-                "knative_service_runtime_uid": "70c6efb9-8e80-4051-ad3a-f432b2c37f5a",
+                "service_runtime_uid": "70c6efb9-8e80-4051-ad3a-f432b2c37f5a",
                 "image_drift": {
                     "agent_kind": "astro_orchestrator",
                     "available": True,
@@ -1499,6 +1500,21 @@ def test_agent_session_runtime_access_uses_session_uid_route(monkeypatch):
                         }
                     ],
                     "detail": None,
+                    "catalog_state": {
+                        "image_prefix": "astro",
+                        "tag": "latest",
+                        "ttl_seconds": 3600,
+                        "last_synced_at": "2026-07-17T10:00:00+00:00",
+                        "status": "fresh",
+                        "fresh": True,
+                        "refresh_required": False,
+                        "detail": "",
+                        "catalog_image_registry_id": 11,
+                        "catalog_image_registry_uid": "registry-uid",
+                        "catalog_image_id": 42,
+                        "latest_pinned_uri": "registry.example/astro@sha256:expected",
+                        "age_seconds": 12.5,
+                    },
                 },
             }
 
@@ -1515,10 +1531,13 @@ def test_agent_session_runtime_access_uses_session_uid_route(monkeypatch):
 
     assert access.coding_agent_service_id == "svc-12"
     assert access.is_ready is True
+    assert access.service_runtime_uid == "70c6efb9-8e80-4051-ad3a-f432b2c37f5a"
     assert access.knative_service_runtime_uid == "70c6efb9-8e80-4051-ad3a-f432b2c37f5a"
     assert access.image_drift is not None
     assert access.image_drift.agent_kind == "astro_orchestrator"
     assert access.image_drift.checks[0].key == "orchestrator_image"
+    assert access.image_drift.catalog_state is not None
+    assert access.image_drift.catalog_state["refresh_required"] is False
     assert captured == {
         "r_type": "POST",
         "url": f"{agent_models_mod.AgentSession.get_object_url()}/{session_uid}/resolve_runtime_access/",

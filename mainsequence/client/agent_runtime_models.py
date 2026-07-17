@@ -10,7 +10,7 @@ from enum import Enum
 from typing import Any, ClassVar
 
 import requests
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, model_validator
 
 from .base import BaseObjectOrm, BasePydanticModel, ShareableObjectMixin
 from .exceptions import ApiError, raise_for_response
@@ -118,6 +118,10 @@ class AgentRuntimeImageDrift(BasePydanticModel):
         None,
         description="Additional backend detail when drift information is unavailable or degraded.",
     )
+    catalog_state: dict[str, Any] | None = Field(
+        None,
+        description="Platform catalog freshness state returned by the backend, when available.",
+    )
 
 
 class AgentRuntimePaths(BasePydanticModel):
@@ -165,9 +169,13 @@ class AgentSessionRuntimeAccess(BasePydanticModel):
         default_factory=AgentRuntimePaths,
         description="Runtime-relative paths returned by the control plane.",
     )
+    service_runtime_uid: str | None = Field(
+        None,
+        description="Public UID of the linked service runtime, when the backend has one.",
+    )
     knative_service_runtime_uid: str | None = Field(
         None,
-        description="Public UID of the linked Knative service runtime, when the backend has one.",
+        description="Deprecated alias for service_runtime_uid kept for older SDK callers.",
     )
     image_drift: AgentRuntimeImageDrift | None = Field(
         None,
@@ -179,6 +187,20 @@ class AgentSessionRuntimeAccess(BasePydanticModel):
         if self.image_drift is None:
             return None
         return self.image_drift.model_dump()
+
+    @model_validator(mode="after")
+    def _mirror_service_runtime_uid(self) -> AgentSessionRuntimeAccess:
+        if (
+            self.service_runtime_uid is None
+            and self.knative_service_runtime_uid is not None
+        ):
+            self.service_runtime_uid = self.knative_service_runtime_uid
+        elif (
+            self.knative_service_runtime_uid is None
+            and self.service_runtime_uid is not None
+        ):
+            self.knative_service_runtime_uid = self.service_runtime_uid
+        return self
 
 
 def _join_runtime_url(rpc_url: str, runtime_path: str) -> str:
@@ -423,9 +445,27 @@ class CodingAgentService(BaseObjectOrm, BasePydanticModel):
     related_job_uid: str | None = Field(
         None, description="Public UID of the backing job, if attached."
     )
-    knative_service_runtime_uid: str | None = Field(
-        None, description="Public UID of the backing Knative service runtime, if attached."
+    service_runtime_uid: str | None = Field(
+        None, description="Public UID of the backing service runtime, if attached."
     )
+    knative_service_runtime_uid: str | None = Field(
+        None,
+        description="Deprecated alias for service_runtime_uid kept for older SDK callers.",
+    )
+
+    @model_validator(mode="after")
+    def _mirror_service_runtime_uid(self) -> CodingAgentService:
+        if (
+            self.service_runtime_uid is None
+            and self.knative_service_runtime_uid is not None
+        ):
+            self.service_runtime_uid = self.knative_service_runtime_uid
+        elif (
+            self.knative_service_runtime_uid is None
+            and self.service_runtime_uid is not None
+        ):
+            self.knative_service_runtime_uid = self.service_runtime_uid
+        return self
 
     @classmethod
     def _post_collection_action(
