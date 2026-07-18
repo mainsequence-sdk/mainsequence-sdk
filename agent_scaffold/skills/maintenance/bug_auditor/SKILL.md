@@ -50,8 +50,6 @@ This skill audits. It does not implement by default.
 
 - bootstrap, routing, and repo structure:
   `.agents/skills/mainsequence/project_builder/SKILL.md`
-- `.agents/` state reconciliation after the audit:
-  `.agents/skills/mainsequence/maintenance/local_journal/SKILL.md`
 - DataNode implementation issues:
   `.agents/skills/mainsequence/data_publishing/data_nodes/SKILL.md`
 - MetaTable implementation issues:

@@ -64,8 +64,8 @@ Core responsibilities:
 - translate user business logic into reusable code under `src/` so it can be reused by APIs,
   dashboards, jobs, and other project components instead of duplicating logic in integration
   layers
-- maintain the repository through the maintenance skills, including project-state reconciliation,
-  journaling, blocker tracking, and bug auditing
+- maintain the repository through explicit `.agents/` project-state files and the bug auditor skill
+  for blocker and SDK/platform issue assessment
 
 Typical outcomes include:
 
@@ -77,7 +77,7 @@ Typical outcomes include:
   Center surface before building or deploying it
 - build reusable business logic in `src/` and keep thin integration layers in APIs, jobs, and
   dashboards
-- keep the repository auditable through maintenance, journaling, and bug reporting
+- keep the repository auditable through project-state records, blocker tracking, and bug reporting
 
 Working rules for this role:
 
@@ -251,8 +251,8 @@ Default pattern:
 
 Before the final response:
 
-- consult the maintenance skill whenever project understanding, verified state, or historical
-  record changed during the turn
+- update the relevant `.agents/` project-state files whenever project understanding, verified
+  state, open tasks, blockers, or historical record changed during the turn
 
 Always use `.agents/skills/mainsequence/project_builder/SKILL.md` as the source of truth for project
 scaffolding, folder structure, and standard repository layout.
@@ -345,6 +345,6 @@ If something may be a Main Sequence SDK, documentation, or platform issue:
 ## Project-State Files Under `.agents/`
 
 
-Do not improvise their meaning in domain skills. Use the maintenance skill to reconcile them after
-material work.
+Do not improvise their meaning in domain skills. Use the project bootstrap skill rules to reconcile
+them after material work.
 <!-- mainsequence-agent-scaffold:end -->

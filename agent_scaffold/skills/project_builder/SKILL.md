@@ -1,6 +1,6 @@
 ---
 name: mainsequence-project
-description: Use this skill to bootstrap work in a Main Sequence repository. This skill owns project context verification, docs-first behavior, success-definition discipline, and routing between specialized domain skills and the maintenance skill. It does not own domain implementation semantics or direct reconciliation of the project-state files under `.agents/`.
+description: Use this skill to bootstrap work in a Main Sequence repository. This skill owns project context verification, docs-first behavior, success-definition discipline, routing between specialized domain skills, and project-state file discipline. It does not own domain implementation semantics.
 ---
 
 # Main Sequence Project Bootstrap
@@ -24,7 +24,7 @@ This skill is for:
 - define a concrete success condition before implementation starts
 - verify current project and platform context
 - decide which specialized skill owns the actual domain work
-- decide when to hand off to `.agents/skills/mainsequence/maintenance/local_journal/SKILL.md`
+- decide when project-state files under `.agents/` need to be read or updated
 - enforce standard Main Sequence repository structure expectations
 - separate verified facts from assumptions
 - record documentation mismatches and route follow-up work
@@ -61,8 +61,6 @@ Do not let this skill become a domain manual.
   `.agents/skills/mainsequence/command_center/workspace_builder/SKILL.md`
 - AppComponents, custom forms, and widget-facing API contracts:
   `.agents/skills/mainsequence/command_center/widgets/app_components/SKILL.md`
-- project-state reconciliation and local history under `.agents/`:
-  `.agents/skills/mainsequence/maintenance/local_journal/SKILL.md`
 - project status audits, blocker analysis, and upstream SDK assessment:
   `.agents/skills/mainsequence/maintenance/bug_auditor/SKILL.md`
 - jobs, schedules, artifacts, images, resources, releases, and Streamlit dashboard deployment:
@@ -75,13 +73,12 @@ Streamlit dashboard design and implementation are app-owned project work, not a 
 ## Read First
 
 1. `AGENTS.md`
-2. `.agents/skills/mainsequence/maintenance/local_journal/SKILL.md`
-3. the latest relevant Main Sequence docs for the task
-4. `.agents/brief.md`
-5. `.agents/status.md`
-6. `.agents/tasks.md`
-7. `.agents/record.md`
-8. `.agents/journal.md` when resuming, debugging, or investigating a repeated issue
+2. the latest relevant Main Sequence docs for the task
+3. `.agents/brief.md`
+4. `.agents/status.md`
+5. `.agents/tasks.md`
+6. `.agents/record.md`
+7. `.agents/journal.md` when resuming, debugging, or investigating a repeated issue
 
 Canonical documentation root:
 `https://mainsequence-sdk.github.io/mainsequence-sdk/`
@@ -95,7 +92,7 @@ Before starting non-trivial work, collect or infer:
 - the repository path and current project context
 - whether live platform verification is required
 - which specialized skill should own the domain behavior
-- whether the maintenance skill will need to run after the domain step
+- whether project-state files under `.agents/` will need updates after the domain step
 
 If the user goal or project context is unclear, stop before routing domain work.
 
@@ -106,7 +103,7 @@ For every non-trivial task, decide:
 1. What does success look like in observable terms?
 2. Which specialized skill owns the domain behavior?
 3. Does platform state need live verification?
-4. Will the maintenance skill need to run after this step?
+4. Will project-state files under `.agents/` need to be updated after this step?
 5. Are the docs and local implementation aligned, or is there a discrepancy to record?
 
 ## Build Rules
@@ -170,13 +167,9 @@ Once the task boundary is clear, move into the correct specialized skill.
 
 Do not teach domain semantics here.
 
-### 6. Hand off to maintenance after material work
+### 6. Update project-state files after material work
 
-After material domain work, route to:
-
-- `.agents/skills/mainsequence/maintenance/local_journal/SKILL.md`
-
-Use that handoff when the turn changed:
+After material domain work, update the relevant project-state files under `.agents/` when the turn changed:
 
 - verified state
 - blockers
@@ -198,7 +191,7 @@ Before first-running or validating a new or changed DataNode, use an explicit na
 When reviewing bootstrap behavior, look for:
 
 - domain work happening without a clear owner skill
-- material domain work finishing without a maintenance handoff
+- material domain work finishing without required project-state updates
 - implementation starting without a concrete success condition
 - platform claims made without verification
 - docs mismatches that were noticed but not recorded
@@ -212,7 +205,7 @@ Do not claim bootstrap success until you have checked:
 - the relevant docs were checked
 - the success condition is explicit
 - the correct specialized skill was chosen
-- the maintenance handoff was made when project state materially changed
+- required project-state updates were made when project state materially changed
 - any platform-state claims were verified with CLI or platform tooling
 
 ## This Skill Must Stop And Escalate When
