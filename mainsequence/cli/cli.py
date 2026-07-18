@@ -3376,27 +3376,35 @@ def _format_shareable_permission_change(payload: dict[str, object]) -> list[tupl
         ("Explicit Can Edit", str(payload.get("explicit_can_edit"))),
         (
             "Explicit View User IDs",
-            ", ".join(str(item) for item in explicit_view_ids)
-            if isinstance(explicit_view_ids, list)
-            else "-",
+            (
+                ", ".join(str(item) for item in explicit_view_ids)
+                if isinstance(explicit_view_ids, list)
+                else "-"
+            ),
         ),
         (
             "Explicit Edit User IDs",
-            ", ".join(str(item) for item in explicit_edit_ids)
-            if isinstance(explicit_edit_ids, list)
-            else "-",
+            (
+                ", ".join(str(item) for item in explicit_edit_ids)
+                if isinstance(explicit_edit_ids, list)
+                else "-"
+            ),
         ),
         (
             "Explicit View Team IDs",
-            ", ".join(str(item) for item in explicit_view_team_ids)
-            if isinstance(explicit_view_team_ids, list)
-            else "-",
+            (
+                ", ".join(str(item) for item in explicit_view_team_ids)
+                if isinstance(explicit_view_team_ids, list)
+                else "-"
+            ),
         ),
         (
             "Explicit Edit Team IDs",
-            ", ".join(str(item) for item in explicit_edit_team_ids)
-            if isinstance(explicit_edit_team_ids, list)
-            else "-",
+            (
+                ", ".join(str(item) for item in explicit_edit_team_ids)
+                if isinstance(explicit_edit_team_ids, list)
+                else "-"
+            ),
         ),
     ]
 
@@ -3610,9 +3618,11 @@ def _agent_list_impl(
                 str(agent_payload.get("uid") or "-"),
                 str(agent_payload.get("name") or "-"),
                 str(agent_payload.get("status") or "-"),
-                ", ".join(str(item) for item in labels)
-                if isinstance(labels, list) and labels
-                else "-",
+                (
+                    ", ".join(str(item) for item in labels)
+                    if isinstance(labels, list) and labels
+                    else "-"
+                ),
                 str(agent_payload.get("llm_provider") or "-"),
                 str(agent_payload.get("llm_model") or "-"),
                 str(agent_payload.get("engine_name") or "-"),
@@ -3929,9 +3939,9 @@ def _agent_session_a2a_send_impl(
     attachments = [
         {
             "path": str(path),
-            "media_type": attachment_media_types[index]
-            if attachment_media_types
-            else "application/pdf",
+            "media_type": (
+                attachment_media_types[index] if attachment_media_types else "application/pdf"
+            ),
         }
         for index, path in enumerate(attachment_paths)
     ]
@@ -4040,8 +4050,7 @@ def _agent_session_list_impl(
     )
     if agent_uid and any(key in filters for key in ("agent_uid", "agent_uid__in")):
         error(
-            "Do not pass `--filter agent_uid=...` with `--agent-uid`. "
-            "Use only one agent scope."
+            "Do not pass `--filter agent_uid=...` with `--agent-uid`. " "Use only one agent scope."
         )
         raise typer.Exit(1)
 
@@ -8391,9 +8400,9 @@ def data_node_storage_search_cmd(
         {
             "query": q,
             "mode": normalized_mode,
-            "description": description_payload
-            if normalized_mode in {"both", "description"}
-            else None,
+            "description": (
+                description_payload if normalized_mode in {"both", "description"} else None
+            ),
             "column": column_payload if normalized_mode in {"both", "column"} else None,
             "total_matches": total_matches,
         }
@@ -9916,6 +9925,7 @@ def _project_resource_release_create_impl(
     gpu_request: str | None,
     gpu_type: str | None,
     spot: bool | None,
+    automatic_deployment: bool | None,
     timeout: int | None,
 ) -> None:
     _require_login()
@@ -10039,6 +10049,7 @@ def _project_resource_release_create_impl(
             gpu_request=gpu_request,
             gpu_type=gpu_type,
             spot=spot,
+            automatic_deployment=automatic_deployment,
             timeout=timeout,
         )
     except ApiError as e:
@@ -10064,6 +10075,14 @@ def _project_resource_release_create_impl(
             ("GPU Request", str(created.get("gpu_request") or gpu_request or "-")),
             ("GPU Type", str(created.get("gpu_type") or gpu_type or "-")),
             ("Spot", str(created.get("spot") if created.get("spot") is not None else spot).lower()),
+            (
+                "Automatic Deployment",
+                str(
+                    created.get("automatic_deployment")
+                    if created.get("automatic_deployment") is not None
+                    else bool(automatic_deployment)
+                ).lower(),
+            ),
         ],
     )
 
@@ -10094,6 +10113,11 @@ def project_project_resource_create_dashboard_cmd(
     spot: bool | None = typer.Option(
         None, "--spot/--no-spot", help="Whether to prefer spot capacity."
     ),
+    automatic_deployment: bool | None = typer.Option(
+        None,
+        "--automatic-deployment/--no-automatic-deployment",
+        help="Opt the release into repository-sync CI/CD rotation.",
+    ),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
@@ -10114,6 +10138,7 @@ def project_project_resource_create_dashboard_cmd(
         gpu_request=gpu_request,
         gpu_type=gpu_type,
         spot=spot,
+        automatic_deployment=automatic_deployment,
         timeout=timeout,
     )
 
@@ -10144,6 +10169,11 @@ def project_project_resource_create_fastapi_cmd(
     spot: bool | None = typer.Option(
         None, "--spot/--no-spot", help="Whether to prefer spot capacity."
     ),
+    automatic_deployment: bool | None = typer.Option(
+        None,
+        "--automatic-deployment/--no-automatic-deployment",
+        help="Opt the release into repository-sync CI/CD rotation.",
+    ),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
@@ -10164,6 +10194,7 @@ def project_project_resource_create_fastapi_cmd(
         gpu_request=gpu_request,
         gpu_type=gpu_type,
         spot=spot,
+        automatic_deployment=automatic_deployment,
         timeout=timeout,
     )
 

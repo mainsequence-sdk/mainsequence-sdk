@@ -1457,6 +1457,236 @@ def test_agent_runtime_models_deserialize_backend_uid_payloads():
     assert service.knative_service_runtime_uid == "runtime-uid"
 
 
+def test_resource_release_models_support_automatic_deployment_payloads():
+    release_uid = "2f4c4c3d-5669-4da5-9d86-b84633c1e6ed"
+    resource_uid = "857bec7b-dd77-4272-aecd-13fc2138eacc"
+    job_uid = "7d0ab07c-d1c0-4b7f-9c69-3c1a41c0a4da"
+
+    release = models_helpers_mod.ResourceRelease.model_validate(
+        {
+            "uid": release_uid,
+            "subdomain": "analytics-123",
+            "resource_uid": resource_uid,
+            "readme_resource_uid": None,
+            "related_job_uid": job_uid,
+            "release_kind": "fastapi",
+            "automatic_deployment": True,
+        }
+    )
+
+    assert release.uid == release_uid
+    assert release.release_kind == models_helpers_mod.ResourceReleaseKind.FAST_API
+    assert release.automatic_deployment is True
+
+    run = models_helpers_mod.ResourceReleaseAutomaticDeploymentRun.model_validate(
+        {
+            "uid": "11111111-1111-4111-8111-111111111111",
+            "resource_release_uid": release_uid,
+            "resource_release_name": "analytics-123",
+            "release_kind": "fastapi",
+            "status": "waiting_project_image",
+            "current_step": "wait_project_image",
+            "automatic_deployment_source": "manual",
+            "revision_context": {"current_commit_sha": "abc123"},
+            "trigger_context": {},
+            "image_artifact_context": {"project_image": {"state": "waiting"}},
+            "cleanup_context": {},
+            "started_at": "2026-01-01T00:00:00Z",
+            "finished_at": None,
+            "result": {},
+            "error_code": "",
+            "error_detail": "",
+        }
+    )
+
+    assert run.resource_release_uid == release_uid
+    assert (
+        run.status
+        == models_helpers_mod.ResourceReleaseAutomaticDeploymentRun.STATUS_WAITING_PROJECT_IMAGE
+    )
+    assert run.revision_context["current_commit_sha"] == "abc123"
+
+
+def test_resource_release_create_sends_automatic_deployment(monkeypatch):
+    captured = {}
+    release_uid = "2f4c4c3d-5669-4da5-9d86-b84633c1e6ed"
+    resource_uid = "857bec7b-dd77-4272-aecd-13fc2138eacc"
+    image_uid = "6cfdb152-923e-45b9-a150-c4541c68b0d1"
+
+    class FakeResponse:
+        status_code = 201
+
+        @staticmethod
+        def json():
+            return {
+                "uid": release_uid,
+                "subdomain": "analytics-123",
+                "resource_uid": resource_uid,
+                "readme_resource_uid": None,
+                "related_job_uid": "7d0ab07c-d1c0-4b7f-9c69-3c1a41c0a4da",
+                "release_kind": "fastapi",
+                "automatic_deployment": True,
+            }
+
+    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
+        captured["r_type"] = r_type
+        captured["url"] = url
+        captured["payload"] = payload
+        captured["timeout"] = time_out
+        return FakeResponse()
+
+    monkeypatch.setattr(models_helpers_mod, "make_request", _fake_make_request)
+
+    release = models_helpers_mod.ResourceRelease.create(
+        resource_uid=resource_uid,
+        related_image_uid=image_uid,
+        release_kind=models_helpers_mod.ResourceReleaseKind.FAST_API,
+        cpu_request="500m",
+        memory_request="1Gi",
+        automatic_deployment=True,
+        timeout=11,
+    )
+
+    assert release.automatic_deployment is True
+    assert captured["r_type"] == "POST"
+    assert str(captured["url"]).endswith("/orm/api/pods/resource-release/")
+    assert captured["payload"]["json"]["automatic_deployment"] is True
+    assert captured["payload"]["json"]["resource_uid"] == resource_uid
+    assert captured["payload"]["json"]["related_image_uid"] == image_uid
+    assert captured["timeout"] == 11
+
+
+def test_project_resource_create_release_translates_related_image_id_alias(monkeypatch):
+    captured = {}
+    resource_uid = "857bec7b-dd77-4272-aecd-13fc2138eacc"
+    image_uid = "6cfdb152-923e-45b9-a150-c4541c68b0d1"
+    release_uid = "2f4c4c3d-5669-4da5-9d86-b84633c1e6ed"
+    resource = models_helpers_mod.ProjectResource(
+        uid=resource_uid,
+        name="analytics_dashboard.py",
+        resource_type="dashboard",
+        path="dashboards/analytics_dashboard.py",
+    )
+
+    class FakeResponse:
+        status_code = 201
+
+        @staticmethod
+        def json():
+            return {
+                "uid": release_uid,
+                "subdomain": "analytics-123",
+                "resource_uid": resource_uid,
+                "readme_resource_uid": None,
+                "related_job_uid": "7d0ab07c-d1c0-4b7f-9c69-3c1a41c0a4da",
+                "release_kind": "streamlit_dashboard",
+                "automatic_deployment": True,
+            }
+
+    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
+        captured["r_type"] = r_type
+        captured["payload"] = payload
+        captured["timeout"] = time_out
+        return FakeResponse()
+
+    monkeypatch.setattr(models_helpers_mod, "make_request", _fake_make_request)
+
+    release = resource.create_dashboard(
+        related_image_id=image_uid,
+        cpu_request="500m",
+        memory_request="1Gi",
+        automatic_deployment=True,
+        timeout=7,
+    )
+
+    assert release.uid == release_uid
+    assert captured["r_type"] == "POST"
+    assert captured["payload"]["json"]["related_image_uid"] == image_uid
+    assert "related_image_id" not in captured["payload"]["json"]
+    assert captured["payload"]["json"]["automatic_deployment"] is True
+    assert captured["timeout"] == 7
+
+
+def test_resource_release_deploy_current_version_posts_detail_action(monkeypatch):
+    captured = {}
+    release_uid = "2f4c4c3d-5669-4da5-9d86-b84633c1e6ed"
+    run_uid = "11111111-1111-4111-8111-111111111111"
+    release = models_helpers_mod.ResourceRelease(
+        uid=release_uid,
+        subdomain="analytics-123",
+        release_kind="fastapi",
+        automatic_deployment=True,
+    )
+
+    class FakeResponse:
+        status_code = 202
+        content = b'{"uid": "run"}'
+
+        @staticmethod
+        def json():
+            return {
+                "uid": run_uid,
+                "resource_release_uid": release_uid,
+                "resource_release_name": "analytics-123",
+                "release_kind": "fastapi",
+                "status": "pending",
+                "current_step": "resolve_eligibility",
+                "automatic_deployment_source": "manual",
+                "revision_context": {},
+                "trigger_context": {},
+                "image_artifact_context": {},
+                "cleanup_context": {},
+                "started_at": None,
+                "finished_at": None,
+                "result": {},
+                "error_code": "",
+                "error_detail": "",
+            }
+
+    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
+        captured["r_type"] = r_type
+        captured["url"] = url
+        captured["payload"] = payload
+        captured["timeout"] = time_out
+        return FakeResponse()
+
+    monkeypatch.setattr(base_mod, "make_request", _fake_make_request)
+
+    run = release.deploy_current_version(timeout=9)
+
+    assert run.uid == run_uid
+    assert run.status == models_helpers_mod.ResourceReleaseAutomaticDeploymentRun.STATUS_PENDING
+    assert captured == {
+        "r_type": "POST",
+        "url": (
+            f"{models_helpers_mod.ResourceRelease.get_object_url()}/{release_uid}/"
+            "deploy-current-version/"
+        ),
+        "payload": {},
+        "timeout": 9,
+    }
+
+
+def test_resource_release_automatic_deployment_run_filters_are_uid_based():
+    release_uid = " 2f4c4c3d-5669-4da5-9d86-b84633c1e6ed "
+
+    normalized = models_helpers_mod.ResourceReleaseAutomaticDeploymentRun._normalize_filter_kwargs(
+        {
+            "resource_release__uid": release_uid,
+            "status__in": [" deployed ", " failed "],
+            "release_kind": " fastapi ",
+            "automatic_deployment_source": " manual ",
+        }
+    )
+
+    assert normalized == {
+        "resource_release__uid": release_uid.strip(),
+        "status__in": ["deployed", "failed"],
+        "release_kind": "fastapi",
+        "automatic_deployment_source": "manual",
+    }
+
+
 def test_agent_session_runtime_access_uses_session_uid_route(monkeypatch):
     captured = {}
     session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
@@ -2008,9 +2238,9 @@ def test_shareable_models_keep_shareable_object_mixin():
 
     for class_name, source_bases in expected.items():
         assert class_name in source_bases, f"{class_name} class not found"
-        assert "ShareableObjectMixin" in source_bases[class_name], (
-            f"{class_name} must inherit ShareableObjectMixin"
-        )
+        assert (
+            "ShareableObjectMixin" in source_bases[class_name]
+        ), f"{class_name} must inherit ShareableObjectMixin"
 
 
 def test_secret_constant_bucket_artifact_accept_uid_identity_payloads():
@@ -2046,9 +2276,9 @@ def test_team_uses_permission_managed_object_mixin():
     )
 
     assert "Team" in models_user_bases, "Team class not found"
-    assert "PermissionManagedObjectMixin" in models_user_bases["Team"], (
-        "Team must inherit PermissionManagedObjectMixin"
-    )
-    assert "ShareableObjectMixin" not in models_user_bases["Team"], (
-        "Team should not inherit ShareableObjectMixin directly"
-    )
+    assert (
+        "PermissionManagedObjectMixin" in models_user_bases["Team"]
+    ), "Team must inherit PermissionManagedObjectMixin"
+    assert (
+        "ShareableObjectMixin" not in models_user_bases["Team"]
+    ), "Team should not inherit ShareableObjectMixin directly"

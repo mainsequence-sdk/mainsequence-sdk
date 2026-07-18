@@ -300,8 +300,7 @@ def test_cc_workspace_snapshot_prints_resolved_output_path(cli_mod, runner, monk
     snapshot_module._WorkspaceSnapshotError = RuntimeError
     snapshot_module._resolve_command_center_url = lambda: "http://localhost:5173"
     snapshot_module._build_snapshot_url = (
-        lambda base_url,
-        workspace_uid: f"{base_url}/app/workspace-studio/workspaces?workspace={workspace_uid}&snapshot=true&snapshotProfile=full-data"
+        lambda base_url, workspace_uid: f"{base_url}/app/workspace-studio/workspaces?workspace={workspace_uid}&snapshot=true&snapshotProfile=full-data"
     )
     snapshot_module._capture_workspace_snapshot = lambda workspace_uid, output_path=None: (
         b"zip-bytes",
@@ -4975,12 +4974,14 @@ def test_create_project_resource_release_uses_client_model(cli_mod, monkeypatch)
         memory_request="1",
         gpu_request="",
         gpu_type="",
+        automatic_deployment=True,
     )
     assert captured["get"] == {"pk": 381, "timeout": None, "filters": {}}
     assert captured["create_dashboard"]["related_image_id"] == 94
     assert captured["create_dashboard"]["spot"] is True
     assert captured["create_dashboard"]["cpu_request"] == "0.5"
     assert captured["create_dashboard"]["memory_request"] == "1"
+    assert captured["create_dashboard"]["automatic_deployment"] is True
     assert captured["jwt"] == ("acc", "ref")
     assert out == {"id": 501, "resource": 381, "related_image": 94}
 
@@ -5050,12 +5051,14 @@ def test_create_project_resource_release_uses_client_model_for_fastapi(cli_mod, 
         memory_request="1",
         gpu_request="",
         gpu_type="",
+        automatic_deployment=False,
     )
     assert captured["get"] == {"pk": 381, "timeout": None, "filters": {}}
     assert captured["create_fastapi"]["related_image_id"] == 94
     assert captured["create_fastapi"]["spot"] is False
     assert captured["create_fastapi"]["cpu_request"] == "0.5"
     assert captured["create_fastapi"]["memory_request"] == "1"
+    assert captured["create_fastapi"]["automatic_deployment"] is False
     assert captured["jwt"] == ("acc", "ref")
     assert out == {"id": 503, "resource": 381, "related_image": 94}
 
@@ -6542,7 +6545,7 @@ def test_project_get_data_node_updates_defaults_to_env_project_id(
 
     result = runner.invoke(cli_mod.app, ["project", "data-node-updates", "list"])
     assert result.exit_code == 0
-    assert captured["project_id"] == 123
+    assert str(captured["project_id"]) == "123"
     assert "abc123" in result.output
     assert "storage-xyz" in result.output
 
@@ -6736,7 +6739,7 @@ def test_project_project_resource_list_defaults_to_remote_branch_head(
 
     result = runner.invoke(cli_mod.app, ["project", "project_resource", "list"])
     assert result.exit_code == 0
-    assert captured["project_id"] == 123
+    assert str(captured["project_id"]) == "123"
     assert captured["repo_commit_sha"] == "abc123"
     assert "Using repo_commit_sha=abc123 from origin/main." in result.output
     assert "Project Resources" in result.output
@@ -6829,11 +6832,11 @@ def test_project_project_resource_create_dashboard_filters_resources_by_selected
 
     result = runner.invoke(
         cli_mod.app,
-        ["project", "project_resource", "create_dashboard"],
+        ["project", "project_resource", "create_dashboard", "--automatic-deployment"],
         input="94\n381\n",
     )
     assert result.exit_code == 0
-    assert captured["project_id"] == 123
+    assert str(captured["project_id"]) == "123"
     assert captured["repo_commit_sha"] == "sha-94"
     assert captured["resource_type"] == "dashboard"
     assert captured["create_release"]["release_kind"] == "streamlit_dashboard"
@@ -6842,6 +6845,7 @@ def test_project_project_resource_create_dashboard_filters_resources_by_selected
     assert captured["create_release"]["cpu_request"] == "0.25"
     assert captured["create_release"]["memory_request"] == "0.5"
     assert captured["create_release"]["spot"] is False
+    assert captured["create_release"]["automatic_deployment"] is True
     assert "Using defaults: cpu_request=0.25, memory_request=0.5, spot=false." in result.output
     assert "Project resource release created: id=501" in result.output
 
@@ -6901,7 +6905,7 @@ def test_project_project_resource_create_fastapi_filters_resources_by_selected_i
         input="94\n382\n",
     )
     assert result.exit_code == 0
-    assert captured["project_id"] == 123
+    assert str(captured["project_id"]) == "123"
     assert captured["repo_commit_sha"] == "sha-94"
     assert captured["resource_type"] == "fastapi"
     assert captured["create_release"]["release_kind"] == "fastapi"
@@ -6910,6 +6914,7 @@ def test_project_project_resource_create_fastapi_filters_resources_by_selected_i
     assert captured["create_release"]["cpu_request"] == "0.25"
     assert captured["create_release"]["memory_request"] == "0.5"
     assert captured["create_release"]["spot"] is False
+    assert captured["create_release"]["automatic_deployment"] is None
     assert "Using defaults: cpu_request=0.25, memory_request=0.5, spot=false." in result.output
     assert "Project resource release created: id=503" in result.output
 
@@ -8770,9 +8775,7 @@ def test_run_meta_table_query_uses_client_model(cli_mod, monkeypatch):
 
     monkeypatch.setattr(api_mod, "_run_sdk_model_operation", _run_sdk_model_operation)
 
-    out = api_mod.run_meta_table_query(
-        "meta-table-42", "SELECT 2 AS value", timeout=16
-    )
+    out = api_mod.run_meta_table_query("meta-table-42", "SELECT 2 AS value", timeout=16)
     assert captured == {
         "module_name": "mainsequence.client.metatables",
         "class_name": "MetaTable",

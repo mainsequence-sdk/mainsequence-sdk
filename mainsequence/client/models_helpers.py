@@ -7,7 +7,7 @@ from collections.abc import Collection
 from decimal import Decimal
 from enum import Enum
 from pathlib import PurePosixPath
-from typing import Any, ClassVar, Literal, Union
+from typing import Any, ClassVar, Literal
 from uuid import UUID
 
 import yaml
@@ -78,7 +78,7 @@ class IntervalSchedule(BaseModel):
     )
 
 
-Schedule = Union[CrontabSchedule, IntervalSchedule]
+Schedule = CrontabSchedule | IntervalSchedule
 
 
 class PeriodicTask(BasePydanticModel):
@@ -989,11 +989,14 @@ class ProjectResource(BaseObjectOrm, BasePydanticModel):
         description="Display name of the resource discovered in the project's repository.",
         examples=["analytics_dashboard.py"],
     )
-    resource_type: Literal["dashboard", "fastapi", "markdown"] | None = Field(
+    resource_type: Literal["dashboard", "fastapi", "markdown", "agent"] | None = Field(
         None,
         title="Resource Type",
-        description="Type of the project resource. Allowed values are `dashboard`,  `fastapi`, and `markdown`.",
-        examples=["dashboard", "fastapi", "markdown"],
+        description=(
+            "Type of the project resource. Allowed values are `dashboard`, `fastapi`, "
+            "`markdown`, and `agent`."
+        ),
+        examples=["dashboard", "fastapi", "markdown", "agent"],
     )
     code: str | None = Field(
         None,
@@ -1047,9 +1050,19 @@ class ProjectResource(BaseObjectOrm, BasePydanticModel):
         **kwargs,
     ) -> ResourceRelease:
         resource_uid = self._public_detail_reference()
+        if "related_image_id" in kwargs and "related_image_uid" not in kwargs:
+            kwargs["related_image_uid"] = kwargs.pop("related_image_id")
+
+        readme_resource_id = kwargs.pop("readme_resource_id", None)
+        if readme_resource_id is not None:
+            raise ValueError(
+                "readme_resource_id is not supported by ResourceRelease.create(); "
+                "README resources are resolved by the backend."
+            )
+
         kwargs["resource_uid"] = resource_uid
         kwargs["release_kind"] = release_kind.value
-        return ResourceRelease.create(timeout=timeout, files=files, *args, **kwargs)
+        return ResourceRelease.create(*args, timeout=timeout, files=files, **kwargs)
 
     def create_dashboard(self, timeout=None, files=None, *args, **kwargs) -> ResourceRelease:
         return self._create_release(
@@ -1069,13 +1082,36 @@ class ProjectResource(BaseObjectOrm, BasePydanticModel):
             **kwargs,
         )
 
+    def create_agent(self, timeout=None, files=None, *args, **kwargs) -> ResourceRelease:
+        return self._create_release(
+            ResourceReleaseKind.AGENT,
+            timeout,
+            files,
+            *args,
+            **kwargs,
+        )
+
 
 class ResourceReleaseKind(str, Enum):
     STREAMLIT_DASHBOARD = "streamlit_dashboard"
+    AGENT = "agent"
     FAST_API = "fastapi"
 
 
 class ResourceRelease(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
+    FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
+        "uid": ["exact", "in"],
+        "resource__uid": ["exact", "in"],
+        "related_job__uid": ["exact", "in"],
+        "release_kind": ["exact", "in"],
+    }
+    FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
+        "uid": "uid",
+        "resource__uid": "uid",
+        "related_job__uid": "uid",
+        "release_kind": "str",
+    }
+
     uid: str | None = Field(
         None,
         title="Resource Release UID",
@@ -1141,6 +1177,15 @@ class ResourceRelease(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
         description="Whether the release should prefer spot or preemptible capacity.",
         examples=[False, True],
     )
+    automatic_deployment: bool = Field(
+        default=False,
+        title="Automatic Deployment",
+        description=(
+            "Whether repository synchronization should rotate this release to the "
+            "current project commit."
+        ),
+        examples=[False, True],
+    )
 
     @classmethod
     def create(
@@ -1154,6 +1199,7 @@ class ResourceRelease(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
         gpu_request: str | int | None = None,
         gpu_type: str | None = None,
         spot: bool | None = None,
+        automatic_deployment: bool | None = None,
         timeout: int | None = None,
         files=None,
     ) -> ResourceRelease:
@@ -1198,6 +1244,8 @@ class ResourceRelease(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
             payload["gpu_type"] = normalized_compute["gpu_type"]
         if spot is not None:
             payload["spot"] = bool(spot)
+        if automatic_deployment is not None:
+            payload["automatic_deployment"] = bool(automatic_deployment)
 
         request_payload = {"json": cls.serialize_for_json(payload)}
         if files:
@@ -1216,3 +1264,126 @@ class ResourceRelease(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
             raise_for_response(r, payload=request_payload)
 
         return cls(**r.json())
+
+    def deploy_current_version(
+        self,
+        *,
+        timeout: int | float | tuple[float, float] | None = None,
+    ) -> ResourceReleaseAutomaticDeploymentRun:
+        data = self._request_detail_action(
+            r_type="POST",
+            action_name="deploy-current-version",
+            payload={},
+            timeout=timeout,
+            expected_statuses=(200, 202),
+        )
+        return ResourceReleaseAutomaticDeploymentRun(**data)
+
+
+class ResourceReleaseAutomaticDeploymentRun(BaseObjectOrm, BasePydanticModel):
+    FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
+        "resource_release__uid": ["exact", "in"],
+        "status": ["exact", "in"],
+        "release_kind": ["exact", "in"],
+        "automatic_deployment_source": ["exact", "in"],
+    }
+    FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
+        "resource_release__uid": "uid",
+        "status": "str",
+        "release_kind": "str",
+        "automatic_deployment_source": "str",
+    }
+
+    STATUS_PENDING: ClassVar[str] = "pending"
+    STATUS_RUNNING: ClassVar[str] = "running"
+    STATUS_WAITING_PROJECT_IMAGE: ClassVar[str] = "waiting_project_image"
+    STATUS_WAITING_RUNTIME_READY: ClassVar[str] = "waiting_runtime_ready"
+    STATUS_NO_ACTION: ClassVar[str] = "no_action"
+    STATUS_DEPLOYED: ClassVar[str] = "deployed"
+    STATUS_SKIPPED: ClassVar[str] = "skipped"
+    STATUS_BLOCKED: ClassVar[str] = "blocked"
+    STATUS_FAILED: ClassVar[str] = "failed"
+
+    SOURCE_MANUAL: ClassVar[str] = "manual"
+    SOURCE_REPOSITORY_EVENT: ClassVar[str] = "repository_event"
+
+    uid: str | None = Field(
+        None,
+        title="Resource Release Automatic Deployment Run UID",
+        description="Public UID of the automatic deployment run.",
+    )
+    resource_release_uid: str | None = Field(
+        None,
+        title="Resource Release UID",
+        description="Public UID snapshot of the resource release targeted by this run.",
+    )
+    resource_release_name: str = Field(
+        default="",
+        title="Resource Release Name",
+        description="Display-name snapshot of the targeted resource release.",
+    )
+    release_kind: ResourceReleaseKind | str | None = Field(
+        None,
+        title="Release Kind",
+        description="Resource release kind targeted by this run.",
+    )
+    status: str | None = Field(
+        None,
+        title="Status",
+        description="Deployment run status.",
+    )
+    current_step: str = Field(
+        default="",
+        title="Current Step",
+        description="Current orchestration step key.",
+    )
+    automatic_deployment_source: str | None = Field(
+        None,
+        title="Automatic Deployment Source",
+        description="Run trigger source, for example manual or repository_event.",
+    )
+    revision_context: dict[str, Any] = Field(
+        default_factory=dict,
+        title="Revision Context",
+        description="Stable project/revision/resource context for the run.",
+    )
+    trigger_context: dict[str, Any] = Field(
+        default_factory=dict,
+        title="Trigger Context",
+        description="Repository event or manual trigger correlation metadata.",
+    )
+    image_artifact_context: dict[str, Any] = Field(
+        default_factory=dict,
+        title="Image Artifact Context",
+        description="Project image and resource snapshots captured by the run.",
+    )
+    cleanup_context: dict[str, Any] = Field(
+        default_factory=dict,
+        title="Cleanup Context",
+        description="Cleanup outcomes captured by the run.",
+    )
+    started_at: datetime.datetime | None = Field(
+        None,
+        title="Started At",
+        description="Timestamp when execution started.",
+    )
+    finished_at: datetime.datetime | None = Field(
+        None,
+        title="Finished At",
+        description="Timestamp when execution finished.",
+    )
+    result: dict[str, Any] = Field(
+        default_factory=dict,
+        title="Result",
+        description="Terminal or intermediate deployment result payload.",
+    )
+    error_code: str = Field(
+        default="",
+        title="Error Code",
+        description="Machine-readable error code when the run failed or was blocked.",
+    )
+    error_detail: str = Field(
+        default="",
+        title="Error Detail",
+        description="Human-readable error detail when the run failed or was blocked.",
+    )

@@ -2635,6 +2635,7 @@ def create_project_resource_release(
     gpu_request: str | int | None = None,
     gpu_type: str | None = None,
     spot: bool | None = None,
+    automatic_deployment: bool | None = None,
     timeout: int | None = None,
 ) -> dict[str, Any]:
     """
@@ -2699,6 +2700,7 @@ def create_project_resource_release(
             "gpu_request": gpu_request,
             "gpu_type": gpu_type,
             "spot": spot,
+            "automatic_deployment": automatic_deployment,
             "timeout": timeout,
         }
 

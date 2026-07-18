@@ -101,6 +101,7 @@ class BaseObjectOrm:
         "GithubOrganization": "pods/github-organization",
         "ProjectResource": "pods/project-resource",
         "ResourceRelease": "pods/resource-release",
+        "ResourceReleaseAutomaticDeploymentRun": "pods/resource-release-automatic-deployment-runs",
         "Bucket": "pods/bucket",
     }
     ROOT_URL = API_ENDPOINT
