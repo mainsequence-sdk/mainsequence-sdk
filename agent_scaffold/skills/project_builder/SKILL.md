@@ -1,6 +1,6 @@
 ---
 name: mainsequence-project
-description: Use this skill to bootstrap work in a Main Sequence repository. This skill owns project context verification, docs-first behavior, success-definition discipline, routing between specialized domain skills, and project-state file discipline. It does not own domain implementation semantics.
+description: Use this skill to bootstrap work in a Main Sequence repository. This skill owns project context verification, docs-first behavior, success-definition discipline, and routing between specialized domain skills. It does not own domain implementation semantics or local project bookkeeping.
 ---
 
 # Main Sequence Project Bootstrap
@@ -14,7 +14,6 @@ This skill is for:
 - establishing project context
 - defining success up front
 - enforcing a docs-first workflow
-- deciding when `.agents/` maintenance is required
 - verifying platform context before making claims
 - routing work to the correct specialized skill
 
@@ -24,10 +23,9 @@ This skill is for:
 - define a concrete success condition before implementation starts
 - verify current project and platform context
 - decide which specialized skill owns the actual domain work
-- decide when project-state files under `.agents/` need to be read or updated
 - enforce standard Main Sequence repository structure expectations
 - separate verified facts from assumptions
-- record documentation mismatches and route follow-up work
+- surface documentation mismatches to the user
 - enforce the namespace-first safety rule for new or modified DataNodes
 
 ## This Skill Must Not Claim
@@ -61,7 +59,7 @@ Do not let this skill become a domain manual.
   `.agents/skills/mainsequence/command_center/workspace_builder/SKILL.md`
 - AppComponents, custom forms, and widget-facing API contracts:
   `.agents/skills/mainsequence/command_center/widgets/app_components/SKILL.md`
-- project status audits, blocker analysis, and upstream SDK assessment:
+- project audits, blocker analysis, and upstream SDK assessment:
   `.agents/skills/mainsequence/maintenance/bug_auditor/SKILL.md`
 - jobs, schedules, artifacts, images, resources, releases, and Streamlit dashboard deployment:
   `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
@@ -74,11 +72,6 @@ Streamlit dashboard design and implementation are app-owned project work, not a 
 
 1. `AGENTS.md`
 2. the latest relevant Main Sequence docs for the task
-3. `.agents/brief.md`
-4. `.agents/status.md`
-5. `.agents/tasks.md`
-6. `.agents/record.md`
-7. `.agents/journal.md` when resuming, debugging, or investigating a repeated issue
 
 Canonical documentation root:
 `https://mainsequence-sdk.github.io/mainsequence-sdk/`
@@ -92,7 +85,6 @@ Before starting non-trivial work, collect or infer:
 - the repository path and current project context
 - whether live platform verification is required
 - which specialized skill should own the domain behavior
-- whether project-state files under `.agents/` will need updates after the domain step
 
 If the user goal or project context is unclear, stop before routing domain work.
 
@@ -103,8 +95,7 @@ For every non-trivial task, decide:
 1. What does success look like in observable terms?
 2. Which specialized skill owns the domain behavior?
 3. Does platform state need live verification?
-4. Will project-state files under `.agents/` need to be updated after this step?
-5. Are the docs and local implementation aligned, or is there a discrepancy to record?
+4. Are the docs and local implementation aligned, or is there a discrepancy to surface?
 
 ## Build Rules
 
@@ -167,22 +158,7 @@ Once the task boundary is clear, move into the correct specialized skill.
 
 Do not teach domain semantics here.
 
-### 6. Update project-state files after material work
-
-After material domain work, update the relevant project-state files under `.agents/` when the turn changed:
-
-- verified state
-- blockers
-- next actions
-- scope
-- stable operational references
-- a meaningful milestone
-- a failure
-- a repeated issue
-- a suspected SDK or platform issue
-- an investigation result worth preserving historically
-
-### 7. Use namespaces first for new or modified DataNodes
+### 6. Use namespaces first for new or modified DataNodes
 
 Before first-running or validating a new or changed DataNode, use an explicit namespace before any non-namespaced run.
 
@@ -191,10 +167,9 @@ Before first-running or validating a new or changed DataNode, use an explicit na
 When reviewing bootstrap behavior, look for:
 
 - domain work happening without a clear owner skill
-- material domain work finishing without required project-state updates
 - implementation starting without a concrete success condition
 - platform claims made without verification
-- docs mismatches that were noticed but not recorded
+- docs mismatches that were noticed but not surfaced
 - the bootstrap skill growing back into a catch-all domain manual
 
 ## Validation Checklist
@@ -205,7 +180,6 @@ Do not claim bootstrap success until you have checked:
 - the relevant docs were checked
 - the success condition is explicit
 - the correct specialized skill was chosen
-- required project-state updates were made when project state materially changed
 - any platform-state claims were verified with CLI or platform tooling
 
 ## This Skill Must Stop And Escalate When
