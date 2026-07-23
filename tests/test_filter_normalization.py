@@ -1457,6 +1457,30 @@ def test_agent_runtime_models_deserialize_backend_uid_payloads():
     assert service.knative_service_runtime_uid == "runtime-uid"
 
 
+def test_resource_release_model_accepts_collection_payload_without_runtime_child_fields():
+    release_uid = "2f4c4c3d-5669-4da5-9d86-b84633c1e6ed"
+    project_uid = "9d81d63f-b8c9-404d-9f1a-5f2ad29dbf16"
+
+    release = models_helpers_mod.ResourceRelease.model_validate(
+        {
+            "uid": release_uid,
+            "subdomain": "competition-analysis-dc3697f1f1",
+            "project_uid": project_uid,
+            "name": "Competition Analysis",
+            "release_kind": "static_site",
+            "automatic_deployment": True,
+        }
+    )
+
+    assert release.uid == release_uid
+    assert release.project_uid == project_uid
+    assert release.name == "Competition Analysis"
+    assert release.release_kind == models_helpers_mod.ResourceReleaseKind.STATIC_SITE
+    assert release.resource_uid is None
+    assert release.readme_resource_uid is None
+    assert release.related_job_uid is None
+
+
 def test_resource_release_models_support_automatic_deployment_payloads():
     release_uid = "2f4c4c3d-5669-4da5-9d86-b84633c1e6ed"
     resource_uid = "857bec7b-dd77-4272-aecd-13fc2138eacc"
@@ -1684,6 +1708,101 @@ def test_resource_release_automatic_deployment_run_filters_are_uid_based():
         "status__in": ["deployed", "failed"],
         "release_kind": "fastapi",
         "automatic_deployment_source": "manual",
+    }
+
+
+def test_unified_deployment_run_models_and_filters(monkeypatch):
+    captured = {}
+    run_uid = "11111111-1111-4111-8111-111111111111"
+    target_uid = "22222222-2222-4222-8222-222222222222"
+    project_uid = "33333333-3333-4333-8333-333333333333"
+    run = models_helpers_mod.DeploymentRun.model_validate(
+        {
+            "uid": run_uid,
+            "target_type": "resource_release",
+            "target": {"uid": target_uid, "name": "Orders API", "kind": "fastapi"},
+            "project_uid": project_uid,
+            "operation": "build_and_deploy",
+            "source": "repository_event",
+            "commit_sha": "a" * 40,
+            "configuration_revision": None,
+            "state": "running",
+            "phase": "waiting_project_image",
+            "outcome": "",
+            "created_at": "2026-07-19T12:00:00Z",
+            "started_at": "2026-07-19T12:00:01Z",
+            "finished_at": None,
+            "logs": {
+                "state": "available",
+                "url": f"/orm/api/pods/deployment-runs/{run_uid}/logs/",
+                "retention_expires_at": None,
+            },
+            "error": None,
+        }
+    )
+
+    normalized = models_helpers_mod.DeploymentRun._normalize_filter_kwargs(
+        {
+            "project_uid": f" {project_uid} ",
+            "target_type__in": [" resource_release ", " static_site "],
+            "state__in": [" running ", " failed "],
+        }
+    )
+
+    assert run.target.uid == target_uid
+    assert run.steps == []
+    assert normalized == {
+        "project_uid": project_uid,
+        "target_type__in": ["resource_release", "static_site"],
+        "state__in": ["running", "failed"],
+    }
+
+    class FakeResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {
+                "run_uid": run_uid,
+                "entries": [
+                    {
+                        "sequence": 1,
+                        "timestamp": "2026-07-19T12:00:02Z",
+                        "step_uid": None,
+                        "source": "orchestrator",
+                        "stream": "stdout",
+                        "level": "info",
+                        "text": "Deployment run entered running",
+                    }
+                ],
+                "sources": [{"source": "orchestrator", "state": "available"}],
+                "next_cursor": None,
+                "complete": True,
+                "retention_expires_at": None,
+            }
+
+    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
+        captured.update(
+            {
+                "r_type": r_type,
+                "url": url,
+                "payload": payload,
+                "timeout": time_out,
+            }
+        )
+        return FakeResponse()
+
+    monkeypatch.setattr(models_helpers_mod, "make_request", _fake_make_request)
+
+    page = run.get_logs(limit=25, source="orchestrator", timeout=8)
+
+    assert page.complete is True
+    assert page.entries[0].source == "orchestrator"
+    assert captured == {
+        "r_type": "GET",
+        "url": f"{models_helpers_mod.DeploymentRun.get_object_url()}/{run_uid}/logs/",
+        "payload": {"params": {"limit": 25, "source": "orchestrator"}},
+        "timeout": 8,
     }
 
 

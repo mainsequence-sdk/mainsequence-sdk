@@ -1096,6 +1096,7 @@ class ResourceReleaseKind(str, Enum):
     STREAMLIT_DASHBOARD = "streamlit_dashboard"
     AGENT = "agent"
     FAST_API = "fastapi"
+    STATIC_SITE = "static_site"
 
 
 class ResourceRelease(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
@@ -1122,6 +1123,18 @@ class ResourceRelease(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
         title="Subdomain",
         description="DNS-safe label used as the subdomain for this release.",
         examples=["analytics-123"],
+    )
+    project_uid: str | None = Field(
+        None,
+        title="Project UID",
+        description="Public UID of the project that owns this release. Present on collection rows.",
+        examples=["9d81d63f-b8c9-404d-9f1a-5f2ad29dbf16"],
+    )
+    name: str | None = Field(
+        None,
+        title="Name",
+        description="Display name of the release. Present on collection rows.",
+        examples=["Competition Analysis"],
     )
     resource_uid: str | None = Field(
         None,
@@ -1387,3 +1400,147 @@ class ResourceReleaseAutomaticDeploymentRun(BaseObjectOrm, BasePydanticModel):
         title="Error Detail",
         description="Human-readable error detail when the run failed or was blocked.",
     )
+
+
+class DeploymentRunTarget(BaseModel):
+    uid: str | None = None
+    name: str = ""
+    kind: str = ""
+
+
+class DeploymentRunLogReference(BaseModel):
+    state: str
+    url: str
+    retention_expires_at: datetime.datetime | None = None
+
+
+class DeploymentRunError(BaseModel):
+    code: str = ""
+    detail: str = ""
+
+
+class DeploymentRunStep(BaseModel):
+    uid: str
+    sequence: int
+    key: str
+    name: str = ""
+    kind: str
+    state: str
+    phase: str = ""
+    outcome: str = ""
+    provider: str = ""
+    external_operation_id: str = ""
+    artifact_context: dict[str, Any] = Field(default_factory=dict)
+    started_at: datetime.datetime | None = None
+    finished_at: datetime.datetime | None = None
+    error_code: str = ""
+    error_detail: str = ""
+
+
+class DeploymentRunLogEntry(BaseModel):
+    sequence: int
+    timestamp: datetime.datetime | None = None
+    step_uid: str | None = None
+    source: str
+    stream: Literal["stdout", "stderr"]
+    level: Literal["debug", "info", "warning", "error"]
+    text: str = ""
+
+
+class DeploymentRunLogSource(BaseModel):
+    source: str
+    state: Literal["pending", "available", "partial", "expired", "unavailable"]
+
+
+class DeploymentRunLogPage(BaseModel):
+    run_uid: str
+    entries: list[DeploymentRunLogEntry] = Field(default_factory=list)
+    sources: list[DeploymentRunLogSource] = Field(default_factory=list)
+    next_cursor: str | None = None
+    complete: bool
+    retention_expires_at: datetime.datetime | None = None
+
+
+class DeploymentRun(BaseObjectOrm, BasePydanticModel):
+    ENDPOINT: ClassVar[str] = "pods/deployment-runs"
+    FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
+        "project_uid": ["exact", "in"],
+        "target_type": ["exact", "in"],
+        "target_uid": ["exact", "in"],
+        "target_kind": ["exact", "in"],
+        "operation": ["exact", "in"],
+        "state": ["exact", "in"],
+        "source": ["exact", "in"],
+        "commit_sha": ["exact", "in"],
+    }
+    FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
+        "project_uid": "uid",
+        "target_type": "str",
+        "target_uid": "uid",
+        "target_kind": "str",
+        "operation": "str",
+        "state": "str",
+        "source": "str",
+        "commit_sha": "str",
+    }
+    READ_QUERY_PARAMS: ClassVar[dict[str, str]] = {
+        "created_after": "str",
+        "created_before": "str",
+        "ordering": "str",
+        "search": "str",
+    }
+
+    uid: str
+    target_type: str
+    target: DeploymentRunTarget
+    project_uid: str | None = None
+    operation: str
+    source: str
+    commit_sha: str = ""
+    configuration_revision: int | None = None
+    state: str
+    phase: str = ""
+    outcome: str = ""
+    created_at: datetime.datetime
+    started_at: datetime.datetime | None = None
+    finished_at: datetime.datetime | None = None
+    revision_context: dict[str, Any] = Field(default_factory=dict)
+    trigger_context: dict[str, Any] = Field(default_factory=dict)
+    artifact_context: dict[str, Any] = Field(default_factory=dict)
+    cleanup_context: dict[str, Any] = Field(default_factory=dict)
+    result: dict[str, Any] = Field(default_factory=dict)
+    steps: list[DeploymentRunStep] = Field(default_factory=list)
+    logs: DeploymentRunLogReference
+    error: DeploymentRunError | None = None
+
+    def get_logs(
+        self,
+        *,
+        cursor: str | None = None,
+        limit: int | None = None,
+        step_uid: str | UUID | None = None,
+        source: str | None = None,
+        level: str | None = None,
+        timeout: int | float | tuple[float, float] | None = None,
+    ) -> DeploymentRunLogPage:
+        params = {
+            key: value
+            for key, value in {
+                "cursor": cursor,
+                "limit": limit,
+                "step_uid": str(step_uid) if step_uid is not None else None,
+                "source": source,
+                "level": level,
+            }.items()
+            if value is not None
+        }
+        response = make_request(
+            s=self.build_session(),
+            loaders=self.LOADERS,
+            r_type="GET",
+            url=f"{self.get_object_url()}/{self._public_detail_reference()}/logs/",
+            payload={"params": params},
+            time_out=timeout,
+        )
+        raise_for_response(response, payload={"params": params})
+        return DeploymentRunLogPage(**response.json())
