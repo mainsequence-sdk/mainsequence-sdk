@@ -1394,6 +1394,30 @@ def _prompt_select_id(
         raise RuntimeError(f"Invalid {prompt_label}: {picked}") from e
 
 
+def _require_item_uid(item: dict, *, prompt_label: str) -> str:
+    uid = str(item.get("uid") or "").strip()
+    if not uid:
+        raise RuntimeError(f"Available {prompt_label} option is missing uid.")
+    return uid
+
+
+def _prompt_select_uid(
+    *,
+    title: str,
+    prompt_label: str,
+    items: list[dict],
+    rows: list[list[str]],
+) -> str:
+    if not items:
+        raise RuntimeError(f"No options available for {prompt_label}.")
+    print_table(title, ["UID", "Name", "Details"], rows)
+    default_uid = _require_item_uid(items[0], prompt_label=prompt_label)
+    picked = typer.prompt(prompt_label, default=default_uid).strip()
+    if not picked:
+        raise RuntimeError(f"Invalid {prompt_label}: {picked}")
+    return picked
+
+
 def _prepare_batch_jobs_file_with_selected_related_image(
     *,
     project_id: str,
@@ -9210,14 +9234,14 @@ def project_validate_name_alias_cmd(
 @project.command("create")
 def project_create_cmd(
     project_name: str | None = typer.Argument(None, help="Project name"),
-    data_source_id: int | None = typer.Option(
-        None, "--data-source-id", help="Dynamic table data source ID"
+    data_source_uid: str | None = typer.Option(
+        None, "--data-source-uid", help="Dynamic table data source UID"
     ),
-    default_base_image_id: int | None = typer.Option(
-        None, "--default-base-image-id", help="Default base image ID"
+    default_base_image_uid: str | None = typer.Option(
+        None, "--default-base-image-uid", help="Default base image UID"
     ),
-    github_org_id: int | None = typer.Option(
-        None, "--github-org-id", "--organization-id", help="GitHub organization ID"
+    github_org_uid: str | None = typer.Option(
+        None, "--github-org-uid", "--organization-uid", help="GitHub organization UID"
     ),
     branch: str | None = typer.Option(None, "--branch", help="Repository branch (default: main)"),
     env: list[str] | None = typer.Option(
@@ -9236,12 +9260,12 @@ def project_create_cmd(
     ----------
     project_name:
         Project name. If omitted, prompt is shown.
-    data_source_id:
-        Dynamic table data source ID.
-    default_base_image_id:
-        Default base image ID.
-    github_org_id:
-        GitHub organization ID.
+    data_source_uid:
+        Dynamic table data source UID.
+    default_base_image_uid:
+        Default base image UID.
+    github_org_uid:
+        GitHub organization UID.
     branch:
         Repository branch (default: `main`).
     env:
@@ -9252,6 +9276,7 @@ def project_create_cmd(
     ```bash
     mainsequence project create
     mainsequence project create tutorial-project
+    mainsequence project create tutorial-project --default-base-image-uid <base_image_uid> --github-org-uid <github_org_uid>
     mainsequence project create tutorial-project --branch main --env FOO=bar --env BAZ=qux
     ```
     """
@@ -9294,10 +9319,11 @@ def project_create_cmd(
                 )
             raise typer.Exit(1)
 
-        if data_source_id is None:
+        if data_source_uid is None:
             ds_items = list_dynamic_table_data_sources(status="AVAILABLE")
             ds_rows: list[list[str]] = []
             for item in ds_items:
+                uid = _require_item_uid(item, prompt_label="data source uid")
                 rr = item.get("related_resource") or {}
                 ds_name = (
                     rr.get("display_name")
@@ -9308,45 +9334,47 @@ def project_create_cmd(
                 ds_details = (
                     f"class={rr.get('class_type') or '-'}, status={rr.get('status') or '-'}"
                 )
-                ds_rows.append([str(item.get("id", "")), str(ds_name), str(ds_details)])
-            data_source_id = _prompt_select_id(
+                ds_rows.append([uid, str(ds_name), str(ds_details)])
+            data_source_uid = _prompt_select_uid(
                 title="Available Data Sources",
-                prompt_label="Data source id",
+                prompt_label="Data source uid",
                 items=ds_items,
                 rows=ds_rows,
             )
 
-        if default_base_image_id is None:
+        if default_base_image_uid is None:
             img_items = list_project_base_images()
             img_rows: list[list[str]] = []
             for item in img_items:
+                uid = _require_item_uid(item, prompt_label="default base image uid")
                 name = item.get("title") or f"image-{item.get('id')}"
                 details = item.get("description") or item.get("latest_digest") or "-"
-                img_rows.append([str(item.get("id", "")), str(name), str(details)])
-            default_base_image_id = _prompt_select_id(
+                img_rows.append([uid, str(name), str(details)])
+            default_base_image_uid = _prompt_select_uid(
                 title="Available Base Images",
-                prompt_label="Default base image id",
+                prompt_label="Default base image uid",
                 items=img_items,
                 rows=img_rows,
             )
 
-        if github_org_id is None:
+        if github_org_uid is None:
             org_items = list_github_organizations()
             if org_items:
                 org_rows: list[list[str]] = []
                 for item in org_items:
+                    uid = _require_item_uid(item, prompt_label="github organization uid")
                     name = item.get("display_name") or item.get("login") or f"org-{item.get('id')}"
                     details = item.get("login") or "-"
-                    org_rows.append([str(item.get("id", "")), str(name), str(details)])
-                github_org_id = _prompt_select_id(
+                    org_rows.append([uid, str(name), str(details)])
+                github_org_uid = _prompt_select_uid(
                     title="Available GitHub Organizations",
-                    prompt_label="GitHub organization id",
+                    prompt_label="GitHub organization uid",
                     items=org_items,
                     rows=org_rows,
                 )
             else:
                 warn(
-                    "No GitHub organizations available. Project will be created without github_org_id."
+                    "No GitHub organizations available. Project will be created without github_org_uid."
                 )
 
         branch = (
@@ -9374,9 +9402,9 @@ def project_create_cmd(
 
         created = create_project(
             project_name=project_name,
-            data_source_id=data_source_id,
-            default_base_image_id=default_base_image_id,
-            github_org_id=github_org_id,
+            data_source_uid=data_source_uid,
+            default_base_image_uid=default_base_image_uid,
+            github_org_uid=github_org_uid,
             repository_branch=branch,
             env_vars=env_vars,
         )

@@ -6301,9 +6301,9 @@ def test_create_project_does_not_send_project_visible(cli_mod, monkeypatch):
 
     out = api_mod.create_project(
         project_name="demo-project",
-        data_source_id=11,
-        default_base_image_id=22,
-        github_org_id=33,
+        data_source_uid="11111111-1111-4111-8111-111111111111",
+        default_base_image_uid="22222222-2222-4222-8222-222222222222",
+        github_org_uid="33333333-3333-4333-8333-333333333333",
         repository_branch="main",
         env_vars={"FOO": "bar"},
     )
@@ -6313,9 +6313,9 @@ def test_create_project_does_not_send_project_visible(cli_mod, monkeypatch):
     assert captured["body"] == {
         "project_name": "demo-project",
         "repository_branch": "main",
-        "data_source_id": 11,
-        "default_base_image_id": 22,
-        "github_org_id": 33,
+        "data_source_uid": "11111111-1111-4111-8111-111111111111",
+        "default_base_image_uid": "22222222-2222-4222-8222-222222222222",
+        "github_org_uid": "33333333-3333-4333-8333-333333333333",
         "env_vars": [{"name": "FOO", "value": "bar"}],
     }
     assert "project_visible" not in captured["body"]
@@ -9791,6 +9791,7 @@ def test_project_create_interactive_defaults(cli_mod, runner, monkeypatch):
         lambda status="AVAILABLE": [
             {
                 "id": 11,
+                "uid": "11111111-1111-4111-8111-111111111111",
                 "related_resource": {
                     "display_name": "Default DS",
                     "class_type": "timescale_db",
@@ -9803,12 +9804,26 @@ def test_project_create_interactive_defaults(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(
         cli_mod,
         "list_project_base_images",
-        lambda: [{"id": 22, "title": "Python 3.12", "description": "Default image"}],
+        lambda: [
+            {
+                "id": 22,
+                "uid": "22222222-2222-4222-8222-222222222222",
+                "title": "Python 3.12",
+                "description": "Default image",
+            }
+        ],
     )
     monkeypatch.setattr(
         cli_mod,
         "list_github_organizations",
-        lambda: [{"id": 33, "login": "main-sequence", "display_name": "Main Sequence"}],
+        lambda: [
+            {
+                "id": 33,
+                "uid": "33333333-3333-4333-8333-333333333333",
+                "login": "main-sequence",
+                "display_name": "Main Sequence",
+            }
+        ],
     )
 
     captured = {}
@@ -9826,9 +9841,9 @@ def test_project_create_interactive_defaults(cli_mod, runner, monkeypatch):
 
     # Prompts:
     # 1) Project name
-    # 2) Data source id (default=11)
-    # 3) Default base image id (default=22)
-    # 4) GitHub organization id (default=33)
+    # 2) Data source uid
+    # 3) Default base image uid
+    # 4) GitHub organization uid
     # 5) Repository branch (default=main)
     # 6) Environment variables line
     user_input = "demo-project\n\n\n\n\nFOO=bar, BAZ=qux\n"
@@ -9836,9 +9851,9 @@ def test_project_create_interactive_defaults(cli_mod, runner, monkeypatch):
 
     assert result.exit_code == 0
     assert captured["project_name"] == "demo-project"
-    assert captured["data_source_id"] == 11
-    assert captured["default_base_image_id"] == 22
-    assert captured["github_org_id"] == 33
+    assert captured["data_source_uid"] == "11111111-1111-4111-8111-111111111111"
+    assert captured["default_base_image_uid"] == "22222222-2222-4222-8222-222222222222"
+    assert captured["github_org_uid"] == "33333333-3333-4333-8333-333333333333"
     assert captured["repository_branch"] == "main"
     assert captured["env_vars"] == {"FOO": "bar", "BAZ": "qux"}
     assert "Project created: demo-project (uid=project-uid-321)" in result.output
@@ -9896,12 +9911,12 @@ def test_project_create_polls_until_initialized(cli_mod, runner, monkeypatch):
             "project",
             "create",
             "demo-project",
-            "--data-source-id",
-            "11",
-            "--default-base-image-id",
-            "22",
-            "--github-org-id",
-            "33",
+            "--data-source-uid",
+            "11111111-1111-4111-8111-111111111111",
+            "--default-base-image-uid",
+            "22222222-2222-4222-8222-222222222222",
+            "--github-org-uid",
+            "33333333-3333-4333-8333-333333333333",
             "--branch",
             "main",
             "--env",

@@ -5634,9 +5634,9 @@ def list_github_organizations() -> list[dict]:
 def create_project(
     *,
     project_name: str,
-    data_source_id: int | None = None,
-    default_base_image_id: int | None = None,
-    github_org_id: int | None = None,
+    data_source_uid: str | None = None,
+    default_base_image_uid: str | None = None,
+    github_org_uid: str | None = None,
     repository_branch: str | None = None,
     env_vars: dict[str, str] | None = None,
 ) -> dict:
@@ -5647,12 +5647,12 @@ def create_project(
 
     if repository_branch:
         payload["repository_branch"] = repository_branch
-    if data_source_id is not None:
-        payload["data_source_id"] = int(data_source_id)
-    if default_base_image_id is not None:
-        payload["default_base_image_id"] = int(default_base_image_id)
-    if github_org_id is not None:
-        payload["github_org_id"] = int(github_org_id)
+    if data_source_uid not in (None, ""):
+        payload["data_source_uid"] = str(data_source_uid)
+    if default_base_image_uid not in (None, ""):
+        payload["default_base_image_uid"] = str(default_base_image_uid)
+    if github_org_uid not in (None, ""):
+        payload["github_org_uid"] = str(github_org_uid)
     if env_vars:
         payload["env_vars"] = [{"name": k, "value": str(v)} for k, v in env_vars.items()]
 

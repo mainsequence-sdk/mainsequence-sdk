@@ -95,19 +95,19 @@ mainsequence project create tutorial-project-cli
 
 The CLI validates the project name before continuing, prompts for any missing values, and uses sensible defaults. It also polls the backend every 30 seconds until `is_initialized=true`.
 
-!!! note "Default parameter: data source (`--data-source-id`)"
+!!! note "Default parameter: data source (`--data-source-uid`)"
     The CLI defaults to the first available data source.
 
     In Main Sequence, data is accessed through a **Data Source** abstraction rather than being tied directly to a specific database or storage system. This lets you work with data without needing to make database-specific decisions about schemas, storage engines, or query languages. Your workflows remain consistent even if the underlying storage changes.
 
     _Add your organization guidance here (for example: the recommended data source, naming conventions, or storage constraints)._
 
-!!! note "Default parameter: base image (`--default-base-image-id`)"
+!!! note "Default parameter: base image (`--default-base-image-uid`)"
     Projects run in a secure, organization-approved compute environment.
 
     The **base image** defines the operating environment used to run your project, including the required runtime, dependencies, and system configuration. When a project is executed, Main Sequence runs the code from the repository using this image. This ensures a consistent and approved environment across development, testing, and deployment, helping support reliable CI/CD workflows.
 
-!!! note "Default parameter: GitHub organization (`--github-org-id`)"
+!!! note "Default parameter: GitHub organization (`--github-org-uid`)"
     The CLI defaults to the first available GitHub organization (if available).
 
     Main Sequence organizes projects as repositories either in your selected GitHub organization or in the default Main Sequence-managed repository system. This gives you control over where your project code is hosted and managed.
