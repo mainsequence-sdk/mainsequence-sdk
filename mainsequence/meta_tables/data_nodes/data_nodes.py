@@ -10,7 +10,6 @@ from functools import wraps
 from typing import Any, Union
 
 import pandas as pd
-import pytz
 import structlog.contextvars as cvars
 
 import mainsequence.meta_tables.data_nodes.build_operations as build_operations
@@ -437,7 +436,7 @@ class DataNode(DataAccessMixin, ABC):
     - Provide table/column metadata for production datasets.
     """
 
-    OFFSET_START = datetime.datetime(2018, 1, 1, tzinfo=pytz.utc)
+    OFFSET_START = datetime.datetime(2018, 1, 1, tzinfo=datetime.UTC)
     DATA_NODE_UPDATE_CLASS = DataNodeUpdate
 
     def __init__(

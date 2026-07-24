@@ -204,9 +204,17 @@ mainsequence project build_local_venv --path .
 ```
 
 This command:
-- reads `pyproject.toml`,
-- creates `.venv` with the requested Python version,
+- reads and validates the Python requirement from `pyproject.toml`,
+- creates `.venv` with an interpreter satisfying that complete requirement,
 - runs `uv sync` into that `.venv`.
+
+If `.venv` already exists, the command reuses it only when its interpreter
+satisfies the project requirement. For an incompatible or unreadable
+environment, replace it explicitly:
+
+```bash
+mainsequence project build_local_venv --path . --recreate
+```
 
 After this step, your folder will also include:
 

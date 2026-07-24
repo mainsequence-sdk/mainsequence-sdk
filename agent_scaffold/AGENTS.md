@@ -23,9 +23,19 @@ installed SDK version with the managed skills pin:
 - `mainsequence project update-sdk --path .`
 
 After the SDK update, inspect `.agents/skills/mainsequence/PINNED_FROM.txt`.
-Its `pinned_version=...` value records the SDK version that supplied the copied
-Main Sequence skills. Compare that value with the installed SDK version reported
-by `mainsequence --version`.
+The schema-2 record describes both sources installed by
+`mainsequence project update_agent_skills`:
+
+- `sdk_version=...` and `sdk_skills_path=...` identify the SDK-owned execution
+  skills copied from the target project's installed SDK;
+- `platform_manifest_version=...`, `platform_manifest_sha256=...`,
+  `platform_ontology_sha256=...`, and the
+  `platform_capability.<name>.*` fields identify the platform-owned skills
+  retrieved from the authenticated backend.
+
+`pinned_version=...` remains as a backward-readable alias of `sdk_version`.
+Compare the SDK value with the installed version reported by
+`mainsequence --version`.
 
 Refresh the managed scaffold only when `PINNED_FROM.txt` is missing or its
 `pinned_version` differs from the installed SDK version:
@@ -33,19 +43,20 @@ Refresh the managed scaffold only when `PINNED_FROM.txt` is missing or its
 - `mainsequence project update AGENTS.md --path .`
 - `mainsequence project update_agent_skills --path .`
 
-If `pinned_version` already matches the installed SDK version, do not refresh
-`AGENTS.md` or `.agents/skills/mainsequence/` as a startup ritual; continue with
-the task.
+If `sdk_version` already matches the installed SDK version and no explicit
+platform-skill refresh is needed, do not refresh `AGENTS.md` or
+`.agents/skills/mainsequence/` as a startup ritual; continue with the task.
 
 Canonical Main Sequence documentation root:
 `https://mainsequence-sdk.github.io/mainsequence-sdk/`
 
 ## Agent Job
 
-You are the intelligence project builder for a Main Sequence repository.
+You are the SDK execution orchestrator for a Main Sequence repository.
 
-Your job is to translate user intent into the correct Main Sequence components, repository
-changes, and validation steps.
+The platform-owned `project_builder` establishes intent, platform ontology, and
+success criteria. Your SDK-owned responsibility is to translate that verified
+plan into repository changes, CLI/SDK operations, and validation steps.
 
 Core responsibilities:
 
@@ -231,13 +242,17 @@ For any non-trivial Main Sequence task:
 11. Before proceeding with non-trivial Main Sequence work, update the project SDK:
     `mainsequence project update-sdk --path .`
 12. After updating the SDK, compare `mainsequence --version` with
-    `.agents/skills/mainsequence/PINNED_FROM.txt` field `pinned_version=...`.
-13. If `PINNED_FROM.txt` is missing or `pinned_version` differs from the installed
-    SDK version, refresh the managed scaffold files:
+    `.agents/skills/mainsequence/PINNED_FROM.txt` field `sdk_version=...`
+    (`pinned_version=...` is its compatibility alias), and verify that the
+    sentinel contains platform manifest and capability hashes.
+13. If `PINNED_FROM.txt` is missing, `sdk_version` differs from the installed
+    SDK version, or a platform-skill refresh is explicitly required, refresh
+    the managed scaffold files:
     `mainsequence project update AGENTS.md --path .`
     `mainsequence project update_agent_skills --path .`
-14. If `pinned_version` already matches the installed SDK version, do not refresh
-    `AGENTS.md` or `.agents/skills/mainsequence/` as a startup ritual.
+14. If `sdk_version` already matches the installed SDK version and no platform
+    refresh is required, do not refresh `AGENTS.md` or
+    `.agents/skills/mainsequence/` as a startup ritual.
 15. Verify platform state with the CLI or platform tooling instead of guessing.
 
 ## Orchestrator Rule
@@ -247,15 +262,18 @@ Use the skills as an orchestrated sequence, not as isolated documents.
 Default pattern:
 
 1. `.agents/skills/mainsequence/project_builder/SKILL.md`
-2. the relevant domain skill
+2. `.agents/skills/mainsequence/sdk_project_execution/SKILL.md`
+3. the relevant domain skill
 
 Before the final response:
 
 - update the relevant `.agents/` project-state files whenever project understanding, verified
   state, open tasks, blockers, or historical record changed during the turn
 
-Always use `.agents/skills/mainsequence/project_builder/SKILL.md` as the source of truth for project
-scaffolding, folder structure, and standard repository layout.
+Use `.agents/skills/mainsequence/project_builder/SKILL.md` as the platform
+source of truth for intent and ontology. Use
+`.agents/skills/mainsequence/sdk_project_execution/SKILL.md` for installed-SDK,
+CLI, filesystem, and local repository execution mechanics.
 
 ## Core Working Rules
 

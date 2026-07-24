@@ -1063,10 +1063,8 @@ def _project_package_name(*, cwd: str | pathlib.Path | None = None) -> str | Non
     pyproject_path = pathlib.Path(cwd or pathlib.Path.cwd()).resolve() / "pyproject.toml"
     if not pyproject_path.exists():
         return None
-    try:
-        import tomllib
-    except ModuleNotFoundError:  # pragma: no cover - Python < 3.11 fallback.
-        return None
+    import tomllib
+
     try:
         pyproject = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
     except Exception:

@@ -1,13 +1,17 @@
 ---
-name: mainsequence-project
-description: Use this skill to bootstrap work in a Main Sequence repository. This skill owns project context verification, docs-first behavior, success-definition discipline, and routing between specialized domain skills. It does not own domain implementation semantics or local project bookkeeping.
+name: mainsequence-sdk-project-execution
+description: Use the installed Main Sequence SDK and project-local tools to verify repository context, apply local scaffold conventions, and route concrete implementation work after platform intent and ontology have been established.
 ---
 
-# Main Sequence Project Bootstrap
+# Main Sequence SDK Project Execution
 
 ## Overview
 
-Use this skill to start work correctly in a Main Sequence repository before moving into a domain skill.
+Use this SDK-owned execution skill after the platform `project_builder` skill
+has established intent, platform concepts, and the observable definition of
+success. This file owns local SDK, CLI, filesystem, and repository mechanics;
+it does not define the platform ontology or replace the platform
+`project_builder`.
 
 This skill is for:
 

@@ -45,9 +45,14 @@ from textwrap import dedent
 import click
 import typer
 import yaml
+from packaging.specifiers import InvalidSpecifier, SpecifierSet
+from packaging.version import InvalidVersion, Version
 
 from ..client.compute_validation import decimal_to_storage, parse_cpu_request, parse_memory_request
-from ..scaffold_skills import ScaffoldSkillCopyBlocked, copy_scaffold_skills
+from ..project_skills import (
+    ProjectSkillAssemblyError,
+    install_dual_source_project_skills,
+)
 from . import config as cfg
 from .api import (
     ApiError,
@@ -106,6 +111,7 @@ from .api import (
     delete_resource_release,
     delete_secret,
     delete_workspace,
+    fetch_platform_project_skill_catalog,
     get_agent,
     get_agent_run,
     get_agent_session,
@@ -2109,27 +2115,60 @@ def _build_job_task_schedule_payload(
     return payload
 
 
-def _extract_python_version_from_spec(spec: str | None) -> str | None:
+def _normalize_python_version_request(spec: str | None) -> str | None:
     if not spec:
         return None
     cleaned = str(spec).strip()
-    m = re.search(r"(?<!\d)(\d+)\.(\d+)(?:\.(\d+))?", cleaned)
-    if not m:
+    if not cleaned:
         return None
-    major, minor, patch = m.group(1), m.group(2), m.group(3)
-    if patch and re.fullmatch(r"\d+\.\d+\.\d+", cleaned):
-        return f"{major}.{minor}.{patch}"
-    return f"{major}.{minor}"
+
+    normalized = cleaned
+    if cleaned == "*":
+        normalized = ">=3.13"
+    elif cleaned.startswith("^"):
+        try:
+            lower = Version(cleaned[1:])
+        except InvalidVersion:
+            return None
+        release = lower.release + (0, 0, 0)
+        major, minor, patch = release[:3]
+        if major:
+            upper = f"{major + 1}.0"
+        elif minor:
+            upper = f"0.{minor + 1}"
+        else:
+            upper = f"0.0.{patch + 1}"
+        normalized = f">={lower},<{upper}"
+    elif cleaned.startswith("~") and not cleaned.startswith("~="):
+        raw_version = cleaned[1:]
+        try:
+            lower = Version(raw_version)
+        except InvalidVersion:
+            return None
+        release = lower.release
+        if len(release) <= 1:
+            upper = f"{release[0] + 1}.0"
+        else:
+            upper = f"{release[0]}.{release[1] + 1}"
+        normalized = f">={lower},<{upper}"
+    elif re.fullmatch(r"\d+(?:\.\d+){0,2}(?:\.\*)?", cleaned):
+        if cleaned.endswith(".*"):
+            normalized = f"=={cleaned}"
+        elif cleaned.count(".") < 2:
+            normalized = f"=={cleaned}.*"
+        else:
+            normalized = f"=={cleaned}"
+
+    try:
+        SpecifierSet(normalized)
+    except InvalidSpecifier:
+        return None
+    return normalized
 
 
-def _extract_python_version_from_pyproject_text(pyproject_text: str) -> str | None:
-    """
-    Extract python version from pyproject.toml text.
+def _extract_python_request_from_pyproject_text(pyproject_text: str) -> str | None:
+    """Extract and validate the project Python interpreter request."""
 
-    Supported keys:
-      - [project].requires-python
-      - [tool.poetry.dependencies].python
-    """
     try:
         import tomllib
 
@@ -2156,14 +2195,14 @@ def _extract_python_version_from_pyproject_text(pyproject_text: str) -> str | No
                         candidates.append(str(py_spec))
 
     for spec in candidates:
-        parsed = _extract_python_version_from_spec(spec)
+        parsed = _normalize_python_version_request(spec)
         if parsed:
             return parsed
 
     # Fallback regex parsing for partially-invalid TOML or non-standard formatting.
     req_match = re.search(r'(?im)^\s*requires-python\s*=\s*["\']([^"\']+)["\']\s*$', pyproject_text)
     if req_match:
-        parsed = _extract_python_version_from_spec(req_match.group(1))
+        parsed = _normalize_python_version_request(req_match.group(1))
         if parsed:
             return parsed
 
@@ -2177,9 +2216,43 @@ def _extract_python_version_from_pyproject_text(pyproject_text: str) -> str | No
             r'(?im)^\s*python\s*=\s*["\']([^"\']+)["\']\s*$', poetry_section.group(1)
         )
         if py_match:
-            return _extract_python_version_from_spec(py_match.group(1))
+            return _normalize_python_version_request(py_match.group(1))
 
     return None
+
+
+def _venv_python_executable(venv_path: pathlib.Path) -> pathlib.Path | None:
+    candidates = (
+        venv_path / "Scripts" / "python.exe",
+        venv_path / "bin" / "python",
+    )
+    return next((candidate for candidate in candidates if candidate.is_file()), None)
+
+
+def _read_venv_python_version(venv_path: pathlib.Path) -> Version | None:
+    python_executable = _venv_python_executable(venv_path)
+    if python_executable is None:
+        return None
+
+    result = subprocess.run(
+        [
+            str(python_executable),
+            "-c",
+            "import platform; print(platform.python_version())",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return None
+    try:
+        return Version(result.stdout.strip())
+    except InvalidVersion:
+        return None
+
+
+def _python_version_matches_request(version: Version, request: str) -> bool:
+    return SpecifierSet(request).contains(version, prereleases=True)
 
 
 def _resolve_uv_runner() -> tuple[list[str], str] | None:
@@ -11885,6 +11958,11 @@ def project_open_signed_terminal(
 def project_build_local_venv(
     project_id: str | None = typer.Argument(None, help="Project UID"),
     path: str | None = typer.Option(None, "--path", help="Project directory"),
+    recreate: bool = typer.Option(
+        False,
+        "--recreate",
+        help="Replace an existing .venv after validating the project Python requirement",
+    ),
 ):
     """
     Build local `.venv` and sync dependencies using `uv`.
@@ -11905,6 +11983,7 @@ def project_build_local_venv(
     mainsequence project build_local_venv
     mainsequence project build_local_venv project-uid-123
     mainsequence project build_local_venv --path .
+    mainsequence project build_local_venv --path . --recreate
     ```
     """
     project_dir = (
@@ -11912,11 +11991,6 @@ def project_build_local_venv(
         if (project_id is not None or path)
         else _resolve_current_project_dir_from_env()
     )
-    venv_path = project_dir / ".venv"
-    if venv_path.exists():
-        info(f"Skipped: {venv_path} already exists.")
-        return
-
     pyproject_path = project_dir / "pyproject.toml"
     if not pyproject_path.is_file():
         error("pyproject.toml not found in the project root.")
@@ -11928,12 +12002,37 @@ def project_build_local_venv(
         error("Could not read pyproject.toml from the project root.")
         raise typer.Exit(1) from e
 
-    python_version = _extract_python_version_from_pyproject_text(pyproject_text)
-    if not python_version:
+    python_request = _extract_python_request_from_pyproject_text(pyproject_text)
+    if not python_request:
         error(
-            "Could not determine Python version from pyproject.toml (requires-python or Poetry python spec)."
+            "Could not determine a valid Python requirement from pyproject.toml "
+            "(requires-python or Poetry python spec)."
         )
         raise typer.Exit(1)
+
+    venv_path = project_dir / ".venv"
+    replace_existing_venv = False
+    if venv_path.exists():
+        existing_version = _read_venv_python_version(venv_path)
+        if not recreate:
+            if existing_version is not None and _python_version_matches_request(
+                existing_version, python_request
+            ):
+                info(
+                    f"Skipped: {venv_path} already uses compatible Python "
+                    f"{existing_version} ({python_request})."
+                )
+                return
+
+            actual = str(existing_version) if existing_version is not None else "unreadable"
+            error(
+                f"Existing {venv_path} uses Python {actual}, which does not satisfy "
+                f"{python_request}."
+            )
+            info("Re-run with --recreate to replace the incompatible environment.")
+            raise typer.Exit(1)
+
+        replace_existing_venv = True
 
     with status("Building local .venv..."):
         uv_runner = _resolve_uv_runner()
@@ -11956,9 +12055,13 @@ def project_build_local_venv(
 
         uv_cmd, uv_display = uv_runner
 
-        info(f"Creating .venv with Python {python_version}...")
+        if replace_existing_venv:
+            info(f"Replacing existing {venv_path}.")
+            shutil.rmtree(venv_path)
+
+        info(f"Creating .venv with Python requirement {python_request}...")
         venv_result = subprocess.run(
-            [*uv_cmd, "venv", ".venv", "--python", python_version],
+            [*uv_cmd, "venv", ".venv", "--python", python_request],
             cwd=str(project_dir),
             env=os.environ.copy(),
             capture_output=True,
@@ -11988,7 +12091,7 @@ def project_build_local_venv(
             )
             raise typer.Exit(1)
 
-    success(f"Local .venv built with Python {python_version}.")
+    success(f"Local .venv built for Python requirement {python_request}.")
 
 
 @project.command("refresh_token")
@@ -12672,12 +12775,14 @@ def project_update_agent_skills(
     path: str | None = typer.Option(None, "--path", help="Project directory"),
 ):
     """
-    Update `.agents/skills/mainsequence` from the installed `agent_scaffold/skills` bundle subtree.
+    Update `.agents/skills/mainsequence` from installed SDK and platform sources.
 
-    This copies every top-level scaffold skill folder from `agent_scaffold/skills/`
-    into `.agents/skills/mainsequence/`, overwriting any folders with the same name
-    under that namespace. Bundle-root files such as `AGENTS.md` are not copied by
-    this command.
+    The existing command copies SDK-owned execution skills from the target
+    project's installed `agent_scaffold/skills` tree and retrieves platform-owned
+    skills from the authenticated backend. It validates and stages both sources,
+    then replaces only the managed `mainsequence` namespace and writes one
+    dual-source `PINNED_FROM.txt`. Bundle-root files such as `AGENTS.md` are not
+    copied by this command.
 
     Examples
     --------
@@ -12699,56 +12804,88 @@ def project_update_agent_skills(
     source_checkout_root = _mainsequence_source_checkout_root()
     protected_project_roots = (source_checkout_root,) if source_checkout_root is not None else ()
     try:
-        copy_result = copy_scaffold_skills(
+        platform_catalog = fetch_platform_project_skill_catalog()
+        install_result = install_dual_source_project_skills(
             project_dir=project_dir,
-            library_name="mainsequence",
+            sdk_library_name="mainsequence",
             namespace="mainsequence",
-            skills_path=skills_dir,
-            pinned_version=pinned_version,
+            sdk_skills_path=skills_dir,
+            sdk_version=pinned_version,
+            platform_catalog=platform_catalog,
             command="mainsequence project update_agent_skills",
             protected_project_roots=protected_project_roots,
         )
-    except (ScaffoldSkillCopyBlocked, FileNotFoundError, ValueError) as exc:
+    except (
+        ApiError,
+        ProjectSkillAssemblyError,
+        FileNotFoundError,
+        OSError,
+        ValueError,
+    ) as exc:
         error(str(exc))
         raise typer.Exit(1) from exc
 
     updated = [
         {
             "name": item.name,
+            "owner": item.owner,
             "source": item.source,
             "destination": item.destination,
+            "content_sha256": item.content_sha256,
         }
-        for item in copy_result.copied
+        for item in install_result.installed
     ]
 
     payload = {
         "project": project_dir,
-        "library_name": copy_result.library_name,
-        "namespace": copy_result.namespace,
-        "skills_path": copy_result.skills_path,
-        "destination_root": copy_result.destination_root,
-        "sentinel_path": copy_result.sentinel_path,
-        "pinned_version": copy_result.pinned_version,
+        "library_name": install_result.sdk_library_name,
+        "namespace": "mainsequence",
+        "skills_path": install_result.sdk_skills_path,
+        "destination_root": install_result.destination_root,
+        "sentinel_path": install_result.sentinel_path,
+        "pinned_version": install_result.sdk_version,
+        "sdk": {
+            "library_name": install_result.sdk_library_name,
+            "version": install_result.sdk_version,
+            "skills_path": install_result.sdk_skills_path,
+        },
+        "platform": {
+            "source_url": platform_catalog.source_url,
+            "manifest_version": platform_catalog.manifest_version,
+            "manifest_sha256": platform_catalog.manifest_sha256,
+            "ontology_uri": platform_catalog.ontology_uri,
+            "ontology_sha256": platform_catalog.ontology_sha256,
+            "capabilities": [
+                {
+                    "name": capability.name,
+                    "source_ref": capability.source_ref,
+                    "path": str(capability.relative_path),
+                    "content_sha256": capability.content_sha256,
+                }
+                for capability in platform_catalog.capabilities
+            ],
+        },
         "updated_count": len(updated),
         "updated": updated,
     }
     if _emit_json(payload):
         return
 
-    success("Updated .agents/skills/mainsequence from installed agent_scaffold bundle.")
+    success("Updated .agents/skills/mainsequence from installed SDK and platform sources.")
     print_kv(
-        "Scaffold Skill Pin",
+        "Project Skill Provenance",
         [
-            ("Library", copy_result.library_name),
-            ("Namespace", copy_result.namespace),
-            ("Pinned Version", copy_result.pinned_version),
-            ("Sentinel", str(copy_result.sentinel_path)),
+            ("SDK Library", install_result.sdk_library_name),
+            ("SDK Version", install_result.sdk_version),
+            ("Platform Manifest", platform_catalog.manifest_sha256),
+            ("Platform Capabilities", len(platform_catalog.capabilities)),
+            ("Sentinel", str(install_result.sentinel_path)),
         ],
     )
     print_table(
-        "Updated Scaffold Skills",
-        ["Skill Folder", "Destination"],
-        [[item["name"], str(item["destination"])] for item in updated],
+        "Updated Project Skills",
+        ["Skill", "Owner", "Destination"],
+        [[item["name"], item["owner"], str(item["destination"])] for item in updated],
     )
 
 
@@ -12787,7 +12924,7 @@ def skills_list_cmd():
 def skills_path_cmd(
     skill_name: str | None = typer.Argument(
         None,
-        help="Optional installed skill name, for example project_builder or command_center/workspace_builder",
+        help="Optional installed SDK skill name, for example sdk_project_execution or command_center/workspace_builder",
     ),
 ):
     """
@@ -12803,7 +12940,7 @@ def skills_path_cmd(
     --------
     ```bash
     mainsequence skills path
-    mainsequence skills path project_builder
+    mainsequence skills path sdk_project_execution
     mainsequence skills path command_center/workspace_builder
     mainsequence skills path workspace_builder
     ```

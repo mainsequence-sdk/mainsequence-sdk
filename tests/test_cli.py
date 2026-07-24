@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import importlib
 import json
 import os
@@ -10331,7 +10332,7 @@ def test_project_build_local_venv(cli_mod, runner, monkeypatch, tmp_path):
     target = tmp_path / "project"
     target.mkdir(parents=True, exist_ok=True)
     (target / "pyproject.toml").write_text(
-        '[project]\nname = "demo"\nrequires-python = ">=3.11,<3.13"\n',
+        '[project]\nname = "demo"\nrequires-python = ">=3.13,<3.14"\n',
         encoding="utf-8",
     )
 
@@ -10349,11 +10350,11 @@ def test_project_build_local_venv(cli_mod, runner, monkeypatch, tmp_path):
         ["project", "build_local_venv", "--path", str(target)],
     )
     assert result.exit_code == 0
-    assert calls[0][0] == ["uv", "venv", ".venv", "--python", "3.11"]
+    assert calls[0][0] == ["uv", "venv", ".venv", "--python", ">=3.13,<3.14"]
     assert calls[0][1] == str(target.resolve())
     assert calls[1][0] == ["uv", "sync"]
     assert calls[1][2]["UV_PROJECT_ENVIRONMENT"] == ".venv"
-    assert "Local .venv built with Python 3.11." in result.output
+    assert "Local .venv built for Python requirement >=3.13,<3.14." in result.output
 
 
 def test_project_build_local_venv_defaults_to_cwd_with_env_project_id(
@@ -10363,7 +10364,7 @@ def test_project_build_local_venv_defaults_to_cwd_with_env_project_id(
     target.mkdir(parents=True, exist_ok=True)
     (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8")
     (target / "pyproject.toml").write_text(
-        '[project]\nname = "demo"\nrequires-python = ">=3.11,<3.13"\n',
+        '[project]\nname = "demo"\nrequires-python = ">=3.13,<3.14"\n',
         encoding="utf-8",
     )
 
@@ -10379,23 +10380,135 @@ def test_project_build_local_venv_defaults_to_cwd_with_env_project_id(
 
     result = runner.invoke(cli_mod.app, ["project", "build_local_venv"])
     assert result.exit_code == 0
-    assert calls[0][0] == ["uv", "venv", ".venv", "--python", "3.11"]
+    assert calls[0][0] == ["uv", "venv", ".venv", "--python", ">=3.13,<3.14"]
     assert calls[0][1] == str(target.resolve())
     assert calls[1][0] == ["uv", "sync"]
     assert calls[1][2]["UV_PROJECT_ENVIRONMENT"] == ".venv"
 
 
-def test_project_build_local_venv_skips_when_exists(cli_mod, runner, tmp_path):
+@pytest.mark.parametrize(
+    ("spec", "expected"),
+    [
+        (">=3.13,<3.15,!=3.14.1", ">=3.13,<3.15,!=3.14.1"),
+        ("^3.13", ">=3.13,<4.0"),
+        ("~3.13", ">=3.13,<3.14"),
+        ("3.13", "==3.13.*"),
+        ("3.13.2", "==3.13.2"),
+    ],
+)
+def test_normalize_python_version_request(cli_mod, spec, expected):
+    assert cli_mod._normalize_python_version_request(spec) == expected
+
+
+def test_normalize_python_version_request_rejects_invalid_constraint(cli_mod):
+    assert cli_mod._normalize_python_version_request("not-a-version") is None
+
+
+def test_project_build_local_venv_skips_compatible_existing_environment(
+    cli_mod, runner, monkeypatch, tmp_path
+):
     target = tmp_path / "project"
     target.mkdir(parents=True, exist_ok=True)
     (target / ".venv").mkdir(parents=True, exist_ok=True)
+    (target / "pyproject.toml").write_text(
+        '[project]\nname = "demo"\nrequires-python = ">=3.13,<3.14"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        cli_mod,
+        "_read_venv_python_version",
+        lambda _: cli_mod.Version("3.13.7"),
+    )
 
     result = runner.invoke(
         cli_mod.app,
         ["project", "build_local_venv", "--path", str(target)],
     )
     assert result.exit_code == 0
-    assert "already exists" in result.output
+    assert "already uses compatible Python 3.13.7" in result.output
+
+
+def test_project_build_local_venv_rejects_incompatible_existing_environment(
+    cli_mod, runner, monkeypatch, tmp_path
+):
+    target = tmp_path / "project"
+    target.mkdir(parents=True, exist_ok=True)
+    (target / ".venv").mkdir(parents=True, exist_ok=True)
+    (target / "pyproject.toml").write_text(
+        '[project]\nname = "demo"\nrequires-python = ">=3.13"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        cli_mod,
+        "_read_venv_python_version",
+        lambda _: cli_mod.Version("3.12.8"),
+    )
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["project", "build_local_venv", "--path", str(target)],
+    )
+
+    assert result.exit_code == 1
+    assert "Python 3.12.8, which does not satisfy >=3.13" in result.output
+    assert "Re-run with --recreate" in result.output
+
+
+def test_project_build_local_venv_recreates_incompatible_environment(
+    cli_mod, runner, monkeypatch, tmp_path
+):
+    target = tmp_path / "project"
+    target.mkdir(parents=True, exist_ok=True)
+    venv_path = target / ".venv"
+    venv_path.mkdir(parents=True, exist_ok=True)
+    (venv_path / "old-environment").write_text("old", encoding="utf-8")
+    (target / "pyproject.toml").write_text(
+        '[project]\nname = "demo"\nrequires-python = ">=3.13"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(cli_mod, "_resolve_uv_runner", lambda: (["uv"], "uv"))
+    calls = []
+
+    def _run(cmd, cwd=None, env=None, capture_output=None, text=None):
+        calls.append((cmd, cwd, env))
+        return types.SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(cli_mod.subprocess, "run", _run)
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["project", "build_local_venv", "--path", str(target), "--recreate"],
+    )
+
+    assert result.exit_code == 0
+    assert not (venv_path / "old-environment").exists()
+    assert calls[0][0] == ["uv", "venv", ".venv", "--python", ">=3.13"]
+    assert "Replacing existing" in result.output
+
+
+def test_project_build_local_venv_preserves_existing_environment_when_uv_is_unavailable(
+    cli_mod, runner, monkeypatch, tmp_path
+):
+    target = tmp_path / "project"
+    target.mkdir(parents=True, exist_ok=True)
+    marker = target / ".venv" / "existing-environment"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text("existing", encoding="utf-8")
+    (target / "pyproject.toml").write_text(
+        '[project]\nname = "demo"\nrequires-python = ">=3.13"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(cli_mod, "_resolve_uv_runner", lambda: None)
+    monkeypatch.setattr(cli_mod, "_install_uv", lambda: (False, "offline"))
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["project", "build_local_venv", "--path", str(target), "--recreate"],
+    )
+
+    assert result.exit_code == 1
+    assert marker.read_text(encoding="utf-8") == "existing"
+    assert "automatic install failed: offline" in result.output
 
 
 def test_project_build_local_venv_requires_pyproject(cli_mod, runner, tmp_path):
@@ -11345,6 +11458,45 @@ def test_installed_agent_scaffold_bundle_dir_falls_back_to_sibling_package(cli_m
     assert resolved == expected.resolve()
 
 
+def _cli_platform_skill_catalog():
+    from pathlib import PurePosixPath
+
+    from mainsequence.project_skills import (
+        PlatformProjectSkill,
+        PlatformProjectSkillCatalog,
+    )
+
+    capabilities = []
+    for name, front_matter_name in (
+        ("a2a_communication", "a2a-communication"),
+        ("project_builder", "project-builder"),
+    ):
+        content = (
+            f"---\nname: {front_matter_name}\n"
+            f"description: Platform {name}\n---\n"
+        )
+        capabilities.append(
+            PlatformProjectSkill(
+                uid=f"{name}-uid",
+                name=name,
+                source_ref=f"mainsequence:platform-capability:{name}",
+                relative_path=PurePosixPath(name, "SKILL.md"),
+                content=content,
+                content_sha256=hashlib.sha256(content.encode("utf-8")).hexdigest(),
+                content_mime_type="text/markdown",
+                content_size=len(content.encode("utf-8")),
+            )
+        )
+    return PlatformProjectSkillCatalog(
+        source_url="https://platform.example.test",
+        manifest_version=1,
+        manifest_sha256="a" * 64,
+        ontology_uri="mainsequence://platform/ontology",
+        ontology_sha256="b" * 64,
+        capabilities=tuple(capabilities),
+    )
+
+
 def test_project_update_agent_skills_overwrites_matching_folders(
     cli_mod, runner, monkeypatch, tmp_path
 ):
@@ -11380,6 +11532,11 @@ def test_project_update_agent_skills_overwrites_matching_folders(
         "_project_installed_package_version",
         lambda project_dir, package_name: "4.4.3",
     )
+    monkeypatch.setattr(
+        cli_mod,
+        "fetch_platform_project_skill_catalog",
+        _cli_platform_skill_catalog,
+    )
 
     result = runner.invoke(cli_mod.app, ["project", "update_agent_skills", "--path", str(target)])
     assert result.exit_code == 0
@@ -11400,8 +11557,21 @@ def test_project_update_agent_skills_overwrites_matching_folders(
     assert "namespace=mainsequence" in sentinel_content
     assert "pinned_version=4.4.3" in sentinel_content
     assert f"skills_path={(bundle_dir / 'skills').resolve()}" in sentinel_content
-    assert "Updated Scaffold Skills" in result.output
-    assert "Pinned Version" in result.output
+    assert "sdk_version=4.4.3" in sentinel_content
+    assert f"platform_manifest_sha256={'a' * 64}" in sentinel_content
+    assert "Updated Project Skills" in result.output
+    assert "SDK Version" in result.output
+    assert (
+        target / ".agents" / "skills" / "mainsequence" / "project_builder" / "SKILL.md"
+    ).is_file()
+    assert (
+        target
+        / ".agents"
+        / "skills"
+        / "mainsequence"
+        / "a2a_communication"
+        / "SKILL.md"
+    ).is_file()
 
 
 def test_project_update_agent_skills_json_reports_pin_sentinel(
@@ -11423,6 +11593,11 @@ def test_project_update_agent_skills_json_reports_pin_sentinel(
         "_project_installed_package_version",
         lambda project_dir, package_name: "4.4.3",
     )
+    monkeypatch.setattr(
+        cli_mod,
+        "fetch_platform_project_skill_catalog",
+        _cli_platform_skill_catalog,
+    )
 
     result = runner.invoke(
         cli_mod.app,
@@ -11439,8 +11614,18 @@ def test_project_update_agent_skills_json_reports_pin_sentinel(
     assert payload["destination_root"] == str(
         (target / ".agents" / "skills" / "mainsequence").resolve()
     )
-    assert payload["updated_count"] == 1
-    assert payload["updated"][0]["name"] == "data_publishing"
+    assert payload["updated_count"] == 3
+    assert [item["name"] for item in payload["updated"]] == [
+        "data_publishing",
+        "a2a_communication",
+        "project_builder",
+    ]
+    assert payload["sdk"]["version"] == "4.4.3"
+    assert payload["platform"]["manifest_sha256"] == "a" * 64
+    assert [item["name"] for item in payload["platform"]["capabilities"]] == [
+        "a2a_communication",
+        "project_builder",
+    ]
     assert "pinned_version=4.4.3" in sentinel.read_text(encoding="utf-8")
 
 

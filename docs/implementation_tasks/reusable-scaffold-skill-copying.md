@@ -2,6 +2,15 @@
 
 Date: 2026-06-14
 
+> Current Main Sequence behavior: the generic `copy_scaffold_skills(...)`
+> helper and its schema-1 SDK-only sentinel remain supported for extension
+> libraries. The Main Sequence `project update_agent_skills` command now uses
+> that helper's dry-run/source-validation behavior as one lane of a
+> dual-source installation, combines installed SDK skills with authenticated
+> platform skills, and writes its schema-2 dual-provenance sentinel. The
+> completed tasks below describe the original reusable-copy extraction and are
+> retained as historical implementation context.
+
 ## Context
 
 `mainsequence project update_agent_skills` currently owns one hard-coded copy
@@ -225,7 +234,7 @@ schema=1
 library_name=mainsequence
 namespace=mainsequence
 pinned_version=4.4.3
-skills_path=/project/.venv/lib/python3.12/site-packages/agent_scaffold/skills
+skills_path=/project/.venv/lib/pythonX.Y/site-packages/agent_scaffold/skills
 copied_at_utc=2026-06-14T12:34:56Z
 command=mainsequence project update_agent_skills
 ```
@@ -237,7 +246,7 @@ schema=1
 library_name=ms-markets
 namespace=ms_markets
 pinned_version=0.8.1
-skills_path=/project/.venv/lib/python3.12/site-packages/ms_markets/scaffold_skills
+skills_path=/project/.venv/lib/pythonX.Y/site-packages/ms_markets/scaffold_skills
 copied_at_utc=2026-06-14T12:34:56Z
 command=msm copy-msm-skills
 ```

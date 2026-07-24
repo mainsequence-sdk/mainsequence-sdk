@@ -1,12 +1,15 @@
 ---
-name: a2a_communication
-description: Canonical guidance for discovering agents and sending session-scoped A2A requests through Main Sequence.
+name: mainsequence-a2a-sdk-execution
+description: Execute the platform A2A communication flow with the installed Main Sequence CLI or Python SDK after the platform-owned A2A capability has established the language-neutral protocol semantics.
 ---
 
-# A2A Communication
+# Main Sequence A2A SDK Execution
 
-Use this skill when you need to discover another agent, create or resolve a
-target `AgentSession`, and send a bounded A2A request.
+Use this SDK-owned execution skill after reading the platform-owned
+`a2a_communication` skill. It provides concrete CLI and Python mechanics for
+discovering another agent, creating or resolving a target `AgentSession`, and
+sending a bounded A2A request. It is not the canonical platform protocol
+definition.
 
 ## Canonical CLI Path
 

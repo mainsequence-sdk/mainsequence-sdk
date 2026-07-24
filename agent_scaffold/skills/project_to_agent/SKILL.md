@@ -27,7 +27,7 @@ This skill must only be used for adding agentic capabilities to an existing proj
 For general project-building tasks, use:
 
 ```text
-.agents/skills/project_builder/SKILL.md
+.agents/skills/mainsequence/project_builder/SKILL.md
 ```
 
 ## Instructions

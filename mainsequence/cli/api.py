@@ -24,6 +24,11 @@ from urllib.parse import urlencode
 
 import requests
 
+from ..project_skills import (
+    PlatformProjectSkillCatalog,
+    ProjectSkillAssemblyError,
+    parse_platform_project_skill_catalog,
+)
 from .config import (
     backend_url,
     clear_runtime_access_cache,
@@ -5596,6 +5601,79 @@ def _json_results(r: requests.Response) -> list[dict]:
         if isinstance(results, list):
             return results
     return []
+
+
+def fetch_platform_project_skill_catalog() -> PlatformProjectSkillCatalog:
+    """Fetch and validate the complete manifest-owned platform skill catalog."""
+
+    query = urlencode(
+        {
+            "source_type": "registry",
+            "search": "mainsequence:platform-capability:",
+            "ordering": "name",
+        }
+    )
+    response = authed(
+        "GET",
+        f"/orm/api/agents/v1/capabilities/?{query}",
+    )
+    if not response.ok:
+        raise ApiError(
+            "Platform capability catalog fetch failed "
+            f"({response.status_code})."
+        )
+
+    rows = _json_results(response)
+    platform_rows: list[dict[str, Any]] = []
+    for row in rows:
+        metadata = row.get("metadata")
+        catalog_metadata = (
+            metadata.get("platform_catalog")
+            if isinstance(metadata, dict)
+            else None
+        )
+        if not isinstance(catalog_metadata, dict):
+            continue
+        if catalog_metadata.get("sync_source") != "platform_manifest":
+            continue
+
+        capability_uid = str(row.get("uid") or "").strip()
+        if not capability_uid:
+            raise ApiError("Platform capability response is missing uid.")
+        content_response = authed(
+            "GET",
+            f"/orm/api/agents/v1/capabilities/{capability_uid}/content/",
+        )
+        if not content_response.ok:
+            raise ApiError(
+                "Platform capability content fetch failed for "
+                f"{capability_uid} ({content_response.status_code})."
+            )
+        if not content_response.headers.get("content-type", "").startswith(
+            "application/json"
+        ):
+            raise ApiError(
+                "Platform capability content response was not JSON."
+            )
+        content_payload = content_response.json()
+        if not isinstance(content_payload, dict):
+            raise ApiError(
+                "Platform capability content response must be an object."
+            )
+        platform_rows.append(
+            {
+                **row,
+                "_content": content_payload,
+            }
+        )
+
+    try:
+        return parse_platform_project_skill_catalog(
+            platform_rows,
+            source_url=backend_url(),
+        )
+    except ProjectSkillAssemblyError as exc:
+        raise ApiError(f"Platform capability catalog is invalid: {exc}") from exc
 
 
 def list_dynamic_table_data_sources(status: str | None = "AVAILABLE") -> list[dict]:

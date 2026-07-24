@@ -13,12 +13,11 @@ import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from threading import RLock
-from typing import Any, ClassVar, Generic, Literal, TypedDict, TypeVar
+from typing import Any, ClassVar, Literal, TypedDict
 from uuid import UUID
 
 import numpy as np
 import pandas as pd
-import pytz
 import requests
 from pydantic import (
     AliasChoices,
@@ -3023,7 +3022,7 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
         time_to_wait = 0.0
         if next_update is not None:
             time_to_wait = (
-                pd.to_datetime(next_update) - datetime.datetime.now(pytz.utc)
+                pd.to_datetime(next_update) - datetime.datetime.now(datetime.UTC)
             ).total_seconds()
             time_to_wait = max(0, time_to_wait)
         return time_to_wait, next_update
@@ -3039,7 +3038,7 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
             logger.info(f"Scheduler Waiting for ts update time at {next_update} {time_to_wait}")
             time.sleep(time_to_wait)
         else:
-            time_to_wait = max(0, 60 - datetime.datetime.now(pytz.utc).second)
+            time_to_wait = max(0, 60 - datetime.datetime.now(datetime.UTC).second)
             logger.info("Scheduler Waiting for ts update at start of minute")
             time.sleep(time_to_wait)
 
@@ -3848,7 +3847,7 @@ class Scheduler(BasePydanticModel, BaseObjectOrm):
                 is_running=True,
                 running_process_pid=os.getpid(),
                 running_in_debug_mode=self.running_in_debug_mode,
-                last_heart_beat=datetime.datetime.utcnow().replace(tzinfo=pytz.utc).timestamp(),
+                last_heart_beat=datetime.datetime.now(datetime.UTC).timestamp(),
             )
             for field, value in scheduler.__dict__.items():
                 setattr(self, field, value)
@@ -4728,12 +4727,7 @@ class LocalTimeSeriesHistoricalUpdate(HistoricalUpdateRecord, BasePydanticModel,
     last_time_index_value: datetime.datetime | None = None
 
 
-UpdateT = TypeVar("UpdateT")
-UpdateDetailsT = TypeVar("UpdateDetailsT")
-TimeIndexedProfileT = TypeVar("TimeIndexedProfileT")
-
-
-class UpdateBatchResponse(BaseModel, Generic[UpdateT, UpdateDetailsT, TimeIndexedProfileT]):
+class UpdateBatchResponse[UpdateT, UpdateDetailsT, TimeIndexedProfileT](BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     time_indexed_profile_map: dict[str, TimeIndexedProfileT | None]

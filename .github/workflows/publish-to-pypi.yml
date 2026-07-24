@@ -36,7 +36,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11' # Use a version consistent with your project
+          python-version: '3.13'
 
       # Step 3: Install build dependencies
       # This step installs the 'build' package, which is the modern

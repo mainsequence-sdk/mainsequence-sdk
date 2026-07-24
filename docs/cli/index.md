@@ -79,7 +79,7 @@ mainsequence cc --help
 mainsequence organization --help
 mainsequence skills list
 mainsequence skills path
-mainsequence skills path project_builder
+mainsequence skills path sdk_project_execution
 mainsequence data-node list
 mainsequence user
 mainsequence settings show
@@ -283,6 +283,7 @@ mainsequence project refresh_token
 # 3) Environment setup
 mainsequence project build_local_venv
 mainsequence project build_local_venv --path .
+mainsequence project build_local_venv --path . --recreate
 mainsequence project freeze-env --path .
 mainsequence project update AGENTS.md
 mainsequence project update AGENTS.md --path .
@@ -340,11 +341,82 @@ mainsequence settings refresh
 mainsequence skills list
 mainsequence skills list --json
 mainsequence skills path
-mainsequence skills path project_builder
+mainsequence skills path sdk_project_execution
 mainsequence skills path command_center/workspace_builder
 mainsequence skills path workspace_builder
 mainsequence skills path workspace_builder --json
 ```
+
+### Updating project agent skills
+
+`mainsequence project update_agent_skills --path <PROJECT>` performs one
+dual-source update:
+
+1. it resolves SDK-owned execution skills from the target project's installed
+   `agent_scaffold/skills` and records that installed SDK version;
+2. it uses the already-configured platform JWT to retrieve the server-owned
+   platform capability catalog and content through the existing Agents API;
+3. it validates one complete manifest revision, every content hash, and the
+   SDK/platform destination ownership map; and
+4. it stages the combined result before replacing only
+   `.agents/skills/mainsequence/`.
+
+The command does not use a platform capability cached in the SDK. It requires
+the backend for the platform lane. If authentication, transport, catalog
+validation, staging, or final replacement fails, the command exits non-zero
+and preserves the previous managed tree and sentinel. It never changes
+project-owned skills outside `.agents/skills/mainsequence/`, and it is not run
+implicitly when an agent starts.
+
+Use `--json` for the machine-readable result. Existing top-level compatibility
+fields remain, while `sdk`, `platform`, and each `updated[].owner` identify the
+two independent sources:
+
+```json
+{
+  "project": "/project",
+  "library_name": "mainsequence",
+  "namespace": "mainsequence",
+  "pinned_version": "5.0.0",
+  "sdk": {
+    "library_name": "mainsequence",
+    "version": "5.0.0",
+    "skills_path": "/project/.venv/lib/pythonX.Y/site-packages/agent_scaffold/skills"
+  },
+  "platform": {
+    "source_url": "https://platform.example",
+    "manifest_version": 1,
+    "manifest_sha256": "<sha256>",
+    "ontology_uri": "mainsequence://platform/ontology",
+    "ontology_sha256": "<sha256>",
+    "capabilities": [
+      {
+        "name": "project_builder",
+        "source_ref": "mainsequence:platform-capability:project_builder",
+        "path": "project_builder/SKILL.md",
+        "content_sha256": "<sha256>"
+      }
+    ]
+  },
+  "updated": [
+    {
+      "name": "sdk_project_execution",
+      "owner": "sdk"
+    },
+    {
+      "name": "project_builder",
+      "owner": "platform"
+    }
+  ]
+}
+```
+
+The schema-2 `PINNED_FROM.txt` retains the schema-1 compatibility fields
+(`library_name`, `namespace`, `pinned_version`, `skills_path`,
+`copied_at_utc`, and `command`) and adds `installed_at_utc`, the `sdk_*`
+fields, `platform_source_url`, `platform_retrieved_at_utc`, platform
+manifest/ontology identity, and one `platform_capability.<name>.*` group for
+each installed platform skill.
 
 ## Troubleshooting
 
@@ -409,7 +481,7 @@ mainsequence skills path workspace_builder --json
 - `mainsequence project search "<QUERY>"` is the first-class CLI command for finding existing projects before creation or local setup. Use it for fuzzy discovery, then use `mainsequence project validate-name "<PROJECT_NAME>"` for the exact create-time availability check.
 - `mainsequence project validate-name "<PROJECT_NAME>"` validates a candidate project name through the SDK client `Project.validate_name()` path, prints normalized names and suggestions, and exits non-zero when the name is unavailable.
 - `mainsequence project update AGENTS.md` is project-scoped. It resolves the target project first, then reads `AGENTS.md` from the running CLI's installed `agent_scaffold` bundle. This command does not require the target project's `.venv`. If the target file is missing, it creates it from that installed bundle. If an existing `AGENTS.md` has no Main Sequence managed marker, the command replaces the whole file. If the managed marker exists, the command updates only that managed block.
-- `mainsequence project update_agent_skills` is project-scoped. It resolves the target project first, then copies every top-level skill folder from that project's installed `agent_scaffold/skills/` bundle in `.venv` into `.agents/skills/mainsequence/`, overwriting only folders with the same names under that namespace. It writes `.agents/skills/mainsequence/PINNED_FROM.txt` with the target project's installed `mainsequence` version, source skill path, and copy command. It does not copy bundle-root files such as `AGENTS.md`, and it does not remove existing top-level project skills under `.agents/skills/`.
+- `mainsequence project update_agent_skills` is project-scoped and dual-source. In one invocation it resolves SDK-owned execution skills from the target project's installed `agent_scaffold/skills/` bundle, retrieves fixed platform-owned skills through the authenticated Agents API using the existing platform JWT, validates the complete platform manifest revision and every content hash, rejects SDK/platform destination collisions, stages the combined tree, and replaces only `.agents/skills/mainsequence/`. It writes one schema-2 `.agents/skills/mainsequence/PINNED_FROM.txt` containing the installed SDK version/source path and the independent platform manifest version/hash, ontology hash, capability source references, and capability content hashes. A failed update preserves the previous managed tree and sentinel. It does not copy bundle-root files such as `AGENTS.md`, does not package platform content in the SDK, and does not modify project-owned skills outside `.agents/skills/mainsequence/`.
 - `mainsequence data-node can_view` lists users returned by the SDK `ShareableObjectMixin.can_view()` path for `TimeIndexMetaTable`.
 - `mainsequence data-node can_edit` lists users returned by the SDK `ShareableObjectMixin.can_edit()` path for `TimeIndexMetaTable`.
 - `mainsequence data-node add_to_view`, `add_to_edit`, `remove_from_view`, and `remove_from_edit` mutate data-node user sharing through the SDK `ShareableObjectMixin` paths and render the resulting permission state in the terminal.

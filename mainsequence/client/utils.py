@@ -16,7 +16,6 @@ from typing import TypedDict
 from uuid import UUID, getnode
 
 import psutil
-import pytz
 import requests
 from requests.adapters import HTTPAdapter
 from requests.structures import CaseInsensitiveDict
@@ -414,14 +413,14 @@ class JWTAuthProvider(BaseAuthProvider):
 def request_to_datetime(string_date: str):
     if "+" in string_date:
         string_date = datetime.datetime.fromisoformat(string_date.replace("T", " ")).replace(
-            tzinfo=pytz.utc
+            tzinfo=datetime.UTC
         )
         return string_date
     try:
-        date = datetime.datetime.strptime(string_date, DATE_FORMAT).replace(tzinfo=pytz.utc)
+        date = datetime.datetime.strptime(string_date, DATE_FORMAT).replace(tzinfo=datetime.UTC)
     except ValueError:
         date = datetime.datetime.strptime(string_date, "%Y-%m-%dT%H:%M:%SZ").replace(
-            tzinfo=pytz.utc
+            tzinfo=datetime.UTC
         )
     return date
 
