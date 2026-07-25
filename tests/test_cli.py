@@ -141,8 +141,8 @@ def test_user_show_json(cli_mod, runner, monkeypatch):
 
 def test_skills_list(cli_mod, runner, monkeypatch, tmp_path):
     bundle_dir = tmp_path / "agent_scaffold"
-    (bundle_dir / "skills" / "project_builder").mkdir(parents=True)
-    (bundle_dir / "skills" / "project_builder" / "SKILL.md").write_text(
+    (bundle_dir / "skills" / "project_design").mkdir(parents=True)
+    (bundle_dir / "skills" / "project_design" / "SKILL.md").write_text(
         "project builder", encoding="utf-8"
     )
     (bundle_dir / "skills" / "command_center" / "workspace_builder").mkdir(parents=True)
@@ -154,7 +154,7 @@ def test_skills_list(cli_mod, runner, monkeypatch, tmp_path):
 
     result = runner.invoke(cli_mod.app, ["skills", "list"])
     assert result.exit_code == 0
-    assert "project_builder" in result.output
+    assert "project_design" in result.output
     assert "command_center/workspace_builder" in result.output
 
 
@@ -11462,24 +11462,53 @@ def _cli_platform_skill_catalog():
     from pathlib import PurePosixPath
 
     from mainsequence.project_skills import (
+        PLATFORM_A2A_SKILL_URI,
+        PLATFORM_ONTOLOGY_URI,
+        PLATFORM_PROJECT_DESIGN_SKILL_URI,
+        PLATFORM_PROJECT_TO_AGENT_SKILL_URI,
+        PlatformProjectResource,
         PlatformProjectSkill,
         PlatformProjectSkillCatalog,
     )
 
-    capabilities = []
-    for name, front_matter_name in (
-        ("a2a_communication", "a2a-communication"),
-        ("project_builder", "project-builder"),
+    ontology_content = '{"title":"Main Sequence","description":"Ontology"}\n'
+    ontology = PlatformProjectResource(
+        name="ontology",
+        uri=PLATFORM_ONTOLOGY_URI,
+        resource_path=PurePosixPath("ontology/platform.json"),
+        content=ontology_content,
+        content_sha256=hashlib.sha256(ontology_content.encode("utf-8")).hexdigest(),
+        content_mime_type="application/json",
+        content_size=len(ontology_content.encode("utf-8")),
+    )
+    skills = []
+    for name, front_matter_name, uri in (
+        (
+            "a2a_communication",
+            "a2a-communication",
+            PLATFORM_A2A_SKILL_URI,
+        ),
+        (
+            "project_design",
+            "project-design",
+            PLATFORM_PROJECT_DESIGN_SKILL_URI,
+        ),
+        (
+            "project_to_agent",
+            "project-to-agent",
+            PLATFORM_PROJECT_TO_AGENT_SKILL_URI,
+        ),
     ):
-        content = (
-            f"---\nname: {front_matter_name}\n"
-            f"description: Platform {name}\n---\n"
-        )
-        capabilities.append(
+        content = f"---\nname: {front_matter_name}\ndescription: Platform {name}\n---\n"
+        skills.append(
             PlatformProjectSkill(
-                uid=f"{name}-uid",
                 name=name,
-                source_ref=f"mainsequence:platform-capability:{name}",
+                uri=uri,
+                resource_path=PurePosixPath(
+                    "skills",
+                    name,
+                    "SKILL.md",
+                ),
                 relative_path=PurePosixPath(name, "SKILL.md"),
                 content=content,
                 content_sha256=hashlib.sha256(content.encode("utf-8")).hexdigest(),
@@ -11488,12 +11517,11 @@ def _cli_platform_skill_catalog():
             )
         )
     return PlatformProjectSkillCatalog(
-        source_url="https://platform.example.test",
-        manifest_version=1,
+        source_url="https://platform.example.test/mcp",
+        manifest_version=2,
         manifest_sha256="a" * 64,
-        ontology_uri="mainsequence://platform/ontology",
-        ontology_sha256="b" * 64,
-        capabilities=tuple(capabilities),
+        ontology=ontology,
+        skills=tuple(skills),
     )
 
 
@@ -11562,7 +11590,7 @@ def test_project_update_agent_skills_overwrites_matching_folders(
     assert "Updated Project Skills" in result.output
     assert "SDK Version" in result.output
     assert (
-        target / ".agents" / "skills" / "mainsequence" / "project_builder" / "SKILL.md"
+        target / ".agents" / "skills" / "mainsequence" / "project_design" / "SKILL.md"
     ).is_file()
     assert (
         target
@@ -11570,6 +11598,14 @@ def test_project_update_agent_skills_overwrites_matching_folders(
         / "skills"
         / "mainsequence"
         / "a2a_communication"
+        / "SKILL.md"
+    ).is_file()
+    assert (
+        target
+        / ".agents"
+        / "skills"
+        / "mainsequence"
+        / "project_to_agent"
         / "SKILL.md"
     ).is_file()
 
@@ -11614,17 +11650,19 @@ def test_project_update_agent_skills_json_reports_pin_sentinel(
     assert payload["destination_root"] == str(
         (target / ".agents" / "skills" / "mainsequence").resolve()
     )
-    assert payload["updated_count"] == 3
+    assert payload["updated_count"] == 4
     assert [item["name"] for item in payload["updated"]] == [
         "data_publishing",
         "a2a_communication",
-        "project_builder",
+        "project_design",
+        "project_to_agent",
     ]
     assert payload["sdk"]["version"] == "4.4.3"
     assert payload["platform"]["manifest_sha256"] == "a" * 64
-    assert [item["name"] for item in payload["platform"]["capabilities"]] == [
+    assert [item["name"] for item in payload["platform"]["skills"]] == [
         "a2a_communication",
-        "project_builder",
+        "project_design",
+        "project_to_agent",
     ]
     assert "pinned_version=4.4.3" in sentinel.read_text(encoding="utf-8")
 

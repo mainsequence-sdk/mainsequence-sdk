@@ -44,7 +44,7 @@ This skill discovers and identifies data. It does not publish, redesign, or defi
 ## Route Adjacent Work
 
 - project bootstrap, scaffolding, and routing:
-  `.agents/skills/mainsequence/project_builder/SKILL.md`
+  `.agents/skills/mainsequence/project_design/SKILL.md`
 - `DataNode` creation or modification:
   `.agents/skills/mainsequence/data_publishing/data_nodes/SKILL.md`
 - `MetaTable` registration or operation work:

@@ -12778,11 +12778,11 @@ def project_update_agent_skills(
     Update `.agents/skills/mainsequence` from installed SDK and platform sources.
 
     The existing command copies SDK-owned execution skills from the target
-    project's installed `agent_scaffold/skills` tree and retrieves platform-owned
-    skills from the authenticated backend. It validates and stages both sources,
-    then replaces only the managed `mainsequence` namespace and writes one
-    dual-source `PINNED_FROM.txt`. Bundle-root files such as `AGENTS.md` are not
-    copied by this command.
+    project's installed `agent_scaffold/skills` tree and retrieves
+    platform-owned skills from authenticated MCP resources. It validates and
+    stages both sources, then replaces only the managed `mainsequence`
+    namespace and writes one dual-source `PINNED_FROM.txt`. Bundle-root files
+    such as `AGENTS.md` are not copied by this command.
 
     Examples
     --------
@@ -12855,14 +12855,23 @@ def project_update_agent_skills(
             "manifest_sha256": platform_catalog.manifest_sha256,
             "ontology_uri": platform_catalog.ontology_uri,
             "ontology_sha256": platform_catalog.ontology_sha256,
-            "capabilities": [
+            "resources": [
                 {
-                    "name": capability.name,
-                    "source_ref": capability.source_ref,
-                    "path": str(capability.relative_path),
-                    "content_sha256": capability.content_sha256,
+                    "name": resource.name,
+                    "uri": resource.uri,
+                    "path": str(resource.resource_path),
+                    "content_sha256": resource.content_sha256,
                 }
-                for capability in platform_catalog.capabilities
+                for resource in platform_catalog.resources
+            ],
+            "skills": [
+                {
+                    "name": skill.name,
+                    "uri": skill.uri,
+                    "path": str(skill.relative_path),
+                    "content_sha256": skill.content_sha256,
+                }
+                for skill in platform_catalog.skills
             ],
         },
         "updated_count": len(updated),
@@ -12878,7 +12887,8 @@ def project_update_agent_skills(
             ("SDK Library", install_result.sdk_library_name),
             ("SDK Version", install_result.sdk_version),
             ("Platform Manifest", platform_catalog.manifest_sha256),
-            ("Platform Capabilities", len(platform_catalog.capabilities)),
+            ("Platform Resources", len(platform_catalog.resources)),
+            ("Platform Skills", len(platform_catalog.skills)),
             ("Sentinel", str(install_result.sentinel_path)),
         ],
     )

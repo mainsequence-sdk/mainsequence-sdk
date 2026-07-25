@@ -47,6 +47,9 @@ AUTH_PATHS = {
     "ping": "/auth/rest-auth/user/",
 }
 CLI_BROWSER_CLIENT_ID = "mainsequence-cli"
+MCP_RESOURCE_PATH = "/mcp"
+MCP_PROTOCOL_VERSION = "2025-11-25"
+MCP_CLIENT_NAME = "mainsequence-cli"
 
 S = requests.Session()
 S.headers.update({"Content-Type": "application/json"})
@@ -374,6 +377,75 @@ def authed(method: str, api_path: str, body: dict | None = None) -> requests.Res
     if r.status_code == 401:
         raise NotLoggedIn("Not logged in.")
     return r
+
+
+def _mcp_json_rpc(
+    method: str,
+    params: dict[str, Any],
+    *,
+    request_id: int,
+    protocol_version: str | None = None,
+) -> dict[str, Any]:
+    """Send one authenticated stateless MCP JSON-RPC request."""
+
+    access = _access_token()
+    if not access:
+        access = refresh_access()
+
+    payload = {
+        "jsonrpc": "2.0",
+        "id": request_id,
+        "method": method,
+        "params": params,
+    }
+
+    def _send(token: str) -> requests.Response:
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+        if protocol_version is not None:
+            headers["MCP-Protocol-Version"] = protocol_version
+        return S.request(
+            "POST",
+            _full(MCP_RESOURCE_PATH),
+            headers=headers,
+            data=json.dumps(payload),
+        )
+
+    response = _send(access)
+    if response.status_code == 401:
+        response = _send(refresh_access())
+    if response.status_code == 401:
+        raise NotLoggedIn("Not logged in.")
+    if not response.ok:
+        raise ApiError(f"MCP {method} request failed ({response.status_code}).")
+    if not response.headers.get("content-type", "").startswith("application/json"):
+        raise ApiError(f"MCP {method} response was not JSON.")
+    try:
+        response_payload = response.json()
+    except Exception as exc:
+        raise ApiError(f"MCP {method} response was not valid JSON.") from exc
+    if not isinstance(response_payload, dict):
+        raise ApiError(f"MCP {method} response must be an object.")
+    if response_payload.get("jsonrpc") != "2.0":
+        raise ApiError(f"MCP {method} response has an invalid JSON-RPC version.")
+    if response_payload.get("id") != request_id:
+        raise ApiError(f"MCP {method} response id does not match the request.")
+
+    error_payload = response_payload.get("error")
+    if error_payload is not None:
+        if isinstance(error_payload, dict):
+            code = error_payload.get("code")
+            message = error_payload.get("message") or "Unknown MCP error."
+            raise ApiError(f"MCP {method} failed with error {code}: {message}")
+        raise ApiError(f"MCP {method} returned an invalid error object.")
+
+    result = response_payload.get("result")
+    if not isinstance(result, dict):
+        raise ApiError(f"MCP {method} response result must be an object.")
+    return result
 
 
 # ---------- Helper APIs (parity with VS Code extension) ----------
@@ -5604,76 +5676,73 @@ def _json_results(r: requests.Response) -> list[dict]:
 
 
 def fetch_platform_project_skill_catalog() -> PlatformProjectSkillCatalog:
-    """Fetch and validate the complete manifest-owned platform skill catalog."""
+    """Fetch and validate the fixed platform skills through authenticated MCP."""
 
-    query = urlencode(
+    initialize_result = _mcp_json_rpc(
+        "initialize",
         {
-            "source_type": "registry",
-            "search": "mainsequence:platform-capability:",
-            "ordering": "name",
-        }
+            "protocolVersion": MCP_PROTOCOL_VERSION,
+            "capabilities": {},
+            "clientInfo": {
+                "name": MCP_CLIENT_NAME,
+                "version": "1.0",
+            },
+        },
+        request_id=1,
     )
-    response = authed(
-        "GET",
-        f"/orm/api/agents/v1/capabilities/?{query}",
-    )
-    if not response.ok:
+    negotiated_protocol_version = initialize_result.get("protocolVersion")
+    if negotiated_protocol_version != MCP_PROTOCOL_VERSION:
         raise ApiError(
-            "Platform capability catalog fetch failed "
-            f"({response.status_code})."
+            "MCP initialize negotiated an unsupported protocol version: "
+            f"{negotiated_protocol_version!r}."
         )
+    server_capabilities = initialize_result.get("capabilities")
+    if not isinstance(server_capabilities, dict) or not isinstance(
+        server_capabilities.get("resources"), dict
+    ):
+        raise ApiError("MCP server did not advertise resource support.")
 
-    rows = _json_results(response)
+    list_result = _mcp_json_rpc(
+        "resources/list",
+        {},
+        request_id=2,
+        protocol_version=MCP_PROTOCOL_VERSION,
+    )
+    resources = list_result.get("resources")
+    if not isinstance(resources, list):
+        raise ApiError("MCP resources/list did not return a resource array.")
+    if list_result.get("nextCursor"):
+        raise ApiError("MCP fixed platform resources must not require pagination.")
+
     platform_rows: list[dict[str, Any]] = []
-    for row in rows:
-        metadata = row.get("metadata")
-        catalog_metadata = (
-            metadata.get("platform_catalog")
-            if isinstance(metadata, dict)
-            else None
-        )
-        if not isinstance(catalog_metadata, dict):
-            continue
-        if catalog_metadata.get("sync_source") != "platform_manifest":
-            continue
+    for request_id, raw_resource in enumerate(resources, start=3):
+        if not isinstance(raw_resource, dict):
+            raise ApiError("MCP resources/list returned a non-object resource.")
+        uri = raw_resource.get("uri")
+        if not isinstance(uri, str) or not uri.strip():
+            raise ApiError("MCP resources/list returned a resource without a URI.")
 
-        capability_uid = str(row.get("uid") or "").strip()
-        if not capability_uid:
-            raise ApiError("Platform capability response is missing uid.")
-        content_response = authed(
-            "GET",
-            f"/orm/api/agents/v1/capabilities/{capability_uid}/content/",
+        read_result = _mcp_json_rpc(
+            "resources/read",
+            {"uri": uri},
+            request_id=request_id,
+            protocol_version=MCP_PROTOCOL_VERSION,
         )
-        if not content_response.ok:
-            raise ApiError(
-                "Platform capability content fetch failed for "
-                f"{capability_uid} ({content_response.status_code})."
-            )
-        if not content_response.headers.get("content-type", "").startswith(
-            "application/json"
-        ):
-            raise ApiError(
-                "Platform capability content response was not JSON."
-            )
-        content_payload = content_response.json()
-        if not isinstance(content_payload, dict):
-            raise ApiError(
-                "Platform capability content response must be an object."
-            )
-        platform_rows.append(
-            {
-                **row,
-                "_content": content_payload,
-            }
-        )
+        contents = read_result.get("contents")
+        if not isinstance(contents, list) or len(contents) != 1:
+            raise ApiError(f"MCP resources/read for {uri!r} must return exactly one content item.")
+        content = contents[0]
+        if not isinstance(content, dict):
+            raise ApiError(f"MCP resources/read for {uri!r} returned a non-object content item.")
+        platform_rows.append({**raw_resource, "_content": content})
 
     try:
         return parse_platform_project_skill_catalog(
             platform_rows,
-            source_url=backend_url(),
+            source_url=_full(MCP_RESOURCE_PATH),
         )
     except ProjectSkillAssemblyError as exc:
-        raise ApiError(f"Platform capability catalog is invalid: {exc}") from exc
+        raise ApiError(f"Platform MCP resource catalog is invalid: {exc}") from exc
 
 
 def list_dynamic_table_data_sources(status: str | None = "AVAILABLE") -> list[dict]:

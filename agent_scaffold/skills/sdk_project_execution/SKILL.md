@@ -7,11 +7,11 @@ description: Use the installed Main Sequence SDK and project-local tools to veri
 
 ## Overview
 
-Use this SDK-owned execution skill after the platform `project_builder` skill
-has established intent, platform concepts, and the observable definition of
-success. This file owns local SDK, CLI, filesystem, and repository mechanics;
-it does not define the platform ontology or replace the platform
-`project_builder`.
+Use this SDK-owned execution skill after the platform `project-design` skill
+has established intent, project ontology, the connected Project Blueprint, and
+the observable definition of success. This file owns local SDK, CLI,
+filesystem, and repository mechanics; it does not define the platform ontology
+or replace `project-design`.
 
 This skill is for:
 

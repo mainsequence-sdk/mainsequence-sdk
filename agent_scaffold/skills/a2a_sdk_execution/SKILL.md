@@ -1,6 +1,6 @@
 ---
 name: mainsequence-a2a-sdk-execution
-description: Execute the platform A2A communication flow with the installed Main Sequence CLI or Python SDK after the platform-owned A2A capability has established the language-neutral protocol semantics.
+description: Execute the platform A2A communication flow with the installed Main Sequence CLI or Python SDK after the platform-owned A2A skill has established the language-neutral protocol semantics.
 ---
 
 # Main Sequence A2A SDK Execution

@@ -30,8 +30,8 @@ The schema-2 record describes both sources installed by
   skills copied from the target project's installed SDK;
 - `platform_manifest_version=...`, `platform_manifest_sha256=...`,
   `platform_ontology_sha256=...`, and the
-  `platform_capability.<name>.*` fields identify the platform-owned skills
-  retrieved from the authenticated backend.
+  `platform_resource.<name>.*` fields identify the platform-owned ontology and
+  skills retrieved from authenticated MCP resources.
 
 `pinned_version=...` remains as a backward-readable alias of `sdk_version`.
 Compare the SDK value with the installed version reported by
@@ -54,9 +54,10 @@ Canonical Main Sequence documentation root:
 
 You are the SDK execution orchestrator for a Main Sequence repository.
 
-The platform-owned `project_builder` establishes intent, platform ontology, and
-success criteria. Your SDK-owned responsibility is to translate that verified
-plan into repository changes, CLI/SDK operations, and validation steps.
+The platform-owned `project_design` establishes intent, project ontology, the
+connected Project Blueprint, and success criteria. Your SDK-owned
+responsibility is to translate that accepted Blueprint into repository changes,
+CLI/SDK operations, and validation steps.
 
 Core responsibilities:
 
@@ -184,10 +185,14 @@ Use the latest relevant documentation or specialized skill for the task at hand.
 
 Typical routing:
 
-- project setup, local checkout, and CLI environment:
-  `.agents/skills/mainsequence/project_builder/SKILL.md`
-- project scaffolding, folder structure, and standard repository layout:
-  `.agents/skills/mainsequence/project_builder/SKILL.md`
+- project architecture, ontology, and Project Blueprint:
+  `.agents/skills/mainsequence/project_design/SKILL.md`
+- project setup, local checkout, CLI environment, scaffolding, and standard
+  repository layout:
+  `.agents/skills/mainsequence/sdk_project_execution/SKILL.md`
+- turning an existing project into a project-backed coding agent, defining
+  project-owned skills, and authoring `.agents/agent_card.json`:
+  `.agents/skills/mainsequence/project_to_agent/SKILL.md`
 - project status audits, blocker analysis, failure classification, and upstream SDK assessment:
   `.agents/skills/mainsequence/maintenance/bug_auditor/SKILL.md`
 - DataNodes, updates, identifiers, schema, metadata:
@@ -244,7 +249,7 @@ For any non-trivial Main Sequence task:
 12. After updating the SDK, compare `mainsequence --version` with
     `.agents/skills/mainsequence/PINNED_FROM.txt` field `sdk_version=...`
     (`pinned_version=...` is its compatibility alias), and verify that the
-    sentinel contains platform manifest and capability hashes.
+    sentinel contains platform manifest and resource hashes.
 13. If `PINNED_FROM.txt` is missing, `sdk_version` differs from the installed
     SDK version, or a platform-skill refresh is explicitly required, refresh
     the managed scaffold files:
@@ -261,16 +266,22 @@ Use the skills as an orchestrated sequence, not as isolated documents.
 
 Default pattern:
 
-1. `.agents/skills/mainsequence/project_builder/SKILL.md`
+1. `.agents/skills/mainsequence/project_design/SKILL.md`
 2. `.agents/skills/mainsequence/sdk_project_execution/SKILL.md`
 3. the relevant domain skill
+
+When the intended project surface is a project-backed coding agent, apply
+`.agents/skills/mainsequence/project_to_agent/SKILL.md` after the relevant
+project behavior exists and has been verified. The repository source card is
+not the runtime A2A Agent Card; the deployed runtime supplies its concrete
+interfaces and security declarations.
 
 Before the final response:
 
 - update the relevant `.agents/` project-state files whenever project understanding, verified
   state, open tasks, blockers, or historical record changed during the turn
 
-Use `.agents/skills/mainsequence/project_builder/SKILL.md` as the platform
+Use `.agents/skills/mainsequence/project_design/SKILL.md` as the platform
 source of truth for intent and ontology. Use
 `.agents/skills/mainsequence/sdk_project_execution/SKILL.md` for installed-SDK,
 CLI, filesystem, and local repository execution mechanics.

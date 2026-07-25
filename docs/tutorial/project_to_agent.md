@@ -29,7 +29,7 @@ It still has:
 
 - code in the repository
 - documented project behavior
-- a CLI or other local execution surface
+- implemented and documented project capabilities
 - project resources and releases
 
 What changes is that you also give the project an agent-facing layer that explains:
@@ -96,10 +96,8 @@ project work in a repeatable way.
 The important rule is simple:
 
 - non-Main-Sequence skills should map to real project capabilities
-- in practice, they should usually support or expose the project CLI and documented workflows
-- skills should be CLI-based. This means that if you want the agent to update a data node, run a
-  job, or do anything else, you should create a CLI under `src/cli/...` and have the skill
-  definition point to that CLI
+- each skill must identify the implemented behavior and validation that support
+  its claims
 
 Main Sequence scaffold skills can be refreshed with:
 
@@ -107,13 +105,18 @@ Main Sequence scaffold skills can be refreshed with:
 mainsequence project update_agent_skills --path .
 ```
 
-### Project CLI Capabilities
+That command retrieves the canonical platform-owned `project_to_agent` skill
+from MCP and installs it in
+`.agents/skills/mainsequence/project_to_agent/SKILL.md`. The SDK does not
+package a second copy.
+
+### Concrete Project Capabilities
 
 The project should have a real control surface that the agent can rely on.
 
-The preferred pattern is a documented project CLI, often under a module such as `src/cli`, though
-the exact location can vary by project. The important thing is not the folder name. The important
-thing is that the project exposes concrete commands the agent can execute or reason about.
+That surface may be project code, documented operations, APIs, data workflows,
+or other verified repository behavior. The important point is that each
+agent-facing claim maps to something concrete and testable in the project.
 
 That is what turns the agent from a free-form chat wrapper into a reliable operator for the
 project.
@@ -126,16 +129,23 @@ The repository should also contain:
 .agents/agent_card.json
 ```
 
-This is the structured description of the agent surface. Think of it as the machine-readable
-contract for the agent.
+This is the committed repository source definition for the project agent. It
+is not the complete runtime A2A Agent Card.
 
-The agent card should:
+The source card should:
 
-- use the project name and project id in the agent name
+- use a meaningful human-facing agent name
 - match the agent-specific description from `AGENTS.md`
-- use the same version as `pyproject.toml`
+- use the project agent definition version
 - list all project skills under `.agents/skills/`, excluding `.agents/skills/mainsequence`
-- avoid invented tags unless they have been explicitly confirmed
+- use factual, non-empty tags for every declared skill
+- omit runtime interface URLs, security schemes, and transport capability flags
+
+At deployment, the platform runtime materializes the complete standard A2A
+Agent Card. The runtime supplies the concrete interface URL, protocol binding,
+protocol version, security declarations, and actual runtime capabilities.
+Never place placeholder runtime values or credentials in the repository source
+card.
 
 ## 4. Why Skills Matter More Than Prompts
 
@@ -144,7 +154,7 @@ The agentic layer should not be a generic system prompt that says "be helpful."
 The better pattern is:
 
 1. keep real business logic in repository code
-2. expose repeatable operations through the project CLI or clearly documented modules
+2. expose repeatable operations through concrete, documented project behavior
 3. attach skills that explain when and how the agent should use those project capabilities
 
 That structure gives you a project agent that is:
@@ -161,7 +171,7 @@ In other words, the agent should sit on top of the project. It should not replac
 Use the following sequence when you want to turn an existing project into an agent-oriented one.
 
 1. Confirm the project already has real capabilities worth exposing.
-   Good candidates are project CLIs, data workflows, APIs, dashboards, orchestration helpers, or
+   Good candidates are data workflows, APIs, dashboards, orchestration helpers, or
    repository-specific maintenance operations.
 2. Create or refresh `AGENTS.md`.
    Replace generic text in `## Project-Specific Instructions` with the real local rules and the
@@ -171,8 +181,10 @@ Use the following sequence when you want to turn an existing project into an age
 4. Make sure the skills match real code paths.
    If a skill claims to publish data, inspect the `DataNode` path. If it claims to manage
    dashboards, tie it to real dashboard code or real CLI flows.
-5. Create `.agents/agent_card.json`.
-   Keep the name, description, version, and skill list aligned with the repository state.
+5. Create the `.agents/agent_card.json` repository source definition.
+   Keep the meaningful agent name, description, version, and project-owned skill
+   list aligned with the repository state. Leave runtime interface and security
+   fields to deployment.
 6. Treat the agent as a project surface.
    Once the repository is ready, you package and release it through the same Main Sequence project
    lifecycle used for other application surfaces.
@@ -262,7 +274,7 @@ Minimal interaction pattern:
          | CLI only                                                   | CLI only
          v                                                           v
 +-------------------+                                       +-------------------+
-| project CLI       |                                       | project CLI       |
+| project surface   |                                       | project surface   |
 +-------------------+                                       +-------------------+
          |                                                           |
          | quick operation                                            | heavy operation
@@ -279,8 +291,9 @@ Before you describe a project as an agent, verify the following:
 
 - `AGENTS.md` exists and its `## Project-Specific Instructions` section matches the real project
 - `.agents/skills/` exists and the project-specific skills match real repository capabilities
-- the project exposes a clear CLI or another concrete local control surface
-- `.agents/agent_card.json` exists and matches the project name, description, version, and skills
+- the project exposes concrete, testable behavior for every declared capability
+- `.agents/agent_card.json` exists and its meaningful agent name, description,
+  version, and project-owned skills match the implemented repository behavior
 - the project documentation does not promise tasks the repository cannot actually perform
 
 If those checks pass, you are no longer describing a vague future agent. You are describing a

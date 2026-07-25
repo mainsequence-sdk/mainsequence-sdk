@@ -49,7 +49,7 @@ This skill audits. It does not implement by default.
 ## Route Adjacent Work
 
 - bootstrap, routing, and repo structure:
-  `.agents/skills/mainsequence/project_builder/SKILL.md`
+  `.agents/skills/mainsequence/project_design/SKILL.md`
 - DataNode implementation issues:
   `.agents/skills/mainsequence/data_publishing/data_nodes/SKILL.md`
 - MetaTable implementation issues:
@@ -68,7 +68,7 @@ Streamlit dashboard design and implementation failures are target-project applic
 ## Read First
 
 1. `AGENTS.md`
-2. `.agents/skills/mainsequence/project_builder/SKILL.md`
+2. `.agents/skills/mainsequence/project_design/SKILL.md`
 3. `.agents/tasks.md` when it exists
 4. `.agents/status.md` when it exists
 5. `.agents/record.md` when stable references or project ids matter
