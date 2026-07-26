@@ -443,32 +443,6 @@ class Project(LabelableObjectMixin, ShareableObjectMixin, BasePydanticModel, Bas
 
         return ProjectNameValidationResult.model_validate(payload)
 
-    @classmethod
-    def sync_project_after_commit(
-        cls,
-        project_uid: str | int,
-        timeout: int | None = None,
-    ) -> Project | dict[str, Any] | None:
-        url = f"{cls.get_object_url()}/{project_uid}/sync_project_after_commit/"
-
-        s = cls.build_session()
-        r = make_request(
-            s=s,
-            loaders=cls.LOADERS,
-            r_type="POST",
-            url=url,
-            time_out=timeout,
-        )
-        raise_for_response(r)
-
-        if not r.content:
-            return None
-
-        data = r.json()
-        if isinstance(data, dict) and ({"project_name"} <= set(data.keys())):
-            return cls(**data)
-        return data
-
     def delete(
         self,
         *,

@@ -6050,64 +6050,6 @@ def test_search_projects_uses_client_model(cli_mod, monkeypatch):
     ]
 
 
-def test_sync_project_after_commit_uses_client_model(cli_mod, monkeypatch):
-    api_mod = importlib.import_module("mainsequence.cli.api")
-    captured = {}
-
-    monkeypatch.setattr(
-        api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"}
-    )
-    monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
-    monkeypatch.delenv("MAIN_SEQUENCE_PROJECT_ID", raising=False)
-
-    fake_client_pkg = types.ModuleType("mainsequence.client")
-    fake_utils = types.ModuleType("mainsequence.client.utils")
-    fake_base = types.ModuleType("mainsequence.client.base")
-    fake_models = types.ModuleType("mainsequence.client.models_foundry")
-
-    class FakeLoaders:
-        provider = "orig"
-
-        def use_jwt(self, *, access=None, refresh=None):
-            captured["jwt"] = (access, refresh)
-
-    fake_utils.loaders = FakeLoaders()
-    fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
-    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
-
-    class FakeBaseObjectOrm:
-        ROOT_URL = "https://old.test/orm/api"
-
-    class FakeProject:
-        ROOT_URL = "https://old.test/orm/api/pods/projects"
-
-        @classmethod
-        def sync_project_after_commit(cls, project_id, timeout=None):
-            captured["project_id"] = project_id
-            captured["timeout"] = timeout
-            captured["env_project_id"] = os.environ.get("MAIN_SEQUENCE_PROJECT_ID")
-            return types.SimpleNamespace(
-                model_dump=lambda: {"id": project_id, "project_name": "Demo"}
-            )
-
-    fake_base.BaseObjectOrm = FakeBaseObjectOrm
-    fake_models.Project = FakeProject
-    fake_client_pkg.utils = fake_utils
-
-    monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.models_foundry", fake_models)
-
-    out = api_mod.sync_project_after_commit(123)
-    assert captured["project_id"] == "123"
-    assert captured["timeout"] is None
-    assert captured["env_project_id"] == "123"
-    assert captured["jwt"] == ("acc", "ref")
-    assert out == {"id": "123", "project_name": "Demo"}
-    assert os.environ.get("MAIN_SEQUENCE_PROJECT_ID") is None
-
-
 def test_create_project_job_uses_client_model_task_schedule(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
@@ -10550,7 +10492,6 @@ def test_project_sync(cli_mod, runner, monkeypatch, tmp_path):
     uv_path = target / ".venv" / "bin" / "uv"
     uv_calls = []
     git_calls = []
-    post_sync = {"called": False}
 
     monkeypatch.setattr(cli_mod, "ensure_venv", lambda *_: None)
     monkeypatch.setattr(cli_mod, "git_origin", lambda *_: "git@github.com:org/repo.git")
@@ -10558,6 +10499,7 @@ def test_project_sync(cli_mod, runner, monkeypatch, tmp_path):
         cli_mod, "ensure_key_for_repo", lambda *_: (key, key.with_suffix(".pub"), "pub")
     )
     monkeypatch.setattr(cli_mod, "ensure_uv_installed", lambda *_: uv_path)
+    monkeypatch.setattr(cli_mod, "uv_project_version", lambda *_, **__: "1.2.4")
     monkeypatch.setattr(
         cli_mod,
         "run_uv",
@@ -10573,13 +10515,9 @@ def test_project_sync(cli_mod, runner, monkeypatch, tmp_path):
         "run_cmd",
         lambda cmd, cwd, env=None: git_calls.append(cmd),
     )
-    monkeypatch.setattr(
-        cli_mod, "sync_project_after_commit", lambda project_id: post_sync.update(called=True)
-    )
-
     result = runner.invoke(
         cli_mod.app,
-        ["project", "sync", "--message", "Update deps", "--path", str(target), "--no-push"],
+        ["project", "sync", "--message", "Update deps", "--path", str(target)],
     )
     assert result.exit_code == 0
     assert ["version", "--bump", "patch"] in uv_calls
@@ -10587,8 +10525,8 @@ def test_project_sync(cli_mod, runner, monkeypatch, tmp_path):
     assert ["sync"] in uv_calls
     assert ["git", "add", "-A"] in git_calls
     assert ["git", "commit", "-m", "Update deps"] in git_calls
-    assert ["git", "push"] not in git_calls
-    assert post_sync["called"] is False
+    assert ["git", "tag", "-a", "v1.2.4", "-m", "v1.2.4"] in git_calls
+    assert ["git", "push", "--follow-tags"] in git_calls
 
 
 def test_project_sync_defaults_to_cwd_with_positional_message(
@@ -10608,6 +10546,7 @@ def test_project_sync_defaults_to_cwd_with_positional_message(
         cli_mod, "ensure_key_for_repo", lambda *_: (key, key.with_suffix(".pub"), "pub")
     )
     monkeypatch.setattr(cli_mod, "ensure_uv_installed", lambda *_: uv_path)
+    monkeypatch.setattr(cli_mod, "uv_project_version", lambda *_, **__: "1.2.4")
     monkeypatch.setattr(cli_mod, "run_uv", lambda uv, args, cwd, env=None: None)
     monkeypatch.setattr(cli_mod, "uv_export_requirements", lambda uv, cwd, **kwargs: None)
     monkeypatch.setattr(
@@ -10618,7 +10557,7 @@ def test_project_sync_defaults_to_cwd_with_positional_message(
 
     result = runner.invoke(
         cli_mod.app,
-        ["project", "sync", "Update deps", "--no-push"],
+        ["project", "sync", "Update deps"],
     )
     assert result.exit_code == 0
     assert (["git", "commit", "-m", "Update deps"], target) in git_calls
@@ -10870,106 +10809,6 @@ def test_project_schedule_batch_jobs_renders_summary_response(
     )
 
 
-def test_project_sync_triggers_backend_sync_after_push(cli_mod, runner, monkeypatch, tmp_path):
-    target = tmp_path / "project"
-    target.mkdir(parents=True, exist_ok=True)
-    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8")
-    key = tmp_path / "id_ed25519"
-    uv_path = target / ".venv" / "bin" / "uv"
-    post_sync = {}
-    call_order = []
-
-    monkeypatch.chdir(target)
-    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
-    monkeypatch.setattr(cli_mod, "ensure_venv", lambda *_: None)
-    monkeypatch.setattr(cli_mod, "git_origin", lambda *_: "git@github.com:org/repo.git")
-    monkeypatch.setattr(
-        cli_mod, "ensure_key_for_repo", lambda *_: (key, key.with_suffix(".pub"), "pub")
-    )
-    monkeypatch.setattr(cli_mod, "ensure_uv_installed", lambda *_: uv_path)
-    monkeypatch.setattr(
-        cli_mod,
-        "prime_sync_project_after_commit_sdk",
-        lambda: call_order.append("prime"),
-    )
-    monkeypatch.setattr(
-        cli_mod, "run_uv", lambda uv, args, cwd, env=None: call_order.append(f"uv:{args[0]}")
-    )
-    monkeypatch.setattr(
-        cli_mod, "uv_export_requirements", lambda uv, cwd, **kwargs: call_order.append("uv:export")
-    )
-    monkeypatch.setattr(
-        cli_mod, "run_cmd", lambda cmd, cwd, env=None: call_order.append(f"cmd:{cmd[0]}")
-    )
-    monkeypatch.setattr(
-        cli_mod,
-        "sync_project_after_commit",
-        lambda project_id: call_order.append("post_sync")
-        or post_sync.update(project_id=project_id)
-        or {"id": project_id},
-    )
-
-    result = runner.invoke(cli_mod.app, ["project", "sync", "Update deps"])
-    assert result.exit_code == 0
-    assert post_sync["project_id"] == "project-uid-123"
-    assert call_order[0] == "prime"
-    assert "post_sync" == call_order[-1]
-    assert "Triggered backend sync for project project-uid-123." in result.output
-
-
-def test_project_sync_after_commit_uses_project_uid(cli_mod, runner, monkeypatch):
-    captured = {}
-
-    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
-    monkeypatch.setattr(
-        cli_mod,
-        "sync_project_after_commit",
-        lambda project_uid, timeout=None: captured.update(
-            project_uid=project_uid,
-            timeout=timeout,
-        )
-        or {"uid": project_uid},
-    )
-
-    result = runner.invoke(
-        cli_mod.app,
-        ["project", "sync-after-commit", "project-uid-123", "--timeout", "30"],
-    )
-
-    assert result.exit_code == 0
-    assert captured == {"project_uid": "project-uid-123", "timeout": 30}
-    assert "Triggered backend sync for project project-uid-123." in result.output
-
-
-def test_project_sync_after_commit_reads_project_uid_from_env_file(
-    cli_mod, runner, monkeypatch, tmp_path
-):
-    target = tmp_path / "project"
-    target.mkdir()
-    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8")
-
-    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
-    monkeypatch.setattr(
-        cli_mod,
-        "sync_project_after_commit",
-        lambda project_uid, timeout=None: {
-            "project_uid": project_uid,
-            "status": "queued",
-        },
-    )
-
-    result = runner.invoke(
-        cli_mod.app,
-        ["project", "sync-after-commit", "--path", str(target), "--json"],
-    )
-
-    assert result.exit_code == 0
-    assert json.loads(result.output) == {
-        "project_uid": "project-uid-123",
-        "status": "queued",
-    }
-
-
 def test_project_sync_project(cli_mod, runner, monkeypatch, tmp_path):
     target = tmp_path / "project"
     target.mkdir(parents=True, exist_ok=True)
@@ -10979,15 +10818,13 @@ def test_project_sync_project(cli_mod, runner, monkeypatch, tmp_path):
     uv_calls = []
     export_calls = []
     git_calls = []
-    post_sync = {}
-
-    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(cli_mod, "ensure_venv", lambda *_: None)
     monkeypatch.setattr(cli_mod, "git_origin", lambda *_: "git@github.com:org/repo.git")
     monkeypatch.setattr(
         cli_mod, "ensure_key_for_repo", lambda *_: (key, key.with_suffix(".pub"), "pub")
     )
     monkeypatch.setattr(cli_mod, "ensure_uv_installed", lambda *_: uv_path)
+    monkeypatch.setattr(cli_mod, "uv_project_version", lambda *_, **__: "1.2.4")
     monkeypatch.setattr(
         cli_mod,
         "run_uv",
@@ -11003,12 +10840,6 @@ def test_project_sync_project(cli_mod, runner, monkeypatch, tmp_path):
         "run_cmd",
         lambda cmd, cwd, env=None: git_calls.append(cmd),
     )
-    monkeypatch.setattr(
-        cli_mod,
-        "sync_project_after_commit",
-        lambda project_id: post_sync.update(project_id=project_id) or {"id": project_id},
-    )
-
     result = runner.invoke(
         cli_mod.app,
         ["project", "sync_project", "Update deps", "--path", str(target)],
@@ -11023,9 +10854,9 @@ def test_project_sync_project(cli_mod, runner, monkeypatch, tmp_path):
     assert git_calls == [
         ["git", "add", "-A"],
         ["git", "commit", "-m", "Update deps"],
-        ["git", "push"],
+        ["git", "tag", "-a", "v1.2.4", "-m", "v1.2.4"],
+        ["git", "push", "--follow-tags"],
     ]
-    assert post_sync["project_id"] == "project-uid-123"
 
 
 def test_project_sync_project_defaults_to_current_project_dir(
@@ -11039,13 +10870,13 @@ def test_project_sync_project_defaults_to_current_project_dir(
     seen = {"cwd": []}
 
     monkeypatch.chdir(target)
-    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(cli_mod, "ensure_venv", lambda *_: None)
     monkeypatch.setattr(cli_mod, "git_origin", lambda *_: "git@github.com:org/repo.git")
     monkeypatch.setattr(
         cli_mod, "ensure_key_for_repo", lambda *_: (key, key.with_suffix(".pub"), "pub")
     )
     monkeypatch.setattr(cli_mod, "ensure_uv_installed", lambda *_: uv_path)
+    monkeypatch.setattr(cli_mod, "uv_project_version", lambda *_, **__: "1.2.4")
     monkeypatch.setattr(
         cli_mod,
         "run_uv",
@@ -11061,8 +10892,6 @@ def test_project_sync_project_defaults_to_current_project_dir(
         "run_cmd",
         lambda cmd, cwd, env=None: seen["cwd"].append(cwd),
     )
-    monkeypatch.setattr(cli_mod, "sync_project_after_commit", lambda project_id: {"id": project_id})
-
     result = runner.invoke(
         cli_mod.app,
         ["project", "sync_project", "Update deps"],

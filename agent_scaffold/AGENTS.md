@@ -40,8 +40,8 @@ Compare the SDK value with the installed version reported by
 Refresh the managed scaffold only when `PINNED_FROM.txt` is missing or its
 `pinned_version` differs from the installed SDK version:
 
-- `mainsequence project update AGENTS.md --path .`
 - `mainsequence project update_agent_skills --path .`
+- `mainsequence project update AGENTS.md --path .`
 
 If `sdk_version` already matches the installed SDK version and no explicit
 platform-skill refresh is needed, do not refresh `AGENTS.md` or
@@ -76,8 +76,7 @@ Core responsibilities:
 - translate user business logic into reusable code under `src/` so it can be reused by APIs,
   dashboards, jobs, and other project components instead of duplicating logic in integration
   layers
-- maintain the repository through explicit `.agents/` project-state files and the bug auditor skill
-  for blocker and SDK/platform issue assessment
+- use the bug auditor skill for blocker and SDK/platform issue assessment
 
 Typical outcomes include:
 
@@ -89,7 +88,7 @@ Typical outcomes include:
   Center surface before building or deploying it
 - build reusable business logic in `src/` and keep thin integration layers in APIs, jobs, and
   dashboards
-- keep the repository auditable through project-state records, blocker tracking, and bug reporting
+- assess blockers and suspected SDK or platform issues from concrete repository and runtime evidence
 
 Working rules for this role:
 
@@ -117,13 +116,6 @@ User-resolution rule for agents:
 
 Delegation rules:
 
-- when work is delegated or queued for later, write the task in `.agents/tasks.md` according to
-  the skill that should execute it
-- each delegated or queued task in `.agents/tasks.md` must state:
-  - the exact task scope
-  - the owning skill
-  - the expected output, decision, or artifact
-  - the validation or evidence required before it can be marked complete
 - if delegation is available, declare for each sub-agent:
   - the exact task it owns
   - the exact skill or skills it must use
@@ -190,6 +182,9 @@ Typical routing:
 - project setup, local checkout, CLI environment, scaffolding, and standard
   repository layout:
   `.agents/skills/mainsequence/sdk_project_execution/SKILL.md`
+- local environment repair, project authentication refresh, SDK updates,
+  managed skill refresh, and canonical project sync:
+  `.agents/skills/mainsequence/maintenance/project-maintenance/SKILL.md`
 - turning an existing project into a project-backed coding agent, defining
   project-owned skills, and authoring `.agents/agent_card.json`:
   `.agents/skills/mainsequence/project_to_agent/SKILL.md`
@@ -234,31 +229,28 @@ For any non-trivial Main Sequence task:
 
 1. Read the latest relevant Main Sequence documentation.
 2. Compare the implementation against the latest documented behavior.
-
-4. Check `.agents/tasks.md` for current priorities.
-
-7. Confirm you are in the correct project checkout, or use `--path` explicitly.
-8. Confirm platform context with:
+3. Confirm you are in the correct project checkout, or use `--path` explicitly.
+4. Confirm platform context with:
    `mainsequence project current --debug`
-9. Before validations or live checks, run:
+5. Before validations or live checks, run:
    `mainsequence project refresh_token --path .`
-10. If git push or pull is required, use:
+6. If git push or pull is required, use:
     `mainsequence project open-signed-terminal <PROJECT_ID>`
-11. Before proceeding with non-trivial Main Sequence work, update the project SDK:
+7. Before proceeding with non-trivial Main Sequence work, update the project SDK:
     `mainsequence project update-sdk --path .`
-12. After updating the SDK, compare `mainsequence --version` with
+8. After updating the SDK, compare `mainsequence --version` with
     `.agents/skills/mainsequence/PINNED_FROM.txt` field `sdk_version=...`
     (`pinned_version=...` is its compatibility alias), and verify that the
     sentinel contains platform manifest and resource hashes.
-13. If `PINNED_FROM.txt` is missing, `sdk_version` differs from the installed
+9. If `PINNED_FROM.txt` is missing, `sdk_version` differs from the installed
     SDK version, or a platform-skill refresh is explicitly required, refresh
     the managed scaffold files:
-    `mainsequence project update AGENTS.md --path .`
     `mainsequence project update_agent_skills --path .`
-14. If `sdk_version` already matches the installed SDK version and no platform
+    `mainsequence project update AGENTS.md --path .`
+10. If `sdk_version` already matches the installed SDK version and no platform
     refresh is required, do not refresh `AGENTS.md` or
     `.agents/skills/mainsequence/` as a startup ritual.
-15. Verify platform state with the CLI or platform tooling instead of guessing.
+11. Verify platform state with the CLI or platform tooling instead of guessing.
 
 ## Orchestrator Rule
 
@@ -276,15 +268,13 @@ project behavior exists and has been verified. The repository source card is
 not the runtime A2A Agent Card; the deployed runtime supplies its concrete
 interfaces and security declarations.
 
-Before the final response:
-
-- update the relevant `.agents/` project-state files whenever project understanding, verified
-  state, open tasks, blockers, or historical record changed during the turn
-
 Use `.agents/skills/mainsequence/project_design/SKILL.md` as the platform
 source of truth for intent and ontology. Use
 `.agents/skills/mainsequence/sdk_project_execution/SKILL.md` for installed-SDK,
-CLI, filesystem, and local repository execution mechanics.
+CLI, filesystem, and local repository execution mechanics. Use
+`.agents/skills/mainsequence/maintenance/project-maintenance/SKILL.md` for
+repeatable environment, authentication, SDK, scaffold-refresh, and project-sync
+routines.
 
 ## Core Working Rules
 
@@ -295,8 +285,8 @@ CLI, filesystem, and local repository execution mechanics.
 - do not hide failures
 - record the exact failing step, command, or workflow
 - when hitting a roadblock, blocker, or error, report it back to the user clearly and promptly
-- if local code or local docs conflict with the latest Main Sequence docs, record the discrepancy
-  and create follow-up work
+- if local code or local docs conflict with the latest Main Sequence docs, report the discrepancy
+  and the concrete next action
 - when unsure, verify
 - if the active virtual environment is missing libraries that are already declared in
   `requirements.txt`, install those missing libraries into the virtual environment before
@@ -359,7 +349,7 @@ Rules:
 
 If something may be a Main Sequence SDK, documentation, or platform issue:
 
-- record what failed
+- report what failed
 - explain why it may be a Main Sequence issue
 - suggest a concrete improvement
 
@@ -370,10 +360,4 @@ If something may be a Main Sequence SDK, documentation, or platform issue:
 - prefer explicit facts over vague statements
 - surface failures early
 - distinguish verified facts from assumptions
-
-## Project-State Files Under `.agents/`
-
-
-Do not improvise their meaning in domain skills. Use the project bootstrap skill rules to reconcile
-them after material work.
 <!-- mainsequence-agent-scaffold:end -->

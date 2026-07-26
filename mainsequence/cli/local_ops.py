@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """
 mainsequence.cli.local_ops
 ==========================
@@ -10,6 +8,8 @@ Local operations shared by several commands:
 - Ensure .venv exists and locate venv python/uv
 - Run uv and git commands with nice error messages
 """
+
+from __future__ import annotations
 
 import os
 import pathlib
@@ -95,6 +95,31 @@ def run_cmd(cmd: list[str], cwd: pathlib.Path, env: dict[str, str] | None = None
 def run_uv(uv_path: pathlib.Path, args: list[str], cwd: pathlib.Path, env: dict[str, str] | None = None) -> None:
     """Run uv with args, raising on failure."""
     run_cmd([str(uv_path), *args], cwd=cwd, env=env)
+
+
+def uv_project_version(
+    uv_path: pathlib.Path,
+    cwd: pathlib.Path,
+    env: dict[str, str] | None = None,
+) -> str:
+    """Return the current project version reported by ``uv version --short``."""
+    result = subprocess.run(
+        [str(uv_path), "version", "--short"],
+        cwd=str(cwd),
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "").strip()
+        suffix = f": {detail}" if detail else ""
+        raise RuntimeError(
+            f"Command failed ({result.returncode}): {uv_path} version --short{suffix}"
+        )
+    version = (result.stdout or "").strip()
+    if not version:
+        raise RuntimeError("uv version --short returned an empty project version.")
+    return version.splitlines()[-1].strip()
 
 
 def git_origin(project_dir: pathlib.Path) -> str:

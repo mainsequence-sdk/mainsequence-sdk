@@ -20,8 +20,7 @@ This skill is for diagnosis and assessment. Default behavior is read-only unless
 ## This Skill Can Do
 
 - inspect project state and summarize completion status
-- read `.agents/tasks.md` and `.agents/status.md` first when they exist
-- use repo state, logs, test output, stderr, and task files as evidence
+- use repo state, logs, test output, and stderr as evidence
 - classify failures into:
   - target-project issue
   - environment or credentials issue
@@ -62,6 +61,9 @@ This skill audits. It does not implement by default.
   `.agents/skills/mainsequence/platform_operations/access_control_and_sharing/SKILL.md`
 - Streamlit dashboard deployment or release issues:
   `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
+- environment repair, authentication refresh, SDK updates, managed skill
+  refresh, and project sync after the failure is classified:
+  `.agents/skills/mainsequence/maintenance/project-maintenance/SKILL.md`
 
 Streamlit dashboard design and implementation failures are target-project application code issues unless the evidence points to Main Sequence deployment, resource discovery, image selection, release creation, or platform runtime behavior.
 
@@ -69,11 +71,7 @@ Streamlit dashboard design and implementation failures are target-project applic
 
 1. `AGENTS.md`
 2. `.agents/skills/mainsequence/project_design/SKILL.md`
-3. `.agents/tasks.md` when it exists
-4. `.agents/status.md` when it exists
-5. `.agents/record.md` when stable references or project ids matter
-6. `.agents/journal.md` when repeated failures or prior investigations may be relevant
-7. the latest relevant Main Sequence docs for the failing workflow
+3. the latest relevant Main Sequence docs for the failing workflow
 
 ## Inputs This Skill Needs
 
@@ -101,17 +99,15 @@ For every audit, decide:
 
 ### 1. Stay read-only unless edits were explicitly requested
 
-Do not modify code, docs, or project-state files unless the task explicitly asks for edits.
+Do not modify code or docs unless the task explicitly asks for edits.
 
-### 2. Start with project-state files
+### 2. Start with current evidence
 
-Read `.agents/tasks.md` and `.agents/status.md` first when they exist.
-
-Use them as hypotheses, not as proof.
+Inspect the repository state, available logs, failing commands, stderr, and test output.
 
 ### 3. Use evidence, not impressions
 
-Use repo state, logs, test output, stderr, and task files as evidence.
+Use repo state, logs, test output, and stderr as evidence.
 
 When reporting a blocker or failure, include:
 
@@ -127,7 +123,6 @@ Before each major investigation step, emit a short progress update that says wha
 
 Especially announce when you are:
 
-- reading `.agents/tasks.md` or `.agents/status.md`
 - inspecting a failing command, traceback, or stderr excerpt
 - checking the local `mainsequence` package or version
 - inspecting or cloning the public `mainsequence-sdk` repository
@@ -184,7 +179,6 @@ When reviewing an audit, look for:
 
 Do not claim audit completion until you have checked:
 
-- `.agents/tasks.md` and `.agents/status.md` first when they exist
 - the overall state is one of:
   - `finished`
   - `in_progress`

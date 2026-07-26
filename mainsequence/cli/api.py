@@ -2062,62 +2062,6 @@ def get_project_data_node_updates(
                 os.environ[k] = v
 
 
-def sync_project_after_commit(
-    project_id: int | str, *, timeout: int | None = None
-) -> dict[str, Any] | None:
-    """
-    Notify the backend that a project commit has been pushed.
-
-    Single source of truth:
-      - delegates request behavior and payload parsing to `Project.sync_project_after_commit()`
-    """
-    try:
-        project_uid = resolve_project_uid(project_id)
-        payload = _run_sdk_model_operation(
-            module_name="mainsequence.client.models_foundry",
-            class_name="Project",
-            operation=lambda ClientProject: ClientProject.sync_project_after_commit(
-                project_uid,
-                timeout=timeout,
-            ),
-            project_id_env=resolve_project_row_id(project_id),
-            project_uid_env=project_uid,
-        )
-        if payload is None:
-            return None
-        if isinstance(payload, dict):
-            return payload
-        if hasattr(payload, "model_dump"):
-            return payload.model_dump()
-        return {"id": getattr(payload, "id", None)}
-    except Exception as e:
-        err_name = type(e).__name__
-        if err_name in {"AuthenticationError", "PermissionDeniedError"}:
-            raise NotLoggedIn(str(e) or "Not logged in.") from e
-        if err_name == "NotFoundError":
-            raise ApiError(f"Project not found: {project_id}") from e
-        raise ApiError(f"Project post-commit sync failed: {e}") from e
-
-
-def prime_sync_project_after_commit_sdk() -> None:
-    """
-    Load the SDK modules needed by `sync_project_after_commit()` before the active
-    virtual environment is mutated by `uv sync`.
-
-    `project sync` runs inside the same `.venv` that it later updates. If the
-    environment changes during the command, a fresh `mainsequence.client` import
-    can fail late in the flow. Priming the relevant SDK modules first keeps the
-    post-commit sync path available in the current process.
-    """
-    try:
-        importlib.import_module("mainsequence.client")
-        importlib.import_module("mainsequence.client.utils")
-        importlib.import_module("mainsequence.client.base")
-        importlib.import_module("mainsequence.client.models_foundry")
-    except Exception as e:
-        raise ApiError(f"Project post-commit SDK import failed: {e}") from e
-
-
 def create_project_image(
     *,
     project_repo_hash: str,

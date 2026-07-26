@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 from pathlib import Path
 
 import pytest
@@ -92,12 +93,7 @@ def _platform_rows(*, manifest_sha256: str = "a" * 64) -> list[dict]:
             name="project_to_agent",
             path="skills/project_to_agent/SKILL.md",
             mime_type="text/markdown",
-            content=(
-                "---\n"
-                "name: project-to-agent\n"
-                "description: Project agent preparation\n"
-                "---\n"
-            ),
+            content=("---\nname: project-to-agent\ndescription: Project agent preparation\n---\n"),
             manifest_sha256=manifest_sha256,
         ),
     ]
@@ -147,6 +143,12 @@ def test_dual_source_install_replaces_only_managed_tree_and_records_both_sources
     sdk_skill = sdk_skills / "sdk_project_execution"
     sdk_skill.mkdir(parents=True)
     (sdk_skill / "SKILL.md").write_text("sdk execution", encoding="utf-8")
+    maintenance_skill = sdk_skills / "maintenance" / "project-maintenance"
+    maintenance_skill.mkdir(parents=True)
+    (maintenance_skill / "SKILL.md").write_text(
+        "sdk project maintenance",
+        encoding="utf-8",
+    )
 
     project_dir = tmp_path / "project"
     managed_root = project_dir / ".agents" / "skills" / "mainsequence"
@@ -169,15 +171,19 @@ def test_dual_source_install_replaces_only_managed_tree_and_records_both_sources
     assert (managed_root / "sdk_project_execution" / "SKILL.md").read_text(
         encoding="utf-8"
     ) == "sdk execution"
+    assert (managed_root / "maintenance" / "project-maintenance" / "SKILL.md").read_text(
+        encoding="utf-8"
+    ) == "sdk project maintenance"
     assert (managed_root / "project_design" / "SKILL.md").is_file()
     assert (managed_root / "a2a_communication" / "SKILL.md").is_file()
     assert (managed_root / "project_to_agent" / "SKILL.md").is_file()
     assert (project_owned / "SKILL.md").read_text(encoding="utf-8") == "keep"
-    assert [item.owner for item in result.installed] == [
-        "sdk",
-        "platform",
-        "platform",
-        "platform",
+    assert [(item.name, item.owner) for item in result.installed] == [
+        ("maintenance", "sdk"),
+        ("sdk_project_execution", "sdk"),
+        ("a2a_communication", "platform"),
+        ("project_design", "platform"),
+        ("project_to_agent", "platform"),
     ]
 
     sentinel = result.sentinel_path.read_text(encoding="utf-8")
@@ -204,14 +210,7 @@ def test_dual_source_install_rejects_sdk_platform_path_collision_without_writes(
     colliding_skill.mkdir(parents=True)
     (colliding_skill / "SKILL.md").write_text("sdk collision", encoding="utf-8")
     project_dir = tmp_path / "project"
-    existing = (
-        project_dir
-        / ".agents"
-        / "skills"
-        / "mainsequence"
-        / "existing"
-        / "SKILL.md"
-    )
+    existing = project_dir / ".agents" / "skills" / "mainsequence" / "existing" / "SKILL.md"
     existing.parent.mkdir(parents=True)
     existing.write_text("keep", encoding="utf-8")
 
@@ -269,9 +268,7 @@ def test_dual_source_install_restores_previous_tree_when_final_swap_fails(
         )
 
     assert previous.read_text(encoding="utf-8") == "previous valid tree"
-    assert previous_sentinel.read_text(encoding="utf-8") == (
-        "schema=2\nsdk_version=previous\n"
-    )
+    assert previous_sentinel.read_text(encoding="utf-8") == ("schema=2\nsdk_version=previous\n")
     assert not list(managed_root.parent.glob(".mainsequence.backup-*"))
     assert not list(managed_root.parent.glob(".mainsequence.staging-*"))
 
@@ -428,3 +425,59 @@ def test_sdk_source_tree_does_not_vendor_platform_owned_content():
     ]
 
     assert not [path for path in forbidden_paths if path.exists()]
+
+
+def test_project_maintenance_is_sdk_owned_and_uses_canonical_cli_workflows():
+    sdk_root = Path(__file__).resolve().parents[1]
+    skill_path = (
+        sdk_root / "agent_scaffold" / "skills" / "maintenance" / "project-maintenance" / "SKILL.md"
+    )
+    content = skill_path.read_text(encoding="utf-8")
+
+    assert "name: project-maintenance" in content
+    assert "mainsequence project build_local_venv --path ." in content
+    assert "mainsequence project refresh_token --path ." in content
+    assert "mainsequence project update-sdk --path ." in content
+    assert "mainsequence project sync --path . -m" in content
+    assert content.index("mainsequence project update_agent_skills --path .") < (
+        content.index("mainsequence project update AGENTS.md --path .")
+    )
+    assert "Do not call `sync-after-commit`" in content
+    assert "mainsequence://" not in content
+
+
+def test_docs_do_not_reference_unsupported_agent_state_files():
+    sdk_root = Path(__file__).resolve().parents[1]
+    ignored_parts = {
+        ".git",
+        ".mypy_cache",
+        ".pytest_cache",
+        ".ruff_cache",
+        ".tox",
+        ".venv",
+        "build",
+        "dist",
+        "node_modules",
+        "site",
+        "venv",
+    }
+    forbidden_patterns = (
+        re.compile(
+            r"\.agents(?:/|\.)"
+            r"(?:tasks?|status|record|journal|local[_-]?journal)(?:\.md)?\b",
+            re.IGNORECASE,
+        ),
+        re.compile(r"\bproject[- ]state (?:files?|records?)\b", re.IGNORECASE),
+    )
+    violations: list[str] = []
+
+    for markdown_path in sdk_root.rglob("*.md"):
+        if ignored_parts.intersection(markdown_path.relative_to(sdk_root).parts):
+            continue
+        content = markdown_path.read_text(encoding="utf-8")
+        for pattern in forbidden_patterns:
+            if pattern.search(content):
+                violations.append(str(markdown_path.relative_to(sdk_root)))
+                break
+
+    assert violations == []

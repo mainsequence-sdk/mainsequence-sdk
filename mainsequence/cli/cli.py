@@ -169,7 +169,6 @@ from .api import (
     list_workspaces,
     logout_cli_session,
     patch_adapter_from_api_connection,
-    prime_sync_project_after_commit_sdk,
     refresh_data_node_storage_search_index,
     remove_agent_team_from_edit,
     remove_agent_team_from_view,
@@ -211,7 +210,6 @@ from .api import (
     search_projects,
     semantic_search_agents,
     send_agent_session_a2a_message,
-    sync_project_after_commit,
     update_organization_team,
     update_workspace,
     validate_project_name,
@@ -231,6 +229,7 @@ from .local_ops import (
     run_cmd,
     run_uv,
     uv_export_requirements,
+    uv_project_version,
 )
 from .migrations import migrations as migrations_group
 from .model_filters import build_cli_model_filter_rows, parse_cli_model_filters
@@ -12217,20 +12216,18 @@ def project_sync(
     project_id: str | None = typer.Argument(None, help="Project UID"),
     path: str | None = typer.Option(None, "--path", help="Project directory"),
     message_opt: str | None = typer.Option(None, "--message", "-m", help="Git commit message"),
-    bump: str = typer.Option(
-        "patch", "--bump", help="uv version bump: patch|minor|major (default: patch)"
-    ),
-    no_push: bool = typer.Option(False, "--no-push", help="Do not git push"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Print steps but do not execute"),
 ):
     """
     Run end-to-end sync workflow for project dependencies and git state.
 
     Workflow:
-    1. bump package version via `uv version`,
+    1. patch the package version via `uv version`,
     2. run `uv lock` + `uv sync`,
     3. export locked `requirements.txt`,
-    4. commit and push git changes.
+    4. commit the changes,
+    5. create an annotated `v<version>` tag,
+    6. push the branch and tag with `--follow-tags`.
 
     Parameters
     ----------
@@ -12240,10 +12237,6 @@ def project_sync(
         Project UID to resolve local folder.
     path:
         Explicit local path.
-    bump:
-        Version bump strategy (`patch`, `minor`, `major`).
-    no_push:
-        Skip git push.
     dry_run:
         Print plan without executing commands.
 
@@ -12252,7 +12245,6 @@ def project_sync(
     ```bash
     mainsequence project sync "Update environment"
     mainsequence project sync -m "Update environment" --path .
-    mainsequence project sync -m "Bump minor" --bump minor --path .
     mainsequence project sync -m "Preview only" --path . --dry-run
     ```
     """
@@ -12262,22 +12254,6 @@ def project_sync(
 
     message = message if message is not None else message_opt
     project_dir = _resolve_project_dir(project_id, path)
-    resolved_project_id = (
-        project_id if project_id is not None else _read_project_ref_from_env_file(project_dir)
-    )
-    if not dry_run and not no_push:
-        _require_login()
-        if resolved_project_id is None:
-            error(
-                "Could not determine project uid from local .env. "
-                "Pass PROJECT_UID or ensure MAIN_SEQUENCE_PROJECT_UID is present before syncing."
-            )
-            raise typer.Exit(1)
-        try:
-            prime_sync_project_after_commit_sdk()
-        except ApiError as e:
-            error(f"Could not load SDK post-commit sync path before uv sync: {e}")
-            raise typer.Exit(1) from e
     ensure_venv(project_dir)
 
     origin = git_origin(project_dir)
@@ -12293,13 +12269,14 @@ def project_sync(
 
     steps = [
         "resolve uv executable",
-        f"uv version --bump {bump}",
+        "uv version --bump patch",
         "uv lock",
         "uv sync",
         "uv export (locked) -> requirements.txt",
         "git add -A",
         f'git commit -m "{safe_message}"',
-        "git push" if not no_push else "(skip git push)",
+        "git tag -a v<version> -m v<version>",
+        "git push --follow-tags",
     ]
 
     print_table("Sync plan", ["Step"], [[s] for s in steps])
@@ -12313,7 +12290,7 @@ def project_sync(
 
     uv = ensure_uv_installed(project_dir)
     with status("Running uv + git sync steps..."):
-        run_uv(uv, ["version", "--bump", bump], cwd=project_dir, env=env)
+        run_uv(uv, ["version", "--bump", "patch"], cwd=project_dir, env=env)
         run_uv(uv, ["lock"], cwd=project_dir, env=env)
         run_uv(uv, ["sync"], cwd=project_dir, env=env)
         # `uv sync` can prune ad hoc packages from `.venv`, including a `uv`
@@ -12330,79 +12307,12 @@ def project_sync(
 
         run_cmd(["git", "add", "-A"], cwd=project_dir, env=env)
         run_cmd(["git", "commit", "-m", safe_message], cwd=project_dir, env=env)
-        if not no_push:
-            run_cmd(["git", "push"], cwd=project_dir, env=env)
-
-    if not dry_run and not no_push and resolved_project_id is not None:
-        with status("Triggering backend sync_project_after_commit..."):
-            try:
-                sync_project_after_commit(resolved_project_id)
-            except ApiError as e:
-                error(f"Backend post-commit sync failed: {e}")
-                raise typer.Exit(1) from e
-        info(f"Triggered backend sync for project {resolved_project_id}.")
+        version = uv_project_version(uv, cwd=project_dir, env=env)
+        tag = f"v{version}"
+        run_cmd(["git", "tag", "-a", tag, "-m", tag], cwd=project_dir, env=env)
+        run_cmd(["git", "push", "--follow-tags"], cwd=project_dir, env=env)
 
     success(f"Synced: {repo_name}")
-
-
-@project.command("sync-after-commit")
-def project_sync_after_commit(
-    project_uid: str | None = typer.Argument(
-        None,
-        help="Project UID. If omitted, read MAIN_SEQUENCE_PROJECT_UID from local .env.",
-    ),
-    path: str | None = typer.Option(
-        None,
-        "--path",
-        help="Project directory used to resolve MAIN_SEQUENCE_PROJECT_UID when PROJECT_UID is omitted.",
-    ),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds."),
-):
-    """
-    Trigger backend post-commit project sync.
-
-    This directly calls:
-
-    POST /orm/api/pods/projects/<project_uid>/sync_project_after_commit/
-
-    Examples
-    --------
-    ```bash
-    mainsequence project sync-after-commit project-uid-123
-    mainsequence project sync-after-commit --path .
-    ```
-    """
-    _require_login()
-
-    resolved_project_uid = project_uid
-    if resolved_project_uid is None:
-        project_dir = normalize_path(path) if path else pathlib.Path.cwd()
-        if path and not project_dir.exists():
-            error(f"Folder does not exist: {project_dir}")
-            raise typer.Exit(1)
-        resolved_project_uid = _read_project_ref_from_env_file(project_dir)
-
-    if resolved_project_uid is None:
-        error(
-            "Could not determine project uid. Pass PROJECT_UID or ensure "
-            "MAIN_SEQUENCE_PROJECT_UID is present in local .env."
-        )
-        raise typer.Exit(1)
-
-    try:
-        payload = sync_project_after_commit(resolved_project_uid, timeout=timeout)
-    except ApiError as e:
-        error(f"Backend post-commit sync failed: {e}")
-        raise typer.Exit(1) from e
-
-    result = payload or {
-        "project_uid": resolved_project_uid,
-        "detail": "sync_project_after_commit triggered",
-    }
-    if _emit_json(result):
-        return
-
-    success(f"Triggered backend sync for project {resolved_project_uid}.")
 
 
 @project.command("sync_project", hidden=True)
@@ -12419,8 +12329,6 @@ def project_sync_project(
         project_id=project_id,
         path=path,
         message_opt=None,
-        bump="patch",
-        no_push=False,
         dry_run=False,
     )
 

@@ -62,20 +62,18 @@ Before scheduling anything, make sure your environment is consistent and your la
 3. **What `mainsequence project sync` does for you**
 
    - Ensures your local `.venv` and `uv` tooling are ready.
-   - Bumps the package version (`patch` by default; configurable with `--bump`).
+   - Applies the required patch package-version bump.
    - Runs `uv lock` and `uv sync`.
-   - Exports locked dependencies to `requirements.txt`.
-   - Runs `git add -A`, creates your commit, and pushes to remote (unless `--no-push` is used).
+   - Exports locked production dependencies to `requirements.txt`.
+   - Runs `git add -A` and creates your commit.
+   - Creates an annotated `v<version>` tag.
+   - Pushes the branch and tag with `git push --follow-tags`.
    - Uses your project SSH key setup for secure push flow.
 
-4. **Useful options**
+4. **Preview the fixed workflow without executing it**
 
    ```bash
-   # Bump minor version instead of patch
-   mainsequence project sync -m "Tutorial files" --bump minor
-
-   # Commit changes but skip push
-   mainsequence project sync -m "Tutorial files" --no-push
+   mainsequence project sync -m "Tutorial files" --dry-run
    ```
 
 ## 2) Scheduling Jobs

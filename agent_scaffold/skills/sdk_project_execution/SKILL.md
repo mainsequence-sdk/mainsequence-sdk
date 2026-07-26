@@ -65,6 +65,9 @@ Do not let this skill become a domain manual.
   `.agents/skills/mainsequence/command_center/widgets/app_components/SKILL.md`
 - project audits, blocker analysis, and upstream SDK assessment:
   `.agents/skills/mainsequence/maintenance/bug_auditor/SKILL.md`
+- local environment repair, project authentication refresh, SDK updates,
+  managed skill refresh, and canonical project sync:
+  `.agents/skills/mainsequence/maintenance/project-maintenance/SKILL.md`
 - jobs, schedules, artifacts, images, resources, releases, and Streamlit dashboard deployment:
   `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
 - RBAC and sharing:

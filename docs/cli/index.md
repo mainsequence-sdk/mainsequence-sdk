@@ -80,6 +80,7 @@ mainsequence organization --help
 mainsequence skills list
 mainsequence skills path
 mainsequence skills path sdk_project_execution
+mainsequence skills path maintenance/project-maintenance
 mainsequence data-node list
 mainsequence user
 mainsequence settings show
@@ -342,6 +343,7 @@ mainsequence skills list
 mainsequence skills list --json
 mainsequence skills path
 mainsequence skills path sdk_project_execution
+mainsequence skills path maintenance/project-maintenance
 mainsequence skills path command_center/workspace_builder
 mainsequence skills path workspace_builder
 mainsequence skills path workspace_builder --json
@@ -443,6 +445,10 @@ two independent sources:
   "updated": [
     {
       "name": "sdk_project_execution",
+      "owner": "sdk"
+    },
+    {
+      "name": "maintenance",
       "owner": "sdk"
     },
     {
@@ -553,7 +559,7 @@ ontology and each installed platform skill.
 - `mainsequence project add_team_to_view`, `add_team_to_edit`, `remove_team_from_view`, and `remove_team_from_edit` mutate project team sharing through the SDK `ShareableObjectMixin` team-action paths.
 - `mainsequence project project_resource list` lists project resources through the SDK client `ProjectResource.filter()` path and always applies `repo_commit_sha` from the current upstream branch head.
 - `mainsequence cc workspace add-label` and `remove-label` mutate `Workspace` labels through the SDK `LabelableObjectMixin` path. Labels are organizational metadata only and do not affect runtime behavior or functionality.
-- `mainsequence project sync` performs the local uv/git sync flow and, after a successful push, calls the SDK client `Project.sync_project_after_commit()` path for the resolved project id.
+- `mainsequence project sync` is the canonical local release workflow: it always patches the project version, runs `uv lock`, runs `uv sync`, exports locked production requirements, commits, creates an annotated `v<version>` tag, and pushes with `--follow-tags`. Backend repository reconciliation is triggered independently by the GitHub branch-push webhook; there is no client post-commit callback.
 - `mainsequence project jobs runs list` lists job-run history through the SDK client `JobRun.filter(job__id=[job_id])` path.
 - `mainsequence project jobs runs logs` fetches logs through the SDK client `JobRun.get_logs()` path, polls every 30 seconds by default while the job run is `PENDING` or `RUNNING`, and stops after 10 minutes unless you override `--max-wait-seconds` or disable it with `--max-wait-seconds 0`.
 - `mainsequence project jobs run` triggers a manual run through the SDK client `Job.run_job()` path.
