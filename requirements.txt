@@ -13,7 +13,7 @@ certifi==2025.10.5
     # via requests
 charset-normalizer==3.4.3
     # via requests
-click==8.3.0
+click==8.3.3
     # via
     #   mainsequence
     #   typer
@@ -31,7 +31,7 @@ greenlet==3.5.0 ; platform_machine == 'AMD64' or platform_machine == 'WIN32' or 
     # via sqlalchemy
 grpcio==1.75.1
     # via opentelemetry-exporter-otlp-proto-grpc
-idna==3.11
+idna==3.15
     # via
     #   anyio
     #   requests
@@ -84,9 +84,10 @@ pandas==2.3.3
     # via mainsequence
 portalocker==3.2.0
     # via concurrent-log-handler
-protobuf==6.32.1
+protobuf==6.33.5
     # via
     #   googleapis-common-protos
+    #   mainsequence
     #   opentelemetry-proto
 psutil==7.1.0
     # via mainsequence
@@ -96,8 +97,10 @@ pydantic==2.12.0
     # via mainsequence
 pydantic-core==2.41.1
     # via pydantic
-pygments==2.19.2
-    # via rich
+pygments==2.20.0
+    # via
+    #   mainsequence
+    #   rich
 python-dateutil==2.9.0.post0
     # via pandas
 pytz==2025.2
@@ -106,7 +109,7 @@ pywin32==311 ; sys_platform == 'win32'
     # via portalocker
 pyyaml==6.0.3
     # via mainsequence
-requests==2.32.5
+requests==2.33.0
     # via
     #   mainsequence
     #   opentelemetry-exporter-otlp-proto-http
@@ -146,7 +149,7 @@ typing-inspection==0.4.2
     # via pydantic
 tzdata==2025.2
     # via pandas
-urllib3==2.5.0
+urllib3==2.7.0
     # via
     #   mainsequence
     #   requests

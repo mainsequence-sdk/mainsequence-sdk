@@ -89,6 +89,11 @@ copy, or return access and refresh token values. Do not attempt to extract the
 calling MCP host's protected bearer token. If authentication is unavailable,
 stop and request login through the normal CLI or development integration.
 
+The command preserves unrelated project configuration and renders only the
+current supported authentication shape. Existing `MAINSEQUENCE_TOKEN` and
+`MAIN_SEQUENCE_PROJECT_ID` entries are not carried into the rewritten file;
+this is not a separate cleanup routine.
+
 ## Update The Project SDK
 
 Inspect the current status, preview the update, and then update when requested

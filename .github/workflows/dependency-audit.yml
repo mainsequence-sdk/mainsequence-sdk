@@ -1,0 +1,58 @@
+name: Dependency audit
+
+on:
+  pull_request:
+    paths:
+      - "pyproject.toml"
+      - "uv.lock"
+      - "requirements.txt"
+      - ".github/workflows/dependency-audit.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "pyproject.toml"
+      - "uv.lock"
+      - "requirements.txt"
+      - ".github/workflows/dependency-audit.yml"
+  schedule:
+    - cron: "17 9 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: Audit ${{ matrix.scope }} dependencies
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - scope: production
+            export-arguments: --no-dev --all-extras
+          - scope: development
+            export-arguments: --all-groups --all-extras
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install uv
+        run: python -m pip install uv
+
+      - name: Export locked ${{ matrix.scope }} dependencies
+        run: >-
+          uv export --frozen --no-hashes --no-emit-local
+          ${{ matrix.export-arguments }}
+          --output-file audit-requirements.txt
+
+      - name: Audit ${{ matrix.scope }} dependencies
+        uses: pypa/gh-action-pip-audit@v1.1.0
+        with:
+          inputs: audit-requirements.txt
+          no-deps: true

@@ -167,6 +167,9 @@ MAIN_SEQUENCE_PROJECT_UID=<project UID>
 ```
 
 They do not require or write `MAINSEQUENCE_REFRESH_TOKEN` in runtime credential mode.
+Both local-project commands preserve unrelated `.env` entries while rendering
+the current supported authentication shape. They do not carry forward obsolete
+`MAINSEQUENCE_TOKEN` or `MAIN_SEQUENCE_PROJECT_ID` entries.
 
 Functionally:
 

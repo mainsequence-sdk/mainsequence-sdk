@@ -1408,6 +1408,9 @@ def test_agent_runtime_models_deserialize_backend_uid_payloads():
             "agent_uid": agent_uid,
             "agent_name": "Research Copilot",
             "agent_type": "custom",
+            "harness": "tau",
+            "harness_protocol": "tau-session-v1",
+            "harness_version": "0.3.1",
             "created_by_user_uid": user_uid,
             "parent_session_uid": None,
             "name": "Research follow-up",
@@ -1416,9 +1419,14 @@ def test_agent_runtime_models_deserialize_backend_uid_payloads():
             "working": True,
             "started_at": "2026-01-01T00:00:00Z",
             "ended_at": None,
+            "is_archived": False,
+            "archived_at": None,
             "llm_provider": "openai",
             "llm_model": "gpt-5.4",
             "llm_thinking": "medium",
+            "active_provider": "openai",
+            "active_model": "gpt-5.4",
+            "active_thinking": "medium",
             "engine_name": "codex",
             "runtime_config_snapshot": {"temperature": 0},
             "error_detail": "",
@@ -1435,6 +1443,11 @@ def test_agent_runtime_models_deserialize_backend_uid_payloads():
     assert session.uid == session_uid
     assert session.agent_uid == agent_uid
     assert session.name == "Research follow-up"
+    assert session.harness is agent_models_mod.AgentHarnessKind.TAU
+    assert session.harness_protocol is agent_models_mod.AgentHarnessProtocol.TAU_SESSION_V1
+    assert session.harness_version == "0.3.1"
+    assert session.is_archived is False
+    assert session.active_model == "gpt-5.4"
 
     service = agent_models_mod.CodingAgentService.model_validate(
         {
@@ -1455,6 +1468,269 @@ def test_agent_runtime_models_deserialize_backend_uid_payloads():
     assert service.scope["project_uid"] == "project-uid"
     assert service.service_runtime_uid == "runtime-uid"
     assert service.knative_service_runtime_uid == "runtime-uid"
+
+
+def test_agent_session_filter_supports_archive_history_query(monkeypatch):
+    captured = {}
+    user_uid = "3a715c8d-da66-452a-b6cb-ffbb696ef121"
+
+    class FakeResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {"count": 0, "next": None, "previous": None, "results": []}
+
+    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
+        captured.update(
+            {
+                "r_type": r_type,
+                "url": url,
+                "payload": payload,
+                "timeout": time_out,
+            }
+        )
+        return FakeResponse()
+
+    monkeypatch.setattr(base_mod, "make_request", _fake_make_request)
+
+    sessions = agent_models_mod.AgentSession.filter(
+        created_by_user_uid=user_uid,
+        is_archived=False,
+        ordering="-started_at",
+        limit=20,
+        offset=0,
+        timeout=7,
+    )
+
+    assert sessions == []
+    assert captured == {
+        "r_type": "GET",
+        "url": f"{agent_models_mod.AgentSession.get_object_url()}/",
+        "payload": {
+            "params": {
+                "created_by_user_uid": user_uid,
+                "is_archived": False,
+                "ordering": "-started_at",
+                "limit": "20",
+                "offset": "0",
+            }
+        },
+        "timeout": 7,
+    }
+
+
+def test_agent_session_get_insights_parses_pi_response(monkeypatch):
+    session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
+    captured = {}
+
+    class FakeResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {
+                "has_insights": False,
+                "agent_session_uid": session_uid,
+                "harness": "pi",
+                "harness_protocol": "pi-checkpoint-v1",
+                "harness_version": "",
+                "checkpoint_version": None,
+                "bundle_hash": "",
+                "computed_at": None,
+                "flushed_at": None,
+                "reason": None,
+                "insights": {},
+                "updated_at": None,
+            }
+
+    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
+        captured.update(
+            {
+                "r_type": r_type,
+                "url": url,
+                "payload": payload,
+                "timeout": time_out,
+            }
+        )
+        return FakeResponse()
+
+    monkeypatch.setattr(agent_models_mod, "make_request", _fake_make_request)
+
+    insights = agent_models_mod.AgentSession.get_insights(session_uid, timeout=9)
+
+    assert isinstance(insights, agent_models_mod.PiAgentSessionInsights)
+    assert insights.has_insights is False
+    assert insights.checkpoint_version is None
+    assert captured == {
+        "r_type": "GET",
+        "url": f"{agent_models_mod.AgentSession.get_object_url()}/{session_uid}/insights/",
+        "payload": {},
+        "timeout": 9,
+    }
+
+
+def test_agent_session_get_insights_parses_tau_response(monkeypatch):
+    session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
+
+    class FakeResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {
+                "has_insights": True,
+                "agent_session_uid": session_uid,
+                "harness": "tau",
+                "harness_protocol": "tau-session-v1",
+                "harness_version": "0.3.1",
+                "entry_count": 4,
+                "last_sequence": 4,
+                "active_branch_entry_count": 3,
+                "entry_type_counts": {"message": 3, "session_info": 1},
+                "title": "Competition analysis",
+                "computed_at": "2026-07-26T19:25:00Z",
+                "reason": "tau_entries_projection",
+                "updated_at": "2026-07-26T19:24:00Z",
+                "insights": {
+                    "version": 1,
+                    "model": {
+                        "provider": "openai",
+                        "model": "gpt-5.4",
+                        "reasoningEffort": "high",
+                    },
+                    "session": {
+                        "agentSessionId": session_uid,
+                        "sessionId": "thread-123",
+                        "threadId": "thread-123",
+                        "status": "running",
+                        "startedAt": "2026-07-26T19:00:00Z",
+                        "updatedAt": "2026-07-26T19:24:00Z",
+                        "lastError": None,
+                    },
+                    "usage": {
+                        "totalMessages": 3,
+                        "userMessages": 1,
+                        "assistantMessages": 2,
+                        "assistantTurns": 2,
+                        "toolCalls": 1,
+                        "toolResults": 0,
+                        "estimatedCostUsd": 0.42,
+                        "tokens": {
+                            "input": 100,
+                            "output": 50,
+                            "cacheRead": 10,
+                            "cacheWrite": 5,
+                            "total": 165,
+                        },
+                    },
+                    "context": {
+                        "source": "tau_entries",
+                        "status": "reported_by_last_assistant",
+                        "tokens": 100,
+                        "latestCompaction": None,
+                    },
+                    "lastTurn": {
+                        "completedAt": "2026-07-26T19:24:00Z",
+                        "finishReason": "stop",
+                        "errorMessage": None,
+                        "model": {
+                            "provider": "openai",
+                            "model": "gpt-5.4",
+                        },
+                        "tokens": {
+                            "input": 60,
+                            "output": 20,
+                            "cacheRead": 10,
+                            "cacheWrite": 5,
+                            "total": 95,
+                        },
+                    },
+                },
+            }
+
+    monkeypatch.setattr(agent_models_mod, "make_request", lambda **kwargs: FakeResponse())
+
+    insights = agent_models_mod.AgentSession.get_insights(session_uid)
+
+    assert isinstance(insights, agent_models_mod.TauAgentSessionInsights)
+    assert insights.entry_count == 4
+    assert insights.entry_type_counts == {"message": 3, "session_info": 1}
+    assert insights.insights.model.reasoning_effort == "high"
+    assert insights.insights.session.agent_session_id == session_uid
+    assert insights.insights.usage.tokens.cache_read == 10
+    assert insights.insights.last_turn is not None
+    assert insights.insights.last_turn.finish_reason == "stop"
+
+
+def test_agent_session_archive_actions_return_current_session_contract(monkeypatch):
+    session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
+    requests = []
+
+    class FakeResponse:
+        status_code = 200
+
+        def __init__(self, archived):
+            self.archived = archived
+
+        def json(self):
+            return {
+                "uid": session_uid,
+                "agent_uid": "9d81d63f-b8c9-404d-9f1a-5f2ad29dbf16",
+                "agent_name": "Research Copilot",
+                "agent_type": "custom",
+                "harness": "tau",
+                "harness_protocol": "tau-session-v1",
+                "harness_version": "0.3.1",
+                "created_by_user_uid": "3a715c8d-da66-452a-b6cb-ffbb696ef121",
+                "parent_session_uid": None,
+                "name": "Research follow-up",
+                "status": "running",
+                "started_at": "2026-07-26T19:00:00Z",
+                "ended_at": None,
+                "is_archived": self.archived,
+                "archived_at": "2026-07-26T20:00:00Z" if self.archived else None,
+                "llm_provider": "openai",
+                "llm_model": "gpt-5.4",
+                "llm_thinking": "high",
+                "active_provider": "openai",
+                "active_model": "gpt-5.4",
+                "active_thinking": "high",
+                "engine_name": "tau",
+                "runtime_config_snapshot": {},
+                "error_detail": "",
+                "thread_id": "thread-123",
+                "session_metadata": {},
+                "bound_handle": None,
+            }
+
+    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
+        requests.append((r_type, url, payload, time_out))
+        return FakeResponse(url.endswith("/archive/"))
+
+    monkeypatch.setattr(agent_models_mod, "make_request", _fake_make_request)
+
+    archived = agent_models_mod.AgentSession.archive_by_uid(session_uid, timeout=5)
+    unarchived = archived.unarchive(timeout=6)
+
+    assert archived.is_archived is True
+    assert archived.archived_at is not None
+    assert unarchived.is_archived is False
+    assert unarchived.archived_at is None
+    assert requests == [
+        (
+            "POST",
+            f"{agent_models_mod.AgentSession.get_object_url()}/{session_uid}/archive/",
+            {},
+            5,
+        ),
+        (
+            "POST",
+            f"{agent_models_mod.AgentSession.get_object_url()}/{session_uid}/unarchive/",
+            {},
+            6,
+        ),
+    ]
 
 
 def test_resource_release_model_accepts_collection_payload_without_runtime_child_fields():

@@ -2344,6 +2344,7 @@ def _render_project_runtime_env_text(
     Return `.env` text with managed runtime auth keys refreshed.
 
     Managed keys are rewritten from scratch to avoid duplicate stale entries.
+    Obsolete local-project aliases are not carried into the rendered file.
     """
     managed_prefixes = (
         "MAINSEQUENCE_AUTH_MODE=",
@@ -2353,6 +2354,7 @@ def _render_project_runtime_env_text(
         "MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET=",
         "MAINSEQUENCE_ENDPOINT=",
         "MAIN_SEQUENCE_PROJECT_UID=",
+        "MAINSEQUENCE_TOKEN=",
         "MAIN_SEQUENCE_PROJECT_ID=",
     )
     lines = [

@@ -7,7 +7,7 @@ import pathlib
 import time
 import uuid
 from enum import Enum
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Literal
 
 import requests
 from pydantic import ConfigDict, Field, model_validator
@@ -33,6 +33,16 @@ class AgentSessionStatus(str, Enum):
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELED = "canceled"
+
+
+class AgentHarnessKind(str, Enum):
+    PI = "pi"
+    TAU = "tau"
+
+
+class AgentHarnessProtocol(str, Enum):
+    PI_CHECKPOINT_V1 = "pi-checkpoint-v1"
+    TAU_SESSION_V1 = "tau-session-v1"
 
 
 class AgentSemanticSearchResult(BasePydanticModel):
@@ -613,12 +623,155 @@ class CodingAgentService(BaseObjectOrm, BasePydanticModel):
         return response.json()
 
 
+class AgentSessionInsightsBase(BasePydanticModel):
+    has_insights: bool = Field(
+        True,
+        description="Whether the session currently has an insights projection.",
+    )
+    agent_session_uid: str = Field(
+        ...,
+        description="Public UID of the AgentSession represented by this response.",
+    )
+    harness_version: str = Field(
+        "",
+        description="Version of the harness runtime that produced the session history.",
+    )
+    computed_at: datetime.datetime | None = Field(
+        None,
+        description="Timestamp when the insights projection was computed.",
+    )
+    reason: str | None = Field(
+        None,
+        description="Backend reason describing how the insights projection was produced.",
+    )
+    updated_at: datetime.datetime | None = Field(
+        None,
+        description="Timestamp of the newest state represented by the projection.",
+    )
+
+
+class PiAgentSessionInsights(AgentSessionInsightsBase):
+    harness: Literal["pi"] = "pi"
+    harness_protocol: Literal["pi-checkpoint-v1"] = "pi-checkpoint-v1"
+    checkpoint_version: int | None = Field(
+        None,
+        description="Pi checkpoint version used to calculate these insights.",
+    )
+    bundle_hash: str = Field(
+        "",
+        description="Hash of the Pi checkpoint bundle used to calculate these insights.",
+    )
+    flushed_at: datetime.datetime | None = Field(
+        None,
+        description="Timestamp when the source Pi checkpoint was flushed.",
+    )
+    insights: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Pi-native checkpoint insights payload.",
+    )
+
+
+class TauAgentSessionInsightsTokenTotals(BasePydanticModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    input: int = 0
+    output: int = 0
+    cache_read: int = Field(0, alias="cacheRead")
+    cache_write: int = Field(0, alias="cacheWrite")
+    total: int = 0
+
+
+class TauAgentSessionInsightsModel(BasePydanticModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    provider: str | None = None
+    model: str | None = None
+    reasoning_effort: str | None = Field(None, alias="reasoningEffort")
+
+
+class TauAgentSessionInsightsSession(BasePydanticModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    agent_session_id: str = Field(..., alias="agentSessionId")
+    session_id: str | None = Field(None, alias="sessionId")
+    thread_id: str | None = Field(None, alias="threadId")
+    status: Literal["running", "completed", "error"]
+    started_at: datetime.datetime | None = Field(None, alias="startedAt")
+    updated_at: datetime.datetime | None = Field(None, alias="updatedAt")
+    last_error: str | None = Field(None, alias="lastError")
+
+
+class TauAgentSessionInsightsUsage(BasePydanticModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    total_messages: int = Field(0, alias="totalMessages")
+    user_messages: int = Field(0, alias="userMessages")
+    assistant_messages: int = Field(0, alias="assistantMessages")
+    assistant_turns: int = Field(0, alias="assistantTurns")
+    tool_calls: int = Field(0, alias="toolCalls")
+    tool_results: int = Field(0, alias="toolResults")
+    estimated_cost_usd: float = Field(0, alias="estimatedCostUsd")
+    tokens: TauAgentSessionInsightsTokenTotals
+
+
+class TauAgentSessionInsightsContext(BasePydanticModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    source: str
+    status: str
+    tokens: int | None = None
+    latest_compaction: datetime.datetime | None = Field(None, alias="latestCompaction")
+
+
+class TauAgentSessionInsightsLastTurnModel(BasePydanticModel):
+    provider: str | None = None
+    model: str | None = None
+
+
+class TauAgentSessionInsightsLastTurn(BasePydanticModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    completed_at: datetime.datetime | None = Field(None, alias="completedAt")
+    finish_reason: str | None = Field(None, alias="finishReason")
+    error_message: str | None = Field(None, alias="errorMessage")
+    model: TauAgentSessionInsightsLastTurnModel
+    tokens: TauAgentSessionInsightsTokenTotals
+
+
+class TauAgentSessionInsightsDetails(BasePydanticModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    version: int
+    model: TauAgentSessionInsightsModel
+    session: TauAgentSessionInsightsSession
+    usage: TauAgentSessionInsightsUsage
+    context: TauAgentSessionInsightsContext
+    last_turn: TauAgentSessionInsightsLastTurn | None = Field(None, alias="lastTurn")
+
+
+class TauAgentSessionInsights(AgentSessionInsightsBase):
+    harness: Literal["tau"] = "tau"
+    harness_protocol: Literal["tau-session-v1"] = "tau-session-v1"
+    entry_count: int = 0
+    last_sequence: int | None = None
+    active_branch_entry_count: int = 0
+    entry_type_counts: dict[str, int] = Field(default_factory=dict)
+    title: str | None = None
+    insights: TauAgentSessionInsightsDetails
+
+
+AgentSessionInsights = PiAgentSessionInsights | TauAgentSessionInsights
+
+
 class AgentSession(BaseObjectOrm, BasePydanticModel):
     ENDPOINT: ClassVar[str] = "agents/v1/sessions"
     _RUNTIME_ACCESS_CACHE: ClassVar[dict[str, tuple[float | None, AgentSessionRuntimeAccess]]] = {}
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]] | None] = {
         "uid": ["exact", "in"],
         "agent_uid": ["exact", "in"],
+        "agent_name": ["exact"],
+        "created_by_user_uid": ["exact"],
+        "is_archived": ["exact"],
         "status": ["exact"],
         "search": ["exact"],
         "q": ["exact"],
@@ -628,9 +781,17 @@ class AgentSession(BaseObjectOrm, BasePydanticModel):
         "uid__in": "uid",
         "agent_uid": "uid",
         "agent_uid__in": "uid",
+        "agent_name": "str",
+        "created_by_user_uid": "uid",
+        "is_archived": "bool",
         "status": "str",
         "search": "str",
         "q": "str",
+    }
+    READ_QUERY_PARAMS: ClassVar[dict[str, str]] = {
+        "ordering": "str",
+        "limit": "str",
+        "offset": "str",
     }
 
     @classmethod
@@ -981,6 +1142,81 @@ class AgentSession(BaseObjectOrm, BasePydanticModel):
             cls.cache_runtime_access(session_uid, access)
         return access
 
+    @classmethod
+    def get_insights(
+        cls,
+        agent_session: str | AgentSession,
+        *,
+        timeout=None,
+    ) -> AgentSessionInsights:
+        session_uid = cls._resolve_agent_session_uid(agent_session)
+        url = f"{cls.get_object_url().rstrip('/')}/{session_uid}/insights/"
+        response = make_request(
+            s=cls.build_session(),
+            loaders=cls.LOADERS,
+            r_type="GET",
+            url=url,
+            payload={},
+            time_out=timeout,
+        )
+        if response.status_code != 200:
+            raise_for_response(response)
+        data = response.json()
+        if not isinstance(data, dict):
+            raise TypeError("Agent session insights response must be a JSON object")
+
+        harness = data.get("harness")
+        if harness == AgentHarnessKind.PI.value:
+            return PiAgentSessionInsights(**data)
+        if harness == AgentHarnessKind.TAU.value:
+            return TauAgentSessionInsights(**data)
+        raise TypeError(
+            "Agent session insights response must include a supported "
+            f"harness discriminator. Got: {harness!r}"
+        )
+
+    def insights(self, *, timeout=None) -> AgentSessionInsights:
+        return type(self).get_insights(self, timeout=timeout)
+
+    @classmethod
+    def _set_archive_state(
+        cls,
+        agent_session: str | AgentSession,
+        *,
+        action: Literal["archive", "unarchive"],
+        timeout=None,
+    ) -> AgentSession:
+        session_uid = cls._resolve_agent_session_uid(agent_session)
+        url = f"{cls.get_object_url().rstrip('/')}/{session_uid}/{action}/"
+        response = make_request(
+            s=cls.build_session(),
+            loaders=cls.LOADERS,
+            r_type="POST",
+            url=url,
+            payload={},
+            time_out=timeout,
+        )
+        if response.status_code != 200:
+            raise_for_response(response)
+        data = response.json()
+        if not isinstance(data, dict):
+            raise TypeError(f"Agent session {action} response must be a JSON object")
+        return cls(**data)
+
+    @classmethod
+    def archive_by_uid(cls, uid: str, *, timeout=None) -> AgentSession:
+        return cls._set_archive_state(uid, action="archive", timeout=timeout)
+
+    @classmethod
+    def unarchive_by_uid(cls, uid: str, *, timeout=None) -> AgentSession:
+        return cls._set_archive_state(uid, action="unarchive", timeout=timeout)
+
+    def archive(self, *, timeout=None) -> AgentSession:
+        return type(self)._set_archive_state(self, action="archive", timeout=timeout)
+
+    def unarchive(self, *, timeout=None) -> AgentSession:
+        return type(self)._set_archive_state(self, action="unarchive", timeout=timeout)
+
     uid: str | None = Field(None, description="Public UID of the agent session.")
     agent_uid: str | None = Field(
         None, description="Public UID of the agent definition used for this session."
@@ -1013,6 +1249,21 @@ class AgentSession(BaseObjectOrm, BasePydanticModel):
         "",
         description="Read-only helper with the canonical machine-readable agent runtime or workflow type.",
     )
+    harness: AgentHarnessKind | None = Field(
+        None,
+        description=(
+            "Harness that owns session persistence. None means the connected backend "
+            "predates the multi-harness contract."
+        ),
+    )
+    harness_protocol: AgentHarnessProtocol | None = Field(
+        None,
+        description="Harness persistence protocol advertised by the backend.",
+    )
+    harness_version: str = Field(
+        "",
+        description="Version of the harness runtime that owns the session.",
+    )
     parent_session: int | AgentSession | None = Field(
         None,
         exclude=True,
@@ -1043,6 +1294,14 @@ class AgentSession(BaseObjectOrm, BasePydanticModel):
         None,
         description="Timestamp when the session ended.",
     )
+    is_archived: bool | None = Field(
+        None,
+        description="Whether the session is archived. None means the backend omitted archive state.",
+    )
+    archived_at: datetime.datetime | None = Field(
+        None,
+        description="Timestamp when the session was archived.",
+    )
     llm_provider: str = Field(
         ...,
         description="Resolved LLM provider actually used for this session. Unlike Agent defaults, this is intended to be the authoritative runtime record.",
@@ -1053,6 +1312,18 @@ class AgentSession(BaseObjectOrm, BasePydanticModel):
     )
     llm_thinking: str = Field(
         "", description="Resolved thinking/reasoning setting used for this session."
+    )
+    active_provider: str | None = Field(
+        None,
+        description="Read-only active provider projection for the session.",
+    )
+    active_model: str | None = Field(
+        None,
+        description="Read-only active model projection for the session.",
+    )
+    active_thinking: str | None = Field(
+        None,
+        description="Read-only active thinking level projection for the session.",
     )
     engine_name: str = Field(
         "",
@@ -1096,6 +1367,20 @@ __all__ = [
     "Agent",
     "AgentRuntimeImageDrift",
     "AgentRuntimeImageDriftCheck",
+    "AgentHarnessKind",
+    "AgentHarnessProtocol",
+    "AgentSessionInsights",
+    "AgentSessionInsightsBase",
+    "PiAgentSessionInsights",
+    "TauAgentSessionInsights",
+    "TauAgentSessionInsightsContext",
+    "TauAgentSessionInsightsDetails",
+    "TauAgentSessionInsightsLastTurn",
+    "TauAgentSessionInsightsLastTurnModel",
+    "TauAgentSessionInsightsModel",
+    "TauAgentSessionInsightsSession",
+    "TauAgentSessionInsightsTokenTotals",
+    "TauAgentSessionInsightsUsage",
     "AgentSemanticSearchResult",
     "AgentSessionRuntimeAccess",
     "CodingAgentService",

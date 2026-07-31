@@ -3522,10 +3522,14 @@ def test_project_add_label(cli_mod, runner, monkeypatch):
 
     result = runner.invoke(
         cli_mod.app,
-        ["project", "add-label", "4", "--label", "rates,research"],
+        ["project", "add-label", "project-uid-4", "--label", "rates,research"],
     )
     assert result.exit_code == 0
-    assert captured == {"project_id": 4, "labels": ["rates", "research"], "timeout": None}
+    assert captured == {
+        "project_id": "project-uid-4",
+        "labels": ["rates", "research"],
+        "timeout": None,
+    }
     assert "Project add-label completed." in result.output
     assert "rates, research" in result.output
 
@@ -3560,9 +3564,9 @@ def test_project_add_to_edit(cli_mod, runner, monkeypatch):
 
     monkeypatch.setattr(cli_mod, "add_project_user_to_edit", _add)
 
-    result = runner.invoke(cli_mod.app, ["project", "add_to_edit", "4", "12"])
+    result = runner.invoke(cli_mod.app, ["project", "add_to_edit", "project-uid-4", "12"])
     assert result.exit_code == 0
-    assert captured == {"project_id": 4, "user_id": 12, "timeout": None}
+    assert captured == {"project_id": "project-uid-4", "user_id": 12, "timeout": None}
     assert "Project add_to_edit completed." in result.output
     assert "Project Sharing Update" in result.output
     assert "editor@example.com" in result.output
@@ -3595,9 +3599,9 @@ def test_project_add_team_to_view(cli_mod, runner, monkeypatch):
 
     monkeypatch.setattr(cli_mod, "add_project_team_to_view", _add)
 
-    result = runner.invoke(cli_mod.app, ["project", "add_team_to_view", "4", "3"])
+    result = runner.invoke(cli_mod.app, ["project", "add_team_to_view", "project-uid-4", "3"])
     assert result.exit_code == 0
-    assert captured == {"project_id": 4, "team_id": 3, "timeout": None}
+    assert captured == {"project_id": "project-uid-4", "team_id": 3, "timeout": None}
     assert "Project add_team_to_view completed." in result.output
     assert "Research" in result.output
 
@@ -3730,15 +3734,15 @@ def test_list_project_users_can_view_uses_client_model(cli_mod, monkeypatch):
         ROOT_URL = "https://old.test/orm/api/pods/projects"
 
         @classmethod
-        def get(cls, pk=None, timeout=None, **filters):
-            captured["get"] = {"pk": pk, "timeout": timeout, "filters": filters}
+        def get_by_uid(cls, uid, timeout=None):
+            captured["get_by_uid"] = {"uid": uid, "timeout": timeout}
 
             class _Project:
                 def can_view(self, timeout=None):
                     captured["can_view_timeout"] = timeout
                     return types.SimpleNamespace(
                         model_dump=lambda mode="python": {
-                            "object_id": pk,
+                            "object_id": uid,
                             "object_type": "tdag.project",
                             "access_level": "view",
                             "users": [
@@ -3765,8 +3769,8 @@ def test_list_project_users_can_view_uses_client_model(cli_mod, monkeypatch):
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
     monkeypatch.setitem(sys.modules, "mainsequence.client.models_foundry", fake_models)
 
-    out = api_mod.list_project_users_can_view(4, timeout=9)
-    assert captured["get"] == {"pk": 4, "timeout": 9, "filters": {}}
+    out = api_mod.list_project_users_can_view("project-uid-4", timeout=9)
+    assert captured["get_by_uid"] == {"uid": "project-uid-4", "timeout": 9}
     assert captured["can_view_timeout"] == 9
     assert captured["jwt"] == ("acc", "ref")
     assert out["users"][0]["username"] == "viewer"
@@ -3813,8 +3817,8 @@ def test_add_project_user_to_edit_uses_client_model(cli_mod, monkeypatch):
         ROOT_URL = "https://old.test/orm/api/pods/projects"
 
         @classmethod
-        def get(cls, pk=None, timeout=None, **filters):
-            captured["get"] = {"pk": pk, "timeout": timeout, "filters": filters}
+        def get_by_uid(cls, uid, timeout=None):
+            captured["get_by_uid"] = {"uid": uid, "timeout": timeout}
 
             class _Project:
                 def add_to_edit(self, user_id, timeout=None):
@@ -3823,7 +3827,7 @@ def test_add_project_user_to_edit_uses_client_model(cli_mod, monkeypatch):
                         "ok": True,
                         "action": "add_to_edit",
                         "detail": "User now has explicit edit access.",
-                        "object_id": pk,
+                        "object_id": uid,
                         "object_type": "tdag.project",
                         "user": {
                             "id": user_id,
@@ -3847,8 +3851,8 @@ def test_add_project_user_to_edit_uses_client_model(cli_mod, monkeypatch):
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
     monkeypatch.setitem(sys.modules, "mainsequence.client.models_foundry", fake_models)
 
-    out = api_mod.add_project_user_to_edit(4, 12, timeout=10)
-    assert captured["get"] == {"pk": 4, "timeout": 10, "filters": {}}
+    out = api_mod.add_project_user_to_edit("project-uid-4", 12, timeout=10)
+    assert captured["get_by_uid"] == {"uid": "project-uid-4", "timeout": 10}
     assert captured["add_to_edit"] == {"user_id": 12, "timeout": 10}
     assert captured["jwt"] == ("acc", "ref")
     assert out["action"] == "add_to_edit"
@@ -4003,15 +4007,13 @@ def test_delete_constant_uses_client_model(cli_mod, monkeypatch):
         ROOT_URL = "https://old.test/orm/api/pods/constant"
 
         @classmethod
-        def get(cls, pk=None, timeout=None, **filters):
-            captured["get"] = {"pk": pk, "timeout": timeout, "filters": filters}
+        def get_by_uid(cls, uid, timeout=None):
+            captured["get_by_uid"] = {"uid": uid, "timeout": timeout}
 
             class _Constant:
-                id = pk
-
                 def model_dump(self, mode="python"):
                     return {
-                        "id": pk,
+                        "uid": uid,
                         "name": "ASSETS__MASTER",
                         "value": {"source": "bbg"},
                     }
@@ -4030,8 +4032,8 @@ def test_delete_constant_uses_client_model(cli_mod, monkeypatch):
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
     monkeypatch.setitem(sys.modules, "mainsequence.client.models_foundry", fake_models)
 
-    out = api_mod.delete_constant(7, timeout=20)
-    assert captured["get"] == {"pk": 7, "timeout": 20, "filters": {}}
+    out = api_mod.delete_constant("constant-uid-7", timeout=20)
+    assert captured["get_by_uid"] == {"uid": "constant-uid-7", "timeout": 20}
     assert captured["delete_timeout"] == 20
     assert captured["jwt"] == ("acc", "ref")
     assert out["name"] == "ASSETS__MASTER"
@@ -4068,8 +4070,8 @@ def test_list_constant_users_can_edit_uses_client_model(cli_mod, monkeypatch):
         ROOT_URL = "https://old.test/orm/api/pods/constant"
 
         @classmethod
-        def get(cls, pk=None, timeout=None, **filters):
-            captured["get"] = {"pk": pk, "timeout": timeout, "filters": filters}
+        def get_by_uid(cls, uid, timeout=None):
+            captured["get_by_uid"] = {"uid": uid, "timeout": timeout}
 
             class _Constant:
                 def can_edit(self, timeout=None):
@@ -4103,8 +4105,8 @@ def test_list_constant_users_can_edit_uses_client_model(cli_mod, monkeypatch):
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
     monkeypatch.setitem(sys.modules, "mainsequence.client.models_foundry", fake_models)
 
-    out = api_mod.list_constant_users_can_edit(7, timeout=12)
-    assert captured["get"] == {"pk": 7, "timeout": 12, "filters": {}}
+    out = api_mod.list_constant_users_can_edit("constant-uid-7", timeout=12)
+    assert captured["get_by_uid"] == {"uid": "constant-uid-7", "timeout": 12}
     assert captured["can_edit_timeout"] == 12
     assert captured["jwt"] == ("acc", "ref")
     assert out["users"][0]["username"] == "editor"
@@ -4141,8 +4143,8 @@ def test_add_constant_user_to_edit_uses_client_model(cli_mod, monkeypatch):
         ROOT_URL = "https://old.test/orm/api/pods/constant"
 
         @classmethod
-        def get(cls, pk=None, timeout=None, **filters):
-            captured["get"] = {"pk": pk, "timeout": timeout, "filters": filters}
+        def get_by_uid(cls, uid, timeout=None):
+            captured["get_by_uid"] = {"uid": uid, "timeout": timeout}
 
             class _Constant:
                 def add_to_edit(self, user_id, timeout=None):
@@ -4151,7 +4153,7 @@ def test_add_constant_user_to_edit_uses_client_model(cli_mod, monkeypatch):
                         "ok": True,
                         "action": "add_to_edit",
                         "detail": "User now has explicit edit access.",
-                        "object_id": pk,
+                        "object_id": uid,
                         "object_type": "tdag.constant",
                         "user": {
                             "id": user_id,
@@ -4175,8 +4177,8 @@ def test_add_constant_user_to_edit_uses_client_model(cli_mod, monkeypatch):
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
     monkeypatch.setitem(sys.modules, "mainsequence.client.models_foundry", fake_models)
 
-    out = api_mod.add_constant_user_to_edit(7, 9, timeout=14)
-    assert captured["get"] == {"pk": 7, "timeout": 14, "filters": {}}
+    out = api_mod.add_constant_user_to_edit("constant-uid-7", 9, timeout=14)
+    assert captured["get_by_uid"] == {"uid": "constant-uid-7", "timeout": 14}
     assert captured["add_to_edit"] == {"user_id": 9, "timeout": 14}
     assert captured["jwt"] == ("acc", "ref")
     assert out["action"] == "add_to_edit"
@@ -4270,8 +4272,8 @@ def test_list_secret_users_can_view_uses_client_model(cli_mod, monkeypatch):
         ROOT_URL = "https://old.test/orm/api/pods/secret"
 
         @classmethod
-        def get(cls, pk=None, timeout=None, **filters):
-            captured["get"] = {"pk": pk, "timeout": timeout, "filters": filters}
+        def get_by_uid(cls, uid, timeout=None):
+            captured["get_by_uid"] = {"uid": uid, "timeout": timeout}
 
             class _Secret:
                 def can_view(self, timeout=None):
@@ -4307,8 +4309,8 @@ def test_list_secret_users_can_view_uses_client_model(cli_mod, monkeypatch):
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
     monkeypatch.setitem(sys.modules, "mainsequence.client.models_foundry", fake_models)
 
-    out = api_mod.list_secret_users_can_view(8, timeout=13)
-    assert captured["get"] == {"pk": 8, "timeout": 13, "filters": {}}
+    out = api_mod.list_secret_users_can_view("secret-uid-8", timeout=13)
+    assert captured["get_by_uid"] == {"uid": "secret-uid-8", "timeout": 13}
     assert captured["can_view_timeout"] == 13
     assert captured["jwt"] == ("acc", "ref")
     assert out["users"][0]["username"] == "viewer"
@@ -4347,8 +4349,8 @@ def test_add_secret_user_to_edit_uses_client_model(cli_mod, monkeypatch):
         ROOT_URL = "https://old.test/orm/api/pods/secret"
 
         @classmethod
-        def get(cls, pk=None, timeout=None, **filters):
-            captured["get"] = {"pk": pk, "timeout": timeout, "filters": filters}
+        def get_by_uid(cls, uid, timeout=None):
+            captured["get_by_uid"] = {"uid": uid, "timeout": timeout}
 
             class _Secret:
                 def add_to_edit(self, user_id, timeout=None):
@@ -4357,7 +4359,7 @@ def test_add_secret_user_to_edit_uses_client_model(cli_mod, monkeypatch):
                         "ok": True,
                         "action": "add_to_edit",
                         "detail": "User now has explicit edit access.",
-                        "object_id": pk,
+                        "object_id": uid,
                         "object_type": "tdag.secret",
                         "user": {
                             "id": user_id,
@@ -4381,8 +4383,8 @@ def test_add_secret_user_to_edit_uses_client_model(cli_mod, monkeypatch):
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
     monkeypatch.setitem(sys.modules, "mainsequence.client.models_foundry", fake_models)
 
-    out = api_mod.add_secret_user_to_edit(8, 11, timeout=14)
-    assert captured["get"] == {"pk": 8, "timeout": 14, "filters": {}}
+    out = api_mod.add_secret_user_to_edit("secret-uid-8", 11, timeout=14)
+    assert captured["get_by_uid"] == {"uid": "secret-uid-8", "timeout": 14}
     assert captured["add_to_edit"] == {"user_id": 11, "timeout": 14}
     assert captured["jwt"] == ("acc", "ref")
     assert out["action"] == "add_to_edit"
@@ -9267,7 +9269,9 @@ def test_project_job_runs_logs_stops_after_max_wait(cli_mod, runner, monkeypatch
 def test_project_jobs_create_interactive_defaults(cli_mod, runner, monkeypatch, tmp_path):
     target = tmp_path / "demo-123"
     target.mkdir(parents=True, exist_ok=True)
-    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_ID=123\n", encoding="utf-8")
+    (target / ".env").write_text(
+        "MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8"
+    )
 
     monkeypatch.chdir(target)
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
@@ -9301,7 +9305,7 @@ def test_project_jobs_create_interactive_defaults(cli_mod, runner, monkeypatch, 
         cli_mod.app, ["project", "jobs", "create"], input="demo-job\n\nscripts/test.py\n\n"
     )
     assert result.exit_code == 0
-    assert captured["project_id"] == 123
+    assert captured["project_id"] == "project-uid-123"
     assert captured["name"] == "demo-job"
     assert captured["related_image_id"] == 77
     assert captured["execution_path"] == "scripts/test.py"
@@ -9426,7 +9430,9 @@ def test_project_jobs_create_interactive_interval_schedule(cli_mod, runner, monk
 def test_project_create_image_interactive_defaults(cli_mod, runner, monkeypatch, tmp_path):
     target = tmp_path / "demo-123"
     target.mkdir(parents=True, exist_ok=True)
-    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_ID=123\n", encoding="utf-8")
+    (target / ".env").write_text(
+        "MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8"
+    )
 
     monkeypatch.chdir(target)
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
@@ -9489,7 +9495,7 @@ def test_project_create_image_interactive_defaults(cli_mod, runner, monkeypatch,
 
     result = runner.invoke(cli_mod.app, ["project", "images", "create"], input="\n\n")
     assert result.exit_code == 0
-    assert captured["related_project_id"] == 123
+    assert captured["related_project_id"] == "project-uid-123"
     assert captured["project_repo_hash"] == "1111111111111111111111111111111111111111"
     assert captured["base_image_id"] == 22
     assert "Project image created: id=77" in result.output
@@ -10115,6 +10121,7 @@ def test_project_refresh_token(cli_mod, runner, monkeypatch, tmp_path):
     env_path.write_text(
         "FOO=bar\n"
         "MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n"
+        "MAIN_SEQUENCE_PROJECT_ID=123\n"
         "MAINSEQUENCE_ACCESS_TOKEN=old-access\n"
         "MAINSEQUENCE_REFRESH_TOKEN=old-refresh\n"
         "MAINSEQUENCE_ENDPOINT=https://old-backend.test\n"
@@ -10140,7 +10147,7 @@ def test_project_refresh_token(cli_mod, runner, monkeypatch, tmp_path):
     assert "MAINSEQUENCE_ENDPOINT=https://backend.test" in env_text
     assert "MAIN_SEQUENCE_PROJECT_UID=project-uid-123" in env_text
     assert "MAIN_SEQUENCE_PROJECT_ID" not in env_text
-    assert "MAINSEQUENCE_TOKEN=legacy-token" in env_text
+    assert "MAINSEQUENCE_TOKEN" not in env_text
     assert "old-access" not in env_text
     assert "old-refresh" not in env_text
 
@@ -10152,9 +10159,11 @@ def test_project_refresh_token_runtime_credential(cli_mod, runner, monkeypatch, 
     env_path.write_text(
         "FOO=bar\n"
         "MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n"
+        "MAIN_SEQUENCE_PROJECT_ID=123\n"
         "MAINSEQUENCE_AUTH_MODE=jwt\n"
         "MAINSEQUENCE_ACCESS_TOKEN=old-access\n"
-        "MAINSEQUENCE_REFRESH_TOKEN=old-refresh\n",
+        "MAINSEQUENCE_REFRESH_TOKEN=old-refresh\n"
+        "MAINSEQUENCE_TOKEN=legacy-token\n",
         encoding="utf-8",
     )
 
@@ -10186,6 +10195,7 @@ def test_project_refresh_token_runtime_credential(cli_mod, runner, monkeypatch, 
     assert "MAINSEQUENCE_ENDPOINT=https://backend.test" in env_text
     assert "MAIN_SEQUENCE_PROJECT_UID=project-uid-123" in env_text
     assert "MAIN_SEQUENCE_PROJECT_ID" not in env_text
+    assert "MAINSEQUENCE_TOKEN" not in env_text
     assert "MAINSEQUENCE_REFRESH_TOKEN" not in env_text
     assert "old-access" not in env_text
     assert "old-refresh" not in env_text
@@ -10567,7 +10577,9 @@ def test_project_sync_defaults_to_cwd_with_positional_message(
 def test_project_schedule_batch_jobs_defaults_to_cwd(cli_mod, runner, monkeypatch, tmp_path):
     target = tmp_path / "project"
     target.mkdir(parents=True, exist_ok=True)
-    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_ID=123\n", encoding="utf-8")
+    (target / ".env").write_text(
+        "MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8"
+    )
     (target / "scheduled_jobs.yaml").write_text("jobs: []\n", encoding="utf-8")
     captured = {}
 
@@ -10594,7 +10606,7 @@ def test_project_schedule_batch_jobs_defaults_to_cwd(cli_mod, runner, monkeypatc
         ["project", "schedule_batch_jobs", "scheduled_jobs.yaml", "--strict"],
     )
     assert result.exit_code == 0
-    assert captured["project_id"] == 123
+    assert captured["project_id"] == "project-uid-123"
     assert captured["file_path"] == str((target / "scheduled_jobs.yaml").resolve())
     assert captured["strict"] is True
     assert "Scheduled 1 jobs from scheduled_jobs.yaml." in result.output
@@ -10606,7 +10618,9 @@ def test_project_schedule_batch_jobs_prompts_for_project_image_and_applies_it_to
     target = tmp_path / "project"
     target.mkdir(parents=True, exist_ok=True)
     batch_file = target / "scheduled_jobs.yaml"
-    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_ID=123\n", encoding="utf-8")
+    (target / ".env").write_text(
+        "MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8"
+    )
     batch_file.write_text(
         "\n".join(
             [
@@ -10668,7 +10682,7 @@ def test_project_schedule_batch_jobs_prompts_for_project_image_and_applies_it_to
         ["project", "schedule_batch_jobs", "scheduled_jobs.yaml"],
     )
     assert result.exit_code == 0
-    assert captured["project_id"] == 123
+    assert captured["project_id"] == "project-uid-123"
     assert captured["file_path"] != str(batch_file.resolve())
     assert captured_picker["title"] == "Available Project Images"
     assert captured_picker["items"][0]["id"] == 77

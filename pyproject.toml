@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mainsequence"
-version = "5.0.2"
+version = "5.0.3"
 description = "Main Sequence SDK "
 readme = "README.md"
 requires-python = ">=3.13"
@@ -24,7 +24,7 @@ classifiers = [
 dependencies = [
   "alembic>=1.18.4",
   "cachetools",
-  "click>=8.3.0",
+  "click>=8.3.3",
   "concurrent-log-handler",
   "numpy",
   "opentelemetry-api",
@@ -32,23 +32,25 @@ dependencies = [
   "opentelemetry-sdk",
   "packaging>=24.2",
   "pandas",
+  "protobuf>=6.33.5",
   "psutil",
   "psycopg2>=2.9.12",
   "pydantic>=2.11,<3",
+  "pygments>=2.20.0",
   "pyyaml",
-  "requests",
+  "requests>=2.33.0",
   "sqlalchemy>=2,<3",
   "starlette",
   "structlog",
   "tqdm",
   "typer",
-  "urllib3",
+  "urllib3>=2.7.0",
 ]
 
 [project.optional-dependencies]
 "local-data" = [
-  "duckdb",
-  "pyarrow",
+  "duckdb>=1.4.2",
+  "pyarrow>=23.0.1",
 ]
 # Optional headless browser support for future Command Center workspace/web snapshots.
 # Keep this out of the default SDK install because most users do not need Playwright.
@@ -66,11 +68,22 @@ ms = "mainsequence.cli.cli:app"
 # PEP 621 dependencies (published requirements)
 [dependency-groups]
 dev = [
-  "mkdocs", "mkdocs-material", "mkdocs-gen-files", "mkdocs-literate-nav", "mkdocs-autorefs",
-  "mkdocstrings[python]", "mkdocs-mermaid2-plugin", "pymdown-extensions", "pipdeptree",
-  "pytest>=8.4.2", "twine", "streamlit", "IPython",
-      "ruff>=0.14.0",
-  "black>=25.9.0","pre-commit"
+  "black>=26.3.1",
+  "IPython",
+  "mkdocs",
+  "mkdocs-autorefs",
+  "mkdocs-gen-files",
+  "mkdocs-literate-nav",
+  "mkdocs-material",
+  "mkdocs-mermaid2-plugin",
+  "mkdocstrings[python]",
+  "pipdeptree",
+  "pre-commit",
+  "pymdown-extensions>=11.0.0",
+  "pytest>=9.0.3",
+  "ruff>=0.14.0",
+  "streamlit>=1.54.0",
+  "twine",
 ]
 
 # Package discovery equivalent to find_packages(include=['mainsequence','mainsequence.*'])

@@ -34,7 +34,7 @@ When `MAINSEQUENCE_AUTH_MODE=runtime_credential`, `mainsequence login` exchanges
 
 `mainsequence logout` now performs a hard CLI logout when the session came from browser-based CLI login and a refresh token is available. It revokes the tracked CLI login session server-side through `/auth/cli/revoke/`, falls back to JWT logout on older backends that do not implement that endpoint, and otherwise clears only local CLI auth state.
 
-`mainsequence project set-up-locally` and `mainsequence project refresh_token` are auth-mode aware. In runtime credential mode they write `MAINSEQUENCE_AUTH_MODE=runtime_credential`, the runtime credential id/secret, and an exchanged `MAINSEQUENCE_ACCESS_TOKEN` into the project `.env`; they do not require or write `MAINSEQUENCE_REFRESH_TOKEN`.
+`mainsequence project set-up-locally` and `mainsequence project refresh_token` are auth-mode aware. In runtime credential mode they write `MAINSEQUENCE_AUTH_MODE=runtime_credential`, the runtime credential id/secret, and an exchanged `MAINSEQUENCE_ACCESS_TOKEN` into the project `.env`; they do not require or write `MAINSEQUENCE_REFRESH_TOKEN`. Both commands preserve unrelated `.env` entries and do not carry obsolete `MAINSEQUENCE_TOKEN` or `MAIN_SEQUENCE_PROJECT_ID` entries into the rendered file.
 
 ## Quickstart
 
