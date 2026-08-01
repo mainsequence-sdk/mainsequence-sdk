@@ -2296,6 +2296,133 @@ def test_login_mocked(cli_mod, runner, monkeypatch):
     }
 
 
+def test_login_via_mcp_handoff_persists_without_browser(
+    cli_mod,
+    runner,
+    monkeypatch,
+):
+    handoff_uid = "00000000-0000-4000-8000-000000000001"
+    captured: dict[str, object] = {}
+    saved: list[tuple[str, str, str]] = []
+
+    def _mcp_login(*, timeout_seconds, on_handoff):
+        captured["timeout_seconds"] = timeout_seconds
+        on_handoff(
+            {
+                "mcp_tool": "auth.cli_authorize",
+                "mcp_arguments": {"handoff_uid": handoff_uid},
+            }
+        )
+        return {
+            "backend": cli_mod.cfg.STANDARD_BACKEND_URL,
+            "access": "mcp-access",
+            "refresh": "mcp-refresh",
+            "user": {"username": "coding-agent@example.com"},
+        }
+
+    monkeypatch.setattr(cli_mod, "login_via_mcp_handoff", _mcp_login)
+    monkeypatch.setattr(
+        cli_mod,
+        "login_via_browser",
+        lambda **_kwargs: (_ for _ in ()).throw(
+            AssertionError("browser login must not run")
+        ),
+    )
+    monkeypatch.setattr(
+        cli_mod.cfg,
+        "save_tokens",
+        lambda username, access, refresh: saved.append(
+            (username, access, refresh)
+        )
+        or True,
+    )
+    monkeypatch.setattr(
+        cli_mod.cfg,
+        "get_config",
+        lambda: {"mainsequence_path": "/tmp/mainsequence"},
+    )
+    monkeypatch.setattr(
+        cli_mod.cfg,
+        "set_session_overrides",
+        lambda **kwargs: captured.update({"session": kwargs}),
+    )
+    monkeypatch.setattr(
+        cli_mod.cfg,
+        "auth_persistence_label",
+        lambda: "local CLI auth storage",
+    )
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["login", "--mcp", "--mcp-timeout-seconds", "42"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert captured["timeout_seconds"] == 42
+    assert '"tool":"auth.cli_authorize"' in result.output
+    assert handoff_uid in result.output
+    assert "mcp-access" not in result.output
+    assert "mcp-refresh" not in result.output
+    assert saved == [
+        ("", "mcp-access", "mcp-refresh"),
+        (
+            "coding-agent@example.com",
+            "mcp-access",
+            "mcp-refresh",
+        ),
+    ]
+
+
+def test_login_via_mcp_handoff_rejects_export(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(
+        cli_mod,
+        "login_via_mcp_handoff",
+        lambda **_kwargs: (_ for _ in ()).throw(
+            AssertionError("handoff must not start")
+        ),
+    )
+
+    result = runner.invoke(cli_mod.app, ["login", "--mcp", "--export"])
+
+    assert result.exit_code == 1
+    assert "cannot be combined with --export" in result.output
+
+
+def test_login_via_mcp_handoff_rejects_runtime_credential_mode(
+    cli_mod, runner, monkeypatch
+):
+    monkeypatch.setenv("MAINSEQUENCE_AUTH_MODE", "runtime_credential")
+    monkeypatch.setattr(
+        cli_mod,
+        "login_via_mcp_handoff",
+        lambda **_kwargs: (_ for _ in ()).throw(
+            AssertionError("handoff must not start")
+        ),
+    )
+
+    result = runner.invoke(cli_mod.app, ["login", "--mcp"])
+
+    assert result.exit_code == 1
+    assert "MAINSEQUENCE_AUTH_MODE=runtime_credential" in result.output
+    assert "Run `mainsequence login` instead" in result.output
+
+
+def test_login_via_mcp_handoff_reports_mcp_failure(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(
+        cli_mod,
+        "login_via_mcp_handoff",
+        lambda **_kwargs: (_ for _ in ()).throw(
+            cli_mod.BrowserAuthError("handoff expired")
+        ),
+    )
+
+    result = runner.invoke(cli_mod.app, ["login", "--mcp"])
+
+    assert result.exit_code == 1
+    assert "MCP handoff login failed: handoff expired" in result.output
+    assert "Browser login failed" not in result.output
+
+
 def test_login_with_backend_override(cli_mod, runner, monkeypatch):
     seen = {}
     session_override = {}

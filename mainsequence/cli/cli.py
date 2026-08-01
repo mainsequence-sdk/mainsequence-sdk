@@ -214,7 +214,11 @@ from .api import (
     update_workspace,
     validate_project_name,
 )
-from .browser_auth import BrowserAuthError, login_via_browser
+from .browser_auth import (
+    BrowserAuthError,
+    login_via_browser,
+    login_via_mcp_handoff,
+)
 from .docker_utils import (
     build_docker_environment,
     compute_docker_image_ref,
@@ -2402,6 +2406,20 @@ def login(
         "--no-open",
         help="Do not auto-open a browser. Print the authorization URL and wait for callback.",
     ),
+    mcp: bool = typer.Option(
+        False,
+        "--mcp",
+        help=(
+            "Authorize this CLI through the already-authenticated Main Sequence "
+            "MCP principal instead of opening a browser."
+        ),
+    ),
+    mcp_timeout_seconds: int = typer.Option(
+        300,
+        "--mcp-timeout-seconds",
+        min=1,
+        help="Seconds to wait for the MCP host to authorize the CLI handoff.",
+    ),
     backend_option: str | None = typer.Option(
         None,
         "--backend",
@@ -2453,6 +2471,10 @@ def login(
         JWT refresh token for manual token import.
     no_open:
         If True, do not auto-open a browser. The CLI prints the auth URL.
+    mcp:
+        If True, use a backend-issued handoff approved by auth.cli_authorize.
+    mcp_timeout_seconds:
+        Maximum time to wait for the MCP authorization handoff.
     backend_option:
         Backend override for this terminal session.
     projects_base_option:
@@ -2466,6 +2488,7 @@ def login(
     mainsequence login
     mainsequence login 127.0.0.1:8000 mainsequence-dev
     mainsequence login --no-open
+    mainsequence login --mcp
     mainsequence login --access-token "$TOKEN" --refresh-token "$REFRESH"
     mainsequence login --access-token "$TOKEN" --refresh-token "$REFRESH" --backend http://127.0.0.1:8000 --projects-base mainsequence-dev
     mainsequence login --export
@@ -2478,9 +2501,24 @@ def login(
     if using_runtime_credential and using_jwt:
         error("Runtime credential login cannot be combined with --access-token/--refresh-token.")
         raise typer.Exit(1)
+    if using_runtime_credential and mcp:
+        error(
+            "MCP handoff login cannot be used when "
+            "MAINSEQUENCE_AUTH_MODE=runtime_credential. Run `mainsequence login` instead."
+        )
+        raise typer.Exit(1)
+
+    if mcp and using_jwt:
+        error("MCP handoff login cannot be combined with --access-token/--refresh-token.")
+        raise typer.Exit(1)
+    if mcp and export:
+        error("MCP handoff login cannot be combined with --export.")
+        raise typer.Exit(1)
 
     if using_runtime_credential and no_open:
         warn("--no-open is ignored when MAINSEQUENCE_AUTH_MODE=runtime_credential.")
+    if mcp and no_open:
+        warn("--no-open is ignored during MCP handoff login.")
 
     if not using_jwt and backend and "@" in backend:
         error(
@@ -2555,6 +2593,51 @@ def login(
                 "persisted": bool(persisted),
                 "auth_mode": "jwt",
             }
+        elif mcp:
+
+            def _emit_mcp_handoff(handoff: dict) -> None:
+                tool_call = {
+                    "tool": handoff["mcp_tool"],
+                    "arguments": handoff["mcp_arguments"],
+                }
+                info(
+                    "Authorize this CLI from the connected Main Sequence MCP session:"
+                )
+                typer.echo(json.dumps(tool_call, separators=(",", ":")))
+
+            flow = login_via_mcp_handoff(
+                timeout_seconds=mcp_timeout_seconds,
+                on_handoff=_emit_mcp_handoff,
+            )
+            access = (flow.get("access") or "").strip()
+            refresh = (flow.get("refresh") or "").strip()
+            if not access or not refresh:
+                raise ApiError(
+                    "MCP handoff login did not return access and refresh tokens."
+                )
+
+            persisted = cfg.save_tokens("", access, refresh)
+            user_payload = flow.get("user")
+            username = ""
+            if isinstance(user_payload, dict):
+                username = str(user_payload.get("username") or "").strip()
+            if not username:
+                profile = get_current_user_profile()
+                if isinstance(profile, dict):
+                    username = (profile.get("username") or "").strip()
+            if username:
+                persisted = bool(
+                    cfg.save_tokens(username, access, refresh) and persisted
+                )
+
+            res = {
+                "username": username,
+                "backend": normalized_backend,
+                "access": access,
+                "refresh": refresh,
+                "persisted": bool(persisted),
+                "auth_mode": "jwt",
+            }
         else:
 
             def _emit_auth_url(url: str) -> None:
@@ -2586,7 +2669,8 @@ def login(
                 "auth_mode": "jwt",
             }
     except BrowserAuthError as e:
-        error(f"Browser login failed: {e}")
+        login_kind = "MCP handoff" if mcp else "Browser"
+        error(f"{login_kind} login failed: {e}")
         raise typer.Exit(1) from e
     except ApiError as e:
         error(f"Login failed: {e}")

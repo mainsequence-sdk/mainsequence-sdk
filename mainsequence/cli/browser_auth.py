@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """
 mainsequence.cli.browser_auth
 =============================
@@ -7,18 +5,28 @@ mainsequence.cli.browser_auth
 Browser-based authentication helpers for MainSequence CLI login.
 """
 
+from __future__ import annotations
+
 import base64
 import hashlib
 import html
 import secrets
 import threading
+import time
 import webbrowser
 from collections.abc import Callable
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-from .api import CLI_BROWSER_CLIENT_ID, build_cli_authorize_url, exchange_cli_authorization_code
+from .api import (
+    CLI_BROWSER_CLIENT_ID,
+    build_cli_authorize_url,
+    exchange_cli_authorization_code,
+    poll_mcp_cli_handoff,
+    start_mcp_cli_handoff,
+)
+from .config import backend_url
 
 
 class BrowserAuthError(RuntimeError):
@@ -211,3 +219,79 @@ def login_via_browser(
         )
 
     return tokens | {"authorize_url": authorize_url}
+
+
+def _normalized_origin(url: str) -> tuple[str, str, int] | None:
+    parsed = urlparse(str(url or "").strip())
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        return None
+    if parsed.username or parsed.password or parsed.fragment:
+        return None
+    default_port = 443 if parsed.scheme == "https" else 80
+    try:
+        port = parsed.port or default_port
+    except ValueError:
+        return None
+    return parsed.scheme, parsed.hostname.lower(), port
+
+
+def login_via_mcp_handoff(
+    *,
+    timeout_seconds: int = 300,
+    poll_interval_seconds: float = 1.0,
+    on_handoff: Callable[[dict], None] | None = None,
+) -> dict:
+    """Authorize CLI login through an already-authenticated MCP principal."""
+    state = _state_token()
+    code_verifier = _pkce_code_verifier()
+    code_challenge = _pkce_code_challenge(code_verifier)
+    try:
+        handoff = start_mcp_cli_handoff(
+            state=state,
+            code_challenge=code_challenge,
+        )
+    except Exception as exc:
+        raise BrowserAuthError(
+            f"Could not start MCP CLI login handoff: {exc}"
+        ) from exc
+
+    handoff_uid = str(handoff.get("handoff_uid") or "").strip()
+    redirect_uri = str(handoff.get("redirect_uri") or "").strip()
+    tool_name = str(handoff.get("mcp_tool") or "").strip()
+    tool_arguments = handoff.get("mcp_arguments")
+    if (
+        not handoff_uid
+        or tool_name != "auth.cli_authorize"
+        or tool_arguments != {"handoff_uid": handoff_uid}
+    ):
+        raise BrowserAuthError(
+            "Backend returned an invalid MCP CLI login handoff contract."
+        )
+    if _normalized_origin(redirect_uri) != _normalized_origin(backend_url()):
+        raise BrowserAuthError(
+            "Backend returned an MCP CLI callback on a different origin."
+        )
+
+    if on_handoff is not None:
+        on_handoff(handoff)
+
+    deadline = time.monotonic() + timeout_seconds
+    while True:
+        if time.monotonic() >= deadline:
+            raise BrowserAuthError(
+                "Timed out waiting for auth.cli_authorize to approve the CLI login handoff."
+            )
+        try:
+            tokens = poll_mcp_cli_handoff(
+                redirect_uri=redirect_uri,
+                handoff_uid=handoff_uid,
+                state=state,
+                code_verifier=code_verifier,
+            )
+        except Exception as exc:
+            raise BrowserAuthError(
+                f"MCP CLI login handoff failed: {exc}"
+            ) from exc
+        if tokens is not None:
+            return tokens | {"handoff_uid": handoff_uid}
+        time.sleep(max(0.1, poll_interval_seconds))

@@ -87,6 +87,12 @@ Authenticate:
 mainsequence login
 ```
 
+An already MCP-authenticated coding agent can establish the same persisted CLI
+session with `mainsequence login --mcp`, then call the printed
+`auth.cli_authorize` tool while the command waits. The backend supplies the
+callback URI; tokens return directly to the CLI and are never exposed through
+MCP.
+
 Check that you can see your projects:
 
 ```bash

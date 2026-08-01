@@ -183,3 +183,158 @@ def test_login_via_browser_open_failure(monkeypatch):
 
     with pytest.raises(auth.BrowserAuthError, match="--no-open"):
         auth.login_via_browser(no_open=False)
+
+
+def test_start_mcp_cli_handoff_uses_backend_without_redirect_input(monkeypatch):
+    monkeypatch.setattr(cli_api, "backend_url", lambda: "https://api.example.test")
+    captured: dict[str, object] = {}
+
+    class _Resp:
+        ok = True
+        status_code = 201
+        text = ""
+
+        @staticmethod
+        def json():
+            return {
+                "handoff_uid": "00000000-0000-4000-8000-000000000001",
+                "status": "pending",
+                "redirect_uri": "https://api.example.test/auth/mcp/cli-handoff/callback/",
+                "expires_at": "2026-08-01T10:00:00Z",
+                "mcp_tool": "auth.cli_authorize",
+                "mcp_arguments": {
+                    "handoff_uid": "00000000-0000-4000-8000-000000000001"
+                },
+            }
+
+    def _post(url, data):
+        captured["url"] = url
+        captured["payload"] = json.loads(data)
+        return _Resp()
+
+    monkeypatch.setattr(cli_api.S, "post", _post)
+    result = cli_api.start_mcp_cli_handoff(
+        state="opaque-state",
+        code_challenge="challenge",
+    )
+
+    assert captured["url"] == "https://api.example.test/auth/mcp/cli-handoff/start/"
+    assert captured["payload"] == {
+        "state": "opaque-state",
+        "code_challenge": "challenge",
+        "code_challenge_method": "S256",
+    }
+    assert "redirect_uri" not in captured["payload"]
+    assert result["mcp_tool"] == "auth.cli_authorize"
+
+
+def test_poll_mcp_cli_handoff_uses_exact_backend_callback(monkeypatch):
+    monkeypatch.setattr(cli_api, "backend_url", lambda: "https://api.example.test")
+    responses = iter(
+        [
+            (202, {"status": "pending"}),
+            (200, {"access": "access", "refresh": "refresh", "user": {"username": "agent"}}),
+        ]
+    )
+    captured: list[tuple[str, dict]] = []
+
+    class _Resp:
+        text = ""
+
+        def __init__(self, status_code, payload):
+            self.status_code = status_code
+            self.ok = 200 <= status_code < 300
+            self._payload = payload
+
+        def json(self):
+            return self._payload
+
+    def _post(url, data):
+        captured.append((url, json.loads(data)))
+        return _Resp(*next(responses))
+
+    monkeypatch.setattr(cli_api.S, "post", _post)
+    kwargs = {
+        "redirect_uri": "https://api.example.test/auth/mcp/cli-handoff/callback/",
+        "handoff_uid": "00000000-0000-4000-8000-000000000001",
+        "state": "opaque-state",
+        "code_verifier": "v" * 64,
+    }
+
+    assert cli_api.poll_mcp_cli_handoff(**kwargs) is None
+    tokens = cli_api.poll_mcp_cli_handoff(**kwargs)
+
+    assert tokens["access"] == "access"
+    assert tokens["refresh"] == "refresh"
+    assert all(item[0] == kwargs["redirect_uri"] for item in captured)
+
+
+def test_login_via_mcp_handoff_waits_for_tool_authorization(monkeypatch):
+    handoff_uid = "00000000-0000-4000-8000-000000000001"
+    handoff = {
+        "handoff_uid": handoff_uid,
+        "redirect_uri": "https://api.example.test/auth/mcp/cli-handoff/callback/",
+        "expires_at": "2026-08-01T10:00:00Z",
+        "mcp_tool": "auth.cli_authorize",
+        "mcp_arguments": {"handoff_uid": handoff_uid},
+    }
+    observed: dict[str, object] = {}
+    poll_results = iter([None, {"access": "access", "refresh": "refresh"}])
+    clock = iter([0.0, 0.0, 0.1])
+
+    monkeypatch.setattr(auth, "_state_token", lambda: "opaque-state")
+    monkeypatch.setattr(auth, "_pkce_code_verifier", lambda: "v" * 64)
+    monkeypatch.setattr(auth, "_pkce_code_challenge", lambda _value: "challenge")
+    monkeypatch.setattr(auth, "backend_url", lambda: "https://api.example.test")
+    monkeypatch.setattr(
+        auth,
+        "start_mcp_cli_handoff",
+        lambda **kwargs: observed.update({"start": kwargs}) or handoff,
+    )
+    monkeypatch.setattr(
+        auth,
+        "poll_mcp_cli_handoff",
+        lambda **kwargs: observed.update({"poll": kwargs}) or next(poll_results),
+    )
+    monkeypatch.setattr(auth.time, "monotonic", lambda: next(clock))
+    monkeypatch.setattr(auth.time, "sleep", lambda _seconds: None)
+    emitted: list[dict] = []
+
+    result = auth.login_via_mcp_handoff(
+        timeout_seconds=300,
+        on_handoff=emitted.append,
+    )
+
+    assert observed["start"] == {
+        "state": "opaque-state",
+        "code_challenge": "challenge",
+    }
+    assert observed["poll"] == {
+        "redirect_uri": handoff["redirect_uri"],
+        "handoff_uid": handoff_uid,
+        "state": "opaque-state",
+        "code_verifier": "v" * 64,
+    }
+    assert emitted == [handoff]
+    assert result["access"] == "access"
+    assert result["refresh"] == "refresh"
+    assert result["handoff_uid"] == handoff_uid
+
+
+def test_login_via_mcp_handoff_rejects_cross_origin_callback(monkeypatch):
+    handoff_uid = "00000000-0000-4000-8000-000000000001"
+    monkeypatch.setattr(auth, "backend_url", lambda: "https://api.example.test")
+    monkeypatch.setattr(
+        auth,
+        "start_mcp_cli_handoff",
+        lambda **_kwargs: {
+            "handoff_uid": handoff_uid,
+            "redirect_uri": "https://other.example.test/callback/",
+            "expires_at": "2026-08-01T10:00:00Z",
+            "mcp_tool": "auth.cli_authorize",
+            "mcp_arguments": {"handoff_uid": handoff_uid},
+        },
+    )
+
+    with pytest.raises(auth.BrowserAuthError, match="different origin"):
+        auth.login_via_mcp_handoff()

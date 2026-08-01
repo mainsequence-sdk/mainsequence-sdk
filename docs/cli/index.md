@@ -18,6 +18,7 @@ pip install mainsequence
 mainsequence login
 mainsequence login 127.0.0.1:8000 mainsequence-dev
 mainsequence login --no-open
+mainsequence login --mcp
 mainsequence login --access-token "$TOKEN" --refresh-token "$REFRESH"
 mainsequence login --access-token "$TOKEN" --refresh-token "$REFRESH" --backend http://127.0.0.1:80 --projects-base mainsequence-dev
 mainsequence logout
@@ -32,6 +33,17 @@ By default, `mainsequence login` persists auth tokens for later CLI commands:
 - Linux and other platforms without secure-store support: local CLI auth storage under the MainSequence config directory
 
 You only need `--export` if you explicitly want shell-managed environment variables.
+`--export` cannot be combined with `--mcp`.
+
+`mainsequence login --mcp` is for a coding agent that already has an
+authenticated Main Sequence MCP connection. The CLI creates PKCE state and a
+challenge, asks the configured backend to create a short-lived handoff, and
+prints the exact `auth.cli_authorize` tool invocation. The backend returns the
+callback URI; the CLI does not create a localhost callback for this flow.
+After the MCP tool authorizes the handoff, the backend returns the normal
+tracked JWT pair directly to the waiting CLI, which persists it in the same
+local auth storage used by browser login. Tokens never pass through the MCP
+tool result or terminal output.
 
 `mainsequence logout` now performs a hard CLI logout when a browser-login refresh token exists:
 

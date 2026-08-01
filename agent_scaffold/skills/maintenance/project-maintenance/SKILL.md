@@ -24,7 +24,7 @@ Do not own:
 - platform ontology or Project Blueprint design;
 - domain implementation for MetaTables, DataNodes, APIs, jobs, or releases;
 - backend repository reconciliation;
-- MCP authentication or access-token extraction;
+- MCP authorization policy, OAuth token storage, or access-token extraction;
 - project-owned skills outside `.agents/skills/mainsequence/`.
 
 Route architecture changes to `project_design`, implementation routing to
@@ -77,6 +77,27 @@ documentation.
 
 ## Refresh Project Authentication
 
+Establish CLI authentication before refreshing a project. Select exactly one
+existing authentication lane:
+
+- When `MAINSEQUENCE_AUTH_MODE=runtime_credential`, run `mainsequence login`.
+  The CLI exchanges the injected runtime credential without a browser or a
+  refresh-backed user handoff.
+- When the coding agent has an authenticated Main Sequence MCP connection but
+  the CLI has no session, run `mainsequence login --mcp` in a terminal that can
+  remain active. The command asks the configured backend to create the
+  handoff, prints a JSON object naming `auth.cli_authorize` and its exact
+  `handoff_uid`, and waits. Call that MCP tool with only the printed arguments.
+  The backend-issued callback completes the waiting command and the CLI stores
+  the normal tracked JWT pair locally.
+- When neither lane is available, use the existing interactive browser login.
+
+Never use `--export` with MCP handoff login, pass access or refresh tokens to
+the model, invent a callback URI, or substitute a handoff UID from another
+terminal. If `auth.cli_authorize` returns an error, preserve the pending local
+workflow output and report that exact error rather than starting multiple
+handoffs blindly.
+
 Refresh only the CLI-managed runtime authentication entries in the project
 `.env`:
 
@@ -84,10 +105,11 @@ Refresh only the CLI-managed runtime authentication entries in the project
 mainsequence project refresh_token --path .
 ```
 
-Require normal Main Sequence CLI login first. Never print, inspect, summarize,
-copy, or return access and refresh token values. Do not attempt to extract the
-calling MCP host's protected bearer token. If authentication is unavailable,
-stop and request login through the normal CLI or development integration.
+Require one supported Main Sequence CLI login lane first. Never print,
+inspect, summarize, copy, or return access and refresh token values. Do not
+attempt to extract the calling MCP host's protected bearer token: the handoff
+authorizes a new PKCE grant and the backend returns credentials directly to
+the waiting CLI process.
 
 The command preserves unrelated project configuration and renders only the
 current supported authentication shape. Existing `MAINSEQUENCE_TOKEN` and

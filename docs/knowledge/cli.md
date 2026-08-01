@@ -32,6 +32,14 @@ For the full authentication model, including runtime credential auth and request
 
 When `MAINSEQUENCE_AUTH_MODE=runtime_credential`, `mainsequence login` exchanges the configured runtime credential instead of opening browser login. Use `mainsequence login --export` if the current shell needs the exchanged `MAINSEQUENCE_ACCESS_TOKEN`.
 
+When a coding agent already has an authenticated Main Sequence MCP connection,
+`mainsequence login --mcp` creates a backend-owned PKCE handoff and prints the
+exact `auth.cli_authorize` call. The backend supplies the callback URI and
+returns the tracked JWT pair directly to the waiting CLI after approval; the
+MCP tool never returns credentials. Runtime-credential mode continues to use
+ordinary `mainsequence login`; `--mcp` is rejected in that mode and cannot be
+combined with `--export`.
+
 `mainsequence logout` now performs a hard CLI logout when the session came from browser-based CLI login and a refresh token is available. It revokes the tracked CLI login session server-side through `/auth/cli/revoke/`, falls back to JWT logout on older backends that do not implement that endpoint, and otherwise clears only local CLI auth state.
 
 `mainsequence project set-up-locally` and `mainsequence project refresh_token` are auth-mode aware. In runtime credential mode they write `MAINSEQUENCE_AUTH_MODE=runtime_credential`, the runtime credential id/secret, and an exchanged `MAINSEQUENCE_ACCESS_TOKEN` into the project `.env`; they do not require or write `MAINSEQUENCE_REFRESH_TOKEN`. Both commands preserve unrelated `.env` entries and do not carry obsolete `MAINSEQUENCE_TOKEN` or `MAIN_SEQUENCE_PROJECT_ID` entries into the rendered file.

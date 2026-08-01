@@ -427,6 +427,12 @@ def test_sdk_source_tree_does_not_vendor_platform_owned_content():
     assert not [path for path in forbidden_paths if path.exists()]
 
 
+def test_sdk_source_tree_does_not_vendor_extension_library_routing_skills():
+    sdk_root = Path(__file__).resolve().parents[1]
+
+    assert not (sdk_root / "agent_scaffold" / "skills" / "ms-markets").exists()
+
+
 def test_project_maintenance_is_sdk_owned_and_uses_canonical_cli_workflows():
     sdk_root = Path(__file__).resolve().parents[1]
     skill_path = (

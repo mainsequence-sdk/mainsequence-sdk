@@ -45,6 +45,7 @@ AUTH_PATHS = {
     "refresh": "/auth/jwt-token/token/refresh/",
     "logout": "/auth/jwt-token/logout/",
     "ping": "/auth/rest-auth/user/",
+    "mcp_cli_handoff_start": "/auth/mcp/cli-handoff/start/",
 }
 CLI_BROWSER_CLIENT_ID = "mainsequence-cli"
 MCP_RESOURCE_PATH = "/mcp"
@@ -169,6 +170,75 @@ def exchange_cli_authorization_code(
         "backend": backend_url(),
         "access": str(access),
         "refresh": str(refresh),
+    }
+
+
+def start_mcp_cli_handoff(
+    *,
+    state: str,
+    code_challenge: str,
+) -> dict:
+    """Create a backend-owned CLI login handoff for an MCP agent."""
+    payload = {
+        "state": state,
+        "code_challenge": code_challenge,
+        "code_challenge_method": "S256",
+    }
+    response = S.post(
+        _full(AUTH_PATHS["mcp_cli_handoff_start"]),
+        data=json.dumps(payload),
+    )
+    try:
+        data = response.json()
+    except Exception:
+        data = {}
+    if not response.ok:
+        message = data.get("detail") or data.get("message") or response.text
+        raise ApiError(str(message or "Could not create MCP CLI login handoff."))
+
+    required = ("handoff_uid", "redirect_uri", "expires_at", "mcp_tool", "mcp_arguments")
+    if not all(data.get(field_name) for field_name in required):
+        raise ApiError("Server returned an incomplete MCP CLI login handoff.")
+    return data
+
+
+def poll_mcp_cli_handoff(
+    *,
+    redirect_uri: str,
+    handoff_uid: str,
+    state: str,
+    code_verifier: str,
+) -> dict | None:
+    """Poll the exact backend-issued callback and exchange an approved grant."""
+    response = S.post(
+        redirect_uri,
+        data=json.dumps(
+            {
+                "handoff_uid": handoff_uid,
+                "state": state,
+                "code_verifier": code_verifier,
+            }
+        ),
+    )
+    try:
+        data = response.json()
+    except Exception:
+        data = {}
+    if response.status_code == 202:
+        return None
+    if not response.ok:
+        message = data.get("detail") or data.get("message") or response.text
+        raise ApiError(str(message or "MCP CLI login handoff failed."))
+
+    access = data.get("access") or data.get("access_token")
+    refresh = data.get("refresh") or data.get("refresh_token")
+    if not access or not refresh:
+        raise ApiError("Server did not return expected CLI login tokens.")
+    return {
+        "backend": backend_url(),
+        "access": str(access),
+        "refresh": str(refresh),
+        "user": data.get("user"),
     }
 
 

@@ -74,6 +74,33 @@ Use this for:
 - local scripts launched from an authenticated environment
 - development workflows where a human user signs in
 
+### MCP-Assisted CLI Login
+
+When a coding agent already has an authenticated Main Sequence MCP connection
+but the local CLI has no session, run:
+
+```bash
+mainsequence login --mcp
+```
+
+The CLI generates PKCE state, verifier, and challenge. It sends only the state
+and challenge to the configured Main Sequence backend. The backend creates the
+short-lived handoff and returns its exact callback URI and the
+`auth.cli_authorize` invocation. The CLI never creates or submits a redirect
+URI in this flow.
+
+Call the printed MCP tool with only its `handoff_uid` while the command remains
+running. After MCP binds the handoff to its authenticated principal, the CLI
+exchanges its private verifier at the backend callback. The normal tracked JWT
+pair returns directly to the CLI and is persisted through existing CLI auth
+storage. No bearer, authorization code, access token, refresh token, or PKCE
+verifier is returned by the MCP tool.
+
+Do not combine `--mcp` with `--export` or manual token arguments. A process
+using `MAINSEQUENCE_AUTH_MODE=runtime_credential` already has a noninteractive
+authentication lane; the CLI rejects `--mcp` in that mode, so run ordinary
+`mainsequence login` instead.
+
 If a local shell, IDE, or subprocess cannot see auth credentials, refresh or export them with the CLI login flow used by your environment.
 
 ## Environment JWT Auth
