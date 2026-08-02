@@ -84,7 +84,7 @@ pandas==2.3.3
     # via mainsequence
 portalocker==3.2.0
     # via concurrent-log-handler
-protobuf==6.33.5
+protobuf==7.35.1
     # via
     #   googleapis-common-protos
     #   mainsequence
