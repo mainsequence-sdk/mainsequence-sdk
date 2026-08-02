@@ -15,6 +15,7 @@ Any behavioral differences vs the VS Code extension should be considered bugs.
 from __future__ import annotations
 
 import importlib
+import importlib.metadata
 import json
 import os
 import re
@@ -25,9 +26,13 @@ from urllib.parse import urlencode
 import requests
 
 from ..project_skills import (
+    PLATFORM_ONTOLOGY_URI,
+    PLATFORM_SKILL_URI_PREFIX,
     PlatformProjectSkillCatalog,
     ProjectSkillAssemblyError,
     parse_platform_project_skill_catalog,
+    parse_platform_project_skill_declarations,
+    validate_platform_project_skill_membership,
 )
 from .config import (
     backend_url,
@@ -51,6 +56,7 @@ CLI_BROWSER_CLIENT_ID = "mainsequence-cli"
 MCP_RESOURCE_PATH = "/mcp"
 MCP_PROTOCOL_VERSION = "2025-11-25"
 MCP_CLIENT_NAME = "mainsequence-cli"
+MCP_MAX_RESOURCE_PAGES = 100
 
 S = requests.Session()
 S.headers.update({"Content-Type": "application/json"})
@@ -5689,8 +5695,15 @@ def _json_results(r: requests.Response) -> list[dict]:
     return []
 
 
+def _mcp_client_version() -> str:
+    try:
+        return importlib.metadata.version("mainsequence")
+    except importlib.metadata.PackageNotFoundError:
+        return "unknown"
+
+
 def fetch_platform_project_skill_catalog() -> PlatformProjectSkillCatalog:
-    """Fetch and validate the fixed platform skills through authenticated MCP."""
+    """Fetch and validate the server-owned platform skills through authenticated MCP."""
 
     initialize_result = _mcp_json_rpc(
         "initialize",
@@ -5699,7 +5712,7 @@ def fetch_platform_project_skill_catalog() -> PlatformProjectSkillCatalog:
             "capabilities": {},
             "clientInfo": {
                 "name": MCP_CLIENT_NAME,
-                "version": "1.0",
+                "version": _mcp_client_version(),
             },
         },
         request_id=1,
@@ -5716,25 +5729,59 @@ def fetch_platform_project_skill_catalog() -> PlatformProjectSkillCatalog:
     ):
         raise ApiError("MCP server did not advertise resource support.")
 
-    list_result = _mcp_json_rpc(
-        "resources/list",
-        {},
-        request_id=2,
-        protocol_version=MCP_PROTOCOL_VERSION,
-    )
-    resources = list_result.get("resources")
-    if not isinstance(resources, list):
-        raise ApiError("MCP resources/list did not return a resource array.")
-    if list_result.get("nextCursor"):
-        raise ApiError("MCP fixed platform resources must not require pagination.")
+    resources: list[Any] = []
+    request_id = 2
+    cursor: str | None = None
+    seen_cursors: set[str] = set()
+    for _page_number in range(MCP_MAX_RESOURCE_PAGES):
+        params = {} if cursor is None else {"cursor": cursor}
+        list_result = _mcp_json_rpc(
+            "resources/list",
+            params,
+            request_id=request_id,
+            protocol_version=MCP_PROTOCOL_VERSION,
+        )
+        request_id += 1
+        page_resources = list_result.get("resources")
+        if not isinstance(page_resources, list):
+            raise ApiError("MCP resources/list did not return a resource array.")
+        resources.extend(page_resources)
 
-    platform_rows: list[dict[str, Any]] = []
-    for request_id, raw_resource in enumerate(resources, start=3):
+        next_cursor = list_result.get("nextCursor")
+        if next_cursor is None:
+            break
+        if (
+            not isinstance(next_cursor, str)
+            or not next_cursor.strip()
+            or next_cursor != next_cursor.strip()
+        ):
+            raise ApiError("MCP resources/list returned an invalid nextCursor.")
+        if next_cursor in seen_cursors:
+            raise ApiError("MCP resources/list repeated a pagination cursor.")
+        seen_cursors.add(next_cursor)
+        cursor = next_cursor
+    else:
+        raise ApiError(
+            f"MCP resources/list exceeded the {MCP_MAX_RESOURCE_PAGES}-page safety limit."
+        )
+
+    resources_by_uri: dict[str, dict[str, Any]] = {}
+    for raw_resource in resources:
         if not isinstance(raw_resource, dict):
             raise ApiError("MCP resources/list returned a non-object resource.")
         uri = raw_resource.get("uri")
-        if not isinstance(uri, str) or not uri.strip():
+        if not isinstance(uri, str) or not uri.strip() or uri != uri.strip():
             raise ApiError("MCP resources/list returned a resource without a URI.")
+        if uri in resources_by_uri:
+            raise ApiError(f"MCP resources/list returned duplicate URI {uri!r}.")
+        resources_by_uri[uri] = raw_resource
+
+    ontology_list_row = resources_by_uri.get(PLATFORM_ONTOLOGY_URI)
+    if ontology_list_row is None:
+        raise ApiError(f"MCP resources/list did not return {PLATFORM_ONTOLOGY_URI!r}.")
+
+    def _read_resource(uri: str, raw_resource: dict[str, Any]) -> dict[str, Any]:
+        nonlocal request_id
 
         read_result = _mcp_json_rpc(
             "resources/read",
@@ -5742,15 +5789,33 @@ def fetch_platform_project_skill_catalog() -> PlatformProjectSkillCatalog:
             request_id=request_id,
             protocol_version=MCP_PROTOCOL_VERSION,
         )
+        request_id += 1
         contents = read_result.get("contents")
         if not isinstance(contents, list) or len(contents) != 1:
             raise ApiError(f"MCP resources/read for {uri!r} must return exactly one content item.")
         content = contents[0]
         if not isinstance(content, dict):
             raise ApiError(f"MCP resources/read for {uri!r} returned a non-object content item.")
-        platform_rows.append({**raw_resource, "_content": content})
+        return {**raw_resource, "_content": content}
 
+    ontology_row = _read_resource(PLATFORM_ONTOLOGY_URI, ontology_list_row)
     try:
+        declarations = parse_platform_project_skill_declarations(
+            ontology_row["_content"].get("text")
+        )
+        listed_skill_uris = {
+            uri for uri in resources_by_uri if uri.startswith(PLATFORM_SKILL_URI_PREFIX)
+        }
+        validate_platform_project_skill_membership(
+            declarations,
+            listed_skill_uris=listed_skill_uris,
+        )
+
+        platform_rows = [ontology_row]
+        platform_rows.extend(
+            _read_resource(declaration.uri, resources_by_uri[declaration.uri])
+            for declaration in declarations
+        )
         return parse_platform_project_skill_catalog(
             platform_rows,
             source_url=_full(MCP_RESOURCE_PATH),

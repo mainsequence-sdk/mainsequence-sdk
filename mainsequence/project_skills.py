@@ -14,6 +14,7 @@ project. It is never persisted in the installed SDK package.
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import re
 import shutil
@@ -24,6 +25,8 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+import yaml
+
 from .scaffold_skills import (
     PINNED_FROM_FILENAME,
     CopiedScaffoldSkill,
@@ -31,53 +34,17 @@ from .scaffold_skills import (
 )
 
 DUAL_SOURCE_SENTINEL_SCHEMA = "2"
+PLATFORM_RESOURCE_NAMESPACE = "mainsequence://platform/"
 PLATFORM_ONTOLOGY_URI = "mainsequence://platform/ontology"
-PLATFORM_A2A_SKILL_URI = "mainsequence://platform/skills/a2a-communication"
-PLATFORM_PROJECT_DESIGN_SKILL_URI = (
-    "mainsequence://platform/skills/project-design"
-)
-PLATFORM_PROJECT_TO_AGENT_SKILL_URI = (
-    "mainsequence://platform/skills/project-to-agent"
-)
-PLATFORM_RESOURCE_URIS = (
-    PLATFORM_ONTOLOGY_URI,
-    PLATFORM_A2A_SKILL_URI,
-    PLATFORM_PROJECT_DESIGN_SKILL_URI,
-    PLATFORM_PROJECT_TO_AGENT_SKILL_URI,
-)
+PLATFORM_SKILL_URI_PREFIX = f"{PLATFORM_RESOURCE_NAMESPACE}skills/"
+SUPPORTED_PLATFORM_MANIFEST_VERSIONS = frozenset({2})
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
-_PLATFORM_SKILL_NAME_RE = re.compile(r"^[a-z0-9_]+$")
-_PLATFORM_RESOURCE_CONTRACT = {
-    PLATFORM_ONTOLOGY_URI: {
-        "name": "ontology",
-        "listed_name": "Main Sequence platform ontology",
-        "path": PurePosixPath("ontology/platform.json"),
-        "mime_type": "application/json",
-        "front_matter_name": None,
-    },
-    PLATFORM_A2A_SKILL_URI: {
-        "name": "a2a_communication",
-        "listed_name": "a2a_communication",
-        "path": PurePosixPath("skills/a2a_communication/SKILL.md"),
-        "mime_type": "text/markdown",
-        "front_matter_name": "a2a-communication",
-    },
-    PLATFORM_PROJECT_DESIGN_SKILL_URI: {
-        "name": "project_design",
-        "listed_name": "project_design",
-        "path": PurePosixPath("skills/project_design/SKILL.md"),
-        "mime_type": "text/markdown",
-        "front_matter_name": "project-design",
-    },
-    PLATFORM_PROJECT_TO_AGENT_SKILL_URI: {
-        "name": "project_to_agent",
-        "listed_name": "project_to_agent",
-        "path": PurePosixPath("skills/project_to_agent/SKILL.md"),
-        "mime_type": "text/markdown",
-        "front_matter_name": "project-to-agent",
-    },
-}
+_PLATFORM_SKILL_NAME_RE = re.compile(r"^[a-z0-9]+(?:_[a-z0-9]+)*$")
+_PLATFORM_SKILL_SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+_PLATFORM_SKILL_FILENAMES = frozenset({"SKILL.md", "SKILL.markdown"})
+_PLATFORM_ONTOLOGY_NAME = "Main Sequence platform ontology"
+_PLATFORM_ONTOLOGY_PATH = PurePosixPath("ontology/platform.json")
 
 
 class ProjectSkillAssemblyError(RuntimeError):
@@ -85,8 +52,32 @@ class ProjectSkillAssemblyError(RuntimeError):
 
 
 @dataclass(frozen=True)
+class PlatformProjectSkillDeclaration:
+    """One platform skill identity declared by the platform ontology."""
+
+    name: str
+    uri: str
+    front_matter_name: str
+
+
+@dataclass(frozen=True)
+class _ValidatedPlatformResourcePayload:
+    """One resource after list/read integrity validation."""
+
+    listed_name: str
+    uri: str
+    resource_path: PurePosixPath
+    content: str
+    content_sha256: str
+    content_mime_type: str
+    content_size: int
+    manifest_version: int
+    manifest_sha256: str
+
+
+@dataclass(frozen=True)
 class PlatformProjectResource:
-    """One validated fixed platform resource returned by MCP."""
+    """One validated server-owned platform resource returned by MCP."""
 
     name: str
     uri: str
@@ -106,7 +97,7 @@ class PlatformProjectSkill(PlatformProjectResource):
 
 @dataclass(frozen=True)
 class PlatformProjectSkillCatalog:
-    """One complete validated fixed-resource manifest revision."""
+    """One complete validated server-owned resource manifest revision."""
 
     source_url: str
     manifest_version: int
@@ -157,10 +148,10 @@ def parse_platform_project_skill_catalog(
     *,
     source_url: str,
 ) -> PlatformProjectSkillCatalog:
-    """Validate one complete MCP fixed-resource catalog and its read results."""
+    """Validate one complete server-owned MCP project-skill catalog."""
 
     if not rows:
-        raise ProjectSkillAssemblyError("The platform returned no fixed MCP resources.")
+        raise ProjectSkillAssemblyError("The platform returned no MCP project resources.")
 
     normalized_source_url = _single_line_text(
         source_url,
@@ -169,170 +160,293 @@ def parse_platform_project_skill_catalog(
     if not normalized_source_url:
         raise ProjectSkillAssemblyError("platform source URL is required.")
 
-    expected_manifest_version: int | None = None
-    expected_manifest_sha256: str | None = None
-    resources: list[PlatformProjectResource] = []
-
-    actual_uris = [
-        _single_line_text(
-            _mapping(raw_row, label=f"platform resource row {index}").get("uri"),
+    raw_rows_by_uri: dict[str, dict[str, Any]] = {}
+    for index, raw_row in enumerate(rows):
+        row = _mapping(raw_row, label=f"platform resource row {index}")
+        uri = _single_line_text(
+            row.get("uri"),
             label=f"platform resource row {index} URI",
         )
-        for index, raw_row in enumerate(rows)
-    ]
-    if actual_uris != list(PLATFORM_RESOURCE_URIS):
-        raise ProjectSkillAssemblyError(
-            "The platform MCP resource catalog does not match the approved "
-            "fixed resource set and ordering."
-        )
-
-    for raw_row, uri in zip(rows, actual_uris, strict=True):
-        label = f"platform resource {uri!r}"
-        contract = _PLATFORM_RESOURCE_CONTRACT[uri]
-        row = _mapping(raw_row, label=f"{label} list row")
-        metadata = _mapping(row.get("_meta"), label=f"{label} list _meta")
-
-        if metadata.get("owner_application") != "mcp_gateway":
-            raise ProjectSkillAssemblyError(f"{label} is not owned by mcp_gateway.")
-        manifest_version = metadata.get("manifest_version")
-        if not isinstance(manifest_version, int) or manifest_version < 1:
-            raise ProjectSkillAssemblyError(f"{label} has an invalid manifest version.")
-        manifest_sha256 = _sha256(
-            metadata.get("manifest_sha256"),
-            label=f"{label} manifest hash",
-        )
-
-        if expected_manifest_version is None:
-            expected_manifest_version = manifest_version
-            expected_manifest_sha256 = manifest_sha256
-        elif (
-            manifest_version,
-            manifest_sha256,
-        ) != (
-            expected_manifest_version,
-            expected_manifest_sha256,
-        ):
+        if uri in raw_rows_by_uri:
             raise ProjectSkillAssemblyError(
-                "Platform MCP resources do not describe one manifest revision."
+                f"The platform MCP resource catalog returned duplicate URI {uri!r}."
             )
+        if uri != PLATFORM_ONTOLOGY_URI and not uri.startswith(PLATFORM_SKILL_URI_PREFIX):
+            raise ProjectSkillAssemblyError(f"Unsupported platform project resource URI {uri!r}.")
+        raw_rows_by_uri[uri] = row
 
-        listed_name = _single_line_text(
-            row.get("name"),
-            label=f"{label} listed name",
-        )
-        if listed_name != contract["listed_name"]:
-            raise ProjectSkillAssemblyError(f"{label} has an unexpected name.")
-        resource_path = _safe_platform_resource_path(
-            metadata.get("resource_path"),
-            label=label,
-        )
-        if resource_path != contract["path"]:
-            raise ProjectSkillAssemblyError(f"{label} has an unexpected resource path.")
-        declared_mime_type = _single_line_text(
-            row.get("mimeType"),
-            label=f"{label} MIME type",
-        )
-        if declared_mime_type != contract["mime_type"]:
-            raise ProjectSkillAssemblyError(f"{label} has an unexpected MIME type.")
-        declared_size = row.get("size")
-        if not isinstance(declared_size, int) or declared_size < 0:
-            raise ProjectSkillAssemblyError(f"{label} has an invalid content size.")
-        declared_sha256 = _sha256(
-            metadata.get("content_sha256"),
-            label=f"{label} content hash",
-        )
-
-        content_response = _mapping(
-            row.get("_content"),
-            label=f"{label} read response",
-        )
-        if content_response.get("uri") != uri:
-            raise ProjectSkillAssemblyError(f"{label} read response returned a different URI.")
-        if content_response.get("mimeType") != declared_mime_type:
-            raise ProjectSkillAssemblyError(f"{label} read response MIME type mismatch.")
-        content = content_response.get("text")
-        if not isinstance(content, str):
-            raise ProjectSkillAssemblyError(f"{label} content must be UTF-8 text.")
-        content_bytes = content.encode("utf-8")
-        actual_sha256 = hashlib.sha256(content_bytes).hexdigest()
-        content_metadata = _mapping(
-            content_response.get("_meta"),
-            label=f"{label} read _meta",
-        )
-        response_sha256 = _sha256(
-            content_metadata.get("content_sha256"),
-            label=f"{label} read hash",
-        )
-        if actual_sha256 != declared_sha256 or response_sha256 != declared_sha256:
-            raise ProjectSkillAssemblyError(f"{label} content hash mismatch.")
-        if content_metadata.get("owner_application") != "mcp_gateway":
-            raise ProjectSkillAssemblyError(f"{label} read response is not owned by mcp_gateway.")
-        if (
-            content_metadata.get("manifest_version") != expected_manifest_version
-            or content_metadata.get("manifest_sha256") != expected_manifest_sha256
-        ):
-            raise ProjectSkillAssemblyError(f"{label} read response manifest identity mismatch.")
-        if content_metadata.get("resource_path") != str(resource_path):
-            raise ProjectSkillAssemblyError(f"{label} read response resource path mismatch.")
-        if content_metadata.get("resource_name") != listed_name:
-            raise ProjectSkillAssemblyError(f"{label} read response resource name mismatch.")
-        if (
-            content_metadata.get("content_size") != declared_size
-            or len(content_bytes) != declared_size
-        ):
-            raise ProjectSkillAssemblyError(f"{label} content byte-size mismatch.")
-        if uri == PLATFORM_ONTOLOGY_URI:
-            _validate_ontology_content(content)
-            resources.append(
-                PlatformProjectResource(
-                    name="ontology",
-                    uri=uri,
-                    resource_path=resource_path,
-                    content=content,
-                    content_sha256=declared_sha256,
-                    content_mime_type=declared_mime_type,
-                    content_size=declared_size,
-                )
-            )
-            continue
-
-        name = str(contract["name"])
-        if not _PLATFORM_SKILL_NAME_RE.fullmatch(name):
-            raise ProjectSkillAssemblyError(f"{label} is not a safe project skill name.")
-        _validate_skill_front_matter_name(
-            content,
-            expected_name=str(contract["front_matter_name"]),
-            label=label,
-        )
-        resources.append(
-            PlatformProjectSkill(
-                name=name,
-                uri=uri,
-                resource_path=resource_path,
-                relative_path=PurePosixPath(*resource_path.parts[1:]),
-                content=content,
-                content_sha256=declared_sha256,
-                content_mime_type=declared_mime_type,
-                content_size=declared_size,
-            )
-        )
-
-    assert expected_manifest_version is not None
-    assert expected_manifest_sha256 is not None
-    ontology = resources[0]
-    skills = tuple(
-        resource for resource in resources[1:] if isinstance(resource, PlatformProjectSkill)
-    )
-    if len(skills) != 3:
+    if PLATFORM_ONTOLOGY_URI not in raw_rows_by_uri:
         raise ProjectSkillAssemblyError(
-            "The platform MCP catalog did not return the three approved skills."
+            f"The platform MCP resource catalog is missing {PLATFORM_ONTOLOGY_URI!r}."
         )
+
+    validated_by_uri = {
+        uri: _validate_platform_resource_payload(raw_row, uri=uri)
+        for uri, raw_row in raw_rows_by_uri.items()
+    }
+    ontology_payload = validated_by_uri[PLATFORM_ONTOLOGY_URI]
+    if ontology_payload.listed_name != _PLATFORM_ONTOLOGY_NAME:
+        raise ProjectSkillAssemblyError("The platform ontology resource has an unexpected name.")
+    if ontology_payload.resource_path != _PLATFORM_ONTOLOGY_PATH:
+        raise ProjectSkillAssemblyError(
+            "The platform ontology resource has an unexpected resource path."
+        )
+    if ontology_payload.content_mime_type != "application/json":
+        raise ProjectSkillAssemblyError("The platform ontology resource must use application/json.")
+
+    declarations = parse_platform_project_skill_declarations(ontology_payload.content)
+    listed_skill_uris = set(validated_by_uri) - {PLATFORM_ONTOLOGY_URI}
+    validate_platform_project_skill_membership(
+        declarations,
+        listed_skill_uris=listed_skill_uris,
+    )
+
+    manifest_identity = (
+        ontology_payload.manifest_version,
+        ontology_payload.manifest_sha256,
+    )
+    for uri, payload in validated_by_uri.items():
+        if (payload.manifest_version, payload.manifest_sha256) != manifest_identity:
+            raise ProjectSkillAssemblyError(
+                f"Platform resource {uri!r} does not describe the ontology manifest revision."
+            )
+
+    ontology = PlatformProjectResource(
+        name="ontology",
+        uri=ontology_payload.uri,
+        resource_path=ontology_payload.resource_path,
+        content=ontology_payload.content,
+        content_sha256=ontology_payload.content_sha256,
+        content_mime_type=ontology_payload.content_mime_type,
+        content_size=ontology_payload.content_size,
+    )
+    skills: list[PlatformProjectSkill] = []
+    destination_paths: set[PurePosixPath] = set()
+    for declaration in declarations:
+        payload = validated_by_uri[declaration.uri]
+        label = f"platform resource {declaration.uri!r}"
+        if payload.listed_name != declaration.name:
+            raise ProjectSkillAssemblyError(
+                f"{label} listed name does not match ontology.skill_resources."
+            )
+        if payload.content_mime_type != "text/markdown":
+            raise ProjectSkillAssemblyError(f"{label} must use text/markdown.")
+        _validate_platform_skill_path(
+            payload.resource_path,
+            expected_name=declaration.name,
+            label=label,
+        )
+        _validate_skill_front_matter(
+            payload.content,
+            expected_name=declaration.front_matter_name,
+            label=label,
+        )
+        relative_path = PurePosixPath(*payload.resource_path.parts[1:])
+        if relative_path in destination_paths:
+            raise ProjectSkillAssemblyError(
+                f"{label} resolves to duplicate project destination {relative_path!s}."
+            )
+        destination_paths.add(relative_path)
+        skills.append(
+            PlatformProjectSkill(
+                name=declaration.name,
+                uri=payload.uri,
+                resource_path=payload.resource_path,
+                relative_path=relative_path,
+                content=payload.content,
+                content_sha256=payload.content_sha256,
+                content_mime_type=payload.content_mime_type,
+                content_size=payload.content_size,
+            )
+        )
+
     return PlatformProjectSkillCatalog(
         source_url=normalized_source_url,
-        manifest_version=expected_manifest_version,
-        manifest_sha256=expected_manifest_sha256,
+        manifest_version=ontology_payload.manifest_version,
+        manifest_sha256=ontology_payload.manifest_sha256,
         ontology=ontology,
-        skills=skills,
+        skills=tuple(skills),
+    )
+
+
+def parse_platform_project_skill_declarations(
+    ontology_content: Any,
+) -> tuple[PlatformProjectSkillDeclaration, ...]:
+    """Return the validated, deterministic skill index from platform ontology JSON."""
+
+    if not isinstance(ontology_content, str):
+        raise ProjectSkillAssemblyError("The platform ontology resource must contain UTF-8 text.")
+    try:
+        ontology = json.loads(ontology_content)
+    except json.JSONDecodeError as exc:
+        raise ProjectSkillAssemblyError(
+            "The platform ontology resource must contain valid JSON."
+        ) from exc
+    ontology = _mapping(ontology, label="platform ontology payload")
+    raw_declarations = ontology.get("skill_resources")
+    if not isinstance(raw_declarations, list):
+        raise ProjectSkillAssemblyError(
+            "The platform ontology must contain a skill_resources array."
+        )
+
+    declarations: list[PlatformProjectSkillDeclaration] = []
+    names: set[str] = set()
+    uris: set[str] = set()
+    for index, raw_declaration in enumerate(raw_declarations):
+        label = f"platform ontology skill_resources[{index}]"
+        declaration = _mapping(raw_declaration, label=label)
+        name = _single_line_text(
+            declaration.get("name"),
+            label=f"{label} name",
+        )
+        if not _PLATFORM_SKILL_NAME_RE.fullmatch(name):
+            raise ProjectSkillAssemblyError(f"{label} name must use safe lowercase snake case.")
+        uri = _single_line_text(
+            declaration.get("uri"),
+            label=f"{label} URI",
+        )
+        front_matter_name = _platform_skill_slug(uri, label=label)
+        if name != front_matter_name.replace("-", "_"):
+            raise ProjectSkillAssemblyError(f"{label} name does not match its platform skill URI.")
+        if name in names:
+            raise ProjectSkillAssemblyError(
+                f"The platform ontology declares duplicate skill name {name!r}."
+            )
+        if uri in uris:
+            raise ProjectSkillAssemblyError(
+                f"The platform ontology declares duplicate skill URI {uri!r}."
+            )
+        names.add(name)
+        uris.add(uri)
+        declarations.append(
+            PlatformProjectSkillDeclaration(
+                name=name,
+                uri=uri,
+                front_matter_name=front_matter_name,
+            )
+        )
+
+    return tuple(sorted(declarations, key=lambda item: (item.name, item.uri)))
+
+
+def validate_platform_project_skill_membership(
+    declarations: Sequence[PlatformProjectSkillDeclaration],
+    *,
+    listed_skill_uris: Sequence[str] | set[str],
+) -> None:
+    """Require listed platform skills to match the ontology-owned declaration."""
+
+    declared_uris = {declaration.uri for declaration in declarations}
+    listed_uris = set(listed_skill_uris)
+    if listed_uris == declared_uris:
+        return
+
+    missing = sorted(declared_uris - listed_uris)
+    undeclared = sorted(listed_uris - declared_uris)
+    details = []
+    if missing:
+        details.append("missing declared skills: " + ", ".join(missing))
+    if undeclared:
+        details.append("undeclared listed skills: " + ", ".join(undeclared))
+    raise ProjectSkillAssemblyError(
+        "The platform MCP skill resources do not match "
+        "ontology.skill_resources (" + "; ".join(details) + ")."
+    )
+
+
+def _validate_platform_resource_payload(
+    raw_row: dict[str, Any],
+    *,
+    uri: str,
+) -> _ValidatedPlatformResourcePayload:
+    label = f"platform resource {uri!r}"
+    row = _mapping(raw_row, label=f"{label} list row")
+    metadata = _mapping(row.get("_meta"), label=f"{label} list _meta")
+    if metadata.get("owner_application") != "mcp_gateway":
+        raise ProjectSkillAssemblyError(f"{label} is not owned by mcp_gateway.")
+
+    manifest_version = metadata.get("manifest_version")
+    if not isinstance(manifest_version, int) or isinstance(manifest_version, bool):
+        raise ProjectSkillAssemblyError(f"{label} has an invalid manifest version.")
+    if manifest_version not in SUPPORTED_PLATFORM_MANIFEST_VERSIONS:
+        supported = ", ".join(
+            str(version) for version in sorted(SUPPORTED_PLATFORM_MANIFEST_VERSIONS)
+        )
+        raise ProjectSkillAssemblyError(
+            f"{label} uses unsupported platform manifest version {manifest_version}; "
+            f"this SDK supports {supported}."
+        )
+    manifest_sha256 = _sha256(
+        metadata.get("manifest_sha256"),
+        label=f"{label} manifest hash",
+    )
+    listed_name = _single_line_text(
+        row.get("name"),
+        label=f"{label} listed name",
+    )
+    resource_path = _safe_platform_resource_path(
+        metadata.get("resource_path"),
+        label=label,
+    )
+    declared_mime_type = _single_line_text(
+        row.get("mimeType"),
+        label=f"{label} MIME type",
+    )
+    declared_size = row.get("size")
+    if not isinstance(declared_size, int) or isinstance(declared_size, bool) or declared_size < 0:
+        raise ProjectSkillAssemblyError(f"{label} has an invalid content size.")
+    declared_sha256 = _sha256(
+        metadata.get("content_sha256"),
+        label=f"{label} content hash",
+    )
+
+    content_response = _mapping(
+        row.get("_content"),
+        label=f"{label} read response",
+    )
+    if content_response.get("uri") != uri:
+        raise ProjectSkillAssemblyError(f"{label} read response returned a different URI.")
+    if content_response.get("mimeType") != declared_mime_type:
+        raise ProjectSkillAssemblyError(f"{label} read response MIME type mismatch.")
+    content = content_response.get("text")
+    if not isinstance(content, str):
+        raise ProjectSkillAssemblyError(f"{label} content must be UTF-8 text.")
+    content_bytes = content.encode("utf-8")
+    actual_sha256 = hashlib.sha256(content_bytes).hexdigest()
+    content_metadata = _mapping(
+        content_response.get("_meta"),
+        label=f"{label} read _meta",
+    )
+    response_sha256 = _sha256(
+        content_metadata.get("content_sha256"),
+        label=f"{label} read hash",
+    )
+    if actual_sha256 != declared_sha256 or response_sha256 != declared_sha256:
+        raise ProjectSkillAssemblyError(f"{label} content hash mismatch.")
+    if content_metadata.get("owner_application") != "mcp_gateway":
+        raise ProjectSkillAssemblyError(f"{label} read response is not owned by mcp_gateway.")
+    if (
+        content_metadata.get("manifest_version") != manifest_version
+        or content_metadata.get("manifest_sha256") != manifest_sha256
+    ):
+        raise ProjectSkillAssemblyError(f"{label} read response manifest identity mismatch.")
+    if content_metadata.get("resource_path") != str(resource_path):
+        raise ProjectSkillAssemblyError(f"{label} read response resource path mismatch.")
+    if content_metadata.get("resource_name") != listed_name:
+        raise ProjectSkillAssemblyError(f"{label} read response resource name mismatch.")
+    if content_metadata.get("content_size") != declared_size or len(content_bytes) != declared_size:
+        raise ProjectSkillAssemblyError(f"{label} content byte-size mismatch.")
+
+    return _ValidatedPlatformResourcePayload(
+        listed_name=listed_name,
+        uri=uri,
+        resource_path=resource_path,
+        content=content,
+        content_sha256=declared_sha256,
+        content_mime_type=declared_mime_type,
+        content_size=declared_size,
+        manifest_version=manifest_version,
+        manifest_sha256=manifest_sha256,
     )
 
 
@@ -507,9 +621,7 @@ def _validate_source_ownership(
 
 
 def _replace_managed_tree(*, staging_root: Path, destination_root: Path) -> None:
-    backup_root = destination_root.parent / (
-        f".{destination_root.name}.backup-{uuid.uuid4().hex}"
-    )
+    backup_root = destination_root.parent / (f".{destination_root.name}.backup-{uuid.uuid4().hex}")
     destination_existed = destination_root.exists()
     if destination_existed:
         os.replace(destination_root, backup_root)
@@ -539,28 +651,44 @@ def _safe_platform_resource_path(
         value,
         label=f"{label} path",
     )
+    if "\\" in raw_path:
+        raise ProjectSkillAssemblyError(f"{label} has an unsafe resource path.")
     path = PurePosixPath(raw_path)
-    if path.is_absolute() or ".." in path.parts or "." in path.parts:
+    if path.is_absolute() or ".." in path.parts or raw_path != path.as_posix():
         raise ProjectSkillAssemblyError(f"{label} has an unsafe resource path.")
     return path
 
 
-def _validate_ontology_content(content: str) -> None:
-    import json
+def _platform_skill_slug(uri: str, *, label: str) -> str:
+    if not uri.startswith(PLATFORM_SKILL_URI_PREFIX):
+        raise ProjectSkillAssemblyError(f"{label} URI must use {PLATFORM_SKILL_URI_PREFIX}.")
+    slug = uri.removeprefix(PLATFORM_SKILL_URI_PREFIX)
+    if not _PLATFORM_SKILL_SLUG_RE.fullmatch(slug):
+        raise ProjectSkillAssemblyError(
+            f"{label} URI must end with a safe lowercase kebab-case skill name."
+        )
+    return slug
 
-    try:
-        payload = json.loads(content)
-    except json.JSONDecodeError as exc:
+
+def _validate_platform_skill_path(
+    path: PurePosixPath,
+    *,
+    expected_name: str,
+    label: str,
+) -> None:
+    if (
+        len(path.parts) != 3
+        or path.parts[0] != "skills"
+        or path.parts[1] != expected_name
+        or path.parts[2] not in _PLATFORM_SKILL_FILENAMES
+    ):
         raise ProjectSkillAssemblyError(
-            "The platform ontology resource must contain valid JSON."
-        ) from exc
-    if not isinstance(payload, dict):
-        raise ProjectSkillAssemblyError(
-            "The platform ontology resource must contain a JSON object."
+            f"{label} path must be skills/{expected_name}/SKILL.md "
+            f"or skills/{expected_name}/SKILL.markdown."
         )
 
 
-def _validate_skill_front_matter_name(
+def _validate_skill_front_matter(
     content: str,
     *,
     expected_name: str,
@@ -576,20 +704,26 @@ def _validate_skill_front_matter_name(
     except StopIteration as exc:
         raise ProjectSkillAssemblyError(f"{label} front matter is not closed.") from exc
 
-    names: list[str] = []
-    for line in lines[1:closing_index]:
-        if ":" not in line:
-            continue
-        key, value = line.split(":", 1)
-        if key.strip() == "name":
-            names.append(value.strip())
-    if names != [expected_name]:
+    try:
+        front_matter = yaml.safe_load("\n".join(lines[1:closing_index]))
+    except yaml.YAMLError as exc:
+        raise ProjectSkillAssemblyError(f"{label} front matter must contain valid YAML.") from exc
+    front_matter = _mapping(front_matter, label=f"{label} front matter")
+    name = _single_line_text(
+        front_matter.get("name"),
+        label=f"{label} front matter name",
+    )
+    if name != expected_name:
         raise ProjectSkillAssemblyError(f"{label} front matter name must be {expected_name!r}.")
+    _single_line_text(
+        front_matter.get("description"),
+        label=f"{label} front matter description",
+    )
 
 
 def _mapping(value: Any, *, label: str) -> dict[str, Any]:
     if not isinstance(value, dict):
-        raise ProjectSkillAssemblyError(f"{label} must be a JSON object.")
+        raise ProjectSkillAssemblyError(f"{label} must be an object mapping.")
     return value
 
 

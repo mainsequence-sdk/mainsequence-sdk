@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import re
 from pathlib import Path
@@ -11,15 +12,15 @@ from mainsequence import project_skills
 from mainsequence.cli import api as cli_api
 from mainsequence.cli.api import ApiError
 from mainsequence.project_skills import (
-    PLATFORM_A2A_SKILL_URI,
     PLATFORM_ONTOLOGY_URI,
-    PLATFORM_PROJECT_DESIGN_SKILL_URI,
-    PLATFORM_PROJECT_TO_AGENT_SKILL_URI,
+    PLATFORM_SKILL_URI_PREFIX,
     PlatformProjectSkillCatalog,
     ProjectSkillAssemblyError,
     install_dual_source_project_skills,
     parse_platform_project_skill_catalog,
 )
+
+_DEFAULT_TEST_SKILLS = ("alpha_skill", "beta_skill", "gamma_skill")
 
 
 def _platform_resource_row(
@@ -62,41 +63,66 @@ def _platform_resource_row(
     }
 
 
-def _platform_rows(*, manifest_sha256: str = "a" * 64) -> list[dict]:
-    return [
+def _platform_rows(
+    *,
+    manifest_sha256: str = "a" * 64,
+    skill_names: tuple[str, ...] = _DEFAULT_TEST_SKILLS,
+) -> list[dict]:
+    skill_resources = [
+        {
+            "name": name,
+            "uri": f"{PLATFORM_SKILL_URI_PREFIX}{name.replace('_', '-')}",
+        }
+        for name in skill_names
+    ]
+    ontology_content = (
+        json.dumps(
+            {
+                "title": "Main Sequence",
+                "description": "Platform ontology",
+                "skill_resources": skill_resources,
+            },
+            separators=(",", ":"),
+        )
+        + "\n"
+    )
+    rows = [
         _platform_resource_row(
             uri=PLATFORM_ONTOLOGY_URI,
             name="Main Sequence platform ontology",
             path="ontology/platform.json",
             mime_type="application/json",
-            content='{"title":"Main Sequence","description":"Platform ontology"}\n',
+            content=ontology_content,
             manifest_sha256=manifest_sha256,
-        ),
-        _platform_resource_row(
-            uri=PLATFORM_A2A_SKILL_URI,
-            name="a2a_communication",
-            path="skills/a2a_communication/SKILL.md",
-            mime_type="text/markdown",
-            content=("---\nname: a2a-communication\ndescription: A2A\n---\n"),
-            manifest_sha256=manifest_sha256,
-        ),
-        _platform_resource_row(
-            uri=PLATFORM_PROJECT_DESIGN_SKILL_URI,
-            name="project_design",
-            path="skills/project_design/SKILL.md",
-            mime_type="text/markdown",
-            content=("---\nname: project-design\ndescription: Builder\n---\n"),
-            manifest_sha256=manifest_sha256,
-        ),
-        _platform_resource_row(
-            uri=PLATFORM_PROJECT_TO_AGENT_SKILL_URI,
-            name="project_to_agent",
-            path="skills/project_to_agent/SKILL.md",
-            mime_type="text/markdown",
-            content=("---\nname: project-to-agent\ndescription: Project agent preparation\n---\n"),
-            manifest_sha256=manifest_sha256,
-        ),
+        )
     ]
+    rows.extend(
+        _platform_resource_row(
+            uri=resource["uri"],
+            name=resource["name"],
+            path=f"skills/{resource['name']}/SKILL.md",
+            mime_type="text/markdown",
+            content=(
+                "---\n"
+                f"name: {resource['name'].replace('_', '-')}\n"
+                f"description: {resource['name']} guidance\n"
+                "---\n"
+            ),
+            manifest_sha256=manifest_sha256,
+        )
+        for resource in skill_resources
+    )
+    return rows
+
+
+def _replace_resource_content(row: dict, content: str) -> None:
+    content_bytes = content.encode("utf-8")
+    content_sha256 = hashlib.sha256(content_bytes).hexdigest()
+    row["size"] = len(content_bytes)
+    row["_meta"]["content_sha256"] = content_sha256
+    row["_content"]["text"] = content
+    row["_content"]["_meta"]["content_sha256"] = content_sha256
+    row["_content"]["_meta"]["content_size"] = len(content_bytes)
 
 
 def _platform_catalog() -> PlatformProjectSkillCatalog:
@@ -112,16 +138,12 @@ def test_parse_platform_catalog_validates_one_complete_revision():
     assert catalog.manifest_version == 2
     assert catalog.manifest_sha256 == "a" * 64
     assert catalog.ontology_uri == PLATFORM_ONTOLOGY_URI
-    assert [item.name for item in catalog.skills] == [
-        "a2a_communication",
-        "project_design",
-        "project_to_agent",
-    ]
-    assert catalog.skills[0].relative_path.as_posix() == ("a2a_communication/SKILL.md")
+    assert [item.name for item in catalog.skills] == list(_DEFAULT_TEST_SKILLS)
+    assert catalog.skills[0].relative_path.as_posix() == "alpha_skill/SKILL.md"
 
 
 def test_parse_platform_catalog_rejects_incomplete_or_drifted_content():
-    with pytest.raises(ProjectSkillAssemblyError, match="approved fixed resource"):
+    with pytest.raises(ProjectSkillAssemblyError, match="missing declared skills"):
         parse_platform_project_skill_catalog(
             _platform_rows()[:-1],
             source_url="https://platform.example.test/mcp",
@@ -130,6 +152,97 @@ def test_parse_platform_catalog_rejects_incomplete_or_drifted_content():
     rows = _platform_rows()
     rows[-1]["_content"]["text"] = "drift"
     with pytest.raises(ProjectSkillAssemblyError, match="hash mismatch"):
+        parse_platform_project_skill_catalog(
+            rows,
+            source_url="https://platform.example.test/mcp",
+        )
+
+
+def test_parse_platform_catalog_accepts_additive_skills_and_ignores_order():
+    rows = _platform_rows(skill_names=("gamma_skill", "new_capability", "alpha_skill"))
+
+    catalog = parse_platform_project_skill_catalog(
+        list(reversed(rows)),
+        source_url="https://platform.example.test/mcp",
+    )
+
+    assert [skill.name for skill in catalog.skills] == [
+        "alpha_skill",
+        "gamma_skill",
+        "new_capability",
+    ]
+
+
+def test_parse_platform_catalog_accepts_current_backend_skill_membership():
+    rows = _platform_rows(
+        skill_names=(
+            "a2a_communication",
+            "project_design",
+            "project_local_setup",
+            "project_to_agent",
+            "static_site",
+        )
+    )
+
+    catalog = parse_platform_project_skill_catalog(
+        rows,
+        source_url="https://platform.example.test/mcp",
+    )
+
+    assert len(catalog.resources) == 6
+    assert [skill.name for skill in catalog.skills] == [
+        "a2a_communication",
+        "project_design",
+        "project_local_setup",
+        "project_to_agent",
+        "static_site",
+    ]
+
+
+def test_parse_platform_catalog_rejects_undeclared_duplicate_and_unsafe_skills():
+    rows = _platform_rows()
+    rows.append(_platform_rows(skill_names=("undeclared_skill",))[1])
+    with pytest.raises(ProjectSkillAssemblyError, match="undeclared listed skills"):
+        parse_platform_project_skill_catalog(
+            rows,
+            source_url="https://platform.example.test/mcp",
+        )
+
+    rows = _platform_rows()
+    rows.append(rows[-1])
+    with pytest.raises(ProjectSkillAssemblyError, match="duplicate URI"):
+        parse_platform_project_skill_catalog(
+            rows,
+            source_url="https://platform.example.test/mcp",
+        )
+
+    rows = _platform_rows()
+    rows[1]["_meta"]["resource_path"] = "skills/../escape/SKILL.md"
+    rows[1]["_content"]["_meta"]["resource_path"] = "skills/../escape/SKILL.md"
+    with pytest.raises(ProjectSkillAssemblyError, match="unsafe resource path"):
+        parse_platform_project_skill_catalog(
+            rows,
+            source_url="https://platform.example.test/mcp",
+        )
+
+
+def test_parse_platform_catalog_rejects_invalid_front_matter_and_schema_version():
+    rows = _platform_rows()
+    _replace_resource_content(
+        rows[1],
+        "---\nname: alpha-skill\n---\n",
+    )
+    with pytest.raises(ProjectSkillAssemblyError, match="front matter description"):
+        parse_platform_project_skill_catalog(
+            rows,
+            source_url="https://platform.example.test/mcp",
+        )
+
+    rows = _platform_rows()
+    for row in rows:
+        row["_meta"]["manifest_version"] = 999
+        row["_content"]["_meta"]["manifest_version"] = 999
+    with pytest.raises(ProjectSkillAssemblyError, match="unsupported platform manifest version"):
         parse_platform_project_skill_catalog(
             rows,
             source_url="https://platform.example.test/mcp",
@@ -174,16 +287,16 @@ def test_dual_source_install_replaces_only_managed_tree_and_records_both_sources
     assert (managed_root / "maintenance" / "project-maintenance" / "SKILL.md").read_text(
         encoding="utf-8"
     ) == "sdk project maintenance"
-    assert (managed_root / "project_design" / "SKILL.md").is_file()
-    assert (managed_root / "a2a_communication" / "SKILL.md").is_file()
-    assert (managed_root / "project_to_agent" / "SKILL.md").is_file()
+    assert (managed_root / "alpha_skill" / "SKILL.md").is_file()
+    assert (managed_root / "beta_skill" / "SKILL.md").is_file()
+    assert (managed_root / "gamma_skill" / "SKILL.md").is_file()
     assert (project_owned / "SKILL.md").read_text(encoding="utf-8") == "keep"
     assert [(item.name, item.owner) for item in result.installed] == [
         ("maintenance", "sdk"),
         ("sdk_project_execution", "sdk"),
-        ("a2a_communication", "platform"),
-        ("project_design", "platform"),
-        ("project_to_agent", "platform"),
+        ("alpha_skill", "platform"),
+        ("beta_skill", "platform"),
+        ("gamma_skill", "platform"),
     ]
 
     sentinel = result.sentinel_path.read_text(encoding="utf-8")
@@ -198,7 +311,7 @@ def test_dual_source_install_replaces_only_managed_tree_and_records_both_sources
     assert "platform_resource_count=4" in sentinel
     assert "platform_skill_count=3" in sentinel
     assert (
-        "platform_resource.project_design.uri=mainsequence://platform/skills/project-design"
+        "platform_resource.beta_skill.uri=mainsequence://platform/skills/beta-skill"
     ) in sentinel
 
 
@@ -206,7 +319,7 @@ def test_dual_source_install_rejects_sdk_platform_path_collision_without_writes(
     tmp_path,
 ):
     sdk_skills = tmp_path / "installed-sdk" / "agent_scaffold" / "skills"
-    colliding_skill = sdk_skills / "project_design"
+    colliding_skill = sdk_skills / "beta_skill"
     colliding_skill.mkdir(parents=True)
     (colliding_skill / "SKILL.md").write_text("sdk collision", encoding="utf-8")
     project_dir = tmp_path / "project"
@@ -278,6 +391,13 @@ def test_cli_fetch_uses_authenticated_mcp_resources(monkeypatch):
     listed_resources = [
         {key: value for key, value in row.items() if key != "_content"} for row in rows
     ]
+    listed_resources.insert(
+        1,
+        {
+            "uri": "mainsequence://documents/release-notes",
+            "name": "release_notes",
+        },
+    )
     content_by_uri = {row["uri"]: row["_content"] for row in rows}
     calls = []
 
@@ -299,6 +419,7 @@ def test_cli_fetch_uses_authenticated_mcp_resources(monkeypatch):
         return {"contents": [content_by_uri[params["uri"]]]}
 
     monkeypatch.setattr(cli_api, "_mcp_json_rpc", _mcp_json_rpc)
+    monkeypatch.setattr(cli_api, "_mcp_client_version", lambda: "5.0.5")
     monkeypatch.setattr(
         cli_api,
         "backend_url",
@@ -308,11 +429,7 @@ def test_cli_fetch_uses_authenticated_mcp_resources(monkeypatch):
     catalog = cli_api.fetch_platform_project_skill_catalog()
 
     assert catalog.source_url == "https://platform.example.test/mcp"
-    assert [item.name for item in catalog.skills] == [
-        "a2a_communication",
-        "project_design",
-        "project_to_agent",
-    ]
+    assert [item.name for item in catalog.skills] == list(_DEFAULT_TEST_SKILLS)
     assert [call[0] for call in calls] == [
         "initialize",
         "resources/list",
@@ -322,7 +439,78 @@ def test_cli_fetch_uses_authenticated_mcp_resources(monkeypatch):
         "resources/read",
     ]
     assert calls[0][3] is None
+    assert calls[0][1]["clientInfo"]["version"] == "5.0.5"
     assert all(call[3] == cli_api.MCP_PROTOCOL_VERSION for call in calls[1:])
+    assert all(call[1].get("uri") != "mainsequence://documents/release-notes" for call in calls)
+
+
+def test_cli_fetch_follows_resource_pagination_and_normalizes_order(monkeypatch):
+    rows = _platform_rows(skill_names=("gamma_skill", "alpha_skill", "new_capability"))
+    listed_resources = [
+        {key: value for key, value in row.items() if key != "_content"} for row in rows
+    ]
+    content_by_uri = {row["uri"]: row["_content"] for row in rows}
+    calls = []
+
+    def _mcp_json_rpc(
+        method,
+        params,
+        *,
+        request_id,
+        protocol_version=None,
+    ):
+        calls.append((method, params, request_id, protocol_version))
+        if method == "initialize":
+            return {
+                "protocolVersion": cli_api.MCP_PROTOCOL_VERSION,
+                "capabilities": {"resources": {}},
+            }
+        if method == "resources/list":
+            if not params:
+                return {
+                    "resources": list(reversed(listed_resources[:2])),
+                    "nextCursor": "page-2",
+                }
+            assert params == {"cursor": "page-2"}
+            return {"resources": list(reversed(listed_resources[2:]))}
+        return {"contents": [content_by_uri[params["uri"]]]}
+
+    monkeypatch.setattr(cli_api, "_mcp_json_rpc", _mcp_json_rpc)
+    monkeypatch.setattr(
+        cli_api,
+        "backend_url",
+        lambda: "https://platform.example.test",
+    )
+
+    catalog = cli_api.fetch_platform_project_skill_catalog()
+
+    assert [skill.name for skill in catalog.skills] == [
+        "alpha_skill",
+        "gamma_skill",
+        "new_capability",
+    ]
+    assert [call[0] for call in calls[:3]] == [
+        "initialize",
+        "resources/list",
+        "resources/list",
+    ]
+    assert calls[1][2] == 2
+    assert calls[2][2] == 3
+
+
+def test_cli_fetch_rejects_repeated_resource_pagination_cursor(monkeypatch):
+    def _mcp_json_rpc(method, _params, **_kwargs):
+        if method == "initialize":
+            return {
+                "protocolVersion": cli_api.MCP_PROTOCOL_VERSION,
+                "capabilities": {"resources": {}},
+            }
+        return {"resources": [], "nextCursor": "repeat"}
+
+    monkeypatch.setattr(cli_api, "_mcp_json_rpc", _mcp_json_rpc)
+
+    with pytest.raises(ApiError, match="repeated a pagination cursor"):
+        cli_api.fetch_platform_project_skill_catalog()
 
 
 def test_mcp_json_rpc_uses_existing_jwt_and_refreshes_once(monkeypatch):
@@ -420,7 +608,9 @@ def test_sdk_source_tree_does_not_vendor_platform_owned_content():
         sdk_root / "agent_scaffold" / "SDK_CAPABILITY_ASSEMBLY.json",
         sdk_root / "agent_scaffold" / "skills" / "project_design",
         sdk_root / "agent_scaffold" / "skills" / "a2a_communication",
+        sdk_root / "agent_scaffold" / "skills" / "project_local_setup",
         sdk_root / "agent_scaffold" / "skills" / "project_to_agent",
+        sdk_root / "agent_scaffold" / "skills" / "static_site",
         sdk_root / "mainsequence" / "platform_capability_snapshot.py",
     ]
 

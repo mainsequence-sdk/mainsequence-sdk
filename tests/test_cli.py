@@ -11432,10 +11432,8 @@ def _cli_platform_skill_catalog():
     from pathlib import PurePosixPath
 
     from mainsequence.project_skills import (
-        PLATFORM_A2A_SKILL_URI,
         PLATFORM_ONTOLOGY_URI,
-        PLATFORM_PROJECT_DESIGN_SKILL_URI,
-        PLATFORM_PROJECT_TO_AGENT_SKILL_URI,
+        PLATFORM_SKILL_URI_PREFIX,
         PlatformProjectResource,
         PlatformProjectSkill,
         PlatformProjectSkillCatalog,
@@ -11452,23 +11450,13 @@ def _cli_platform_skill_catalog():
         content_size=len(ontology_content.encode("utf-8")),
     )
     skills = []
-    for name, front_matter_name, uri in (
-        (
-            "a2a_communication",
-            "a2a-communication",
-            PLATFORM_A2A_SKILL_URI,
-        ),
-        (
-            "project_design",
-            "project-design",
-            PLATFORM_PROJECT_DESIGN_SKILL_URI,
-        ),
-        (
-            "project_to_agent",
-            "project-to-agent",
-            PLATFORM_PROJECT_TO_AGENT_SKILL_URI,
-        ),
+    for name in (
+        "a2a_communication",
+        "project_design",
+        "project_to_agent",
     ):
+        front_matter_name = name.replace("_", "-")
+        uri = f"{PLATFORM_SKILL_URI_PREFIX}{front_matter_name}"
         content = f"---\nname: {front_matter_name}\ndescription: Platform {name}\n---\n"
         skills.append(
             PlatformProjectSkill(

@@ -369,22 +369,31 @@ dual-source update:
 1. it resolves SDK-owned execution skills from the target project's installed
    `agent_scaffold/skills` and records that installed SDK version;
 2. it uses the already-configured platform JWT to initialize `/mcp`, discover
-   the fixed platform resources with `resources/list`, and retrieve their
-   content with `resources/read`;
-3. it validates one complete manifest revision, every content hash, and the
-   SDK/platform destination ownership map; and
+   the server-owned platform catalog with `resources/list`, reads the ontology
+   first, and retrieves the skills declared by `ontology.skill_resources` with
+   `resources/read`;
+3. it validates one complete manifest revision, generic URI/name/path/front-
+   matter rules, every content hash, and the SDK/platform destination ownership
+   map; and
 4. it stages the combined result before replacing only
    `.agents/skills/mainsequence/`.
 
 The command does not cache or package platform resources in the SDK. It
 requires the backend for the platform lane. The ontology is read and hashed as
-part of the platform manifest identity; only platform skill resources are
-materialized under `.agents/skills/mainsequence/`. If authentication,
-transport, catalog validation, staging, or final replacement fails, the
-command exits non-zero and preserves the previous managed tree and sentinel.
-It never changes project-owned skills outside
-`.agents/skills/mainsequence/`, and it is not run implicitly when an agent
-starts.
+part of the platform manifest identity and its `skill_resources` array is the
+authoritative skill index. The SDK does not pin concrete platform skill names
+or MCP list order. A valid additive platform skill is accepted without an SDK
+catalog change, while missing, undeclared, duplicate, unsafe, or internally
+inconsistent platform skill resources are rejected. Unrelated MCP resources
+are ignored and not read. Only validated platform skill resources are
+materialized under `.agents/skills/mainsequence/` in deterministic name/URI
+order.
+
+If authentication, transport, unsupported manifest schema, catalog validation,
+staging, or final replacement fails, the command exits non-zero and preserves
+the previous managed tree and sentinel. It never changes project-owned skills
+outside `.agents/skills/mainsequence/`, and it is not run implicitly when an
+agent starts.
 
 Use `--json` for the machine-readable result. Existing top-level compatibility
 fields remain, while `sdk`, `platform`, and each `updated[].owner` identify the
@@ -550,7 +559,7 @@ ontology and each installed platform skill.
 - `mainsequence project search "<QUERY>"` is the first-class CLI command for finding existing projects before creation or local setup. Use it for fuzzy discovery, then use `mainsequence project validate-name "<PROJECT_NAME>"` for the exact create-time availability check.
 - `mainsequence project validate-name "<PROJECT_NAME>"` validates a candidate project name through the SDK client `Project.validate_name()` path, prints normalized names and suggestions, and exits non-zero when the name is unavailable.
 - `mainsequence project update AGENTS.md` is project-scoped. It resolves the target project first, then reads `AGENTS.md` from the running CLI's installed `agent_scaffold` bundle. This command does not require the target project's `.venv`. If the target file is missing, it creates it from that installed bundle. If an existing `AGENTS.md` has no Main Sequence managed marker, the command replaces the whole file. If the managed marker exists, the command updates only that managed block.
-- `mainsequence project update_agent_skills` is project-scoped and dual-source. In one invocation it resolves SDK-owned execution skills from the target project's installed `agent_scaffold/skills/` bundle, uses the existing platform JWT to initialize `/mcp`, discovers the fixed ontology and skills through `resources/list`, reads them through `resources/read`, validates the complete platform manifest revision and every content hash, rejects SDK/platform destination collisions, stages the combined tree, and replaces only `.agents/skills/mainsequence/`. It writes one schema-2 `.agents/skills/mainsequence/PINNED_FROM.txt` containing the installed SDK version/source path and the independent platform manifest version/hash, ontology hash, resource URIs, resource paths, and content hashes. A failed update preserves the previous managed tree and sentinel. It does not copy bundle-root files such as `AGENTS.md`, does not package platform content in the SDK, and does not modify project-owned skills outside `.agents/skills/mainsequence/`.
+- `mainsequence project update_agent_skills` is project-scoped and dual-source. In one invocation it resolves SDK-owned execution skills from the target project's installed `agent_scaffold/skills/` bundle, uses the existing platform JWT to initialize `/mcp`, discovers the server-owned resource catalog through paginated `resources/list`, reads the ontology and its dynamically declared `skill_resources` through `resources/read`, validates the complete platform manifest revision and every generic resource/content rule, rejects SDK/platform destination collisions, stages the deterministically ordered combined tree, and replaces only `.agents/skills/mainsequence/`. It writes one schema-2 `.agents/skills/mainsequence/PINNED_FROM.txt` containing the installed SDK version/source path and the independent platform manifest version/hash, ontology hash, resource URIs, resource paths, and content hashes. A failed update preserves the previous managed tree and sentinel. It does not copy bundle-root files such as `AGENTS.md`, does not package platform content in the SDK, and does not modify project-owned skills outside `.agents/skills/mainsequence/`.
 - `mainsequence data-node can_view` lists users returned by the SDK `ShareableObjectMixin.can_view()` path for `TimeIndexMetaTable`.
 - `mainsequence data-node can_edit` lists users returned by the SDK `ShareableObjectMixin.can_edit()` path for `TimeIndexMetaTable`.
 - `mainsequence data-node add_to_view`, `add_to_edit`, `remove_from_view`, and `remove_from_edit` mutate data-node user sharing through the SDK `ShareableObjectMixin` paths and render the resulting permission state in the terminal.
