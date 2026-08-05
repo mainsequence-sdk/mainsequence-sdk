@@ -88,6 +88,7 @@ from .api import (
     add_team_user_to_edit,
     add_team_user_to_view,
     add_workspace_labels,
+    bulk_delete_projects,
     create_adapter_from_api_connection,
     create_agent,
     create_constant,
@@ -106,7 +107,6 @@ from .api import (
     delete_data_node_storage,
     delete_meta_table,
     delete_organization_team,
-    delete_project,
     delete_project_image,
     delete_resource_release,
     delete_secret,
@@ -124,7 +124,7 @@ from .api import (
     get_meta_table,
     get_or_create_agent_session,
     get_organization_team,
-    get_project,
+    get_project_branch,
     get_project_data_node_updates,
     get_project_image,
     get_project_job,
@@ -725,17 +725,9 @@ def _determine_repo_url(p: dict) -> str:
     return repo
 
 
-def _project_identity_value(project: dict, *, prefer_uid: bool = True) -> str:
-    """
-    Return the public project identifier for display purposes.
-
-    Public CLI surfaces should prefer `uid`, while still tolerating legacy payloads
-    that only expose numeric `id`.
-    """
-    primary = project.get("uid") if prefer_uid else project.get("id")
-    fallback = project.get("id") if prefer_uid else project.get("uid")
-    value = primary or fallback or ""
-    return str(value).strip()
+def _project_identity_value(project: dict) -> str:
+    """Return the logical Project public UID."""
+    return str(project.get("uid") or "").strip()
 
 
 def _project_ref_matches_env(project_dir: pathlib.Path, project_ref: str) -> bool:
@@ -751,10 +743,6 @@ def _project_ref_matches_env(project_dir: pathlib.Path, project_ref: str) -> boo
     if uid_match and uid_match.group(1).strip() == project_ref:
         return True
 
-    id_match = re.search(r"(?m)^MAIN_SEQUENCE_PROJECT_ID=(.+?)\s*$", content)
-    if id_match and id_match.group(1).strip() == project_ref:
-        return True
-
     return False
 
 
@@ -764,12 +752,9 @@ def _find_local_project_dir(
     """
     Find local folder for a project reference.
 
-    Preferred matching is by `.env` markers, especially `MAIN_SEQUENCE_PROJECT_UID`.
-    Legacy numeric `-<id>` folder suffixes remain supported for older local clones.
+    Matching is by the canonical `MAIN_SEQUENCE_PROJECT_UID` `.env` marker.
     """
     normalized_ref = str(project_ref).strip()
-    legacy_suffix = f"-{normalized_ref}" if normalized_ref.isdigit() else None
-
     root = _projects_root(base_dir, org_slug)
     if root.exists():
         # Prefer CWD hints when the local .env explicitly points at this project.
@@ -799,16 +784,8 @@ def _find_local_project_dir(
                     continue
                 if _project_ref_matches_env(d, normalized_ref):
                     return str(d)
-                if legacy_suffix and d.name.endswith(legacy_suffix):
-                    return str(d)
         except Exception:
             pass
-
-    # legacy <slug> if name provided
-    if project_name:
-        legacy = root / safe_slug(project_name)
-        if legacy.is_dir():
-            return str(legacy)
 
     return None
 
@@ -819,16 +796,19 @@ def _render_projects_table(items: list[dict], base_dir: str, org_slug: str) -> s
     rows = []
     for p in items:
         public_id = _project_identity_value(p)
-        local_lookup_id = _project_identity_value(p, prefer_uid=False) or public_id
         name = p.get("project_name") or "(unnamed)"
-        initialized = "yes" if p.get("is_initialized") is True else "no"
+        branches = ", ".join(
+            str(branch.get("repository_branch") or "-")
+            for branch in list(p.get("branches") or [])
+            if isinstance(branch, dict)
+        ) or "-"
 
-        local_path = _find_local_project_dir(base_dir, org_slug, local_lookup_id, name)
+        local_path = _find_local_project_dir(base_dir, org_slug, public_id, name)
         local = "Local" if local_path else "-"
         path_col = local_path or "-"
-        rows.append((public_id or "-", name, initialized, local, path_col))
+        rows.append((public_id or "-", name, branches, local, path_col))
 
-    header = ["UID", "Project", "Initialized", "Local", "Path"]
+    header = ["UID", "Project", "Branches", "Local", "Path"]
     if not rows:
         return "No projects."
 
@@ -889,7 +869,7 @@ def _resolve_project_dir(project_id: str | None, path: str | None) -> pathlib.Pa
     Resolve project directory by:
       - explicit --path, or
       - current working directory when local `.env` exposes `MAIN_SEQUENCE_PROJECT_UID`, or
-      - scanning base projects root for a matching project ref / legacy numeric suffix
+      - scanning the projects root for a matching logical Project UID
 
     Raises:
         typer.Exit(1) on failure.
@@ -935,7 +915,6 @@ def _read_project_ref_from_env_file(project_dir: pathlib.Path) -> str | None:
     Read the preferred local project reference from `<project_dir>/.env`.
 
     The public contract is `MAIN_SEQUENCE_PROJECT_UID`.
-    Legacy `MAIN_SEQUENCE_PROJECT_ID` remains readable for older local clones.
     """
     env_path = project_dir / ".env"
     if not env_path.is_file():
@@ -948,10 +927,6 @@ def _read_project_ref_from_env_file(project_dir: pathlib.Path) -> str | None:
     uid_match = re.search(r"(?m)^MAIN_SEQUENCE_PROJECT_UID=(.+?)\s*$", content)
     if uid_match:
         return uid_match.group(1).strip() or None
-
-    id_match = re.search(r"(?m)^MAIN_SEQUENCE_PROJECT_ID=(.+?)\s*$", content)
-    if id_match:
-        return id_match.group(1).strip() or None
 
     return None
 
@@ -981,6 +956,75 @@ def _resolve_project_id_from_local_env(path: str | None = None) -> str:
         error(f"Could not determine project uid from {project_dir / '.env'}.")
         raise typer.Exit(1)
     return project_ref
+
+
+def _current_git_branch(project_dir: pathlib.Path | None = None) -> str | None:
+    try:
+        result = subprocess.run(
+            ["git", "branch", "--show-current"],
+            cwd=str(project_dir or pathlib.Path.cwd()),
+            capture_output=True,
+            text=True,
+            timeout=2,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    branch = result.stdout.strip() if result.returncode == 0 else ""
+    return branch or None
+
+
+def _resolve_project_branch(
+    project: dict,
+    *,
+    repository_branch: str | None = None,
+    project_dir: pathlib.Path | None = None,
+    prompt_if_ambiguous: bool = False,
+    use_current_git_branch: bool = True,
+) -> dict:
+    branches = [item for item in list(project.get("branches") or []) if isinstance(item, dict)]
+    if not branches:
+        raise ApiError("This Project has no ProjectBranches.")
+
+    branch_name = (repository_branch or "").strip()
+    if not branch_name and use_current_git_branch:
+        branch_name = _current_git_branch(project_dir) or ""
+    if branch_name:
+        matches = [
+            item for item in branches if str(item.get("repository_branch") or "") == branch_name
+        ]
+        if len(matches) == 1:
+            return get_project_branch(str(matches[0]["uid"]))
+        raise ApiError(
+            f"Git branch {branch_name!r} is not registered as a ProjectBranch for this Project."
+        )
+
+    if prompt_if_ambiguous:
+        names = [str(item.get("repository_branch") or "") for item in branches]
+        selected = typer.prompt(
+            "Repository branch",
+            type=click.Choice(names, case_sensitive=True),
+        )
+        match = next(item for item in branches if item.get("repository_branch") == selected)
+        return get_project_branch(str(match["uid"]))
+
+    raise ApiError(
+        "No repository branch was selected. Run the command from the Project Git checkout "
+        "or pass an explicit repository branch."
+    )
+
+
+def _resolve_project_branch_uid_for_command(
+    project_ref: str,
+    *,
+    project_dir: pathlib.Path | None = None,
+) -> str:
+    project = resolve_project(project_ref)
+    project_branch = _resolve_project_branch(project, project_dir=project_dir)
+    uid = str(project_branch.get("uid") or "").strip()
+    if not uid:
+        raise ApiError("The resolved ProjectBranch has no UID.")
+    return uid
 
 
 def _project_agent_scaffold_bundle_dir(project_dir: pathlib.Path) -> pathlib.Path:
@@ -1430,6 +1474,7 @@ def _prompt_select_uid(
 def _prepare_batch_jobs_file_with_selected_related_image(
     *,
     project_id: str,
+    project_dir: pathlib.Path,
     batch_file: pathlib.Path,
     timeout: int | None,
 ) -> pathlib.Path:
@@ -1448,7 +1493,14 @@ def _prepare_batch_jobs_file_with_selected_related_image(
         if not isinstance(raw_job, dict):
             return batch_file
 
-    project_images = list_project_images(related_project_id=project_id, timeout=timeout)
+    project_branch_uid = _resolve_project_branch_uid_for_command(
+        project_id,
+        project_dir=project_dir,
+    )
+    project_images = list_project_images(
+        related_project_branch_uid=project_branch_uid,
+        timeout=timeout,
+    )
     if not project_images:
         raise RuntimeError(
             "No project images are available. Create a project image before scheduling batch jobs."
@@ -1456,7 +1508,7 @@ def _prepare_batch_jobs_file_with_selected_related_image(
 
     rows = [
         [
-            str(img.get("id") or "-"),
+            str(img.get("uid") or "-"),
             str(img.get("project_repo_hash") or "-"),
             _format_base_image_label(img.get("base_image")),
         ]
@@ -1466,30 +1518,30 @@ def _prepare_batch_jobs_file_with_selected_related_image(
         f"All {len(jobs_config)} job(s) in {batch_file.name} will be scheduled on one project image. "
         "Select the image to use for this batch."
     )
-    related_image_id = _prompt_select_id(
+    related_image_uid = _prompt_select_uid(
         title="Available Project Images",
-        prompt_label="Related image ID",
+        prompt_label="Related image UID",
         items=project_images,
         rows=rows,
     )
-    selected_image = _find_image_by_id(project_images, related_image_id)
+    selected_image = _find_image_by_uid(project_images, related_image_uid)
     if selected_image is None:
-        raise RuntimeError(f"Related image not found: {related_image_id}")
+        raise RuntimeError(f"Related image not found: {related_image_uid}")
 
     patched_config = dict(raw_config)
     patched_jobs: list[dict] = []
     overwritten_count = 0
     for raw_job in jobs_config:
         job_copy = dict(raw_job)
-        existing_image_ref = job_copy.get("related_image_id")
+        existing_image_ref = job_copy.get("related_image_uid")
         if existing_image_ref in (None, ""):
             existing_image_ref = job_copy.get("related_image")
         if existing_image_ref not in (None, "") and str(existing_image_ref) != str(
-            related_image_id
+            related_image_uid
         ):
             overwritten_count += 1
         job_copy.pop("related_image", None)
-        job_copy["related_image_id"] = related_image_id
+        job_copy["related_image_uid"] = related_image_uid
         patched_jobs.append(job_copy)
     patched_config["jobs"] = patched_jobs
 
@@ -1505,9 +1557,9 @@ def _prepare_batch_jobs_file_with_selected_related_image(
 
     if overwritten_count:
         warn(
-            f"Overriding related_image_id for {overwritten_count} job(s) so the entire batch uses image {related_image_id}."
+            f"Overriding related_image_uid for {overwritten_count} job(s) so the entire batch uses image {related_image_uid}."
         )
-    info(f"Using project image {related_image_id} for all {len(jobs_config)} job(s) in this batch.")
+    info(f"Using project image {related_image_uid} for all {len(jobs_config)} job(s) in this batch.")
     return temp_path
 
 
@@ -1520,20 +1572,20 @@ def _confirm_schedule_batch_jobs_submission(batch_file: pathlib.Path) -> bool:
 
     jobs_config = raw_config.get("jobs") if isinstance(raw_config, dict) else None
     if isinstance(jobs_config, list) and jobs_config:
-        image_ids: list[str] = []
+        image_uids: list[str] = []
         for raw_job in jobs_config:
             if not isinstance(raw_job, dict):
                 continue
-            image_ref = raw_job.get("related_image_id")
+            image_ref = raw_job.get("related_image_uid")
             if image_ref in (None, ""):
                 image_ref = raw_job.get("related_image")
             if image_ref not in (None, ""):
-                image_ids.append(str(image_ref))
-        unique_image_ids = sorted(set(image_ids))
-        if len(unique_image_ids) == 1:
+                image_uids.append(str(image_ref))
+        unique_image_uids = sorted(set(image_uids))
+        if len(unique_image_uids) == 1:
             prompt_text = (
                 f"This will schedule all {len(jobs_config)} job(s) on the same image "
-                f"({unique_image_ids[0]}). Continue?"
+                f"({unique_image_uids[0]}). Continue?"
             )
         else:
             prompt_text = f"This will schedule {len(jobs_config)} job(s). Continue?"
@@ -1602,7 +1654,7 @@ def _format_meta_table_delete_preview(meta_table: dict[str, object]) -> list[tup
 
 def _format_project_image_delete_preview(image: dict[str, object]) -> list[tuple[str, str]]:
     return [
-        ("ID", str(image.get("id") or "-")),
+        ("UID", str(image.get("uid") or "-")),
         ("Project Repo Hash", str(image.get("project_repo_hash") or "-")),
         ("Base Image", _format_base_image_label(image.get("base_image"))),
         ("Is Ready", str(image.get("is_ready")) if image.get("is_ready") is not None else "-"),
@@ -1787,20 +1839,20 @@ def _group_project_images_by_hash(images: list[dict]) -> dict[str, list[dict]]:
 
 def _format_base_image_label(value) -> str:
     if isinstance(value, dict):
-        return str(value.get("title") or value.get("id") or "-")
+        return str(value.get("title") or value.get("uid") or "-")
     if value is None:
         return "-"
     return str(value)
 
 
-def _format_image_ids(images: list[dict]) -> str:
-    ids = [str(img.get("id")) for img in images if img.get("id") is not None]
-    return ", ".join(ids) if ids else "-"
+def _format_image_uids(images: list[dict]) -> str:
+    uids = [str(img.get("uid")) for img in images if img.get("uid") is not None]
+    return ", ".join(uids) if uids else "-"
 
 
 def _format_related_image_label(value) -> str:
     if isinstance(value, dict):
-        return str(value.get("id") or value.get("title") or "-")
+        return str(value.get("uid") or value.get("title") or "-")
     if value is None:
         return "-"
     return str(value)
@@ -1851,10 +1903,10 @@ def _format_json_value(value) -> str:
         return str(value)
 
 
-def _find_image_by_id(images: list[dict], image_id: int | None) -> dict | None:
-    if image_id is None:
+def _find_image_by_uid(images: list[dict], image_uid: str | None) -> dict | None:
+    if image_uid is None:
         return None
-    return next((img for img in images if str(img.get("id")) == str(image_id)), None)
+    return next((img for img in images if str(img.get("uid")) == str(image_uid)), None)
 
 
 def _format_job_schedule_summary(task_schedule) -> str:
@@ -2359,7 +2411,6 @@ def _render_project_runtime_env_text(
         "MAINSEQUENCE_ENDPOINT=",
         "MAIN_SEQUENCE_PROJECT_UID=",
         "MAINSEQUENCE_TOKEN=",
-        "MAIN_SEQUENCE_PROJECT_ID=",
     )
     lines = [
         ln
@@ -9120,7 +9171,7 @@ def _print_project_data_node_updates(
     """
     List data node updates for a project.
 
-    Uses SDK client `Project.get_data_nodes_updates()` as the single source of truth
+    Uses SDK client `ProjectBranch.get_data_nodes_updates()` as the single source of truth
     for payload parsing and shape handling.
 
     Parameters
@@ -9151,7 +9202,8 @@ def _print_project_data_node_updates(
 
     _require_login()
     try:
-        updates = get_project_data_node_updates(project_id, timeout=timeout)
+        project_branch_uid = _resolve_project_branch_uid_for_command(project_id)
+        updates = get_project_data_node_updates(project_branch_uid, timeout=timeout)
     except NotLoggedIn as e:
         error("Not logged in. Run: mainsequence login")
         raise typer.Exit(1) from e
@@ -9362,13 +9414,11 @@ def project_search_cmd(
     if projects:
         print_table(
             "Project Search Results",
-            ["UID", "Project Name", "Repository Branch", "Cluster ID"],
+            ["UID", "Project Name"],
             [
                 [
                     _project_identity_value(project) or "-",
                     str(project.get("project_name") or "-"),
-                    str(project.get("repository_branch") or "-"),
-                    str(project.get("cluster_id") or "-"),
                 ]
                 for project in projects
             ],
@@ -9392,8 +9442,9 @@ def project_validate_name_alias_cmd(
 @project.command("create")
 def project_create_cmd(
     project_name: str | None = typer.Argument(None, help="Project name"),
-    data_source_uid: str | None = typer.Option(
-        None, "--data-source-uid", help="Dynamic table data source UID"
+    project_type: str = typer.Option("python", "--project-type", help="Project type"),
+    metatables_data_source_uid: str | None = typer.Option(
+        None, "--metatables-data-source-uid", help="MetaTables data source UID"
     ),
     default_base_image_uid: str | None = typer.Option(
         None, "--default-base-image-uid", help="Default base image UID"
@@ -9401,7 +9452,6 @@ def project_create_cmd(
     github_org_uid: str | None = typer.Option(
         None, "--github-org-uid", "--organization-uid", help="GitHub organization UID"
     ),
-    branch: str | None = typer.Option(None, "--branch", help="Repository branch (default: main)"),
     env: list[str] | None = typer.Option(
         None,
         "--env",
@@ -9412,20 +9462,20 @@ def project_create_cmd(
     Create a project on the platform.
 
     If required values are omitted, the command prompts interactively and applies defaults.
-    After creation, it polls project status until `is_initialized=true`.
+    Project creation creates the logical Project and its initial `main` ProjectBranch.
 
     Parameters
     ----------
     project_name:
         Project name. If omitted, prompt is shown.
-    data_source_uid:
-        Dynamic table data source UID.
+    project_type:
+        Project type used for the initial ProjectBranch.
+    metatables_data_source_uid:
+        MetaTables data source UID.
     default_base_image_uid:
         Default base image UID.
     github_org_uid:
         GitHub organization UID.
-    branch:
-        Repository branch (default: `main`).
     env:
         Environment variable entries in `KEY=VALUE` format.
 
@@ -9435,7 +9485,7 @@ def project_create_cmd(
     mainsequence project create
     mainsequence project create tutorial-project
     mainsequence project create tutorial-project --default-base-image-uid <base_image_uid> --github-org-uid <github_org_uid>
-    mainsequence project create tutorial-project --branch main --env FOO=bar --env BAZ=qux
+    mainsequence project create tutorial-project --env FOO=bar --env BAZ=qux
     ```
     """
     _require_login()
@@ -9477,7 +9527,7 @@ def project_create_cmd(
                 )
             raise typer.Exit(1)
 
-        if data_source_uid is None:
+        if metatables_data_source_uid is None and project_type == "python":
             ds_items = list_dynamic_table_data_sources(status="AVAILABLE")
             ds_rows: list[list[str]] = []
             for item in ds_items:
@@ -9493,7 +9543,7 @@ def project_create_cmd(
                     f"class={rr.get('class_type') or '-'}, status={rr.get('status') or '-'}"
                 )
                 ds_rows.append([uid, str(ds_name), str(ds_details)])
-            data_source_uid = _prompt_select_uid(
+            metatables_data_source_uid = _prompt_select_uid(
                 title="Available Data Sources",
                 prompt_label="Data source uid",
                 items=ds_items,
@@ -9535,12 +9585,6 @@ def project_create_cmd(
                     "No GitHub organizations available. Project will be created without github_org_uid."
                 )
 
-        branch = (
-            (branch or "").strip()
-            or typer.prompt("Repository branch", default="main").strip()
-            or "main"
-        )
-
         env_entries = list(env or [])
         if not env_entries:
             env_line = typer.prompt(
@@ -9560,10 +9604,10 @@ def project_create_cmd(
 
         created = create_project(
             project_name=project_name,
-            data_source_uid=data_source_uid,
+            project_type=project_type,
+            metatables_data_source_uid=metatables_data_source_uid,
             default_base_image_uid=default_base_image_uid,
             github_org_uid=github_org_uid,
-            repository_branch=branch,
             env_vars=env_vars,
         )
     except ApiError as e:
@@ -9574,8 +9618,6 @@ def project_create_cmd(
         raise typer.Exit(1) from e
 
     project_uid = _project_identity_value(created)
-    project_poll_ref = project_uid or str(created.get("id") or "").strip() or None
-
     if _emit_json(created):
         return
 
@@ -9583,38 +9625,17 @@ def project_create_cmd(
         f"Project created: {created.get('project_name') or project_name} (uid={project_uid or '-'})"
     )
 
-    # A freshly created project can take several minutes to initialize on backend.
-    # Keep polling until API reports is_initialized=True.
-    if project_poll_ref and created.get("is_initialized") is False:
-        info("Project is still initializing. Waiting until is_initialized=true (poll every 30s).")
-        attempt = 0
-        try:
-            while True:
-                attempt += 1
-                with status(f"Project not ready yet (attempt {attempt}). Next check in 30s..."):
-                    time.sleep(30)
-                try:
-                    latest = get_project(project_poll_ref)
-                except ApiError as e:
-                    warn(f"Project status poll failed (attempt {attempt}): {e}")
-                    continue
-
-                created = latest
-                if created.get("is_initialized") is True:
-                    success("Project is initialized and ready.")
-                    break
-
-                info("Project still initializing. Continuing to poll...")
-        except KeyboardInterrupt:
-            warn("Stopped waiting for project initialization. Project may still be initializing.")
-
+    branch_names = ", ".join(
+        str(item.get("repository_branch") or "-")
+        for item in list(created.get("branches") or [])
+        if isinstance(item, dict)
+    )
     print_kv(
         "Project",
         [
             ("UID", project_uid or "-"),
             ("Project Name", str(created.get("project_name") or project_name)),
-            ("Git SSH URL", str(created.get("git_ssh_url") or "-")),
-            ("Branch", branch),
+            ("Branches", branch_names or "-"),
         ],
     )
     if project_uid:
@@ -9678,7 +9699,10 @@ def project_delete_remote_cmd(
             raise typer.Exit(0)
 
     try:
-        resp = delete_project(project_id, delete_repositories=delete_repositories)
+        resp = bulk_delete_projects(
+            uids=[project_uid],
+            delete_repositories=delete_repositories,
+        )
     except NotLoggedIn as e:
         error("Not logged in. Run: mainsequence login")
         raise typer.Exit(1) from e
@@ -9689,7 +9713,10 @@ def project_delete_remote_cmd(
     if _emit_json(resp):
         return
 
-    success(f"Project deleted: {project_name} (uid={project_uid})")
+    success(
+        f"Project deleted: {project_name} (uid={project_uid}; "
+        f"deleted={resp.get('deleted_count', 0)})"
+    )
     if isinstance(resp, dict) and resp:
         detail = resp.get("detail") or resp.get("message")
         if detail:
@@ -9995,7 +10022,7 @@ def _project_resources_list_impl(
         show_filters=show_filters,
         command_label="Project Resources",
         reserved_filter_descriptions={
-            "project__id": "always set from the selected project",
+            "project__uid": "always set from the selected ProjectBranch",
             "repo_commit_sha": "always set from the upstream remote branch head commit",
         },
     )
@@ -10013,8 +10040,12 @@ def _project_resources_list_impl(
         raise typer.Exit(1) from e
 
     try:
+        project_branch_uid = _resolve_project_branch_uid_for_command(
+            project_id,
+            project_dir=project_dir,
+        )
         resources = list_project_resources(
-            project_id=project_id,
+            project_branch_uid=project_branch_uid,
             repo_commit_sha=repo_commit_sha,
             filters=filters,
             timeout=timeout,
@@ -10102,9 +10133,9 @@ def _project_resource_release_create_impl(
     *,
     release_kind: str,
     project_id: str | None,
-    resource_id: int | None,
+    resource_uid: str | None,
     path: str | None,
-    related_image_id: int | None,
+    related_image_uid: str | None,
     readme_resource_id: int | None,
     cpu_request: str | None,
     memory_request: str | None,
@@ -10121,7 +10152,14 @@ def _project_resource_release_create_impl(
         project_id = _resolve_project_id_from_local_env(str(project_dir))
 
     try:
-        project_images = list_project_images(related_project_id=project_id, timeout=timeout)
+        project_branch_uid = _resolve_project_branch_uid_for_command(
+            project_id,
+            project_dir=project_dir,
+        )
+        project_images = list_project_images(
+            related_project_branch_uid=project_branch_uid,
+            timeout=timeout,
+        )
     except ApiError as e:
         error(f"Project images fetch failed: {e}")
         raise typer.Exit(1) from e
@@ -10130,26 +10168,26 @@ def _project_resource_release_create_impl(
         error("No project images are available. Create an image first.")
         raise typer.Exit(1)
 
-    if related_image_id is None:
+    if related_image_uid is None:
         image_rows: list[list[str]] = []
         for image in project_images:
             image_rows.append(
                 [
-                    str(image.get("id") or ""),
+                    str(image.get("uid") or ""),
                     str(image.get("project_repo_hash") or "-"),
                     _format_base_image_label(image.get("base_image")),
                 ]
             )
-        related_image_id = _prompt_select_id(
+        related_image_uid = _prompt_select_uid(
             title="Available Project Images",
-            prompt_label="Related image id",
+            prompt_label="Related image UID",
             items=project_images,
             rows=image_rows,
         )
 
-    selected_image = _find_image_by_id(project_images, related_image_id)
+    selected_image = _find_image_by_uid(project_images, related_image_uid)
     if not selected_image:
-        error(f"Related image not found: {related_image_id}")
+        error(f"Related image not found: {related_image_uid}")
         raise typer.Exit(1)
 
     repo_commit_sha = str(selected_image.get("project_repo_hash") or "").strip()
@@ -10164,7 +10202,7 @@ def _project_resource_release_create_impl(
 
     try:
         resources = list_project_resources(
-            project_id=project_id,
+            project_branch_uid=project_branch_uid,
             repo_commit_sha=repo_commit_sha,
             resource_type=resource_type,
             timeout=timeout,
@@ -10180,27 +10218,27 @@ def _project_resource_release_create_impl(
         )
         raise typer.Exit(1)
 
-    if resource_id is None:
+    if resource_uid is None:
         resource_rows: list[list[str]] = []
         for resource in resources:
             resource_rows.append(
                 [
-                    str(resource.get("id") or ""),
+                    str(resource.get("uid") or ""),
                     str(resource.get("name") or "-"),
                     f"{str(resource.get('resource_type') or '-')}: {str(resource.get('path') or '-')}",
                 ]
             )
-        resource_id = _prompt_select_id(
+        resource_uid = _prompt_select_uid(
             title="Project Resources Matching Selected Image and Release Type",
-            prompt_label="Resource id",
+            prompt_label="Resource UID",
             items=resources,
             rows=resource_rows,
         )
 
-    resource_ids = {
-        str(resource.get("id")) for resource in resources if resource.get("id") is not None
+    resource_uids = {
+        str(resource.get("uid")) for resource in resources if resource.get("uid") is not None
     }
-    if str(resource_id) not in resource_ids:
+    if str(resource_uid) not in resource_uids:
         error("Selected resource does not match the selected image commit and release type.")
         raise typer.Exit(1)
 
@@ -10227,8 +10265,8 @@ def _project_resource_release_create_impl(
     try:
         created = create_project_resource_release(
             release_kind=release_kind,
-            resource_id=resource_id,
-            related_image_id=related_image_id,
+            resource_uid=resource_uid,
+            related_image_uid=related_image_uid,
             readme_resource_id=readme_resource_id,
             cpu_request=cpu_request,
             memory_request=memory_request,
@@ -10251,10 +10289,10 @@ def _project_resource_release_create_impl(
         [
             ("ID", str(created.get("id") or "-")),
             ("Release Kind", release_kind),
-            ("Resource", str(created.get("resource") or resource_id)),
+            ("Resource", str(created.get("resource") or resource_uid)),
             (
                 "Related Image",
-                _format_related_image_label(created.get("related_image") or related_image_id),
+                _format_related_image_label(created.get("related_image") or related_image_uid),
             ),
             ("CPU Request", str(created.get("cpu_request") or cpu_request)),
             ("Memory Request", str(created.get("memory_request") or memory_request)),
@@ -10278,12 +10316,12 @@ def project_project_resource_create_dashboard_cmd(
     project_id: str | None = typer.Argument(
         None, help="Project UID. Defaults to local .env when omitted."
     ),
-    resource_id: int | None = typer.Option(None, "--resource-id", help="Project resource ID."),
+    resource_uid: str | None = typer.Option(None, "--resource-uid", help="Project resource UID."),
     path: str | None = typer.Option(
         None, "--path", help="Project repository path (default: current project)"
     ),
-    related_image_id: int | None = typer.Option(
-        None, "--related-image-id", help="Project image ID."
+    related_image_uid: str | None = typer.Option(
+        None, "--related-image-uid", help="Project image UID."
     ),
     readme_resource_id: int | None = typer.Option(
         None, "--readme-resource-id", help="Optional README resource ID."
@@ -10315,9 +10353,9 @@ def project_project_resource_create_dashboard_cmd(
     _project_resource_release_create_impl(
         release_kind="streamlit_dashboard",
         project_id=project_id,
-        resource_id=resource_id,
+        resource_uid=resource_uid,
         path=path,
-        related_image_id=related_image_id,
+        related_image_uid=related_image_uid,
         readme_resource_id=readme_resource_id,
         cpu_request=cpu_request,
         memory_request=memory_request,
@@ -10334,12 +10372,12 @@ def project_project_resource_create_fastapi_cmd(
     project_id: str | None = typer.Argument(
         None, help="Project UID. Defaults to local .env when omitted."
     ),
-    resource_id: int | None = typer.Option(None, "--resource-id", help="Project resource ID."),
+    resource_uid: str | None = typer.Option(None, "--resource-uid", help="Project resource UID."),
     path: str | None = typer.Option(
         None, "--path", help="Project repository path (default: current project)"
     ),
-    related_image_id: int | None = typer.Option(
-        None, "--related-image-id", help="Project image ID."
+    related_image_uid: str | None = typer.Option(
+        None, "--related-image-uid", help="Project image UID."
     ),
     readme_resource_id: int | None = typer.Option(
         None, "--readme-resource-id", help="Optional README resource ID."
@@ -10371,9 +10409,9 @@ def project_project_resource_create_fastapi_cmd(
     _project_resource_release_create_impl(
         release_kind="fastapi",
         project_id=project_id,
-        resource_id=resource_id,
+        resource_uid=resource_uid,
         path=path,
-        related_image_id=related_image_id,
+        related_image_uid=related_image_uid,
         readme_resource_id=readme_resource_id,
         cpu_request=cpu_request,
         memory_request=memory_request,
@@ -10493,7 +10531,7 @@ def _project_images_list_impl(
         show_filters=show_filters,
         command_label="Project Images",
         reserved_filter_descriptions={
-            "related_project__id__in": "always set from the selected project",
+            "related_project_branch_uid": "always set from the selected ProjectBranch",
         },
     )
 
@@ -10503,8 +10541,11 @@ def _project_images_list_impl(
         project_id = _resolve_project_id_from_local_env(path)
 
     try:
+        project_branch_uid = _resolve_project_branch_uid_for_command(project_id)
         images = list_project_images(
-            related_project_id=project_id, filters=filters, timeout=timeout
+            related_project_branch_uid=project_branch_uid,
+            filters=filters,
+            timeout=timeout,
         )
     except ApiError as e:
         error(f"Project images fetch failed: {e}")
@@ -10517,7 +10558,7 @@ def _project_images_list_impl(
     for image in images:
         rows.append(
             [
-                str(image.get("id") or "-"),
+                str(image.get("uid") or "-"),
                 str(image.get("project_repo_hash") or "-"),
                 _format_base_image_label(image.get("base_image")),
             ]
@@ -10577,14 +10618,14 @@ def project_images_list_cmd(
 
 def _project_images_delete_impl(
     *,
-    image_id: int,
+    image_uid: str,
     yes: bool,
     timeout: int | None,
 ) -> None:
     _require_login()
 
     try:
-        image = get_project_image(image_id=image_id, timeout=timeout)
+        image = get_project_image(image_uid=image_uid, timeout=timeout)
     except ApiError as e:
         error(f"Project image fetch failed: {e}")
         raise typer.Exit(1) from e
@@ -10592,12 +10633,12 @@ def _project_images_delete_impl(
     _confirm_delete_action(
         preview_title="Project Image Delete Preview",
         preview_items=_format_project_image_delete_preview(image),
-        prompt_text=f"Delete project image {image_id}?",
+        prompt_text=f"Delete project image {image_uid}?",
         yes=yes,
     )
 
     try:
-        deleted = delete_project_image(image_id=image_id, timeout=timeout)
+        deleted = delete_project_image(image_uid=image_uid, timeout=timeout)
     except ApiError as e:
         error(f"Project image deletion failed: {e}")
         raise typer.Exit(1) from e
@@ -10605,13 +10646,13 @@ def _project_images_delete_impl(
     if _emit_json(deleted):
         return
 
-    success(f"Project image deleted: id={image_id}")
+    success(f"Project image deleted: uid={image_uid}")
     print_kv("Deleted Project Image", _format_project_image_delete_preview(deleted))
 
 
 @project_images_group.command("delete")
 def project_images_delete_cmd(
-    image_id: int = typer.Argument(..., help="Project image ID."),
+    image_uid: str = typer.Argument(..., help="Project image UID."),
     yes: bool = typer.Option(False, "--yes", help="Delete without confirmation."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
@@ -10625,14 +10666,14 @@ def project_images_delete_cmd(
     mainsequence project images delete 94 --yes
     ```
     """
-    _project_images_delete_impl(image_id=image_id, yes=yes, timeout=timeout)
+    _project_images_delete_impl(image_uid=image_uid, yes=yes, timeout=timeout)
 
 
 def _project_images_create_impl(
     project_id: str | None,
     project_repo_hash: str | None,
     path: str | None,
-    base_image_id: int | None,
+    base_image_uid: str | None,
     timeout: int,
     poll_interval: int,
 ) -> None:
@@ -10647,7 +10688,14 @@ def _project_images_create_impl(
         project_id = _resolve_project_id_from_local_env(str(project_dir))
 
     try:
-        existing_images = list_project_images(related_project_id=project_id, timeout=timeout)
+        project_branch_uid = _resolve_project_branch_uid_for_command(
+            project_id,
+            project_dir=project_dir,
+        )
+        existing_images = list_project_images(
+            related_project_branch_uid=project_branch_uid,
+            timeout=timeout,
+        )
     except ApiError as e:
         error(f"Project images fetch failed: {e}")
         raise typer.Exit(1) from e
@@ -10680,7 +10728,7 @@ def _project_images_create_impl(
                 c["hash"],
                 c["date"],
                 c["subject"] or "-",
-                _format_image_ids(images_by_hash.get(c["hash"], [])),
+                _format_image_uids(images_by_hash.get(c["hash"], [])),
             ]
             for c in commits
         ]
@@ -10705,27 +10753,27 @@ def _project_images_create_impl(
 
     existing_for_hash = images_by_hash.get(project_repo_hash, [])
     if existing_for_hash:
-        warn("This commit already has project image(s): " + _format_image_ids(existing_for_hash))
+        warn("This commit already has project image(s): " + _format_image_uids(existing_for_hash))
 
     try:
-        if base_image_id is None:
+        if base_image_uid is None:
             img_items = list_project_base_images()
             img_rows: list[list[str]] = []
             for item in img_items:
-                name = item.get("title") or f"image-{item.get('id')}"
+                name = item.get("title") or f"image-{item.get('uid')}"
                 details = item.get("description") or item.get("latest_digest") or "-"
-                img_rows.append([str(item.get("id", "")), str(name), str(details)])
-            base_image_id = _prompt_select_id(
+                img_rows.append([str(item.get("uid", "")), str(name), str(details)])
+            base_image_uid = _prompt_select_uid(
                 title="Available Base Images",
-                prompt_label="Base image id",
+                prompt_label="Base image UID",
                 items=img_items,
                 rows=img_rows,
             )
 
         created = create_project_image(
             project_repo_hash=project_repo_hash,
-            related_project_id=project_id,
-            base_image_id=base_image_id,
+            related_project_branch_uid=project_branch_uid,
+            base_image_uid=base_image_uid,
             timeout=timeout,
         )
     except ApiError as e:
@@ -10736,10 +10784,10 @@ def _project_images_create_impl(
         raise typer.Exit(1) from e
 
     if not emit_json:
-        success(f"Project image created: id={created.get('id') or '-'}")
+        success(f"Project image created: uid={created.get('uid') or '-'}")
 
-    image_id = created.get("id")
-    if image_id is not None and created.get("is_ready") is False:
+    image_uid = created.get("uid")
+    if image_uid is not None and created.get("is_ready") is False:
         wait_deadline = time.monotonic() + max(int(timeout), 0)
         attempt = 0
         info(
@@ -10757,16 +10805,19 @@ def _project_images_create_impl(
                     time.sleep(sleep_for)
 
             try:
-                polled_images = list_project_images(related_project_id=project_id, timeout=timeout)
+                polled_images = list_project_images(
+                    related_project_branch_uid=project_branch_uid,
+                    timeout=timeout,
+                )
             except ApiError as e:
                 warn(f"Project image status poll failed (attempt {attempt}): {e}")
                 continue
 
             latest = next(
-                (img for img in polled_images if str(img.get("id")) == str(image_id)), None
+                (img for img in polled_images if str(img.get("uid")) == str(image_uid)), None
             )
             if latest is None:
-                warn(f"Project image {image_id} was not visible yet on poll attempt {attempt}.")
+                warn(f"Project image {image_uid} was not visible yet on poll attempt {attempt}.")
                 continue
 
             created = latest
@@ -10779,7 +10830,7 @@ def _project_images_create_impl(
         else:
             if not emit_json:
                 warn(
-                    f"Timed out after {timeout}s waiting for project image {image_id} to become ready. "
+                    f"Timed out after {timeout}s waiting for project image {image_uid} to become ready. "
                     "It may still be building on the backend."
                 )
 
@@ -10788,15 +10839,15 @@ def _project_images_create_impl(
 
     base_image_value = created.get("base_image")
     if isinstance(base_image_value, dict):
-        base_image_value = base_image_value.get("id") or base_image_value.get("title") or "-"
+        base_image_value = base_image_value.get("uid") or base_image_value.get("title") or "-"
 
     print_kv(
         "Project Image",
         [
-            ("ID", str(created.get("id") or "-")),
+            ("UID", str(created.get("uid") or "-")),
             ("Project UID", str(project_id)),
             ("Project Repo Hash", project_repo_hash),
-            ("Base Image", str(base_image_value or base_image_id or "-")),
+            ("Base Image", str(base_image_value or base_image_uid or "-")),
             (
                 "Is Ready",
                 str(created.get("is_ready")) if created.get("is_ready") is not None else "-",
@@ -10817,7 +10868,7 @@ def project_images_create_cmd(
     path: str | None = typer.Option(
         None, "--path", help="Project repository path (default: current project)"
     ),
-    base_image_id: int | None = typer.Option(None, "--base-image-id", help="Project base image ID"),
+    base_image_uid: str | None = typer.Option(None, "--base-image-uid", help="Project base image UID"),
     timeout: int = typer.Option(
         300, "--timeout", help="Maximum wait time in seconds for the image to become ready."
     ),
@@ -10840,8 +10891,8 @@ def project_images_create_cmd(
         Git commit hash already pushed to remote.
     path:
         Local repository path. Defaults to current project folder.
-    base_image_id:
-        Project base image ID. If omitted, prompt from available base images.
+    base_image_uid:
+        Project base image UID. If omitted, prompt from available base images.
     timeout:
         Maximum wait time in seconds for the image to become ready.
     poll_interval:
@@ -10861,7 +10912,7 @@ def project_images_create_cmd(
         project_id=project_id,
         project_repo_hash=project_repo_hash,
         path=path,
-        base_image_id=base_image_id,
+        base_image_uid=base_image_uid,
         timeout=timeout,
         poll_interval=poll_interval,
     )
@@ -10879,7 +10930,7 @@ def project_create_image_cmd(
     path: str | None = typer.Option(
         None, "--path", help="Project repository path (default: current project)"
     ),
-    base_image_id: int | None = typer.Option(None, "--base-image-id", help="Project base image ID"),
+    base_image_uid: str | None = typer.Option(None, "--base-image-uid", help="Project base image UID"),
     timeout: int = typer.Option(
         300, "--timeout", help="Maximum wait time in seconds for the image to become ready."
     ),
@@ -10894,7 +10945,7 @@ def project_create_image_cmd(
         project_id=project_id,
         project_repo_hash=project_repo_hash,
         path=path,
-        base_image_id=base_image_id,
+        base_image_uid=base_image_uid,
         timeout=timeout,
         poll_interval=poll_interval,
     )
@@ -10913,8 +10964,7 @@ def _project_jobs_list_impl(
         show_filters=show_filters,
         command_label="Project Jobs",
         reserved_filter_descriptions={
-            "project": "always scoped to the selected project",
-            "project__id__in": "always scoped to the selected project",
+            "project__uid": "always scoped to the selected ProjectBranch",
         },
     )
 
@@ -10924,7 +10974,12 @@ def _project_jobs_list_impl(
         project_id = _resolve_project_id_from_local_env(path)
 
     try:
-        jobs = list_project_jobs(project_id=project_id, filters=filters, timeout=timeout)
+        project_branch_uid = _resolve_project_branch_uid_for_command(project_id)
+        jobs = list_project_jobs(
+            project_branch_uid=project_branch_uid,
+            filters=filters,
+            timeout=timeout,
+        )
     except ApiError as e:
         error(f"Project jobs fetch failed: {e}")
         raise typer.Exit(1) from e
@@ -11307,7 +11362,7 @@ def _project_jobs_create_impl(
     path: str | None,
     execution_path: str | None,
     app_name: str | None,
-    related_image_id: int | None,
+    related_image_uid: str | None,
     schedule_type: str | None,
     schedule_every: int | None,
     schedule_period: str | None,
@@ -11332,35 +11387,47 @@ def _project_jobs_create_impl(
     if project_id is None:
         project_id = _resolve_project_id_from_local_env(str(project_dir))
 
+    try:
+        project_branch_uid = _resolve_project_branch_uid_for_command(
+            project_id,
+            project_dir=project_dir,
+        )
+    except ApiError as e:
+        error(str(e))
+        raise typer.Exit(1) from e
+
     name = (name or "").strip() or typer.prompt(pydantic_prompt_text(JOB_MODEL_REF, "name")).strip()
     if not name:
         error("Job name is required.")
         raise typer.Exit(1)
 
     try:
-        project_images = list_project_images(related_project_id=project_id, timeout=timeout)
+        project_images = list_project_images(
+            related_project_branch_uid=project_branch_uid,
+            timeout=timeout,
+        )
     except ApiError as e:
         error(f"Project images fetch failed: {e}")
         raise typer.Exit(1) from e
 
-    if related_image_id is None and project_images:
+    if related_image_uid is None and project_images:
         image_rows = [
             [
-                str(img.get("id") or "-"),
+                str(img.get("uid") or "-"),
                 str(img.get("project_repo_hash") or "-"),
                 _format_base_image_label(img.get("base_image")),
             ]
             for img in project_images
         ]
-        related_image_id = _prompt_select_id(
+        related_image_uid = _prompt_select_uid(
             title="Available Project Images",
-            prompt_label="Related image ID",
+            prompt_label="Related image UID",
             items=project_images,
             rows=image_rows,
         )
 
-    if related_image_id is None:
-        error("related_image_id is required for jobs.")
+    if related_image_uid is None:
+        error("related_image_uid is required for jobs.")
         raise typer.Exit(1)
 
     if execution_path is None and app_name is None:
@@ -11426,7 +11493,7 @@ def _project_jobs_create_impl(
     try:
         created = create_project_job(
             name=name,
-            project_id=project_id,
+            project_branch_uid=project_branch_uid,
             execution_path=execution_path,
             app_name=app_name,
             task_schedule=task_schedule,
@@ -11436,7 +11503,7 @@ def _project_jobs_create_impl(
             gpu_type=gpu_type,
             spot=spot,
             max_runtime_seconds=max_runtime_seconds,
-            related_image_id=related_image_id,
+            related_image_uid=related_image_uid,
             timeout=timeout,
         )
     except ApiError as e:
@@ -11460,7 +11527,7 @@ def _project_jobs_create_impl(
             ("App Name", str(created.get("app_name") or app_name or "-")),
             (
                 "Related Image",
-                _format_related_image_label(created.get("related_image") or related_image_id),
+                _format_related_image_label(created.get("related_image") or related_image_uid),
             ),
             (
                 "Schedule",
@@ -11493,12 +11560,12 @@ def project_jobs_create_cmd(
         "--execution-path",
     ),
     app_name: str | None = pydantic_option(JOB_MODEL_REF, "app_name", None, "--app-name"),
-    related_image_id: int | None = pydantic_option(
+    related_image_uid: str | None = pydantic_option(
         JOB_MODEL_REF,
         "related_image_uid",
         None,
-        "--related-image-id",
-        extra_help="Use the numeric project image ID.",
+        "--related-image-uid",
+        extra_help="Use the public project image UID.",
     ),
     schedule_type: str | None = pydantic_option(
         INTERVAL_SCHEDULE_MODEL_REF,
@@ -11584,10 +11651,8 @@ def project_jobs_create_cmd(
     --------
     ```bash
     mainsequence project jobs create
-    mainsequence project jobs create project-uid-123 --name daily-run --execution-path scripts/test.py --related-image-id 77
-    mainsequence project jobs create project-uid-123 --name dashboard --app-name dashboard-api --related-image-id 77
-    mainsequence project jobs create project-uid-123 --name hourly-run --execution-path scripts/test.py --related-image-id 77 --schedule-type interval --schedule-every 1 --schedule-period hours
-    mainsequence project jobs create project-uid-123 --name nightly-run --execution-path scripts/test.py --related-image-id 77 --schedule-type crontab --schedule-expression "0 0 * * *"
+    mainsequence project jobs create project-uid-123 --name daily-run --execution-path scripts/test.py --related-image-uid <uid>
+    mainsequence project jobs create project-uid-123 --name dashboard --app-name dashboard-api --related-image-uid <uid>
     ```
     """
     _project_jobs_create_impl(
@@ -11596,7 +11661,7 @@ def project_jobs_create_cmd(
         path=path,
         execution_path=execution_path,
         app_name=app_name,
-        related_image_id=related_image_id,
+        related_image_uid=related_image_uid,
         schedule_type=schedule_type,
         schedule_every=schedule_every,
         schedule_period=schedule_period,
@@ -11665,10 +11730,11 @@ def project_schedule_batch_jobs_cmd(
         error(f"Jobs file not found: {batch_file}")
         raise typer.Exit(1)
 
-        prepared_batch_file = batch_file
+    prepared_batch_file = batch_file
     try:
         prepared_batch_file = _prepare_batch_jobs_file_with_selected_related_image(
             project_id=project_id,
+            project_dir=project_dir,
             batch_file=batch_file,
             timeout=timeout,
         )
@@ -11676,7 +11742,10 @@ def project_schedule_batch_jobs_cmd(
             return
         created = schedule_batch_project_jobs(
             file_path=str(prepared_batch_file),
-            project_id=project_id,
+            project_branch_uid=_resolve_project_branch_uid_for_command(
+                project_id,
+                project_dir=project_dir,
+            ),
             strict=strict,
             timeout=timeout,
         )
@@ -11780,6 +11849,11 @@ def project_schedule_batch_jobs_cmd(
 @project.command("set-up-locally")
 def project_set_up_locally(
     project_id: str = typer.Argument(..., help="Project UID from the platform"),
+    branch: str | None = typer.Option(
+        None,
+        "--branch",
+        help="Repository branch to check out; prompted when omitted.",
+    ),
     base_dir: str | None = typer.Option(
         None, "--base-dir", help="Override base dir (default from settings)"
     ),
@@ -11828,16 +11902,20 @@ def project_set_up_locally(
         raise typer.Exit(1) from e
 
     project_uid = _project_identity_value(p) or str(project_id).strip()
-    project_row_id = str(p.get("id") or "").strip()
+    try:
+        project_branch = _resolve_project_branch(
+            p,
+            repository_branch=branch,
+            prompt_if_ambiguous=True,
+            use_current_git_branch=False,
+        )
+    except ApiError as e:
+        error(str(e))
+        raise typer.Exit(1) from e
 
-    is_initialized = p.get("is_initialized")
-    if is_initialized is None:
-        try:
-            p = get_project(project_uid)
-        except ApiError as e:
-            error(f"Could not verify project initialization status: {e}")
-            raise typer.Exit(1) from e
-        is_initialized = p.get("is_initialized")
+    project_branch_uid = str(project_branch.get("uid") or "").strip()
+    repository_branch = str(project_branch.get("repository_branch") or "").strip()
+    is_initialized = project_branch.get("is_initialized")
 
     if is_initialized is not True:
         error(
@@ -11846,7 +11924,7 @@ def project_set_up_locally(
         )
         raise typer.Exit(1)
 
-    repo = _determine_repo_url(p)
+    repo = _determine_repo_url(project_branch)
     if not repo:
         error("No repository URL found for this project.")
         raise typer.Exit(1)
@@ -11862,7 +11940,7 @@ def project_set_up_locally(
     # Best-effort deploy key (do not fail set-up-locally on this)
     try:
         host = platform.node()
-        add_deploy_key(project_uid, host, pub)
+        add_deploy_key(project_branch_uid, host, pub)
     except Exception as e:
         warn(f"Could not add deploy key automatically (continuing): {e}")
 
@@ -11877,7 +11955,9 @@ def project_set_up_locally(
 
     with status(f"Cloning repo into {target_dir}..."):
         rc = subprocess.call(
-            ["git", "clone", repo, str(target_dir)], env=env, cwd=str(projects_root)
+            ["git", "clone", "--branch", repository_branch, repo, str(target_dir)],
+            env=env,
+            cwd=str(projects_root),
         )
     if rc != 0:
         try:
@@ -11910,8 +11990,7 @@ def project_set_up_locally(
 
     success(f"Local folder: {target_dir}")
     info(f"Repo URL: {repo}")
-    if project_row_id:
-        info(f"Resolved backend row id: {project_row_id}")
+    info(f"Repository branch: {repository_branch}")
     if copied:
         info("Public key copied to clipboard.")
 
@@ -12514,7 +12593,6 @@ def project_current(
         "path": project_info.path,
         "folder": project_info.folder,
         "project_uid": project_info.project_uid,
-        "legacy_project_id": project_info.project_id,
         "venv_path": project_info.venv_path,
         "python_version": project_info.python_version,
     }

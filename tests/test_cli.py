@@ -6590,20 +6590,27 @@ def test_get_project_job_run_logs_uses_client_model(cli_mod, monkeypatch):
     }
 
 
-def test_project_get_data_node_updates_defaults_to_env_project_id(
+def test_project_get_data_node_updates_defaults_to_env_project_uid(
     cli_mod, runner, monkeypatch, tmp_path
 ):
     target = tmp_path / "demo-123"
     target.mkdir(parents=True, exist_ok=True)
-    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_ID=123\n", encoding="utf-8")
+    (target / ".env").write_text(
+        "MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8"
+    )
 
     captured = {}
 
     monkeypatch.chdir(target)
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "_resolve_project_branch_uid_for_command",
+        lambda *args, **kwargs: "project-branch-uid-123",
+    )
 
-    def _get_updates(project_id, timeout=None):
-        captured["project_id"] = project_id
+    def _get_updates(project_branch_uid, timeout=None):
+        captured["project_branch_uid"] = project_branch_uid
         return [
             {
                 "id": 10,
@@ -6617,7 +6624,7 @@ def test_project_get_data_node_updates_defaults_to_env_project_id(
 
     result = runner.invoke(cli_mod.app, ["project", "data-node-updates", "list"])
     assert result.exit_code == 0
-    assert str(captured["project_id"]) == "123"
+    assert captured["project_branch_uid"] == "project-branch-uid-123"
     assert "abc123" in result.output
     assert "storage-xyz" in result.output
 
@@ -9404,14 +9411,24 @@ def test_project_jobs_create_interactive_defaults(cli_mod, runner, monkeypatch, 
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(
         cli_mod,
+        "_resolve_project_branch_uid_for_command",
+        lambda *args, **kwargs: "project-branch-uid-123",
+    )
+    monkeypatch.setattr(
+        cli_mod,
         "list_project_images",
-        lambda related_project_id, timeout=None: [
+        lambda related_project_branch_uid, timeout=None: [
             {
-                "id": 77,
+                "uid": "project-image-uid-77",
                 "project_repo_hash": "abc123",
-                "base_image": {"id": 22, "title": "Python 3.12"},
+                "base_image": {"uid": "base-image-uid-22", "title": "Python 3.12"},
             }
         ],
+    )
+    monkeypatch.setattr(
+        cli_mod,
+        "_prompt_select_uid",
+        lambda **kwargs: "project-image-uid-77",
     )
 
     captured = {}
@@ -9423,18 +9440,18 @@ def test_project_jobs_create_interactive_defaults(cli_mod, runner, monkeypatch, 
             "name": kwargs["name"],
             "execution_path": kwargs["execution_path"],
             "app_name": kwargs["app_name"],
-            "related_image": kwargs["related_image_id"],
+            "related_image": kwargs["related_image_uid"],
         }
 
     monkeypatch.setattr(cli_mod, "create_project_job", _create_project_job)
 
     result = runner.invoke(
-        cli_mod.app, ["project", "jobs", "create"], input="demo-job\n\nscripts/test.py\n\n"
+        cli_mod.app, ["project", "jobs", "create"], input="demo-job\nscripts/test.py\n\n\n"
     )
     assert result.exit_code == 0
-    assert captured["project_id"] == "project-uid-123"
+    assert captured["project_branch_uid"] == "project-branch-uid-123"
     assert captured["name"] == "demo-job"
-    assert captured["related_image_id"] == 77
+    assert captured["related_image_uid"] == "project-image-uid-77"
     assert captured["execution_path"] == "scripts/test.py"
     assert captured["task_schedule"] is None
     assert captured["cpu_request"] == "0.25"
@@ -10077,9 +10094,23 @@ def test_project_set_up_locally(cli_mod, runner, monkeypatch, tmp_path):
         cli_mod,
         "resolve_project",
         lambda project_ref: {
-            "id": 123,
             "uid": "project-uid-123",
             "project_name": "Demo",
+            "git_repository_uid": "repository-uid-123",
+            "archived": False,
+            "created_by": "u",
+            "labels": [],
+            "branches": [{"uid": "project-branch-uid-123", "repository_branch": "main"}],
+        },
+    )
+    monkeypatch.setattr(
+        cli_mod,
+        "get_project_branch",
+        lambda branch_uid: {
+            "uid": branch_uid,
+            "project_uid": "project-uid-123",
+            "project_name": "Demo",
+            "repository_branch": "main",
             "git_ssh_url": "git@github.com:org/repo.git",
             "is_initialized": True,
         },
@@ -10103,7 +10134,10 @@ def test_project_set_up_locally(cli_mod, runner, monkeypatch, tmp_path):
         lambda: {"username": "u", "access": "access-123", "refresh": "refresh-456"},
     )
 
-    result = runner.invoke(cli_mod.app, ["project", "set-up-locally", "project-uid-123"])
+    result = runner.invoke(
+        cli_mod.app,
+        ["project", "set-up-locally", "project-uid-123", "--branch", "main"],
+    )
     assert result.exit_code == 0
 
     env_file = base / "org" / "projects" / "demo-project-uid-123" / ".env"
@@ -10140,9 +10174,23 @@ def test_project_set_up_locally_runtime_credential(cli_mod, runner, monkeypatch,
         cli_mod,
         "resolve_project",
         lambda project_ref: {
-            "id": 123,
             "uid": "project-uid-123",
             "project_name": "Demo",
+            "git_repository_uid": "repository-uid-123",
+            "archived": False,
+            "created_by": "u",
+            "labels": [],
+            "branches": [{"uid": "project-branch-uid-123", "repository_branch": "main"}],
+        },
+    )
+    monkeypatch.setattr(
+        cli_mod,
+        "get_project_branch",
+        lambda branch_uid: {
+            "uid": branch_uid,
+            "project_uid": "project-uid-123",
+            "project_name": "Demo",
+            "repository_branch": "main",
             "git_ssh_url": "git@github.com:org/repo.git",
             "is_initialized": True,
         },
@@ -10171,7 +10219,10 @@ def test_project_set_up_locally_runtime_credential(cli_mod, runner, monkeypatch,
         lambda backend_url: "runtime-access",
     )
 
-    result = runner.invoke(cli_mod.app, ["project", "set-up-locally", "project-uid-123"])
+    result = runner.invoke(
+        cli_mod.app,
+        ["project", "set-up-locally", "project-uid-123", "--branch", "main"],
+    )
     assert result.exit_code == 0
 
     env_file = base / "org" / "projects" / "demo-project-uid-123" / ".env"
@@ -10207,9 +10258,23 @@ def test_project_set_up_locally_rejects_uninitialized_project(
         cli_mod,
         "resolve_project",
         lambda project_ref: {
-            "id": 123,
             "uid": "project-uid-123",
             "project_name": "Demo",
+            "git_repository_uid": "repository-uid-123",
+            "archived": False,
+            "created_by": "u",
+            "labels": [],
+            "branches": [{"uid": "project-branch-uid-123", "repository_branch": "main"}],
+        },
+    )
+    monkeypatch.setattr(
+        cli_mod,
+        "get_project_branch",
+        lambda branch_uid: {
+            "uid": branch_uid,
+            "project_uid": "project-uid-123",
+            "project_name": "Demo",
+            "repository_branch": "main",
             "git_ssh_url": "git@github.com:org/repo.git",
             "is_initialized": False,
         },
@@ -10223,7 +10288,10 @@ def test_project_set_up_locally_rejects_uninitialized_project(
 
     monkeypatch.setattr(cli_mod.subprocess, "call", _clone)
 
-    result = runner.invoke(cli_mod.app, ["project", "set-up-locally", "project-uid-123"])
+    result = runner.invoke(
+        cli_mod.app,
+        ["project", "set-up-locally", "project-uid-123", "--branch", "main"],
+    )
 
     assert result.exit_code == 1
     assert "Project has not finished initializing yet." in result.output
@@ -10712,6 +10780,11 @@ def test_project_schedule_batch_jobs_defaults_to_cwd(cli_mod, runner, monkeypatc
 
     monkeypatch.chdir(target)
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "_resolve_project_branch_uid_for_command",
+        lambda *args, **kwargs: "project-branch-uid-123",
+    )
     monkeypatch.setattr(cli_mod.typer, "confirm", lambda message, default=False: True)
     monkeypatch.setattr(
         cli_mod,
@@ -10733,7 +10806,7 @@ def test_project_schedule_batch_jobs_defaults_to_cwd(cli_mod, runner, monkeypatc
         ["project", "schedule_batch_jobs", "scheduled_jobs.yaml", "--strict"],
     )
     assert result.exit_code == 0
-    assert captured["project_id"] == "project-uid-123"
+    assert captured["project_branch_uid"] == "project-branch-uid-123"
     assert captured["file_path"] == str((target / "scheduled_jobs.yaml").resolve())
     assert captured["strict"] is True
     assert "Scheduled 1 jobs from scheduled_jobs.yaml." in result.output
@@ -10754,7 +10827,7 @@ def test_project_schedule_batch_jobs_prompts_for_project_image_and_applies_it_to
                 "jobs:",
                 '  - name: "Simulated Prices"',
                 '    execution_path: "scripts/simulated_prices_launcher.py"',
-                "    related_image_id: 78",
+                '    related_image_uid: "project-image-uid-78"',
                 "    task_schedule:",
                 '      type: "crontab"',
                 '      expression: "0 0 * * *"',
@@ -10767,19 +10840,32 @@ def test_project_schedule_batch_jobs_prompts_for_project_image_and_applies_it_to
 
     monkeypatch.chdir(target)
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "_resolve_project_branch_uid_for_command",
+        lambda *args, **kwargs: "project-branch-uid-123",
+    )
     captured_confirm = {}
     monkeypatch.setattr(
         cli_mod,
         "list_project_images",
-        lambda related_project_id, timeout=None: [
-            {"id": 77, "project_repo_hash": "abc123", "base_image": {"title": "py311"}},
-            {"id": 78, "project_repo_hash": "def456", "base_image": {"title": "py312"}},
+        lambda related_project_branch_uid, timeout=None: [
+            {
+                "uid": "project-image-uid-77",
+                "project_repo_hash": "abc123",
+                "base_image": {"title": "py311"},
+            },
+            {
+                "uid": "project-image-uid-78",
+                "project_repo_hash": "def456",
+                "base_image": {"title": "py312"},
+            },
         ],
     )
     monkeypatch.setattr(
         cli_mod,
-        "_prompt_select_id",
-        lambda **kwargs: captured_picker.update(kwargs) or 77,
+        "_prompt_select_uid",
+        lambda **kwargs: captured_picker.update(kwargs) or "project-image-uid-77",
     )
     monkeypatch.setattr(
         cli_mod.typer,
@@ -10809,14 +10895,14 @@ def test_project_schedule_batch_jobs_prompts_for_project_image_and_applies_it_to
         ["project", "schedule_batch_jobs", "scheduled_jobs.yaml"],
     )
     assert result.exit_code == 0
-    assert captured["project_id"] == "project-uid-123"
+    assert captured["project_branch_uid"] == "project-branch-uid-123"
     assert captured["file_path"] != str(batch_file.resolve())
     assert captured_picker["title"] == "Available Project Images"
-    assert captured_picker["items"][0]["id"] == 77
-    assert captured["yaml"]["jobs"][0]["related_image_id"] == 77
-    assert "same image (77)" in captured_confirm["message"]
-    assert "Overriding related_image_id for 1 job(s)" in result.output
-    assert "Using project image 77 for all 1 job(s) in this batch." in result.output
+    assert captured_picker["items"][0]["uid"] == "project-image-uid-77"
+    assert captured["yaml"]["jobs"][0]["related_image_uid"] == "project-image-uid-77"
+    assert "same image (project-image-uid-77)" in captured_confirm["message"]
+    assert "Overriding related_image_uid for 1 job(s)" in result.output
+    assert "Using project image project-image-uid-77 for all 1 job(s)" in result.output
 
 
 def test_project_schedule_batch_jobs_cancelled_on_confirmation(
@@ -10825,14 +10911,16 @@ def test_project_schedule_batch_jobs_cancelled_on_confirmation(
     target = tmp_path / "project"
     target.mkdir(parents=True, exist_ok=True)
     batch_file = target / "scheduled_jobs.yaml"
-    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_ID=123\n", encoding="utf-8")
+    (target / ".env").write_text(
+        "MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8"
+    )
     batch_file.write_text(
         "\n".join(
             [
                 "jobs:",
                 '  - name: "Simulated Prices"',
                 '    execution_path: "scripts/simulated_prices_launcher.py"',
-                "    related_image_id: 77",
+                '    related_image_uid: "project-image-uid-77"',
             ]
         ),
         encoding="utf-8",
@@ -10842,12 +10930,25 @@ def test_project_schedule_batch_jobs_cancelled_on_confirmation(
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(
         cli_mod,
+        "_resolve_project_branch_uid_for_command",
+        lambda *args, **kwargs: "project-branch-uid-123",
+    )
+    monkeypatch.setattr(
+        cli_mod,
         "list_project_images",
-        lambda related_project_id, timeout=None: [
-            {"id": 77, "project_repo_hash": "abc123", "base_image": {"title": "py311"}},
+        lambda related_project_branch_uid, timeout=None: [
+            {
+                "uid": "project-image-uid-77",
+                "project_repo_hash": "abc123",
+                "base_image": {"title": "py311"},
+            },
         ],
     )
-    monkeypatch.setattr(cli_mod, "_prompt_select_id", lambda **kwargs: 77)
+    monkeypatch.setattr(
+        cli_mod,
+        "_prompt_select_uid",
+        lambda **kwargs: "project-image-uid-77",
+    )
     monkeypatch.setattr(cli_mod.typer, "confirm", lambda message, default=False: False)
     monkeypatch.setattr(
         cli_mod,
@@ -10868,17 +10969,24 @@ def test_project_schedule_batch_jobs_renders_summary_response(
 ):
     target = tmp_path / "project"
     target.mkdir(parents=True, exist_ok=True)
-    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_ID=123\n", encoding="utf-8")
+    (target / ".env").write_text(
+        "MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8"
+    )
     (target / "scheduled_jobs.yaml").write_text("jobs: []\n", encoding="utf-8")
 
     monkeypatch.chdir(target)
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "_resolve_project_branch_uid_for_command",
+        lambda *args, **kwargs: "project-branch-uid-123",
+    )
     monkeypatch.setattr(cli_mod.typer, "confirm", lambda message, default=False: True)
     monkeypatch.setattr(
         cli_mod,
         "schedule_batch_project_jobs",
         lambda **kwargs: {
-            "project_id": 123,
+            "project_branch_uid": "project-branch-uid-123",
             "strict": True,
             "created_count": 1,
             "existing_count": 1,

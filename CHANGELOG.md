@@ -15,6 +15,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- Replaced the former branch-shaped `Project` SDK contract with the logical
+  Project aggregate and added explicit `ProjectBranch` and `GitRepository`
+  models. Branch-owned jobs, images, resources, releases, deployment runs,
+  DataNodes, and coding-agent services now use ProjectBranch UIDs.
+- Kept `MAIN_SEQUENCE_PROJECT_UID` as the only persisted local Project
+  identity. The SDK resolves the active ProjectBranch from that logical
+  Project and the checked-out Git branch; it does not introduce or read a
+  `MAIN_SEQUENCE_PROJECT_BRANCH_UID` variable.
+- Updated Project creation and bulk deletion to the canonical backend request
+  contracts and moved branch actions, including summaries and repository
+  browsing, onto `ProjectBranch`.
 - Made SQLAlchemy a core SDK dependency for MetaTable declaration and compiled
   SQL support.
 - Reworked MetaTable schema migration docs around Alembic-rendered SQL artifacts

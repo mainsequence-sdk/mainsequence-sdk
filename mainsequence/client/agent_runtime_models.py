@@ -420,7 +420,7 @@ class CodingAgentService(BaseObjectOrm, BasePydanticModel):
         "agent_type": ["exact"],
         "scope_kind": ["exact"],
         "user_uid": ["exact"],
-        "project_uid": ["exact"],
+        "project_branch_uid": ["exact"],
         "automatic_deployment": ["exact"],
     }
     FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
@@ -430,7 +430,7 @@ class CodingAgentService(BaseObjectOrm, BasePydanticModel):
         "agent_type": "str",
         "scope_kind": "str",
         "user_uid": "uid",
-        "project_uid": "uid",
+        "project_branch_uid": "uid",
         "automatic_deployment": "bool",
     }
 
@@ -442,7 +442,10 @@ class CodingAgentService(BaseObjectOrm, BasePydanticModel):
     )
     scope: dict[str, Any] = Field(
         default_factory=dict,
-        description="Typed scope projection, for example {kind: user, user_uid} or {kind: project, project_uid}.",
+        description=(
+            "Typed scope projection, for example {kind: user, user_uid} or "
+            "{kind: project_branch, project_branch_uid}."
+        ),
     )
     is_ready: bool = Field(False, description="Whether the service runtime is routable.")
     automatic_deployment: bool = Field(
@@ -458,24 +461,6 @@ class CodingAgentService(BaseObjectOrm, BasePydanticModel):
     service_runtime_uid: str | None = Field(
         None, description="Public UID of the backing service runtime, if attached."
     )
-    knative_service_runtime_uid: str | None = Field(
-        None,
-        description="Deprecated alias for service_runtime_uid kept for older SDK callers.",
-    )
-
-    @model_validator(mode="after")
-    def _mirror_service_runtime_uid(self) -> CodingAgentService:
-        if (
-            self.service_runtime_uid is None
-            and self.knative_service_runtime_uid is not None
-        ):
-            self.service_runtime_uid = self.knative_service_runtime_uid
-        elif (
-            self.knative_service_runtime_uid is None
-            and self.service_runtime_uid is not None
-        ):
-            self.knative_service_runtime_uid = self.service_runtime_uid
-        return self
 
     @classmethod
     def _post_collection_action(
@@ -506,15 +491,23 @@ class CodingAgentService(BaseObjectOrm, BasePydanticModel):
         *,
         agent_type: str,
         user_uid: str | None = None,
-        project_uid: str | None = None,
+        project_branch_uid: str | None = None,
         timeout=None,
     ) -> CodingAgentService:
         body: dict[str, Any] = {"agent_type": str(agent_type)}
         if user_uid is not None:
             body["user_uid"] = cls._coerce_filter_uid(user_uid, field_name="user_uid")
-        if project_uid is not None:
-            body["project_uid"] = cls._coerce_filter_uid(project_uid, field_name="project_uid")
-        return cls(**cls._post_collection_action("resolve", body, timeout=timeout))
+        if project_branch_uid is not None:
+            body["project_branch_uid"] = cls._coerce_filter_uid(
+                project_branch_uid,
+                field_name="project_branch_uid",
+            )
+        rows = cls.filter(timeout=timeout, **body)
+        if len(rows) != 1:
+            raise ValueError(
+                f"Expected exactly one coding-agent service for {body!r}; found {len(rows)}."
+            )
+        return rows[0]
 
     @classmethod
     def resolve_user_orchestrator(
@@ -533,35 +526,20 @@ class CodingAgentService(BaseObjectOrm, BasePydanticModel):
     def resolve_project_executor(
         cls,
         *,
-        project_uid: str,
+        project_branch_uid: str,
         timeout=None,
     ) -> CodingAgentService:
         return cls.resolve(
             agent_type="project-executor",
-            project_uid=project_uid,
+            project_branch_uid=project_branch_uid,
             timeout=timeout,
-        )
-
-    @classmethod
-    def deploy_current_project_version(
-        cls,
-        *,
-        project_uid: str,
-        timeout=None,
-    ) -> dict[str, Any]:
-        resolved_project_uid = cls._coerce_filter_uid(project_uid, field_name="project_uid")
-        return cls._post_collection_action(
-            f"project/{resolved_project_uid}/deploy-current-version",
-            {},
-            timeout=timeout,
-            expected_statuses=(200, 201, 202),
         )
 
     @classmethod
     def deploy_project(
         cls,
         *,
-        project_uid: str,
+        project_branch_uid: str,
         llm_provider: str | None = None,
         llm_model: str | None = None,
         llm_thinking: str | None = None,
@@ -576,7 +554,10 @@ class CodingAgentService(BaseObjectOrm, BasePydanticModel):
         timeout=None,
         **extra: Any,
     ) -> dict[str, Any]:
-        resolved_project_uid = cls._coerce_filter_uid(project_uid, field_name="project_uid")
+        resolved_project_branch_uid = cls._coerce_filter_uid(
+            project_branch_uid,
+            field_name="project_branch_uid",
+        )
         body: dict[str, Any] = {
             key: value
             for key, value in {
@@ -595,8 +576,13 @@ class CodingAgentService(BaseObjectOrm, BasePydanticModel):
             }.items()
             if value is not None
         }
+        body["agent_type"] = "project-executor"
+        body["scope"] = {
+            "kind": "project_branch",
+            "project_branch_uid": resolved_project_branch_uid,
+        }
         return cls._post_collection_action(
-            f"project/{resolved_project_uid}/deploy",
+            "deploy",
             body,
             timeout=timeout,
             expected_statuses=(200, 201, 202),

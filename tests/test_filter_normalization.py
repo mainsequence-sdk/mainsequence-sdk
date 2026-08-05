@@ -229,7 +229,7 @@ def test_project_image_accepts_creation_date():
     image = ProjectImage(
         uid="f3cb8477-df47-49cb-a151-80b746fb1243",
         project_repo_hash="abc123",
-        related_project_uid="5a28020a-0f1b-47ee-aab8-334286234bea",
+        related_project_branch_uid="5a28020a-0f1b-47ee-aab8-334286234bea",
         base_image=None,
         is_ready=False,
         creation_date="2026-04-07T09:00:00Z",
@@ -1454,7 +1454,10 @@ def test_agent_runtime_models_deserialize_backend_uid_payloads():
             "uid": service_uid,
             "agent_uid": agent_uid,
             "agent_type": "project-executor",
-            "scope": {"kind": "project", "project_uid": "project-uid"},
+            "scope": {
+                "kind": "project_branch",
+                "project_branch_uid": "project-branch-uid",
+            },
             "is_ready": True,
             "image_drift": {"has_drift": False, "checks": []},
             "related_job_uid": "job-uid",
@@ -1465,9 +1468,8 @@ def test_agent_runtime_models_deserialize_backend_uid_payloads():
     assert service.uid == service_uid
     assert service.agent_uid == agent_uid
     assert service.agent_type == "project-executor"
-    assert service.scope["project_uid"] == "project-uid"
+    assert service.scope["project_branch_uid"] == "project-branch-uid"
     assert service.service_runtime_uid == "runtime-uid"
-    assert service.knative_service_runtime_uid == "runtime-uid"
 
 
 def test_agent_session_filter_supports_archive_history_query(monkeypatch):
@@ -1735,13 +1737,13 @@ def test_agent_session_archive_actions_return_current_session_contract(monkeypat
 
 def test_resource_release_model_accepts_collection_payload_without_runtime_child_fields():
     release_uid = "2f4c4c3d-5669-4da5-9d86-b84633c1e6ed"
-    project_uid = "9d81d63f-b8c9-404d-9f1a-5f2ad29dbf16"
+    project_branch_uid = "9d81d63f-b8c9-404d-9f1a-5f2ad29dbf16"
 
     release = models_helpers_mod.ResourceRelease.model_validate(
         {
             "uid": release_uid,
             "subdomain": "competition-analysis-dc3697f1f1",
-            "project_uid": project_uid,
+            "project_branch_uid": project_branch_uid,
             "name": "Competition Analysis",
             "release_kind": "static_site",
             "automatic_deployment": True,
@@ -1749,7 +1751,7 @@ def test_resource_release_model_accepts_collection_payload_without_runtime_child
     )
 
     assert release.uid == release_uid
-    assert release.project_uid == project_uid
+    assert release.project_branch_uid == project_branch_uid
     assert release.name == "Competition Analysis"
     assert release.release_kind == models_helpers_mod.ResourceReleaseKind.STATIC_SITE
     assert release.resource_uid is None
@@ -1991,13 +1993,13 @@ def test_unified_deployment_run_models_and_filters(monkeypatch):
     captured = {}
     run_uid = "11111111-1111-4111-8111-111111111111"
     target_uid = "22222222-2222-4222-8222-222222222222"
-    project_uid = "33333333-3333-4333-8333-333333333333"
+    project_branch_uid = "33333333-3333-4333-8333-333333333333"
     run = models_helpers_mod.DeploymentRun.model_validate(
         {
             "uid": run_uid,
             "target_type": "resource_release",
             "target": {"uid": target_uid, "name": "Orders API", "kind": "fastapi"},
-            "project_uid": project_uid,
+            "project_branch_uid": project_branch_uid,
             "operation": "build_and_deploy",
             "source": "repository_event",
             "commit_sha": "a" * 40,
@@ -2019,7 +2021,7 @@ def test_unified_deployment_run_models_and_filters(monkeypatch):
 
     normalized = models_helpers_mod.DeploymentRun._normalize_filter_kwargs(
         {
-            "project_uid": f" {project_uid} ",
+            "project_branch_uid": f" {project_branch_uid} ",
             "target_type__in": [" resource_release ", " static_site "],
             "state__in": [" running ", " failed "],
         }
@@ -2028,7 +2030,7 @@ def test_unified_deployment_run_models_and_filters(monkeypatch):
     assert run.target.uid == target_uid
     assert run.steps == []
     assert normalized == {
-        "project_uid": project_uid,
+        "project_branch_uid": project_branch_uid,
         "target_type__in": ["resource_release", "static_site"],
         "state__in": ["running", "failed"],
     }

@@ -8,7 +8,9 @@ import gzip
 import json
 import math
 import os
+import pathlib
 import re
+import subprocess
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -1934,8 +1936,10 @@ _executor = concurrent.futures.ThreadPoolExecutor(max_workers=5)
 
 _POD_PROJECT_RESOLUTION_LOCK = RLock()
 _POD_PROJECT_RESOLUTION_CACHE = None
+_POD_PROJECT_RESOLUTION_CACHE_KEY: tuple[str, str] | None = None
 _POD_PROJECT_LOGGED_STATES: set[tuple[str, str]] = set()
 POD_PROJECT = None
+POD_PROJECT_BRANCH = None
 
 
 def _local_data_interface(class_type: str):
@@ -2375,14 +2379,14 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
     def get_or_create(cls, **kwargs):
         url = cls.get_object_url() + "/get_or_create/"
         kwargs = serialize_to_json(kwargs)
-        pod_project = _require_local_pod_project("DataNodeUpdate.get_or_create")
-        project_uid = str(getattr(pod_project, "uid", "") or "").strip()
-        if not project_uid:
+        project_branch = _require_local_pod_project_branch("DataNodeUpdate.get_or_create")
+        project_branch_uid = str(getattr(project_branch, "uid", "") or "").strip()
+        if not project_branch_uid:
             raise RuntimeError(
-                "DataNodeUpdate.get_or_create requires a local pod project uid, "
-                "but the resolved project does not expose one."
+                "DataNodeUpdate.get_or_create requires a ProjectBranch uid, "
+                "but the active branch does not expose one."
             )
-        kwargs["current_project_uid"] = project_uid
+        kwargs["current_project_branch_uid"] = project_branch_uid
         payload = {"json": kwargs}
         s = cls.build_session()
         r = make_request(s=s, loaders=cls.LOADERS, r_type="POST", url=url, payload=payload)
@@ -4739,24 +4743,52 @@ class UpdateBatchResponse[UpdateT, UpdateDetailsT, TimeIndexedProfileT](BaseMode
 @dataclass(frozen=True)
 class _PodProjectResolution:
     project: Any | None
+    project_branch: Any | None
+    repository_branch: str | None
     status: str
     detail: str = ""
 
 
 def _reset_local_pod_project_resolution_cache() -> None:
-    global _POD_PROJECT_RESOLUTION_CACHE
+    global _POD_PROJECT_RESOLUTION_CACHE, _POD_PROJECT_RESOLUTION_CACHE_KEY
     with _POD_PROJECT_RESOLUTION_LOCK:
         _POD_PROJECT_RESOLUTION_CACHE = None
+        _POD_PROJECT_RESOLUTION_CACHE_KEY = None
         _POD_PROJECT_LOGGED_STATES.clear()
 
 
-def _build_local_pod_project_resolution() -> _PodProjectResolution:
-    from ..models_foundry import Project
+def _current_repository_branch() -> str | None:
+    try:
+        result = subprocess.run(
+            ["git", "branch", "--show-current"],
+            cwd=pathlib.Path.cwd(),
+            capture_output=True,
+            text=True,
+            timeout=2,
+            check=False,
+        )
+        branch = result.stdout.strip() if result.returncode == 0 else ""
+        if branch:
+            return branch
+    except (OSError, subprocess.SubprocessError):
+        pass
 
-    running_project_uid = (os.environ.get("MAIN_SEQUENCE_PROJECT_UID") or "").strip()
+    branch = (os.environ.get("MAINSEQUENCE_REPOSITORY_BRANCH") or "").strip()
+    return branch or None
+
+
+def _build_local_pod_project_resolution(
+    *,
+    running_project_uid: str,
+    repository_branch: str | None,
+) -> _PodProjectResolution:
+    from ..models_foundry import Project, ProjectBranch
+
     if not running_project_uid:
         return _PodProjectResolution(
             project=None,
+            project_branch=None,
+            repository_branch=repository_branch,
             status="missing",
             detail="MAIN_SEQUENCE_PROJECT_UID is not configured.",
         )
@@ -4773,12 +4805,16 @@ def _build_local_pod_project_resolution() -> _PodProjectResolution:
     except DoesNotExist:
         return _PodProjectResolution(
             project=None,
+            project_branch=None,
+            repository_branch=repository_branch,
             status="not_found",
             detail=f"Project reference {running_project_uid!r} from local runtime env was not found.",
         )
     except Exception as exc:
         return _PodProjectResolution(
             project=None,
+            project_branch=None,
+            repository_branch=repository_branch,
             status="lookup_failed",
             detail=(
                 "Could not resolve project reference "
@@ -4786,16 +4822,91 @@ def _build_local_pod_project_resolution() -> _PodProjectResolution:
             ),
         )
 
-    return _PodProjectResolution(project=project, status="resolved")
+    if not repository_branch:
+        return _PodProjectResolution(
+            project=project,
+            project_branch=None,
+            repository_branch=None,
+            status="branch_missing",
+            detail=(
+                "Could not determine the active repository branch from Git or "
+                "MAINSEQUENCE_REPOSITORY_BRANCH"
+            ),
+        )
+
+    branch_ref = next(
+        (
+            branch
+            for branch in project.branches
+            if branch.repository_branch == repository_branch
+        ),
+        None,
+    )
+    if branch_ref is None:
+        return _PodProjectResolution(
+            project=project,
+            project_branch=None,
+            repository_branch=repository_branch,
+            status="branch_not_registered",
+            detail=(
+                f"Repository branch {repository_branch!r} is not registered as a "
+                f"ProjectBranch of Project {running_project_uid!r}"
+            ),
+        )
+
+    try:
+        project_branch = ProjectBranch.get(pk=branch_ref.uid)
+    except (AuthenticationError, PermissionDeniedError) as exc:
+        raise RuntimeError(
+            "Could not resolve the active ProjectBranch because SDK "
+            f"authentication/authorization failed. Backend response: {exc}"
+        ) from exc
+    except DoesNotExist:
+        return _PodProjectResolution(
+            project=project,
+            project_branch=None,
+            repository_branch=repository_branch,
+            status="branch_not_found",
+            detail=f"ProjectBranch {branch_ref.uid!r} was not found",
+        )
+    except Exception as exc:
+        return _PodProjectResolution(
+            project=project,
+            project_branch=None,
+            repository_branch=repository_branch,
+            status="branch_lookup_failed",
+            detail=f"Could not load ProjectBranch {branch_ref.uid!r}: {exc}",
+        )
+
+    return _PodProjectResolution(
+        project=project,
+        project_branch=project_branch,
+        repository_branch=repository_branch,
+        status="resolved",
+    )
 
 
 def _resolve_local_pod_project(*, refresh: bool = False) -> _PodProjectResolution:
-    global _POD_PROJECT_RESOLUTION_CACHE, POD_PROJECT
+    global _POD_PROJECT_RESOLUTION_CACHE, _POD_PROJECT_RESOLUTION_CACHE_KEY
+    global POD_PROJECT, POD_PROJECT_BRANCH
+
+    running_project_uid = (os.environ.get("MAIN_SEQUENCE_PROJECT_UID") or "").strip()
+    repository_branch = _current_repository_branch()
+    cache_key = (running_project_uid, repository_branch or "")
 
     with _POD_PROJECT_RESOLUTION_LOCK:
-        if _POD_PROJECT_RESOLUTION_CACHE is None or refresh:
-            _POD_PROJECT_RESOLUTION_CACHE = _build_local_pod_project_resolution()
+        if (
+            _POD_PROJECT_RESOLUTION_CACHE is None
+            or _POD_PROJECT_RESOLUTION_CACHE_KEY != cache_key
+            or refresh
+        ):
+            _POD_PROJECT_RESOLUTION_CACHE = _build_local_pod_project_resolution(
+                running_project_uid=running_project_uid,
+                repository_branch=repository_branch,
+            )
+            _POD_PROJECT_RESOLUTION_CACHE_KEY = cache_key
             POD_PROJECT = _POD_PROJECT_RESOLUTION_CACHE.project
+            POD_PROJECT_BRANCH = _POD_PROJECT_RESOLUTION_CACHE.project_branch
         return _POD_PROJECT_RESOLUTION_CACHE
 
 
@@ -4832,17 +4943,27 @@ def _require_local_pod_project(operation: str) -> Any:
     raise RuntimeError(f"{operation} requires a local pod project. {detail}")
 
 
+def _require_local_pod_project_branch(operation: str) -> Any:
+    resolution = _resolve_local_pod_project()
+    if resolution.project_branch is not None:
+        return resolution.project_branch
+
+    _log_local_pod_project_resolution(resolution)
+    detail = (resolution.detail or "No local ProjectBranch attached.").strip()
+    raise RuntimeError(f"{operation} requires a registered active ProjectBranch. {detail}")
+
+
 @dataclass
 class PodDataSource:
     data_source: Any | None = None
 
     def set_remote_db(self):
         resolution = _resolve_local_pod_project()
-        if resolution.project is None:
+        if resolution.project_branch is None:
             _log_local_pod_project_resolution(resolution)
             return None
 
-        self.data_source = resolution.project.data_source
+        self.data_source = resolution.project_branch.metatables_data_source
         logger.debug(f"Set remote data source to {self.data_source.related_resource}")
 
         if self.data_source.related_resource.status != "AVAILABLE":

@@ -20,9 +20,9 @@ from .compute_validation import (
     validate_and_normalize_compute_fields,
 )
 from .exceptions import raise_for_response
-from .metatables.core import _require_local_pod_project, _resolve_local_pod_project
+from .metatables.core import _require_local_pod_project_branch, _resolve_local_pod_project
 from .models_foundry import (
-    Project,
+    ProjectBranch,
     ProjectImage,
 )
 from .utils import make_request
@@ -140,9 +140,9 @@ class Job(BaseObjectOrm, BasePydanticModel):
         examples=["Daily feature build"],
     )
 
-    project_uid: str | None = Field(
+    project_branch_uid: str | None = Field(
         default=None,
-        description="Public UID of the owning project.",
+        description="Public UID of the owning ProjectBranch.",
         examples=["5a28020a-0f1b-47ee-aab8-334286234bea"],
     )
 
@@ -266,20 +266,21 @@ class Job(BaseObjectOrm, BasePydanticModel):
         return decimal_to_storage(value)
 
     @classmethod
-    def _resolve_project_uid(
+    def _resolve_project_branch_uid(
         cls,
-        project_uid: str | Project | dict[str, Any] | None = None,
+        project_branch_uid: str | ProjectBranch | dict[str, Any] | None = None,
     ) -> str:
-        ref = project_uid
+        ref = project_branch_uid
         if ref is None:
             resolution = _resolve_local_pod_project()
-            if resolution.project is not None:
-                ref = resolution.project
+            if resolution.project_branch is not None:
+                ref = resolution.project_branch
 
-        resolved = cls._coerce_uid(ref, field_name="project_uid")
+        resolved = cls._coerce_uid(ref, field_name="project_branch_uid")
         if resolved is None:
             raise ValueError(
-                "project_uid is required. Pass project_uid or configure a local pod project."
+                "project_branch_uid is required. Pass it explicitly or run inside a "
+                "registered branch of a configured local Project."
             )
         return resolved
 
@@ -476,7 +477,7 @@ class Job(BaseObjectOrm, BasePydanticModel):
         cls,
         *,
         name: str,
-        project_uid: str | Project | dict[str, Any] | None = None,
+        project_branch_uid: str | ProjectBranch | dict[str, Any] | None = None,
         project_repo_hash: str | None = None,
         execution_path: str | None = None,
         app_name: str | None = None,
@@ -497,7 +498,9 @@ class Job(BaseObjectOrm, BasePydanticModel):
 
         payload: dict[str, Any] = {
             "name": normalized_name,
-            "project_uid": cls._resolve_project_uid(project_uid=project_uid),
+            "project_branch_uid": cls._resolve_project_branch_uid(
+                project_branch_uid=project_branch_uid
+            ),
         }
 
         normalized_project_repo_hash = cls._normalize_str(project_repo_hash)
@@ -556,7 +559,7 @@ class Job(BaseObjectOrm, BasePydanticModel):
         cls,
         *,
         name: str,
-        project_uid: str | Project | dict[str, Any] | None = None,
+        project_branch_uid: str | ProjectBranch | dict[str, Any] | None = None,
         project_repo_hash: str | None = None,
         execution_path: str | None = None,
         app_name: str | None = None,
@@ -574,7 +577,7 @@ class Job(BaseObjectOrm, BasePydanticModel):
     ) -> Job:
         payload = cls._build_create_payload(
             name=name,
-            project_uid=project_uid,
+            project_branch_uid=project_branch_uid,
             project_repo_hash=project_repo_hash,
             execution_path=execution_path,
             app_name=app_name,
@@ -611,7 +614,7 @@ class Job(BaseObjectOrm, BasePydanticModel):
         cls,
         *,
         yaml_file: str | pathlib.Path,
-        project_uid: str | Project | dict[str, Any],
+        project_branch_uid: str | ProjectBranch | dict[str, Any],
         strict: bool = False,
         timeout: int | None = None,
     ) -> list[Job] | dict[str, Any]:
@@ -619,7 +622,7 @@ class Job(BaseObjectOrm, BasePydanticModel):
         Validate a batch YAML file and synchronize its jobs with the backend.
 
         Request body:
-          - project_uid
+          - project_branch_uid
           - jobs
           - strict
 
@@ -628,9 +631,12 @@ class Job(BaseObjectOrm, BasePydanticModel):
           - jobs linked to dashboards or resource releases are protected and may be returned
             in the response under `not_deleted`
         """
-        resolved_project_uid = cls._coerce_uid(project_uid, field_name="project_uid")
-        if resolved_project_uid is None:
-            raise ValueError("project_uid is required.")
+        resolved_project_branch_uid = cls._coerce_uid(
+            project_branch_uid,
+            field_name="project_branch_uid",
+        )
+        if resolved_project_branch_uid is None:
+            raise ValueError("project_branch_uid is required.")
 
         yaml_path = pathlib.Path(yaml_file).expanduser()
         if not yaml_path.is_file():
@@ -653,10 +659,10 @@ class Job(BaseObjectOrm, BasePydanticModel):
 
             job_data = dict(raw_job)
 
-            if {"project", "project_id", "project_uid"} & set(job_data):
+            if {"project", "project_id", "project_uid", "project_branch_uid"} & set(job_data):
                 raise ValueError(
-                    f"jobs[{index}] must not define project/project_id/project_uid. "
-                    "Pass the target project_uid to Job.bulk_get_or_create()."
+                    f"jobs[{index}] must not define a project identity. "
+                    "Pass project_branch_uid to Job.bulk_get_or_create()."
                 )
             if "timeout" in job_data:
                 raise ValueError(f"jobs[{index}] must not define timeout.")
@@ -667,10 +673,10 @@ class Job(BaseObjectOrm, BasePydanticModel):
 
             try:
                 normalized_job = cls._build_create_payload(
-                    project_uid=resolved_project_uid,
+                    project_branch_uid=resolved_project_branch_uid,
                     **job_data,
                 )
-                normalized_job.pop("project_uid", None)
+                normalized_job.pop("project_branch_uid", None)
                 normalized_jobs.append(normalized_job)
             except TypeError as exc:
                 raise ValueError(f"jobs[{index}] has unsupported or missing fields: {exc}") from exc
@@ -680,7 +686,7 @@ class Job(BaseObjectOrm, BasePydanticModel):
         request_payload = {
             "json": cls.serialize_for_json(
                 {
-                    "project_uid": resolved_project_uid,
+                    "project_branch_uid": resolved_project_branch_uid,
                     "jobs": normalized_jobs,
                     "strict": bool(strict),
                 }
@@ -717,7 +723,7 @@ class Job(BaseObjectOrm, BasePydanticModel):
         url = cls.get_object_url() + "/create_from_configuration/"
         s = cls.build_session()
         payload = dict(job_configuration)
-        payload["project_uid"] = _require_local_pod_project(
+        payload["project_branch_uid"] = _require_local_pod_project_branch(
             f"{cls.__name__}.create_from_configuration"
         ).uid
 
@@ -977,10 +983,10 @@ class ProjectResource(BaseObjectOrm, BasePydanticModel):
         description="Public UID of the project resource.",
         examples=["857bec7b-dd77-4272-aecd-13fc2138eacc"],
     )
-    project_uid: str | None = Field(
+    project_branch_uid: str | None = Field(
         None,
-        title="Project UID",
-        description="Public UID of the project this resource belongs to.",
+        title="ProjectBranch UID",
+        description="Public UID of the ProjectBranch this resource belongs to.",
         examples=["5a28020a-0f1b-47ee-aab8-334286234bea"],
     )
     name: str | None = Field(
@@ -1050,9 +1056,6 @@ class ProjectResource(BaseObjectOrm, BasePydanticModel):
         **kwargs,
     ) -> ResourceRelease:
         resource_uid = self._public_detail_reference()
-        if "related_image_id" in kwargs and "related_image_uid" not in kwargs:
-            kwargs["related_image_uid"] = kwargs.pop("related_image_id")
-
         readme_resource_id = kwargs.pop("readme_resource_id", None)
         if readme_resource_id is not None:
             raise ValueError(
@@ -1102,12 +1105,14 @@ class ResourceReleaseKind(str, Enum):
 class ResourceRelease(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
         "uid": ["exact", "in"],
+        "project_branch_uid": ["exact"],
         "resource__uid": ["exact", "in"],
         "related_job__uid": ["exact", "in"],
         "release_kind": ["exact", "in"],
     }
     FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
         "uid": "uid",
+        "project_branch_uid": "uid",
         "resource__uid": "uid",
         "related_job__uid": "uid",
         "release_kind": "str",
@@ -1124,10 +1129,10 @@ class ResourceRelease(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
         description="DNS-safe label used as the subdomain for this release.",
         examples=["analytics-123"],
     )
-    project_uid: str | None = Field(
+    project_branch_uid: str | None = Field(
         None,
-        title="Project UID",
-        description="Public UID of the project that owns this release. Present on collection rows.",
+        title="ProjectBranch UID",
+        description="Public UID of the ProjectBranch that owns this release.",
         examples=["9d81d63f-b8c9-404d-9f1a-5f2ad29dbf16"],
     )
     name: str | None = Field(
@@ -1464,7 +1469,7 @@ class DeploymentRunLogPage(BaseModel):
 class DeploymentRun(BaseObjectOrm, BasePydanticModel):
     ENDPOINT: ClassVar[str] = "pods/deployment-runs"
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
-        "project_uid": ["exact", "in"],
+        "project_branch_uid": ["exact", "in"],
         "target_type": ["exact", "in"],
         "target_uid": ["exact", "in"],
         "target_kind": ["exact", "in"],
@@ -1474,7 +1479,7 @@ class DeploymentRun(BaseObjectOrm, BasePydanticModel):
         "commit_sha": ["exact", "in"],
     }
     FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
-        "project_uid": "uid",
+        "project_branch_uid": "uid",
         "target_type": "str",
         "target_uid": "uid",
         "target_kind": "str",
@@ -1493,7 +1498,7 @@ class DeploymentRun(BaseObjectOrm, BasePydanticModel):
     uid: str
     target_type: str
     target: DeploymentRunTarget
-    project_uid: str | None = None
+    project_branch_uid: str | None = None
     operation: str
     source: str
     commit_sha: str = ""

@@ -8,6 +8,7 @@ from mainsequence.client.exceptions import AuthenticationError
 from mainsequence.meta_tables.data_nodes import build_operations
 
 PROJECT_UID = "1d0530c0-65d1-4db0-856b-dc29d8260a09"
+PROJECT_BRANCH_UID = "5a28020a-0f1b-47ee-aab8-334286234bea"
 DATA_SOURCE_UID = "864e7c22-482a-464a-8758-0d3408abd77f"
 ORGANIZATION_UID = "56db6c13-235f-4ea4-adb7-f21fd9cebc67"
 
@@ -23,9 +24,27 @@ def _project_payload_public() -> dict:
     return {
         "uid": PROJECT_UID,
         "project_name": "Markets Repository",
-        "data_source": {
+        "git_repository_uid": "3c2113e7-40ba-4d8c-ad65-51ca236c3b0c",
+        "archived": False,
+        "created_by": "user-4",
+        "labels": ["markets"],
+        "branches": [
+            {"uid": PROJECT_BRANCH_UID, "repository_branch": "main"},
+        ],
+    }
+
+
+def _project_branch_payload_public() -> dict:
+    return {
+        "uid": PROJECT_BRANCH_UID,
+        "project_uid": PROJECT_UID,
+        "project_name": "Markets Repository",
+        "repository_branch": "main",
+        "project_type": "python",
+        "primary_language": "python",
+        "framework": "",
+        "metatables_data_source": {
             "uid": DATA_SOURCE_UID,
-            "backend_can_add_fields": "ignored",
             "related_resource": {
                 "uid": DATA_SOURCE_UID,
                 "data_source_uid": DATA_SOURCE_UID,
@@ -34,15 +53,21 @@ def _project_payload_public() -> dict:
                 "class_type": "timescale_db_remote",
                 "status": "AVAILABLE",
                 "storage_access_mode": "read_write",
-                "backend_can_add_nested_fields": "ignored",
             },
             "related_resource_class_type": "timescale_db_remote",
         },
+        "metatables_data_source_uid": DATA_SOURCE_UID,
+        "default_base_image": {
+            "uid": "c3ddb792-a3c0-428c-b5cf-31ed99dad10f",
+            "title": "Python",
+        },
+        "sdks": [],
+        "git_repository_uid": "3c2113e7-40ba-4d8c-ad65-51ca236c3b0c",
         "git_ssh_url": "git@github.com:mainsequence/markets-repository.git",
+        "latest_git_version": "",
         "is_initialized": True,
         "created_by": "user-4",
         "labels": ["markets"],
-        "backend_can_add_project_fields": "ignored",
     }
 
 
@@ -51,20 +76,31 @@ def test_project_deserializes_public_uid_serializer_payload():
 
     assert project.uid == PROJECT_UID
     assert project.created_by == "user-4"
-    assert project.data_source is not None
-    assert project.data_source.uid == DATA_SOURCE_UID
-    assert project.data_source.related_resource.uid == DATA_SOURCE_UID
-    assert project.data_source.related_resource.data_source_uid == DATA_SOURCE_UID
-    assert project.data_source.related_resource.organization_uid == ORGANIZATION_UID
-    assert project.data_source.related_resource.class_type == "timescale_db_remote"
-    assert project.data_source.related_resource.storage_access_mode == "read_write"
-    assert project.data_source.related_resource.allows_runtime_reads is True
-    assert project.data_source.related_resource.allows_runtime_writes is True
+    assert project.archived is False
+    assert project.branches[0].uid == PROJECT_BRANCH_UID
+    assert project.branches[0].repository_branch == "main"
+
+
+def test_project_branch_deserializes_public_uid_serializer_payload():
+    project_branch = models_foundry.ProjectBranch(**_project_branch_payload_public())
+
+    assert project_branch.uid == PROJECT_BRANCH_UID
+    assert project_branch.project_uid == PROJECT_UID
+    assert project_branch.metatables_data_source is not None
+    assert project_branch.metatables_data_source.uid == DATA_SOURCE_UID
+    related_resource = project_branch.metatables_data_source.related_resource
+    assert related_resource.uid == DATA_SOURCE_UID
+    assert related_resource.data_source_uid == DATA_SOURCE_UID
+    assert related_resource.organization_uid == ORGANIZATION_UID
+    assert related_resource.class_type == "timescale_db_remote"
+    assert related_resource.storage_access_mode == "read_write"
+    assert related_resource.allows_runtime_reads is True
+    assert related_resource.allows_runtime_writes is True
 
 
 def test_project_deserializes_nullable_datasource_related_resource_edge_case():
-    payload = _project_payload_public()
-    payload["data_source"]["related_resource"] = {
+    payload = _project_branch_payload_public()
+    payload["metatables_data_source"]["related_resource"] = {
         "uid": None,
         "data_source_uid": None,
         "display_name": None,
@@ -74,35 +110,47 @@ def test_project_deserializes_nullable_datasource_related_resource_edge_case():
         "storage_access_mode": None,
     }
 
-    project = models_foundry.Project(**payload)
+    project = models_foundry.ProjectBranch(**payload)
 
-    assert project.data_source is not None
-    assert project.data_source.related_resource is not None
-    assert project.data_source.related_resource.storage_access_mode is None
-    assert project.data_source.related_resource.allows_runtime_reads is False
-    assert project.data_source.related_resource.allows_runtime_writes is False
+    assert project.metatables_data_source is not None
+    assert project.metatables_data_source.related_resource is not None
+    assert project.metatables_data_source.related_resource.storage_access_mode is None
+    assert project.metatables_data_source.related_resource.allows_runtime_reads is False
+    assert project.metatables_data_source.related_resource.allows_runtime_writes is False
 
 
 def test_project_deserializes_null_datasource_related_resource_edge_case():
-    payload = _project_payload_public()
-    payload["data_source"]["related_resource"] = None
+    payload = _project_branch_payload_public()
+    payload["metatables_data_source"]["related_resource"] = None
 
-    project = models_foundry.Project(**payload)
+    project = models_foundry.ProjectBranch(**payload)
 
-    assert project.data_source is not None
-    assert project.data_source.related_resource is None
+    assert project.metatables_data_source is not None
+    assert project.metatables_data_source.related_resource is None
 
 
-def test_data_node_update_get_or_create_uses_current_project_uid(monkeypatch):
+def test_data_node_update_get_or_create_uses_current_project_branch_uid(monkeypatch):
     monkeypatch.setenv("MAIN_SEQUENCE_PROJECT_UID", PROJECT_UID)
     monkeypatch.delenv("MAIN_SEQUENCE_PROJECT_ID", raising=False)
+    monkeypatch.setattr(models_metatables, "_current_repository_branch", lambda: "main")
 
     captured = {}
 
     monkeypatch.setattr(
         models_foundry.Project,
         "get",
-        lambda *args, **kwargs: types.SimpleNamespace(uid=PROJECT_UID, data_source=None),
+        lambda *args, **kwargs: types.SimpleNamespace(
+            uid=PROJECT_UID,
+            branches=[types.SimpleNamespace(uid=PROJECT_BRANCH_UID, repository_branch="main")],
+        ),
+    )
+    monkeypatch.setattr(
+        models_foundry.ProjectBranch,
+        "get",
+        lambda *args, **kwargs: types.SimpleNamespace(
+            uid=PROJECT_BRANCH_UID,
+            metatables_data_source=None,
+        ),
     )
     monkeypatch.setattr(
         models_metatables.DataNodeUpdate,
@@ -138,7 +186,8 @@ def test_data_node_update_get_or_create_uses_current_project_uid(monkeypatch):
     models_metatables.DataNodeUpdate.get_or_create(update_hash="abc123")
 
     payload = captured["payload"]["json"]
-    assert payload["current_project_uid"] == PROJECT_UID
+    assert payload["current_project_branch_uid"] == PROJECT_BRANCH_UID
+    assert "current_project_uid" not in payload
     assert "current_project_id" not in payload
 
 
@@ -146,27 +195,42 @@ def test_resolve_local_pod_project_uses_uid_lookup_and_caches(monkeypatch):
     monkeypatch.setenv("MAIN_SEQUENCE_PROJECT_UID", PROJECT_UID)
     monkeypatch.delenv("MAIN_SEQUENCE_PROJECT_ID", raising=False)
 
-    calls = []
-    project = types.SimpleNamespace(uid=PROJECT_UID, data_source=None)
+    monkeypatch.setattr(models_metatables, "_current_repository_branch", lambda: "main")
+    project_calls = []
+    branch_calls = []
+    project_branch = types.SimpleNamespace(uid=PROJECT_BRANCH_UID, metatables_data_source=None)
+    project = types.SimpleNamespace(
+        uid=PROJECT_UID,
+        branches=[types.SimpleNamespace(uid=PROJECT_BRANCH_UID, repository_branch="main")],
+    )
 
     def _project_get(*args, **kwargs):
-        calls.append(kwargs)
+        project_calls.append(kwargs)
         return project
 
+    def _project_branch_get(*args, **kwargs):
+        branch_calls.append(kwargs)
+        return project_branch
+
     monkeypatch.setattr(models_foundry.Project, "get", _project_get)
+    monkeypatch.setattr(models_foundry.ProjectBranch, "get", _project_branch_get)
 
     resolution_first = models_metatables._resolve_local_pod_project()
     resolution_second = models_metatables._resolve_local_pod_project()
 
     assert resolution_first.status == "resolved"
     assert resolution_first.project is project
+    assert resolution_first.project_branch is project_branch
+    assert resolution_first.repository_branch == "main"
     assert resolution_second.project is project
-    assert calls == [{"pk": PROJECT_UID}]
+    assert project_calls == [{"pk": PROJECT_UID}]
+    assert branch_calls == [{"pk": PROJECT_BRANCH_UID}]
 
 
 def test_set_remote_db_warns_once_for_lookup_failure(monkeypatch):
     monkeypatch.setenv("MAIN_SEQUENCE_PROJECT_UID", PROJECT_UID)
     monkeypatch.delenv("MAIN_SEQUENCE_PROJECT_ID", raising=False)
+    monkeypatch.setattr(models_metatables, "_current_repository_branch", lambda: "main")
 
     warnings = []
     debugs = []
@@ -196,6 +260,7 @@ def test_set_remote_db_warns_once_for_lookup_failure(monkeypatch):
 def test_resolve_local_pod_project_raises_auth_failure(monkeypatch):
     monkeypatch.setenv("MAIN_SEQUENCE_PROJECT_UID", PROJECT_UID)
     monkeypatch.delenv("MAIN_SEQUENCE_PROJECT_ID", raising=False)
+    monkeypatch.setattr(models_metatables, "_current_repository_branch", lambda: "main")
 
     def _project_get(*args, **kwargs):
         raise AuthenticationError("No auth configured.")
@@ -522,7 +587,7 @@ def test_data_node_update_get_or_create_requires_local_pod_project(monkeypatch):
         models_metatables.DataNodeUpdate.get_or_create(update_hash="abc123")
 
     message = str(exc_info.value)
-    assert "DataNodeUpdate.get_or_create requires a local pod project." in message
+    assert "DataNodeUpdate.get_or_create requires a registered active ProjectBranch." in message
     assert "MAIN_SEQUENCE_PROJECT_UID is not configured." in message
 
 

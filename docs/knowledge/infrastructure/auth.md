@@ -198,6 +198,11 @@ Both local-project commands preserve unrelated `.env` entries while rendering
 the current supported authentication shape. They do not carry forward obsolete
 `MAINSEQUENCE_TOKEN` or `MAIN_SEQUENCE_PROJECT_ID` entries.
 
+`MAIN_SEQUENCE_PROJECT_UID` identifies the logical Project, not one branch.
+The SDK matches the checkout's current Git branch to the corresponding
+`ProjectBranch` whenever a branch-owned operation needs its UID. Switching or
+creating Git branches therefore does not rewrite local Project credentials.
+
 Functionally:
 
 - the credential id and secret identify the runtime

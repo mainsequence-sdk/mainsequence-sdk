@@ -91,6 +91,8 @@ class BaseObjectOrm:
         "DynamicTableDataSource": "ts_manager/dynamic_table_data_source",
         "DataSource": "connections/data_source",
         "Project": "pods/projects",
+        "ProjectBranch": "pods/project-branches",
+        "GitRepository": "pods/project-repositories",
         "Artifact": "pods/artifact",
         "Job": "pods/job",
         "JobRun": "pods/job-run",

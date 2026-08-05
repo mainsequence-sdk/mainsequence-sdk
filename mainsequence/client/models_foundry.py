@@ -10,7 +10,7 @@ from uuid import UUID
 import pandas as pd
 import yaml
 from cachetools import TTLCache, cachedmethod
-from pydantic import ConfigDict, Field, SecretStr
+from pydantic import Field, SecretStr
 
 from mainsequence.logconf import logger
 
@@ -53,8 +53,15 @@ class GithubOrganization(BasePydanticModel, BaseObjectOrm):
 class ProjectBaseImage(BasePydanticModel, BaseObjectOrm):
     uid: str
     latest_digest: str | None = None
-    description: str
-    title: str
+    digest: str | None = None
+    catalog_ref: str | None = None
+    catalog_role: str | None = None
+    project_type: str | None = None
+    runtime: str | None = None
+    is_default: bool | None = None
+    pinned_image_uri: str | None = None
+    description: str = ""
+    title: str = ""
     tags: list[str] | None = None
 
     def __str__(self):
@@ -116,8 +123,8 @@ class ProjectNameValidationResult(BasePydanticModel):
 
 
 class ProjectQuickSearchResult(BasePydanticModel):
-    uid: str | None = Field(
-        None,
+    uid: str = Field(
+        ...,
         title="UID",
         description="Public uid of the matching project.",
         json_schema_extra={"label": "UID"},
@@ -128,32 +135,48 @@ class ProjectQuickSearchResult(BasePydanticModel):
         description="Display name of the matching project.",
         json_schema_extra={"label": "Project Name"},
     )
-    repository_branch: str | None = Field(
-        None,
-        title="Repository Branch",
-        description="Configured repository branch for the matching project.",
-        json_schema_extra={"label": "Repository Branch"},
-    )
+
+
+class ProjectBranchLight(BasePydanticModel):
+    uid: str
+    repository_branch: str
+
+
+class ProjectSDKObservation(BasePydanticModel):
+    sdk_type: str
+    package_name: str
+    status: str
+    version: str | None = None
+    repository_path: str = ""
+    observed_commit_sha: str = ""
+    observed_at: datetime.datetime | None = None
+    is_current: bool = False
+
+
+class ProjectBulkDeleteResponse(BasePydanticModel):
+    detail: str
+    matched_count: int
+    deleted_count: int
 
 
 class Project(LabelableObjectMixin, ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
-    model_config = ConfigDict(extra="allow")
-
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
         "project_name": ["in", "exact", "contains"],
         "uid": ["in", "exact"],
+        "archived": ["exact"],
         "labels": ["exact", "in", "contains"],
     }
     FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
         "uid": "str",
         "uid__in": "str",
         "project_name": "str",
+        "archived": "bool",
         "labels": "str",
         "labels__in": "str",
         "labels__contains": "str",
     }
-    uid: str | None = Field(
-        None,
+    uid: str = Field(
+        ...,
         title="Project UID",
         description="Public uid of the project.",
         examples=["project-uid-142"],
@@ -166,29 +189,8 @@ class Project(LabelableObjectMixin, ShareableObjectMixin, BasePydanticModel, Bas
         examples=["Data Research Pipeline"],
         json_schema_extra={"label": "Project Name"},
     )
-    data_source: _DynamicTableDataSource | None = Field(
-        None,
-        title="Data Source",
-        description="Default data source associated with the project, when configured.",
-        json_schema_extra={"label": "Data Source"},
-    )
-    git_ssh_url: str | None = Field(
-        None,
-        title="Git SSH URL",
-        description="SSH repository URL used to access the project's source code repository.",
-        examples=["git@github.com:mainsequence/data-pipeline.git"],
-        json_schema_extra={"label": "Git SSH URL"},
-    )
-    latest_git_version: str = Field(
-        "",
-        title="Latest Git Version",
-        description=(
-            "Normalized highest valid version extracted from repository tags for the "
-            "project's configured branch. Empty when the backend has not found a valid version."
-        ),
-        examples=["1.2.3"],
-        json_schema_extra={"label": "Latest Git Version"},
-    )
+    git_repository_uid: str | None = None
+    archived: bool = False
     created_by: str | int | dict[str, Any] | None = Field(
         None,
         title="Created By",
@@ -206,13 +208,7 @@ class Project(LabelableObjectMixin, ShareableObjectMixin, BasePydanticModel, Bas
         json_schema_extra={"label": "Labels"},
     )
 
-    is_initialized: bool = Field(
-        ...,
-        title="Is Initialized",
-        description="Whether the project has completed its initial setup and is ready for use.",
-        examples=[True],
-        json_schema_extra={"label": "Is Initialized"},
-    )
+    branches: list[ProjectBranchLight] = Field(default_factory=list)
 
     @staticmethod
     def _normalize_env_vars(
@@ -260,11 +256,12 @@ class Project(LabelableObjectMixin, ShareableObjectMixin, BasePydanticModel, Bas
         cls,
         *,
         project_name: str,
-        data_source_uid: str | _DynamicTableDataSource | dict[str, Any] | None = None,
+        project_type: str = "python",
+        metatables_data_source_uid: str | _DynamicTableDataSource | dict[str, Any] | None = None,
         default_base_image_uid: str | ProjectBaseImage | dict[str, Any] | None = None,
         github_org_uid: str | GithubOrganization | dict[str, Any] | None = None,
-        repository_branch: str | None = None,
         env_vars: dict[str, str] | list[dict[str, str]] | None = None,
+        labels: list[str] | None = None,
         timeout: int | None = None,
     ) -> Project:
         """
@@ -272,24 +269,22 @@ class Project(LabelableObjectMixin, ShareableObjectMixin, BasePydanticModel, Bas
 
         Sends:
           - project_name
-          - repository_branch (optional)
-          - data_source_uid (optional; server may auto-pick for individual orgs)
+          - project_type
+          - metatables_data_source_uid (required for Python projects)
           - default_base_image_uid (optional)
           - github_org_uid (optional)
           - env_vars (optional list of {name,value})
         """
         url = cls.get_object_url() + "/"
 
-        payload: dict[str, Any] = {
-            "project_name": project_name,
-        }
+        payload: dict[str, Any] = {"project_name": project_name, "project_type": project_type}
 
-        if repository_branch:
-            payload["repository_branch"] = repository_branch
-
-        ds_uid = cls._coerce_uid(data_source_uid, field_name="data_source_uid")
+        ds_uid = cls._coerce_uid(
+            metatables_data_source_uid,
+            field_name="metatables_data_source_uid",
+        )
         if ds_uid is not None:
-            payload["data_source_uid"] = ds_uid
+            payload["metatables_data_source_uid"] = ds_uid
 
         img_uid = cls._coerce_uid(default_base_image_uid, field_name="default_base_image_uid")
         if img_uid is not None:
@@ -302,6 +297,8 @@ class Project(LabelableObjectMixin, ShareableObjectMixin, BasePydanticModel, Bas
         env_list = cls._normalize_env_vars(env_vars)
         if env_list is not None:
             payload["env_vars"] = env_list
+        if labels is not None:
+            payload["labels"] = list(labels)
 
         s = cls.build_session()
         r = make_request(
@@ -317,26 +314,6 @@ class Project(LabelableObjectMixin, ShareableObjectMixin, BasePydanticModel, Bas
         raise_for_response(r)
 
         # DRF should return 201 with your detail serializer shape
-        return cls(**r.json())
-
-    @classmethod
-    def get_user_default_project(cls):
-        url = cls.get_object_url() + "/get_user_default_project/"
-
-        s = cls.build_session()
-        r = make_request(
-            s=s,
-            loaders=cls.LOADERS,
-            r_type="GET",
-            url=url,
-        )
-        if r.status_code == 404:
-            raise_for_response(
-                r,
-            )
-
-        if r.status_code != 200:
-            raise Exception(f"Error in request {r.text}")
         return cls(**r.json())
 
     @classmethod
@@ -443,76 +420,33 @@ class Project(LabelableObjectMixin, ShareableObjectMixin, BasePydanticModel, Bas
 
         return ProjectNameValidationResult.model_validate(payload)
 
-    def delete(
-        self,
+    @classmethod
+    def bulk_delete(
+        cls,
         *,
+        uids: list[str] | None = None,
+        selection: dict[str, Any] | None = None,
         delete_repositories: bool = False,
         timeout: int | None = None,
-    ) -> dict[str, Any] | None:
-        """
-        DELETE /projects/{uid}/
-
-        Optional query param:
-          - delete_repositories=true
-        """
-        cls = type(self)
-        url = f"{cls.get_object_url()}/{self._public_detail_reference()}/"
-
-        request_payload: dict[str, Any] = {}
-        if delete_repositories:
-            request_payload["params"] = {"delete_repositories": "true"}
-
-        s = cls.build_session()
+    ) -> ProjectBulkDeleteResponse:
+        if (uids is None) == (selection is None):
+            raise ValueError("Pass exactly one of uids or selection.")
+        resolved_selection = selection or {"mode": "explicit", "uids": list(uids or [])}
         r = make_request(
-            s=s,
+            s=cls.build_session(),
             loaders=cls.LOADERS,
-            r_type="DELETE",
-            url=url,
-            payload=request_payload,
-            time_out=timeout,
-        )
-
-        raise_for_response(r)
-
-        return r.json() if r.content else None
-
-    def get_data_nodes_updates(self, *, timeout: int | None = None) -> list[Any]:
-        """
-        GET /projects/{uid}/get-data-nodes-updates/
-
-        Returns a list of DataNodeUpdate objects for this project.
-        """
-        from .metatables import DataNodeUpdate
-
-        cls = type(self)
-        url = f"{cls.get_object_url()}/{self._public_detail_reference()}/get-data-nodes-updates/"
-
-        s = cls.build_session()
-        r = make_request(
-            s=s,
-            loaders=cls.LOADERS,
-            r_type="GET",
-            url=url,
+            r_type="POST",
+            url=cls.get_object_url() + "/bulk-delete/",
+            payload={
+                "json": {
+                    "selection": resolved_selection,
+                    "options": {"delete_repositories": delete_repositories},
+                }
+            },
             time_out=timeout,
         )
         raise_for_response(r)
-
-        payload = r.json()
-        if isinstance(payload, list):
-            raw_updates = payload
-        elif isinstance(payload, dict):
-            if isinstance(payload.get("results"), list):
-                raw_updates = payload["results"]
-            elif isinstance(payload.get("data_node_updates"), list):
-                raw_updates = payload["data_node_updates"]
-            else:
-                raw_updates = []
-        else:
-            raise ValueError(
-                f"Unexpected response type for project data node updates: {type(payload)!r}"
-            )
-
-        return [u if isinstance(u, DataNodeUpdate) else DataNodeUpdate(**u) for u in raw_updates]
+        return ProjectBulkDeleteResponse.model_validate(r.json())
 
     def __str__(self):
         return yaml.safe_dump(
@@ -522,6 +456,177 @@ class Project(LabelableObjectMixin, ShareableObjectMixin, BasePydanticModel, Bas
         )
 
 
+class ProjectBranch(BasePydanticModel, BaseObjectOrm):
+    FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
+        "uid": ["in", "exact"],
+        "project_uid": ["exact"],
+        "project_name": ["in", "exact", "contains"],
+        "repository_branch": ["in", "exact", "contains"],
+    }
+    FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
+        "uid": "uid",
+        "uid__in": "uid",
+        "project_uid": "uid",
+        "project_name": "str",
+        "repository_branch": "str",
+    }
+
+    uid: str
+    project_uid: str
+    project_name: str
+    repository_branch: str
+    project_type: str
+    primary_language: str
+    framework: str
+    metatables_data_source: _DynamicTableDataSource | None = None
+    metatables_data_source_uid: str | None = None
+    default_base_image: ProjectBaseImage
+    sdks: list[ProjectSDKObservation] = Field(default_factory=list)
+    git_repository_uid: str | None = None
+    git_ssh_url: str | None = None
+    latest_git_version: str = ""
+    is_initialized: bool
+    created_by: str | int | dict[str, Any] | None = None
+    labels: list[str] = Field(default_factory=list)
+
+    def _action_url(self, action: str) -> str:
+        return f"{type(self).get_object_url()}/{self._public_detail_reference()}/{action.strip('/')}/"
+
+    def _get_action(self, action: str, *, params=None, timeout=None) -> Any:
+        r = make_request(
+            s=type(self).build_session(),
+            loaders=type(self).LOADERS,
+            r_type="GET",
+            url=self._action_url(action),
+            payload={"params": params} if params else {},
+            time_out=timeout,
+        )
+        raise_for_response(r)
+        return r.json() if r.content else None
+
+    def summary(self, *, timeout=None) -> dict[str, Any]:
+        return self._get_action("summary", timeout=timeout)
+
+    def browse_repository(self, path: str = "", *, timeout=None) -> dict[str, Any]:
+        return self._get_action("browse-repository", params={"path": path}, timeout=timeout)
+
+    def resource_code(self, path: str = "", *, timeout=None) -> dict[str, Any]:
+        return self._get_action("resource-code", params={"path": path}, timeout=timeout)
+
+    def infra_graph(self, *, commit_sha: str | None = None, timeout=None) -> dict[str, Any]:
+        params = {"commit_sha": commit_sha} if commit_sha else None
+        return self._get_action("infra-graph", params=params, timeout=timeout)
+
+    def update_sdk(self, *, timeout=None) -> dict[str, Any]:
+        r = make_request(
+            s=type(self).build_session(),
+            loaders=type(self).LOADERS,
+            r_type="POST",
+            url=self._action_url("update-sdk"),
+            payload={"json": {}},
+            time_out=timeout,
+        )
+        raise_for_response(r)
+        return r.json()
+
+    def add_deploy_key(self, *, key_title: str, public_key: str, timeout=None) -> None:
+        r = make_request(
+            s=type(self).build_session(),
+            loaders=type(self).LOADERS,
+            r_type="POST",
+            url=self._action_url("add_deploy_key"),
+            payload={"json": {"key_title": key_title, "public_key": public_key}},
+            time_out=timeout,
+        )
+        raise_for_response(r)
+
+    def get_data_nodes_updates(self, *, timeout: int | None = None) -> list[Any]:
+        from .metatables import DataNodeUpdate
+
+        payload = self._get_action("get-data-nodes-updates", timeout=timeout)
+        if isinstance(payload, list):
+            raw_updates = payload
+        elif isinstance(payload, dict):
+            raw_updates = payload.get("results") or payload.get("data_node_updates") or []
+        else:
+            raise ValueError(
+                f"Unexpected response type for ProjectBranch data node updates: {type(payload)!r}"
+            )
+        return [u if isinstance(u, DataNodeUpdate) else DataNodeUpdate(**u) for u in raw_updates]
+
+    def __str__(self):
+        return yaml.safe_dump(self.model_dump(), sort_keys=False, default_flow_style=False)
+
+
+class GitRepositoryBranch(BasePydanticModel):
+    repository_branch: str
+    head_sha: str
+    is_linked: bool
+    project_branch_uid: str | None = None
+
+
+class GitRepositoryBranchList(BasePydanticModel):
+    repository_uid: str
+    results: list[GitRepositoryBranch]
+
+
+class GitRepositoryImportResult(BasePydanticModel):
+    repository_uid: str
+    project_branch_uid: str
+    repository_branch: str
+    is_initialized: bool
+
+
+class GitRepository(BasePydanticModel, BaseObjectOrm):
+    FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
+        "uid": ["in", "exact"],
+        "project_name": ["in", "exact", "contains"],
+        "labels": ["exact", "in", "contains"],
+    }
+    uid: str
+    project_uid: str
+    project_name: str
+    repo_name: str
+    github_full_name: str
+    git_ssh_url: str | None = None
+    git_repo_url: str | None = None
+    created_by: str | int | dict[str, Any] | None = None
+
+    def branches(self, *, timeout=None) -> GitRepositoryBranchList:
+        url = f"{type(self).get_object_url()}/{self._public_detail_reference()}/branches/"
+        r = make_request(
+            s=type(self).build_session(),
+            loaders=type(self).LOADERS,
+            r_type="GET",
+            url=url,
+            time_out=timeout,
+        )
+        raise_for_response(r)
+        return GitRepositoryBranchList.model_validate(r.json())
+
+    def import_branch(
+        self,
+        *,
+        repository_branch: str,
+        metatables_data_source_uid: str | None = None,
+        timeout=None,
+    ) -> GitRepositoryImportResult:
+        body: dict[str, Any] = {"repository_branch": repository_branch}
+        if metatables_data_source_uid is not None:
+            body["metatables_data_source_uid"] = str(metatables_data_source_uid)
+        url = f"{type(self).get_object_url()}/{self._public_detail_reference()}/import-branch/"
+        r = make_request(
+            s=type(self).build_session(),
+            loaders=type(self).LOADERS,
+            r_type="POST",
+            url=url,
+            payload={"json": body},
+            time_out=timeout,
+        )
+        raise_for_response(r)
+        return GitRepositoryImportResult.model_validate(r.json())
+
+
 class ProjectImage(BasePydanticModel, BaseObjectOrm):
     """
     Image build from a a project
@@ -529,13 +634,12 @@ class ProjectImage(BasePydanticModel, BaseObjectOrm):
 
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
         "search": ["exact"],
-        "related_project__uid": ["in", "exact"],
-        "related_project_uid": ["in", "exact"],
+        "related_project_branch_uid": ["in", "exact"],
         "project_repo_hash": ["exact", "in"],
     }
     FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
-        "related_project__uid": "uid",
-        "related_project_uid": "uid",
+        "related_project_branch_uid": "uid",
+        "related_project_branch_uid__in": "uid",
     }
 
     uid: str = Field(..., description="Public UID of the project image")
@@ -543,7 +647,10 @@ class ProjectImage(BasePydanticModel, BaseObjectOrm):
     key: str | None = Field(None, description="Stable image key")
     description: str | None = Field(None, description="Image description")
     project_repo_hash: str = Field(..., description="Canonical full commit SHA for the built image")
-    related_project_uid: str | None = Field(None, description="Public UID of the owning project")
+    related_project_branch_uid: str | None = Field(
+        None,
+        description="Public UID of the owning ProjectBranch",
+    )
     base_image: ProjectBaseImage | None = Field(None, description="Persisted parent base image")
     tags: list[str] | None = Field(
         default=[], description="Observed registry tags for the project image"
@@ -576,7 +683,7 @@ class ProjectImage(BasePydanticModel, BaseObjectOrm):
         cls,
         *,
         project_repo_hash: str,
-        related_project_uid: str | Project | dict[str, Any] | None = None,
+        related_project_branch_uid: str | ProjectBranch | dict[str, Any] | None = None,
         base_image_uid: str | ProjectBaseImage | dict[str, Any] | None = None,
         timeout=None,
         files=None,
@@ -587,9 +694,12 @@ class ProjectImage(BasePydanticModel, BaseObjectOrm):
         """
         payload: dict[str, Any] = {"project_repo_hash": project_repo_hash}
 
-        project_uid = cls._coerce_uid(related_project_uid, field_name="related_project_uid")
-        if project_uid is not None:
-            payload["related_project_uid"] = project_uid
+        project_branch_uid = cls._coerce_uid(
+            related_project_branch_uid,
+            field_name="related_project_branch_uid",
+        )
+        if project_branch_uid is not None:
+            payload["related_project_branch_uid"] = project_branch_uid
 
         image_uid = cls._coerce_uid(base_image_uid, field_name="base_image_uid")
         if image_uid is not None:

@@ -609,7 +609,6 @@ def _run_sdk_model_operation(
     module_name: str,
     class_name: str,
     operation,
-    project_id_env: int | str | None = None,
     project_uid_env: str | None = None,
 ):
     tokens = get_tokens()
@@ -627,7 +626,6 @@ def _run_sdk_model_operation(
         "MAINSEQUENCE_REFRESH_TOKEN": os.environ.get("MAINSEQUENCE_REFRESH_TOKEN"),
         "MAINSEQUENCE_ENDPOINT": os.environ.get("MAINSEQUENCE_ENDPOINT"),
         "MAIN_SEQUENCE_PROJECT_UID": os.environ.get("MAIN_SEQUENCE_PROJECT_UID"),
-        "MAIN_SEQUENCE_PROJECT_ID": os.environ.get("MAIN_SEQUENCE_PROJECT_ID"),
     }
 
     client_utils = None
@@ -646,14 +644,8 @@ def _run_sdk_model_operation(
         os.environ["MAINSEQUENCE_ENDPOINT"] = endpoint
         if project_uid_env is not None:
             os.environ["MAIN_SEQUENCE_PROJECT_UID"] = str(project_uid_env)
-        elif project_id_env is not None and not str(project_id_env).strip().isdigit():
-            os.environ["MAIN_SEQUENCE_PROJECT_UID"] = str(project_id_env)
         else:
             os.environ.pop("MAIN_SEQUENCE_PROJECT_UID", None)
-        if project_id_env is not None:
-            os.environ["MAIN_SEQUENCE_PROJECT_ID"] = str(project_id_env)
-        else:
-            os.environ.pop("MAIN_SEQUENCE_PROJECT_ID", None)
 
         from mainsequence.client import utils as _client_utils
         from mainsequence.client.base import BaseObjectOrm
@@ -892,10 +884,7 @@ def _normalize_project_reference(project_ref: int | str) -> str:
 
 
 def _project_matches_reference(project_payload: dict[str, Any], project_ref: str) -> bool:
-    return (
-        str(project_payload.get("uid") or "").strip() == project_ref
-        or str(project_payload.get("id") or "").strip() == project_ref
-    )
+    return str(project_payload.get("uid") or "").strip() == project_ref
 
 
 def resolve_project(project_ref: int | str) -> dict[str, Any]:
@@ -918,31 +907,32 @@ def resolve_project(project_ref: int | str) -> dict[str, Any]:
 
 
 def resolve_project_uid(project_ref: int | str) -> str:
-    normalized_ref = _normalize_project_reference(project_ref)
-    if normalized_ref.isdigit():
-        return normalized_ref
-
     payload = resolve_project(project_ref)
     normalized_uid = str(payload.get("uid") or "").strip()
     if normalized_uid:
         return normalized_uid
-    if not normalized_ref.isdigit():
-        return normalized_ref
-    raise ApiError(f"Project UID is not available for project reference: {normalized_ref}")
+    raise ApiError(f"Project UID is not available for project reference: {project_ref}")
 
 
-def resolve_project_row_id(project_ref: int | str) -> int:
-    normalized_ref = _normalize_project_reference(project_ref)
-    if normalized_ref.isdigit():
-        return int(normalized_ref)
+def get_project_branch(project_branch_uid: str) -> dict[str, Any]:
+    normalized_uid = str(project_branch_uid).strip()
+    if not normalized_uid:
+        raise ApiError("ProjectBranch UID is required.")
+    r = authed("GET", f"/orm/api/pods/project-branches/{normalized_uid}/")
+    if not r.ok:
+        raise ApiError(f"ProjectBranch fetch failed ({r.status_code}).")
+    payload = r.json()
+    if not isinstance(payload, dict):
+        raise ApiError("ProjectBranch fetch returned an unexpected payload.")
+    return payload
 
-    payload = resolve_project(project_ref)
-    row_id = payload.get("id")
-    if row_id is None:
-        if normalized_ref.isdigit():
-            return int(normalized_ref)
-        raise ApiError(f"Backend row id is not available for project reference: {normalized_ref}")
-    return int(row_id)
+
+def resolve_project_branch_uid(project_branch_ref: str) -> str:
+    payload = get_project_branch(project_branch_ref)
+    normalized_uid = str(payload.get("uid") or "").strip()
+    if not normalized_uid:
+        raise ApiError(f"ProjectBranch UID is not available: {project_branch_ref}")
+    return normalized_uid
 
 
 def search_projects(
@@ -2028,13 +2018,13 @@ def remove_project_labels(
 
 
 def get_project_data_node_updates(
-    project_id: int | str, *, timeout: int | None = None
+    project_branch_uid: str, *, timeout: int | None = None
 ) -> list[dict[str, Any]]:
     """
-    Fetch project data node updates via SDK client model.
+    Fetch ProjectBranch data-node updates via the branch custom action.
 
     Single source of truth:
-      - delegates response parsing to `Project.get_data_nodes_updates()`
+      - delegates response parsing to `ProjectBranch.get_data_nodes_updates()`
       - avoids duplicating payload-shape logic in the CLI API wrapper
     """
     tokens = get_tokens()
@@ -2052,7 +2042,6 @@ def get_project_data_node_updates(
         "MAINSEQUENCE_REFRESH_TOKEN": os.environ.get("MAINSEQUENCE_REFRESH_TOKEN"),
         "MAINSEQUENCE_ENDPOINT": os.environ.get("MAINSEQUENCE_ENDPOINT"),
         "MAIN_SEQUENCE_PROJECT_UID": os.environ.get("MAIN_SEQUENCE_PROJECT_UID"),
-        "MAIN_SEQUENCE_PROJECT_ID": os.environ.get("MAIN_SEQUENCE_PROJECT_ID"),
     }
 
     client_utils = None
@@ -2069,14 +2058,11 @@ def get_project_data_node_updates(
         else:
             os.environ.pop("MAINSEQUENCE_REFRESH_TOKEN", None)
         os.environ["MAINSEQUENCE_ENDPOINT"] = endpoint
-        project_uid = resolve_project_uid(project_id)
-        project_row_id = resolve_project_row_id(project_id)
-        os.environ["MAIN_SEQUENCE_PROJECT_UID"] = project_uid
-        os.environ["MAIN_SEQUENCE_PROJECT_ID"] = str(project_row_id)
+        resolved_branch_uid = resolve_project_branch_uid(project_branch_uid)
 
         from mainsequence.client import utils as _client_utils
         from mainsequence.client.base import BaseObjectOrm
-        from mainsequence.client.models_foundry import Project as ClientProject
+        from mainsequence.client.models_foundry import ProjectBranch as ClientProject
 
         client_utils = _client_utils
         old_provider = getattr(client_utils.loaders, "provider", None)
@@ -2089,8 +2075,8 @@ def get_project_data_node_updates(
         BaseObjectOrm.ROOT_URL = root_url
         ClientProject.ROOT_URL = root_url
 
-        project = ClientProject.get(pk=project_uid, timeout=timeout)
-        updates = project.get_data_nodes_updates(timeout=timeout)
+        project_branch = ClientProject.get(pk=resolved_branch_uid, timeout=timeout)
+        updates = project_branch.get_data_nodes_updates(timeout=timeout)
 
         out: list[dict[str, Any]] = []
         for u in updates:
@@ -2108,7 +2094,7 @@ def get_project_data_node_updates(
         if err_name in {"AuthenticationError", "PermissionDeniedError"}:
             raise NotLoggedIn(str(e) or "Not logged in.") from e
         if err_name == "NotFoundError":
-            raise ApiError(f"Project not found: {project_id}") from e
+            raise ApiError(f"ProjectBranch not found: {project_branch_uid}") from e
         raise ApiError(f"Data node updates fetch failed: {e}") from e
     finally:
         if client_utils is not None:
@@ -2125,7 +2111,7 @@ def get_project_data_node_updates(
                 pass
         if old_project_root_url is not None:
             try:
-                from mainsequence.client.models_foundry import Project as ClientProject
+                from mainsequence.client.models_foundry import ProjectBranch as ClientProject
 
                 ClientProject.ROOT_URL = old_project_root_url
             except Exception:
@@ -2141,8 +2127,8 @@ def get_project_data_node_updates(
 def create_project_image(
     *,
     project_repo_hash: str,
-    related_project_id: int | str,
-    base_image_id: int | None = None,
+    related_project_branch_uid: str,
+    base_image_uid: str | None = None,
     timeout: int | None = None,
 ) -> dict[str, Any]:
     """
@@ -2167,7 +2153,6 @@ def create_project_image(
         "MAINSEQUENCE_REFRESH_TOKEN": os.environ.get("MAINSEQUENCE_REFRESH_TOKEN"),
         "MAINSEQUENCE_ENDPOINT": os.environ.get("MAINSEQUENCE_ENDPOINT"),
         "MAIN_SEQUENCE_PROJECT_UID": os.environ.get("MAIN_SEQUENCE_PROJECT_UID"),
-        "MAIN_SEQUENCE_PROJECT_ID": os.environ.get("MAIN_SEQUENCE_PROJECT_ID"),
     }
 
     client_utils = None
@@ -2183,10 +2168,7 @@ def create_project_image(
         else:
             os.environ.pop("MAINSEQUENCE_REFRESH_TOKEN", None)
         os.environ["MAINSEQUENCE_ENDPOINT"] = endpoint
-        project_uid = resolve_project_uid(related_project_id)
-        project_row_id = resolve_project_row_id(related_project_id)
-        os.environ["MAIN_SEQUENCE_PROJECT_UID"] = project_uid
-        os.environ["MAIN_SEQUENCE_PROJECT_ID"] = str(project_row_id)
+        resolved_branch_uid = resolve_project_branch_uid(related_project_branch_uid)
 
         from mainsequence.client import utils as _client_utils
         from mainsequence.client.base import BaseObjectOrm
@@ -2205,8 +2187,8 @@ def create_project_image(
 
         created = ClientProjectImage.create(
             project_repo_hash=project_repo_hash,
-            related_project_id=project_row_id,
-            base_image_id=base_image_id,
+            related_project_branch_uid=resolved_branch_uid,
+            base_image_uid=base_image_uid,
             timeout=timeout,
         )
         if isinstance(created, dict):
@@ -2220,7 +2202,7 @@ def create_project_image(
         if err_name in {"AuthenticationError", "PermissionDeniedError"}:
             raise NotLoggedIn(str(e) or "Not logged in.") from e
         if err_name == "NotFoundError":
-            raise ApiError(f"Project not found: {related_project_id}") from e
+            raise ApiError(f"ProjectBranch not found: {related_project_branch_uid}") from e
         raise ApiError(f"Project image create failed: {e}") from e
     finally:
         if client_utils is not None:
@@ -2252,7 +2234,7 @@ def create_project_image(
 
 def list_project_images(
     *,
-    related_project_id: int | str,
+    related_project_branch_uid: str,
     filters: dict[str, Any] | None = None,
     timeout: int | None = None,
 ) -> list[dict[str, Any]]:
@@ -2278,7 +2260,6 @@ def list_project_images(
         "MAINSEQUENCE_REFRESH_TOKEN": os.environ.get("MAINSEQUENCE_REFRESH_TOKEN"),
         "MAINSEQUENCE_ENDPOINT": os.environ.get("MAINSEQUENCE_ENDPOINT"),
         "MAIN_SEQUENCE_PROJECT_UID": os.environ.get("MAIN_SEQUENCE_PROJECT_UID"),
-        "MAIN_SEQUENCE_PROJECT_ID": os.environ.get("MAIN_SEQUENCE_PROJECT_ID"),
     }
 
     client_utils = None
@@ -2294,10 +2275,7 @@ def list_project_images(
         else:
             os.environ.pop("MAINSEQUENCE_REFRESH_TOKEN", None)
         os.environ["MAINSEQUENCE_ENDPOINT"] = endpoint
-        project_uid = resolve_project_uid(related_project_id)
-        project_row_id = resolve_project_row_id(related_project_id)
-        os.environ["MAIN_SEQUENCE_PROJECT_UID"] = project_uid
-        os.environ["MAIN_SEQUENCE_PROJECT_ID"] = str(project_row_id)
+        resolved_branch_uid = resolve_project_branch_uid(related_project_branch_uid)
 
         from mainsequence.client import utils as _client_utils
         from mainsequence.client.base import BaseObjectOrm
@@ -2315,7 +2293,7 @@ def list_project_images(
         ClientProjectImage.ROOT_URL = root_url
 
         merged_filters = dict(filters or {})
-        merged_filters["related_project__id__in"] = [project_row_id]
+        merged_filters["related_project_branch_uid"] = resolved_branch_uid
         images = ClientProjectImage.filter(timeout=timeout, **merged_filters)
 
         out: list[dict[str, Any]] = []
@@ -2333,7 +2311,7 @@ def list_project_images(
         if err_name in {"AuthenticationError", "PermissionDeniedError"}:
             raise NotLoggedIn(str(e) or "Not logged in.") from e
         if err_name == "NotFoundError":
-            raise ApiError(f"Project not found: {related_project_id}") from e
+            raise ApiError(f"ProjectBranch not found: {related_project_branch_uid}") from e
         raise ApiError(f"Project images fetch failed: {e}") from e
     finally:
         if client_utils is not None:
@@ -2365,7 +2343,7 @@ def list_project_images(
 
 def get_project_image(
     *,
-    image_id: int | str,
+    image_uid: str,
     timeout: int | None = None,
 ) -> dict[str, Any]:
     try:
@@ -2373,7 +2351,7 @@ def get_project_image(
             module_name="mainsequence.client.models_foundry",
             class_name="ProjectImage",
             operation=lambda ClientProjectImage: ClientProjectImage.get(
-                pk=int(image_id),
+                pk=image_uid,
                 timeout=timeout,
             ),
         )
@@ -2381,7 +2359,7 @@ def get_project_image(
     except Exception as e:
         err_name = type(e).__name__
         if err_name == "NotFoundError":
-            raise ApiError(f"Project image not found: {image_id}") from e
+            raise ApiError(f"Project image not found: {image_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
         raise ApiError(f"Project image fetch failed: {e}") from e
@@ -2389,13 +2367,13 @@ def get_project_image(
 
 def delete_project_image(
     *,
-    image_id: int | str,
+    image_uid: str,
     timeout: int | None = None,
 ) -> dict[str, Any]:
     try:
 
         def _delete(ClientProjectImage):
-            image = ClientProjectImage.get(pk=int(image_id), timeout=timeout)
+            image = ClientProjectImage.get(pk=image_uid, timeout=timeout)
             payload = _sdk_object_to_dict(image)
             image.delete()
             return payload
@@ -2408,7 +2386,7 @@ def delete_project_image(
     except Exception as e:
         err_name = type(e).__name__
         if err_name == "NotFoundError":
-            raise ApiError(f"Project image not found: {image_id}") from e
+            raise ApiError(f"Project image not found: {image_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
         raise ApiError(f"Project image deletion failed: {e}") from e
@@ -2484,7 +2462,7 @@ def delete_resource_release(
 
 def list_project_jobs(
     *,
-    project_id: int | str,
+    project_branch_uid: str,
     filters: dict[str, Any] | None = None,
     timeout: int | None = None,
 ) -> list[dict[str, Any]]:
@@ -2509,7 +2487,6 @@ def list_project_jobs(
         "MAINSEQUENCE_REFRESH_TOKEN": os.environ.get("MAINSEQUENCE_REFRESH_TOKEN"),
         "MAINSEQUENCE_ENDPOINT": os.environ.get("MAINSEQUENCE_ENDPOINT"),
         "MAIN_SEQUENCE_PROJECT_UID": os.environ.get("MAIN_SEQUENCE_PROJECT_UID"),
-        "MAIN_SEQUENCE_PROJECT_ID": os.environ.get("MAIN_SEQUENCE_PROJECT_ID"),
     }
 
     client_utils = None
@@ -2525,10 +2502,7 @@ def list_project_jobs(
         else:
             os.environ.pop("MAINSEQUENCE_REFRESH_TOKEN", None)
         os.environ["MAINSEQUENCE_ENDPOINT"] = endpoint
-        project_uid = resolve_project_uid(project_id)
-        project_row_id = resolve_project_row_id(project_id)
-        os.environ["MAIN_SEQUENCE_PROJECT_UID"] = project_uid
-        os.environ["MAIN_SEQUENCE_PROJECT_ID"] = str(project_row_id)
+        resolved_branch_uid = resolve_project_branch_uid(project_branch_uid)
 
         from mainsequence.client import utils as _client_utils
         from mainsequence.client.base import BaseObjectOrm
@@ -2548,7 +2522,7 @@ def list_project_jobs(
         extra_filters = dict(filters or {})
         jobs = ClientJob.filter(
             timeout=timeout,
-            **{**extra_filters, "project__id": project_row_id},
+            **{**extra_filters, "project__uid": resolved_branch_uid},
         )
 
         out: list[dict[str, Any]] = []
@@ -2566,7 +2540,7 @@ def list_project_jobs(
         if err_name in {"AuthenticationError", "PermissionDeniedError"}:
             raise NotLoggedIn(str(e) or "Not logged in.") from e
         if err_name == "NotFoundError":
-            raise ApiError(f"Project not found: {project_id}") from e
+            raise ApiError(f"ProjectBranch not found: {project_branch_uid}") from e
         raise ApiError(f"Project jobs fetch failed: {e}") from e
     finally:
         if client_utils is not None:
@@ -2598,7 +2572,7 @@ def list_project_jobs(
 
 def list_project_resources(
     *,
-    project_id: int | str,
+    project_branch_uid: str,
     repo_commit_sha: str,
     resource_type: str | None = None,
     filters: dict[str, Any] | None = None,
@@ -2625,7 +2599,6 @@ def list_project_resources(
         "MAINSEQUENCE_REFRESH_TOKEN": os.environ.get("MAINSEQUENCE_REFRESH_TOKEN"),
         "MAINSEQUENCE_ENDPOINT": os.environ.get("MAINSEQUENCE_ENDPOINT"),
         "MAIN_SEQUENCE_PROJECT_UID": os.environ.get("MAIN_SEQUENCE_PROJECT_UID"),
-        "MAIN_SEQUENCE_PROJECT_ID": os.environ.get("MAIN_SEQUENCE_PROJECT_ID"),
     }
 
     client_utils = None
@@ -2641,10 +2614,7 @@ def list_project_resources(
         else:
             os.environ.pop("MAINSEQUENCE_REFRESH_TOKEN", None)
         os.environ["MAINSEQUENCE_ENDPOINT"] = endpoint
-        project_uid = resolve_project_uid(project_id)
-        project_row_id = resolve_project_row_id(project_id)
-        os.environ["MAIN_SEQUENCE_PROJECT_UID"] = project_uid
-        os.environ["MAIN_SEQUENCE_PROJECT_ID"] = str(project_row_id)
+        resolved_branch_uid = resolve_project_branch_uid(project_branch_uid)
 
         from mainsequence.client import utils as _client_utils
         from mainsequence.client.base import BaseObjectOrm
@@ -2664,7 +2634,7 @@ def list_project_resources(
         merged_filters: dict[str, Any] = dict(filters or {})
         merged_filters.update(
             {
-                "project__id": project_row_id,
+                "project__uid": resolved_branch_uid,
                 "repo_commit_sha": str(repo_commit_sha).strip(),
             }
         )
@@ -2689,7 +2659,7 @@ def list_project_resources(
         if err_name in {"AuthenticationError", "PermissionDeniedError"}:
             raise NotLoggedIn(str(e) or "Not logged in.") from e
         if err_name == "NotFoundError":
-            raise ApiError(f"Project not found: {project_id}") from e
+            raise ApiError(f"ProjectBranch not found: {project_branch_uid}") from e
         raise ApiError(f"Project resources fetch failed: {e}") from e
     finally:
         if client_utils is not None:
@@ -2724,8 +2694,8 @@ def list_project_resources(
 def create_project_resource_release(
     *,
     release_kind: str,
-    resource_id: int | str,
-    related_image_id: int | None = None,
+    resource_uid: str,
+    related_image_uid: str | None = None,
     readme_resource_id: int | None = None,
     cpu_request: str | int | float | None = None,
     memory_request: str | int | float | None = None,
@@ -2788,9 +2758,9 @@ def create_project_resource_release(
         BaseObjectOrm.ROOT_URL = root_url
         ClientProjectResource.ROOT_URL = root_url
 
-        resource = ClientProjectResource.get(pk=int(resource_id), timeout=timeout)
+        resource = ClientProjectResource.get(pk=resource_uid, timeout=timeout)
         create_kwargs: dict[str, Any] = {
-            "related_image_id": related_image_id,
+            "related_image_uid": related_image_uid,
             "readme_resource_id": readme_resource_id,
             "cpu_request": cpu_request,
             "memory_request": memory_request,
@@ -2824,7 +2794,7 @@ def create_project_resource_release(
         if err_name in {"AuthenticationError", "PermissionDeniedError"}:
             raise NotLoggedIn(str(e) or "Not logged in.") from e
         if err_name == "NotFoundError":
-            raise ApiError(f"Project resource not found: {resource_id}") from e
+            raise ApiError(f"Project resource not found: {resource_uid}") from e
         raise ApiError(f"Project resource release create failed: {e}") from e
     finally:
         if client_utils is not None:
@@ -5079,7 +5049,7 @@ def remove_meta_table_labels(
 def create_project_job(
     *,
     name: str,
-    project_id: int | str,
+    project_branch_uid: str,
     execution_path: str | None = None,
     app_name: str | None = None,
     task_schedule: dict[str, Any] | str | None = None,
@@ -5089,7 +5059,7 @@ def create_project_job(
     gpu_type: str | None = None,
     spot: bool | None = None,
     max_runtime_seconds: int | None = None,
-    related_image_id: int | None = None,
+    related_image_uid: str | None = None,
     timeout: int | None = None,
 ) -> dict[str, Any]:
     """
@@ -5113,7 +5083,6 @@ def create_project_job(
         "MAINSEQUENCE_REFRESH_TOKEN": os.environ.get("MAINSEQUENCE_REFRESH_TOKEN"),
         "MAINSEQUENCE_ENDPOINT": os.environ.get("MAINSEQUENCE_ENDPOINT"),
         "MAIN_SEQUENCE_PROJECT_UID": os.environ.get("MAIN_SEQUENCE_PROJECT_UID"),
-        "MAIN_SEQUENCE_PROJECT_ID": os.environ.get("MAIN_SEQUENCE_PROJECT_ID"),
     }
 
     client_utils = None
@@ -5129,10 +5098,7 @@ def create_project_job(
         else:
             os.environ.pop("MAINSEQUENCE_REFRESH_TOKEN", None)
         os.environ["MAINSEQUENCE_ENDPOINT"] = endpoint
-        project_uid = resolve_project_uid(project_id)
-        project_row_id = resolve_project_row_id(project_id)
-        os.environ["MAIN_SEQUENCE_PROJECT_UID"] = project_uid
-        os.environ["MAIN_SEQUENCE_PROJECT_ID"] = str(project_row_id)
+        resolved_branch_uid = resolve_project_branch_uid(project_branch_uid)
 
         from mainsequence.client import utils as _client_utils
         from mainsequence.client.base import BaseObjectOrm
@@ -5151,7 +5117,7 @@ def create_project_job(
 
         created = ClientJob.create(
             name=name,
-            project_id=project_row_id,
+            project_branch_uid=resolved_branch_uid,
             execution_path=execution_path,
             app_name=app_name,
             task_schedule=task_schedule,
@@ -5161,7 +5127,7 @@ def create_project_job(
             gpu_type=gpu_type,
             spot=spot,
             max_runtime_seconds=max_runtime_seconds,
-            related_image_id=related_image_id,
+            related_image_uid=related_image_uid,
             timeout=timeout,
         )
         if isinstance(created, dict):
@@ -5175,7 +5141,7 @@ def create_project_job(
         if err_name in {"AuthenticationError", "PermissionDeniedError"}:
             raise NotLoggedIn(str(e) or "Not logged in.") from e
         if err_name == "NotFoundError":
-            raise ApiError(f"Project not found: {project_id}") from e
+            raise ApiError(f"ProjectBranch not found: {project_branch_uid}") from e
         raise ApiError(f"Project job create failed: {e}") from e
     finally:
         if client_utils is not None:
@@ -5208,7 +5174,7 @@ def create_project_job(
 def schedule_batch_project_jobs(
     *,
     file_path: str,
-    project_id: int | str,
+    project_branch_uid: str,
     strict: bool = False,
     timeout: int | None = None,
 ) -> list[dict[str, Any]] | dict[str, Any]:
@@ -5238,7 +5204,6 @@ def schedule_batch_project_jobs(
         "MAINSEQUENCE_REFRESH_TOKEN": os.environ.get("MAINSEQUENCE_REFRESH_TOKEN"),
         "MAINSEQUENCE_ENDPOINT": os.environ.get("MAINSEQUENCE_ENDPOINT"),
         "MAIN_SEQUENCE_PROJECT_UID": os.environ.get("MAIN_SEQUENCE_PROJECT_UID"),
-        "MAIN_SEQUENCE_PROJECT_ID": os.environ.get("MAIN_SEQUENCE_PROJECT_ID"),
     }
 
     client_utils = None
@@ -5254,10 +5219,7 @@ def schedule_batch_project_jobs(
         else:
             os.environ.pop("MAINSEQUENCE_REFRESH_TOKEN", None)
         os.environ["MAINSEQUENCE_ENDPOINT"] = endpoint
-        project_uid = resolve_project_uid(project_id)
-        project_row_id = resolve_project_row_id(project_id)
-        os.environ["MAIN_SEQUENCE_PROJECT_UID"] = project_uid
-        os.environ["MAIN_SEQUENCE_PROJECT_ID"] = str(project_row_id)
+        resolved_branch_uid = resolve_project_branch_uid(project_branch_uid)
 
         from mainsequence.client import utils as _client_utils
         from mainsequence.client.base import BaseObjectOrm
@@ -5276,7 +5238,7 @@ def schedule_batch_project_jobs(
 
         created = ClientJob.bulk_get_or_create(
             yaml_file=file_path,
-            project_id=project_row_id,
+            project_branch_uid=resolved_branch_uid,
             strict=bool(strict),
             timeout=timeout,
         )
@@ -5299,7 +5261,7 @@ def schedule_batch_project_jobs(
         if err_name in {"AuthenticationError", "PermissionDeniedError"}:
             raise NotLoggedIn(str(e) or "Not logged in.") from e
         if err_name == "NotFoundError":
-            raise ApiError(f"Project not found: {project_id}") from e
+            raise ApiError(f"ProjectBranch not found: {project_branch_uid}") from e
         raise ApiError(f"Project batch job scheduling failed: {e}") from e
     finally:
         if client_utils is not None:
@@ -5860,27 +5822,31 @@ def list_github_organizations() -> list[dict]:
 def create_project(
     *,
     project_name: str,
-    data_source_uid: str | None = None,
+    project_type: str = "python",
+    metatables_data_source_uid: str | None = None,
     default_base_image_uid: str | None = None,
     github_org_uid: str | None = None,
-    repository_branch: str | None = None,
     env_vars: dict[str, str] | None = None,
+    labels: list[str] | None = None,
 ) -> dict:
     """
     Create a new project.
     """
-    payload: dict[str, Any] = {"project_name": project_name}
+    payload: dict[str, Any] = {
+        "project_name": project_name,
+        "project_type": project_type,
+    }
 
-    if repository_branch:
-        payload["repository_branch"] = repository_branch
-    if data_source_uid not in (None, ""):
-        payload["data_source_uid"] = str(data_source_uid)
+    if metatables_data_source_uid not in (None, ""):
+        payload["metatables_data_source_uid"] = str(metatables_data_source_uid)
     if default_base_image_uid not in (None, ""):
         payload["default_base_image_uid"] = str(default_base_image_uid)
     if github_org_uid not in (None, ""):
         payload["github_org_uid"] = str(github_org_uid)
     if env_vars:
         payload["env_vars"] = [{"name": k, "value": str(v)} for k, v in env_vars.items()]
+    if labels is not None:
+        payload["labels"] = list(labels)
 
     r = authed("POST", "/orm/api/pods/projects/", payload)
     if not r.ok:
@@ -5903,20 +5869,15 @@ def create_project(
     return data
 
 
-def delete_project(
-    project_id: int | str, *, delete_repositories: bool = False
-) -> dict[str, Any] | None:
+def delete_project(project_id: int | str) -> dict[str, Any] | None:
     """
     Delete a project by public reference.
 
     Mirrors backend behavior:
       - DELETE /orm/api/pods/projects/{uid}/
-      - optional query param delete_repositories=true
     """
     project_uid = resolve_project_uid(project_id)
     path = f"/orm/api/pods/projects/{project_uid}/"
-    if delete_repositories:
-        path = f"{path}?delete_repositories=true"
 
     r = authed("DELETE", path)
     if not r.ok:
@@ -5937,45 +5898,25 @@ def delete_project(
     return None
 
 
-def fetch_project_env_text(project_id: int | str) -> str:
-    """
-    Fetch the project's environment (.env content) and return it as text.
-
-    Parity: VS Code extension supports:
-      - JSON containing 'environment'/'env'/'content'/'text'
-      - JSON dict of key-values (flattened into KEY=value lines)
-      - Raw string response
-
-    Returns:
-        str: environment text (possibly empty)
-    """
-    r = authed("GET", f"/orm/api/pods/projects/{project_id}/get_environment/")
-    raw: Any
-    if r.headers.get("content-type", "").startswith("application/json"):
-        try:
-            raw = r.json()
-        except Exception:
-            raw = {}
-    else:
-        raw = r.text
-
-    if isinstance(raw, dict):
-        embedded = raw.get("environment") or raw.get("env") or raw.get("content") or raw.get("text")
-        if isinstance(embedded, str):
-            return embedded
-        if isinstance(embedded, dict):
-            raw = embedded
-
-    if isinstance(raw, dict):
-        return "\n".join(f"{k}={_format_env_value(v)}" for k, v in raw.items())
-
-    if isinstance(raw, str):
-        return raw
-
-    return ""
+def bulk_delete_projects(
+    *,
+    uids: list[str],
+    delete_repositories: bool = False,
+) -> dict[str, Any]:
+    payload = {
+        "selection": {"mode": "explicit", "uids": list(uids)},
+        "options": {"delete_repositories": delete_repositories},
+    }
+    r = authed("POST", "/orm/api/pods/projects/bulk-delete/", payload)
+    if not r.ok:
+        raise ApiError(f"Project bulk delete failed ({r.status_code}). {(r.text or '').strip()}")
+    data = r.json()
+    if not isinstance(data, dict):
+        raise ApiError("Project bulk delete returned an unexpected payload.")
+    return data
 
 
-def add_deploy_key(project_id: int | str, key_title: str, public_key: str) -> None:
+def add_deploy_key(project_branch_uid: str, key_title: str, public_key: str) -> None:
     """
     Add a deploy key for the project.
 
@@ -5984,7 +5925,7 @@ def add_deploy_key(project_id: int | str, key_title: str, public_key: str) -> No
     """
     r = authed(
         "POST",
-        f"/orm/api/pods/projects/{resolve_project_uid(project_id)}/add_deploy_key/",
+        f"/orm/api/pods/project-branches/{resolve_project_branch_uid(project_branch_uid)}/add_deploy_key/",
         {"key_title": key_title, "public_key": public_key},
     )
     r.raise_for_status()
