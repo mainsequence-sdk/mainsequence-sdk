@@ -1014,16 +1014,41 @@ def _resolve_project_branch(
     )
 
 
+def _resolve_git_project_branch_context(
+    project_ref: str,
+    *,
+    project_dir: pathlib.Path | None = None,
+    repository_branch: str | None = None,
+) -> tuple[str, str]:
+    """Resolve the current Git branch to its registered ProjectBranch UID."""
+    branch_name = (repository_branch or "").strip()
+    if not branch_name:
+        branch_name = _current_git_branch(project_dir) or ""
+    if not branch_name:
+        raise ApiError("Current Git checkout is detached or has no named branch.")
+
+    project = resolve_project(project_ref)
+    project_branch = _resolve_project_branch(
+        project,
+        repository_branch=branch_name,
+        project_dir=project_dir,
+        use_current_git_branch=False,
+    )
+    uid = str(project_branch.get("uid") or "").strip()
+    if not uid:
+        raise ApiError("The resolved ProjectBranch has no UID.")
+    return branch_name, uid
+
+
 def _resolve_project_branch_uid_for_command(
     project_ref: str,
     *,
     project_dir: pathlib.Path | None = None,
 ) -> str:
-    project = resolve_project(project_ref)
-    project_branch = _resolve_project_branch(project, project_dir=project_dir)
-    uid = str(project_branch.get("uid") or "").strip()
-    if not uid:
-        raise ApiError("The resolved ProjectBranch has no UID.")
+    _, uid = _resolve_git_project_branch_context(
+        project_ref,
+        project_dir=project_dir,
+    )
     return uid
 
 
@@ -12419,11 +12444,6 @@ def project_sync(
 
     message = message if message is not None else message_opt
     project_dir = _resolve_project_dir(project_id, path)
-    ensure_venv(project_dir)
-
-    origin = git_origin(project_dir)
-    repo_name = repo_name_from_git_url(origin) or project_dir.name
-    key_path, _, _ = ensure_key_for_repo(origin)
 
     safe_message = (
         str(message or "").replace("\r", " ").replace("\n", " ").replace('"', "'").strip()
@@ -12431,6 +12451,34 @@ def project_sync(
     if not safe_message:
         error("Commit message is required.")
         raise typer.Exit(1)
+
+    project_ref = str(project_id or _read_project_ref_from_env_file(project_dir) or "").strip()
+    if not project_ref:
+        error(
+            "Project sync preflight failed: MAIN_SEQUENCE_PROJECT_UID is not configured "
+            f"in {project_dir / '.env'}."
+        )
+        raise typer.Exit(1)
+
+    try:
+        git_branch, project_branch_uid = _resolve_git_project_branch_context(
+            project_ref,
+            project_dir=project_dir,
+        )
+    except ApiError as exc:
+        error(f"Project sync preflight failed: {exc}")
+        raise typer.Exit(1) from exc
+
+    info(
+        "Project sync preflight resolved "
+        f"Git branch {git_branch!r} to ProjectBranch {project_branch_uid}."
+    )
+
+    ensure_venv(project_dir)
+
+    origin = git_origin(project_dir)
+    repo_name = repo_name_from_git_url(origin) or project_dir.name
+    key_path, _, _ = ensure_key_for_repo(origin)
 
     steps = [
         "resolve uv executable",
@@ -12563,8 +12611,9 @@ def project_current(
     """
     Detect and display current project context from current directory.
 
-    Includes detected path, project uid, virtual environment, Python version,
-    and SDK status when available.
+    Includes detected path, logical Project UID, current Git branch, resolved
+    ProjectBranch UID, virtual environment, Python version, and SDK status when
+    available.
 
     Parameters
     ----------
@@ -12589,10 +12638,37 @@ def project_current(
             print_kv("Debug", [("checks", json.dumps([c.__dict__ for c in dbg.checks], indent=2))])
         raise typer.Exit(1)
 
+    project_path = pathlib.Path(project_info.path)
+    project_uid = str(getattr(project_info, "project_uid", None) or "").strip()
+    git_branch = _current_git_branch(project_path)
+    project_branch_uid = None
+    project_branch_status = "detached"
+    project_branch_error = "Current Git checkout is detached or has no named branch."
+    if git_branch and not project_uid:
+        project_branch_status = "missing_project_uid"
+        project_branch_error = "MAIN_SEQUENCE_PROJECT_UID is not configured."
+    elif git_branch and project_uid:
+        try:
+            _, project_branch_uid = _resolve_git_project_branch_context(
+                project_uid,
+                project_dir=project_path,
+                repository_branch=git_branch,
+            )
+        except ApiError as exc:
+            project_branch_status = "unresolved"
+            project_branch_error = str(exc)
+        else:
+            project_branch_status = "resolved"
+            project_branch_error = None
+
     current_project_payload = {
         "path": project_info.path,
         "folder": project_info.folder,
-        "project_uid": project_info.project_uid,
+        "project_uid": project_uid or None,
+        "git_branch": git_branch,
+        "project_branch_uid": project_branch_uid,
+        "project_branch_status": project_branch_status,
+        "project_branch_error": project_branch_error,
         "venv_path": project_info.venv_path,
         "python_version": project_info.python_version,
     }
@@ -12636,10 +12712,15 @@ def project_current(
     items = [
         ("Path", project_info.path),
         ("Folder", project_info.folder),
-        ("Project UID", project_info.project_uid or project_info.project_id or "-"),
+        ("Project UID", project_uid or "-"),
+        ("Git Branch", git_branch or "detached/unavailable"),
+        ("ProjectBranch UID", project_branch_uid or "-"),
+        ("Branch Status", project_branch_status),
         ("Venv", project_info.venv_path or "not found"),
         ("Python", project_info.python_version or "unknown"),
     ]
+    if project_branch_error:
+        items.append(("Branch Detail", project_branch_error))
     print_kv("Current Project", items)
 
     if latest or local is not None:

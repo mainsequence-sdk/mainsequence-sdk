@@ -95,6 +95,32 @@ Before starting non-trivial work, collect or infer:
 
 If the user goal or project context is unclear, stop before routing domain work.
 
+## Resolve Local Project Context From Git
+
+Local project context is composed from two sources:
+
+- `.env` supplies `MAIN_SEQUENCE_PROJECT_UID`, the logical Project aggregate;
+- `git branch --show-current` supplies the active repository branch.
+
+Use `mainsequence project current --debug --json` to verify that pair resolves
+to `project_branch_status=resolved` and a nonempty `project_branch_uid`. The UID
+is an internal resolution result for branch-owned platform calls; it is not a
+local configuration input. Never require the user to look it up, never persist
+`MAIN_SEQUENCE_PROJECT_BRANCH_UID`, and never infer a branch from collection
+order. A detached checkout or an unregistered Git branch is unresolved project
+context and must block live branch-owned operations.
+
+Keep the platform boundaries explicit:
+
+- use the logical Project UID for aggregate identity and Project operations;
+- let the SDK resolve the current Git branch to ProjectBranch only when Jobs,
+  images, releases, resources, pods, or other branch-owned APIs require it;
+- treat GitRepository as repository metadata and clone-location ownership;
+  `git_ssh_url` is not ProjectBranch state.
+
+For ordinary local implementation, work naturally in the current Git branch.
+Do not make ProjectBranch selection a separate user workflow.
+
 ## Required Decisions
 
 For every non-trivial task, decide:
@@ -158,6 +184,9 @@ Typical bootstrap checks:
 
 - `mainsequence project current --debug`
 - `mainsequence project refresh_token --path .`
+
+Do not proceed with a live branch-owned check unless `project current` reports
+the current Git branch and a resolved ProjectBranch UID.
 
 ### 5. Route domain work instead of expanding the bootstrap skill
 

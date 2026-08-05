@@ -66,14 +66,18 @@ mainsequence project freeze-env --path .
 
 # Sync project (commit + push workflow)
 mainsequence project sync -m "Update deps" --path .
-# runs: uv version bump, uv lock/sync, export requirements, git commit + push
+# first resolves the current named Git branch under MAIN_SEQUENCE_PROJECT_UID;
+# detached or unregistered branches fail before local mutations
+# then runs: uv version bump, uv lock/sync, export requirements, git commit + push
 
 # Docker environment build
 mainsequence project build-docker-env --path .
 # builds via docker buildx and writes .devcontainer/devcontainer.json
 
 # Current project status
-mainsequence project current --debug
+mainsequence project current --debug --json
+# reports logical Project UID, current Git branch, resolved ProjectBranch UID,
+# and branch resolution status
 
 # SDK status and update
 mainsequence project sdk-status --path .

@@ -32,6 +32,13 @@ Route architecture changes to `project_design`, implementation routing to
 `maintenance/bug_auditor` when diagnosis extends beyond the maintenance
 workflow itself.
 
+The local identity contract has one persisted platform identifier:
+`MAIN_SEQUENCE_PROJECT_UID`, the logical Project UID. The checked-out Git
+branch selects the active ProjectBranch. Never ask the user for a
+ProjectBranch UID, persist `MAIN_SEQUENCE_PROJECT_BRANCH_UID`, or treat a
+ProjectBranch UID as local project configuration. The CLI may resolve that UID
+internally when a branch-owned platform API requires it.
+
 ## Inspect Before Changing State
 
 1. Read `AGENTS.md` and the relevant repository skills.
@@ -43,6 +50,12 @@ workflow itself.
    mainsequence project sdk-status --path . --json
    git status --short
    ```
+
+   The `project current` result must report the logical `project_uid`, current
+   `git_branch`, `project_branch_uid`, and `project_branch_status=resolved`.
+   Treat a detached checkout, missing logical Project UID, or unresolved/
+   unregistered Git branch as a maintenance preflight failure before any
+   mutating workflow.
 
 4. Separate existing user changes from changes created by the maintenance
    task. Never assume every uncommitted file belongs to the current task.
@@ -114,7 +127,9 @@ the waiting CLI process.
 The command preserves unrelated project configuration and renders only the
 current supported authentication shape. Existing `MAINSEQUENCE_TOKEN` and
 `MAIN_SEQUENCE_PROJECT_ID` entries are not carried into the rewritten file;
-this is not a separate cleanup routine.
+this is not a separate cleanup routine. It preserves the logical
+`MAIN_SEQUENCE_PROJECT_UID` and never writes a ProjectBranch UID; switching Git
+branches changes local branch context without rewriting `.env`.
 
 ## Update The Project SDK
 
@@ -171,6 +186,11 @@ mainsequence project sync --path . -m "<specific commit message>" --dry-run
 
 Review every pending file because the command stages with `git add -A`. Do not
 continue when unrelated or unexplained changes would be included.
+
+The command performs the same branch preflight even for `--dry-run`: it rejects
+a detached checkout and rejects a Git branch that is not registered under the
+logical Project. Do not bypass that validation or supply a ProjectBranch UID
+manually. Register or select the correct Git branch first.
 
 After review:
 

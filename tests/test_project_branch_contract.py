@@ -45,11 +45,9 @@ def project_branch_payload() -> dict:
         },
         "sdks": [],
         "git_repository_uid": REPOSITORY_UID,
-        "git_ssh_url": "git@github.com:mainsequence/analytics.git",
         "latest_git_version": "1.0.0",
         "is_initialized": True,
         "created_by": "owner@example.com",
-        "labels": ["analytics"],
     }
 
 
@@ -84,6 +82,8 @@ def test_project_branch_owns_branch_configuration():
     assert branch.project_uid == PROJECT_UID
     assert branch.repository_branch == "main"
     assert branch.default_base_image.uid == "61111111-1111-4111-8111-111111111111"
+    assert not hasattr(branch, "git_ssh_url")
+    assert not hasattr(branch, "labels")
 
 
 def test_git_repository_is_a_separate_registry_contract():

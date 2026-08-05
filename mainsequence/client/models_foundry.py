@@ -483,11 +483,9 @@ class ProjectBranch(BasePydanticModel, BaseObjectOrm):
     default_base_image: ProjectBaseImage
     sdks: list[ProjectSDKObservation] = Field(default_factory=list)
     git_repository_uid: str | None = None
-    git_ssh_url: str | None = None
     latest_git_version: str = ""
     is_initialized: bool
     created_by: str | int | dict[str, Any] | None = None
-    labels: list[str] = Field(default_factory=list)
 
     def _action_url(self, action: str) -> str:
         return f"{type(self).get_object_url()}/{self._public_detail_reference()}/{action.strip('/')}/"

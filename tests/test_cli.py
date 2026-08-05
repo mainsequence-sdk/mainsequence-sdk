@@ -10693,12 +10693,20 @@ def test_project_freeze_env(cli_mod, runner, monkeypatch, tmp_path):
 def test_project_sync(cli_mod, runner, monkeypatch, tmp_path):
     target = tmp_path / "project"
     target.mkdir(parents=True, exist_ok=True)
+    (target / ".env").write_text(
+        "MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8"
+    )
     key = tmp_path / "id_ed25519"
     uv_path = target / ".venv" / "bin" / "uv"
     uv_calls = []
     git_calls = []
 
     monkeypatch.setattr(cli_mod, "ensure_venv", lambda *_: None)
+    monkeypatch.setattr(
+        cli_mod,
+        "_resolve_git_project_branch_context",
+        lambda *args, **kwargs: ("main", "project-branch-uid-123"),
+    )
     monkeypatch.setattr(cli_mod, "git_origin", lambda *_: "git@github.com:org/repo.git")
     monkeypatch.setattr(
         cli_mod, "ensure_key_for_repo", lambda *_: (key, key.with_suffix(".pub"), "pub")
@@ -10739,13 +10747,20 @@ def test_project_sync_defaults_to_cwd_with_positional_message(
 ):
     target = tmp_path / "project"
     target.mkdir(parents=True, exist_ok=True)
-    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_ID=123\n", encoding="utf-8")
+    (target / ".env").write_text(
+        "MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8"
+    )
     key = tmp_path / "id_ed25519"
     uv_path = target / ".venv" / "bin" / "uv"
     git_calls = []
 
     monkeypatch.chdir(target)
     monkeypatch.setattr(cli_mod, "ensure_venv", lambda *_: None)
+    monkeypatch.setattr(
+        cli_mod,
+        "_resolve_git_project_branch_context",
+        lambda *args, **kwargs: ("main", "project-branch-uid-123"),
+    )
     monkeypatch.setattr(cli_mod, "git_origin", lambda *_: "git@github.com:org/repo.git")
     monkeypatch.setattr(
         cli_mod, "ensure_key_for_repo", lambda *_: (key, key.with_suffix(".pub"), "pub")
@@ -10767,6 +10782,53 @@ def test_project_sync_defaults_to_cwd_with_positional_message(
     assert result.exit_code == 0
     assert (["git", "commit", "-m", "Update deps"], target) in git_calls
     assert all(cwd == target for _, cwd in git_calls)
+
+
+@pytest.mark.parametrize(
+    "preflight_error",
+    [
+        "Current Git checkout is detached or has no named branch.",
+        "Git branch 'feature/missing' is not registered as a ProjectBranch for this Project.",
+    ],
+)
+def test_project_sync_rejects_invalid_branch_before_local_mutation(
+    cli_mod,
+    runner,
+    monkeypatch,
+    tmp_path,
+    preflight_error,
+):
+    target = tmp_path / "project"
+    target.mkdir(parents=True, exist_ok=True)
+    (target / ".env").write_text(
+        "MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8"
+    )
+
+    def fail_preflight(*args, **kwargs):
+        raise cli_mod.ApiError(preflight_error)
+
+    monkeypatch.setattr(cli_mod, "_resolve_git_project_branch_context", fail_preflight)
+    monkeypatch.setattr(
+        cli_mod,
+        "ensure_venv",
+        lambda *_: pytest.fail("ensure_venv must not run before branch preflight"),
+    )
+
+    result = runner.invoke(
+        cli_mod.app,
+        [
+            "project",
+            "sync",
+            "--message",
+            "Update deps",
+            "--path",
+            str(target),
+            "--dry-run",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert f"Project sync preflight failed: {preflight_error}" in result.output
 
 
 def test_project_schedule_batch_jobs_defaults_to_cwd(cli_mod, runner, monkeypatch, tmp_path):
@@ -11068,6 +11130,11 @@ def test_project_sync_project(cli_mod, runner, monkeypatch, tmp_path):
     export_calls = []
     git_calls = []
     monkeypatch.setattr(cli_mod, "ensure_venv", lambda *_: None)
+    monkeypatch.setattr(
+        cli_mod,
+        "_resolve_git_project_branch_context",
+        lambda *args, **kwargs: ("main", "project-branch-uid-123"),
+    )
     monkeypatch.setattr(cli_mod, "git_origin", lambda *_: "git@github.com:org/repo.git")
     monkeypatch.setattr(
         cli_mod, "ensure_key_for_repo", lambda *_: (key, key.with_suffix(".pub"), "pub")
@@ -11113,13 +11180,20 @@ def test_project_sync_project_defaults_to_current_project_dir(
 ):
     target = tmp_path / "project"
     target.mkdir(parents=True, exist_ok=True)
-    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_ID=123\n", encoding="utf-8")
+    (target / ".env").write_text(
+        "MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8"
+    )
     key = tmp_path / "id_ed25519"
     uv_path = target / ".venv" / "bin" / "uv"
     seen = {"cwd": []}
 
     monkeypatch.chdir(target)
     monkeypatch.setattr(cli_mod, "ensure_venv", lambda *_: None)
+    monkeypatch.setattr(
+        cli_mod,
+        "_resolve_git_project_branch_context",
+        lambda *args, **kwargs: ("main", "project-branch-uid-123"),
+    )
     monkeypatch.setattr(cli_mod, "git_origin", lambda *_: "git@github.com:org/repo.git")
     monkeypatch.setattr(
         cli_mod, "ensure_key_for_repo", lambda *_: (key, key.with_suffix(".pub"), "pub")
@@ -11195,10 +11269,18 @@ def test_project_current(cli_mod, runner, monkeypatch, tmp_path):
     )
     monkeypatch.setattr(cli_mod, "read_local_sdk_version", lambda req: "1.2.3")
     monkeypatch.setattr(cli_mod, "fetch_latest_sdk_version", lambda: "1.2.3")
+    monkeypatch.setattr(cli_mod, "_current_git_branch", lambda *_: "main")
+    monkeypatch.setattr(
+        cli_mod,
+        "_resolve_git_project_branch_context",
+        lambda *args, **kwargs: ("main", "project-branch-uid-123"),
+    )
 
     result = runner.invoke(cli_mod.app, ["project", "current"])
     assert result.exit_code == 0
     assert "Current Project" in result.output
+    assert "main" in result.output
+    assert "project-branch-uid-123" in result.output
 
 
 def test_project_current_json(cli_mod, runner, monkeypatch, tmp_path):
@@ -11225,12 +11307,21 @@ def test_project_current_json(cli_mod, runner, monkeypatch, tmp_path):
     )
     monkeypatch.setattr(cli_mod, "read_local_sdk_version", lambda req: "1.2.3")
     monkeypatch.setattr(cli_mod, "fetch_latest_sdk_version", lambda: "1.2.3")
+    monkeypatch.setattr(cli_mod, "_current_git_branch", lambda *_: "main")
+    monkeypatch.setattr(
+        cli_mod,
+        "_resolve_git_project_branch_context",
+        lambda *args, **kwargs: ("main", "project-branch-uid-123"),
+    )
 
     result = runner.invoke(cli_mod.app, ["project", "current", "--json"])
     assert result.exit_code == 0
     payload = json.loads(result.output)
     assert payload["project"]["project_uid"] == "project-uid-123"
-    assert payload["project"]["legacy_project_id"] == "123"
+    assert payload["project"]["git_branch"] == "main"
+    assert payload["project"]["project_branch_uid"] == "project-branch-uid-123"
+    assert payload["project"]["project_branch_status"] == "resolved"
+    assert payload["project"]["project_branch_error"] is None
     assert payload["sdk_status"]["status"] == "match"
 
 
