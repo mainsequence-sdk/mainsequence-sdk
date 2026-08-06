@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ..app_component import (
+from ...workspaces.app_component import (
     EditableFormDefinition,
     EditableFormMeta,
     FormChoice,

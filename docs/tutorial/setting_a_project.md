@@ -93,10 +93,15 @@ Example:
 mainsequence project create tutorial-project-cli
 ```
 
-The CLI validates the project name before continuing, prompts for any missing values, and uses sensible defaults. It also polls the backend every 30 seconds until `is_initialized=true`.
+The CLI validates the project name before continuing, prompts for missing
+catalog selections, and returns the created logical Project. The platform also
+creates and initializes its main ProjectBranch; branch readiness is inspected
+through the branch-specific Project APIs rather than synthesized on Project.
 
-!!! note "Default parameter: data source (`--data-source-uid`)"
-    The CLI defaults to the first available data source.
+!!! note "Required Project default data source (`--default-metatables-data-source-uid`)"
+    When omitted, the interactive CLI requires selecting one available data
+    source. The platform stores it on the logical Project and assigns it
+    automatically to the initial main ProjectBranch.
 
     In Main Sequence, data is accessed through a **Data Source** abstraction rather than being tied directly to a specific database or storage system. This lets you work with data without needing to make database-specific decisions about schemas, storage engines, or query languages. Your workflows remain consistent even if the underlying storage changes.
 

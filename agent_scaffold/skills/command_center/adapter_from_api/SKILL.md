@@ -105,17 +105,17 @@ Provider code should use the Command Center SDK helpers instead of hand-building
 contract when the project can depend on `mainsequence-sdk`:
 
 ```python
-from mainsequence.client.command_center.contracts.adapter_from_api import (
+from mainsequence.client.command_center.sdk.contracts.adapter_from_api import (
     AdapterFromApiConfigVariable,
     AdapterFromApiParameter,
     AdapterFromApiSecretInjection,
     AdapterFromApiSecretVariable,
 )
-from mainsequence.client.command_center.contracts.response_mapping import (
+from mainsequence.client.command_center.sdk.contracts.response_mapping import (
     make_tabular_response_mapping,
 )
-from mainsequence.client.command_center.contracts.tabular import make_tabular_frame
-from mainsequence.client.command_center.providers.adapter_from_api import (
+from mainsequence.client.command_center.sdk.contracts.tabular import make_tabular_frame
+from mainsequence.client.command_center.sdk.providers.adapter_from_api import (
     make_health_operation,
     make_provider_contract,
     make_query_operation,
@@ -364,8 +364,8 @@ If an operation returns a full canonical frame, the returned JSON must contain:
 For FastAPI providers in Main Sequence repos, full canonical frame endpoints must use:
 
 ```python
-from mainsequence.client.command_center.data_models import TabularFrameResponse
-from mainsequence.client.command_center.contracts.tabular import make_tabular_frame
+from mainsequence.client.command_center.sdk.data_models import TabularFrameResponse
+from mainsequence.client.command_center.sdk.contracts.tabular import make_tabular_frame
 ```
 
 Declare `response_model=TabularFrameResponse` instead of recreating the canonical frame shape
@@ -419,7 +419,7 @@ Rules:
 The SDK canonical model for a full `core.tabular_frame@v1` response is:
 
 ```python
-mainsequence.client.command_center.data_models.TabularFrameResponse
+mainsequence.client.command_center.sdk.data_models.TabularFrameResponse
 ```
 
 Related SDK models:
@@ -456,8 +456,8 @@ Before implementing or revising an API for Adapter from API consumption, decide:
 
 For a FastAPI provider:
 
-- use the SDK provider helpers in `mainsequence.client.command_center.providers.adapter_from_api`
-  and strict models in `mainsequence.client.command_center.contracts.adapter_from_api` when the
+- use the SDK provider helpers in `mainsequence.client.command_center.sdk.providers.adapter_from_api`
+  and strict models in `mainsequence.client.command_center.sdk.contracts.adapter_from_api` when the
   dependency is available
 - set explicit `operation_id` values on routes
 - expose `GET /.well-known/command-center/connection-contract`

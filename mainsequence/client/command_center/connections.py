@@ -8,7 +8,7 @@ from urllib.parse import urljoin, urlparse
 from pydantic import ConfigDict, Field, StrictBool, StrictInt, model_validator
 
 from ..base import BasePydanticModel
-from .workspace import CommandCenterBaseObjectOrm
+from ._base import CommandCenterBaseObjectOrm
 
 CONNECTION_TYPE_ADAPTER_FROM_API = "command_center.adapter_from_api"
 ADAPTER_FROM_API_TRANSPORT_BACKEND = "backend"

@@ -11,6 +11,7 @@ import pytest
 from sqlalchemy import MetaData
 from typer.testing import CliRunner
 
+from mainsequence.client.metatables import MetaTable
 from mainsequence.meta_tables.migrations import (
     AlembicMetaTableMigration,
     AlembicVersionMetaTable,
@@ -46,7 +47,7 @@ def _migration(
     class Registry(AlembicVersionMetaTable):
         __metatable_uid__ = "registry-meta-table-uid"
         __metatable_data_source_uid__ = "data-source-uid"
-        __metatable__ = types.SimpleNamespace(
+        __metatable__ = MetaTable.model_construct(
             uid=__metatable_uid__,
             data_source_uid=__metatable_data_source_uid__,
         )
@@ -69,7 +70,7 @@ def _patch_preflight(monkeypatch, migration_cli, migration, *, emit_reservation=
     monkeypatch.setattr(
         AlembicMetaTableMigration,
         "ensure_alembic_registry",
-        lambda self, timeout=None, on_metatable_registered=None: None,
+        lambda self, timeout=None, on_metatable_registered=None: self.alembic_registry.get_meta_table(),
     )
 
     def fake_prepare_for_alembic(
@@ -138,23 +139,19 @@ def _combined_output(result):
 
 
 def _patch_scoped_connection(monkeypatch, migration_cli, captured):
-    class FakeDataSource:
-        def issue_migration_connection(self, request, *, timeout=None):
-            captured["connection_request"] = request
-            captured["connection_timeout"] = timeout
-            return types.SimpleNamespace(
-                uri="postgresql://temporary-secret",
-                owner_role_name="connection-owner",
-            )
-
-    def fake_get_by_uid(uid):
-        captured["data_source_uid"] = uid
-        return FakeDataSource()
+    def fake_issue_migration_connection(self, request, *, timeout=None):
+        captured["meta_table_uid"] = self.uid
+        captured["connection_request"] = request
+        captured["connection_timeout"] = timeout
+        return types.SimpleNamespace(
+            uri="postgresql://temporary-secret",
+            owner_role_name="connection-owner",
+        )
 
     monkeypatch.setattr(
-        migration_cli.DynamicTableDataSource,
-        "get_by_uid",
-        staticmethod(fake_get_by_uid),
+        MetaTable,
+        "issue_migration_connection",
+        fake_issue_migration_connection,
     )
 
 
@@ -220,7 +217,7 @@ def test_migrations_current_uses_scoped_connection_without_printing_secret(monke
     )
 
     assert result.exit_code == 0
-    assert captured["data_source_uid"] == "data-source-uid"
+    assert captured["meta_table_uid"] == "registry-meta-table-uid"
     assert not hasattr(captured["connection_request"], "meta_table_uids")
     assert captured["connection_timeout"] == 5.0
     assert captured["sqlalchemy_url"] == "postgresql://temporary-secret"
@@ -239,10 +236,7 @@ def test_migrations_current_uses_scoped_connection_without_printing_secret(monke
         "[mainsequence migrations] Skipping provider MetaTable reservations "
         "for read-only Alembic command."
     ) in output
-    assert (
-        "[mainsequence migrations] Loading DynamicTableDataSource uid=data-source-uid..." in output
-    )
-    assert "[mainsequence migrations] Requesting migration connection" in output
+    assert "Requesting migration connection through Alembic registry MetaTable" in output
     assert "[mainsequence migrations] Building Alembic config..." in output
     assert "[mainsequence migrations] Alembic config built." in output
     assert "[mainsequence migrations] Starting Alembic current now..." in output
@@ -299,6 +293,7 @@ def test_migrations_current_prints_alembic_registry_registration(monkeypatch):
                     },
                 ),
             )
+        return self.alembic_registry.get_meta_table()
 
     monkeypatch.setattr(AlembicMetaTableMigration, "ensure_alembic_registry", fake_ensure)
 
@@ -494,7 +489,7 @@ def test_migrations_revision_passes_provider_version_path(monkeypatch):
     assert captured["version_path"] == resolved_version_path
 
 
-def test_migrations_revision_default_autogenerates_without_metatable_provisioning(monkeypatch):
+def test_migrations_revision_default_uses_registry_without_provider_reservations(monkeypatch):
     cli_mod = _load_cli_module()
     runner = CliRunner()
     migration_cli = importlib.import_module("mainsequence.cli.migrations")
@@ -503,14 +498,15 @@ def test_migrations_revision_default_autogenerates_without_metatable_provisionin
     monkeypatch.setattr(migration_cli, "_load_migration", lambda provider: migration)
     _patch_scoped_connection(monkeypatch, migration_cli, captured)
 
-    def fail_backend_call(*args, **kwargs):
-        raise AssertionError("revision must not provision MetaTables")
-
     monkeypatch.setattr(
         AlembicMetaTableMigration,
         "ensure_alembic_registry",
-        fail_backend_call,
+        lambda self, timeout=None, on_metatable_registered=None: self.alembic_registry.get_meta_table(),
     )
+
+    def fail_backend_call(*args, **kwargs):
+        raise AssertionError("revision must not reserve provider MetaTables")
+
     monkeypatch.setattr(
         AlembicMetaTableMigration,
         "prepare_for_alembic",
@@ -550,19 +546,20 @@ def test_migrations_revision_default_autogenerates_without_metatable_provisionin
             "--timeout",
             "5",
             "--ttl-seconds",
-            "15",
+            "60",
         ],
     )
 
     assert result.exit_code == 0
-    assert captured["data_source_uid"] == "data-source-uid"
+    assert captured["meta_table_uid"] == "registry-meta-table-uid"
     assert not hasattr(captured["connection_request"], "meta_table_uids")
-    assert captured["connection_request"].ttl_seconds == 15
+    assert captured["connection_request"].ttl_seconds == 60
+    assert captured["connection_request"].migration_provider_key == "msm:markets"
     assert captured["connection_timeout"] == 5.0
     assert captured["autogenerate"] is True
     assert captured["sqlalchemy_url"] == "postgresql://temporary-secret"
     output = _combined_output(result)
-    assert "Ensuring Alembic registry MetaTable" not in output
+    assert "Ensuring Alembic registry MetaTable for revision" in output
     assert "Preparing platform-managed MetaTable reservations" not in output
 
 

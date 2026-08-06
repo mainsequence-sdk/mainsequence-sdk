@@ -3,8 +3,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from ..connections import CONNECTION_TYPE_ADAPTER_FROM_API
-from ..contracts.tabular import CORE_TABULAR_FRAME_CONTRACT
+from ...connections import CONNECTION_TYPE_ADAPTER_FROM_API
+from ...sdk.contracts.tabular import CORE_TABULAR_FRAME_CONTRACT
 
 
 def make_connection_ref(

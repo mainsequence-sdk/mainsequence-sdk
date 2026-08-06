@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mainsequence"
-version = "6.0.0"
+version = "6.0.1"
 description = "Main Sequence SDK "
 readme = "README.md"
 requires-python = ">=3.13"
@@ -48,6 +48,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+"fastapi" = [
+  "fastapi>=0.115,<1",
+]
 "local-data" = [
   "duckdb>=1.4.2",
   "pyarrow>=23.0.1",

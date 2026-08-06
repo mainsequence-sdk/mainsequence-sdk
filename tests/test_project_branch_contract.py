@@ -17,6 +17,8 @@ def logical_project_payload() -> dict:
     return {
         "uid": PROJECT_UID,
         "project_name": "Analytics",
+        "default_metatables_data_source": None,
+        "default_metatables_data_source_uid": None,
         "git_repository_uid": REPOSITORY_UID,
         "archived": False,
         "created_by": "owner@example.com",
@@ -126,7 +128,7 @@ def test_project_create_sends_only_canonical_fields(monkeypatch):
     created = models_foundry.Project.create(
         project_name="Analytics",
         project_type="python",
-        metatables_data_source_uid="51111111-1111-4111-8111-111111111111",
+        default_metatables_data_source_uid="51111111-1111-4111-8111-111111111111",
         default_base_image_uid="61111111-1111-4111-8111-111111111111",
         github_org_uid="41111111-1111-4111-8111-111111111111",
         env_vars={"FOO": "bar"},
@@ -138,7 +140,7 @@ def test_project_create_sends_only_canonical_fields(monkeypatch):
         "json": {
             "project_name": "Analytics",
             "project_type": "python",
-            "metatables_data_source_uid": "51111111-1111-4111-8111-111111111111",
+            "default_metatables_data_source_uid": "51111111-1111-4111-8111-111111111111",
             "default_base_image_uid": "61111111-1111-4111-8111-111111111111",
             "github_org_uid": "41111111-1111-4111-8111-111111111111",
             "env_vars": [{"name": "FOO", "value": "bar"}],

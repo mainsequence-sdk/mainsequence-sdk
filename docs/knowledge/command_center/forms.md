@@ -69,7 +69,7 @@ The important mental model is:
 ```python
 from fastapi import APIRouter
 
-from mainsequence.client.command_center import (
+from mainsequence.client.command_center.workspaces.app_component import (
     EditableFormDefinition,
     FormFieldDefinition,
     FormFieldKind,
@@ -195,7 +195,7 @@ It is also important not to mix this with widget output contracts.
 
 - OpenAPI parameters and request body schemas describe how the widget should collect pre-submit input
 - `EditableFormDefinition` describes a response-side editable form session
-- the models in `mainsequence.client.command_center.data_models` describe the exact output shape expected by some widgets when your API feeds them directly
+- the models in `mainsequence.client.command_center.sdk.data_models` describe the exact output shape expected by some widgets when your API feeds them directly
 
 If your API is powering a widget end-to-end, you may use both:
 

@@ -120,6 +120,9 @@ Keep the platform boundaries explicit:
 
 For ordinary local implementation, work naturally in the current Git branch.
 Do not make ProjectBranch selection a separate user workflow.
+An unregistered local branch may still use the logical Project default
+DataSource for generic MetaTable/session work. It remains invalid for Jobs,
+images, releases, resources, pods, and every other branch-owned platform API.
 
 ## Required Decisions
 

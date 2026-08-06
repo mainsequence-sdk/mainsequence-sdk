@@ -13,8 +13,8 @@ from urllib.parse import urlparse
 
 from mainsequence.defaults import STANDARD_BACKEND_URL
 
-from ..client import MainSequenceClientConfig
-from ..utils import AuthError, AuthLoaders, _default_auth_provider_kind
+from ...client import MainSequenceClientConfig
+from ...utils import AuthError, AuthLoaders, _default_auth_provider_kind
 
 _AUTH_STORAGE_KEY = "command-center.jwt-auth"
 _DEFAULT_PROFILE = "full-data"

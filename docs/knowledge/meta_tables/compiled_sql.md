@@ -169,7 +169,7 @@ POST /orm/api/ts_manager/meta_table/execute-operation/
 
 Compiled SQL execution has two pieces of scope:
 
-- `scope.data_source_uid` selects the `DynamicTableDataSource` execution
+- `scope.data_source_uid` selects the canonical `DataSource` execution
   connection. The SDK resolves the project/session default when callers omit it.
 - `scope.tables` declares MetaTable permissions for the operation.
 
@@ -195,7 +195,7 @@ validity, while the declared MetaTable scope is the platform permission contract
 ## Backend Execution Rules
 
 TS Manager validates and executes the operation through the selected
-`DynamicTableDataSource`.
+`DataSource`.
 
 It checks:
 

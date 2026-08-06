@@ -20,12 +20,7 @@ from .dtype_codec import (
     token_to_pandas_series,
 )
 from .exceptions import raise_for_response
-from .metatables import (
-    DataSource as _DataSource,
-)
-from .metatables import (
-    DynamicTableDataSource as _DynamicTableDataSource,
-)
+from .metatables import DataSource as _DataSource
 from .utils import (
     MAINSEQUENCE_ENDPOINT,
     loaders,
@@ -189,6 +184,8 @@ class Project(LabelableObjectMixin, ShareableObjectMixin, BasePydanticModel, Bas
         examples=["Data Research Pipeline"],
         json_schema_extra={"label": "Project Name"},
     )
+    default_metatables_data_source: _DataSource | None = None
+    default_metatables_data_source_uid: str | None = None
     git_repository_uid: str | None = None
     archived: bool = False
     created_by: str | int | dict[str, Any] | None = Field(
@@ -256,8 +253,8 @@ class Project(LabelableObjectMixin, ShareableObjectMixin, BasePydanticModel, Bas
         cls,
         *,
         project_name: str,
+        default_metatables_data_source_uid: str | _DataSource | dict[str, Any],
         project_type: str = "python",
-        metatables_data_source_uid: str | _DynamicTableDataSource | dict[str, Any] | None = None,
         default_base_image_uid: str | ProjectBaseImage | dict[str, Any] | None = None,
         github_org_uid: str | GithubOrganization | dict[str, Any] | None = None,
         env_vars: dict[str, str] | list[dict[str, str]] | None = None,
@@ -270,7 +267,7 @@ class Project(LabelableObjectMixin, ShareableObjectMixin, BasePydanticModel, Bas
         Sends:
           - project_name
           - project_type
-          - metatables_data_source_uid (required for Python projects)
+          - default_metatables_data_source_uid (required)
           - default_base_image_uid (optional)
           - github_org_uid (optional)
           - env_vars (optional list of {name,value})
@@ -280,11 +277,12 @@ class Project(LabelableObjectMixin, ShareableObjectMixin, BasePydanticModel, Bas
         payload: dict[str, Any] = {"project_name": project_name, "project_type": project_type}
 
         ds_uid = cls._coerce_uid(
-            metatables_data_source_uid,
-            field_name="metatables_data_source_uid",
+            default_metatables_data_source_uid,
+            field_name="default_metatables_data_source_uid",
         )
-        if ds_uid is not None:
-            payload["metatables_data_source_uid"] = ds_uid
+        if ds_uid is None:
+            raise ValueError("default_metatables_data_source_uid is required")
+        payload["default_metatables_data_source_uid"] = ds_uid
 
         img_uid = cls._coerce_uid(default_base_image_uid, field_name="default_base_image_uid")
         if img_uid is not None:
@@ -478,7 +476,7 @@ class ProjectBranch(BasePydanticModel, BaseObjectOrm):
     project_type: str
     primary_language: str
     framework: str
-    metatables_data_source: _DynamicTableDataSource | None = None
+    metatables_data_source: _DataSource | None = None
     metatables_data_source_uid: str | None = None
     default_base_image: ProjectBaseImage
     sdks: list[ProjectSDKObservation] = Field(default_factory=list)

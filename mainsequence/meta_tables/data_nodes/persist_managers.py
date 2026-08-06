@@ -20,7 +20,7 @@ from mainsequence.client.metatables import (
     SQLITE,
     DataNodeUpdate,
     DataNodeUpdateDetails,
-    DynamicTableDataSource,
+    DataSource,
     TimeIndexMetaTable,
     UpdateStatistics,
 )
@@ -401,11 +401,11 @@ class BasePersistManager:
         return storage_metadata
 
     @property
-    def data_source(self) -> DynamicTableDataSource | Any:
+    def data_source(self) -> DataSource:
         data_source = getattr(self.storage_metadata, "data_source", None)
         if data_source not in (None, "") and not isinstance(data_source, int | str):
             return data_source
-        return DynamicTableDataSource.get_by_uid(self.storage_table.get_data_source_uid())
+        return DataSource.get_by_uid(self.storage_table.get_data_source_uid())
 
     def _get_time_indexed_profile(self) -> Any | None:
         return getattr(self.storage_metadata, self.TIME_INDEXED_PROFILE_ATTR, None)
@@ -672,7 +672,7 @@ class BasePersistManager:
         )
 
     def delete_table(self) -> None:
-        class_type = self.data_source.related_resource.class_type
+        class_type = self.data_source.class_type
         if class_type in LOCAL_DATA_SOURCE_CLASS_TYPES:
             from mainsequence.client.data_sources_interfaces import (
                 get_duckdb_interface_class,
@@ -824,7 +824,7 @@ class PersistManager(BasePersistManager):
 
     @classmethod
     def get_from_storage_table(cls, storage_table: Any, *args, **kwargs) -> PersistManager:
-        return TimeScaleLocalPersistManager(storage_table=storage_table, *args, **kwargs)
+        return TimeScaleLocalPersistManager(*args, storage_table=storage_table, **kwargs)
 
 
 class TimeScaleLocalPersistManager(PersistManager):

@@ -7,7 +7,7 @@ import mainsequence.client as msc
 
 def test_create_project():
 
-    ds = msc.DynamicTableDataSource.filter(related_resource__status=msc.DataSource.STATUS_AVAILABLE)[0]
+    ds = msc.DataSource.filter(status=msc.DataSource.STATUS_AVAILABLE)[0]
     img = msc.ProjectBaseImage.filter()[0]
     org = msc.GithubOrganization.filter()[0]
 

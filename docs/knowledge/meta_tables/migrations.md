@@ -51,8 +51,8 @@ Alembic cannot know on its own:
   UID/storage metadata into the provider models
 - keep the Alembic version MetaTable UID and provider MetaTable UIDs in prepared
   state for finalization and reporting
-- request a temporary provider migration credential from the owning
-  `DynamicTableDataSource`
+- request a temporary provider migration credential through the provider's
+  Alembic registry `MetaTable`; the server derives its owning `DataSource`
 - build an Alembic `Config` with `script_location`, `sqlalchemy.url`,
   `version_table`, `version_table_schema`, provider metadata, owner role, and
   CLI output streams
@@ -274,9 +274,9 @@ The migration CLI coordinates with backend endpoints around Alembic:
 - `POST /orm/api/ts_manager/dynamic_table/` creates or resolves time-indexed
   platform-managed MetaTable catalog rows without creating physical application
   tables.
-- `POST /orm/api/ts_manager/dynamic_table_data_source/<uid>/migration-connection/`
-  issues a temporary provider migration credential. The request does not include
-  MetaTable UIDs.
+- `POST /orm/api/ts_manager/meta_table/<meta_table_uid>/migration-connection/`
+  issues a temporary provider migration credential through an authoritative
+  MetaTable. The server derives the canonical DataSource from that table.
 - `POST /orm/api/ts_manager/meta_table/finalize-managed/` activates reserved
   MetaTables after Alembic creates or alters the physical tables.
 

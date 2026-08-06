@@ -15,8 +15,7 @@ import click
 import typer
 
 from mainsequence.client.metatables import (
-    DynamicTableDataSource,
-    DynamicTableDataSourceMigrationConnectionRequest,
+    MetaTableMigrationConnectionRequest,
     TimeIndexMetaTable,
 )
 from mainsequence.meta_tables.migrations import (
@@ -482,13 +481,15 @@ def _prepare_alembic_config(
         f"data_source_uid={prepared.data_source_uid} "
         f"meta_table_count={len(prepared.meta_table_uids)}"
     )
-    _emit_status(f"Loading DynamicTableDataSource uid={prepared.data_source_uid}...")
-    data_source = DynamicTableDataSource.get_by_uid(prepared.data_source_uid)
-    _emit_status(f"Requesting migration connection ttl_seconds={ttl_seconds}...")
-    connection = data_source.issue_migration_connection(
-        DynamicTableDataSourceMigrationConnectionRequest(
+    _emit_status(
+        "Requesting migration connection through Alembic registry MetaTable "
+        f"uid={_meta_table_uid(registry_meta_table)} ttl_seconds={ttl_seconds}..."
+    )
+    connection = registry_meta_table.issue_migration_connection(
+        MetaTableMigrationConnectionRequest(
             package=migration.package,
             migration_namespace=migration.migration_namespace,
+            migration_provider_key=migration.migration_provider_key,
             ttl_seconds=ttl_seconds,
         ),
         timeout=timeout,
@@ -518,14 +519,20 @@ def _build_revision_alembic_config(
     _emit_status("Building local Alembic config for revision...")
     owner_role_name = None
     if requires_database and sqlalchemy_url in (None, ""):
-        data_source_uid = migration._resolve_provider_data_source_uid()
-        _emit_status(f"Loading DynamicTableDataSource uid={data_source_uid} for revision...")
-        data_source = DynamicTableDataSource.get_by_uid(data_source_uid)
-        _emit_status(f"Requesting revision migration connection ttl_seconds={ttl_seconds}...")
-        connection = data_source.issue_migration_connection(
-            DynamicTableDataSourceMigrationConnectionRequest(
+        _emit_status("Ensuring Alembic registry MetaTable for revision...")
+        registry_meta_table = migration.ensure_alembic_registry(
+            timeout=timeout,
+            on_metatable_registered=_emit_metatable_registration,
+        )
+        _emit_status(
+            "Requesting revision migration connection through Alembic registry MetaTable "
+            f"uid={_meta_table_uid(registry_meta_table)} ttl_seconds={ttl_seconds}..."
+        )
+        connection = registry_meta_table.issue_migration_connection(
+            MetaTableMigrationConnectionRequest(
                 package=migration.package,
                 migration_namespace=migration.migration_namespace,
+                migration_provider_key=migration.migration_provider_key,
                 ttl_seconds=ttl_seconds,
             ),
             timeout=timeout,
@@ -804,7 +811,7 @@ def current(
     ),
     verbose: bool = typer.Option(False, "--verbose", "-v"),
     timeout: float | None = typer.Option(None, "--timeout"),
-    ttl_seconds: int = typer.Option(900, "--ttl-seconds", min=1),
+    ttl_seconds: int = typer.Option(900, "--ttl-seconds", min=60, max=3600),
 ) -> None:
     """Read current Alembic revision through a scoped migration credential."""
 
@@ -858,7 +865,8 @@ def revision(
     ttl_seconds: int = typer.Option(
         900,
         "--ttl-seconds",
-        min=1,
+        min=60,
+        max=3600,
         help="TTL for the revision migration connection when --sqlalchemy-url is omitted.",
     ),
     sqlalchemy_url: str | None = typer.Option(
@@ -920,7 +928,7 @@ def upgrade(
         help="Migration provider reference, for example msm.migrations:migration.",
     ),
     timeout: float | None = typer.Option(None, "--timeout"),
-    ttl_seconds: int = typer.Option(900, "--ttl-seconds", min=1),
+    ttl_seconds: int = typer.Option(900, "--ttl-seconds", min=60, max=3600),
     json_output: bool = typer.Option(False, "--json", help="Emit JSON."),
 ) -> None:
     """Run Alembic upgrade directly and finalize reserved MetaTables."""
@@ -972,7 +980,7 @@ def downgrade(
         help="Migration provider reference, for example msm.migrations:migration.",
     ),
     timeout: float | None = typer.Option(None, "--timeout"),
-    ttl_seconds: int = typer.Option(900, "--ttl-seconds", min=1),
+    ttl_seconds: int = typer.Option(900, "--ttl-seconds", min=60, max=3600),
     json_output: bool = typer.Option(False, "--json", help="Emit JSON."),
 ) -> None:
     """Run Alembic downgrade directly and finalize reserved MetaTables."""

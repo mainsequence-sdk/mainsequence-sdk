@@ -5786,14 +5786,14 @@ def fetch_platform_project_skill_catalog() -> PlatformProjectSkillCatalog:
         raise ApiError(f"Platform MCP resource catalog is invalid: {exc}") from exc
 
 
-def list_dynamic_table_data_sources(status: str | None = "AVAILABLE") -> list[dict]:
+def list_data_sources(status: str | None = "AVAILABLE") -> list[dict]:
     """
-    List DynamicTableDataSource rows (optionally filtered by related resource status).
+    List canonical DataSource rows, optionally filtered by status.
     """
     query = ""
     if status:
-        query = "?" + urlencode({"related_resource__status": status})
-    r = authed("GET", f"/orm/api/ts_manager/dynamic_table_data_source/{query}")
+        query = "?" + urlencode({"status": status})
+    r = authed("GET", f"/orm/api/connections/data_source/{query}")
     if not r.ok:
         raise ApiError(f"Data sources fetch failed ({r.status_code}).")
     return _json_results(r)
@@ -5822,8 +5822,8 @@ def list_github_organizations() -> list[dict]:
 def create_project(
     *,
     project_name: str,
+    default_metatables_data_source_uid: str,
     project_type: str = "python",
-    metatables_data_source_uid: str | None = None,
     default_base_image_uid: str | None = None,
     github_org_uid: str | None = None,
     env_vars: dict[str, str] | None = None,
@@ -5837,8 +5837,11 @@ def create_project(
         "project_type": project_type,
     }
 
-    if metatables_data_source_uid not in (None, ""):
-        payload["metatables_data_source_uid"] = str(metatables_data_source_uid)
+    if default_metatables_data_source_uid in (None, ""):
+        raise ValueError("default_metatables_data_source_uid is required")
+    payload["default_metatables_data_source_uid"] = str(
+        default_metatables_data_source_uid
+    )
     if default_base_image_uid not in (None, ""):
         payload["default_base_image_uid"] = str(default_base_image_uid)
     if github_org_uid not in (None, ""):

@@ -641,7 +641,7 @@ def test_meta_table_execute_operation_does_not_paginate_upsert(monkeypatch):
     assert calls[0]["limits"]["offset"] == 0
 
 
-def test_dynamic_table_data_source_issue_migration_connection_posts_scope(monkeypatch):
+def test_meta_table_issue_migration_connection_posts_scope(monkeypatch):
     captured = {}
 
     def fake_make_request(**kwargs):
@@ -661,30 +661,19 @@ def test_dynamic_table_data_source_issue_migration_connection_posts_scope(monkey
 
     monkeypatch.setattr(meta_table_models, "make_request", fake_make_request)
     monkeypatch.setattr(
-        meta_table_models.DynamicTableDataSource,
+        meta_table_models.MetaTable,
         "build_session",
         classmethod(lambda cls: SimpleNamespace(headers={})),
     )
 
-    data_source = meta_table_models.DynamicTableDataSource(
-        uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
-        id=1,
-        related_resource={
-            "uid": "physical-data-source",
-            "data_source_uid": "physical-data-source",
-            "id": 10,
-            "display_name": "project-db",
-            "organization": None,
-            "organization_uid": None,
-            "class_type": "POSTGRES",
-            "status": "AVAILABLE",
-        },
-        related_resource_class_type="POSTGRES",
+    meta_table = meta_table_models.MetaTable.model_construct(
+        uid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
     )
-    result = data_source.issue_migration_connection(
-        meta_table_models.DynamicTableDataSourceMigrationConnectionRequest(
+    result = meta_table.issue_migration_connection(
+        meta_table_models.MetaTableMigrationConnectionRequest(
             package="msm",
             migration_namespace="markets",
+            migration_provider_key="msm:markets",
             ttl_seconds=60,
         )
     )
@@ -694,15 +683,39 @@ def test_dynamic_table_data_source_issue_migration_connection_posts_scope(monkey
     assert result.owner_role_name == "ms_owner"
     assert captured["r_type"] == "POST"
     assert captured["url"].endswith(
-        "/ts_manager/dynamic_table_data_source/"
-        "dddddddd-dddd-4ddd-8ddd-dddddddddddd/migration-connection/"
+        "/ts_manager/meta_table/"
+        "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/migration-connection/"
     )
     assert captured["payload"]["json"] == {
         "purpose": "schema_migration",
         "package": "msm",
         "migration_namespace": "markets",
+        "migration_provider_key": "msm:markets",
         "ttl_seconds": 60,
     }
+
+
+def test_meta_table_deserializes_canonical_data_source():
+    data_source_uid = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+    meta_table = meta_table_models.MetaTable(
+        uid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        data_source={
+            "uid": data_source_uid,
+            "data_source_uid": data_source_uid,
+            "display_name": "project-db",
+            "organization_uid": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+            "class_type": "postgresql",
+            "status": "AVAILABLE",
+            "storage_access_mode": "read_write",
+        },
+        data_source_uid=data_source_uid,
+        management_mode="external_registered",
+        physical_table_name="orders",
+    )
+
+    assert isinstance(meta_table.data_source, meta_table_models.DataSource)
+    assert meta_table.data_source.uid == data_source_uid
+    assert meta_table.data_source.class_type == "postgresql"
 
 
 def test_meta_table_finalize_managed_posts_finalize_payload(monkeypatch):
@@ -844,6 +857,9 @@ def test_removed_alembic_artifact_client_models_are_not_public():
         "AlembicMigrationOperation",
         "AlembicMigrationStatusRequest",
         "AlembicMigrationStatusResponse",
+        "DynamicTableDataSource",
+        "DynamicTableDataSourceMigrationConnection",
+        "DynamicTableDataSourceMigrationConnectionRequest",
     ]
 
     for name in removed_names:
@@ -853,10 +869,14 @@ def test_removed_alembic_artifact_client_models_are_not_public():
     assert not hasattr(meta_table_models.MetaTable, "get_migration_status")
 
 
-def test_migration_connection_request_validates_positive_ttl():
+def test_migration_connection_request_validates_server_ttl_bounds():
     with pytest.raises(ValidationError):
-        meta_table_models.DynamicTableDataSourceMigrationConnectionRequest(
-            ttl_seconds=0,
+        meta_table_models.MetaTableMigrationConnectionRequest(
+            ttl_seconds=59,
+        )
+    with pytest.raises(ValidationError):
+        meta_table_models.MetaTableMigrationConnectionRequest(
+            ttl_seconds=3601,
         )
 
 

@@ -12,7 +12,7 @@ from pydantic import ValidationError
 import mainsequence.client.metatables as models_metatables
 import mainsequence.client.models_foundry as models_foundry
 import mainsequence.meta_tables.data_nodes.data_nodes as data_nodes_mod
-from mainsequence.client.command_center import Workspace
+from mainsequence.client.command_center.workspaces.models import Workspace
 from mainsequence.client.metatables import (
     DataNodeUpdate,
     DataNodeUpdateDetails,
@@ -79,7 +79,11 @@ def test_data_node_storage_inherits_meta_table_but_keeps_dynamic_table_endpoint(
         storage_hash="prices_storage_hash",
         management_mode="platform_managed",
         physical_table_name="prices_storage_hash",
-        data_source=1,
+        data_source={
+            "uid": "data-source-uid",
+            "data_source_uid": "data-source-uid",
+            "class_type": "timescale_db",
+        },
         source_class_name="PricesNode",
         creation_date="2026-04-13T00:00:00Z",
     )
@@ -101,13 +105,13 @@ def test_metatable_update_models_are_not_exported_from_models_foundry():
         "Scheduler",
         "UpdateStatistics",
         "DataSource",
-        "DynamicTableDataSource",
         "SessionDataSource",
     ]
 
     for name in moved_names:
         assert hasattr(models_metatables, name)
         assert not hasattr(models_foundry, name)
+    assert not hasattr(models_metatables, "DynamicTableDataSource")
 
 
 def test_data_node_update_accepts_local_time_serie_update_details_in_run_configuration():
@@ -225,9 +229,7 @@ def test_persist_manager_does_not_pass_storage_contract_schema_override_to_updat
     storage_metadata = TimeIndexMetaTable.model_construct(
         uid="data-node-storage-44",
         data_source_uid="data-source-uid",
-        data_source=SimpleNamespace(
-            related_resource=SimpleNamespace(class_type="postgres"),
-        ),
+        data_source=SimpleNamespace(class_type="postgresql"),
         time_indexed_profile=models_metatables.TimeIndexedProfile(
             related_table_uid="data-node-storage-44",
             time_index_name="time_index",
@@ -274,7 +276,11 @@ def test_data_node_storage_accepts_namespace():
         management_mode="platform_managed",
         physical_table_name="prices_physical_table",
         namespace="pytest_case_123",
-        data_source=1,
+        data_source={
+            "uid": "data-source-uid",
+            "data_source_uid": "data-source-uid",
+            "class_type": "timescale_db",
+        },
         source_class_name="PricesNode",
         creation_date="2026-04-13T00:00:00Z",
     )
@@ -300,7 +306,11 @@ def test_data_node_storage_rejects_removed_backend_fields(removed_field):
         "management_mode": "platform_managed",
         "physical_table_name": "hash",
         "source_class_name": "ExampleNode",
-        "data_source": 1,
+        "data_source": {
+            "uid": "data-source-uid",
+            "data_source_uid": "data-source-uid",
+            "class_type": "timescale_db",
+        },
         "creation_date": "2026-04-13T00:00:00Z",
         removed_field: "removed",
     }
@@ -724,7 +734,6 @@ def test_label_fields_exist_on_workspace_project_and_storage_models():
     project = Project(
         uid="project-uid-1",
         project_name="Project",
-        is_initialized=True,
         labels=["research"],
     )
     data_node_storage = TimeIndexMetaTable(
@@ -732,7 +741,11 @@ def test_label_fields_exist_on_workspace_project_and_storage_models():
         storage_hash="prices_storage_hash",
         management_mode="platform_managed",
         physical_table_name="prices_storage_hash",
-        data_source=1,
+        data_source={
+            "uid": "data-source-uid",
+            "data_source_uid": "data-source-uid",
+            "class_type": "timescale_db",
+        },
         source_class_name="PricesNode",
         creation_date="2026-04-13T00:00:00Z",
         labels=["vendor-data"],
@@ -924,8 +937,7 @@ def test_data_node_update_output_validates_against_storage_table_contract():
             columns=[{"name": "value", "data_type": "float64"}],
             data_source={
                 "uid": "data-source-uid",
-                "related_resource_class_type": "timescale",
-                "related_resource": {"class_type": "timescale"},
+                "class_type": "timescale_db",
             },
         )
     )

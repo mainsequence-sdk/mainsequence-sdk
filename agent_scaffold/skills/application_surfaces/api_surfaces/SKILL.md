@@ -272,7 +272,7 @@ Do not handcraft loose JSON and hope the widget accepts it.
 For generic Command Center tabular consumers, use:
 
 ```python
-from mainsequence.client.command_center.data_models import TabularFrameResponse
+from mainsequence.client.command_center.sdk.data_models import TabularFrameResponse
 ```
 
 Declare `response_model=TabularFrameResponse` when the route returns the full

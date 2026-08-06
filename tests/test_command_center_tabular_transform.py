@@ -1,15 +1,22 @@
 import pytest
 
-from mainsequence.client.command_center import (
-    CORE_TABULAR_FRAME_CONTRACT,
-    CORE_TABULAR_TRANSFORM_WIDGET_ID,
-    TABULAR_TRANSFORM_LIVE_UPDATES_INPUT_ID,
-    TABULAR_TRANSFORM_UPDATES_OUTPUT_ID,
-    TableLiveMergeKeyMapping,
+from mainsequence.client.command_center.sdk.data_models import CORE_TABULAR_FRAME_CONTRACT
+from mainsequence.client.command_center.workspaces.widgets.bindings import (
     bind_tabular_transform_live_updates,
-    dump_tabular_transform_props,
+    bind_tabular_transform_seed,
+)
+from mainsequence.client.command_center.workspaces.widgets.table import (
+    TableLiveMergeKeyMapping,
     formula_difference,
     formula_percent_change,
+)
+from mainsequence.client.command_center.workspaces.widgets.tabular_transform import (
+    CORE_TABULAR_TRANSFORM_WIDGET_ID,
+    TABULAR_TRANSFORM_DATASET_OUTPUT_ID,
+    TABULAR_TRANSFORM_LIVE_UPDATES_INPUT_ID,
+    TABULAR_TRANSFORM_SEED_INPUT_ID,
+    TABULAR_TRANSFORM_UPDATES_OUTPUT_ID,
+    dump_tabular_transform_props,
     make_aggregate_transform,
     make_filter_transform,
     make_latest_row_transform,
@@ -172,6 +179,19 @@ def test_live_update_binding_targets_transform_live_input():
         "source": {
             "widgetUid": "source-widget",
             "output": TABULAR_TRANSFORM_UPDATES_OUTPUT_ID,
+            "contract": CORE_TABULAR_FRAME_CONTRACT,
+        },
+    }
+
+
+def test_seed_binding_targets_transform_seed_input():
+    binding = bind_tabular_transform_seed(source_widget_uid="source-widget")
+
+    assert binding == {
+        "input": TABULAR_TRANSFORM_SEED_INPUT_ID,
+        "source": {
+            "widgetUid": "source-widget",
+            "output": TABULAR_TRANSFORM_DATASET_OUTPUT_ID,
             "contract": CORE_TABULAR_FRAME_CONTRACT,
         },
     }

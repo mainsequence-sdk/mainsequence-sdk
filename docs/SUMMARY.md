@@ -17,6 +17,7 @@
     - [Data Nodes](knowledge/data_nodes.md)
     - Command Center
         - [Overview](knowledge/command_center/index.md)
+        - [Resource SDK For FastAPI](knowledge/command_center/resource_sdk.md)
         - [Workspaces](knowledge/command_center/workspaces.md)
         - [Connections](knowledge/command_center/connections.md)
         - [Forms](knowledge/command_center/forms.md)

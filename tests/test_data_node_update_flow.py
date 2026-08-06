@@ -511,7 +511,10 @@ def test_upsert_data_into_table_computes_canonical_stats(monkeypatch):
 
     result = update.upsert_data_into_table(
         df,
-        data_source=SimpleNamespace(related_resource=FakeResource()),
+        data_source=SimpleNamespace(
+            class_type="postgresql",
+            insert_data_into_table=FakeResource().insert_data_into_table,
+        ),
         overwrite=True,
     )
 
@@ -577,7 +580,10 @@ def test_upsert_data_into_table_uses_declared_record_dtype_for_payload_columns()
 
     update.upsert_data_into_table(
         df,
-        data_source=SimpleNamespace(related_resource=FakeResource()),
+        data_source=SimpleNamespace(
+            class_type="postgresql",
+            insert_data_into_table=FakeResource().insert_data_into_table,
+        ),
         overwrite=True,
         records=[
             {
@@ -599,40 +605,6 @@ def test_upsert_data_into_table_uses_declared_record_dtype_for_payload_columns()
         "time_index": "timestamp with time zone",
         "venue_specific_properties": "jsonb",
         "venue_event_time": "timestamp with time zone",
-    }
-
-
-def test_dynamic_table_data_source_delegates_direct_class_type_reads():
-    calls = {}
-    expected = pd.DataFrame({"value": [1.0]})
-
-    class FakeResource:
-        class_type = "direct"
-
-        def get_data_by_time_index(self, *args, **kwargs):
-            calls["args"] = args
-            calls["kwargs"] = kwargs
-            return expected
-
-    data_source = models_metatables.DynamicTableDataSource.model_construct(
-        related_resource=FakeResource(),
-        related_resource_class_type="direct",
-    )
-    update = object()
-    start_date = _dt(0)
-
-    result = data_source.get_data_by_time_index(
-        data_node_update=update,
-        start_date=start_date,
-        columns=["value"],
-    )
-
-    assert result is expected
-    assert calls["args"] == ()
-    assert calls["kwargs"] == {
-        "data_node_update": update,
-        "start_date": start_date,
-        "columns": ["value"],
     }
 
 
@@ -664,7 +636,7 @@ def test_upsert_data_into_table_rejects_full_index_duplicates():
     with pytest.raises(Exception, match="Duplicates found"):
         update.upsert_data_into_table(
             df,
-            data_source=SimpleNamespace(related_resource=SimpleNamespace()),
+            data_source=SimpleNamespace(class_type="postgresql"),
             overwrite=True,
         )
 
@@ -685,6 +657,6 @@ def test_upsert_data_into_table_requires_bound_data_node_storage_contract():
     with pytest.raises(ValueError, match="bound TimeIndexMetaTable"):
         update.upsert_data_into_table(
             df,
-            data_source=SimpleNamespace(related_resource=SimpleNamespace()),
+            data_source=SimpleNamespace(class_type="postgresql"),
             overwrite=True,
         )

@@ -6,7 +6,7 @@ Command Center connection instances are configured backend objects represented i
 Most connection types can use the generic SDK methods:
 
 ```python
-from mainsequence.client.command_center import ConnectionInstance
+from mainsequence.client.command_center.connections import ConnectionInstance
 
 connection = ConnectionInstance.get(uid="warehouse-primary")
 connections = ConnectionInstance.filter(type_id="postgresql.database")
@@ -21,7 +21,7 @@ Command Center runtime.
 Use these SDK symbols for Adapter From API connections:
 
 ```python
-from mainsequence.client.command_center import (
+from mainsequence.client.command_center.connections import (
     AdapterFromApiConnectionPublicConfig,
     ConnectionInstance,
     CONNECTION_TYPE_ADAPTER_FROM_API,
@@ -36,15 +36,15 @@ CONNECTION_TYPE_ADAPTER_FROM_API == "command_center.adapter_from_api"
 
 Related SDK helper modules:
 
-- `mainsequence.client.command_center.contracts.adapter_from_api` defines the well-known provider
+- `mainsequence.client.command_center.sdk.contracts.adapter_from_api` defines the well-known provider
   contract models, operation models, config variable models, and secret variable models.
-- `mainsequence.client.command_center.providers.adapter_from_api` provides convenience builders such
+- `mainsequence.client.command_center.sdk.providers.adapter_from_api` provides convenience builders such
   as `make_health_operation`, `make_query_operation`, and `make_provider_contract`.
-- `mainsequence.client.command_center.contracts.response_mapping` provides
+- `mainsequence.client.command_center.sdk.contracts.response_mapping` provides
   `make_tabular_response_mapping` for optional provider-native response mapping metadata.
-- `mainsequence.client.command_center.contracts.tabular` provides `make_tabular_frame` and related
+- `mainsequence.client.command_center.sdk.contracts.tabular` provides `make_tabular_frame` and related
   helpers for building canonical `core.tabular_frame@v1` responses.
-- `mainsequence.client.command_center.widgets.connection_query` provides
+- `mainsequence.client.command_center.workspaces.widgets.connection_query` provides
   `make_connection_query_payload` for source widgets that query a connection instance.
 
 ## Direct Mode Public Config
@@ -53,7 +53,7 @@ Direct mode is used when the browser runtime owns debug API calls. The SDK valid
 public config shape the backend accepts.
 
 ```python
-from mainsequence.client.command_center import AdapterFromApiConnectionPublicConfig
+from mainsequence.client.command_center.connections import AdapterFromApiConnectionPublicConfig
 
 public_config = AdapterFromApiConnectionPublicConfig.direct(
     debug_api_base_url="http://127.0.0.1:8021",
@@ -113,7 +113,7 @@ and the SDK model rejects it before the request reaches the backend.
 Use `ConnectionInstance.create_adapter_from_api_direct(...)` for the common direct-mode connection:
 
 ```python
-from mainsequence.client.command_center import ConnectionInstance
+from mainsequence.client.command_center.connections import ConnectionInstance
 
 connection = ConnectionInstance.create_adapter_from_api_direct(
     name="Markets debug API",

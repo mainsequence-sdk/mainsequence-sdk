@@ -346,7 +346,11 @@ def test_data_node_storage_delete_after_date_posts_tail_delete(monkeypatch):
         storage_hash="prices_hash",
         management_mode="platform_managed",
         physical_table_name="prices_hash",
-        data_source=1,
+        data_source={
+            "uid": "data-source-uid",
+            "data_source_uid": "data-source-uid",
+            "class_type": "timescale_db",
+        },
         source_class_name="PricesNode",
         creation_date="2026-04-01T00:00:00Z",
         time_indexed_profile=models_metatables.TimeIndexedProfile(
@@ -417,7 +421,11 @@ def test_data_node_storage_delete_after_date_accepts_index_coordinates(monkeypat
         storage_hash="prices_hash",
         management_mode="platform_managed",
         physical_table_name="prices_hash",
-        data_source=1,
+        data_source={
+            "uid": "data-source-uid",
+            "data_source_uid": "data-source-uid",
+            "class_type": "timescale_db",
+        },
         source_class_name="PricesNode",
         creation_date="2026-04-01T00:00:00Z",
         time_indexed_profile=models_metatables.TimeIndexedProfile(
@@ -493,7 +501,11 @@ def test_data_node_storage_run_query_posts_plain_text_sql(monkeypatch):
         storage_hash="prices_hash",
         management_mode="platform_managed",
         physical_table_name="prices_hash",
-        data_source=1,
+        data_source={
+            "uid": "data-source-uid",
+            "data_source_uid": "data-source-uid",
+            "class_type": "timescale_db",
+        },
         source_class_name="PricesNode",
         creation_date="2026-04-01T00:00:00Z",
     )
@@ -610,7 +622,11 @@ def test_data_node_storage_run_query_returns_structured_error_envelope(monkeypat
         storage_hash="prices_hash",
         management_mode="platform_managed",
         physical_table_name="prices_hash",
-        data_source=1,
+        data_source={
+            "uid": "data-source-uid",
+            "data_source_uid": "data-source-uid",
+            "class_type": "timescale_db",
+        },
         source_class_name="PricesNode",
         creation_date="2026-04-01T00:00:00Z",
     )

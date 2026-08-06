@@ -10,7 +10,7 @@ from typing import Any, ClassVar, Literal
 
 from mainsequence.client.metatables import (
     AlembicManagementRequest,
-    DynamicTableDataSource,
+    DataSource,
     ManagedMetaTableFinalizeRequest,
     ManagedMetaTableFinalizeResponse,
     ManagedMetaTableFinalizeTableResult,
@@ -181,7 +181,7 @@ class AlembicVersionMetaTable:
     def build_registration_request(
         cls,
         *,
-        data_source: DynamicTableDataSource | None = None,
+        data_source: DataSource | None = None,
         data_source_uid: str | None = None,
         identifier: str | None = None,
         namespace: str | None = None,
@@ -259,7 +259,7 @@ class AlembicVersionMetaTable:
     def register(
         cls,
         *,
-        data_source: DynamicTableDataSource | None = None,
+        data_source: DataSource | None = None,
         data_source_uid: str | None = None,
         timeout: int | float | tuple[float, float] | None = None,
         on_registered: Callable[[type[Any], Any], Any] | None = None,
@@ -413,7 +413,7 @@ class AlembicMetaTableMigration:
     def register_alembic_registry(
         self,
         *,
-        data_source: DynamicTableDataSource | None = None,
+        data_source: DataSource | None = None,
         data_source_uid: str | None = None,
         timeout: int | float | tuple[float, float] | None = None,
         on_metatable_registered: Callable[[type[Any], Any], Any] | None = None,
@@ -428,7 +428,7 @@ class AlembicMetaTableMigration:
     def ensure_alembic_registry(
         self,
         *,
-        data_source: DynamicTableDataSource | None = None,
+        data_source: DataSource | None = None,
         data_source_uid: str | None = None,
         timeout: int | float | tuple[float, float] | None = None,
         on_metatable_registered: Callable[[type[Any], Any], Any] | None = None,

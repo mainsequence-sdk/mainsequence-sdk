@@ -14,7 +14,7 @@ resolved table metadata and compiled query artifacts into TS Manager contracts.
 A `MetaTable` record binds these things together:
 
 - a stable platform `uid`
-- a registered TS Manager `DynamicTableDataSource`
+- a canonical physical `DataSource`
 - a logical `identifier` and `namespace`
 - a physical table name
 - a neutral table contract with columns and table identity
@@ -108,7 +108,7 @@ database directly or should not own DDL credentials.
 
 The practical benefits are:
 
-- TS Manager uses the configured `DynamicTableDataSource` connection, so client
+- TS Manager uses the configured `DataSource` connection, so client
   code does not need direct database credentials.
 - Physical table names are explicit SQLAlchemy/Alembic names, while platform
   references use MetaTable UIDs and logical identifiers.

@@ -8,8 +8,9 @@ from urllib.parse import quote
 
 from pydantic import ConfigDict, Field
 
-from ..base import BaseObjectOrm, BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin
-from ..exceptions import ApiError
+from ...base import BaseObjectOrm, BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin
+from ...exceptions import ApiError
+from .._base import CommandCenterBaseObjectOrm
 
 RegisteredWidgetKind = Literal["kpi", "chart", "table", "feed", "custom"]
 
@@ -25,30 +26,6 @@ def _normalize_uid_csv(value: Any, *, field_name: str) -> str:
 class WorkspaceLayoutKind(str, Enum):
     CUSTOM = "custom"
     AUTO_GRID = "auto-grid"
-
-
-class CommandCenterBaseObjectOrm(BaseObjectOrm):
-    COMMAND_CENTER_PREFIX: ClassVar[str] = "api/v1/command_center"
-    ENDPOINT: ClassVar[str]
-
-    @classmethod
-    def _command_center_root(cls) -> str:
-        root = str(getattr(cls, "ROOT_URL", BaseObjectOrm.ROOT_URL)).rstrip("/")
-        if root.endswith("/orm/api"):
-            root = root[: -len("/orm/api")]
-        return root
-
-    @classmethod
-    def get_object_url(cls, custom_endpoint_name=None):
-        endpoint = custom_endpoint_name or getattr(cls, "ENDPOINT", None)
-        if not endpoint:
-            raise ValueError(f"{cls.__name__} must define ENDPOINT.")
-
-        return (
-            f"{cls._command_center_root().rstrip('/')}/"
-            f"{cls.COMMAND_CENTER_PREFIX.strip('/')}/"
-            f"{endpoint.strip('/')}"
-        )
 
 
 class WorkspaceType(str, Enum):
@@ -196,8 +173,8 @@ class Workspace(
         expected_statuses: tuple[int, ...] = (200,),
         empty_response: Any = None,
     ) -> Any:
-        from ..exceptions import raise_for_response
-        from ..utils import make_request
+        from ...exceptions import raise_for_response
+        from ...utils import make_request
 
         request_payload = payload or {}
         url = self._get_widget_detail_url(widget_instance_id)

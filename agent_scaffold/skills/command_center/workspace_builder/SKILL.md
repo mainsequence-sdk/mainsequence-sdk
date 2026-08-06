@@ -241,14 +241,14 @@ Use this source order strictly:
    - `mainsequence cc registered_widget_type detail <WIDGET_ID> --json`
    - this is the first contract source
 2. SDK client models second
-   - `mainsequence/client/command_center/workspace.py`
-   - `mainsequence/client/command_center/data_models.py`
-   - `mainsequence/client/command_center/app_component.py` when relevant
-   - `mainsequence/client/command_center/widgets/connection_query.py` for connection-query source
+   - `mainsequence/client/command_center/workspaces/models.py`
+   - `mainsequence/client/command_center/sdk/data_models.py`
+   - `mainsequence/client/command_center/workspaces/app_component.py` when relevant
+   - `mainsequence/client/command_center/workspaces/widgets/connection_query.py` for connection-query source
      payloads
-   - `mainsequence/client/command_center/widgets/bindings.py` for widget input/output bindings
-   - `mainsequence/client/command_center/widgets/table.py` for table/pro-table props
-   - `mainsequence/client/command_center/widgets/tabular_transform.py` for tabular transform props
+   - `mainsequence/client/command_center/workspaces/widgets/bindings.py` for widget input/output bindings
+   - `mainsequence/client/command_center/workspaces/widgets/table.py` for table/pro-table props
+   - `mainsequence/client/command_center/workspaces/widgets/tabular_transform.py` for tabular transform props
    - `mainsequence/client/command_center/workspaces/documents.py` and
      `mainsequence/client/command_center/workspaces/mounted_widgets.py` for workspace and mounted
      widget payload helpers
@@ -498,7 +498,7 @@ Connection source rules:
   ad hoc records, normalize through an Adapter from API connection first, then use an explicit
   transform when analytical reshaping is still required
 - when a project API or AppComponent legitimately returns a full canonical frame, ground the
-  contract against `mainsequence.client.command_center.data_models.TabularFrameResponse`
+  contract against `mainsequence.client.command_center.sdk.data_models.TabularFrameResponse`
 - source-specific runtime details belong in `source.context`, not top-level widget payload fields
 
 ### 3.2 Historical and incremental lanes

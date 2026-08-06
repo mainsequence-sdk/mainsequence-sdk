@@ -195,7 +195,9 @@ def test_sqlite_data_source_dispatch_uses_local_interface(monkeypatch):
     monkeypatch.setattr(models_metatables, "_sqlite_interface", lambda: FakeSQLiteInterface())
 
     data_source = models_metatables.DataSource.model_construct(class_type=models_metatables.SQLITE)
-    update = SimpleNamespace(data_node_storage=SimpleNamespace(storage_hash="storage-hash"))
+    update = SimpleNamespace(
+        data_node_storage=SimpleNamespace(physical_table_name="storage-hash")
+    )
     df = pd.DataFrame(
         {
             "time_index": [_dt(0)],
@@ -261,7 +263,7 @@ def test_sqlite_read_dispatch_uses_adjusted_constrain_read_outputs(monkeypatch):
     update = SimpleNamespace(
         update_hash="update-hash",
         data_node_storage=SimpleNamespace(
-            storage_hash="storage-hash",
+            physical_table_name="storage-hash",
             time_indexed_profile=stc,
         ),
     )

@@ -10,7 +10,6 @@ from sqlalchemy.orm import Mapped
 import mainsequence.meta_tables.sqlalchemy_contracts as sqlalchemy_contracts
 from mainsequence.client.metatables import (
     DataSource,
-    DynamicTableDataSource,
     MetaTable,
     MetaTableRegistrationRequest,
     TimeIndexMetaTable,
@@ -34,13 +33,10 @@ from mainsequence.meta_tables.data_nodes.persist_managers import ensure_register
 def _clear_metatable_registration_registry(monkeypatch):
     monkeypatch.setattr(
         "mainsequence.client.metatables.SessionDataSource.data_source",
-        SimpleNamespace(
+        DataSource.model_construct(
             uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
-            related_resource=SimpleNamespace(
-                uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
-                data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
-                status="AVAILABLE",
-            ),
+            data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+            status="AVAILABLE",
         ),
     )
     sqlalchemy_contracts._METATABLE_REGISTRATION_REGISTRY.clear()
@@ -203,18 +199,13 @@ def _time_index_model_class(
     )
 
 
-def _dynamic_table_data_source(uid: str = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"):
-    physical = DataSource.model_construct(
-        uid="eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
-        data_source_uid="eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+def _data_source(uid: str = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"):
+    return DataSource.model_construct(
+        uid=uid,
+        data_source_uid=uid,
         display_name="Local DuckDB",
         class_type="DUCK_DB",
         status="AVAILABLE",
-    )
-    return DynamicTableDataSource.model_construct(
-        uid=uid,
-        related_resource=physical,
-        related_resource_class_type="DUCK_DB",
     )
 
 
@@ -321,7 +312,7 @@ def test_platform_managed_registration_request_from_sqlalchemy_metadata():
     assert request.table_contract.columns[1].description == "Display name"
 
 
-def test_registration_request_accepts_dynamic_table_data_source():
+def test_registration_request_accepts_data_source():
     table_name = "example_assets__account"
     account_table = FakeTable(
         table_name,
@@ -331,13 +322,13 @@ def test_registration_request_accepts_dynamic_table_data_source():
 
     request = platform_managed_registration_request_from_sqlalchemy_model(
         Account,
-        data_source=_dynamic_table_data_source(),
+        data_source=_data_source(),
     )
 
     assert request.data_source_uid == "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
 
 
-def test_registration_request_rejects_non_dynamic_table_data_source():
+def test_registration_request_rejects_non_data_source():
     table_name = "example_assets__account"
     account_table = FakeTable(
         table_name,
@@ -345,7 +336,7 @@ def test_registration_request_rejects_non_dynamic_table_data_source():
     )
     Account = _model_class("Account", account_table)
 
-    with pytest.raises(TypeError, match="DynamicTableDataSource"):
+    with pytest.raises(TypeError, match="DataSource"):
         platform_managed_registration_request_from_sqlalchemy_model(
             Account,
             data_source=SimpleNamespace(uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd"),
@@ -838,9 +829,9 @@ def test_platform_managed_metatable_build_request_uses_session_data_source(monke
     monkeypatch.setattr(
         models_metatables.SessionDataSource,
         "data_source",
-        SimpleNamespace(
+        DataSource.model_construct(
             uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
-            related_resource=SimpleNamespace(status="AVAILABLE"),
+            status="AVAILABLE",
         ),
     )
 
@@ -853,7 +844,7 @@ def test_platform_managed_metatable_build_request_uses_session_data_source(monke
     assert _configured_storage_hash(Account) != table.name
 
 
-def test_platform_managed_metatable_does_not_use_physical_data_source_uid(monkeypatch):
+def test_platform_managed_metatable_requires_canonical_data_source_uid(monkeypatch):
     import mainsequence.client.metatables as models_metatables
 
     table = FakeTable(
@@ -865,13 +856,10 @@ def test_platform_managed_metatable_does_not_use_physical_data_source_uid(monkey
     monkeypatch.setattr(
         models_metatables.SessionDataSource,
         "data_source",
-        SimpleNamespace(
+        DataSource.model_construct(
             uid=None,
-            related_resource=SimpleNamespace(
-                uid="eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
-                data_source_uid="eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
-                status="AVAILABLE",
-            ),
+            data_source_uid=None,
+            status="AVAILABLE",
         ),
     )
 

@@ -3,13 +3,15 @@ from pydantic import ValidationError
 
 import mainsequence.client.base as base_mod
 import mainsequence.client.utils as client_utils
-from mainsequence.client.command_center import (
+from mainsequence.client.command_center.connections import (
     CONNECTION_TYPE_ADAPTER_FROM_API,
     AdapterFromApiConnectionPublicConfig,
     ConnectionAccessMode,
     ConnectionInstance,
     ConnectionInstanceStatus,
     ConnectionType,
+)
+from mainsequence.client.command_center.workspaces.models import (
     RegisteredWidgetType,
     Workspace,
     WorkspaceLayoutKind,

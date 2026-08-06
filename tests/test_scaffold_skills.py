@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import re
+from pathlib import Path
+
 import pytest
 
 from mainsequence.scaffold_skills import (
@@ -8,11 +11,27 @@ from mainsequence.scaffold_skills import (
     normalize_scaffold_skill_namespace,
 )
 
+_LEGACY_COMMAND_CENTER_IMPORT = re.compile(
+    r"mainsequence(?:\.client\.command_center\.|/client/command_center/)"
+    r"(?:app_component|contracts|data_models|providers|widgets|workspace|workspace_snapshot)\b"
+)
+
 
 def _write_skill(skills_root, name: str, content: str = "skill") -> None:
     skill_dir = skills_root / name
     skill_dir.mkdir(parents=True)
     (skill_dir / "SKILL.md").write_text(content, encoding="utf-8")
+
+
+def test_shipped_skills_use_only_canonical_command_center_packages():
+    skills_root = Path(__file__).resolve().parents[1] / "agent_scaffold" / "skills"
+    violations = []
+    for skill_path in skills_root.rglob("SKILL.md"):
+        content = skill_path.read_text(encoding="utf-8")
+        if _LEGACY_COMMAND_CENTER_IMPORT.search(content):
+            violations.append(skill_path.relative_to(skills_root).as_posix())
+
+    assert violations == []
 
 
 def test_copy_scaffold_skills_copies_namespace_and_writes_pin_sentinel(tmp_path):

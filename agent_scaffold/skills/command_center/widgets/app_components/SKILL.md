@@ -72,7 +72,7 @@ Streamlit dashboard implementation is app-owned project code, not an AppComponen
    - `mainsequence cc registered_widget_type detail <WIDGET_ID> --json`
 2. `docs/knowledge/command_center/forms.md`
 3. `docs/knowledge/command_center/widget_data_contracts.md`
-4. `mainsequence/client/command_center/app_component.py`
+4. `mainsequence/client/command_center/workspaces/app_component.py`
 5. `.agents/skills/mainsequence/command_center/widgets/tables/SKILL.md` when AppComponent output will feed
    a table/pro-table widget or needs `core.tabular_frame@v1` plus table visual metadata
 6. `.agents/skills/mainsequence/command_center/adapter_from_api/SKILL.md` when API-shaped data must become a connection-backed tabular dataset
@@ -111,8 +111,8 @@ Use this source order strictly:
    - `mainsequence cc registered_widget_type detail <WIDGET_ID> --json`
    - this is the first contract source
 2. SDK client models second
-   - `mainsequence/client/command_center/app_component.py`
-   - `mainsequence/client/command_center/data_models.py`
+   - `mainsequence/client/command_center/workspaces/app_component.py`
+   - `mainsequence/client/command_center/sdk/data_models.py`
    - use these before any broader repository exploration
 3. Repository docs/models third
    - local docs, examples, payload builders, and typed models
@@ -122,8 +122,8 @@ If registry detail is not sufficient, and only after checking the SDK client mod
 
 - `docs/knowledge/command_center/forms.md`
 - `docs/knowledge/command_center/widget_data_contracts.md`
-- `mainsequence/client/command_center/app_component.py`
-- `mainsequence/client/command_center/data_models.py`
+- `mainsequence/client/command_center/workspaces/app_component.py`
+- `mainsequence/client/command_center/sdk/data_models.py`
 
 If the request contract, response UI contract, or widget-facing output contract is unclear, stop before building the AppComponent contract.
 
@@ -236,7 +236,7 @@ Keep the boundary clear:
 - operation-level `select2` metadata can specialize supported request-side generated fields
 - `EditableFormDefinition` and related form objects describe a response-side editable form session
 - `NotificationDefinition` describes response-side banner feedback
-- `mainsequence.client.command_center.data_models.TabularFrameResponse` is the SDK canonical model for `core.tabular_frame@v1`
+- `mainsequence.client.command_center.sdk.data_models.TabularFrameResponse` is the SDK canonical model for `core.tabular_frame@v1`
 - other SDK widget data models describe specialized widget-facing API responses when those exist
 
 If the AppComponent both collects input and returns widget-facing data, validate both sides explicitly.
@@ -250,7 +250,7 @@ Do not return loose dictionaries for a widget boundary when an exact contract mo
 For generic tabular consumers, the exact SDK model is:
 
 ```python
-from mainsequence.client.command_center.data_models import TabularFrameResponse
+from mainsequence.client.command_center.sdk.data_models import TabularFrameResponse
 ```
 
 Use `TabularFrameResponse` when an AppComponent operation is explicitly producing a full canonical

@@ -13,7 +13,7 @@ import re
 import subprocess
 import time
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from threading import RLock
 from typing import Any, ClassVar, Literal, TypedDict
 from uuid import UUID
@@ -531,7 +531,7 @@ class MetaTableOperationScope(BasePydanticModel):
         min_length=1,
         validation_alias=AliasChoices("data_source_uid", "dataSourceUid"),
         description=(
-            "Public UID of the DynamicTableDataSource that owns the compiled "
+            "Public UID of the DataSource that owns the compiled "
             "SQL execution connection. If omitted, the SDK resolves the "
             "configured project/session default data source. Scoped MetaTables "
             "are the permission contract, not the source of execution routing."
@@ -595,7 +595,7 @@ class MetaTableCompiledSQLOperation(BasePydanticModel):
 class MetaTableRequestFields(BasePydanticModel):
     data_source_uid: str = Field(
         ...,
-        description="Public UID of the DynamicTableDataSource that owns this MetaTable.",
+        description="Public UID of the DataSource that owns this MetaTable.",
     )
     physical_schema: str | None = Field(
         None,
@@ -723,14 +723,15 @@ class SchemaManagementRequest(BasePydanticModel):
     )
 
 
-class DynamicTableDataSourceMigrationConnectionRequest(BasePydanticModel):
+class MetaTableMigrationConnectionRequest(BasePydanticModel):
     purpose: Literal["schema_migration"] = "schema_migration"
     package: str = ""
     migration_namespace: str = ""
-    ttl_seconds: int = Field(default=900, ge=1)
+    migration_provider_key: str = ""
+    ttl_seconds: int = Field(default=900, ge=60, le=3600)
 
 
-class DynamicTableDataSourceMigrationConnection(BasePydanticModel):
+class MetaTableMigrationConnection(BasePydanticModel):
     ok: bool
     data_source_uid: str
     dialect: str
@@ -873,7 +874,7 @@ class DataSource(BasePydanticModel, BaseObjectOrm):
     )
     data_source_uid: str | None = Field(
         None,
-        description="Compatibility alias for the public data source uid.",
+        description="Canonical public data source uid, equal to uid.",
     )
     id: int | None = Field(None, description="The unique identifier of the Local Disk Source Lake")
     display_name: str | None = None
@@ -1108,159 +1109,6 @@ class DataSource(BasePydanticModel, BaseObjectOrm):
             raise NotImplementedError
 
 
-class DynamicTableDataSource(BasePydanticModel, BaseObjectOrm):
-    model_config = ConfigDict(extra="allow", use_enum_values=True)
-
-    uid: str | None = Field(
-        None,
-        description="Public uid of the dynamic table data source.",
-    )
-    id: int | None = Field(
-        None,
-        description="Backend numeric row identifier of the time-indexed data source.",
-    )
-    related_resource: DataSource | None = None
-    related_resource_class_type: str | None = None
-
-    def model_dump_json(self, **json_dumps_kwargs) -> str:
-        dump = self.model_dump()
-        dump["related_resource"] = (
-            self.related_resource.model_dump() if self.related_resource is not None else None
-        )
-        return json.dumps(dump, **json_dumps_kwargs)
-
-    def _public_uid(self) -> str:
-        if self.uid in (None, ""):
-            raise ValueError("DynamicTableDataSource must have a uid before calling this endpoint.")
-        return str(self.uid)
-
-    def issue_migration_connection(
-        self,
-        request: DynamicTableDataSourceMigrationConnectionRequest | Mapping[str, Any] | None = None,
-        *,
-        timeout: int | float | tuple[float, float] | None = None,
-        **kwargs: Any,
-    ) -> DynamicTableDataSourceMigrationConnection:
-        if request is not None and kwargs:
-            raise ValueError("Pass either request or keyword fields, not both.")
-        payload = (
-            request
-            if request is not None
-            else DynamicTableDataSourceMigrationConnectionRequest(**kwargs)
-        )
-        if isinstance(payload, Mapping):
-            payload = DynamicTableDataSourceMigrationConnectionRequest(**payload)
-
-        url = (
-            f"{type(self).get_object_url().rstrip('/')}/{self._public_uid()}/migration-connection/"
-        )
-        request_payload = {"json": _payload_json(payload)}
-        response = make_request(
-            s=type(self).build_session(),
-            loaders=type(self).LOADERS,
-            r_type="POST",
-            url=url,
-            payload=request_payload,
-            time_out=timeout,
-        )
-        if response.status_code != 200:
-            raise_for_response(response, payload=request_payload)
-        return DynamicTableDataSourceMigrationConnection(**response.json())
-
-    @classmethod
-    def get_or_create_duck_db(cls, time_out=None, *args, **kwargs):
-        url = cls.get_object_url() + "/get_or_create_duck_db/"
-        s = cls.build_session()
-        r = make_request(
-            s=s,
-            loaders=cls.LOADERS,
-            r_type="POST",
-            url=url,
-            payload={"json": kwargs},
-            time_out=time_out,
-        )
-        if r.status_code not in [200, 201]:
-            raise Exception(f"Error in request {r.text}")
-        return cls(**r.json())
-
-    @classmethod
-    def get_or_create_sqlite(cls, time_out=None, *args, **kwargs):
-        url = cls.get_object_url() + "/get_or_create_sqlite/"
-        s = cls.build_session()
-        r = make_request(
-            s=s,
-            loaders=cls.LOADERS,
-            r_type="POST",
-            url=url,
-            payload={"json": kwargs},
-            time_out=time_out,
-        )
-        if r.status_code not in [200, 201]:
-            raise Exception(f"Error in request {r.text}")
-        return cls(**r.json())
-
-    @classmethod
-    def create_duckdb(
-        cls,
-        *,
-        data_source: int | DataSource,
-        time_out: int | None = None,
-        **kwargs,
-    ):
-        related_resource_id = (
-            data_source if isinstance(data_source, int) else getattr(data_source, "id", None)
-        )
-        if related_resource_id is None:
-            raise ValueError("A DuckDB DataSource with an id is required.")
-
-        class_type = (
-            None if isinstance(data_source, int) else getattr(data_source, "class_type", None)
-        )
-        if class_type is not None and class_type != DUCK_DB:
-            raise ValueError(
-                f"DynamicTableDataSource.create_duckdb requires a {DUCK_DB!r} "
-                f"DataSource, got {class_type!r}."
-            )
-
-        return cls.get_or_create_duck_db(
-            time_out=time_out,
-            related_resource=related_resource_id,
-            **kwargs,
-        )
-
-    @classmethod
-    def create_sqlite(
-        cls,
-        *,
-        data_source: int | DataSource,
-        time_out: int | None = None,
-        **kwargs,
-    ):
-        related_resource_id = (
-            data_source if isinstance(data_source, int) else getattr(data_source, "id", None)
-        )
-        if related_resource_id is None:
-            raise ValueError("A SQLite DataSource with an id is required.")
-
-        class_type = (
-            None if isinstance(data_source, int) else getattr(data_source, "class_type", None)
-        )
-        if class_type is not None and class_type != SQLITE:
-            raise ValueError(
-                f"DynamicTableDataSource.create_sqlite requires a {SQLITE!r} "
-                f"DataSource, got {class_type!r}."
-            )
-
-        return cls.get_or_create_sqlite(
-            time_out=time_out,
-            related_resource=related_resource_id,
-            **kwargs,
-        )
-
-    def get_data_by_time_index(self, *args, **kwargs):
-        return self.related_resource.get_data_by_time_index(*args, **kwargs)
-
-
 class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, BaseObjectOrm):
     ENDPOINT: ClassVar[str] = "ts_manager/meta_table"
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
@@ -1308,7 +1156,7 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
     }
 
     uid: str | None = Field(None, description="Public uid of this MetaTable.")
-    data_source: int | DynamicTableDataSource | dict[str, Any] | None = None
+    data_source: DataSource | None = None
     data_source_uid: str | None = None
     identifier: str | None = Field(
         default=None,
@@ -1361,6 +1209,27 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
         if self.uid in (None, ""):
             raise ValueError("MetaTable must have a uid before calling this endpoint.")
         return str(self.uid)
+
+    def issue_migration_connection(
+        self,
+        request: MetaTableMigrationConnectionRequest | Mapping[str, Any] | None = None,
+        *,
+        timeout: int | float | tuple[float, float] | None = None,
+        **kwargs: Any,
+    ) -> MetaTableMigrationConnection:
+        if request is not None and kwargs:
+            raise ValueError("Pass either request or keyword fields, not both.")
+        payload = (
+            request if request is not None else MetaTableMigrationConnectionRequest(**kwargs)
+        )
+        if isinstance(payload, Mapping):
+            payload = MetaTableMigrationConnectionRequest(**payload)
+        response = self._post_detail_action(
+            "migration-connection",
+            payload,
+            timeout=timeout,
+        )
+        return MetaTableMigrationConnection(**response)
 
     @classmethod
     def _deserialize_search_response(cls, data: Any):
@@ -2924,7 +2793,7 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
     def upsert_data_into_table(
         self,
         data: pd.DataFrame,
-        data_source: DynamicTableDataSource,
+        data_source: DataSource,
         overwrite: bool,
         records: Sequence[Any] | None = None,
     ):
@@ -2943,9 +2812,7 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
             self.data_node_storage._require_time_indexed_table_contract()
         )
 
-        storage_class_type = getattr(
-            getattr(data_source, "related_resource", None), "class_type", None
-        )
+        storage_class_type = data_source.class_type
         is_local_storage = storage_class_type in LOCAL_DATA_SOURCE_CLASS_TYPES
 
         schema_time_index_name = str(schema_time_index_name)
@@ -3003,7 +2870,7 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
         column_names = [c for c in data.columns if c not in index_names]
         for c in column_names:
             multi_index_column_stats[c] = index_min_max_stats
-        data_source.related_resource.insert_data_into_table(
+        data_source.insert_data_into_table(
             serialized_data_frame=data,
             data_node_update=self,
             overwrite=overwrite,
@@ -3472,27 +3339,13 @@ class TimeIndexMetaTable(MetaTable):
         return self._uses_session_local_data_source()
 
     def _uses_session_local_data_source(self) -> bool:
-        if not isinstance(self.data_source, int):
-            related_resource = getattr(self.data_source, "related_resource", None)
-            return getattr(related_resource, "class_type", None) in LOCAL_DATA_SOURCE_CLASS_TYPES
-
-        session_dynamic_data_source = getattr(SessionDataSource, "data_source", None)
-        related_resource = getattr(session_dynamic_data_source, "related_resource", None)
-        return (
-            getattr(session_dynamic_data_source, "id", None) == self.data_source
-            and getattr(related_resource, "class_type", None) in LOCAL_DATA_SOURCE_CLASS_TYPES
-        )
+        data_source = self.data_source or getattr(SessionDataSource, "data_source", None)
+        return getattr(data_source, "class_type", None) in LOCAL_DATA_SOURCE_CLASS_TYPES
 
     def delete_table(self):
         if self._uses_session_local_data_source():
-            class_type = None
-            if not isinstance(self.data_source, int):
-                related_resource = getattr(self.data_source, "related_resource", None)
-                class_type = getattr(related_resource, "class_type", None)
-            else:
-                session_dynamic_data_source = getattr(SessionDataSource, "data_source", None)
-                related_resource = getattr(session_dynamic_data_source, "related_resource", None)
-                class_type = getattr(related_resource, "class_type", None)
+            data_source = self.data_source or getattr(SessionDataSource, "data_source", None)
+            class_type = getattr(data_source, "class_type", None)
             db_interface = _local_data_interface(class_type)
             db_interface.drop_table(self.physical_table_name)
 
@@ -4742,11 +4595,16 @@ class UpdateBatchResponse[UpdateT, UpdateDetailsT, TimeIndexedProfileT](BaseMode
 
 @dataclass(frozen=True)
 class _PodProjectResolution:
+    running_project_uid: str
     project: Any | None
     project_branch: Any | None
     repository_branch: str | None
     status: str
     detail: str = ""
+
+    @property
+    def remote_cache_key(self) -> tuple[str, str]:
+        return self.running_project_uid, self.repository_branch or ""
 
 
 def _reset_local_pod_project_resolution_cache() -> None:
@@ -4755,6 +4613,14 @@ def _reset_local_pod_project_resolution_cache() -> None:
         _POD_PROJECT_RESOLUTION_CACHE = None
         _POD_PROJECT_RESOLUTION_CACHE_KEY = None
         _POD_PROJECT_LOGGED_STATES.clear()
+
+        session_data_source = globals().get("SessionDataSource")
+        if (
+            session_data_source is not None
+            and getattr(session_data_source, "_remote_resolution_key", None) is not None
+        ):
+            session_data_source.data_source = None
+            session_data_source._remote_resolution_key = None
 
 
 def _current_repository_branch() -> str | None:
@@ -4786,6 +4652,7 @@ def _build_local_pod_project_resolution(
 
     if not running_project_uid:
         return _PodProjectResolution(
+            running_project_uid=running_project_uid,
             project=None,
             project_branch=None,
             repository_branch=repository_branch,
@@ -4804,6 +4671,7 @@ def _build_local_pod_project_resolution(
         ) from exc
     except DoesNotExist:
         return _PodProjectResolution(
+            running_project_uid=running_project_uid,
             project=None,
             project_branch=None,
             repository_branch=repository_branch,
@@ -4812,6 +4680,7 @@ def _build_local_pod_project_resolution(
         )
     except Exception as exc:
         return _PodProjectResolution(
+            running_project_uid=running_project_uid,
             project=None,
             project_branch=None,
             repository_branch=repository_branch,
@@ -4824,6 +4693,7 @@ def _build_local_pod_project_resolution(
 
     if not repository_branch:
         return _PodProjectResolution(
+            running_project_uid=running_project_uid,
             project=project,
             project_branch=None,
             repository_branch=None,
@@ -4844,6 +4714,7 @@ def _build_local_pod_project_resolution(
     )
     if branch_ref is None:
         return _PodProjectResolution(
+            running_project_uid=running_project_uid,
             project=project,
             project_branch=None,
             repository_branch=repository_branch,
@@ -4863,6 +4734,7 @@ def _build_local_pod_project_resolution(
         ) from exc
     except DoesNotExist:
         return _PodProjectResolution(
+            running_project_uid=running_project_uid,
             project=project,
             project_branch=None,
             repository_branch=repository_branch,
@@ -4871,6 +4743,7 @@ def _build_local_pod_project_resolution(
         )
     except Exception as exc:
         return _PodProjectResolution(
+            running_project_uid=running_project_uid,
             project=project,
             project_branch=None,
             repository_branch=repository_branch,
@@ -4879,6 +4752,7 @@ def _build_local_pod_project_resolution(
         )
 
     return _PodProjectResolution(
+        running_project_uid=running_project_uid,
         project=project,
         project_branch=project_branch,
         repository_branch=repository_branch,
@@ -4955,24 +4829,49 @@ def _require_local_pod_project_branch(operation: str) -> Any:
 
 @dataclass
 class PodDataSource:
-    data_source: Any | None = None
+    data_source: DataSource | None = None
+    _remote_resolution_key: tuple[str, str] | None = field(
+        default=None,
+        init=False,
+        repr=False,
+    )
 
-    def set_remote_db(self):
-        resolution = _resolve_local_pod_project()
-        if resolution.project_branch is None:
+    def set_remote_db(self, *, resolution: _PodProjectResolution | None = None):
+        resolution = resolution or _resolve_local_pod_project()
+        self.data_source = None
+        self._remote_resolution_key = resolution.remote_cache_key
+        if resolution.project is None:
             _log_local_pod_project_resolution(resolution)
             return None
 
-        self.data_source = resolution.project_branch.metatables_data_source
-        logger.debug(f"Set remote data source to {self.data_source.related_resource}")
+        branch_data_source = (
+            getattr(resolution.project_branch, "metatables_data_source", None)
+            if resolution.project_branch is not None
+            else None
+        )
+        data_source = branch_data_source or getattr(
+            resolution.project,
+            "default_metatables_data_source",
+            None,
+        )
+        if data_source is None:
+            logger.debug("The active Project has no MetaTable default DataSource.")
+            return None
+        if branch_data_source is None:
+            logger.debug(
+                "Using the logical Project default DataSource for Git branch "
+                f"{resolution.repository_branch!r}."
+            )
+        logger.debug(f"Set remote data source to {data_source}")
 
-        if self.data_source.related_resource.status != "AVAILABLE":
-            raise Exception(f"Project Database {self.data_source} is not available")
+        if data_source.status != DataSource.STATUS_AVAILABLE:
+            raise Exception(f"Project Database {data_source} is not available")
+        self.data_source = data_source
+        return data_source
 
     @property
     def is_local_duck_db(self):
-        related_resource = getattr(getattr(self, "data_source", None), "related_resource", None)
-        return getattr(related_resource, "class_type", None) == DUCK_DB
+        return getattr(self.data_source, "class_type", None) == DUCK_DB
 
     @property
     def is_local_db(self):
@@ -4980,8 +4879,7 @@ class PodDataSource:
 
     @property
     def local_db_class_type(self):
-        related_resource = getattr(getattr(self, "data_source", None), "related_resource", None)
-        return getattr(related_resource, "class_type", None)
+        return getattr(self.data_source, "class_type", None)
 
     def set_local_db(self, *, data_source: DataSource | None = None):
         if data_source is None:
@@ -4996,23 +4894,12 @@ class PodDataSource:
                 "set_local_db requires a supported local DataSource "
                 f"{sorted(LOCAL_DATA_SOURCE_CLASS_TYPES)!r}, got {class_type!r}."
             )
-        if getattr(data_source, "id", None) is None:
-            raise ValueError("set_local_db requires a persisted local DataSource with an id.")
-
-        if class_type == DUCK_DB:
-            local_dynamic_data_source = DynamicTableDataSource.create_duckdb(
-                data_source=data_source
-            )
-        elif class_type == SQLITE:
-            local_dynamic_data_source = DynamicTableDataSource.create_sqlite(
-                data_source=data_source
-            )
-        else:
-            raise ValueError(f"Unsupported local DataSource class_type: {class_type!r}")
+        if getattr(data_source, "uid", None) in (None, ""):
+            raise ValueError("set_local_db requires a persisted local DataSource with a uid.")
 
         # drop local tables that are not in registered in the backend anymore (probably have been deleted)
         remote_node_storages = TimeIndexMetaTable.filter(
-            data_source__uid=local_dynamic_data_source.uid,
+            data_source__uid=data_source.uid,
             list_tables=True,
         )
         remote_table_names = [
@@ -5038,9 +4925,10 @@ class PodDataSource:
 
                 remote_table.delete()
 
-        self.data_source = local_dynamic_data_source
+        self.data_source = data_source
+        self._remote_resolution_key = None
 
-        physical_ds = self.data_source.related_resource
+        physical_ds = self.data_source
         if class_type == DUCK_DB:
             banner = (
                 "─" * 40 + "\n"
@@ -5060,18 +4948,24 @@ class PodDataSource:
         logger.info(banner)
 
     def __repr__(self):
-        return f"{self.data_source.related_resource}"
+        return f"{self.data_source}"
 
 
 SessionDataSource = PodDataSource()
 
 
-def get_session_data_source() -> Any:
+def get_session_data_source() -> DataSource:
     data_source = getattr(SessionDataSource, "data_source", None)
-    if getattr(data_source, "related_resource", None) is None:
-        SessionDataSource.set_remote_db()
+    remote_resolution_key = getattr(SessionDataSource, "_remote_resolution_key", None)
+
+    # A populated source without remote provenance is an explicit local/session
+    # override. Remotely inferred sources must follow the current Git branch.
+    if data_source is None or remote_resolution_key is not None:
+        resolution = _resolve_local_pod_project()
+        if data_source is None or remote_resolution_key != resolution.remote_cache_key:
+            SessionDataSource.set_remote_db(resolution=resolution)
         data_source = getattr(SessionDataSource, "data_source", None)
-    if getattr(data_source, "related_resource", None) is None:
+    if data_source is None:
         resolution = _resolve_local_pod_project()
         detail = (resolution.detail or "No local pod project attached.").strip()
         if detail and not detail.endswith("."):
@@ -5089,7 +4983,6 @@ DataNodeUpdate.model_rebuild()
 RunConfiguration.model_rebuild()
 TimeIndexedProfile.model_rebuild()
 TimeIndexMetaTable.model_rebuild()
-DynamicTableDataSource.model_rebuild()
 DataSource.model_rebuild()
 MetaTableRequestFields.model_rebuild()
 MetaTableRegistrationRequest.model_rebuild()
@@ -5105,9 +4998,6 @@ __all__ = [
     "DataNodeUpdate",
     "DataNodeUpdateDetails",
     "DataSource",
-    "DynamicTableDataSource",
-    "DynamicTableDataSourceMigrationConnection",
-    "DynamicTableDataSourceMigrationConnectionRequest",
     "DUCK_DB",
     "HistoricalUpdateRecord",
     "LastUpdateIndexTimePayload",
@@ -5118,6 +5008,8 @@ __all__ = [
     "ManagedMetaTableFinalizeResponse",
     "ManagedMetaTableFinalizeTableResult",
     "MetaTable",
+    "MetaTableMigrationConnection",
+    "MetaTableMigrationConnectionRequest",
     "MetaTableColumnContract",
     "MetaTableColumnPayload",
     "MetaTableCompiledSQLOperation",

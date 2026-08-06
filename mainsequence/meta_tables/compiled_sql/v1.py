@@ -82,7 +82,7 @@ def compile_sqlalchemy_statement(
     """
     Compile a SQLAlchemy/Core statement into the TS Manager compiled-sql.v1 payload.
 
-    ``data_source_uid`` selects the DynamicTableDataSource connection. If it is
+    ``data_source_uid`` selects the canonical DataSource connection. If it is
     omitted, the SDK resolves the configured project/session default data source.
     ``scope_tables`` remains the declared MetaTable permission scope for the
     operation.

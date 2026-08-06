@@ -81,8 +81,8 @@ provider MetaTable UIDs.
 ## External Managed
 
 Use external-registered mode when your application already owns the physical
-tables. This example creates a local SQLite `DataSource`, resolves its
-`DynamicTableDataSource`, creates the Account/Asset tables locally with
+tables. This example creates a local SQLite `DataSource`, creates the
+Account/Asset tables locally with
 SQLAlchemy, and registers those tables with TS Manager.
 
 Register existing externally managed tables:

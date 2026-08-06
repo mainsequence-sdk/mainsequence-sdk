@@ -293,7 +293,7 @@ def test_organization_github_organizations(cli_mod, runner, monkeypatch):
 def test_cc_workspace_snapshot_prints_resolved_output_path(cli_mod, runner, monkeypatch, tmp_path):
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
 
-    snapshot_module = types.ModuleType("mainsequence.client.command_center.workspace_snapshot")
+    snapshot_module = types.ModuleType("mainsequence.client.command_center.workspaces.snapshot")
     extracted_dir = pathlib.Path(
         "/tmp/workspace-11111111-1111-4111-8111-111111111111-20260429T120000Z-snapshot"
     )
@@ -309,7 +309,9 @@ def test_cc_workspace_snapshot_prints_resolved_output_path(cli_mod, runner, monk
     )
 
     monkeypatch.setitem(
-        sys.modules, "mainsequence.client.command_center.workspace_snapshot", snapshot_module
+        sys.modules,
+        "mainsequence.client.command_center.workspaces.snapshot",
+        snapshot_module,
     )
 
     result = runner.invoke(
@@ -3573,7 +3575,6 @@ def test_project_list(cli_mod, runner, monkeypatch):
             {
                 "uid": "project-uid-1",
                 "project_name": "Demo",
-                "data_source": {"related_resource": {"display_name": "DS"}},
                 "is_initialized": True,
             }
         ],
@@ -6373,10 +6374,9 @@ def test_create_project_does_not_send_project_visible(cli_mod, monkeypatch):
 
     out = api_mod.create_project(
         project_name="demo-project",
-        data_source_uid="11111111-1111-4111-8111-111111111111",
+        default_metatables_data_source_uid="11111111-1111-4111-8111-111111111111",
         default_base_image_uid="22222222-2222-4222-8222-222222222222",
         github_org_uid="33333333-3333-4333-8333-333333333333",
-        repository_branch="main",
         env_vars={"FOO": "bar"},
     )
 
@@ -6384,8 +6384,8 @@ def test_create_project_does_not_send_project_visible(cli_mod, monkeypatch):
     assert captured["api_path"] == "/orm/api/pods/projects/"
     assert captured["body"] == {
         "project_name": "demo-project",
-        "repository_branch": "main",
-        "data_source_uid": "11111111-1111-4111-8111-111111111111",
+        "project_type": "python",
+        "default_metatables_data_source_uid": "11111111-1111-4111-8111-111111111111",
         "default_base_image_uid": "22222222-2222-4222-8222-222222222222",
         "github_org_uid": "33333333-3333-4333-8333-333333333333",
         "env_vars": [{"name": "FOO", "value": "bar"}],
@@ -8213,7 +8213,7 @@ def test_meta_table_list_uses_canonical_command(cli_mod, runner, monkeypatch):
             "list",
             "--filter",
             "namespace=pytest_weights",
-            "--data-source-uid",
+            "--default-metatables-data-source-uid",
             "data-source-1",
             "--timeout",
             "15",
@@ -9880,17 +9880,14 @@ def test_project_create_interactive_defaults(cli_mod, runner, monkeypatch):
     )
     monkeypatch.setattr(
         cli_mod,
-        "list_dynamic_table_data_sources",
+        "list_data_sources",
         lambda status="AVAILABLE": [
             {
                 "id": 11,
                 "uid": "11111111-1111-4111-8111-111111111111",
-                "related_resource": {
-                    "display_name": "Default DS",
-                    "class_type": "timescale_db",
-                    "status": "AVAILABLE",
-                },
-                "related_resource_class_type": "timescale_db",
+                "display_name": "Default DS",
+                "class_type": "timescale_db",
+                "status": "AVAILABLE",
             }
         ],
     )
@@ -9937,22 +9934,28 @@ def test_project_create_interactive_defaults(cli_mod, runner, monkeypatch):
     # 2) Data source uid
     # 3) Default base image uid
     # 4) GitHub organization uid
-    # 5) Repository branch (default=main)
-    # 6) Environment variables line
-    user_input = "demo-project\n\n\n\n\nFOO=bar, BAZ=qux\n"
+    # 5) Environment variables line
+    user_input = "demo-project\n\n\n\nFOO=bar, BAZ=qux\n"
     result = runner.invoke(cli_mod.app, ["project", "create"], input=user_input)
 
     assert result.exit_code == 0
     assert captured["project_name"] == "demo-project"
-    assert captured["data_source_uid"] == "11111111-1111-4111-8111-111111111111"
+    assert captured["project_type"] == "python"
+    assert (
+        captured["default_metatables_data_source_uid"]
+        == "11111111-1111-4111-8111-111111111111"
+    )
     assert captured["default_base_image_uid"] == "22222222-2222-4222-8222-222222222222"
     assert captured["github_org_uid"] == "33333333-3333-4333-8333-333333333333"
-    assert captured["repository_branch"] == "main"
     assert captured["env_vars"] == {"FOO": "bar", "BAZ": "qux"}
     assert "Project created: demo-project (uid=project-uid-321)" in result.output
 
 
-def test_project_create_polls_until_initialized(cli_mod, runner, monkeypatch):
+def test_project_create_with_explicit_options_returns_logical_project(
+    cli_mod,
+    runner,
+    monkeypatch,
+):
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(
         cli_mod,
@@ -9968,35 +9971,16 @@ def test_project_create_polls_until_initialized(cli_mod, runner, monkeypatch):
             "suggestions": [],
         },
     )
-    monkeypatch.setattr(
-        cli_mod,
-        "create_project",
-        lambda **kwargs: {
-            "id": 777,
+    captured = {}
+
+    def _create_project(**kwargs):
+        captured.update(kwargs)
+        return {
+            "uid": "77777777-7777-4777-8777-777777777777",
             "project_name": kwargs["project_name"],
-            "git_ssh_url": "git@github.com:org/repo.git",
-            "is_initialized": False,
-        },
-    )
+        }
 
-    polled = [
-        {
-            "id": 777,
-            "project_name": "demo-project",
-            "git_ssh_url": "git@github.com:org/repo.git",
-            "is_initialized": False,
-        },
-        {
-            "id": 777,
-            "project_name": "demo-project",
-            "git_ssh_url": "git@github.com:org/repo.git",
-            "is_initialized": True,
-        },
-    ]
-    monkeypatch.setattr(cli_mod, "get_project", lambda project_id: polled.pop(0))
-
-    sleep_calls = []
-    monkeypatch.setattr(cli_mod.time, "sleep", lambda secs: sleep_calls.append(secs))
+    monkeypatch.setattr(cli_mod, "create_project", _create_project)
 
     result = runner.invoke(
         cli_mod.app,
@@ -10004,23 +9988,23 @@ def test_project_create_polls_until_initialized(cli_mod, runner, monkeypatch):
             "project",
             "create",
             "demo-project",
-            "--data-source-uid",
+            "--default-metatables-data-source-uid",
             "11111111-1111-4111-8111-111111111111",
             "--default-base-image-uid",
             "22222222-2222-4222-8222-222222222222",
             "--github-org-uid",
             "33333333-3333-4333-8333-333333333333",
-            "--branch",
-            "main",
             "--env",
             "FOO=bar",
         ],
     )
 
     assert result.exit_code == 0
-    assert sleep_calls == [30, 30]
-    assert "Project is still initializing." in result.output
-    assert "Project is initialized and ready." in result.output
+    assert (
+        captured["default_metatables_data_source_uid"]
+        == "11111111-1111-4111-8111-111111111111"
+    )
+    assert "Project created: demo-project" in result.output
 
 
 def test_project_create_rejects_unavailable_name(cli_mod, runner, monkeypatch):

@@ -61,8 +61,8 @@ This skill must not claim ownership of:
    - identify the target `widget_id`
    - `mainsequence cc registered_widget_type detail <WIDGET_ID> --json`
 2. The SDK client models:
-   - `mainsequence/client/command_center/app_component.py`
-   - `mainsequence/client/command_center/workspace.py`
+   - `mainsequence/client/command_center/workspaces/app_component.py`
+   - `mainsequence/client/command_center/workspaces/models.py`
 3. `.agents/skills/mainsequence/command_center/widgets/app_components/SKILL.md`
 4. `.agents/skills/mainsequence/command_center/workspace_builder/SKILL.md`
 

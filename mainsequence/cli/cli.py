@@ -101,7 +101,6 @@ from .api import (
     create_workspace,
     data_node_storage_column_search,
     data_node_storage_description_search,
-    deep_find_repo_url,
     delete_agent,
     delete_constant,
     delete_data_node_storage,
@@ -147,7 +146,7 @@ from .api import (
     list_data_node_storage_users_can_edit,
     list_data_node_storage_users_can_view,
     list_data_node_storages,
-    list_dynamic_table_data_sources,
+    list_data_sources,
     list_github_organizations,
     list_meta_table_users_can_edit,
     list_meta_table_users_can_view,
@@ -714,14 +713,6 @@ def _determine_repo_url(p: dict) -> str:
     repo = (p.get("git_ssh_url") or "").strip()
     if repo.lower() == "none":
         repo = ""
-    if not repo:
-        extra = (p.get("data_source") or {}).get("related_resource", {}) or {}
-        extra = (
-            extra.get("extra_arguments")
-            or (p.get("data_source") or {}).get("extra_arguments")
-            or {}
-        )
-        repo = deep_find_repo_url(extra) or ""
     return repo
 
 
@@ -5461,7 +5452,7 @@ def _workspace_snapshot_impl(
     _require_login()
 
     try:
-        from mainsequence.client.command_center.workspace_snapshot import (
+        from mainsequence.client.command_center.workspaces.snapshot import (
             _build_snapshot_url,
             _capture_workspace_snapshot,
             _resolve_command_center_url,
@@ -9468,8 +9459,10 @@ def project_validate_name_alias_cmd(
 def project_create_cmd(
     project_name: str | None = typer.Argument(None, help="Project name"),
     project_type: str = typer.Option("python", "--project-type", help="Project type"),
-    metatables_data_source_uid: str | None = typer.Option(
-        None, "--metatables-data-source-uid", help="MetaTables data source UID"
+    default_metatables_data_source_uid: str | None = typer.Option(
+        None,
+        "--default-metatables-data-source-uid",
+        help="Logical Project default MetaTables data source UID",
     ),
     default_base_image_uid: str | None = typer.Option(
         None, "--default-base-image-uid", help="Default base image UID"
@@ -9495,8 +9488,9 @@ def project_create_cmd(
         Project name. If omitted, prompt is shown.
     project_type:
         Project type used for the initial ProjectBranch.
-    metatables_data_source_uid:
-        MetaTables data source UID.
+    default_metatables_data_source_uid:
+        Required logical Project default MetaTables data source UID. It is
+        assigned automatically to the initial main ProjectBranch.
     default_base_image_uid:
         Default base image UID.
     github_org_uid:
@@ -9552,23 +9546,21 @@ def project_create_cmd(
                 )
             raise typer.Exit(1)
 
-        if metatables_data_source_uid is None and project_type == "python":
-            ds_items = list_dynamic_table_data_sources(status="AVAILABLE")
+        if default_metatables_data_source_uid is None:
+            ds_items = list_data_sources(status="AVAILABLE")
             ds_rows: list[list[str]] = []
             for item in ds_items:
                 uid = _require_item_uid(item, prompt_label="data source uid")
-                rr = item.get("related_resource") or {}
                 ds_name = (
-                    rr.get("display_name")
-                    or item.get("related_resource_class_type")
-                    or rr.get("class_type")
+                    item.get("display_name")
+                    or item.get("class_type")
                     or f"data-source-{item.get('id')}"
                 )
                 ds_details = (
-                    f"class={rr.get('class_type') or '-'}, status={rr.get('status') or '-'}"
+                    f"class={item.get('class_type') or '-'}, status={item.get('status') or '-'}"
                 )
                 ds_rows.append([uid, str(ds_name), str(ds_details)])
-            metatables_data_source_uid = _prompt_select_uid(
+            default_metatables_data_source_uid = _prompt_select_uid(
                 title="Available Data Sources",
                 prompt_label="Data source uid",
                 items=ds_items,
@@ -9630,7 +9622,7 @@ def project_create_cmd(
         created = create_project(
             project_name=project_name,
             project_type=project_type,
-            metatables_data_source_uid=metatables_data_source_uid,
+            default_metatables_data_source_uid=default_metatables_data_source_uid,
             default_base_image_uid=default_base_image_uid,
             github_org_uid=github_org_uid,
             env_vars=env_vars,

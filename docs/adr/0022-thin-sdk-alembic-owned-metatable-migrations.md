@@ -8,6 +8,11 @@ Superseded-in-part note: ADR 0023 supersedes the FK/index reservation-contract
 policy in this ADR. Foreign keys and indexes are Alembic-owned DDL and must not
 be resolved or serialized by the SDK migration path.
 
+The server's canonical DataSource cutover also supersedes every
+`DynamicTableDataSource` reference in this ADR. `DataSource.uid` is the sole
+database identity, and migration credentials are issued through an
+authoritative MetaTable detail action.
+
 ## Context
 
 ADR 0020 and ADR 0021 moved MetaTable migrations toward Alembic, but the SDK
@@ -34,7 +39,7 @@ The backend now supports the missing coordination primitives:
 - `POST /orm/api/ts_manager/meta_table/reserve-managed/`
   reserves or resolves platform-managed MetaTable rows without creating physical
   tables, and returns TS Manager-owned physical table names.
-- `POST /orm/api/ts_manager/dynamic_table_data_source/<uid>/migration-connection/`
+- `POST /orm/api/ts_manager/meta_table/<meta_table_uid>/migration-connection/`
   issues a short-lived, user-scoped migration credential for the reserved table
   scope. It does not expose the stored data-source owner credential.
 
@@ -103,28 +108,29 @@ reserved MetaTable rows to SQLAlchemy table metadata.
 
 ## New SDK Client Surface
 
-Add `DynamicTableDataSource.issue_migration_connection(...)`.
+Add `MetaTable.issue_migration_connection(...)`.
 
 This method calls:
 
 ```text
-POST /orm/api/ts_manager/dynamic_table_data_source/<uid>/migration-connection/
+POST /orm/api/ts_manager/meta_table/<meta_table_uid>/migration-connection/
 ```
 
 with a provider/data-source-scoped request:
 
 ```python
-class DynamicTableDataSourceMigrationConnectionRequest(BasePydanticModel):
+class MetaTableMigrationConnectionRequest(BasePydanticModel):
     purpose: Literal["schema_migration"] = "schema_migration"
     package: str = ""
     migration_namespace: str = ""
-    ttl_seconds: int = 900
+    migration_provider_key: str = ""
+    ttl_seconds: int = Field(900, ge=60, le=3600)
 ```
 
 and returns a model with at least:
 
 ```python
-class DynamicTableDataSourceMigrationConnection(BasePydanticModel):
+class MetaTableMigrationConnection(BasePydanticModel):
     ok: bool
     data_source_uid: str
     dialect: str
@@ -153,7 +159,7 @@ and uses request/response models equivalent to:
 class MetaTableRequestFields(BasePydanticModel):
     identifier: str | None = Field(None, description="Migration table identity; use authored SQLAlchemy Table.name for Alembic-managed tables.")
     namespace: str | None = Field(None, description="Optional MetaTable namespace.")
-    data_source_uid: str = Field(..., description="DynamicTableDataSource UID that owns this MetaTable.")
+    data_source_uid: str = Field(..., description="Canonical DataSource UID that owns this MetaTable.")
     storage_hash: str = Field(..., max_length=63, description="Canonical table storage hash.")
     description: str | None = Field(None, description="Optional MetaTable description.")
     labels: list[str] = Field(default_factory=list, description="Labels to apply to the MetaTable.")
@@ -181,7 +187,7 @@ class ManagedMetaTableReservationItem(BasePydanticModel):
     identifier: str | None = Field(None, description="Reserved migration table identity.")
     namespace: str | None = Field(None, description="Resolved namespace when returned.")
     meta_table_uid: str = Field(..., description="Reserved backend MetaTable UID.")
-    data_source_uid: str = Field(..., description="DynamicTableDataSource UID that owns the reservation.")
+    data_source_uid: str = Field(..., description="Canonical DataSource UID that owns the reservation.")
     management_mode: Literal["platform_managed"] = Field(..., description="Backend-confirmed management mode.")
     provisioning_status: Literal["reserved", "active"] = Field(..., description="First-class backend provisioning state.")
     storage_hash: str = Field(..., description="Reserved storage hash.")
@@ -350,9 +356,9 @@ normal tutorial workflow.
 
 ## Implementation Tasks
 
-- [x] Add `DynamicTableDataSourceMigrationConnectionRequest`,
-  `DynamicTableDataSourceMigrationConnection`, and
-  `DynamicTableDataSource.issue_migration_connection(...)`.
+- [x] Add `MetaTableMigrationConnectionRequest`,
+  `MetaTableMigrationConnection`, and
+  `MetaTable.issue_migration_connection(...)`.
 - [x] Do not include MetaTable UIDs in migration-connection requests. Keep
   MetaTable UIDs in prepared/finalization state only.
 - [x] Treat the returned migration URI as a secret and avoid printing or logging

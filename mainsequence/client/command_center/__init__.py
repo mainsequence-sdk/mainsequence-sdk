@@ -1,8 +1,5 @@
-from .app_component import *
-from .connections import *
-from .contracts import *
-from .providers import *
-from .widgets import *
-from .workspace import *
-from .workspace_snapshot import *
-from .workspaces import *
+"""Canonical Command Center SDK package boundaries."""
+
+from . import connections, sdk, workspaces
+
+__all__ = ["connections", "sdk", "workspaces"]

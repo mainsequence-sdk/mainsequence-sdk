@@ -1,4 +1,4 @@
-from mainsequence.client.command_center import (
+from mainsequence.client.command_center.workspaces.app_component import (
     EditableFormDefinition,
     FormFieldDefinition,
     FormFieldKind,

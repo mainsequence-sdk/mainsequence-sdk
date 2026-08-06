@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterator, Mapping, Sequence
 from typing import Any
 
-from ..contracts.tabular import CORE_TABULAR_FRAME_CONTRACT
+from ...sdk.contracts.tabular import CORE_TABULAR_FRAME_CONTRACT
 
 
 def iter_contract_strings(payload: Any) -> Iterator[str]:

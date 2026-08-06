@@ -17,10 +17,12 @@ The practical split is:
 - an AppComponent widget connects a UI widget to an application endpoint
 - forms define how richer inputs should be rendered and edited
 
-There are two different contract surfaces to keep separate:
+There are three different contract surfaces to keep separate:
 
 - input contracts, such as `EditableFormDefinition`, when a widget needs a specialized form
-- output contracts, such as the models in `mainsequence.client.command_center.data_models`, when an API should feed a Main Sequence widget directly
+- output contracts, such as the models in `mainsequence.client.command_center.sdk.data_models`, when an API should feed a Main Sequence widget directly
+- resource contracts under `mainsequence.client.command_center.sdk.resource` for canonical lists,
+  pagination, discovered actions, and summaries
 
 ## SDK Helper Layout
 
@@ -28,19 +30,25 @@ The Command Center SDK client is split by responsibility:
 
 - `mainsequence.client.command_center.connections`: connection type and connection instance APIs,
   including Adapter from API public config validation
-- `mainsequence.client.command_center.contracts`: provider-facing contract models and helpers for
+- `mainsequence.client.command_center.sdk.contracts`: provider-facing contract models and helpers for
   Adapter from API, response mappings, tabular frames, table visual metadata, and UI contracts
-- `mainsequence.client.command_center.providers`: convenience builders for provider-side contracts
-- `mainsequence.client.command_center.widgets`: widget payload, table/pro-table props, tabular
+- `mainsequence.client.command_center.sdk.providers`: convenience builders for provider-side contracts
+- `mainsequence.client.command_center.sdk.resource`: the Python projection of the standalone
+  Command Center SDK resource contract
+- `mainsequence.client.command_center.workspaces.widgets`: widget payload, table/pro-table props, tabular
   transform props, binding, registry, and connection-query helpers
-- `mainsequence.client.command_center.workspaces`: workspace document and mounted-widget payload
-  helpers
-- `mainsequence.client.command_center.workspace`: workspace create, fetch, update, and
-  widget-scoped mutation methods
+- `mainsequence.client.command_center.workspaces`: workspace models, create/fetch/update clients,
+  snapshots, AppComponent definitions, documents, mounted-widget payloads, and widget-scoped
+  mutation helpers
+
+The former top-level `contracts`, `data_models`, `providers`, `widgets`, `workspace`,
+`workspace_snapshot`, and `app_component` modules were removed. Use the canonical nested packages
+above; there are no compatibility shim modules.
 
 ## What This Section Covers
 
 - [Workspaces](workspaces.md): how to think about workspace structure and when to mutate a single widget instead of rewriting the whole workspace
+- [Resource SDK For FastAPI](resource_sdk.md): how to build canonical Command Center resource APIs
 - [Connections](connections.md): SDK helpers and strict validation for Command Center connection instances, including `command_center.adapter_from_api`
 - [Forms](forms.md): when an AppComponent should rely on the default argument resolution and when it should return a custom `EditableFormDefinition`
 - [Widget Data Contracts](widget_data_contracts.md): the exact response shapes some Main Sequence widgets expect when an API feeds them directly

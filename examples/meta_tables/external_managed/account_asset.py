@@ -10,7 +10,7 @@ from examples.meta_tables.common import (
     DEFAULT_TIMEOUT,
     print_json,
 )
-from mainsequence.client import DataSource, DynamicTableDataSource, MetaTable
+from mainsequence.client import DataSource, MetaTable
 from mainsequence.client.data_sources_interfaces import get_sqlite_interface_class
 from mainsequence.meta_tables import (
     external_registered_registration_request_from_sqlalchemy_model,
@@ -74,25 +74,21 @@ def create_physical_tables_for_demo() -> None:
         engine.dispose()
 
 
-def create_local_sqlite_dynamic_data_source() -> DynamicTableDataSource:
-    physical_data_source = DataSource.create_sqlite(time_out=DEFAULT_TIMEOUT)
-    dynamic_data_source = DynamicTableDataSource.create_sqlite(
-        data_source=physical_data_source,
-        time_out=DEFAULT_TIMEOUT,
-    )
-    if not dynamic_data_source.uid:
-        raise ValueError("SQLite DynamicTableDataSource response did not include a uid.")
-    return dynamic_data_source
+def create_local_sqlite_data_source() -> DataSource:
+    data_source = DataSource.create_sqlite(time_out=DEFAULT_TIMEOUT)
+    if not data_source.uid:
+        raise ValueError("SQLite DataSource response did not include a uid.")
+    return data_source
 
 
 def main() -> None:
-    dynamic_data_source = create_local_sqlite_dynamic_data_source()
+    data_source = create_local_sqlite_data_source()
     create_physical_tables_for_demo()
     print("\nCreated physical Account and Asset tables in local SQLite.")
 
     account_request = external_registered_registration_request_from_sqlalchemy_model(
         Account,
-        data_source_uid=dynamic_data_source.uid,
+        data_source_uid=data_source.uid,
         schema=DEFAULT_SCHEMA,
         introspect=False,
         description="Example externally managed account table.",
@@ -102,7 +98,7 @@ def main() -> None:
 
     asset_request = external_registered_registration_request_from_sqlalchemy_model(
         Asset,
-        data_source_uid=dynamic_data_source.uid,
+        data_source_uid=data_source.uid,
         schema=DEFAULT_SCHEMA,
         introspect=False,
         description="Example externally managed asset table.",

@@ -16,6 +16,11 @@ from ..data_models import (
     TabularFrameStatus,
     TabularTimeSeriesMetaResponse,
 )
+from .table_visuals import (
+    TABLE_VISUALS_META_KEY,
+    TableFrameVisualsMetadata,
+    dump_table_visuals,
+)
 
 TabularRow = Mapping[str, Any]
 TabularFieldInput = TabularFrameFieldResponse | Mapping[str, Any]
@@ -81,31 +86,6 @@ def make_tabular_field(
         nativeType=native_type,
         provenance=provenance,
         derivedFrom=list(derived_from) if derived_from is not None else None,
-    )
-
-
-def build_tabular_field(
-    *,
-    key: str,
-    field_type: TabularFrameFieldType | str,
-    label: str | None = None,
-    description: str | None = None,
-    nullable: bool | None = None,
-    native_type: str | None = None,
-    provenance: TabularFrameFieldProvenance | str | None = "backend",
-    derived_from: Sequence[str] | None = None,
-) -> TabularFrameFieldResponse:
-    """Compatibility alias using the historical field_type argument name."""
-
-    return make_tabular_field(
-        key,
-        label=label,
-        type=field_type,
-        description=description,
-        nullable=nullable,
-        native_type=native_type,
-        provenance=provenance,
-        derived_from=derived_from,
     )
 
 
@@ -188,6 +168,7 @@ def make_tabular_frame(
     status: TabularFrameStatus | str = "ready",
     error: str | None = None,
     meta: TabularFrameMetaResponse | Mapping[str, Any] | None = None,
+    table_visuals: TableFrameVisualsMetadata | Mapping[str, Any] | None = None,
     source: TabularFrameSourceResponse | Mapping[str, Any] | None = None,
     infer_fields: bool = False,
 ) -> TabularFrameResponse:
@@ -214,8 +195,18 @@ def make_tabular_frame(
     normalized_meta = None
     if meta is not None:
         normalized_meta = (
-            meta if isinstance(meta, TabularFrameMetaResponse) else TabularFrameMetaResponse.model_validate(meta)
+            meta
+            if isinstance(meta, TabularFrameMetaResponse)
+            else TabularFrameMetaResponse.model_validate(meta)
         )
+    if table_visuals is not None:
+        meta_payload = (
+            normalized_meta.model_dump(mode="json", by_alias=True, exclude_none=True)
+            if normalized_meta is not None
+            else {}
+        )
+        meta_payload[TABLE_VISUALS_META_KEY] = dump_table_visuals(table_visuals)
+        normalized_meta = TabularFrameMetaResponse.model_validate(meta_payload)
 
     normalized_source = None
     if source is not None:
@@ -236,29 +227,6 @@ def make_tabular_frame(
     )
 
 
-def build_tabular_frame(
-    *,
-    columns: Sequence[str],
-    rows: Sequence[TabularRow],
-    fields: Sequence[TabularFieldInput] | None = None,
-    meta: TabularFrameMetaResponse | Mapping[str, Any] | None = None,
-    source: TabularFrameSourceResponse | Mapping[str, Any] | None = None,
-    status: TabularFrameStatus | str = "ready",
-    error: str | None = None,
-) -> TabularFrameResponse:
-    """Compatibility alias for project helpers that used build_* names."""
-
-    return make_tabular_frame(
-        columns=columns,
-        rows=rows,
-        fields=fields,
-        meta=meta,
-        source=source,
-        status=status,
-        error=error,
-    )
-
-
 __all__ = [
     "CORE_TABULAR_FRAME_CONTRACT",
     "ContractBaseModel",
@@ -272,8 +240,6 @@ __all__ = [
     "TabularFrameStatus",
     "TabularRow",
     "TabularTimeSeriesMetaResponse",
-    "build_tabular_field",
-    "build_tabular_frame",
     "infer_tabular_field_type",
     "infer_tabular_fields",
     "make_tabular_field",

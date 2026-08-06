@@ -24,6 +24,16 @@ def _project_payload_public() -> dict:
     return {
         "uid": PROJECT_UID,
         "project_name": "Markets Repository",
+        "default_metatables_data_source": {
+            "uid": DATA_SOURCE_UID,
+            "data_source_uid": DATA_SOURCE_UID,
+            "display_name": "Remote Timescale",
+            "organization_uid": ORGANIZATION_UID,
+            "class_type": "timescale_db",
+            "status": "AVAILABLE",
+            "storage_access_mode": "read_write",
+        },
+        "default_metatables_data_source_uid": DATA_SOURCE_UID,
         "git_repository_uid": "3c2113e7-40ba-4d8c-ad65-51ca236c3b0c",
         "archived": False,
         "created_by": "user-4",
@@ -45,16 +55,12 @@ def _project_branch_payload_public() -> dict:
         "framework": "",
         "metatables_data_source": {
             "uid": DATA_SOURCE_UID,
-            "related_resource": {
-                "uid": DATA_SOURCE_UID,
-                "data_source_uid": DATA_SOURCE_UID,
-                "display_name": "Remote Timescale",
-                "organization_uid": ORGANIZATION_UID,
-                "class_type": "timescale_db_remote",
-                "status": "AVAILABLE",
-                "storage_access_mode": "read_write",
-            },
-            "related_resource_class_type": "timescale_db_remote",
+            "data_source_uid": DATA_SOURCE_UID,
+            "display_name": "Remote Timescale",
+            "organization_uid": ORGANIZATION_UID,
+            "class_type": "timescale_db",
+            "status": "AVAILABLE",
+            "storage_access_mode": "read_write",
         },
         "metatables_data_source_uid": DATA_SOURCE_UID,
         "default_base_image": {
@@ -63,11 +69,9 @@ def _project_branch_payload_public() -> dict:
         },
         "sdks": [],
         "git_repository_uid": "3c2113e7-40ba-4d8c-ad65-51ca236c3b0c",
-        "git_ssh_url": "git@github.com:mainsequence/markets-repository.git",
         "latest_git_version": "",
         "is_initialized": True,
         "created_by": "user-4",
-        "labels": ["markets"],
     }
 
 
@@ -77,6 +81,9 @@ def test_project_deserializes_public_uid_serializer_payload():
     assert project.uid == PROJECT_UID
     assert project.created_by == "user-4"
     assert project.archived is False
+    assert project.default_metatables_data_source is not None
+    assert project.default_metatables_data_source.uid == DATA_SOURCE_UID
+    assert project.default_metatables_data_source_uid == DATA_SOURCE_UID
     assert project.branches[0].uid == PROJECT_BRANCH_UID
     assert project.branches[0].repository_branch == "main"
 
@@ -88,45 +95,34 @@ def test_project_branch_deserializes_public_uid_serializer_payload():
     assert project_branch.project_uid == PROJECT_UID
     assert project_branch.metatables_data_source is not None
     assert project_branch.metatables_data_source.uid == DATA_SOURCE_UID
-    related_resource = project_branch.metatables_data_source.related_resource
-    assert related_resource.uid == DATA_SOURCE_UID
-    assert related_resource.data_source_uid == DATA_SOURCE_UID
-    assert related_resource.organization_uid == ORGANIZATION_UID
-    assert related_resource.class_type == "timescale_db_remote"
-    assert related_resource.storage_access_mode == "read_write"
-    assert related_resource.allows_runtime_reads is True
-    assert related_resource.allows_runtime_writes is True
+    assert project_branch.metatables_data_source.data_source_uid == DATA_SOURCE_UID
+    assert project_branch.metatables_data_source.organization_uid == ORGANIZATION_UID
+    assert project_branch.metatables_data_source.class_type == "timescale_db"
+    assert project_branch.metatables_data_source.storage_access_mode == "read_write"
+    assert project_branch.metatables_data_source.allows_runtime_reads is True
+    assert project_branch.metatables_data_source.allows_runtime_writes is True
 
 
-def test_project_deserializes_nullable_datasource_related_resource_edge_case():
+def test_project_branch_deserializes_nullable_data_source_fields():
     payload = _project_branch_payload_public()
-    payload["metatables_data_source"]["related_resource"] = {
-        "uid": None,
-        "data_source_uid": None,
-        "display_name": None,
-        "organization_uid": None,
-        "class_type": None,
-        "status": None,
-        "storage_access_mode": None,
-    }
+    payload["metatables_data_source"]["storage_access_mode"] = None
 
     project = models_foundry.ProjectBranch(**payload)
 
     assert project.metatables_data_source is not None
-    assert project.metatables_data_source.related_resource is not None
-    assert project.metatables_data_source.related_resource.storage_access_mode is None
-    assert project.metatables_data_source.related_resource.allows_runtime_reads is False
-    assert project.metatables_data_source.related_resource.allows_runtime_writes is False
+    assert project.metatables_data_source.storage_access_mode is None
+    assert project.metatables_data_source.allows_runtime_reads is False
+    assert project.metatables_data_source.allows_runtime_writes is False
 
 
-def test_project_deserializes_null_datasource_related_resource_edge_case():
+def test_project_branch_deserializes_null_metatables_data_source():
     payload = _project_branch_payload_public()
-    payload["metatables_data_source"]["related_resource"] = None
+    payload["metatables_data_source"] = None
+    payload["metatables_data_source_uid"] = None
 
     project = models_foundry.ProjectBranch(**payload)
 
-    assert project.metatables_data_source is not None
-    assert project.metatables_data_source.related_resource is None
+    assert project.metatables_data_source is None
 
 
 def test_data_node_update_get_or_create_uses_current_project_branch_uid(monkeypatch):
@@ -257,6 +253,188 @@ def test_set_remote_db_warns_once_for_lookup_failure(monkeypatch):
     assert debugs == []
 
 
+def test_set_remote_db_uses_project_default_for_unregistered_git_branch(monkeypatch):
+    monkeypatch.setenv("MAIN_SEQUENCE_PROJECT_UID", PROJECT_UID)
+    monkeypatch.setattr(
+        models_metatables,
+        "_current_repository_branch",
+        lambda: "feature/local-only",
+    )
+    data_source = types.SimpleNamespace(
+        uid=DATA_SOURCE_UID,
+        status=models_metatables.DataSource.STATUS_AVAILABLE,
+    )
+    project = types.SimpleNamespace(
+        uid=PROJECT_UID,
+        branches=[],
+        default_metatables_data_source=data_source,
+    )
+    monkeypatch.setattr(models_foundry.Project, "get", lambda **kwargs: project)
+
+    pod_data_source = models_metatables.PodDataSource()
+
+    assert pod_data_source.set_remote_db() is data_source
+    assert pod_data_source.data_source is data_source
+    resolution = models_metatables._resolve_local_pod_project()
+    assert resolution.status == "branch_not_registered"
+    assert resolution.project_branch is None
+
+
+def test_get_session_data_source_tracks_registered_git_branch_switch(monkeypatch):
+    feature_branch_uid = "5b28020a-0f1b-47ee-aab8-334286234bea"
+    current_branch = {"name": "main"}
+    main_data_source = types.SimpleNamespace(
+        uid="main-data-source",
+        status=models_metatables.DataSource.STATUS_AVAILABLE,
+    )
+    feature_data_source = types.SimpleNamespace(
+        uid="feature-data-source",
+        status=models_metatables.DataSource.STATUS_AVAILABLE,
+    )
+    project = types.SimpleNamespace(
+        uid=PROJECT_UID,
+        branches=[
+            types.SimpleNamespace(uid=PROJECT_BRANCH_UID, repository_branch="main"),
+            types.SimpleNamespace(uid=feature_branch_uid, repository_branch="feature/runtime"),
+        ],
+        default_metatables_data_source=main_data_source,
+    )
+    project_branches = {
+        PROJECT_BRANCH_UID: types.SimpleNamespace(
+            uid=PROJECT_BRANCH_UID,
+            metatables_data_source=main_data_source,
+        ),
+        feature_branch_uid: types.SimpleNamespace(
+            uid=feature_branch_uid,
+            metatables_data_source=feature_data_source,
+        ),
+    }
+
+    monkeypatch.setenv("MAIN_SEQUENCE_PROJECT_UID", PROJECT_UID)
+    monkeypatch.setattr(
+        models_metatables,
+        "_current_repository_branch",
+        lambda: current_branch["name"],
+    )
+    monkeypatch.setattr(models_foundry.Project, "get", lambda **kwargs: project)
+    monkeypatch.setattr(
+        models_foundry.ProjectBranch,
+        "get",
+        lambda **kwargs: project_branches[kwargs["pk"]],
+    )
+    session_data_source = models_metatables.PodDataSource()
+    monkeypatch.setattr(models_metatables, "SessionDataSource", session_data_source)
+
+    assert models_metatables.get_session_data_source() is main_data_source
+
+    current_branch["name"] = "feature/runtime"
+
+    assert models_metatables.get_session_data_source() is feature_data_source
+    assert session_data_source.data_source is feature_data_source
+
+
+def test_get_session_data_source_uses_project_default_after_unregistered_git_switch(
+    monkeypatch,
+):
+    current_branch = {"name": "main"}
+    branch_data_source = types.SimpleNamespace(
+        uid="main-data-source",
+        status=models_metatables.DataSource.STATUS_AVAILABLE,
+    )
+    default_data_source = types.SimpleNamespace(
+        uid="project-default-data-source",
+        status=models_metatables.DataSource.STATUS_AVAILABLE,
+    )
+    project = types.SimpleNamespace(
+        uid=PROJECT_UID,
+        branches=[types.SimpleNamespace(uid=PROJECT_BRANCH_UID, repository_branch="main")],
+        default_metatables_data_source=default_data_source,
+    )
+
+    monkeypatch.setenv("MAIN_SEQUENCE_PROJECT_UID", PROJECT_UID)
+    monkeypatch.setattr(
+        models_metatables,
+        "_current_repository_branch",
+        lambda: current_branch["name"],
+    )
+    monkeypatch.setattr(models_foundry.Project, "get", lambda **kwargs: project)
+    monkeypatch.setattr(
+        models_foundry.ProjectBranch,
+        "get",
+        lambda **kwargs: types.SimpleNamespace(
+            uid=PROJECT_BRANCH_UID,
+            metatables_data_source=branch_data_source,
+        ),
+    )
+    session_data_source = models_metatables.PodDataSource()
+    monkeypatch.setattr(models_metatables, "SessionDataSource", session_data_source)
+
+    assert models_metatables.get_session_data_source() is branch_data_source
+
+    current_branch["name"] = "feature/local-only"
+
+    assert models_metatables.get_session_data_source() is default_data_source
+    assert session_data_source.data_source is default_data_source
+
+
+def test_get_session_data_source_tracks_project_uid_change(monkeypatch):
+    second_project_uid = "2d0530c0-65d1-4db0-856b-dc29d8260a09"
+    first_data_source = types.SimpleNamespace(
+        uid="first-project-data-source",
+        status=models_metatables.DataSource.STATUS_AVAILABLE,
+    )
+    second_data_source = types.SimpleNamespace(
+        uid="second-project-data-source",
+        status=models_metatables.DataSource.STATUS_AVAILABLE,
+    )
+    projects = {
+        PROJECT_UID: types.SimpleNamespace(
+            uid=PROJECT_UID,
+            branches=[],
+            default_metatables_data_source=first_data_source,
+        ),
+        second_project_uid: types.SimpleNamespace(
+            uid=second_project_uid,
+            branches=[],
+            default_metatables_data_source=second_data_source,
+        ),
+    }
+
+    monkeypatch.setenv("MAIN_SEQUENCE_PROJECT_UID", PROJECT_UID)
+    monkeypatch.setattr(models_metatables, "_current_repository_branch", lambda: "main")
+    monkeypatch.setattr(
+        models_foundry.Project,
+        "get",
+        lambda **kwargs: projects[kwargs["pk"]],
+    )
+    session_data_source = models_metatables.PodDataSource()
+    monkeypatch.setattr(models_metatables, "SessionDataSource", session_data_source)
+
+    assert models_metatables.get_session_data_source() is first_data_source
+
+    monkeypatch.setenv("MAIN_SEQUENCE_PROJECT_UID", second_project_uid)
+
+    assert models_metatables.get_session_data_source() is second_data_source
+    assert session_data_source.data_source is second_data_source
+
+
+def test_get_session_data_source_preserves_explicit_local_override(monkeypatch):
+    local_data_source = types.SimpleNamespace(
+        uid="local-data-source",
+        class_type=models_metatables.DUCK_DB,
+        status=models_metatables.DataSource.STATUS_AVAILABLE,
+    )
+    session_data_source = models_metatables.PodDataSource(data_source=local_data_source)
+    monkeypatch.setattr(models_metatables, "SessionDataSource", session_data_source)
+    monkeypatch.setattr(
+        models_metatables,
+        "_resolve_local_pod_project",
+        lambda **kwargs: pytest.fail("explicit local data sources must not resolve Git state"),
+    )
+
+    assert models_metatables.get_session_data_source() is local_data_source
+
+
 def test_resolve_local_pod_project_raises_auth_failure(monkeypatch):
     monkeypatch.setenv("MAIN_SEQUENCE_PROJECT_UID", PROJECT_UID)
     monkeypatch.delenv("MAIN_SEQUENCE_PROJECT_ID", raising=False)
@@ -354,25 +532,15 @@ def test_set_local_db_requires_explicit_duckdb_data_source():
 
 def test_set_local_db_uses_explicit_duckdb_source_without_hidden_creation(monkeypatch):
     physical_data_source = types.SimpleNamespace(
-        id=7,
+        uid="duckdb-data-source",
         display_name="Local DuckDB",
         class_type=models_metatables.DUCK_DB,
         status="AVAILABLE",
-    )
-    dynamic_data_source = types.SimpleNamespace(
-        id=42,
-        uid="dynamic-duckdb",
-        related_resource=physical_data_source,
     )
     captured = {}
 
     def _hidden_create(*args, **kwargs):
         raise AssertionError("set_local_db should not create the physical DuckDB DataSource")
-
-    def _create_dynamic(cls, *, data_source, **kwargs):
-        captured["dynamic_data_source"] = data_source
-        captured["dynamic_kwargs"] = kwargs
-        return dynamic_data_source
 
     def _filter_storages(cls, **kwargs):
         captured["filter_kwargs"] = kwargs
@@ -395,11 +563,6 @@ def test_set_local_db_uses_explicit_duckdb_source_without_hidden_creation(monkey
         classmethod(_hidden_create),
     )
     monkeypatch.setattr(
-        models_metatables.DynamicTableDataSource,
-        "create_duckdb",
-        classmethod(_create_dynamic),
-    )
-    monkeypatch.setattr(
         models_metatables.TimeIndexMetaTable,
         "filter",
         classmethod(_filter_storages),
@@ -409,33 +572,24 @@ def test_set_local_db_uses_explicit_duckdb_source_without_hidden_creation(monkey
     pod_data_source = models_metatables.PodDataSource()
     pod_data_source.set_local_db(data_source=physical_data_source)
 
-    assert pod_data_source.data_source is dynamic_data_source
-    assert captured["dynamic_data_source"] is physical_data_source
-    assert captured["dynamic_kwargs"] == {}
-    assert captured["filter_kwargs"] == {"data_source__uid": "dynamic-duckdb", "list_tables": True}
+    assert pod_data_source.data_source is physical_data_source
+    assert captured["filter_kwargs"] == {
+        "data_source__uid": "duckdb-data-source",
+        "list_tables": True,
+    }
 
 
 def test_set_local_db_accepts_explicit_sqlite_source_without_hidden_creation(monkeypatch):
     physical_data_source = types.SimpleNamespace(
-        id=8,
+        uid="sqlite-data-source",
         display_name="Local SQLite",
         class_type=models_metatables.SQLITE,
         status="AVAILABLE",
-    )
-    dynamic_data_source = types.SimpleNamespace(
-        id=43,
-        uid="dynamic-sqlite",
-        related_resource=physical_data_source,
     )
     captured = {}
 
     def _hidden_create(*args, **kwargs):
         raise AssertionError("set_local_db should not create the physical SQLite DataSource")
-
-    def _create_dynamic(cls, *, data_source, **kwargs):
-        captured["dynamic_data_source"] = data_source
-        captured["dynamic_kwargs"] = kwargs
-        return dynamic_data_source
 
     def _filter_storages(cls, **kwargs):
         captured["filter_kwargs"] = kwargs
@@ -458,11 +612,6 @@ def test_set_local_db_accepts_explicit_sqlite_source_without_hidden_creation(mon
         classmethod(_hidden_create),
     )
     monkeypatch.setattr(
-        models_metatables.DynamicTableDataSource,
-        "create_sqlite",
-        classmethod(_create_dynamic),
-    )
-    monkeypatch.setattr(
         models_metatables.TimeIndexMetaTable,
         "filter",
         classmethod(_filter_storages),
@@ -472,10 +621,11 @@ def test_set_local_db_accepts_explicit_sqlite_source_without_hidden_creation(mon
     pod_data_source = models_metatables.PodDataSource()
     pod_data_source.set_local_db(data_source=physical_data_source)
 
-    assert pod_data_source.data_source is dynamic_data_source
-    assert captured["dynamic_data_source"] is physical_data_source
-    assert captured["dynamic_kwargs"] == {}
-    assert captured["filter_kwargs"] == {"data_source__uid": "dynamic-sqlite", "list_tables": True}
+    assert pod_data_source.data_source is physical_data_source
+    assert captured["filter_kwargs"] == {
+        "data_source__uid": "sqlite-data-source",
+        "list_tables": True,
+    }
 
 
 def test_delete_table_does_not_create_duckdb_source_to_classify(monkeypatch):
@@ -491,11 +641,6 @@ def test_delete_table_does_not_create_duckdb_source_to_classify(monkeypatch):
         classmethod(_hidden_create),
     )
     monkeypatch.setattr(
-        models_metatables.DynamicTableDataSource,
-        "get_or_create_duck_db",
-        classmethod(_hidden_create),
-    )
-    monkeypatch.setattr(
         models_metatables,
         "_duckdb_interface",
         lambda: types.SimpleNamespace(drop_table=lambda table: drops.append(table)),
@@ -503,14 +648,12 @@ def test_delete_table_does_not_create_duckdb_source_to_classify(monkeypatch):
     monkeypatch.setattr(
         models_metatables.TimeIndexMetaTable,
         "delete",
-        lambda self: deletes.append(self.storage_hash),
+        lambda self: deletes.append(self.physical_table_name),
     )
 
     storage = models_metatables.TimeIndexMetaTable.model_construct(
-        storage_hash="node-storage",
-        data_source=types.SimpleNamespace(
-            related_resource=types.SimpleNamespace(class_type=models_metatables.DUCK_DB),
-        ),
+        physical_table_name="node-storage",
+        data_source=types.SimpleNamespace(class_type=models_metatables.DUCK_DB),
     )
 
     storage.delete_table()
@@ -531,14 +674,12 @@ def test_delete_table_uses_sqlite_adapter_for_sqlite_storage(monkeypatch):
     monkeypatch.setattr(
         models_metatables.TimeIndexMetaTable,
         "delete",
-        lambda self: deletes.append(self.storage_hash),
+        lambda self: deletes.append(self.physical_table_name),
     )
 
     storage = models_metatables.TimeIndexMetaTable.model_construct(
-        storage_hash="node-storage",
-        data_source=types.SimpleNamespace(
-            related_resource=types.SimpleNamespace(class_type=models_metatables.SQLITE),
-        ),
+        physical_table_name="node-storage",
+        data_source=types.SimpleNamespace(class_type=models_metatables.SQLITE),
     )
 
     storage.delete_table()

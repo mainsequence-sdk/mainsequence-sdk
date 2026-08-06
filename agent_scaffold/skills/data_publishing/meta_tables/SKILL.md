@@ -75,7 +75,7 @@ Before changing code, collect or infer:
 - expected read patterns
 - expected mutation patterns
 - whether TS Manager should create the physical table
-- for `external_registered`, the target `DynamicTableDataSource` UID
+- for `external_registered`, the target canonical `DataSource` UID
 - for contract changes, the selected `AlembicMetaTableMigration` provider or provider module path
 - for contract changes, the provider's `AlembicVersionMetaTable` binding and whether it has been registered
 - for contract changes, the intended Alembic revision, parent/current revision, target revision, and updated SQLAlchemy declarations

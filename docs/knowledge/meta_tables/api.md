@@ -68,7 +68,7 @@ Request fields:
 
 | Field | Meaning |
 | --- | --- |
-| `data_source_uid` | TS Manager `DynamicTableDataSource` that owns connection, credentials, capabilities, and execution. |
+| `data_source_uid` | Canonical `DataSource.uid` that owns connection, capabilities, and execution. |
 | `management_mode` | `external_registered` or `platform_managed`. |
 | `identifier` | Optional logical MetaTable identifier, such as `Asset`. Non-empty values are globally unique per organization. Alembic migration preparation resolves provider MetaTables by authored SQLAlchemy table name instead. |
 | `namespace` | Logical namespace, such as `sdk-examples`. |
@@ -307,7 +307,7 @@ Backend coordination uses:
 ```text
 POST /orm/api/ts_manager/meta_table/
 POST /orm/api/ts_manager/dynamic_table/
-POST /orm/api/ts_manager/dynamic_table_data_source/<uid>/migration-connection/
+POST /orm/api/ts_manager/meta_table/<meta_table_uid>/migration-connection/
 POST /orm/api/ts_manager/meta_table/finalize-managed/
 ```
 
@@ -319,7 +319,7 @@ MetaTable catalog rows through `finalize-managed/`.
 
 ## Backend Capabilities
 
-The selected `DynamicTableDataSource` must expose the capability required by
+The selected `DataSource` must expose the capability required by
 the requested operation:
 
 | Capability | Required for |

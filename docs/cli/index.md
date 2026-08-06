@@ -260,7 +260,7 @@ mainsequence project images list 123
 mainsequence project images list --show-filters
 mainsequence project images list --filter project_repo_hash__in=4a1b2c3d,5e6f7a8b
 mainsequence project create tutorial-project
-mainsequence project create tutorial-project --data-source-uid <data_source_uid> --default-base-image-uid <base_image_uid> --github-org-uid <github_org_uid>
+mainsequence project create tutorial-project --default-metatables-data-source-uid <data_source_uid> --default-base-image-uid <base_image_uid> --github-org-uid <github_org_uid>
 mainsequence project images create
 mainsequence project images create 123
 mainsequence project images create 123 4a1b2c3d

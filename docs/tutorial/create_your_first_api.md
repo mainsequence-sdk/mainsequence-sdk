@@ -188,7 +188,7 @@ In that case, do not hand-build arbitrary JSON and hope the consumers accept it.
 Center canonical tabular contract in:
 
 ```python
-mainsequence.client.command_center.data_models
+mainsequence.client.command_center.sdk.data_models
 ```
 
 The primary model is:
@@ -201,7 +201,7 @@ the contract is validated in Python before Command Center consumes it.
 Example:
 
 ```python
-from mainsequence.client.command_center.data_models import (
+from mainsequence.client.command_center.sdk.data_models import (
     TabularFrameFieldResponse,
     TabularFrameResponse,
     TabularFrameSourceResponse,

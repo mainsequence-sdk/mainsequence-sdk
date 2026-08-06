@@ -18,7 +18,6 @@ from mainsequence.client.metatables import (
     BaseUpdateStatistics,
     DataNodeUpdate,
     DataSource,
-    DynamicTableDataSource,
     MetaTable,
     Scheduler,
     SessionDataSource,
@@ -367,9 +366,7 @@ class APIDataNode(DataAccessMixin):
         data_source_uid = data_config.get("uid")
         if data_source_uid in (None, ""):
             raise ValueError("Data source configuration requires uid.")
-        ModelClass = DynamicTableDataSource.get_class(data_config["data_type"])
-        pod_source = ModelClass.get(uid=data_source_uid)
-        return pod_source
+        return DataSource.get_by_uid(str(data_source_uid))
 
     def _set_local_persist_manager(self) -> None:
         self._verify_local_data_source()
@@ -830,9 +827,9 @@ class DataNode(DataAccessMixin, ABC):
 
         storage_data_source = getattr(self.storage_metadata, "data_source", None)
         if isinstance(storage_data_source, dict):
-            relation_type = storage_data_source.get("related_resource_class_type")
+            relation_type = storage_data_source.get("class_type")
         else:
-            relation_type = getattr(storage_data_source, "related_resource_class_type", None)
+            relation_type = getattr(storage_data_source, "class_type", None)
 
         if graph_depth <= graph_depth_limit and relation_type:
             self._set_local_persist_manager(
@@ -1048,17 +1045,9 @@ class DataNode(DataAccessMixin, ABC):
         if storage_data_source is None:
             storage_data_source = self.local_persist_manager.data_source
         if isinstance(storage_data_source, dict):
-            related_resource = storage_data_source.get("related_resource")
-            if isinstance(related_resource, dict):
-                class_type = related_resource.get("class_type")
-            else:
-                class_type = getattr(related_resource, "class_type", None)
+            class_type = storage_data_source.get("class_type")
         else:
-            class_type = getattr(
-                getattr(storage_data_source, "related_resource", None),
-                "class_type",
-                None,
-            )
+            class_type = getattr(storage_data_source, "class_type", None)
 
         run_operations.UpdateRunner.validate_data_frame(
             temp_df,

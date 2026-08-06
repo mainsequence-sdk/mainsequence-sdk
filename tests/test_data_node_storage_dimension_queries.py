@@ -34,7 +34,11 @@ def _storage(index_names: list[str]) -> models_metatables.TimeIndexMetaTable:
         storage_hash="prices_hash",
         management_mode="platform_managed",
         physical_table_name="prices_hash",
-        data_source=1,
+        data_source={
+            "uid": "data-source-uid",
+            "data_source_uid": "data-source-uid",
+            "class_type": "timescale_db",
+        },
         source_class_name="PricesNode",
         creation_date="2026-04-01T00:00:00Z",
         time_indexed_profile=_source_config(index_names),

@@ -88,7 +88,6 @@ class BaseObjectOrm:
         "DataNodeUpdate": "ts_manager/local_time_serie",
         "DataNodeUpdateDetails": "ts_manager/local_time_serie_update_details",
         "LocalTimeSerieHistoricalUpdate": "ts_manager/lts_historical_update",
-        "DynamicTableDataSource": "ts_manager/dynamic_table_data_source",
         "DataSource": "connections/data_source",
         "Project": "pods/projects",
         "ProjectBranch": "pods/project-branches",

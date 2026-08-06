@@ -5,8 +5,8 @@ from typing import Any, Literal
 
 from pydantic import ConfigDict, Field, model_validator
 
-from ..data_models import ContractBaseModel
-from ..workspaces.mounted_widgets import make_mounted_widget_payload
+from ...sdk.data_models import ContractBaseModel
+from ..mounted_widgets import make_mounted_widget_payload
 
 CORE_TABLE_WIDGET_ID = "core__table"
 CORE_PRO_TABLE_WIDGET_ID = "core__pro-table"

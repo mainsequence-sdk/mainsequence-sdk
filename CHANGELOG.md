@@ -15,6 +15,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- Made `DataSource` the sole canonical database identity across ProjectBranch,
+  MetaTable, DataNode persistence, SQLAlchemy registration, compiled SQL, and
+  CLI discovery. Migration credentials are now requested through the owning
+  Alembic registry MetaTable.
 - Replaced the former branch-shaped `Project` SDK contract with the logical
   Project aggregate and added explicit `ProjectBranch` and `GitRepository`
   models. Branch-owned jobs, images, resources, releases, deployment runs,
@@ -30,6 +34,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   SQL support.
 - Reworked MetaTable schema migration docs around Alembic-rendered SQL artifacts
   instead of SDK-managed artifact tables or custom operation plans.
+
+### Removed
+
+- Removed `DynamicTableDataSource`, its deleted TS Manager endpoint, wrapper
+  traversal, migration-connection models, and compatibility exports.
 
 ## [4.0.2] - 2026-05-25
 
@@ -109,7 +118,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
-- Added `NotificationTone` and `NotificationDefinition` to `mainsequence.client.command_center.app_component` so FastAPI and AppComponent APIs can return notification-banner response contracts with `x-ui-role: notification` and `x-ui-widget: banner-v1`.
+- Added `NotificationTone` and `NotificationDefinition` to `mainsequence.client.command_center.workspaces.app_component` so FastAPI and AppComponent APIs can return notification-banner response contracts with `x-ui-role: notification` and `x-ui-widget: banner-v1`.
 - Added focused SDK tests covering notification payload validation and emitted schema metadata for the new AppComponent notification response contract.
 
 ### Changed

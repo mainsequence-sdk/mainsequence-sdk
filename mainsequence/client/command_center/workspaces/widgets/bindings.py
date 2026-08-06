@@ -3,7 +3,13 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from ..contracts.tabular import CORE_TABULAR_FRAME_CONTRACT
+from ...sdk.contracts.tabular import CORE_TABULAR_FRAME_CONTRACT
+from .tabular_transform import (
+    TABULAR_TRANSFORM_DATASET_OUTPUT_ID,
+    TABULAR_TRANSFORM_LIVE_UPDATES_INPUT_ID,
+    TABULAR_TRANSFORM_SEED_INPUT_ID,
+    TABULAR_TRANSFORM_UPDATES_OUTPUT_ID,
+)
 
 
 def make_widget_output_ref(
@@ -70,8 +76,38 @@ def bind_tabular_seed_data(
     )
 
 
+def bind_tabular_transform_seed(
+    *,
+    source_widget_uid: str,
+    source_output: str = TABULAR_TRANSFORM_DATASET_OUTPUT_ID,
+) -> dict[str, Any]:
+    """Bind retained tabular data to a transform's canonical seed input."""
+
+    return make_widget_input_binding(
+        input_name=TABULAR_TRANSFORM_SEED_INPUT_ID,
+        source_widget_uid=source_widget_uid,
+        source_output=source_output,
+    )
+
+
+def bind_tabular_transform_live_updates(
+    *,
+    source_widget_uid: str,
+    source_output: str = TABULAR_TRANSFORM_UPDATES_OUTPUT_ID,
+) -> dict[str, Any]:
+    """Bind incremental tabular data to a transform's canonical live input."""
+
+    return make_widget_input_binding(
+        input_name=TABULAR_TRANSFORM_LIVE_UPDATES_INPUT_ID,
+        source_widget_uid=source_widget_uid,
+        source_output=source_output,
+    )
+
+
 __all__ = [
     "bind_tabular_seed_data",
+    "bind_tabular_transform_live_updates",
+    "bind_tabular_transform_seed",
     "make_dataset_binding",
     "make_widget_input_binding",
     "make_widget_output_ref",

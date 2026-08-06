@@ -20,7 +20,7 @@ from mainsequence.client.dtype_codec import (
     sqlalchemy_type_to_token,
 )
 from mainsequence.client.metatables import (
-    DynamicTableDataSource,
+    DataSource,
     MetaTable,
     MetaTableColumnContract,
     MetaTableContract,
@@ -200,7 +200,7 @@ class PlatformManagedMetaTable:
     def build_registration_request(
         cls,
         *,
-        data_source: DynamicTableDataSource | None = None,
+        data_source: DataSource | None = None,
         data_source_uid: str | None = None,
         identifier: str | None = None,
         namespace: str | None = None,
@@ -231,7 +231,7 @@ class PlatformManagedMetaTable:
     def register(
         cls,
         *,
-        data_source: DynamicTableDataSource | None = None,
+        data_source: DataSource | None = None,
         data_source_uid: str | None = None,
         timeout: int | float | tuple[float, float] | None = None,
         _registration_stack: tuple[str, ...] = (),
@@ -370,7 +370,7 @@ class PlatformTimeIndexMetaTable(PlatformManagedMetaTable):
     def build_registration_request(
         cls,
         *,
-        data_source: DynamicTableDataSource | None = None,
+        data_source: DataSource | None = None,
         data_source_uid: str | None = None,
         identifier: str | None = None,
         namespace: str | None = None,
@@ -405,7 +405,7 @@ class PlatformTimeIndexMetaTable(PlatformManagedMetaTable):
     def register(
         cls,
         *,
-        data_source: DynamicTableDataSource | None = None,
+        data_source: DataSource | None = None,
         data_source_uid: str | None = None,
         timeout: int | float | tuple[float, float] | None = None,
         _registration_stack: tuple[str, ...] = (),
@@ -480,7 +480,7 @@ def table_contract_from_sqlalchemy_model(
 def time_indexed_registration_request_from_sqlalchemy_model(
     model_or_table: Any,
     *,
-    data_source: DynamicTableDataSource | None = None,
+    data_source: DataSource | None = None,
     data_source_uid: str | None = None,
     identifier: str | None = None,
     namespace: str | None = None,
@@ -587,7 +587,7 @@ def time_indexed_registration_request_from_sqlalchemy_model(
 def platform_managed_registration_request_from_sqlalchemy_model(
     model_or_table: Any,
     *,
-    data_source: DynamicTableDataSource | None = None,
+    data_source: DataSource | None = None,
     data_source_uid: str | None = None,
     identifier: str | None = None,
     namespace: str | None = None,
@@ -778,12 +778,12 @@ def _normalize_table_default_schema(table: Any) -> None:
 
 def _resolve_data_source_uid(
     *,
-    data_source: DynamicTableDataSource | None = None,
+    data_source: DataSource | None = None,
     data_source_uid: str | None = None,
 ) -> str:
-    if data_source is not None and not isinstance(data_source, DynamicTableDataSource):
+    if data_source is not None and not isinstance(data_source, DataSource):
         raise TypeError(
-            "data_source must be a DynamicTableDataSource. Pass data_source_uid=... "
+            "data_source must be a DataSource. Pass data_source_uid=... "
             "when only the uid is available."
         )
     if data_source_uid:
@@ -810,7 +810,7 @@ def _resolve_data_source_uid(
 def _resolve_model_data_source_uid(
     model_or_table: Any,
     *,
-    data_source: DynamicTableDataSource | None = None,
+    data_source: DataSource | None = None,
     data_source_uid: str | None = None,
 ) -> str:
     resolved_data_source_uid = (
