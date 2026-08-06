@@ -46,15 +46,15 @@ This skill must not claim ownership of:
 ## Route Adjacent Work
 
 - Command Center workspaces:
-  `.agents/skills/mainsequence/command_center/workspace_builder/SKILL.md`
+  `.agents/skills/mainsequence/command_center/workspaces/builder/SKILL.md`
 - Command Center table/pro-table output contracts and table visual metadata:
-  `.agents/skills/mainsequence/command_center/widgets/tables/SKILL.md`
+  `.agents/skills/mainsequence/command_center/workspaces/widgets/tables/SKILL.md`
 - predeployment mock API contract validation:
-  `.agents/skills/mainsequence/command_center/api_mock_prototyping/SKILL.md`
+  `.agents/skills/mainsequence/command_center/workspaces/api_mock_prototyping/SKILL.md`
 - APIs and FastAPI:
   `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
 - Adapter from API connection workflow:
-  `.agents/skills/mainsequence/command_center/adapter_from_api/SKILL.md`
+  `.agents/skills/mainsequence/command_center/api_contracts/adapter_from_api/SKILL.md`
 - Connection-backed data access and query contract selection:
   `.agents/skills/mainsequence/command_center/connections/SKILL.md`
 - MetaTables:
@@ -72,10 +72,10 @@ Streamlit dashboard implementation is app-owned project code, not an AppComponen
    - `mainsequence cc registered_widget_type detail <WIDGET_ID> --json`
 2. `docs/knowledge/command_center/forms.md`
 3. `docs/knowledge/command_center/widget_data_contracts.md`
-4. `mainsequence/client/command_center/workspaces/app_component.py`
-5. `.agents/skills/mainsequence/command_center/widgets/tables/SKILL.md` when AppComponent output will feed
+4. `mainsequence/command_center/workspaces/app_component.py`
+5. `.agents/skills/mainsequence/command_center/workspaces/widgets/tables/SKILL.md` when AppComponent output will feed
    a table/pro-table widget or needs `core.tabular_frame@v1` plus table visual metadata
-6. `.agents/skills/mainsequence/command_center/adapter_from_api/SKILL.md` when API-shaped data must become a connection-backed tabular dataset
+6. `.agents/skills/mainsequence/command_center/api_contracts/adapter_from_api/SKILL.md` when API-shaped data must become a connection-backed tabular dataset
 7. `.agents/skills/mainsequence/command_center/connections/SKILL.md` when AppComponent output will be consumed by generic tabular widgets or must align with connection-first dataflow
 
 If the AppComponent is backed by project APIs, also read:
@@ -85,7 +85,7 @@ If the AppComponent is backed by project APIs, also read:
 
 If the task is about validating the API contract before deployment, also read:
 
-10. `.agents/skills/mainsequence/command_center/api_mock_prototyping/SKILL.md`
+10. `.agents/skills/mainsequence/command_center/workspaces/api_mock_prototyping/SKILL.md`
 
 ## Inputs This Skill Needs
 
@@ -111,8 +111,8 @@ Use this source order strictly:
    - `mainsequence cc registered_widget_type detail <WIDGET_ID> --json`
    - this is the first contract source
 2. SDK client models second
-   - `mainsequence/client/command_center/workspaces/app_component.py`
-   - `mainsequence/client/command_center/sdk/data_models.py`
+   - `mainsequence/command_center/workspaces/app_component.py`
+   - `mainsequence/command_center/sdk/data_models.py`
    - use these before any broader repository exploration
 3. Repository docs/models third
    - local docs, examples, payload builders, and typed models
@@ -122,8 +122,8 @@ If registry detail is not sufficient, and only after checking the SDK client mod
 
 - `docs/knowledge/command_center/forms.md`
 - `docs/knowledge/command_center/widget_data_contracts.md`
-- `mainsequence/client/command_center/workspaces/app_component.py`
-- `mainsequence/client/command_center/sdk/data_models.py`
+- `mainsequence/command_center/workspaces/app_component.py`
+- `mainsequence/command_center/sdk/data_models.py`
 
 If the request contract, response UI contract, or widget-facing output contract is unclear, stop before building the AppComponent contract.
 
@@ -236,7 +236,7 @@ Keep the boundary clear:
 - operation-level `select2` metadata can specialize supported request-side generated fields
 - `EditableFormDefinition` and related form objects describe a response-side editable form session
 - `NotificationDefinition` describes response-side banner feedback
-- `mainsequence.client.command_center.sdk.data_models.TabularFrameResponse` is the SDK canonical model for `core.tabular_frame@v1`
+- `mainsequence.command_center.sdk.data_models.TabularFrameResponse` is the SDK canonical model for `core.tabular_frame@v1`
 - other SDK widget data models describe specialized widget-facing API responses when those exist
 
 If the AppComponent both collects input and returns widget-facing data, validate both sides explicitly.
@@ -250,7 +250,7 @@ Do not return loose dictionaries for a widget boundary when an exact contract mo
 For generic tabular consumers, the exact SDK model is:
 
 ```python
-from mainsequence.client.command_center.sdk.data_models import TabularFrameResponse
+from mainsequence.command_center.sdk.data_models import TabularFrameResponse
 ```
 
 Use `TabularFrameResponse` when an AppComponent operation is explicitly producing a full canonical
@@ -281,7 +281,7 @@ widget.
 
 Route Adapter from API work to:
 
-- `.agents/skills/mainsequence/command_center/adapter_from_api/SKILL.md`
+- `.agents/skills/mainsequence/command_center/api_contracts/adapter_from_api/SKILL.md`
 
 Do not use AppComponent as a shortcut source node for generic workspace data just because
 `TabularFrameResponse` exists. Use `TabularFrameResponse` directly only when the AppComponent

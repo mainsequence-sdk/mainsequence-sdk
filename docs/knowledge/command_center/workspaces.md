@@ -11,7 +11,8 @@ Workspace public detail routes use `Workspace.uid`. Workspace `labels` are organ
 
 The important operational detail is that you do not always need to fetch and rewrite the full workspace document when the user wants to change one widget.
 
-For widget-specific mutations, prefer the widget-scoped workspace endpoints exposed by `mainsequence.client.command_center.Workspace`:
+For widget-specific mutations, prefer the widget-scoped workspace endpoints exposed by
+`mainsequence.command_center.workspaces.models.Workspace`:
 
 - `patch_workspace_widget(...)`
 - `delete_workspace_widget(...)`
@@ -52,7 +53,7 @@ Widget-scoped mutation is safer and simpler for targeted edits:
 Use this to partially update one mounted widget instance in place.
 
 ```python
-from mainsequence.client.command_center.workspaces.models import Workspace
+from mainsequence.command_center.workspaces.models import Workspace
 
 workspace = Workspace.get_by_uid("11111111-1111-4111-8111-111111111111")
 result = workspace.patch_workspace_widget(
@@ -89,7 +90,7 @@ Success response fields:
 Use this to remove one mounted widget instance.
 
 ```python
-from mainsequence.client.command_center.workspaces.models import Workspace
+from mainsequence.command_center.workspaces.models import Workspace
 
 workspace = Workspace.get_by_uid("11111111-1111-4111-8111-111111111111")
 workspace.delete_workspace_widget("widget-existing")
@@ -112,7 +113,7 @@ Important behavior:
 Use this to reorder or relocate an existing widget instance inside the same workspace.
 
 ```python
-from mainsequence.client.command_center.workspaces.models import Workspace
+from mainsequence.command_center.workspaces.models import Workspace
 
 workspace = Workspace.get_by_uid("11111111-1111-4111-8111-111111111111")
 result = workspace.move_workspace_widget(

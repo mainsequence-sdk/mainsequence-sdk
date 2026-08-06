@@ -12,7 +12,6 @@ from pydantic import ValidationError
 import mainsequence.client.metatables as models_metatables
 import mainsequence.client.models_foundry as models_foundry
 import mainsequence.meta_tables.data_nodes.data_nodes as data_nodes_mod
-from mainsequence.client.command_center.workspaces.models import Workspace
 from mainsequence.client.metatables import (
     DataNodeUpdate,
     DataNodeUpdateDetails,
@@ -22,6 +21,7 @@ from mainsequence.client.metatables import (
 from mainsequence.client.models_foundry import (
     Project,
 )
+from mainsequence.command_center.workspaces.models import Workspace
 from mainsequence.meta_tables import (
     DataNode,
     DataNodeConfiguration,
@@ -63,7 +63,7 @@ def _platform_storage_model(meta_table: MetaTable) -> type[PlatformTimeIndexMeta
     return RuntimeStorageTable
 
 
-def test_data_node_storage_inherits_meta_table_but_keeps_dynamic_table_endpoint():
+def test_data_node_storage_uses_time_index_meta_table_endpoint():
     assert issubclass(TimeIndexMetaTable, MetaTable)
     for inherited_field in (
         "storage_hash",
@@ -91,7 +91,7 @@ def test_data_node_storage_inherits_meta_table_but_keeps_dynamic_table_endpoint(
     assert isinstance(storage, MetaTable)
     assert storage.management_mode == "platform_managed"
     assert storage.physical_table_name == "prices_storage_hash"
-    assert TimeIndexMetaTable.get_object_url().endswith("/ts_manager/dynamic_table")
+    assert TimeIndexMetaTable.get_object_url().endswith("/ts_manager/time_index_meta_table")
 
 
 def test_metatable_update_models_are_not_exported_from_models_foundry():

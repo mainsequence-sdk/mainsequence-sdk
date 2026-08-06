@@ -52,17 +52,17 @@ This skill must not claim ownership of:
 ## Route Adjacent Work
 
 - Workspace design and deciding whether the view should be a table:
-  `.agents/skills/mainsequence/command_center/workspace_design/SKILL.md`
+  `.agents/skills/mainsequence/command_center/workspaces/design/SKILL.md`
 - Workspace JSON creation, table mounting, and widget mutation:
-  `.agents/skills/mainsequence/command_center/workspace_builder/SKILL.md`
+  `.agents/skills/mainsequence/command_center/workspaces/builder/SKILL.md`
 - Connection-backed source data and query model selection:
   `.agents/skills/mainsequence/command_center/connections/SKILL.md`
 - Adapter from API provider contracts:
-  `.agents/skills/mainsequence/command_center/adapter_from_api/SKILL.md`
+  `.agents/skills/mainsequence/command_center/api_contracts/adapter_from_api/SKILL.md`
 - Tabular transform widgets that reshape data before table consumption:
-  `.agents/skills/mainsequence/command_center/widgets/tabular_transform/SKILL.md`
+  `.agents/skills/mainsequence/command_center/workspaces/widgets/tabular_transform/SKILL.md`
 - AppComponent custom forms and action contracts:
-  `.agents/skills/mainsequence/command_center/widgets/app_components/SKILL.md`
+  `.agents/skills/mainsequence/command_center/workspaces/widgets/app_components/SKILL.md`
 - APIs and FastAPI:
   `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
 - MetaTables:
@@ -78,20 +78,20 @@ This skill must not claim ownership of:
    - `mainsequence cc registered_widget_type detail <WIDGET_ID> --json`
 2. `docs/knowledge/command_center/widget_data_contracts.md`
 3. SDK table and tabular models:
-   - `mainsequence/client/command_center/sdk/contracts/tabular.py`
-   - `mainsequence/client/command_center/sdk/contracts/table_visuals.py`
-   - `mainsequence/client/command_center/workspaces/widgets/table.py`
-   - `mainsequence/client/command_center/sdk/data_models.py`
+   - `mainsequence/command_center/sdk/contracts/tabular.py`
+   - `mainsequence/command_center/sdk/contracts/table_visuals.py`
+   - `mainsequence/command_center/workspaces/widgets/table.py`
+   - `mainsequence/command_center/sdk/data_models.py`
 4. If the table consumes connection-backed data:
    - `.agents/skills/mainsequence/command_center/connections/SKILL.md`
-   - `mainsequence/client/command_center/workspaces/widgets/connection_query.py`
-   - `mainsequence/client/command_center/workspaces/widgets/bindings.py`
+   - `mainsequence/command_center/workspaces/widgets/connection_query.py`
+   - `mainsequence/command_center/workspaces/widgets/bindings.py`
 5. If the table consumes transformed data:
-   - `.agents/skills/mainsequence/command_center/widgets/tabular_transform/SKILL.md`
-   - `mainsequence/client/command_center/workspaces/widgets/tabular_transform.py`
+   - `.agents/skills/mainsequence/command_center/workspaces/widgets/tabular_transform/SKILL.md`
+   - `mainsequence/command_center/workspaces/widgets/tabular_transform.py`
 6. If mounting or mutating a table widget:
-   - `.agents/skills/mainsequence/command_center/workspace_builder/SKILL.md`
-   - `mainsequence/client/command_center/workspaces/mounted_widgets.py`
+   - `.agents/skills/mainsequence/command_center/workspaces/builder/SKILL.md`
+   - `mainsequence/command_center/workspaces/mounted_widgets.py`
 
 Use the SDK helper files above before opening frontend implementation files.
 
@@ -135,7 +135,7 @@ Table and pro-table widgets should consume `core.tabular_frame@v1` for generic t
 Use:
 
 ```python
-from mainsequence.client.command_center.sdk.contracts.tabular import (
+from mainsequence.command_center.sdk.contracts.tabular import (
     make_tabular_field,
     make_tabular_frame,
 )
@@ -150,11 +150,11 @@ shape.
 Use `meta.tableVisuals` for source-owned display metadata that should travel with the frame:
 
 ```python
-from mainsequence.client.command_center.sdk.contracts.table_visuals import (
+from mainsequence.command_center.sdk.contracts.table_visuals import (
     make_table_visual_column,
     make_table_visuals,
 )
-from mainsequence.client.command_center.sdk.contracts.tabular import make_tabular_frame
+from mainsequence.command_center.sdk.contracts.tabular import make_tabular_frame
 
 frame = make_tabular_frame(
     rows=[{"asset": "BTC", "price": 101.25, "change": 0.015}],
@@ -184,7 +184,7 @@ view state into `meta.tableVisuals`.
 Use table widget props for persisted workspace presentation:
 
 ```python
-from mainsequence.client.command_center.workspaces.widgets.table import (
+from mainsequence.command_center.workspaces.widgets.table import (
     TableWidgetColumnOverride,
     TableWidgetColumnSchema,
     make_table_widget_payload,
@@ -218,7 +218,7 @@ Normal table payloads reject formula columns. If the table needs formula columns
 `core__pro-table` and `make_pro_table_widget_payload`.
 
 ```python
-from mainsequence.client.command_center.workspaces.widgets.table import (
+from mainsequence.command_center.workspaces.widgets.table import (
     formula_percent_change,
     make_formula_column,
     make_pro_table_widget_payload,

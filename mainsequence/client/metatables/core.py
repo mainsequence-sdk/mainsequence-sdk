@@ -1619,7 +1619,7 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
 
         cls = type(self)
         url = f"{cls.get_object_url().rstrip('/')}/{self._public_uid()}/run_query/"
-        if cls.ENDPOINT == "ts_manager/dynamic_table":
+        if cls.ENDPOINT == "ts_manager/time_index_meta_table":
             session = cls.build_session()
             old_content_type = session.headers.get("Content-Type")
             session.headers["Content-Type"] = "text/plain"
@@ -2988,7 +2988,7 @@ class TableMetaData(BaseModel):
 
 
 class TimeIndexMetaTable(MetaTable):
-    ENDPOINT: ClassVar[str] = "ts_manager/dynamic_table"
+    ENDPOINT: ClassVar[str] = "ts_manager/time_index_meta_table"
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
         "identifier": ["in", "exact", "contains"],
         "uid": ["in", "exact"],

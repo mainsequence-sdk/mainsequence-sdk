@@ -1,23 +1,3 @@
-from __future__ import annotations
+"""Compatibility wrapper for canonical UI contracts."""
 
-from ...workspaces.app_component import (
-    EditableFormDefinition,
-    EditableFormMeta,
-    FormChoice,
-    FormFieldDefinition,
-    FormFieldKind,
-    FormSectionDefinition,
-    NotificationDefinition,
-    NotificationTone,
-)
-
-__all__ = [
-    "EditableFormDefinition",
-    "EditableFormMeta",
-    "FormChoice",
-    "FormFieldDefinition",
-    "FormFieldKind",
-    "FormSectionDefinition",
-    "NotificationDefinition",
-    "NotificationTone",
-]
+from mainsequence.command_center.sdk.contracts.ui import *  # noqa: F403

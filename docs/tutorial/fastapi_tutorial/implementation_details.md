@@ -203,7 +203,7 @@ If the API should feed generic Command Center tabular consumers directly, use th
 from:
 
 ```python
-mainsequence.client.command_center.sdk.data_models
+mainsequence.command_center.sdk.data_models
 ```
 
 The primary model is:
@@ -217,7 +217,7 @@ contract that matches `core.tabular_frame@v1`.
 Minimal tabular-frame example:
 
 ```python
-from mainsequence.client.command_center.sdk.data_models import (
+from mainsequence.command_center.sdk.data_models import (
     TabularFrameFieldResponse,
     TabularFrameResponse,
     TabularFrameSourceResponse,

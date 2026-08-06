@@ -1,6 +1,5 @@
 from mainsequence.logconf import logger as logger
 
-from .command_center import *  # noqa: F403
 from .metatables import *  # noqa: F403
 from .models_foundry import *  # noqa: F403
 from .models_helpers import *  # noqa: F403

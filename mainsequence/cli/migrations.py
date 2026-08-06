@@ -29,7 +29,7 @@ from mainsequence.meta_tables.migrations import (
 migrations = typer.Typer(help="Alembic-owned MetaTable migration commands")
 REGISTER_ENDPOINT = "/orm/api/ts_manager/meta_table/register/"
 METATABLE_COLLECTION_ENDPOINT = "/orm/api/ts_manager/meta_table/"
-DYNAMIC_TABLE_COLLECTION_ENDPOINT = "/orm/api/ts_manager/dynamic_table/"
+TIME_INDEX_META_TABLE_COLLECTION_ENDPOINT = "/orm/api/ts_manager/time_index_meta_table/"
 FINALIZE_MANAGED_ENDPOINT = "/orm/api/ts_manager/meta_table/finalize-managed/"
 DEFAULT_SCAFFOLD_PROJECT_ROOT = pathlib.Path(".")
 DEFAULT_SCAFFOLD_SOURCE_ROOT = pathlib.Path("src")
@@ -365,15 +365,15 @@ def _metatable_message(
 
 def _collection_create_endpoint_for_items(items: Sequence[Any]) -> str:
     if items and all(_item_value(item, "time_index_name") not in (None, "") for item in items):
-        return DYNAMIC_TABLE_COLLECTION_ENDPOINT
+        return TIME_INDEX_META_TABLE_COLLECTION_ENDPOINT
     return METATABLE_COLLECTION_ENDPOINT
 
 
 def _collection_create_endpoint_for_item(item: Any) -> str:
     if isinstance(item, TimeIndexMetaTable):
-        return DYNAMIC_TABLE_COLLECTION_ENDPOINT
+        return TIME_INDEX_META_TABLE_COLLECTION_ENDPOINT
     if _item_value(item, "time_index_name") not in (None, ""):
-        return DYNAMIC_TABLE_COLLECTION_ENDPOINT
+        return TIME_INDEX_META_TABLE_COLLECTION_ENDPOINT
     return METATABLE_COLLECTION_ENDPOINT
 
 

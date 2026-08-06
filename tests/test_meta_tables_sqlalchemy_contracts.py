@@ -1422,7 +1422,7 @@ def test_time_index_meta_table_rejects_nullable_index_columns():
         _configured_storage_hash(BadHoldings)
 
 
-def test_time_index_meta_table_register_posts_to_dynamic_table_endpoint(monkeypatch):
+def test_time_index_meta_table_register_posts_to_canonical_endpoint(monkeypatch):
     import mainsequence.client.metatables as models_metatables
 
     table = FakeTable(
@@ -1497,7 +1497,7 @@ def test_time_index_meta_table_register_posts_to_dynamic_table_endpoint(monkeypa
     assert AccountHoldings.get_physical_table_name() == "example_assets__account_holdings"
     assert AccountHoldings.__table__.name == "example_assets__account_holdings"
     assert captured["r_type"] == "POST"
-    assert captured["url"].endswith("/ts_manager/dynamic_table/register/")
+    assert captured["url"].endswith("/ts_manager/time_index_meta_table/register/")
     assert captured["timeout"] == 15
     assert captured["payload"]["json"]["data_source_uid"] == (
         "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"

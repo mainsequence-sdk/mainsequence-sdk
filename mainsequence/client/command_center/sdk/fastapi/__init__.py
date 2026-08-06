@@ -1,3 +1,3 @@
-"""Optional FastAPI bindings for Command Center SDK wire contracts."""
+"""Compatibility wrapper for :mod:`mainsequence.command_center.sdk.fastapi`."""
 
-from .resource import *
+from mainsequence.command_center.sdk.fastapi import *  # noqa: F403

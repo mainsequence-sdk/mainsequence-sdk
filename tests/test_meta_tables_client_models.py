@@ -213,7 +213,7 @@ def test_time_index_meta_table_bulk_create_posts_raw_collection_payload(monkeypa
 
     assert result[0].uid == "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
     assert captured["r_type"] == "POST"
-    assert captured["url"].endswith("/ts_manager/dynamic_table/")
+    assert captured["url"].endswith("/ts_manager/time_index_meta_table/")
     assert isinstance(captured["payload"]["json"], list)
     assert captured["payload"]["json"] == [row]
 

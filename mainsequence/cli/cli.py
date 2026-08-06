@@ -447,10 +447,10 @@ DATA_NODE_STORAGE_MODEL_REF = "mainsequence.client.metatables.TimeIndexMetaTable
 META_TABLE_MODEL_REF = "mainsequence.client.metatables.MetaTable"
 CONSTANT_MODEL_REF = "mainsequence.client.models_foundry.Constant"
 SECRET_MODEL_REF = "mainsequence.client.models_foundry.Secret"
-WORKSPACE_MODEL_REF = "mainsequence.client.command_center.Workspace"
-REGISTERED_WIDGET_TYPE_MODEL_REF = "mainsequence.client.command_center.RegisteredWidgetType"
-CONNECTION_TYPE_MODEL_REF = "mainsequence.client.command_center.connections.ConnectionType"
-CONNECTION_INSTANCE_MODEL_REF = "mainsequence.client.command_center.connections.ConnectionInstance"
+WORKSPACE_MODEL_REF = "mainsequence.command_center.workspaces.models.Workspace"
+REGISTERED_WIDGET_TYPE_MODEL_REF = "mainsequence.command_center.workspaces.models.RegisteredWidgetType"
+CONNECTION_TYPE_MODEL_REF = "mainsequence.command_center.connections.ConnectionType"
+CONNECTION_INSTANCE_MODEL_REF = "mainsequence.command_center.connections.ConnectionInstance"
 TEAM_MODEL_REF = "mainsequence.client.models_user.Team"
 JOB_RUN_STATUS_PENDING = "PENDING"
 JOB_RUN_STATUS_RUNNING = "RUNNING"
@@ -5452,7 +5452,7 @@ def _workspace_snapshot_impl(
     _require_login()
 
     try:
-        from mainsequence.client.command_center.workspaces.snapshot import (
+        from mainsequence.command_center.workspaces.snapshot import (
             _build_snapshot_url,
             _capture_workspace_snapshot,
             _resolve_command_center_url,
@@ -13079,7 +13079,7 @@ def skills_list_cmd():
 def skills_path_cmd(
     skill_name: str | None = typer.Argument(
         None,
-        help="Optional installed SDK skill name, for example sdk_project_execution or command_center/workspace_builder",
+        help="Optional installed SDK skill name, for example sdk_project_execution or command_center/workspaces/builder",
     ),
 ):
     """
@@ -13089,15 +13089,15 @@ def skills_path_cmd(
     directory for the current CLI installation.
 
     When a skill name is provided, it may be the full relative skill path such as
-    `command_center/workspace_builder` or, when unique, by its leaf folder name.
+    `command_center/workspaces/builder` or, when unique, by its leaf folder name.
 
     Examples
     --------
     ```bash
     mainsequence skills path
     mainsequence skills path sdk_project_execution
-    mainsequence skills path command_center/workspace_builder
-    mainsequence skills path workspace_builder
+    mainsequence skills path command_center/workspaces/builder
+    mainsequence skills path builder
     ```
     """
     if skill_name is None:

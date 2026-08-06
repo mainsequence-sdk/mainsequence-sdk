@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 import pytest
 from pydantic import ValidationError
 
-from mainsequence.client.command_center.sdk.data_models import (
+from mainsequence.command_center.sdk.data_models import (
     CORE_TABULAR_FRAME_CONTRACT,
     TabularFrameFieldResponse,
     TabularFrameMetaResponse,

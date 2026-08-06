@@ -20,30 +20,36 @@ The practical split is:
 There are three different contract surfaces to keep separate:
 
 - input contracts, such as `EditableFormDefinition`, when a widget needs a specialized form
-- output contracts, such as the models in `mainsequence.client.command_center.sdk.data_models`, when an API should feed a Main Sequence widget directly
-- resource contracts under `mainsequence.client.command_center.sdk.resource` for canonical lists,
+- output contracts, such as the models in `mainsequence.command_center.sdk.data_models`, when an API should feed a Main Sequence widget directly
+- resource contracts under `mainsequence.command_center.sdk.resource` for canonical lists,
   pagination, discovered actions, and summaries
+
+## Package Namespace
+
+Command Center is owned by the top-level `mainsequence.command_center` package. The former
+`mainsequence.client.command_center` path remains as a deprecated compatibility namespace, but new
+code should import from the top-level package.
 
 ## SDK Helper Layout
 
-The Command Center SDK client is split by responsibility:
+The Command Center Python package is split by responsibility:
 
-- `mainsequence.client.command_center.connections`: connection type and connection instance APIs,
+- `mainsequence.command_center.connections`: connection type and connection instance APIs,
   including Adapter from API public config validation
-- `mainsequence.client.command_center.sdk.contracts`: provider-facing contract models and helpers for
+- `mainsequence.command_center.sdk.contracts`: provider-facing contract models and helpers for
   Adapter from API, response mappings, tabular frames, table visual metadata, and UI contracts
-- `mainsequence.client.command_center.sdk.providers`: convenience builders for provider-side contracts
-- `mainsequence.client.command_center.sdk.resource`: the Python projection of the standalone
+- `mainsequence.command_center.sdk.providers`: convenience builders for provider-side contracts
+- `mainsequence.command_center.sdk.resource`: the Python projection of the standalone
   Command Center SDK resource contract
-- `mainsequence.client.command_center.workspaces.widgets`: widget payload, table/pro-table props, tabular
+- `mainsequence.command_center.workspaces.widgets`: widget payload, table/pro-table props, tabular
   transform props, binding, registry, and connection-query helpers
-- `mainsequence.client.command_center.workspaces`: workspace models, create/fetch/update clients,
+- `mainsequence.command_center.workspaces`: workspace models, create/fetch/update clients,
   snapshots, AppComponent definitions, documents, mounted-widget payloads, and widget-scoped
   mutation helpers
 
 The former top-level `contracts`, `data_models`, `providers`, `widgets`, `workspace`,
 `workspace_snapshot`, and `app_component` modules were removed. Use the canonical nested packages
-above; there are no compatibility shim modules.
+above; there are no compatibility shims for those flattened module names.
 
 ## What This Section Covers
 

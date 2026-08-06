@@ -1,6 +1,6 @@
 # Command Center Resource SDK For FastAPI
 
-Use `mainsequence.client.command_center.sdk.resource` when a Python API must expose the same
+Use `mainsequence.command_center.sdk.resource` when a Python API must expose the same
 collection, action, pagination, and summary contracts consumed by the standalone Command Center
 SDK.
 
@@ -39,14 +39,14 @@ apply authorization, filters, and stable ordering before counting and slicing th
 ```python
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, Response
 
-from mainsequence.client.command_center.sdk.data_models import ContractBaseModel
-from mainsequence.client.command_center.sdk.fastapi import (
+from mainsequence.command_center.sdk.data_models import ContractBaseModel
+from mainsequence.command_center.sdk.fastapi import (
     build_fastapi_resource_collection,
     resource_limit_offset,
 )
-from mainsequence.client.command_center.sdk.resource import (
+from mainsequence.command_center.sdk.resource import (
     CanonicalResourceCollection,
     ResourceCollectionControls,
     ResourceLimitOffset,
@@ -72,6 +72,7 @@ controls = ResourceCollectionControls(
 @router.get("/", response_model=CanonicalResourceCollection[ProjectRow])
 def list_projects(
     request: Request,
+    response: Response,
     pagination: Annotated[ResourceLimitOffset, Depends(resource_limit_offset)],
 ) -> CanonicalResourceCollection[ProjectRow]:
     filtered_projects = load_authorized_filtered_projects()
@@ -81,6 +82,7 @@ def list_projects(
     ]
     return build_fastapi_resource_collection(
         request=request,
+        response=response,
         results=results,
         count=count,
         pagination=pagination,
@@ -92,8 +94,13 @@ def list_projects(
 `controls.filters` contains only controls the generic SDK should render. Hidden host scope remains
 part of the actual list query and must also be preserved for all-matching actions.
 
+`build_fastapi_resource_collection` applies `Cache-Control: private, no-store` and merges
+`Authorization, Cookie` into `Vary`. Collection action availability is caller-contextual and must
+not be stored in a shared cache.
+
 Do not set `response_model_exclude_none=True` on collection routes. `next` and `previous` are
-required envelope keys and must remain present when their values are `null`.
+required envelope keys and must remain present when their values are `null`. Optional fields inside
+action definitions are omitted by the action model itself, including an absent `preflight_endpoint`.
 
 ## Discovered Selection Actions
 
@@ -104,10 +111,22 @@ Selection-based collection actions use:
 - the same body for optional preflight.
 
 ```python
-from mainsequence.client.command_center.sdk.resource import (
+from typing import Literal
+from uuid import UUID
+
+from fastapi import Response
+
+from mainsequence.command_center.sdk.data_models import ContractBaseModel
+from mainsequence.command_center.sdk.resource import (
     ResourceBulkActionDiscoveryResponse,
+    ResourceBulkActionEmptyOptions,
     ResourceBulkActionPreflightResponse,
     ResourceBulkActionRequest,
+    validate_resource_bulk_action_filters,
+)
+from mainsequence.command_center.sdk.fastapi import (
+    build_fastapi_bulk_action_discovery,
+    build_fastapi_bulk_action_preflight_response,
 )
 
 
@@ -115,12 +134,18 @@ class DeleteOptions(ContractBaseModel):
     delete_from_provider: bool = False
 
 
+class ProjectListFilters(ContractBaseModel):
+    project_uid: UUID | None = None
+    kind: Literal["service", "job"] | None = None
+
+
 DeleteRequest = ResourceBulkActionRequest[DeleteOptions]
 
 
 @router.get("/bulk-actions/", response_model=ResourceBulkActionDiscoveryResponse)
-def discover_project_actions() -> ResourceBulkActionDiscoveryResponse:
-    return ResourceBulkActionDiscoveryResponse(
+def discover_project_actions(response: Response) -> ResourceBulkActionDiscoveryResponse:
+    return build_fastapi_bulk_action_discovery(
+        response=response,
         actions=actions_available_to_current_user()
     )
 
@@ -128,27 +153,61 @@ def discover_project_actions() -> ResourceBulkActionDiscoveryResponse:
 @router.post(
     "/bulk-delete/preflight/",
     response_model=ResourceBulkActionPreflightResponse,
+    responses={409: {"model": ResourceBulkActionPreflightResponse}},
 )
 def preflight_project_deletion(
     payload: DeleteRequest,
-) -> ResourceBulkActionPreflightResponse:
-    targets = reauthorize_and_resolve_targets(payload.selection)
-    return ResourceBulkActionPreflightResponse(
-        allowed=True,
+) -> Response:
+    if payload.selection.mode == "all_matching":
+        filters = validate_resource_bulk_action_filters(
+            payload.selection.query,
+            ProjectListFilters,
+        )
+    else:
+        filters = None
+    targets = reauthorize_and_resolve_targets(payload.selection, filters=filters)
+    preflight = ResourceBulkActionPreflightResponse(
+        allowed=deletion_is_allowed(targets, payload.options),
+        blockers=build_project_deletion_blockers(targets, payload.options),
         warnings=build_project_deletion_warnings(targets, payload.options),
         matched_count=len(targets),
     )
+    return build_fastapi_bulk_action_preflight_response(preflight)
 
 
 @router.post("/bulk-delete/")
 def bulk_delete_projects(payload: DeleteRequest):
-    targets = reauthorize_and_resolve_targets(payload.selection)
+    if payload.selection.mode == "all_matching":
+        filters = validate_resource_bulk_action_filters(
+            payload.selection.query,
+            ProjectListFilters,
+        )
+    else:
+        filters = None
+    targets = reauthorize_and_resolve_targets(payload.selection, filters=filters)
     return execute_project_deletion(targets, payload.options)
 ```
 
+Use `ResourceBulkActionEmptyOptions` instead of an untyped dictionary when an action has no user
+options:
+
+```python
+DeleteRequest = ResourceBulkActionRequest[ResourceBulkActionEmptyOptions]
+```
+
 `explicit` selection accepts public UUIDs. `all_matching` contains semantic `search` and `filters`
-only; pagination and ordering are rejected. Execution must reauthorize and resolve every target.
-Legacy fields such as `selected_uids`, `select_all`, and `current_url` are not accepted.
+only; pagination and ordering are rejected. Pass its filters through the same strict filter model
+and application filtering function used by the list route. This rejects undeclared filters and
+keeps hidden host scope aligned. Execution must reauthorize and resolve every target. Legacy fields
+such as `selected_uids`, `select_all`, and `current_url` are not accepted.
+
+The reusable preflight response supports required `allowed` and `matched_count`, optional `detail`
+and string `blockers`, and string `warnings`. The FastAPI helper returns HTTP 200 when allowed and
+HTTP 409 when blocked, matching the canonical destructive-action preflight behavior. Declare the
+409 response model on the route so OpenAPI documents both outcomes. A domain with structured
+per-item impacts should define its own strict response model instead of flattening or discarding
+those action-specific fields; it must still receive the exact same selection/options request as
+execution.
 
 Successful action responses remain action-specific. Do not wrap every action result in a new
 universal response model.

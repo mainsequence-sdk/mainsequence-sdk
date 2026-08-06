@@ -1,7 +1,13 @@
-"""Python projections of the standalone Command Center SDK contracts."""
+"""Compatibility wrapper for :mod:`mainsequence.command_center.sdk`."""
 
-from .contracts import *
-from .data_models import *
-from .providers import *
-from .resource import *
+from __future__ import annotations
 
+from typing import Any
+
+from mainsequence.command_center import sdk as _canonical
+
+__all__ = _canonical.__all__
+
+
+def __getattr__(name: str) -> Any:
+    return getattr(_canonical, name)

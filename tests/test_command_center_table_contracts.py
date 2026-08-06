@@ -1,11 +1,11 @@
 import pytest
 
-from mainsequence.client.command_center.sdk.contracts.table_visuals import (
+from mainsequence.command_center.sdk.contracts.table_visuals import (
     make_table_visual_column,
     make_table_visuals,
 )
-from mainsequence.client.command_center.sdk.contracts.tabular import make_tabular_frame
-from mainsequence.client.command_center.workspaces.widgets.table import (
+from mainsequence.command_center.sdk.contracts.tabular import make_tabular_frame
+from mainsequence.command_center.workspaces.widgets.table import (
     CORE_PRO_TABLE_WIDGET_ID,
     CORE_TABLE_WIDGET_ID,
     TableLiveMergeKeyMapping,

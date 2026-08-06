@@ -9,9 +9,9 @@ description: Use this skill when the task is about creating, updating, validatin
 
 Use this skill when the task is about a Command Center workspace document or a mounted widget inside that workspace, and the high-level workspace design is already known.
 
-This skill is for workspace structure execution, widget payload resolution, safe workspace mutation, and grounding those decisions against the actual `mainsequence.client.command_center` client models.
+This skill is for workspace structure execution, widget payload resolution, safe workspace mutation, and grounding those decisions against the actual `mainsequence.command_center` client models.
 
-If the task is still deciding what the workspace should communicate, which widgets should be used, or how the workspace should be organized, use `.agents/skills/mainsequence/command_center/workspace_design/SKILL.md` first.
+If the task is still deciding what the workspace should communicate, which widgets should be used, or how the workspace should be organized, use `.agents/skills/mainsequence/command_center/workspaces/design/SKILL.md` first.
 
 ## This Skill Can Do
 
@@ -21,7 +21,7 @@ If the task is still deciding what the workspace should communicate, which widge
 - execute a known workspace design
 - verify widget types in the CLI registry before mounting or mutating them
 - inspect the richer widget detail contract before opening repository source
-- inspect SDK client models in `mainsequence/client/command_center/` before opening frontend implementation files
+- inspect SDK client models in `mainsequence/command_center/` before opening frontend implementation files
 - decide whether widget detail plus SDK models are already enough to build the widget safely
 - resolve widget instance payloads from Main Sequence docs/models in this repository only after registry verification and widget-detail review
 - decide between full workspace update and widget-scoped mutation
@@ -49,19 +49,19 @@ This skill must not claim ownership of:
 ## Route Adjacent Work
 
 - Workspace design, widget selection, and visualization strategy:
-  `.agents/skills/mainsequence/command_center/workspace_design/SKILL.md`
+  `.agents/skills/mainsequence/command_center/workspaces/design/SKILL.md`
 - AppComponents and custom forms:
-  `.agents/skills/mainsequence/command_center/widgets/app_components/SKILL.md`
+  `.agents/skills/mainsequence/command_center/workspaces/widgets/app_components/SKILL.md`
 - Table/pro-table payloads, tabular frame contracts, table visual metadata, formulas, selection,
   and live merge mappings:
-  `.agents/skills/mainsequence/command_center/widgets/tables/SKILL.md`
+  `.agents/skills/mainsequence/command_center/workspaces/widgets/tables/SKILL.md`
 - Tabular transform payloads, projection, filtering, aggregate, pivot, unpivot, computed columns,
   and seed/live update bindings:
-  `.agents/skills/mainsequence/command_center/widgets/tabular_transform/SKILL.md`
+  `.agents/skills/mainsequence/command_center/workspaces/widgets/tabular_transform/SKILL.md`
 - Connection-backed data access and query contract selection:
   `.agents/skills/mainsequence/command_center/connections/SKILL.md`
 - predeployment mock API contract validation:
-  `.agents/skills/mainsequence/command_center/api_mock_prototyping/SKILL.md`
+  `.agents/skills/mainsequence/command_center/workspaces/api_mock_prototyping/SKILL.md`
 - APIs and FastAPI:
   `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
 - Jobs, images, resources, and releases:
@@ -74,7 +74,7 @@ Streamlit dashboard implementation is app-owned project code, not a Main Sequenc
 ## Read First
 
 0. If widget selection, layout narrative, or visualization strategy is not already decided, use:
-   - `.agents/skills/mainsequence/command_center/workspace_design/SKILL.md`
+   - `.agents/skills/mainsequence/command_center/workspaces/design/SKILL.md`
 1. If the workspace may use connection-backed source widgets, inspect the available connections through the CLI first:
    - `mainsequence cc connection list --json`
    - identify the target connection instance `uid`
@@ -86,7 +86,7 @@ Streamlit dashboard implementation is app-owned project code, not a Main Sequenc
    - `mainsequence cc registered_widget_type list --json`
    - identify the target `widget_id`
    - `mainsequence cc registered_widget_type detail <WIDGET_ID> --json`
-3. The SDK client models in `mainsequence/client/command_center/`:
+3. The SDK client models in `mainsequence/command_center/`:
    - `workspace.py`
    - `connections.py` when source widgets depend on backend-owned connections
    - `data_models.py`
@@ -107,10 +107,10 @@ If the workspace contains AppComponent widgets, also read:
 7. `docs/knowledge/command_center/forms.md`
 8. `docs/knowledge/command_center/widget_data_contracts.md`
 9. `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md` when mounted widgets depend on project APIs that must be usable from Command Center
-10. `.agents/skills/mainsequence/command_center/api_mock_prototyping/SKILL.md` when the workspace should validate an AppComponent/API contract in `mock-json` mode before deployment
-11. `.agents/skills/mainsequence/command_center/widgets/tables/SKILL.md` when a table/pro-table widget
+10. `.agents/skills/mainsequence/command_center/workspaces/api_mock_prototyping/SKILL.md` when the workspace should validate an AppComponent/API contract in `mock-json` mode before deployment
+11. `.agents/skills/mainsequence/command_center/workspaces/widgets/tables/SKILL.md` when a table/pro-table widget
     needs exact props, formulas, selection outputs, live merge mappings, or `meta.tableVisuals`
-12. `.agents/skills/mainsequence/command_center/widgets/tabular_transform/SKILL.md` when a
+12. `.agents/skills/mainsequence/command_center/workspaces/widgets/tabular_transform/SKILL.md` when a
     `core__tabular-transform` widget needs exact props or seed/live update bindings
 
 ## Command Center Mental Model
@@ -226,7 +226,7 @@ Before writing or mutating a workspace, collect or infer:
   one item per widget with concrete intent
 - verified `widget_id` values from the CLI registry
 - widget detail payloads for those widget ids
-- relevant SDK model sources in `mainsequence/client/command_center/`
+- relevant SDK model sources in `mainsequence/command_center/`
 - connection instance, connection type, query model, and output contract for each connection-backed source widget
 - widget instance ids
 - external resource ids required by those widgets
@@ -241,16 +241,16 @@ Use this source order strictly:
    - `mainsequence cc registered_widget_type detail <WIDGET_ID> --json`
    - this is the first contract source
 2. SDK client models second
-   - `mainsequence/client/command_center/workspaces/models.py`
-   - `mainsequence/client/command_center/sdk/data_models.py`
-   - `mainsequence/client/command_center/workspaces/app_component.py` when relevant
-   - `mainsequence/client/command_center/workspaces/widgets/connection_query.py` for connection-query source
+   - `mainsequence/command_center/workspaces/models.py`
+   - `mainsequence/command_center/sdk/data_models.py`
+   - `mainsequence/command_center/workspaces/app_component.py` when relevant
+   - `mainsequence/command_center/workspaces/widgets/connection_query.py` for connection-query source
      payloads
-   - `mainsequence/client/command_center/workspaces/widgets/bindings.py` for widget input/output bindings
-   - `mainsequence/client/command_center/workspaces/widgets/table.py` for table/pro-table props
-   - `mainsequence/client/command_center/workspaces/widgets/tabular_transform.py` for tabular transform props
-   - `mainsequence/client/command_center/workspaces/documents.py` and
-     `mainsequence/client/command_center/workspaces/mounted_widgets.py` for workspace and mounted
+   - `mainsequence/command_center/workspaces/widgets/bindings.py` for widget input/output bindings
+   - `mainsequence/command_center/workspaces/widgets/table.py` for table/pro-table props
+   - `mainsequence/command_center/workspaces/widgets/tabular_transform.py` for tabular transform props
+   - `mainsequence/command_center/workspaces/documents.py` and
+     `mainsequence/command_center/workspaces/mounted_widgets.py` for workspace and mounted
      widget payload helpers
    - use these before any broader repository exploration
 3. Repository docs/models third
@@ -326,7 +326,7 @@ This skill does not create resources or releases. Route that work to:
 
 ### 2. Read the SDK client models before frontend implementation files
 
-After registry verification, inspect the relevant `mainsequence.client.command_center` model before opening frontend implementation files.
+After registry verification, inspect the relevant `mainsequence.command_center` model before opening frontend implementation files.
 
 Use:
 
@@ -498,7 +498,7 @@ Connection source rules:
   ad hoc records, normalize through an Adapter from API connection first, then use an explicit
   transform when analytical reshaping is still required
 - when a project API or AppComponent legitimately returns a full canonical frame, ground the
-  contract against `mainsequence.client.command_center.sdk.data_models.TabularFrameResponse`
+  contract against `mainsequence.command_center.sdk.data_models.TabularFrameResponse`
 - source-specific runtime details belong in `source.context`, not top-level widget payload fields
 
 ### 3.2 Historical and incremental lanes

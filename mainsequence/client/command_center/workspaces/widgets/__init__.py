@@ -1,5 +1,3 @@
-from .bindings import *
-from .connection_query import *
-from .registry import *
-from .table import *
-from .tabular_transform import *
+"""Compatibility wrapper for canonical workspace widget contracts."""
+
+from mainsequence.command_center.workspaces.widgets import *  # noqa: F403

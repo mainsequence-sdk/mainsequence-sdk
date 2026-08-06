@@ -356,9 +356,10 @@ mainsequence skills list --json
 mainsequence skills path
 mainsequence skills path sdk_project_execution
 mainsequence skills path maintenance/project-maintenance
-mainsequence skills path command_center/workspace_builder
-mainsequence skills path workspace_builder
-mainsequence skills path workspace_builder --json
+mainsequence skills path command_center/api_contracts/resource_api
+mainsequence skills path command_center/workspaces/builder
+mainsequence skills path builder
+mainsequence skills path builder --json
 ```
 
 ### Updating project agent skills
@@ -503,7 +504,7 @@ ontology and each installed platform skill.
 - `mainsequence login` persists tokens for later CLI runs. Use `--export` only when you explicitly want shell-managed auth variables instead.
 - `mainsequence skills list` lists installed scaffold skills from the current CLI installation by recursively discovering `SKILL.md` files under the installed `agent_scaffold` bundle.
 - `mainsequence skills path` with no argument prints the installed `agent_scaffold/skills` directory for the current CLI installation.
-- `mainsequence skills path <skill_name>` prints the installed `SKILL.md` path for one scaffold skill from the current CLI installation. It accepts full relative skill names such as `command_center/workspace_builder` and unique leaf names such as `workspace_builder`.
+- `mainsequence skills path <skill_name>` prints the installed `SKILL.md` path for one scaffold skill from the current CLI installation. It accepts full relative skill names such as `command_center/workspaces/builder` and unique leaf names such as `builder`.
 - `mainsequence user` shows the authenticated MainSequence user through the SDK client `User.get_logged_user()` path.
 - in standalone authenticated CLI or script code that is not request-bound, prefer `User.get_authenticated_user_details()` over `User.get_logged_user()`. `User.get_logged_user()` is for request-bound identity contexts such as FastAPI middleware, Streamlit, or code that explicitly binds `_CURRENT_AUTH_HEADERS`.
 - `mainsequence project search "<QUERY>"` searches visible projects through the SDK client `Project.quick_search()` path and returns `id`, `project_name`, `repository_branch`, and `cluster_id` for matching rows.
