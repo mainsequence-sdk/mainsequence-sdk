@@ -105,7 +105,7 @@ python-dateutil==2.9.0.post0
     # via pandas
 pytz==2025.2
     # via pandas
-pywin32==311 ; sys_platform == 'win32'
+pywin32==312 ; sys_platform == 'win32'
     # via portalocker
 pyyaml==6.0.3
     # via mainsequence
