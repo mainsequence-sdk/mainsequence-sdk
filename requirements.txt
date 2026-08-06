@@ -93,7 +93,7 @@ psutil==7.1.0
     # via mainsequence
 psycopg2==2.9.12
     # via mainsequence
-pydantic==2.12.0
+pydantic==2.13.4
     # via mainsequence
 pydantic-core==2.41.1
     # via pydantic
