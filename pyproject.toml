@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mainsequence"
-version = "6.0.2"
+version = "6.0.3"
 description = "Main Sequence SDK "
 readme = "README.md"
 requires-python = ">=3.13"
@@ -55,12 +55,6 @@ dependencies = [
   "duckdb>=1.4.2",
   "pyarrow>=23.0.1",
 ]
-# Optional headless browser support for future Command Center workspace/web snapshots.
-# Keep this out of the default SDK install because most users do not need Playwright.
-"workspace-snapshots" = [
-  "playwright",
-]
-
 [project.urls]
 Homepage = "https://github.com/mainsequence-sdk/mainsequence-sdk"
 Issues = "https://github.com/mainsequence-sdk/mainsequence-sdk/issues"

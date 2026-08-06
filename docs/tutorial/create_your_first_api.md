@@ -177,69 +177,7 @@ Inside an API handler, `APIDataNode` is usually the right reader when:
 
 That is the same reason it was introduced earlier for dashboard readers. The API layer is not rebuilding the `DataNode`; it is consuming the published table contract.
 
-## 5. If The API Should Feed Command Center Tabular Consumers
-
-Sometimes the API is not meant for a generic frontend client. It is meant to feed Command Center
-table, chart, statistic, curve, transform, or agent-facing data consumers.
-
-That is a different situation.
-
-In that case, do not hand-build arbitrary JSON and hope the consumers accept it. Use the Command
-Center canonical tabular contract in:
-
-```python
-mainsequence.client.command_center.sdk.data_models
-```
-
-The primary model is:
-
-- `TabularFrameResponse`
-
-Declare it as the FastAPI `response_model` for Command Center-facing tabular endpoints. That way
-the contract is validated in Python before Command Center consumes it.
-
-Example:
-
-```python
-from mainsequence.client.command_center.sdk.data_models import (
-    TabularFrameFieldResponse,
-    TabularFrameResponse,
-    TabularFrameSourceResponse,
-)
-
-
-@app.get(
-    "/widgets/customers/source",
-    response_model=TabularFrameResponse,
-)
-def get_customers_widget_source() -> TabularFrameResponse:
-    rows = list_customers(region=None, limit=50)
-    return TabularFrameResponse(
-        status="ready",
-        columns=["id", "customer_code", "name", "region"],
-        rows=rows,
-        fields=[
-            TabularFrameFieldResponse(key="id", label="Id", type="integer", provenance="manual"),
-            TabularFrameFieldResponse(key="customer_code", label="Customer Code", type="string", provenance="manual"),
-            TabularFrameFieldResponse(key="name", label="Name", type="string", provenance="manual"),
-            TabularFrameFieldResponse(key="region", label="Region", type="string", provenance="manual"),
-        ],
-        source=TabularFrameSourceResponse(
-            kind="api",
-            label="Tutorial Customers API",
-            context={"limit": 50},
-        ),
-    )
-```
-
-This matters because the SDK model gives you the exact `core.tabular_frame@v1` structure expected
-by generic Command Center data consumers.
-
-For the full contract breakdown, see:
-
-- [Command Center Widget Data Contracts](../knowledge/command_center/widget_data_contracts.md)
-
-## 6. Run the API Locally
+## 5. Run the API Locally
 
 From the project root:
 
@@ -255,7 +193,7 @@ Then open:
 
 The automatic FastAPI docs are useful here because they let you verify the request and response shape before you think about deployment.
 
-## 7. Test It Against the Tutorial Data
+## 6. Test It Against the Tutorial Data
 
 The `/customers` route expects that you already registered the tutorial
 backend-managed customer `MetaTable` and saved its UID and physical table name
@@ -286,7 +224,7 @@ curl "http://127.0.0.1:8000/customers?region=US"
 curl "http://127.0.0.1:8000/random-numbers?start_date=2026-03-01&end_date=2026-03-31"
 ```
 
-## 8. How API Deployment Fits the Platform Model
+## 7. How API Deployment Fits the Platform Model
 
 The deployment model is the same one you later use for dashboards:
 
@@ -317,7 +255,7 @@ The CLI uses the same deployment model as dashboards and other project resources
 - discovered project resource
 - release created from that resource
 
-## 9. What To Keep Stable
+## 8. What To Keep Stable
 
 Treat the API as a contract just like you treat a published table identifier or
 a `MetaTable` contract as a contract.
@@ -331,12 +269,12 @@ Keep these stable unless you mean to introduce a breaking change:
 
 If the API is going to be consumed across projects, dashboards, or agents, stability matters just as much here as it does for tables.
 
-## 10. Further Reading
+## 9. Further Reading
 
 For the data layer behind this chapter, see:
 
 - [Data Nodes](../knowledge/data_nodes.md)
-- [Command Center Widget Data Contracts](../knowledge/command_center/widget_data_contracts.md)
+- [Command Center](../knowledge/command_center/index.md)
 - [MetaTables Overview](../knowledge/meta_tables/index.md)
 - [Compiled SQL Execution](../knowledge/meta_tables/compiled_sql.md)
 - [FastAPI Tutorial Overview](fastapi_tutorial/index.md)

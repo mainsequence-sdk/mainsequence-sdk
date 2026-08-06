@@ -15,6 +15,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- Consolidated the generic Command Center backend clients into
+  `mainsequence.client.command_center_models`.
 - Made `DataSource` the sole canonical database identity across ProjectBranch,
   MetaTable, DataNode persistence, SQLAlchemy registration, compiled SQL, and
   CLI discovery. Migration credentials are now requested through the owning
@@ -37,6 +39,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Removed
 
+- Removed the Python Command Center UI contracts, payload recipes, FastAPI helpers,
+  Adapter-from-API specialization, workspace snapshot workflow, and old nested client namespace.
 - Removed `DynamicTableDataSource`, its deleted TS Manager endpoint, wrapper
   traversal, migration-connection models, and compatibility exports.
 

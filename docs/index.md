@@ -35,7 +35,6 @@ Key entry points:
 
 - [Data Nodes](knowledge/data_nodes.md)
 - [Command Center](knowledge/command_center/index.md)
-- [Command Center Widget Data Contracts](knowledge/command_center/widget_data_contracts.md)
 - [MetaTables](knowledge/meta_tables/index.md)
 - [Constants and Secrets](knowledge/infrastructure/constants_and_secrets.md)
 - [Scheduling Jobs](knowledge/infrastructure/scheduling_jobs.md)

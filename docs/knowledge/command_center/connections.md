@@ -1,187 +1,24 @@
 # Command Center Connections
 
-Command Center connection instances are configured backend objects represented in the SDK by
-`mainsequence.client.command_center.connections.ConnectionInstance`.
-
-Most connection types can use the generic SDK methods:
+The Python SDK provides generic backend clients for connection catalog entries and configured
+connection instances:
 
 ```python
-from mainsequence.client.command_center.connections import ConnectionInstance
+from mainsequence.client.command_center_models import ConnectionInstance, ConnectionType
 
+connection_type = ConnectionType.get(type_id="postgresql.database")
 connection = ConnectionInstance.get(uid="warehouse-primary")
-connections = ConnectionInstance.filter(type_id="postgresql.database")
-```
-
-The `command_center.adapter_from_api` connection type has an additional SDK-side validation model
-because its `publicConfig` contract is strict and is consumed by both the backend and browser-side
-Command Center runtime.
-
-## Adapter From API Type
-
-Use these SDK symbols for Adapter From API connections:
-
-```python
-from mainsequence.client.command_center.connections import (
-    AdapterFromApiConnectionPublicConfig,
-    ConnectionInstance,
-    CONNECTION_TYPE_ADAPTER_FROM_API,
-)
-```
-
-The stable connection type id is:
-
-```python
-CONNECTION_TYPE_ADAPTER_FROM_API == "command_center.adapter_from_api"
-```
-
-Related SDK helper modules:
-
-- `mainsequence.client.command_center.sdk.contracts.adapter_from_api` defines the well-known provider
-  contract models, operation models, config variable models, and secret variable models.
-- `mainsequence.client.command_center.sdk.providers.adapter_from_api` provides convenience builders such
-  as `make_health_operation`, `make_query_operation`, and `make_provider_contract`.
-- `mainsequence.client.command_center.sdk.contracts.response_mapping` provides
-  `make_tabular_response_mapping` for optional provider-native response mapping metadata.
-- `mainsequence.client.command_center.sdk.contracts.tabular` provides `make_tabular_frame` and related
-  helpers for building canonical `core.tabular_frame@v1` responses.
-- `mainsequence.client.command_center.workspaces.widgets.connection_query` provides
-  `make_connection_query_payload` for source widgets that query a connection instance.
-
-## Direct Mode Public Config
-
-Direct mode is used when the browser runtime owns debug API calls. The SDK validates the same strict
-public config shape the backend accepts.
-
-```python
-from mainsequence.client.command_center.connections import AdapterFromApiConnectionPublicConfig
-
-public_config = AdapterFromApiConnectionPublicConfig.direct(
-    debug_api_base_url="http://127.0.0.1:8021",
-)
-
-assert public_config.to_public_config() == {
-    "debugApiBaseUrl": "http://127.0.0.1:8021",
-    "transportMode": "direct",
-    "contractDefinitionUrl": (
-        "http://127.0.0.1:8021/.well-known/command-center/connection-contract"
-    ),
-    "openApiUrl": "http://127.0.0.1:8021/openapi.json",
-    "compiledContractSource": "direct",
-    "compiledContractSourceUrl": (
-        "http://127.0.0.1:8021/.well-known/command-center/connection-contract"
-    ),
-    "configValues": {},
-    "contractVersion": "",
-    "requestTimeoutMs": 30000,
-    "queryCachePolicy": "safe",
-    "queryCacheTtlMs": 300000,
-    "dedupeInFlight": True,
-}
-```
-
-The same model can validate a dict received from a frontend before it is sent to the backend:
-
-```python
-payload = {
-    "openApiUrl": "http://127.0.0.1:8021/openapi.json",
-    "configValues": {},
-    "transportMode": "direct",
-    "dedupeInFlight": True,
-    "contractVersion": "",
-    "debugApiBaseUrl": "http://127.0.0.1:8021",
-    "queryCacheTtlMs": 300000,
-    "queryCachePolicy": "safe",
-    "requestTimeoutMs": 30000,
-    "contractDefinitionUrl": (
-        "http://127.0.0.1:8021/.well-known/command-center/connection-contract"
-    ),
-    "compiledContractSource": "direct",
-    "compiledContractSourceUrl": (
-        "http://127.0.0.1:8021/.well-known/command-center/connection-contract"
-    ),
-}
-
-public_config = AdapterFromApiConnectionPublicConfig.model_validate(payload)
-validated_payload = public_config.to_public_config()
-```
-
-Do not include `applicationBindings`. It is not part of the Adapter From API public config contract,
-and the SDK model rejects it before the request reaches the backend.
-
-## Create A Direct Connection
-
-Use `ConnectionInstance.create_adapter_from_api_direct(...)` for the common direct-mode connection:
-
-```python
-from mainsequence.client.command_center.connections import ConnectionInstance
-
-connection = ConnectionInstance.create_adapter_from_api_direct(
-    name="Markets debug API",
-    debug_api_base_url="http://127.0.0.1:8021",
-    workspace_uid="11111111-1111-4111-8111-111111111111",
-    is_default=True,
-)
-```
-
-This helper sends the normal `connections` create request with:
-
-- `typeId = "command_center.adapter_from_api"`
-- a strict `publicConfig` generated by `AdapterFromApiConnectionPublicConfig`
-- optional `workspaceUid`, `isDefault`, and `tags`
-
-For a pre-built config object or dict, use `create_adapter_from_api(...)`:
-
-```python
-public_config = AdapterFromApiConnectionPublicConfig.model_validate(payload)
-
-connection = ConnectionInstance.create_adapter_from_api(
-    name="Markets debug API",
-    public_config=public_config,
+connections = ConnectionInstance.filter(
+    type_id="postgresql.database",
     workspace_uid="11111111-1111-4111-8111-111111111111",
 )
 ```
 
-## Get Or Filter Adapter Connections
+These models map backend responses and provide normal ORM-style transport methods. They do not
+define or validate any connection-type-specific `publicConfig`, query contract, response mapping,
+or provider behavior.
 
-Use the type-specific helpers when callers should only receive
-`command_center.adapter_from_api` instances:
-
-```python
-connection = ConnectionInstance.get_adapter_from_api(
-    workspace_uid="11111111-1111-4111-8111-111111111111",
-    is_default=True,
-)
-
-connections = ConnectionInstance.filter_adapter_from_api(
-    workspace_uid="11111111-1111-4111-8111-111111111111",
-)
-```
-
-If you know the connection UID, `get_adapter_from_api(uid=...)` performs a detail lookup and then
-asserts that the returned instance is actually `command_center.adapter_from_api`:
-
-```python
-connection = ConnectionInstance.get_adapter_from_api(uid="adapter-from-api-debug")
-```
-
-## Validation Rules
-
-`AdapterFromApiConnectionPublicConfig` is intentionally strict:
-
-- unknown fields are rejected
-- `applicationBindings` is rejected
-- URLs must be absolute `http` or `https` URLs without credentials, query strings, or fragments
-- `contractDefinitionUrl`, `openApiUrl`, and `compiledContractSourceUrl` must match the URLs derived
-  from the normalized API base URL
-- direct mode requires `transportMode = "direct"`
-- direct mode requires `compiledContractSource = "direct"` when the field is present
-- direct mode rejects `apiBaseUrl`
-- backend mode rejects `debugApiBaseUrl`, `compiledContractSource`, and `compiledContractSourceUrl`
-- `requestTimeoutMs` must be an integer from `1000` through `30000`
-- `queryCachePolicy` must be `disabled` or `safe`
-- `queryCacheTtlMs` must be an integer from `0` through `3600000`
-- `dedupeInFlight` must be a boolean
-- direct mode with non-empty `configValues` must also provide `compiledContract`
-
-Use this model at SDK boundaries where user input or frontend-provided config crosses into the
-Command Center connection API.
+Connection-specific schemas, including Adapter-from-API contracts, are owned by the standalone
+[`@dev-mainsequence/command-center-sdk`](https://github.com/mainsequence-sdk/command-center-sdk).
+Validate those payloads with its exported schemas and contract fixtures before sending them through
+the generic Python client.

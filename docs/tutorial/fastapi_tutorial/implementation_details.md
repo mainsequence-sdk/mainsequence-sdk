@@ -197,56 +197,7 @@ For the focused knowledge page, see:
 
 - [FastAPI Request User Context](../../knowledge/fastapi/index.md)
 
-## 6. Returning Exact Command Center Tabular Contracts
-
-If the API should feed generic Command Center tabular consumers directly, use the contract models
-from:
-
-```python
-mainsequence.client.command_center.sdk.data_models
-```
-
-The primary model is:
-
-- `TabularFrameResponse`
-
-If the endpoint exists specifically to feed Command Center tabular consumers, declare the Command
-Center model as the FastAPI `response_model`. That gives you validation, documentation, and a
-contract that matches `core.tabular_frame@v1`.
-
-Minimal tabular-frame example:
-
-```python
-from mainsequence.client.command_center.sdk.data_models import (
-    TabularFrameFieldResponse,
-    TabularFrameResponse,
-    TabularFrameSourceResponse,
-)
-
-
-def get_customer_widget_source() -> TabularFrameResponse:
-    rows = [
-        {"customer_code": "ACME", "name": "Acme Capital", "region": "US"},
-        {"customer_code": "BETA", "name": "Beta Treasury", "region": "EU"},
-    ]
-    return TabularFrameResponse(
-        status="ready",
-        columns=["customer_code", "name", "region"],
-        rows=rows,
-        fields=[
-            TabularFrameFieldResponse(key="customer_code", label="Customer Code", type="string", provenance="manual"),
-            TabularFrameFieldResponse(key="name", label="Name", type="string", provenance="manual"),
-            TabularFrameFieldResponse(key="region", label="Region", type="string", provenance="manual"),
-        ],
-        source=TabularFrameSourceResponse(kind="api", label="Tutorial Customers API"),
-    )
-```
-
-For the full contract breakdown, use:
-
-- [Command Center Widget Data Contracts](../../knowledge/command_center/widget_data_contracts.md)
-
-## 7. Prefer Explicit Response Models
+## 6. Prefer Explicit Response Models
 
 Returning raw dictionaries is fine for the first tutorial step, but real APIs should use response models.
 
@@ -277,7 +228,7 @@ Why this is worth it:
 - clients get a stable contract
 - accidental response-shape drift becomes easier to catch
 
-## 8. Validate Inputs Early
+## 7. Validate Inputs Early
 
 FastAPI already validates query parameters, path parameters, and body payloads.
 
@@ -291,7 +242,7 @@ Examples:
 
 That keeps bad requests out of the data access layer.
 
-## 9. Think In Contracts, Not Just Routes
+## 8. Think In Contracts, Not Just Routes
 
 Treat each endpoint as a product surface.
 
@@ -308,7 +259,7 @@ This is the same discipline already used for:
 - `MetaTable` contracts
 - dashboard and agent interfaces
 
-## 10. Local Development Flow
+## 9. Local Development Flow
 
 A practical local loop is:
 
@@ -327,7 +278,7 @@ curl "http://127.0.0.1:8000/customers?region=US"
 curl "http://127.0.0.1:8000/random-numbers?start_date=2026-03-01&end_date=2026-03-31"
 ```
 
-## 11. Deployment Model For FastAPI Resources
+## 10. Deployment Model For FastAPI Resources
 
 FastAPI follows the same project-resource model used elsewhere in the platform.
 
@@ -360,7 +311,7 @@ This is the same deployment pattern you already see with Streamlit dashboards an
 - putting all business logic directly in route functions
 - returning unstable ad-hoc dictionaries as responses
 - rebuilding producer logic in the API instead of consuming published `DataNode` outputs
-- handcrafting widget payloads instead of using the Command Center contract models
+- handcrafting widget payloads instead of validating against the standalone Command Center SDK
 - querying by business meaning but forgetting to keep the endpoint contract stable
 - trying to deploy code that has not been pushed yet
 
@@ -368,7 +319,7 @@ This is the same deployment pattern you already see with Streamlit dashboards an
 
 - [Part 3.2 — Create Your First API](../create_your_first_api.md)
 - [Part 2 — Working With MetaTables](../working_with_meta_tables.md)
-- [Command Center Widget Data Contracts](../../knowledge/command_center/widget_data_contracts.md)
+- [Command Center](../../knowledge/command_center/index.md)
 - [Data Nodes](../../knowledge/data_nodes.md)
 - [MetaTables Overview](../../knowledge/meta_tables/index.md)
 - [Part 5.2 — Streamlit Integration II](../dashboards/streamlit/streamlit_integration_2.md)
