@@ -27,8 +27,8 @@ There are three different contract surfaces to keep separate:
 ## Package Namespace
 
 Command Center is owned by the top-level `mainsequence.command_center` package. The former
-`mainsequence.client.command_center` path remains as a deprecated compatibility namespace, but new
-code should import from the top-level package.
+`mainsequence.client.command_center` package has been removed. All code must import from the
+top-level package.
 
 ## SDK Helper Layout
 
@@ -49,7 +49,7 @@ The Command Center Python package is split by responsibility:
 
 The former top-level `contracts`, `data_models`, `providers`, `widgets`, `workspace`,
 `workspace_snapshot`, and `app_component` modules were removed. Use the canonical nested packages
-above; there are no compatibility shims for those flattened module names.
+above; those flattened module names are not importable.
 
 ## What This Section Covers
 

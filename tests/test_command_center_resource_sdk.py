@@ -360,20 +360,14 @@ def test_workspace_and_sdk_contracts_have_exclusive_canonical_module_ownership()
             importlib.import_module(removed_module)
 
 
-def test_legacy_command_center_modules_reexport_canonical_classes():
-    from mainsequence.command_center.workspaces.models import Workspace
-
-    with pytest.warns(DeprecationWarning, match="has moved to mainsequence.command_center"):
-        legacy_data_models = importlib.import_module(
-            "mainsequence.client.command_center.sdk.data_models"
-        )
-
-    legacy_workspace_models = importlib.import_module(
-        "mainsequence.client.command_center.workspaces.models"
-    )
-
-    assert legacy_data_models.ContractBaseModel is ContractBaseModel
-    assert legacy_workspace_models.Workspace is Workspace
+def test_old_client_command_center_namespace_is_removed():
+    for removed_module in (
+        "mainsequence.client.command_center",
+        "mainsequence.client.command_center.sdk.data_models",
+        "mainsequence.client.command_center.workspaces.models",
+    ):
+        with pytest.raises(ModuleNotFoundError):
+            importlib.import_module(removed_module)
 
 
 def test_resource_contract_import_does_not_eagerly_load_command_center_clients():
