@@ -1,6 +1,6 @@
 # Command Center Resource SDK For FastAPI
 
-Use `mainsequence.command_center.sdk.resource` when a Python API must expose the same
+Use `mainsequence.client.command_center.sdk.resource` when a Python API must expose the same
 collection, action, pagination, and summary contracts consumed by the standalone Command Center
 SDK.
 
@@ -41,12 +41,12 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request, Response
 
-from mainsequence.command_center.sdk.data_models import ContractBaseModel
-from mainsequence.command_center.sdk.fastapi import (
+from mainsequence.client.command_center.sdk.data_models import ContractBaseModel
+from mainsequence.client.command_center.sdk.fastapi import (
     build_fastapi_resource_collection,
     resource_limit_offset,
 )
-from mainsequence.command_center.sdk.resource import (
+from mainsequence.client.command_center.sdk.resource import (
     CanonicalResourceCollection,
     ResourceCollectionControls,
     ResourceLimitOffset,
@@ -116,15 +116,15 @@ from uuid import UUID
 
 from fastapi import Response
 
-from mainsequence.command_center.sdk.data_models import ContractBaseModel
-from mainsequence.command_center.sdk.resource import (
+from mainsequence.client.command_center.sdk.data_models import ContractBaseModel
+from mainsequence.client.command_center.sdk.resource import (
     ResourceBulkActionDiscoveryResponse,
     ResourceBulkActionEmptyOptions,
     ResourceBulkActionPreflightResponse,
     ResourceBulkActionRequest,
     validate_resource_bulk_action_filters,
 )
-from mainsequence.command_center.sdk.fastapi import (
+from mainsequence.client.command_center.sdk.fastapi import (
     build_fastapi_bulk_action_discovery,
     build_fastapi_bulk_action_preflight_response,
 )

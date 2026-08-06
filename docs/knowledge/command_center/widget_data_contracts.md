@@ -11,7 +11,7 @@ If you are building a FastAPI route that returns generic tabular data for Comman
 SDK models in:
 
 ```python
-mainsequence.command_center.sdk.data_models
+mainsequence.client.command_center.sdk.data_models
 ```
 
 The primary response model is:
@@ -67,9 +67,9 @@ Center consumes it.
 Table-specific helpers live in:
 
 ```python
-mainsequence.command_center.sdk.contracts.tabular
-mainsequence.command_center.sdk.contracts.table_visuals
-mainsequence.command_center.workspaces.widgets.table
+mainsequence.client.command_center.sdk.contracts.tabular
+mainsequence.client.command_center.sdk.contracts.table_visuals
+mainsequence.client.command_center.workspaces.widgets.table
 ```
 
 Use `contracts.tabular` for `make_tabular_frame` and field/source helpers. Use
@@ -81,7 +81,7 @@ frame under `meta.tableVisuals`. Use `widgets.table` for persisted table/pro-tab
 ```python
 from fastapi import APIRouter
 
-from mainsequence.command_center.sdk.data_models import (
+from mainsequence.client.command_center.sdk.data_models import (
     TabularFrameFieldResponse,
     TabularFrameResponse,
     TabularFrameSourceResponse,
@@ -136,7 +136,7 @@ def get_customers_frame() -> TabularFrameResponse:
 Keep source-specific details in `source.context`.
 
 ```python
-from mainsequence.command_center.sdk.data_models import (
+from mainsequence.client.command_center.sdk.data_models import (
     TabularFrameResponse,
     TabularFrameSourceResponse,
 )
@@ -166,7 +166,7 @@ This keeps the canonical frame stable while preserving source metadata that some
 When a tabular frame is meant for chart, curve, or time-aware consumers, include `meta.timeSeries`.
 
 ```python
-from mainsequence.command_center.sdk.data_models import (
+from mainsequence.client.command_center.sdk.data_models import (
     TabularFrameMetaResponse,
     TabularFrameResponse,
     TabularTimeSeriesMetaResponse,
@@ -199,11 +199,11 @@ When a tabular frame is meant for table or pro-table consumers, the data source 
 source-owned display defaults under `meta.tableVisuals`.
 
 ```python
-from mainsequence.command_center.sdk.contracts.table_visuals import (
+from mainsequence.client.command_center.sdk.contracts.table_visuals import (
     make_table_visual_column,
     make_table_visuals,
 )
-from mainsequence.command_center.sdk.contracts.tabular import make_tabular_frame
+from mainsequence.client.command_center.sdk.contracts.tabular import make_tabular_frame
 
 
 frame = make_tabular_frame(

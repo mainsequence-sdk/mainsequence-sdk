@@ -20,13 +20,13 @@ The practical split is:
 There are three different contract surfaces to keep separate:
 
 - input contracts, such as `EditableFormDefinition`, when a widget needs a specialized form
-- output contracts, such as the models in `mainsequence.command_center.sdk.data_models`, when an API should feed a Main Sequence widget directly
-- resource contracts under `mainsequence.command_center.sdk.resource` for canonical lists,
+- output contracts, such as the models in `mainsequence.client.command_center.sdk.data_models`, when an API should feed a Main Sequence widget directly
+- resource contracts under `mainsequence.client.command_center.sdk.resource` for canonical lists,
   pagination, discovered actions, and summaries
 
 ## Package Namespace
 
-Command Center is owned by the top-level `mainsequence.command_center` package. The former
+Command Center is owned by the top-level `mainsequence.client.command_center` package. The former
 `mainsequence.client.command_center` package has been removed. All code must import from the
 top-level package.
 
@@ -34,16 +34,16 @@ top-level package.
 
 The Command Center Python package is split by responsibility:
 
-- `mainsequence.command_center.connections`: connection type and connection instance APIs,
+- `mainsequence.client.command_center.connections`: connection type and connection instance APIs,
   including Adapter from API public config validation
-- `mainsequence.command_center.sdk.contracts`: provider-facing contract models and helpers for
+- `mainsequence.client.command_center.sdk.contracts`: provider-facing contract models and helpers for
   Adapter from API, response mappings, tabular frames, table visual metadata, and UI contracts
-- `mainsequence.command_center.sdk.providers`: convenience builders for provider-side contracts
-- `mainsequence.command_center.sdk.resource`: the Python projection of the standalone
+- `mainsequence.client.command_center.sdk.providers`: convenience builders for provider-side contracts
+- `mainsequence.client.command_center.sdk.resource`: the Python projection of the standalone
   Command Center SDK resource contract
-- `mainsequence.command_center.workspaces.widgets`: widget payload, table/pro-table props, tabular
+- `mainsequence.client.command_center.workspaces.widgets`: widget payload, table/pro-table props, tabular
   transform props, binding, registry, and connection-query helpers
-- `mainsequence.command_center.workspaces`: workspace models, create/fetch/update clients,
+- `mainsequence.client.command_center.workspaces`: workspace models, create/fetch/update clients,
   snapshots, AppComponent definitions, documents, mounted-widget payloads, and widget-scoped
   mutation helpers
 

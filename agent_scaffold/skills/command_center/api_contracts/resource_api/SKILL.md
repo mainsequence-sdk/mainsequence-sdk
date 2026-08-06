@@ -52,25 +52,25 @@ accepted wire contract without redefining its semantics.
 - General FastAPI structure and project API implementation:
   `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
 - Adapter from API provider discovery and connection operations:
-  `.agents/skills/mainsequence/command_center/api_contracts/adapter_from_api/SKILL.md`
+  `.agents/skills/mainsequence/client/command_center/api_contracts/adapter_from_api/SKILL.md`
 - Workspace creation and mounted-widget mutation:
-  `.agents/skills/mainsequence/command_center/workspaces/builder/SKILL.md`
+  `.agents/skills/mainsequence/client/command_center/workspaces/builder/SKILL.md`
 - AppComponent request and response contracts:
-  `.agents/skills/mainsequence/command_center/workspaces/widgets/app_components/SKILL.md`
+  `.agents/skills/mainsequence/client/command_center/workspaces/widgets/app_components/SKILL.md`
 - Table and `core.tabular_frame@v1` contracts:
-  `.agents/skills/mainsequence/command_center/workspaces/widgets/tables/SKILL.md`
+  `.agents/skills/mainsequence/client/command_center/workspaces/widgets/tables/SKILL.md`
 - FastAPI resources, images, releases, and deployment:
   `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
 
 ## Read First
 
 1. `docs/knowledge/command_center/resource_sdk.md`
-2. `mainsequence/command_center/sdk/resource/collections.py`
-3. `mainsequence/command_center/sdk/resource/controls.py`
-4. `mainsequence/command_center/sdk/resource/actions.py`
-5. `mainsequence/command_center/sdk/resource/summary.py`
-6. `mainsequence/command_center/sdk/fastapi/resource.py`
-7. `mainsequence/command_center/sdk/fastapi/actions.py`
+2. `mainsequence/client/command_center/sdk/resource/collections.py`
+3. `mainsequence/client/command_center/sdk/resource/controls.py`
+4. `mainsequence/client/command_center/sdk/resource/actions.py`
+5. `mainsequence/client/command_center/sdk/resource/summary.py`
+6. `mainsequence/client/command_center/sdk/fastapi/resource.py`
+7. `mainsequence/client/command_center/sdk/fastapi/actions.py`
 8. the owning application's list filters, authorization path, action behavior,
    and summary contract
 

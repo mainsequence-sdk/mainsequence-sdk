@@ -1,6 +1,6 @@
 ---
 name: command-center-tabular-transform
-description: Use this skill when the task is about the Command Center `core__tabular-transform` widget, including tabular transform widget props, projection, filter, aggregate, pivot, unpivot, computed columns, latest-row merge behavior, seed/live update bindings, or wiring transformed `core.tabular_frame@v1` datasets into downstream table, chart, statistic, curve, or agent-facing widgets. This skill is grounded in `mainsequence.command_center.workspaces.widgets.tabular_transform` and does not own connection creation, API provider contracts, table widget presentation props, workspace layout design, or generic FastAPI implementation.
+description: Use this skill when the task is about the Command Center `core__tabular-transform` widget, including tabular transform widget props, projection, filter, aggregate, pivot, unpivot, computed columns, latest-row merge behavior, seed/live update bindings, or wiring transformed `core.tabular_frame@v1` datasets into downstream table, chart, statistic, curve, or agent-facing widgets. This skill is grounded in `mainsequence.client.command_center.workspaces.widgets.tabular_transform` and does not own connection creation, API provider contracts, table widget presentation props, workspace layout design, or generic FastAPI implementation.
 ---
 
 # Command Center Tabular Transform
@@ -13,13 +13,13 @@ helpers.
 The SDK model for this widget lives in:
 
 ```python
-mainsequence.command_center.workspaces.widgets.tabular_transform
+mainsequence.client.command_center.workspaces.widgets.tabular_transform
 ```
 
 The binding helpers for transform inputs live in:
 
 ```python
-mainsequence.command_center.workspaces.widgets.bindings
+mainsequence.client.command_center.workspaces.widgets.bindings
 ```
 
 ## This Skill Can Do
@@ -57,15 +57,15 @@ This skill must not claim ownership of:
 ## Route Adjacent Work
 
 - Workspace design and deciding whether a transform is needed:
-  `.agents/skills/mainsequence/command_center/workspaces/design/SKILL.md`
+  `.agents/skills/mainsequence/client/command_center/workspaces/design/SKILL.md`
 - Workspace JSON creation, transform mounting, and widget mutation:
-  `.agents/skills/mainsequence/command_center/workspaces/builder/SKILL.md`
+  `.agents/skills/mainsequence/client/command_center/workspaces/builder/SKILL.md`
 - Connection-backed source data and query model selection:
-  `.agents/skills/mainsequence/command_center/connections/SKILL.md`
+  `.agents/skills/mainsequence/client/command_center/connections/SKILL.md`
 - Table/pro-table props and `meta.tableVisuals`:
-  `.agents/skills/mainsequence/command_center/workspaces/widgets/tables/SKILL.md`
+  `.agents/skills/mainsequence/client/command_center/workspaces/widgets/tables/SKILL.md`
 - Adapter from API provider contracts:
-  `.agents/skills/mainsequence/command_center/api_contracts/adapter_from_api/SKILL.md`
+  `.agents/skills/mainsequence/client/command_center/api_contracts/adapter_from_api/SKILL.md`
 
 ## Read First
 
@@ -74,14 +74,14 @@ This skill must not claim ownership of:
    - identify `core__tabular-transform`
    - `mainsequence cc registered_widget_type detail core__tabular-transform --json`
 2. SDK widget models and helpers:
-   - `mainsequence/command_center/workspaces/widgets/tabular_transform.py`
-   - `mainsequence/command_center/workspaces/widgets/bindings.py`
-   - `mainsequence/command_center/workspaces/mounted_widgets.py`
+   - `mainsequence/client/command_center/workspaces/widgets/tabular_transform.py`
+   - `mainsequence/client/command_center/workspaces/widgets/bindings.py`
+   - `mainsequence/client/command_center/workspaces/mounted_widgets.py`
 3. Executable examples:
    - `tests/test_command_center_tabular_transform.py`
 4. When the transform consumes connection-backed data:
-   - `.agents/skills/mainsequence/command_center/connections/SKILL.md`
-   - `mainsequence/command_center/workspaces/widgets/connection_query.py`
+   - `.agents/skills/mainsequence/client/command_center/connections/SKILL.md`
+   - `mainsequence/client/command_center/workspaces/widgets/connection_query.py`
 
 Use these files before opening frontend implementation files.
 
@@ -123,7 +123,7 @@ For every tabular transform task, decide:
 Use the helper that matches the intended mode:
 
 ```python
-from mainsequence.command_center.workspaces.widgets.tabular_transform import (
+from mainsequence.client.command_center.workspaces.widgets.tabular_transform import (
     make_aggregate_transform,
     make_filter_transform,
     make_latest_row_transform,
@@ -142,13 +142,13 @@ Do not hand-build transform props unless the helper cannot represent the require
 Use `bind_tabular_transform_seed` for retained/base rows:
 
 ```python
-from mainsequence.command_center.workspaces.widgets.bindings import bind_tabular_transform_seed
+from mainsequence.client.command_center.workspaces.widgets.bindings import bind_tabular_transform_seed
 ```
 
 Use `bind_tabular_transform_live_updates` for incremental updates:
 
 ```python
-from mainsequence.command_center.workspaces.widgets.bindings import (
+from mainsequence.client.command_center.workspaces.widgets.bindings import (
     bind_tabular_transform_live_updates,
 )
 ```
@@ -191,7 +191,7 @@ column overrides, formulas on table widgets, selection behavior, or `meta.tableV
 Route those to:
 
 ```text
-.agents/skills/mainsequence/command_center/workspaces/widgets/tables/SKILL.md
+.agents/skills/mainsequence/client/command_center/workspaces/widgets/tables/SKILL.md
 ```
 
 ## Review Rules

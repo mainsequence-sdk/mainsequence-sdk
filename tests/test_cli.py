@@ -320,7 +320,7 @@ def test_organization_github_organizations(cli_mod, runner, monkeypatch):
 def test_cc_workspace_snapshot_prints_resolved_output_path(cli_mod, runner, monkeypatch, tmp_path):
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
 
-    snapshot_module = types.ModuleType("mainsequence.command_center.workspaces.snapshot")
+    snapshot_module = types.ModuleType("mainsequence.client.command_center.workspaces.snapshot")
     extracted_dir = pathlib.Path(
         "/tmp/workspace-11111111-1111-4111-8111-111111111111-20260429T120000Z-snapshot"
     )
@@ -337,7 +337,7 @@ def test_cc_workspace_snapshot_prints_resolved_output_path(cli_mod, runner, monk
 
     monkeypatch.setitem(
         sys.modules,
-        "mainsequence.command_center.workspaces.snapshot",
+        "mainsequence.client.command_center.workspaces.snapshot",
         snapshot_module,
     )
 
@@ -564,7 +564,7 @@ def test_list_workspaces_uses_client_model(cli_mod, monkeypatch):
 
     out = api_mod.list_workspaces(timeout=8, filters={"title__contains": "Rates"})
     assert captured == {
-        "module_name": "mainsequence.command_center.workspaces.models",
+        "module_name": "mainsequence.client.command_center.workspaces.models",
         "class_name": "Workspace",
         "timeout": 8,
         "filters": {"title__contains": "Rates"},
@@ -619,7 +619,7 @@ def test_update_workspace_uses_client_model(cli_mod, monkeypatch):
         timeout=11,
     )
     assert captured == {
-        "module_name": "mainsequence.command_center.workspaces.models",
+        "module_name": "mainsequence.client.command_center.workspaces.models",
         "class_name": "Workspace",
         "uid": "11111111-1111-4111-8111-111111111111",
         "timeout": 11,
@@ -671,7 +671,7 @@ def test_add_workspace_labels_uses_client_model(cli_mod, monkeypatch):
         "11111111-1111-4111-8111-111111111111", ["rates", "desk"], timeout=12
     )
     assert captured == {
-        "module_name": "mainsequence.command_center.workspaces.models",
+        "module_name": "mainsequence.client.command_center.workspaces.models",
         "class_name": "Workspace",
         "uid": "11111111-1111-4111-8111-111111111111",
         "get_timeout": 12,
@@ -1138,7 +1138,7 @@ def test_list_connection_instances_uses_uid_client_model(cli_mod, monkeypatch):
     )
 
     assert captured == {
-        "module_name": "mainsequence.command_center.connections",
+        "module_name": "mainsequence.client.command_center.connections",
         "class_name": "ConnectionInstance",
         "timeout": 9,
         "filters": {"workspace_uid": "11111111-1111-4111-8111-111111111111"},
@@ -1176,7 +1176,7 @@ def test_get_connection_instance_uses_uid_client_model(cli_mod, monkeypatch):
     out = api_mod.get_connection_instance("warehouse-primary", timeout=10)
 
     assert captured == {
-        "module_name": "mainsequence.command_center.connections",
+        "module_name": "mainsequence.client.command_center.connections",
         "class_name": "ConnectionInstance",
         "uid": "warehouse-primary",
         "timeout": 10,
@@ -1224,7 +1224,7 @@ def test_create_adapter_from_api_connection_uses_client_model(cli_mod, monkeypat
     )
 
     public_config = captured["create_kwargs"]["public_config"]
-    assert captured["module_name"] == "mainsequence.command_center.connections"
+    assert captured["module_name"] == "mainsequence.client.command_center.connections"
     assert captured["class_name"] == "ConnectionInstance"
     assert captured["create_kwargs"]["name"] == "Markets debug API"
     assert captured["create_kwargs"]["workspace_uid"] == "11111111-1111-4111-8111-111111111111"
@@ -1289,7 +1289,7 @@ def test_patch_adapter_from_api_connection_uses_client_patch(cli_mod, monkeypatc
         timeout=7,
     )
 
-    assert captured["module_name"] == "mainsequence.command_center.connections"
+    assert captured["module_name"] == "mainsequence.client.command_center.connections"
     assert captured["class_name"] == "ConnectionInstance"
     assert captured["uid"] == "adapter-prod"
     assert captured["timeout"] == 7

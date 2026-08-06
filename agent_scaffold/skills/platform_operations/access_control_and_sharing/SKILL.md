@@ -61,7 +61,7 @@ This skill must not claim ownership of:
 - Streamlit dashboard deployment:
   `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
 - Command Center workspaces:
-  `.agents/skills/mainsequence/command_center/workspaces/builder/SKILL.md`
+  `.agents/skills/mainsequence/client/command_center/workspaces/builder/SKILL.md`
 
 Streamlit dashboard implementation is app-owned project code. This skill only reasons about access to deployed resources such as `ResourceRelease`.
 

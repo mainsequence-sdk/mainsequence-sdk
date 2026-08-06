@@ -56,7 +56,7 @@ This skill must not claim ownership of:
 - APIs and FastAPI:
   `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
 - predeployment mock API contract validation:
-  `.agents/skills/mainsequence/command_center/workspaces/api_mock_prototyping/SKILL.md`
+  `.agents/skills/mainsequence/client/command_center/workspaces/api_mock_prototyping/SKILL.md`
 - RBAC and sharing:
   `.agents/skills/mainsequence/platform_operations/access_control_and_sharing/SKILL.md`
 
@@ -74,7 +74,7 @@ If the task asks to design, build, style, or restructure a Streamlit app, do not
 
 If the task is about publishing a Command Center-facing API mainly to test AppComponent UX, bindings, or request/response contracts, read:
 
-6. `.agents/skills/mainsequence/command_center/workspaces/api_mock_prototyping/SKILL.md`
+6. `.agents/skills/mainsequence/client/command_center/workspaces/api_mock_prototyping/SKILL.md`
 
 Do that before building an image or creating a FastAPI `ResourceRelease`.
 
@@ -216,7 +216,7 @@ If the goal is to validate Command Center AppComponent UX, request rendering, re
 
 Use the predeployment mock workflow first:
 
-- `.agents/skills/mainsequence/command_center/workspaces/api_mock_prototyping/SKILL.md`
+- `.agents/skills/mainsequence/client/command_center/workspaces/api_mock_prototyping/SKILL.md`
 
 That workflow exists to validate the contract in `apiTargetMode: "mock-json"` before spending time on deployment.
 

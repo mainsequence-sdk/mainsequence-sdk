@@ -199,25 +199,25 @@ Typical routing:
 - APIs, FastAPI, request and response contracts, and widget-facing API responses:
   `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
 - Command Center canonical collections, controls, summaries, bulk actions, and preflight:
-  `.agents/skills/mainsequence/command_center/api_contracts/resource_api/SKILL.md`
+  `.agents/skills/mainsequence/client/command_center/api_contracts/resource_api/SKILL.md`
 - Command Center Adapter from API provider contracts:
-  `.agents/skills/mainsequence/command_center/api_contracts/adapter_from_api/SKILL.md`
+  `.agents/skills/mainsequence/client/command_center/api_contracts/adapter_from_api/SKILL.md`
 - Command Center connection discovery, readiness, and connection-first dataflow:
-  `.agents/skills/mainsequence/command_center/connections/SKILL.md`
+  `.agents/skills/mainsequence/client/command_center/connections/SKILL.md`
 - Command Center workspace design, widget selection, layout narrative, and visualization strategy:
-  `.agents/skills/mainsequence/command_center/workspaces/design/SKILL.md`
+  `.agents/skills/mainsequence/client/command_center/workspaces/design/SKILL.md`
 - Command Center workspace JSON creation/update and mounted widget mutation:
-  `.agents/skills/mainsequence/command_center/workspaces/builder/SKILL.md`
+  `.agents/skills/mainsequence/client/command_center/workspaces/builder/SKILL.md`
 - AppComponents, custom forms, and widget input or output contracts:
-  `.agents/skills/mainsequence/command_center/workspaces/widgets/app_components/SKILL.md`
+  `.agents/skills/mainsequence/client/command_center/workspaces/widgets/app_components/SKILL.md`
 - Command Center table/pro-table widgets, tabular frames, table visual metadata, formulas,
   selections, and live merge mappings:
-  `.agents/skills/mainsequence/command_center/workspaces/widgets/tables/SKILL.md`
+  `.agents/skills/mainsequence/client/command_center/workspaces/widgets/tables/SKILL.md`
 - Command Center tabular transform widgets, projection, filtering, aggregate, pivot, unpivot,
   computed columns, and seed/live update bindings:
-  `.agents/skills/mainsequence/command_center/workspaces/widgets/tabular_transform/SKILL.md`
+  `.agents/skills/mainsequence/client/command_center/workspaces/widgets/tabular_transform/SKILL.md`
 - predeployment AppComponent/API contract testing through `apiTargetMode: "mock-json"`:
-  `.agents/skills/mainsequence/command_center/workspaces/api_mock_prototyping/SKILL.md`
+  `.agents/skills/mainsequence/client/command_center/workspaces/api_mock_prototyping/SKILL.md`
 - jobs, schedules, images, project resources, releases, and Artifacts:
   `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
 - RBAC, sharing, constants, secrets, and access verification:

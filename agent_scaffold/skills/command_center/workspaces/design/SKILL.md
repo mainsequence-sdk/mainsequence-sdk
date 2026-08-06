@@ -32,16 +32,16 @@ This skill must not claim ownership of:
 ## Route Adjacent Work
 
 - Workspace JSON creation, export/versioning, and widget mutation:
-  `.agents/skills/mainsequence/command_center/workspaces/builder/SKILL.md`
+  `.agents/skills/mainsequence/client/command_center/workspaces/builder/SKILL.md`
 - AppComponent custom forms and widget input contracts:
-  `.agents/skills/mainsequence/command_center/workspaces/widgets/app_components/SKILL.md`
+  `.agents/skills/mainsequence/client/command_center/workspaces/widgets/app_components/SKILL.md`
 - Table/pro-table contracts, table visual metadata, formulas, selection, and live update behavior:
-  `.agents/skills/mainsequence/command_center/workspaces/widgets/tables/SKILL.md`
+  `.agents/skills/mainsequence/client/command_center/workspaces/widgets/tables/SKILL.md`
 - Tabular transform widget contracts for projection, filtering, aggregate, pivot, unpivot, computed
   columns, and seed/live update bindings:
-  `.agents/skills/mainsequence/command_center/workspaces/widgets/tabular_transform/SKILL.md`
+  `.agents/skills/mainsequence/client/command_center/workspaces/widgets/tabular_transform/SKILL.md`
 - Connection-backed data access and query contract selection:
-  `.agents/skills/mainsequence/command_center/connections/SKILL.md`
+  `.agents/skills/mainsequence/client/command_center/connections/SKILL.md`
 - APIs and FastAPI:
   `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
 - MetaTables:
@@ -56,15 +56,15 @@ Streamlit dashboard design and implementation are app-owned project work, not a 
 1. Discover available widgets from the registry:
    - `mainsequence cc registered_widget_type list --json`
    - `mainsequence cc registered_widget_type detail <WIDGET_ID> --json`
-2. `.agents/skills/mainsequence/command_center/connections/SKILL.md` when the workspace needs backend-owned data
+2. `.agents/skills/mainsequence/client/command_center/connections/SKILL.md` when the workspace needs backend-owned data
 3. `docs/knowledge/command_center/workspaces.md`
 4. `docs/knowledge/command_center/widget_data_contracts.md`
 5. `docs/knowledge/command_center/forms.md` when the design may need an AppComponent
-6. `.agents/skills/mainsequence/command_center/workspaces/widgets/tables/SKILL.md` when the design needs a
+6. `.agents/skills/mainsequence/client/command_center/workspaces/widgets/tables/SKILL.md` when the design needs a
    table/pro-table contract, table visual metadata, formulas, selection, or live updates
-7. `.agents/skills/mainsequence/command_center/workspaces/widgets/tabular_transform/SKILL.md` when the design
+7. `.agents/skills/mainsequence/client/command_center/workspaces/widgets/tabular_transform/SKILL.md` when the design
    needs a `core__tabular-transform` widget
-8. `.agents/skills/mainsequence/command_center/workspaces/builder/SKILL.md` only after the design is ready for execution
+8. `.agents/skills/mainsequence/client/command_center/workspaces/builder/SKILL.md` only after the design is ready for execution
 
 The widget registry is the source of truth for which widget types are actually available.
 
@@ -174,7 +174,7 @@ mainsequence cc registered_widget_type detail <WIDGET_ID> --json
 - bind table, chart, statistic, curve, and similar consumers to an upstream `dataset` output
 - require generic tabular consumers to receive `core.tabular_frame@v1`
 - when a project API or AppComponent is meant to produce a full canonical tabular frame, require
-  the SDK `TabularFrameResponse` model from `mainsequence.command_center.sdk.data_models`
+  the SDK `TabularFrameResponse` model from `mainsequence.client.command_center.sdk.data_models`
 - keep source widgets in the sidebar rail when they are execution/data owners; visible canvas widgets should own presentation
 - do not let consumer widgets query connection instances directly
 

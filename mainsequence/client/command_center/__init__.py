@@ -1,4 +1,4 @@
-"""Canonical top-level namespace for Command Center APIs and contracts."""
+"""Canonical client namespace for Command Center APIs and contracts."""
 
 from __future__ import annotations
 

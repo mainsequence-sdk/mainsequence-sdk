@@ -11,8 +11,8 @@ from uuid import UUID
 import pytest
 from pydantic import ValidationError
 
-from mainsequence.command_center.sdk.data_models import ContractBaseModel
-from mainsequence.command_center.sdk.resource import (
+from mainsequence.client.command_center.sdk.data_models import ContractBaseModel
+from mainsequence.client.command_center.sdk.resource import (
     CanonicalResourceCollection,
     EntitySummary,
     ResourceBulkActionDefinition,
@@ -339,20 +339,20 @@ def test_summary_matches_the_canonical_drf_wire_shape():
 
 
 def test_workspace_and_sdk_contracts_have_exclusive_canonical_module_ownership():
-    from mainsequence import command_center
-    from mainsequence.command_center.workspaces.models import Workspace
+    from mainsequence.client import command_center
+    from mainsequence.client.command_center.workspaces.models import Workspace
 
-    assert ContractBaseModel.__module__ == "mainsequence.command_center.sdk.data_models"
-    assert Workspace.__module__ == "mainsequence.command_center.workspaces.models"
+    assert ContractBaseModel.__module__ == "mainsequence.client.command_center.sdk.data_models"
+    assert Workspace.__module__ == "mainsequence.client.command_center.workspaces.models"
 
     for removed_module in (
-        "mainsequence.command_center.app_component",
-        "mainsequence.command_center.contracts",
-        "mainsequence.command_center.data_models",
-        "mainsequence.command_center.providers",
-        "mainsequence.command_center.widgets",
-        "mainsequence.command_center.workspace",
-        "mainsequence.command_center.workspace_snapshot",
+        "mainsequence.client.command_center.app_component",
+        "mainsequence.client.command_center.contracts",
+        "mainsequence.client.command_center.data_models",
+        "mainsequence.client.command_center.providers",
+        "mainsequence.client.command_center.widgets",
+        "mainsequence.client.command_center.workspace",
+        "mainsequence.client.command_center.workspace_snapshot",
     ):
         removed_name = removed_module.rsplit(".", 1)[-1]
         assert not hasattr(command_center, removed_name)
@@ -360,11 +360,11 @@ def test_workspace_and_sdk_contracts_have_exclusive_canonical_module_ownership()
             importlib.import_module(removed_module)
 
 
-def test_old_client_command_center_namespace_is_removed():
+def test_top_level_command_center_namespace_is_removed():
     for removed_module in (
-        "mainsequence.client.command_center",
-        "mainsequence.client.command_center.sdk.data_models",
-        "mainsequence.client.command_center.workspaces.models",
+        "mainsequence.command_center",
+        "mainsequence.command_center.sdk.data_models",
+        "mainsequence.command_center.workspaces.models",
     ):
         with pytest.raises(ModuleNotFoundError):
             importlib.import_module(removed_module)
@@ -377,11 +377,11 @@ def test_resource_contract_import_does_not_eagerly_load_command_center_clients()
             "-c",
             (
                 "import sys; "
-                "import mainsequence.command_center.sdk.resource; "
+                "import mainsequence.client.command_center.sdk.resource; "
                 "forbidden = {"
-                "'mainsequence.command_center.connections', "
-                "'mainsequence.command_center.workspaces', "
-                "'mainsequence.command_center.workspaces.snapshot', "
+                "'mainsequence.client.command_center.connections', "
+                "'mainsequence.client.command_center.workspaces', "
+                "'mainsequence.client.command_center.workspaces.snapshot', "
                 "'fastapi'"
                 "}; "
                 "loaded = sorted(forbidden.intersection(sys.modules)); "
@@ -399,7 +399,7 @@ def test_resource_contract_import_does_not_eagerly_load_command_center_clients()
 def test_fastapi_helpers_publish_and_validate_the_canonical_collection_contract():
     fastapi = pytest.importorskip("fastapi")
 
-    from mainsequence.command_center.sdk.fastapi import (
+    from mainsequence.client.command_center.sdk.fastapi import (
         apply_resource_discovery_headers,
         build_fastapi_bulk_action_discovery,
         build_fastapi_bulk_action_preflight_response,

@@ -1,16 +1,16 @@
 import pytest
 
-from mainsequence.command_center.sdk.data_models import CORE_TABULAR_FRAME_CONTRACT
-from mainsequence.command_center.workspaces.widgets.bindings import (
+from mainsequence.client.command_center.sdk.data_models import CORE_TABULAR_FRAME_CONTRACT
+from mainsequence.client.command_center.workspaces.widgets.bindings import (
     bind_tabular_transform_live_updates,
     bind_tabular_transform_seed,
 )
-from mainsequence.command_center.workspaces.widgets.table import (
+from mainsequence.client.command_center.workspaces.widgets.table import (
     TableLiveMergeKeyMapping,
     formula_difference,
     formula_percent_change,
 )
-from mainsequence.command_center.workspaces.widgets.tabular_transform import (
+from mainsequence.client.command_center.workspaces.widgets.tabular_transform import (
     CORE_TABULAR_TRANSFORM_WIDGET_ID,
     TABULAR_TRANSFORM_DATASET_OUTPUT_ID,
     TABULAR_TRANSFORM_LIVE_UPDATES_INPUT_ID,

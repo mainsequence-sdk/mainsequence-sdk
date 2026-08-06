@@ -2893,7 +2893,7 @@ def list_workspaces(
     """
     try:
         workspaces = _run_sdk_model_operation(
-            module_name="mainsequence.command_center.workspaces.models",
+            module_name="mainsequence.client.command_center.workspaces.models",
             class_name="Workspace",
             operation=lambda ClientWorkspace: ClientWorkspace.filter(
                 timeout=timeout,
@@ -2917,7 +2917,7 @@ def get_workspace(
     """
     try:
         workspace = _run_sdk_model_operation(
-            module_name="mainsequence.command_center.workspaces.models",
+            module_name="mainsequence.client.command_center.workspaces.models",
             class_name="Workspace",
             operation=lambda ClientWorkspace: ClientWorkspace.get_by_uid(
                 str(workspace_uid),
@@ -2956,7 +2956,7 @@ def create_workspace(
     """
     try:
         workspace = _run_sdk_model_operation(
-            module_name="mainsequence.command_center.workspaces.models",
+            module_name="mainsequence.client.command_center.workspaces.models",
             class_name="Workspace",
             operation=lambda ClientWorkspace: ClientWorkspace.create(
                 title=title,
@@ -3036,7 +3036,7 @@ def update_workspace(
 
     try:
         workspace = _run_sdk_model_operation(
-            module_name="mainsequence.command_center.workspaces.models",
+            module_name="mainsequence.client.command_center.workspaces.models",
             class_name="Workspace",
             operation=lambda ClientWorkspace: ClientWorkspace.get_by_uid(
                 str(workspace_uid),
@@ -3070,7 +3070,7 @@ def delete_workspace(
             return payload
 
         return _run_sdk_model_operation(
-            module_name="mainsequence.command_center.workspaces.models",
+            module_name="mainsequence.client.command_center.workspaces.models",
             class_name="Workspace",
             operation=_delete,
         )
@@ -3092,7 +3092,7 @@ def add_workspace_labels(
     """Attach one or more organizational labels to a workspace."""
 
     return _mutate_labelable_object_labels(
-        module_name="mainsequence.command_center.workspaces.models",
+        module_name="mainsequence.client.command_center.workspaces.models",
         class_name="Workspace",
         object_id=workspace_uid,
         action_name="add_label",
@@ -3111,7 +3111,7 @@ def remove_workspace_labels(
     """Remove one or more organizational labels from a workspace."""
 
     return _mutate_labelable_object_labels(
-        module_name="mainsequence.command_center.workspaces.models",
+        module_name="mainsequence.client.command_center.workspaces.models",
         class_name="Workspace",
         object_id=workspace_uid,
         action_name="remove_label",
@@ -3131,7 +3131,7 @@ def list_registered_widget_types(
     """
     try:
         widgets = _run_sdk_model_operation(
-            module_name="mainsequence.command_center.workspaces.models",
+            module_name="mainsequence.client.command_center.workspaces.models",
             class_name="RegisteredWidgetType",
             operation=lambda ClientWidgetType: ClientWidgetType.filter(
                 timeout=timeout,
@@ -3155,7 +3155,7 @@ def get_registered_widget_type(
     """
     try:
         widget = _run_sdk_model_operation(
-            module_name="mainsequence.command_center.workspaces.models",
+            module_name="mainsequence.client.command_center.workspaces.models",
             class_name="RegisteredWidgetType",
             operation=lambda ClientWidgetType: ClientWidgetType.get(
                 widget_id=str(widget_id),
@@ -3182,7 +3182,7 @@ def list_connection_types(
     """
     try:
         connection_types = _run_sdk_model_operation(
-            module_name="mainsequence.command_center.connections",
+            module_name="mainsequence.client.command_center.connections",
             class_name="ConnectionType",
             operation=lambda ClientConnectionType: ClientConnectionType.filter(
                 timeout=timeout,
@@ -3206,7 +3206,7 @@ def get_connection_type(
     """
     try:
         connection_type = _run_sdk_model_operation(
-            module_name="mainsequence.command_center.connections",
+            module_name="mainsequence.client.command_center.connections",
             class_name="ConnectionType",
             operation=lambda ClientConnectionType: ClientConnectionType.get(
                 type_id=str(type_id),
@@ -3233,7 +3233,7 @@ def list_connection_instances(
     """
     try:
         connections = _run_sdk_model_operation(
-            module_name="mainsequence.command_center.connections",
+            module_name="mainsequence.client.command_center.connections",
             class_name="ConnectionInstance",
             operation=lambda ClientConnectionInstance: ClientConnectionInstance.filter(
                 timeout=timeout,
@@ -3257,7 +3257,7 @@ def get_connection_instance(
     """
     try:
         connection = _run_sdk_model_operation(
-            module_name="mainsequence.command_center.connections",
+            module_name="mainsequence.client.command_center.connections",
             class_name="ConnectionInstance",
             operation=lambda ClientConnectionInstance: ClientConnectionInstance.get_by_uid(
                 str(connection_uid),
@@ -3275,7 +3275,7 @@ def get_connection_instance(
 
 
 def _adapter_from_api_public_config_model():
-    module = importlib.import_module("mainsequence.command_center.connections")
+    module = importlib.import_module("mainsequence.client.command_center.connections")
     return module.AdapterFromApiConnectionPublicConfig
 
 
@@ -3443,7 +3443,7 @@ def create_adapter_from_api_connection(
 
     try:
         connection = _run_sdk_model_operation(
-            module_name="mainsequence.command_center.connections",
+            module_name="mainsequence.client.command_center.connections",
             class_name="ConnectionInstance",
             operation=lambda ClientConnectionInstance: ClientConnectionInstance.create_adapter_from_api(
                 name=name,
@@ -3541,7 +3541,7 @@ def patch_adapter_from_api_connection(
             return connection.patch(**resolved_patch_kwargs)
 
         connection = _run_sdk_model_operation(
-            module_name="mainsequence.command_center.connections",
+            module_name="mainsequence.client.command_center.connections",
             class_name="ConnectionInstance",
             operation=_patch,
         )

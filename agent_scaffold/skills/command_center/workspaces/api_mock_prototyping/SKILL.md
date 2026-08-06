@@ -44,11 +44,11 @@ This skill must not claim ownership of:
 ## Route Adjacent Work
 
 - AppComponents and custom forms:
-  `.agents/skills/mainsequence/command_center/workspaces/widgets/app_components/SKILL.md`
+  `.agents/skills/mainsequence/client/command_center/workspaces/widgets/app_components/SKILL.md`
 - Command Center workspaces and widget mutation:
-  `.agents/skills/mainsequence/command_center/workspaces/builder/SKILL.md`
+  `.agents/skills/mainsequence/client/command_center/workspaces/builder/SKILL.md`
 - Tabular transform widgets for downstream reshaping in mock validation:
-  `.agents/skills/mainsequence/command_center/workspaces/widgets/tabular_transform/SKILL.md`
+  `.agents/skills/mainsequence/client/command_center/workspaces/widgets/tabular_transform/SKILL.md`
 - APIs and FastAPI:
   `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
 - Jobs, images, resources, and releases:
@@ -61,10 +61,10 @@ This skill must not claim ownership of:
    - identify the target `widget_id`
    - `mainsequence cc registered_widget_type detail <WIDGET_ID> --json`
 2. The SDK client models:
-   - `mainsequence/command_center/workspaces/app_component.py`
-   - `mainsequence/command_center/workspaces/models.py`
-3. `.agents/skills/mainsequence/command_center/workspaces/widgets/app_components/SKILL.md`
-4. `.agents/skills/mainsequence/command_center/workspaces/builder/SKILL.md`
+   - `mainsequence/client/command_center/workspaces/app_component.py`
+   - `mainsequence/client/command_center/workspaces/models.py`
+3. `.agents/skills/mainsequence/client/command_center/workspaces/widgets/app_components/SKILL.md`
+4. `.agents/skills/mainsequence/client/command_center/workspaces/builder/SKILL.md`
 
 Only after the mock contract is stable:
 

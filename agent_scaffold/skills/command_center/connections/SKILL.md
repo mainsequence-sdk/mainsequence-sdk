@@ -23,11 +23,11 @@ connection instance and query model are known.
 
 ## This Skill Can Do
 
-- discover connection types and instances through `mainsequence.command_center.connections`
-- use `mainsequence.command_center.workspaces.widgets.connection_query` for connection-query source
+- discover connection types and instances through `mainsequence.client.command_center.connections`
+- use `mainsequence.client.command_center.workspaces.widgets.connection_query` for connection-query source
   widget payload drafts
-- use `mainsequence.command_center.sdk.contracts.*` and
-  `mainsequence.command_center.sdk.providers.*` when validating Adapter from API provider
+- use `mainsequence.client.command_center.sdk.contracts.*` and
+  `mainsequence.client.command_center.sdk.providers.*` when validating Adapter from API provider
   contracts
 - decide whether an existing connection instance can support the requested workspace data
 - inspect `ConnectionType.queryModels` and `usageGuidance`
@@ -50,17 +50,17 @@ This skill must not claim ownership of:
 ## Route Adjacent Work
 
 - Workspace design and widget selection:
-  `.agents/skills/mainsequence/command_center/workspaces/design/SKILL.md`
+  `.agents/skills/mainsequence/client/command_center/workspaces/design/SKILL.md`
 - Workspace JSON creation and widget mutation:
-  `.agents/skills/mainsequence/command_center/workspaces/builder/SKILL.md`
+  `.agents/skills/mainsequence/client/command_center/workspaces/builder/SKILL.md`
 - Table/pro-table consumer contracts, table visual metadata, selection, and live update behavior:
-  `.agents/skills/mainsequence/command_center/workspaces/widgets/tables/SKILL.md`
+  `.agents/skills/mainsequence/client/command_center/workspaces/widgets/tables/SKILL.md`
 - Tabular transform consumer contracts and source/live update bindings:
-  `.agents/skills/mainsequence/command_center/workspaces/widgets/tabular_transform/SKILL.md`
+  `.agents/skills/mainsequence/client/command_center/workspaces/widgets/tabular_transform/SKILL.md`
 - Adapter from API connection workflow:
-  `.agents/skills/mainsequence/command_center/api_contracts/adapter_from_api/SKILL.md`
+  `.agents/skills/mainsequence/client/command_center/api_contracts/adapter_from_api/SKILL.md`
 - AppComponent forms and action API contracts:
-  `.agents/skills/mainsequence/command_center/workspaces/widgets/app_components/SKILL.md`
+  `.agents/skills/mainsequence/client/command_center/workspaces/widgets/app_components/SKILL.md`
 - API implementation:
   `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
 - Jobs, images, resources, and releases:
@@ -69,24 +69,24 @@ This skill must not claim ownership of:
 ## Read First
 
 1. SDK connection models:
-   - `mainsequence/command_center/connections.py`
-   - `mainsequence/command_center/sdk/data_models.py` when validating `core.tabular_frame@v1`
+   - `mainsequence/client/command_center/connections.py`
+   - `mainsequence/client/command_center/sdk/data_models.py` when validating `core.tabular_frame@v1`
      output shape
-   - `mainsequence/command_center/sdk/contracts/adapter_from_api.py` when validating provider
+   - `mainsequence/client/command_center/sdk/contracts/adapter_from_api.py` when validating provider
      discovery contracts
-   - `mainsequence/command_center/sdk/contracts/response_mapping.py` when validating
+   - `mainsequence/client/command_center/sdk/contracts/response_mapping.py` when validating
      response-mapping metadata
-   - `mainsequence/command_center/sdk/contracts/tabular.py` when building or checking canonical
+   - `mainsequence/client/command_center/sdk/contracts/tabular.py` when building or checking canonical
      tabular frames
-   - `mainsequence/command_center/sdk/contracts/table_visuals.py` when table-specific visual
+   - `mainsequence/client/command_center/sdk/contracts/table_visuals.py` when table-specific visual
      defaults travel with `meta.tableVisuals`
-   - `mainsequence/command_center/sdk/providers/adapter_from_api.py` when a provider should use
+   - `mainsequence/client/command_center/sdk/providers/adapter_from_api.py` when a provider should use
      SDK contract builders
-   - `mainsequence/command_center/workspaces/widgets/connection_query.py` when creating
+   - `mainsequence/client/command_center/workspaces/widgets/connection_query.py` when creating
      connection-query source widget payloads
-   - `mainsequence/command_center/workspaces/widgets/tabular_transform.py` when a connection-backed
+   - `mainsequence/client/command_center/workspaces/widgets/tabular_transform.py` when a connection-backed
      flow needs a `core__tabular-transform` widget
-   - `mainsequence/command_center/workspaces/widgets/bindings.py` when binding seed data or live updates
+   - `mainsequence/client/command_center/workspaces/widgets/bindings.py` when binding seed data or live updates
      into the transform
 2. Widget registry detail for the source and consumer widgets:
    - `mainsequence cc registered_widget_type list --json`
@@ -177,7 +177,7 @@ first create, or select an existing, connection instance of type Adapter from AP
 normalization into `core.tabular_frame@v1` before any generic tabular consumer is bound.
 
 When an API operation already returns the full canonical frame, validate it against
-`mainsequence.command_center.sdk.data_models.TabularFrameResponse`. If it returns
+`mainsequence.client.command_center.sdk.data_models.TabularFrameResponse`. If it returns
 provider-native JSON, the Adapter from API contract must declare the exact response mapping into
 `core.tabular_frame@v1`.
 

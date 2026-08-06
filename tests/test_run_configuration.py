@@ -12,6 +12,7 @@ from pydantic import ValidationError
 import mainsequence.client.metatables as models_metatables
 import mainsequence.client.models_foundry as models_foundry
 import mainsequence.meta_tables.data_nodes.data_nodes as data_nodes_mod
+from mainsequence.client.command_center.workspaces.models import Workspace
 from mainsequence.client.metatables import (
     DataNodeUpdate,
     DataNodeUpdateDetails,
@@ -21,7 +22,6 @@ from mainsequence.client.metatables import (
 from mainsequence.client.models_foundry import (
     Project,
 )
-from mainsequence.command_center.workspaces.models import Workspace
 from mainsequence.meta_tables import (
     DataNode,
     DataNodeConfiguration,

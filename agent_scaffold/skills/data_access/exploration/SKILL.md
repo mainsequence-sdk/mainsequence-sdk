@@ -54,7 +54,7 @@ This skill discovers and identifies data. It does not publish, redesign, or defi
 - Streamlit dashboard deployment:
   `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
 - Command Center surfaces:
-  `.agents/skills/mainsequence/command_center/workspaces/builder/SKILL.md`
+  `.agents/skills/mainsequence/client/command_center/workspaces/builder/SKILL.md`
 - blocker and failure analysis:
   `.agents/skills/mainsequence/maintenance/bug_auditor/SKILL.md`
 

@@ -447,10 +447,10 @@ DATA_NODE_STORAGE_MODEL_REF = "mainsequence.client.metatables.TimeIndexMetaTable
 META_TABLE_MODEL_REF = "mainsequence.client.metatables.MetaTable"
 CONSTANT_MODEL_REF = "mainsequence.client.models_foundry.Constant"
 SECRET_MODEL_REF = "mainsequence.client.models_foundry.Secret"
-WORKSPACE_MODEL_REF = "mainsequence.command_center.workspaces.models.Workspace"
-REGISTERED_WIDGET_TYPE_MODEL_REF = "mainsequence.command_center.workspaces.models.RegisteredWidgetType"
-CONNECTION_TYPE_MODEL_REF = "mainsequence.command_center.connections.ConnectionType"
-CONNECTION_INSTANCE_MODEL_REF = "mainsequence.command_center.connections.ConnectionInstance"
+WORKSPACE_MODEL_REF = "mainsequence.client.command_center.workspaces.models.Workspace"
+REGISTERED_WIDGET_TYPE_MODEL_REF = "mainsequence.client.command_center.workspaces.models.RegisteredWidgetType"
+CONNECTION_TYPE_MODEL_REF = "mainsequence.client.command_center.connections.ConnectionType"
+CONNECTION_INSTANCE_MODEL_REF = "mainsequence.client.command_center.connections.ConnectionInstance"
 TEAM_MODEL_REF = "mainsequence.client.models_user.Team"
 JOB_RUN_STATUS_PENDING = "PENDING"
 JOB_RUN_STATUS_RUNNING = "RUNNING"
@@ -5452,7 +5452,7 @@ def _workspace_snapshot_impl(
     _require_login()
 
     try:
-        from mainsequence.command_center.workspaces.snapshot import (
+        from mainsequence.client.command_center.workspaces.snapshot import (
             _build_snapshot_url,
             _capture_workspace_snapshot,
             _resolve_command_center_url,

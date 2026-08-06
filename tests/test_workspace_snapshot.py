@@ -3,7 +3,7 @@ import zipfile
 
 import pytest
 
-import mainsequence.command_center.workspaces.snapshot as workspace_snapshot
+import mainsequence.client.command_center.workspaces.snapshot as workspace_snapshot
 
 
 def test_build_storage_payload_uses_explicit_auth_mode():

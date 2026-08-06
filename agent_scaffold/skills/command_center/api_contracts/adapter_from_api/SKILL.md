@@ -105,17 +105,17 @@ Provider code should use the Command Center SDK helpers instead of hand-building
 contract when the project can depend on `mainsequence-sdk`:
 
 ```python
-from mainsequence.command_center.sdk.contracts.adapter_from_api import (
+from mainsequence.client.command_center.sdk.contracts.adapter_from_api import (
     AdapterFromApiConfigVariable,
     AdapterFromApiParameter,
     AdapterFromApiSecretInjection,
     AdapterFromApiSecretVariable,
 )
-from mainsequence.command_center.sdk.contracts.response_mapping import (
+from mainsequence.client.command_center.sdk.contracts.response_mapping import (
     make_tabular_response_mapping,
 )
-from mainsequence.command_center.sdk.contracts.tabular import make_tabular_frame
-from mainsequence.command_center.sdk.providers.adapter_from_api import (
+from mainsequence.client.command_center.sdk.contracts.tabular import make_tabular_frame
+from mainsequence.client.command_center.sdk.providers.adapter_from_api import (
     make_health_operation,
     make_provider_contract,
     make_query_operation,
@@ -161,15 +161,15 @@ Route those concerns to the adjacent skills below.
 - General Main Sequence API creation:
   `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
 - Command Center connection instance creation and selection:
-  `.agents/skills/mainsequence/command_center/connections/SKILL.md`
+  `.agents/skills/mainsequence/client/command_center/connections/SKILL.md`
 - Workspace widgets and binding:
-  `.agents/skills/mainsequence/command_center/workspaces/builder/SKILL.md`
+  `.agents/skills/mainsequence/client/command_center/workspaces/builder/SKILL.md`
 - Table/pro-table output contracts and `meta.tableVisuals` metadata:
-  `.agents/skills/mainsequence/command_center/workspaces/widgets/tables/SKILL.md`
+  `.agents/skills/mainsequence/client/command_center/workspaces/widgets/tables/SKILL.md`
 - AppComponent form-driven actions:
-  `.agents/skills/mainsequence/command_center/workspaces/widgets/app_components/SKILL.md`
+  `.agents/skills/mainsequence/client/command_center/workspaces/widgets/app_components/SKILL.md`
 - API mock/prototype validation before deployment:
-  `.agents/skills/mainsequence/command_center/workspaces/api_mock_prototyping/SKILL.md`
+  `.agents/skills/mainsequence/client/command_center/workspaces/api_mock_prototyping/SKILL.md`
 - FastAPI resources, images, jobs, and releases:
   `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
 
@@ -364,8 +364,8 @@ If an operation returns a full canonical frame, the returned JSON must contain:
 For FastAPI providers in Main Sequence repos, full canonical frame endpoints must use:
 
 ```python
-from mainsequence.command_center.sdk.data_models import TabularFrameResponse
-from mainsequence.command_center.sdk.contracts.tabular import make_tabular_frame
+from mainsequence.client.command_center.sdk.data_models import TabularFrameResponse
+from mainsequence.client.command_center.sdk.contracts.tabular import make_tabular_frame
 ```
 
 Declare `response_model=TabularFrameResponse` instead of recreating the canonical frame shape
@@ -419,7 +419,7 @@ Rules:
 The SDK canonical model for a full `core.tabular_frame@v1` response is:
 
 ```python
-mainsequence.command_center.sdk.data_models.TabularFrameResponse
+mainsequence.client.command_center.sdk.data_models.TabularFrameResponse
 ```
 
 Related SDK models:
@@ -456,8 +456,8 @@ Before implementing or revising an API for Adapter from API consumption, decide:
 
 For a FastAPI provider:
 
-- use the SDK provider helpers in `mainsequence.command_center.sdk.providers.adapter_from_api`
-  and strict models in `mainsequence.command_center.sdk.contracts.adapter_from_api` when the
+- use the SDK provider helpers in `mainsequence.client.command_center.sdk.providers.adapter_from_api`
+  and strict models in `mainsequence.client.command_center.sdk.contracts.adapter_from_api` when the
   dependency is available
 - set explicit `operation_id` values on routes
 - expose `GET /.well-known/command-center/connection-contract`
