@@ -56,7 +56,7 @@ This skill must not claim ownership of:
   `.agents/skills/mainsequence/data_publishing/data_nodes/SKILL.md`
 - MetaTables:
   `.agents/skills/mainsequence/data_publishing/meta_tables/SKILL.md`
-- APIs and FastAPI:
+- Command Center-serving FastAPI providers:
   `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
 - Streamlit dashboard deployment:
   `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`

@@ -1,209 +1,205 @@
 ---
-name: mainsequence-api-surfaces
-description: Use this skill when building or changing a FastAPI application in a Main Sequence repository. It owns API structure, request and response contracts, request-user binding, APIDataNode and MetaTable consumption, and local validation. It does not own producer-side DataNode or MetaTable design, job scheduling, image builds, resource discovery, releases, access policy, or Streamlit implementation.
+name: mainsequence-command-center-fastapi
+description: Build, contract-test, release, and verify a FastAPI project resource that serves the Command Center frontend. Use when a Main Sequence API must implement a wire contract defined by the mainsequence-sdk/command-center-sdk GitHub repository and then move through local testing, project sync, image and resource resolution, FastAPI ResourceRelease creation, and deployed frontend validation.
 ---
 
-# Main Sequence API Surfaces
+# Command Center FastAPI Release Lifecycle
 
-## Overview
+## Goal
 
-Use this skill for application-facing HTTP APIs in a Main Sequence project.
-Project APIs should use FastAPI unless the repository and task explicitly
-require preserving another framework.
+Build a FastAPI provider that the Command Center frontend can use, prove that
+its Command Center contract-bearing payloads conform to the selected Command
+Center SDK repository revision, and release the exact tested commit through the
+Main Sequence platform.
 
-This skill covers API structure, request and response contracts, request-user
-context, and API-side consumption of published project data. Deployment remains
-a separate platform workflow.
+This skill coordinates the provider lifecycle. The canonical
+[`mainsequence-sdk/command-center-sdk`](https://github.com/mainsequence-sdk/command-center-sdk)
+GitHub repository is authoritative for every endpoint that adopts a Command
+Center wire contract.
 
-## This Skill Can Do
+## Contract Authority
 
-- create or modify a FastAPI application
-- structure an API for project resource discovery
-- define typed request and response models
-- keep route handlers thin and contract-driven
-- use `APIDataNode` to read published DataNode tables
-- use `MetaTable.execute_operation(...)` to read governed MetaTable rows
-- add `LoggedUserContextMiddleware` when request-local user context is required
-- review whether routes incorrectly duplicate producer logic
-- validate routes locally and inspect generated OpenAPI
+Apply the Command Center SDK default per endpoint, not to the whole API.
 
-## This Skill Must Not Claim
+- When an endpoint is being created to serve a frontend, first treat the pinned
+  Command Center SDK repository contracts as the default unless the user
+  explicitly names another frontend or contract authority.
+- Classify every endpoint independently. A single FastAPI application can mix
+  Command Center-facing routes with health, internal, administrative, webhook,
+  external-integration, and backend-to-backend routes.
+- Do not force non-frontend endpoints into Command Center contracts merely
+  because they share an application with frontend-serving routes.
+- Do not force every frontend operation into one generic envelope. Select the
+  exact manifest contract whose role and semantics match that endpoint.
 
-This skill does not own:
+For each endpoint classified as Command Center contract-bearing, before
+designing Pydantic models or route serialization:
 
-- DataNode producer design
-- MetaTable schema design
-- job creation or scheduling
-- image creation or pinning
-- project resource or release creation
-- RBAC or sharing policy
-- Streamlit dashboard design or implementation
+1. Select a branch, tag, or commit from
+   `https://github.com/mainsequence-sdk/command-center-sdk`. Use `main` unless
+   the user or consuming frontend requires a specific compatible revision, and
+   record the resolved commit SHA.
+2. Open `command-center-sdk/contracts/manifest.json` at that exact revision:
+   `https://github.com/mainsequence-sdk/command-center-sdk/blob/<revision>/command-center-sdk/contracts/manifest.json`.
+3. Select the exact contract by contract ID and role.
+4. Load the manifest-referenced draft-2020-12 JSON Schema and every indexed
+   valid and invalid fixture.
+5. Load the corresponding contract skill from
+   `command-center-sdk/agent_scaffold/skills/contracts/` at the same revision
+   when one exists. Otherwise use `implement-command-center-contract` there.
 
-## Route Adjacent Work
+The manifest, referenced schema, and indexed fixtures define the wire format.
+TypeScript declarations and human documentation explain the contract but do not
+replace that language-neutral definition.
 
-- DataNodes:
-  `.agents/skills/mainsequence/data_publishing/data_nodes/SKILL.md`
-- MetaTables:
-  `.agents/skills/mainsequence/data_publishing/meta_tables/SKILL.md`
-- Jobs, images, resources, and releases:
-  `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
-- RBAC and sharing:
-  `.agents/skills/mainsequence/platform_operations/access_control_and_sharing/SKILL.md`
+Do not install the Node package in the Python API environment to discover or
+validate these contracts. Read them from a checkout or GitHub URLs pinned to the
+resolved repository commit.
 
-Streamlit implementation is project-owned code. Route only its platform
-deployment and release verification to orchestration and releases.
+Do not copy schemas, fixture payloads, contract IDs, or field inventories into
+this skill or into Main Sequence SDK client models. Generate or maintain
+provider-side Python models against the selected repository schema and validate
+serialized responses at the HTTP boundary.
 
-## Read First
+If no published contract applies to an application-specific frontend endpoint,
+record that decision and define an explicit application-owned route contract.
+Do not mislabel it as a Command Center SDK contract or distort a nearby schema
+to make it fit.
 
-1. `docs/tutorial/create_your_first_api.md`
-2. `docs/tutorial/fastapi_tutorial/index.md`
-3. `docs/tutorial/fastapi_tutorial/implementation_details.md`
-4. `docs/knowledge/fastapi/index.md`
-5. `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
-   when the API must be deployed
+If the endpoint claims an existing Command Center contract but that contract
+cannot express the required behavior, stop that endpoint implementation and
+produce a Command Center SDK handoff containing:
 
-## Inputs This Skill Needs
+- Command Center SDK repository commit SHA
+- contract ID and schema `$id`
+- rejected payload or failing fixture
+- exact missing capability or compatibility requirement
 
-Before changing code, collect or infer:
+Do not invent a local wire extension while waiting for a contract change.
 
-- the routes that should exist
-- the intended clients
-- input parameters and validation rules
-- response contracts
-- upstream data sources
-- whether request-local user context is required
-- whether the API already exists as a project resource and release
+## Lifecycle
 
-If the producer contract is unclear, resolve that before implementing the API.
+### 1. Establish the API boundary
 
-## Required Decisions
+Record:
 
-For every non-trivial API task, decide:
+- the Command Center frontend flow consuming the API
+- the per-endpoint classification: frontend-facing, health, internal,
+  administrative, webhook, external integration, or backend-to-backend
+- the exact contract ID and role for each request or response body
+- route paths, HTTP methods, authentication expectations, and error semantics
+- upstream `APIDataNode`, MetaTable, service, or external data dependencies
+- whether the API uses backend transport or a contract-defined direct
+  development transport
 
-1. Is the route exposing application logic, or should the data remain a table?
-2. Should the route read from `APIDataNode`, `MetaTable`, or another source?
-3. Does it require request-local user context?
-4. Which request and response models define the public boundary?
-5. Is the route composing published data or rebuilding producer logic?
-6. Does the API need a project resource, image, and release now?
+Use `LoggedUserContextMiddleware` when the platform-authenticated request user
+must be available through `request.state`. This middleware binds request headers
+to the SDK request context; it is not an authorization policy by itself.
 
-## Build Rules
+### 2. Implement the provider
 
-### 1. Treat the API as a consumer surface
+Keep Command Center contract-bearing route code focused on transport and
+application behavior:
 
-An API should expose request validation, route-level composition, and stable
-response contracts. It should consume published resources instead of silently
-reimplementing their producer logic.
+1. validate request bodies and parameters
+2. invoke project-owned services and Main Sequence data access
+3. serialize the declared Command Center contract
+4. validate the serialized body against the schema from the selected repository
+   commit before it crosses the HTTP boundary
 
-### 2. Use FastAPI for project APIs
+Python and Pydantic models are implementation tools, not contract authority.
+Preserve schema requirements, nullability, enums, numeric constraints,
+additional-property policy, contract IDs, and semantic rules from the selected
+Command Center SDK repository revision.
 
-Do not introduce another framework unless the repository already uses it and
-the task explicitly requires preserving that choice.
+### 3. Prove contract conformance
 
-### 3. Keep deployment compatibility
+Tests for each selected Command Center contract must:
 
-The implementation should remain compatible with project sync, resource
-discovery, image-based deployment, and release creation. Do not describe a local
-development server as a completed deployment.
+- compile the selected schema using draft 2020-12
+- accept every manifest-indexed valid fixture
+- reject every manifest-indexed invalid fixture
+- validate representative route responses after JSON serialization
+- test request validation, authentication context, authorization decisions, and
+  declared errors
+- assert that secrets and runtime-only objects never enter response payloads
+- record the Command Center SDK repository commit SHA, contract ID, and schema
+  `$id` in test evidence
 
-### 4. Keep route handlers thin
+An OpenAPI document and passing Pydantic validation are useful but do not replace
+validation against the authoritative Command Center SDK schema and fixtures.
 
-A route should primarily:
+### 4. Test with the frontend before release
 
-1. accept validated input
-2. call a helper or service
-3. return a typed response
+Run the FastAPI application locally and exercise it through the actual Command
+Center frontend flow, not only with isolated HTTP calls.
 
-Move reusable business logic into project modules instead of duplicating it in
-route handlers.
+For Adapter From API development, use the direct transport mode defined by the
+selected Command Center SDK repository contract and expose the local API through
+a temporary authenticated Cloudflare tunnel. This allows the workspace
+connection to be tested against local code before creating repeated API
+deployments. Validate discovery, queries, health behavior, exact response
+contracts, and secret redaction through that path.
 
-### 5. Use the correct read path
+Do not guess transport field names or values from this skill. Read them from the
+Adapter From API schema and fixtures at the selected repository commit.
 
-When reading published data:
+### 5. Release the tested commit
 
-- use `APIDataNode` for published DataNode tables
-- use `MetaTable.execute_operation(...)` for governed MetaTable rows
+Before release, verify local project resolution:
 
-Do not rebuild producer logic merely because an API needs the result.
-
-### 6. Bind request-user context only when required
-
-Use:
-
-```python
-app.add_middleware(LoggedUserContextMiddleware)
+```bash
+mainsequence project current --debug --json
 ```
 
-only when route handlers or helpers actually consume the resolved user through
-`request.state.user`. The middleware provides request-local context; it is not
-an authorization policy by itself.
+Then move the tested code through the canonical lifecycle:
 
-### 7. Make models part of the boundary
+```bash
+mainsequence project sync -m "Release Command Center API"
+mainsequence project images create
+mainsequence project project_resource list --filter resource_type=fastapi
+mainsequence project project_resource create_fastapi
+```
 
-Use explicit request and response models:
+Verify that:
 
-- declare `response_model` for every structured route
-- model structured request bodies explicitly
-- avoid loose dictionaries for stable public payloads
-- document fields and validation constraints
+- project sync used the intended Git branch
+- the selected image contains the exact tested commit
+- resource discovery found the expected FastAPI path at that commit
+- the selected resource UID and image UID refer to the same commit
+- the created release kind is `fastapi`
+- compute and spot settings are intentional
 
-Typed boundaries keep OpenAPI useful and make contract drift visible.
+Use `--automatic-deployment` only after the route paths, resource path, and
+frontend contracts are stable and the release should follow future repository
+syncs. Otherwise keep the release pinned and create deliberate replacements.
 
-### 8. Use platform notifications for asynchronous work
+### 6. Verify the deployed API
 
-If work continues after the request returns or spans subprocesses, do not rely
-on the immediate HTTP response as the ongoing feedback channel. Use
-`mainsequence.client.Notification` for delayed user updates.
+Do not treat local success or release creation as completion. Through the
+deployed platform route:
 
-### 9. Keep FastAPI documentation complete
+1. verify health and authentication behavior
+2. execute representative contract-bearing requests
+3. validate returned JSON against the same repository-pinned schemas
+4. exercise the consuming Command Center frontend flow
+5. inspect platform logs for serialization, authorization, and runtime failures
 
-For every project API:
+When automatic deployment is enabled, also inspect the deployment run and prove
+that it selected the expected repository revision, resource path, and image.
 
-- provide explicit route summaries and descriptions
-- type every route parameter
-- use `Query(...)`, `Path(...)`, `Body(...)`, and related helpers where useful
-- add examples, bounds, and enums when they clarify the contract
-- document request and response models
-- keep an API-local `README.md`
+## Completion Evidence
 
-## Review Rules
+Report:
 
-When reviewing an API change, look for:
+- Command Center SDK repository URL and resolved commit SHA
+- implemented contract IDs and schema `$id` values
+- conformance and route-test results
+- local frontend integration path used
+- Git commit, project image UID, project resource UID, and release identity
+- deployed contract validation and Command Center frontend result
+- whether automatic deployment is enabled and why
 
-- a non-FastAPI implementation without an explicit repository reason
-- route handlers containing reusable business logic
-- producer logic duplicated inside the API
-- missing request or response models
-- undocumented or weakly typed route parameters
-- middleware added without a concrete use of `request.state.user`
-- missing middleware when request-local identity is required
-- long-running work using only a one-shot HTTP response for feedback
-- code presented as deployed before resource and release verification
-- documentation that disagrees with the implemented contract
-
-## Validation Checklist
-
-Do not claim success until you have checked:
-
-- the intended client and route semantics are explicit
-- route inputs are intentionally typed
-- every structured route has an explicit `response_model`
-- route handlers remain thin
-- published DataNodes are read through `APIDataNode`
-- governed MetaTables are read through `MetaTable.execute_operation(...)`
-- request-user middleware is present only when required
-- local API tests pass
-- generated OpenAPI reflects the intended contract
-- deployment claims are backed by resource and release verification
-
-## This Skill Must Stop And Escalate When
-
-- the proposed framework is not FastAPI and the repository does not justify it
-- the producer contract needed by a route is unknown
-- a stable response contract cannot be determined
-- request-local identity is required but its binding path is unclear
-- the route would duplicate unpublished producer logic
-- documentation and code disagree on the API boundary
-- deployment is required but the project resource or release path is unavailable
-
-Do not guess through API contracts.
+The Command Center-facing release is complete only when the frontend consumes
+the deployed contract-bearing responses and they pass the contracts from the
+recorded Command Center SDK repository revision.

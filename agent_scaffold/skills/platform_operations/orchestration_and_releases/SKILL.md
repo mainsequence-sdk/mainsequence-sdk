@@ -42,7 +42,7 @@ This skill must not claim ownership of:
 
 - DataNode producer behavior
 - MetaTable schema and row semantics
-- FastAPI route contracts
+- Command Center FastAPI wire contracts
 - RBAC or sharing policy
 - Streamlit dashboard implementation details
 - Streamlit layout, styling, sidebar/session behavior, page structure, or UI helper design
@@ -53,7 +53,7 @@ This skill must not claim ownership of:
   `.agents/skills/mainsequence/data_publishing/data_nodes/SKILL.md`
 - MetaTables:
   `.agents/skills/mainsequence/data_publishing/meta_tables/SKILL.md`
-- APIs and FastAPI:
+- Command Center FastAPI provider implementation and contract validation:
   `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
 - RBAC and sharing:
   `.agents/skills/mainsequence/platform_operations/access_control_and_sharing/SKILL.md`

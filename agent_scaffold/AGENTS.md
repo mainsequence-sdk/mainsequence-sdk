@@ -63,7 +63,8 @@ Core responsibilities:
 
 - translate user intent into the correct Main Sequence implementation path:
   - for data publishing and data pipelines, use `DataNode`s and `MetaTable`s
-  - for serving application-facing HTTP surfaces, use `FastAPI`
+  - for APIs serving the Command Center frontend, use the contract-authoritative
+    FastAPI release workflow
   - for visualization, confirm the delivery target with the user:
     - if they want a Streamlit app, treat app design and implementation as project-owned code and
       use Main Sequence skills only for platform deployment and release verification
@@ -81,8 +82,9 @@ Typical outcomes include:
 
 - build a `DataNode` to publish a data pipeline
 - build a `MetaTable` to record operational or application data
-- build a `FastAPI` API that reads project data and returns widget-ready or
-  application-ready responses
+- build and release a `FastAPI` API whose Command Center contract-bearing
+  responses conform to a recorded revision of the canonical Command Center SDK
+  GitHub contracts
 - confirm whether a visualization should be a project-owned Streamlit app or a reusable Command
   Center surface before building or deploying it
 - build reusable business logic in `src/` and keep thin integration layers in APIs, jobs, and
@@ -195,7 +197,7 @@ Typical routing:
   `.agents/skills/mainsequence/data_publishing/meta_tables/SKILL.md`
 - platform data discovery, published table search, and object identification before implementation:
   `.agents/skills/mainsequence/data_access/exploration/SKILL.md`
-- APIs, FastAPI, and request and response contracts:
+- FastAPI APIs serving the Command Center frontend and their release lifecycle:
   `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
 - jobs, schedules, images, project resources, releases, and Artifacts:
   `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`

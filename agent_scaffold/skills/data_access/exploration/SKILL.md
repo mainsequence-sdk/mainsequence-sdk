@@ -49,7 +49,7 @@ This skill discovers and identifies data. It does not publish, redesign, or defi
   `.agents/skills/mainsequence/data_publishing/data_nodes/SKILL.md`
 - `MetaTable` registration or operation work:
   `.agents/skills/mainsequence/data_publishing/meta_tables/SKILL.md`
-- FastAPI or application-facing implementation:
+- FastAPI providers serving the Command Center frontend:
   `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
 - Streamlit dashboard deployment:
   `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
