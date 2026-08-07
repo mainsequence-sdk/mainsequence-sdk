@@ -46,10 +46,6 @@ If the user is still in the discovery process and does not yet know what data ex
   `.agents/skills/mainsequence/data_publishing/data_nodes/SKILL.md`
 - APIs and FastAPI:
   `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
-- Command Center workspaces:
-  `.agents/skills/mainsequence/client/command_center/workspaces/builder/SKILL.md`
-- AppComponents and custom forms:
-  `.agents/skills/mainsequence/client/command_center/workspaces/widgets/app_components/SKILL.md`
 - Jobs, images, resources, and releases:
   `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
 

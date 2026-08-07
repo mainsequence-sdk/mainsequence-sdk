@@ -55,8 +55,6 @@ This skill must not claim ownership of:
   `.agents/skills/mainsequence/data_publishing/meta_tables/SKILL.md`
 - APIs and FastAPI:
   `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
-- predeployment mock API contract validation:
-  `.agents/skills/mainsequence/client/command_center/workspaces/api_mock_prototyping/SKILL.md`
 - RBAC and sharing:
   `.agents/skills/mainsequence/platform_operations/access_control_and_sharing/SKILL.md`
 
@@ -71,12 +69,6 @@ This skill must not claim ownership of:
 If the task touches deployed FastAPI APIs, also read the relevant API skill/docs before changing the operational workflow.
 
 If the task asks to design, build, style, or restructure a Streamlit app, do not treat that as Main Sequence platform skill work. Streamlit implementation is app-owned project code. This skill only owns deployment and verification of an already-authored dashboard.
-
-If the task is about publishing a Command Center-facing API mainly to test AppComponent UX, bindings, or request/response contracts, read:
-
-6. `.agents/skills/mainsequence/client/command_center/workspaces/api_mock_prototyping/SKILL.md`
-
-Do that before building an image or creating a FastAPI `ResourceRelease`.
 
 ## Inputs This Skill Needs
 
@@ -206,23 +198,7 @@ Do not prescribe Streamlit page layout, styling, sidebar/session patterns, or he
 
 Validate the deployment path, not the Streamlit design.
 
-### 6.2 Do not publish an API just to test AppComponent contracts
-
-If the goal is to validate Command Center AppComponent UX, request rendering, response rendering, published outputs, or downstream bindings, do not jump straight to:
-
-- image build
-- project resource creation
-- `ResourceRelease` creation
-
-Use the predeployment mock workflow first:
-
-- `.agents/skills/mainsequence/client/command_center/workspaces/api_mock_prototyping/SKILL.md`
-
-That workflow exists to validate the contract in `apiTargetMode: "mock-json"` before spending time on deployment.
-
-Only publish the real FastAPI API after the AppComponent contract is stable.
-
-### 6.3 Automatic ResourceRelease deployment
+### 6.2 Automatic ResourceRelease deployment
 
 `automatic_deployment` is the automated deployment opt-in flag on a `ResourceRelease`. It means repository synchronization can rotate an existing release to the latest synced project commit for the same resource path.
 
@@ -298,7 +274,6 @@ When reviewing an orchestration task, look for:
 - no run/log verification after creation
 - unsafe use of `--strict`
 - workflows depending on laptop-specific file paths instead of Artifacts
-- image or release work being used as a substitute for predeployment AppComponent/API contract validation
 - `automatic_deployment` enabled without an explicit decision about repository-sync CI/CD rotation
 - assumptions that automatic deployment will deploy local unpushed changes
 - automatic release rotation where the resource path or dashboard README is not stable
@@ -323,7 +298,6 @@ Do not claim success until you have checked:
 - `automatic_deployment` is intentionally enabled or disabled on each release
 - automatic deployment runs were inspected when repository-sync rotation matters
 - automatic deployment results match the intended commit, resource, README, image, and terminal status
-- Command Center-facing API publishing is not being used just to test AppComponent UX that should have been validated first in `mock-json` mode
 
 If the workflow uses `scheduled_jobs.yaml`, also check:
 
@@ -344,7 +318,6 @@ If the workflow uses Artifacts, also check:
 - the image strategy is unclear but reproducibility matters
 - strict batch sync could delete jobs and the desired state is not explicit
 - the workflow depends on local file paths that should be platform Artifacts
-- the real need is AppComponent/API contract validation before deployment rather than release execution itself
 - automatic deployment is requested but the deployment source branch/current synced project version is unclear
 - automatic deployment is requested but the resource path or required README is not stable
 - the task is actually about RBAC policy rather than orchestration

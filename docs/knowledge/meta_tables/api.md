@@ -352,4 +352,4 @@ After registration, TS Manager stores:
 - an optional `introspection_snapshot`
 - a `TableSearchIndex` document
 
-Command Center and table discovery read those MetaTable records directly.
+Catalog and table discovery read those MetaTable records directly.

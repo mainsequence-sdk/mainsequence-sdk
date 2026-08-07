@@ -15,8 +15,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
-- Consolidated the generic Command Center backend clients into
-  `mainsequence.client.command_center_models`.
 - Made `DataSource` the sole canonical database identity across ProjectBranch,
   MetaTable, DataNode persistence, SQLAlchemy registration, compiled SQL, and
   CLI discovery. Migration credentials are now requested through the owning
@@ -39,8 +37,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Removed
 
-- Removed the Python Command Center UI contracts, payload recipes, FastAPI helpers,
-  Adapter-from-API specialization, workspace snapshot workflow, and old nested client namespace.
 - Removed `DynamicTableDataSource`, its deleted TS Manager endpoint, wrapper
   traversal, migration-connection models, and compatibility exports.
 
@@ -118,24 +114,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Made `mainsequence logout` perform a hard CLI logout for browser-login JWT sessions by calling `/auth/cli/revoke/`, with fallback local-only clearing for runtime credential mode or other no-refresh-token sessions.
 
-## [3.17.48] - 2026-04-14
-
-### Added
-
-- Added `NotificationTone` and `NotificationDefinition` to `mainsequence.client.command_center.workspaces.app_component` so FastAPI and AppComponent APIs can return notification-banner response contracts with `x-ui-role: notification` and `x-ui-widget: banner-v1`.
-- Added focused SDK tests covering notification payload validation and emitted schema metadata for the new AppComponent notification response contract.
-
-### Changed
-
-- Clarified the AppComponent skill so richer UI contracts are explicitly driven by `x-ui-role`, with `editable-form` for input-side contracts and `notification` for response-side contracts.
-- Clarified the FastAPI/API skill so immediate client feedback should use `NotificationDefinition`, while long-running or subprocess-spanning work should use `mainsequence.client.Notification` for asynchronous user updates.
-
 ## [3.17.47] - 2026-04-14
 
 ### Added
 
-- Added `mainsequence cc registered_widget_type detail <WIDGET_ID>` to inspect one registered Command Center widget type by `widget_id`.
-- Updated registered widget type list/detail CLI output to include the backend row `id`.
 - Added focused tests for local pod-project resolution, including invalid environment handling, warning behavior, caching, and `DataNodeUpdate.get_or_create(...)` failure when no local pod project is available.
 
 ### Fixed

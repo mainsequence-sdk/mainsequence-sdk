@@ -7,7 +7,6 @@ Current examples include:
 - `Project`
 - `TimeIndexMetaTable`
 - `MetaTable`
-- `command_center.Workspace`
 
 ## What Labels Are For
 
@@ -60,9 +59,6 @@ mainsequence project remove-label 123 --label archive
 
 mainsequence data-node add-label <DATA_NODE_STORAGE_UID> --label curated
 mainsequence data-node remove-label <DATA_NODE_STORAGE_UID> --label archive
-
-mainsequence cc workspace add-label 11111111-1111-4111-8111-111111111111 --label trading --label desk
-mainsequence cc workspace remove-label 11111111-1111-4111-8111-111111111111 --label old-layout
 ```
 
 Each command calls the SDK model method for that object. The label mutation updates organizational metadata only.

@@ -9,11 +9,6 @@ os.environ.setdefault("MAINSEQUENCE_REFRESH_TOKEN", "test-refresh")
 from mainsequence.meta_tables.data_nodes import data_nodes
 
 
-def _clear_command_center_env(monkeypatch):
-    monkeypatch.delenv("MAINSEQUENCE_COMMAND_CENTER_URL", raising=False)
-    monkeypatch.delenv("COMMAND_CENTER_URL", raising=False)
-
-
 class _FakeAPIPersistManager:
     def __init__(self):
         self.calls = []
@@ -36,33 +31,14 @@ def _mixin_with_fake_api_manager(monkeypatch):
     return mixin, manager
 
 
-def test_data_node_repr_omits_detail_url_without_command_center_env(monkeypatch):
-    _clear_command_center_env(monkeypatch)
+def test_data_node_repr_is_stable(monkeypatch):
     monkeypatch.setenv("MAINSEQUENCE_ENDPOINT", "http://127.0.0.1:8000")
     mixin = data_nodes.DataAccessMixin()
 
     assert repr(mixin) == "DataAccessMixin"
 
 
-def test_data_node_repr_omits_detail_url_with_command_center_env(monkeypatch):
-    _clear_command_center_env(monkeypatch)
-    monkeypatch.setenv("MAINSEQUENCE_ENDPOINT", "http://127.0.0.1:8000")
-    monkeypatch.setenv("COMMAND_CENTER_URL", "http://localhost:5173/")
-    mixin = data_nodes.DataAccessMixin()
-
-    assert repr(mixin) == "DataAccessMixin"
-
-
-def test_api_data_node_repr_omits_detail_url_without_command_center_env(monkeypatch):
-    _clear_command_center_env(monkeypatch)
-    node = object.__new__(data_nodes.APIDataNode)
-
-    assert repr(node) == "APIDataNode"
-
-
-def test_api_data_node_repr_omits_detail_url_with_command_center_env(monkeypatch):
-    _clear_command_center_env(monkeypatch)
-    monkeypatch.setenv("MAINSEQUENCE_COMMAND_CENTER_URL", "http://localhost:5173")
+def test_api_data_node_repr_is_stable():
     node = object.__new__(data_nodes.APIDataNode)
 
     assert repr(node) == "APIDataNode"

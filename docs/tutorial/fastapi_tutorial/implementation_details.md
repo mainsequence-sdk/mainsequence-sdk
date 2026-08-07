@@ -10,7 +10,6 @@ The focus here is implementation quality:
 - how to keep routes thin
 - how to read from `MetaTable` and `APIDataNode` cleanly
 - how to bind the authenticated platform user into FastAPI request handling
-- how to return exact Command Center widget contracts when the API feeds a widget directly
 - how to think about request validation and response contracts
 - how FastAPI resources are discovered and deployed by the platform
 
@@ -311,7 +310,6 @@ This is the same deployment pattern you already see with Streamlit dashboards an
 - putting all business logic directly in route functions
 - returning unstable ad-hoc dictionaries as responses
 - rebuilding producer logic in the API instead of consuming published `DataNode` outputs
-- handcrafting widget payloads instead of validating against the standalone Command Center SDK
 - querying by business meaning but forgetting to keep the endpoint contract stable
 - trying to deploy code that has not been pushed yet
 
@@ -319,7 +317,6 @@ This is the same deployment pattern you already see with Streamlit dashboards an
 
 - [Part 3.2 — Create Your First API](../create_your_first_api.md)
 - [Part 2 — Working With MetaTables](../working_with_meta_tables.md)
-- [Command Center](../../knowledge/command_center/index.md)
 - [Data Nodes](../../knowledge/data_nodes.md)
 - [MetaTables Overview](../../knowledge/meta_tables/index.md)
 - [Part 5.2 — Streamlit Integration II](../dashboards/streamlit/streamlit_integration_2.md)

@@ -39,8 +39,6 @@ This skill must not claim ownership of:
 - DataNode engineering
 - MetaTable design
 - FastAPI or application API design
-- Command Center workspace payloads
-- AppComponent contracts
 - jobs, schedules, images, resources, or releases
 - RBAC or sharing semantics
 - domain assets, translation tables, or construction logic
@@ -59,12 +57,6 @@ Do not let this skill become a domain manual.
   `.agents/skills/mainsequence/data_access/exploration/SKILL.md`
 - FastAPI and application-facing APIs:
   `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
-- Command Center resource collections, summaries, bulk actions, and preflight:
-  `.agents/skills/mainsequence/client/command_center/api_contracts/resource_api/SKILL.md`
-- Command Center workspace creation and widget mounting:
-  `.agents/skills/mainsequence/client/command_center/workspaces/builder/SKILL.md`
-- AppComponents, custom forms, and widget-facing API contracts:
-  `.agents/skills/mainsequence/client/command_center/workspaces/widgets/app_components/SKILL.md`
 - project audits, blocker analysis, and upstream SDK assessment:
   `.agents/skills/mainsequence/maintenance/bug_auditor/SKILL.md`
 - local environment repair, project authentication refresh, SDK updates,

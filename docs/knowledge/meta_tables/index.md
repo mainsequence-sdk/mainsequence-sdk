@@ -113,7 +113,7 @@ The practical benefits are:
 - Physical table names are explicit SQLAlchemy/Alembic names, while platform
   references use MetaTable UIDs and logical identifiers.
 - Creation, permission checks, introspection, search-document refresh, and
-  Command Center discovery happen through one platform path.
+  catalog discovery happen through one platform path.
 - Hosted or restricted environments can create relational tables without giving
   every application direct database access.
 - The server applies a neutral contract. It does not import the user's ORM code

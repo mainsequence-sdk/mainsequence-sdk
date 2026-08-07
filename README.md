@@ -64,8 +64,6 @@ Recommended entry points:
   - [Turn Your Project Into an Agent](docs/tutorial/project_to_agent.md)
 - Knowledge:
   - [Data Nodes](docs/knowledge/data_nodes.md)
-  - [Command Center](docs/knowledge/command_center/index.md)
-  - [Command Center Widget Data Contracts](docs/knowledge/command_center/widget_data_contracts.md)
   - [MetaTables](docs/knowledge/meta_tables/index.md)
   - [Constants and Secrets](docs/knowledge/infrastructure/constants_and_secrets.md)
   - [Scheduling Jobs](docs/knowledge/infrastructure/scheduling_jobs.md)

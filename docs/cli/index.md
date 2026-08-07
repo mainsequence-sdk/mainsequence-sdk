@@ -69,7 +69,6 @@ The flag is global and can be placed after the command you are running, for exam
 mainsequence user --json
 mainsequence agent list --json
 mainsequence project images list --json
-mainsequence cc workspace detail 11111111-1111-4111-8111-111111111111 --json
 mainsequence sdk latest --json
 mainsequence project current --json
 mainsequence project sdk-status --path . --json
@@ -87,7 +86,6 @@ mainsequence doctor
 mainsequence constants --help
 mainsequence secrets --help
 mainsequence agent --help
-mainsequence cc --help
 mainsequence organization --help
 mainsequence skills list
 mainsequence skills path
@@ -104,47 +102,6 @@ mainsequence sdk latest
 ```bash
 mainsequence project --help
 ```
-
-## Command Center
-
-```bash
-mainsequence cc --help
-mainsequence cc workspace list
-mainsequence cc workspace detail 11111111-1111-4111-8111-111111111111
-mainsequence cc workspace create "Rates Desk" --description "Shared workspace"
-mainsequence cc workspace create --file workspace.json
-mainsequence cc workspace update 11111111-1111-4111-8111-111111111111 --file workspace.json
-mainsequence cc workspace delete 11111111-1111-4111-8111-111111111111
-mainsequence cc workspace add-label 11111111-1111-4111-8111-111111111111 --label trading --label desk
-mainsequence cc workspace remove-label 11111111-1111-4111-8111-111111111111 --label old-layout
-mainsequence cc registered_widget_type list
-mainsequence cc registered_widget_type detail main-sequence-data-node
-mainsequence cc registered_widget_type list --filter widget_id=markdown-note
-mainsequence cc registered_widget_type list --show-filters
-mainsequence cc connection_type list
-mainsequence cc connection_type detail postgres
-mainsequence cc connection list
-mainsequence cc connection detail warehouse-primary
-```
-
-Command Center commands are grouped under `cc`:
-
-- `workspace`
-  create, detail, update, list, and delete shared workspaces
-- `registered_widget_type`
-  inspect the widget catalog available to workspaces, including widget-type detail by unique `widget_id` rather than backend row `id`
-- `connection_type`
-  inspect the Command Center connection catalog by stable connection `type_id`
-- `connection`
-  inspect configured Command Center connection instances by stable connection `uid`
-
-For widget-specific workspace mutations, prefer the SDK workspace methods instead of rewriting the full workspace document:
-
-- `Workspace.patch_workspace_widget(...)`
-- `Workspace.delete_workspace_widget(...)`
-- `Workspace.move_workspace_widget(...)`
-
-Those methods mutate one mounted widget instance directly without requiring a full workspace fetch/update round-trip.
 
 Most frequently used flows:
 
@@ -286,8 +243,6 @@ mainsequence project project_resource create_fastapi 123
 mainsequence project project_resource delete_fastapi 701
 mainsequence project project_resource delete_fastapi 701 --yes
 mainsequence project validate-name "Rates Platform"
-mainsequence cc workspace add-label 11111111-1111-4111-8111-111111111111 --label trading --label desk
-mainsequence cc workspace remove-label 11111111-1111-4111-8111-111111111111 --label old-layout
 
 # 2) Set up locally
 mainsequence project set-up-locally 123
@@ -356,10 +311,9 @@ mainsequence skills list --json
 mainsequence skills path
 mainsequence skills path sdk_project_execution
 mainsequence skills path maintenance/project-maintenance
-mainsequence skills path command_center/api_contracts/resource_api
-mainsequence skills path command_center/workspaces/builder
-mainsequence skills path builder
-mainsequence skills path builder --json
+mainsequence skills path data_publishing/meta_tables
+mainsequence skills path meta_tables
+mainsequence skills path meta_tables --json
 ```
 
 ### Updating project agent skills
@@ -504,7 +458,7 @@ ontology and each installed platform skill.
 - `mainsequence login` persists tokens for later CLI runs. Use `--export` only when you explicitly want shell-managed auth variables instead.
 - `mainsequence skills list` lists installed scaffold skills from the current CLI installation by recursively discovering `SKILL.md` files under the installed `agent_scaffold` bundle.
 - `mainsequence skills path` with no argument prints the installed `agent_scaffold/skills` directory for the current CLI installation.
-- `mainsequence skills path <skill_name>` prints the installed `SKILL.md` path for one scaffold skill from the current CLI installation. It accepts full relative skill names such as `command_center/workspaces/builder` and unique leaf names such as `builder`.
+- `mainsequence skills path <skill_name>` prints the installed `SKILL.md` path for one scaffold skill from the current CLI installation. It accepts full relative skill names such as `data_publishing/meta_tables` and unique leaf names such as `meta_tables`.
 - `mainsequence user` shows the authenticated MainSequence user through the SDK client `User.get_logged_user()` path.
 - in standalone authenticated CLI or script code that is not request-bound, prefer `User.get_authenticated_user_details()` over `User.get_logged_user()`. `User.get_logged_user()` is for request-bound identity contexts such as FastAPI middleware, Streamlit, or code that explicitly binds `_CURRENT_AUTH_HEADERS`.
 - `mainsequence project search "<QUERY>"` searches visible projects through the SDK client `Project.quick_search()` path and returns `id`, `project_name`, `repository_branch`, and `cluster_id` for matching rows.
@@ -580,7 +534,6 @@ ontology and each installed platform skill.
 - `mainsequence project add_to_view`, `add_to_edit`, `remove_from_view`, and `remove_from_edit` mutate project user sharing through the SDK `ShareableObjectMixin` paths and render the resulting permission state in the terminal.
 - `mainsequence project add_team_to_view`, `add_team_to_edit`, `remove_team_from_view`, and `remove_team_from_edit` mutate project team sharing through the SDK `ShareableObjectMixin` team-action paths.
 - `mainsequence project project_resource list` lists project resources through the SDK client `ProjectResource.filter()` path and always applies `repo_commit_sha` from the current upstream branch head.
-- `mainsequence cc workspace add-label` and `remove-label` mutate `Workspace` labels through the SDK `LabelableObjectMixin` path. Labels are organizational metadata only and do not affect runtime behavior or functionality.
 - `mainsequence project current` reports the logical Project UID, current named Git branch, resolved ProjectBranch UID, and branch-resolution status. The ProjectBranch UID is derived platform context and is never persisted in `.env`.
 - `mainsequence project sync` is the canonical local release workflow. Its preflight rejects detached checkouts and Git branches that are not registered under `MAIN_SEQUENCE_PROJECT_UID`; only then does it patch the project version, run `uv lock`, run `uv sync`, export locked production requirements, commit, create an annotated `v<version>` tag, and push with `--follow-tags`. Backend repository reconciliation is triggered independently by the GitHub branch-push webhook; there is no client post-commit callback.
 - `mainsequence project jobs runs list` lists job-run history through the SDK client `JobRun.filter(job__id=[job_id])` path.

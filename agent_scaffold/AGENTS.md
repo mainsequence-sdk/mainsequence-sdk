@@ -63,11 +63,10 @@ Core responsibilities:
 
 - translate user intent into the correct Main Sequence implementation path:
   - for data publishing and data pipelines, use `DataNode`s and `MetaTable`s
-  - for serving application or widget-facing surfaces, use `FastAPI`
+  - for serving application-facing HTTP surfaces, use `FastAPI`
   - for visualization, confirm the delivery target with the user:
     - if they want a Streamlit app, treat app design and implementation as project-owned code and
       use Main Sequence skills only for platform deployment and release verification
-    - if they want reusable components and a more structured product surface, use Command Center
   - for scheduled execution, releases, and backend operations, use jobs, images, resources, and
     other platform objects through the proper platform skills
 - break work into independent executions according to the skill each part requires
@@ -196,28 +195,8 @@ Typical routing:
   `.agents/skills/mainsequence/data_publishing/meta_tables/SKILL.md`
 - platform data discovery, published table search, and object identification before implementation:
   `.agents/skills/mainsequence/data_access/exploration/SKILL.md`
-- APIs, FastAPI, request and response contracts, and widget-facing API responses:
+- APIs, FastAPI, and request and response contracts:
   `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
-- Command Center canonical collections, controls, summaries, bulk actions, and preflight:
-  `.agents/skills/mainsequence/client/command_center/api_contracts/resource_api/SKILL.md`
-- Command Center Adapter from API provider contracts:
-  `.agents/skills/mainsequence/client/command_center/api_contracts/adapter_from_api/SKILL.md`
-- Command Center connection discovery, readiness, and connection-first dataflow:
-  `.agents/skills/mainsequence/client/command_center/connections/SKILL.md`
-- Command Center workspace design, widget selection, layout narrative, and visualization strategy:
-  `.agents/skills/mainsequence/client/command_center/workspaces/design/SKILL.md`
-- Command Center workspace JSON creation/update and mounted widget mutation:
-  `.agents/skills/mainsequence/client/command_center/workspaces/builder/SKILL.md`
-- AppComponents, custom forms, and widget input or output contracts:
-  `.agents/skills/mainsequence/client/command_center/workspaces/widgets/app_components/SKILL.md`
-- Command Center table/pro-table widgets, tabular frames, table visual metadata, formulas,
-  selections, and live merge mappings:
-  `.agents/skills/mainsequence/client/command_center/workspaces/widgets/tables/SKILL.md`
-- Command Center tabular transform widgets, projection, filtering, aggregate, pivot, unpivot,
-  computed columns, and seed/live update bindings:
-  `.agents/skills/mainsequence/client/command_center/workspaces/widgets/tabular_transform/SKILL.md`
-- predeployment AppComponent/API contract testing through `apiTargetMode: "mock-json"`:
-  `.agents/skills/mainsequence/client/command_center/workspaces/api_mock_prototyping/SKILL.md`
 - jobs, schedules, images, project resources, releases, and Artifacts:
   `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
 - RBAC, sharing, constants, secrets, and access verification:

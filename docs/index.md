@@ -34,7 +34,6 @@ Use the Knowledge section if you already know the workflow you are building and 
 Key entry points:
 
 - [Data Nodes](knowledge/data_nodes.md)
-- [Command Center](knowledge/command_center/index.md)
 - [MetaTables](knowledge/meta_tables/index.md)
 - [Constants and Secrets](knowledge/infrastructure/constants_and_secrets.md)
 - [Scheduling Jobs](knowledge/infrastructure/scheduling_jobs.md)

@@ -304,4 +304,3 @@ real project surface that can participate in agentic workflows with clear bounda
 - [Part 3.2 — Create Your First API](create_your_first_api.md)
 - [Part 4 — Orchestration](scheduling_jobs.md)
 - [CLI Overview](../cli/index.md)
-- [Command Center Overview](../knowledge/command_center/index.md)

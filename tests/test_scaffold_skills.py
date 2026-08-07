@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import re
-from pathlib import Path
-
 import pytest
 
 from mainsequence.scaffold_skills import (
@@ -11,50 +8,11 @@ from mainsequence.scaffold_skills import (
     normalize_scaffold_skill_namespace,
 )
 
-_LEGACY_COMMAND_CENTER_IMPORT = re.compile(
-    r"mainsequence(?:\.command_center\.|/command_center/)"
-    r"(?:app_component|contracts|data_models|providers|widgets|workspace|workspace_snapshot)\b"
-)
-
 
 def _write_skill(skills_root, name: str, content: str = "skill") -> None:
     skill_dir = skills_root / name
     skill_dir.mkdir(parents=True)
     (skill_dir / "SKILL.md").write_text(content, encoding="utf-8")
-
-
-def test_shipped_skills_use_only_canonical_command_center_packages():
-    skills_root = Path(__file__).resolve().parents[1] / "agent_scaffold" / "skills"
-    violations = []
-    for skill_path in skills_root.rglob("SKILL.md"):
-        content = skill_path.read_text(encoding="utf-8")
-        if _LEGACY_COMMAND_CENTER_IMPORT.search(content):
-            violations.append(skill_path.relative_to(skills_root).as_posix())
-
-    assert violations == []
-
-
-def test_shipped_command_center_skills_follow_package_ownership():
-    skills_root = Path(__file__).resolve().parents[1] / "agent_scaffold" / "skills"
-    command_center_root = skills_root / "command_center"
-
-    actual = {
-        skill_path.relative_to(command_center_root).as_posix()
-        for skill_path in command_center_root.rglob("SKILL.md")
-    }
-
-    assert actual == {
-        "connections/SKILL.md",
-        "api_contracts/adapter_from_api/SKILL.md",
-        "api_contracts/resource_api/SKILL.md",
-        "workspaces/analysis/SKILL.md",
-        "workspaces/api_mock_prototyping/SKILL.md",
-        "workspaces/builder/SKILL.md",
-        "workspaces/design/SKILL.md",
-        "workspaces/widgets/app_components/SKILL.md",
-        "workspaces/widgets/tables/SKILL.md",
-        "workspaces/widgets/tabular_transform/SKILL.md",
-    }
 
 
 def test_copy_scaffold_skills_copies_namespace_and_writes_pin_sentinel(tmp_path):

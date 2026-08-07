@@ -12,7 +12,6 @@ from pydantic import ValidationError
 import mainsequence.client.metatables as models_metatables
 import mainsequence.client.models_foundry as models_foundry
 import mainsequence.meta_tables.data_nodes.data_nodes as data_nodes_mod
-from mainsequence.client.command_center_models import Workspace
 from mainsequence.client.metatables import (
     DataNodeUpdate,
     DataNodeUpdateDetails,
@@ -721,16 +720,7 @@ def test_data_node_update_accepts_labels():
     assert update.labels == ["pricing", "daily"]
 
 
-def test_label_fields_exist_on_workspace_project_and_storage_models():
-    workspace = Workspace(
-        uid="11111111-1111-4111-8111-111111111111",
-        title="Workspace",
-        schemaVersion=1,
-        layoutKind="custom",
-        createdAt="2026-04-20T00:00:00Z",
-        updatedAt="2026-04-20T00:00:00Z",
-        labels=["desk"],
-    )
+def test_label_fields_exist_on_project_and_storage_models():
     project = Project(
         uid="project-uid-1",
         project_name="Project",
@@ -750,7 +740,6 @@ def test_label_fields_exist_on_workspace_project_and_storage_models():
         creation_date="2026-04-13T00:00:00Z",
         labels=["vendor-data"],
     )
-    assert workspace.labels == ["desk"]
     assert project.labels == ["research"]
     assert data_node_storage.labels == ["vendor-data"]
 

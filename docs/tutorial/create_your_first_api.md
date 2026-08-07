@@ -9,7 +9,6 @@ In this tutorial, you will:
 - expose a health endpoint
 - read tutorial `MetaTable` rows from an API endpoint
 - read tutorial `DataNode` output through `APIDataNode`
-- understand how to return exact Command Center widget contracts when the API should feed a Main Sequence widget directly
 - run the API locally
 - understand how API deployment fits the same image/resource/release model used elsewhere in Main Sequence
 
@@ -274,7 +273,6 @@ If the API is going to be consumed across projects, dashboards, or agents, stabi
 For the data layer behind this chapter, see:
 
 - [Data Nodes](../knowledge/data_nodes.md)
-- [Command Center](../knowledge/command_center/index.md)
 - [MetaTables Overview](../knowledge/meta_tables/index.md)
 - [Compiled SQL Execution](../knowledge/meta_tables/compiled_sql.md)
 - [FastAPI Tutorial Overview](fastapi_tutorial/index.md)
