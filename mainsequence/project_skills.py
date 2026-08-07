@@ -233,7 +233,6 @@ def parse_platform_project_skill_catalog(
             raise ProjectSkillAssemblyError(f"{label} must use text/markdown.")
         _validate_platform_skill_path(
             payload.resource_path,
-            expected_name=declaration.name,
             label=label,
         )
         _validate_skill_front_matter(
@@ -673,18 +672,20 @@ def _platform_skill_slug(uri: str, *, label: str) -> str:
 def _validate_platform_skill_path(
     path: PurePosixPath,
     *,
-    expected_name: str,
     label: str,
 ) -> None:
-    if (
-        len(path.parts) != 3
-        or path.parts[0] != "skills"
-        or path.parts[1] != expected_name
-        or path.parts[2] not in _PLATFORM_SKILL_FILENAMES
-    ):
+    if len(path.parts) < 3 or path.parts[0] != "skills":
         raise ProjectSkillAssemblyError(
-            f"{label} path must be skills/{expected_name}/SKILL.md "
-            f"or skills/{expected_name}/SKILL.markdown."
+            f"{label} path must be rooted under skills/ and contain at least "
+            "one skill directory."
+        )
+    if path.parts[-1] not in _PLATFORM_SKILL_FILENAMES:
+        raise ProjectSkillAssemblyError(
+            f"{label} path must end with SKILL.md or SKILL.markdown."
+        )
+    if any(not _PLATFORM_SKILL_NAME_RE.fullmatch(part) for part in path.parts[1:-1]):
+        raise ProjectSkillAssemblyError(
+            f"{label} path directories must use safe lowercase snake case."
         )
 
 

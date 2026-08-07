@@ -79,7 +79,8 @@ Every skill must:
 - use the `mainsequence://platform/skills/<kebab-name>` URI namespace;
 - use the corresponding safe snake-case resource name;
 - use `text/markdown`;
-- map to `skills/<snake_name>/SKILL.md` or `SKILL.markdown`;
+- map below `skills/` through one or more safe snake-case directories and end
+  with `SKILL.md` or `SKILL.markdown`;
 - contain YAML front matter whose name matches the URI identity; and
 - resolve to a unique project destination.
 
@@ -107,6 +108,8 @@ The SDK rejects unsupported versions with an explicit compatibility error.
 - Adding a valid platform skill requires backend manifest, ontology, and skill
   content changes only.
 - Backend catalog order changes do not affect SDK behavior.
+- The backend may organize platform skills into safe hierarchical directories
+  without requiring an SDK release.
 - The SDK remains closed against path traversal, destination collisions,
   inconsistent manifests, malformed front matter, and content drift.
 - Future non-platform MCP resources do not break project skill updates.

@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- Allowed server-owned MCP platform skills to use canonical hierarchical paths
+  below `skills/` while preserving path traversal, naming, identity, ownership,
+  collision, and content-integrity validation.
+
 ### Added
 
 - Added `AlembicVersionMetaTable` as an external catalog binding for Alembic's

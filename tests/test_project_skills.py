@@ -21,6 +21,15 @@ from mainsequence.project_skills import (
 )
 
 _DEFAULT_TEST_SKILLS = ("alpha_skill", "beta_skill", "gamma_skill")
+_CURRENT_BACKEND_SKILL_PATHS = {
+    "a2a_communication": "skills/agents/a2a_communication/SKILL.md",
+    "command_center": "skills/command_center/command_center/SKILL.md",
+    "command_center_connections": "skills/command_center/connections/SKILL.md",
+    "project_design": "skills/platform/project_design/SKILL.md",
+    "project_local_setup": "skills/pod_manager/project_local_setup/SKILL.md",
+    "project_to_agent": "skills/agents/project_to_agent/SKILL.md",
+    "static_site": "skills/pod_manager/static_site/SKILL.md",
+}
 
 
 def _platform_resource_row(
@@ -67,7 +76,9 @@ def _platform_rows(
     *,
     manifest_sha256: str = "a" * 64,
     skill_names: tuple[str, ...] = _DEFAULT_TEST_SKILLS,
+    skill_paths: dict[str, str] | None = None,
 ) -> list[dict]:
+    skill_paths = skill_paths or {}
     skill_resources = [
         {
             "name": name,
@@ -100,7 +111,10 @@ def _platform_rows(
         _platform_resource_row(
             uri=resource["uri"],
             name=resource["name"],
-            path=f"skills/{resource['name']}/SKILL.md",
+            path=skill_paths.get(
+                resource["name"],
+                f"skills/{resource['name']}/SKILL.md",
+            ),
             mime_type="text/markdown",
             content=(
                 "---\n"
@@ -128,6 +142,16 @@ def _replace_resource_content(row: dict, content: str) -> None:
 def _platform_catalog() -> PlatformProjectSkillCatalog:
     return parse_platform_project_skill_catalog(
         _platform_rows(),
+        source_url="https://platform.example.test/mcp",
+    )
+
+
+def _current_backend_catalog() -> PlatformProjectSkillCatalog:
+    return parse_platform_project_skill_catalog(
+        _platform_rows(
+            skill_names=tuple(_CURRENT_BACKEND_SKILL_PATHS),
+            skill_paths=_CURRENT_BACKEND_SKILL_PATHS,
+        ),
         source_url="https://platform.example.test/mcp",
     )
 
@@ -174,29 +198,42 @@ def test_parse_platform_catalog_accepts_additive_skills_and_ignores_order():
 
 
 def test_parse_platform_catalog_accepts_current_backend_skill_membership():
-    rows = _platform_rows(
-        skill_names=(
-            "a2a_communication",
-            "project_design",
-            "project_local_setup",
-            "project_to_agent",
-            "static_site",
-        )
-    )
+    catalog = _current_backend_catalog()
 
-    catalog = parse_platform_project_skill_catalog(
-        rows,
-        source_url="https://platform.example.test/mcp",
-    )
-
-    assert len(catalog.resources) == 6
+    assert len(catalog.resources) == 8
     assert [skill.name for skill in catalog.skills] == [
         "a2a_communication",
+        "command_center",
+        "command_center_connections",
         "project_design",
         "project_local_setup",
         "project_to_agent",
         "static_site",
     ]
+    assert {skill.name: skill.relative_path.as_posix() for skill in catalog.skills} == {
+        name: path.removeprefix("skills/")
+        for name, path in _CURRENT_BACKEND_SKILL_PATHS.items()
+    }
+
+
+def test_dual_source_install_preserves_current_backend_skill_hierarchy(tmp_path):
+    sdk_skills = tmp_path / "installed-sdk" / "agent_scaffold" / "skills"
+    sdk_skill = sdk_skills / "sdk_project_execution"
+    sdk_skill.mkdir(parents=True)
+    (sdk_skill / "SKILL.md").write_text("sdk execution", encoding="utf-8")
+    project_dir = tmp_path / "project"
+
+    install_dual_source_project_skills(
+        project_dir=project_dir,
+        sdk_library_name="mainsequence",
+        sdk_skills_path=sdk_skills,
+        sdk_version="6.0.4",
+        platform_catalog=_current_backend_catalog(),
+    )
+
+    managed_root = project_dir / ".agents" / "skills" / "mainsequence"
+    for resource_path in _CURRENT_BACKEND_SKILL_PATHS.values():
+        assert (managed_root / resource_path.removeprefix("skills/")).is_file()
 
 
 def test_parse_platform_catalog_rejects_undeclared_duplicate_and_unsafe_skills():
@@ -220,6 +257,22 @@ def test_parse_platform_catalog_rejects_undeclared_duplicate_and_unsafe_skills()
     rows[1]["_meta"]["resource_path"] = "skills/../escape/SKILL.md"
     rows[1]["_content"]["_meta"]["resource_path"] = "skills/../escape/SKILL.md"
     with pytest.raises(ProjectSkillAssemblyError, match="unsafe resource path"):
+        parse_platform_project_skill_catalog(
+            rows,
+            source_url="https://platform.example.test/mcp",
+        )
+
+    rows = _platform_rows(
+        skill_paths={"alpha_skill": "skills/invalid-group/alpha_skill/SKILL.md"}
+    )
+    with pytest.raises(ProjectSkillAssemblyError, match="safe lowercase snake case"):
+        parse_platform_project_skill_catalog(
+            rows,
+            source_url="https://platform.example.test/mcp",
+        )
+
+    rows = _platform_rows(skill_paths={"alpha_skill": "skills/SKILL.md"})
+    with pytest.raises(ProjectSkillAssemblyError, match="at least one skill directory"):
         parse_platform_project_skill_catalog(
             rows,
             source_url="https://platform.example.test/mcp",

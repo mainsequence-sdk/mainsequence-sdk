@@ -381,19 +381,19 @@ two independent sources:
       {
         "name": "a2a_communication",
         "uri": "mainsequence://platform/skills/a2a-communication",
-        "path": "skills/a2a_communication/SKILL.md",
+        "path": "skills/agents/a2a_communication/SKILL.md",
         "content_sha256": "<sha256>"
       },
       {
         "name": "project_design",
         "uri": "mainsequence://platform/skills/project-design",
-        "path": "skills/project_design/SKILL.md",
+        "path": "skills/platform/project_design/SKILL.md",
         "content_sha256": "<sha256>"
       },
       {
         "name": "project_to_agent",
         "uri": "mainsequence://platform/skills/project-to-agent",
-        "path": "skills/project_to_agent/SKILL.md",
+        "path": "skills/agents/project_to_agent/SKILL.md",
         "content_sha256": "<sha256>"
       }
     ],
@@ -401,19 +401,19 @@ two independent sources:
       {
         "name": "a2a_communication",
         "uri": "mainsequence://platform/skills/a2a-communication",
-        "path": "a2a_communication/SKILL.md",
+        "path": "agents/a2a_communication/SKILL.md",
         "content_sha256": "<sha256>"
       },
       {
         "name": "project_design",
         "uri": "mainsequence://platform/skills/project-design",
-        "path": "project_design/SKILL.md",
+        "path": "platform/project_design/SKILL.md",
         "content_sha256": "<sha256>"
       },
       {
         "name": "project_to_agent",
         "uri": "mainsequence://platform/skills/project-to-agent",
-        "path": "project_to_agent/SKILL.md",
+        "path": "agents/project_to_agent/SKILL.md",
         "content_sha256": "<sha256>"
       }
     ]
