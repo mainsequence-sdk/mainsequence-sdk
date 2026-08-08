@@ -16,7 +16,7 @@ dependent source table identity. The backend already exposes that complete graph
 through:
 
 ```text
-GET /orm/api/ts_manager/meta_table/<uid>/schema-graph/?depth=<n>&include_incoming=<bool>
+GET /api/v1/meta-tables/<uid>/schema-graph/?depth=<n>&include_incoming=<bool>
 ```
 
 That route returns graph edges with both `source_uid` and `target_uid`, so it is

@@ -108,7 +108,7 @@ def test_job_bulk_get_or_create_posts_normalized_batch(monkeypatch, tmp_path):
     monkeypatch.setattr(
         Job,
         "get_object_url",
-        classmethod(lambda cls: "https://backend.test/orm/api/pods/job"),
+        classmethod(lambda cls: "https://backend.test/api/v1/jobs"),
     )
 
     def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
@@ -128,7 +128,7 @@ def test_job_bulk_get_or_create_posts_normalized_batch(monkeypatch, tmp_path):
     )
 
     assert captured["r_type"] == "POST"
-    assert captured["url"] == "https://backend.test/orm/api/pods/job/sync_jobs/"
+    assert captured["url"] == "https://backend.test/api/v1/jobs/sync-jobs/"
     assert captured["timeout"] == 30
     assert captured["payload"]["json"] == {
         "project_uid": "5a28020a-0f1b-47ee-aab8-334286234bea",
@@ -205,7 +205,7 @@ def test_job_run_job_posts_command_args_as_json(monkeypatch):
     monkeypatch.setattr(
         Job,
         "get_object_url",
-        classmethod(lambda cls: "https://backend.test/orm/api/pods/job"),
+        classmethod(lambda cls: "https://backend.test/api/v1/jobs"),
     )
 
     def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
@@ -227,7 +227,7 @@ def test_job_run_job_posts_command_args_as_json(monkeypatch):
 
     assert captured["r_type"] == "POST"
     assert captured["url"] == (
-        "https://backend.test/orm/api/pods/job/7d0ab07c-d1c0-4b7f-9c69-3c1a41c0a4da/run_job/"
+        "https://backend.test/api/v1/jobs/7d0ab07c-d1c0-4b7f-9c69-3c1a41c0a4da/run-job/"
     )
     assert captured["timeout"] == 30
     assert captured["payload"] == {"json": {"command_args": ["--name", "demo-from-cli"]}}

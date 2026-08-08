@@ -36,10 +36,10 @@ the platform registry/catalog layer.
 
 The backend now supports the missing coordination primitives:
 
-- `POST /orm/api/ts_manager/meta_table/reserve-managed/`
+- `POST /api/v1/meta-tables/reserve-managed/`
   reserves or resolves platform-managed MetaTable rows without creating physical
   tables, and returns TS Manager-owned physical table names.
-- `POST /orm/api/ts_manager/meta_table/<meta_table_uid>/migration-connection/`
+- `POST /api/v1/meta-tables/<meta_table_uid>/migration-connection/`
   issues a short-lived, user-scoped migration credential for the reserved table
   scope. It does not expose the stored data-source owner credential.
 
@@ -113,7 +113,7 @@ Add `MetaTable.issue_migration_connection(...)`.
 This method calls:
 
 ```text
-POST /orm/api/ts_manager/meta_table/<meta_table_uid>/migration-connection/
+POST /api/v1/meta-tables/<meta_table_uid>/migration-connection/
 ```
 
 with a provider/data-source-scoped request:
@@ -150,7 +150,7 @@ Add `MetaTable.reserve_managed(...)`.
 This method calls:
 
 ```text
-POST /orm/api/ts_manager/meta_table/reserve-managed/
+POST /api/v1/meta-tables/reserve-managed/
 ```
 
 and uses request/response models equivalent to:
@@ -290,7 +290,7 @@ state should not mutate or restage application catalog rows.
 3. reserve and bind platform-managed MetaTables;
 4. issue a provider migration connection without MetaTable UIDs;
 5. call Alembic `upgrade(...)` directly;
-6. after success, call `POST /orm/api/ts_manager/meta_table/finalize-managed/`
+6. after success, call `POST /api/v1/meta-tables/finalize-managed/`
    once with the provider MetaTable UIDs;
 7. call `after_register_metatables` with an
    `AlembicMetaTableCatalogRefreshContext` containing the finalized rows and
@@ -312,7 +312,7 @@ response = migration.finalize_metatable_catalog(prepared=prepared)
 The SDK calls the backend once:
 
 ```text
-POST /orm/api/ts_manager/meta_table/finalize-managed/
+POST /api/v1/meta-tables/finalize-managed/
 ```
 
 The backend introspects the reserved physical names created by Alembic and flips

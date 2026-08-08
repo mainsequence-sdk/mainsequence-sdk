@@ -160,7 +160,7 @@ def test_job_run_status_uses_status_detail_endpoint(monkeypatch):
     assert captured["r_type"] == "POST"
     assert captured["payload"] == {"status": "RUNNING", "git_hash": "abc123"}
     assert str(captured["url"]).endswith(
-        "/orm/api/pods/job-run/4c1d77c8-8a42-42b8-a9c1-06be9a336e5d/status/"
+        "/api/v1/job-runs/4c1d77c8-8a42-42b8-a9c1-06be9a336e5d/status/"
     )
 
 
@@ -382,7 +382,7 @@ def test_data_node_storage_delete_after_date_posts_tail_delete(monkeypatch):
     assert result["deleted_count"] == 123
     assert captured == {
         "r_type": "POST",
-        "url": f"{models_metatables.TimeIndexMetaTable.get_object_url()}/714/delete_after_date/",
+        "url": f"{models_metatables.TimeIndexMetaTable.get_object_url()}/714/delete-after-date/",
         "payload": {
             "json": {
                 "after_date": "2026-04-01T00:00:00Z",
@@ -517,7 +517,7 @@ def test_data_node_storage_run_query_posts_plain_text_sql(monkeypatch):
     assert captured == {
         "headers": {"Content-Type": "text/plain"},
         "r_type": "POST",
-        "url": f"{models_metatables.TimeIndexMetaTable.get_object_url()}/714/run_query/",
+        "url": f"{models_metatables.TimeIndexMetaTable.get_object_url()}/714/run-query/",
         "payload": {"data": "SELECT * FROM my_table LIMIT 100"},
         "timeout": 30,
     }
@@ -577,7 +577,7 @@ def test_meta_table_run_query_posts_json_sql(monkeypatch):
         "r_type": "POST",
         "url": (
             f"{models_metatables.MetaTable.get_object_url()}/"
-            "b14db80b-64b7-4390-8483-5377510de505/run_query/"
+            "b14db80b-64b7-4390-8483-5377510de505/run-query/"
         ),
         "payload": {"json": "SELECT * FROM asset LIMIT 100"},
         "timeout": 30,
@@ -1095,7 +1095,7 @@ def test_shareable_can_edit_parses_permission_state(monkeypatch):
 
 
 def test_team_uses_user_api_team_endpoint():
-    assert models_user_mod.Team.get_object_url().endswith("/user/api/team")
+    assert models_user_mod.Team.get_object_url().endswith("/api/v1/teams")
 
 
 def test_user_team_and_organization_filters_use_uid_references():
@@ -1867,7 +1867,7 @@ def test_resource_release_create_sends_automatic_deployment(monkeypatch):
 
     assert release.automatic_deployment is True
     assert captured["r_type"] == "POST"
-    assert str(captured["url"]).endswith("/orm/api/pods/resource-release/")
+    assert str(captured["url"]).endswith("/api/v1/resource-releases/")
     assert captured["payload"]["json"]["automatic_deployment"] is True
     assert captured["payload"]["json"]["resource_uid"] == resource_uid
     assert captured["payload"]["json"]["related_image_uid"] == image_uid
@@ -2028,7 +2028,7 @@ def test_unified_deployment_run_models_and_filters(monkeypatch):
             "finished_at": None,
             "logs": {
                 "state": "available",
-                "url": f"/orm/api/pods/deployment-runs/{run_uid}/logs/",
+                "url": f"/api/v1/deployment-runs/{run_uid}/logs/",
                 "retention_expires_at": None,
             },
             "error": None,
@@ -2183,7 +2183,7 @@ def test_agent_session_runtime_access_uses_session_uid_route(monkeypatch):
     assert access.image_drift.catalog_state["refresh_required"] is False
     assert captured == {
         "r_type": "POST",
-        "url": f"{agent_models_mod.AgentSession.get_object_url()}/{session_uid}/resolve_runtime_access/",
+        "url": f"{agent_models_mod.AgentSession.get_object_url()}/{session_uid}/resolve-runtime-access/",
         "payload": {"json": {}},
         "timeout": 11,
     }
@@ -2299,7 +2299,7 @@ def test_agent_session_send_a2a_message_posts_standard_contract(monkeypatch):
     assert captured["resolve_count"] == 1
     assert captured["resolve"] == {
         "r_type": "POST",
-        "url": f"{agent_models_mod.AgentSession.get_object_url()}/{session_uid}/resolve_runtime_access/",
+        "url": f"{agent_models_mod.AgentSession.get_object_url()}/{session_uid}/resolve-runtime-access/",
         "payload": {"json": {}},
         "timeout": 15,
     }
@@ -2543,7 +2543,7 @@ def test_agent_get_or_create_session_posts_new_contract(monkeypatch):
         "r_type": "POST",
         "url": (
             f"{agent_models_mod.Agent.get_object_url()}/{agent_uid}/"
-            "sessions/get_or_create_session/"
+            "sessions/get-or-create-session/"
         ),
         "payload": {
             "json": {
@@ -2609,7 +2609,7 @@ def test_agent_get_or_create_session_by_uid_sends_only_session_uid(monkeypatch):
         "r_type": "POST",
         "url": (
             f"{agent_models_mod.Agent.get_object_url()}/{agent_uid}/"
-            "sessions/get_or_create_session/"
+            "sessions/get-or-create-session/"
         ),
         "payload": {"json": {"session_uid": session_uid}},
         "timeout": 9,

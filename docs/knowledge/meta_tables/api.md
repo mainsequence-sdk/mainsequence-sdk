@@ -5,7 +5,7 @@ This page maps the SDK objects to the TS Manager backend routes.
 MetaTables use the backend route namespace:
 
 ```text
-/orm/api/ts_manager/meta_table/
+/api/v1/meta-tables/
 ```
 
 Use the MetaTable route namespace for registration, validation, introspection,
@@ -61,7 +61,7 @@ primitive directly when the application owns the physical table lifecycle.
 Backend route:
 
 ```text
-POST /orm/api/ts_manager/meta_table/register/
+POST /api/v1/meta-tables/register/
 ```
 
 Request fields:
@@ -110,7 +110,7 @@ result = MetaTable.validate_contract(
 Backend route:
 
 ```text
-POST /orm/api/ts_manager/meta_table/validate-contract/
+POST /api/v1/meta-tables/validate-contract/
 ```
 
 Validate a replacement contract for an existing table:
@@ -124,7 +124,7 @@ result = meta_table.validate_existing_contract(
 Backend route:
 
 ```text
-POST /orm/api/ts_manager/meta_table/<uid>/validate-contract/
+POST /api/v1/meta-tables/<uid>/validate-contract/
 ```
 
 Validation normalizes column, index, and foreign-key fragments and returns the
@@ -147,7 +147,7 @@ graph = meta_table.get_schema_graph(depth=1, include_incoming=True)
 Backend route:
 
 ```text
-GET /orm/api/ts_manager/meta_table/<uid>/schema-graph/?depth=<n>&include_incoming=<bool>
+GET /api/v1/meta-tables/<uid>/schema-graph/?depth=<n>&include_incoming=<bool>
 ```
 
 Use this graph for dependency analysis. Graph edges include both `source_uid`
@@ -199,7 +199,7 @@ snapshot = result["introspection_snapshot"]
 Backend route:
 
 ```text
-POST /orm/api/ts_manager/meta_table/<uid>/introspect/
+POST /api/v1/meta-tables/<uid>/introspect/
 ```
 
 The backend stores the snapshot on `MetaTable.introspection_snapshot`. The
@@ -217,7 +217,7 @@ result = MetaTable.execute_operation(operation)
 Backend route:
 
 ```text
-POST /orm/api/ts_manager/meta_table/execute-operation/
+POST /api/v1/meta-tables/execute-operation/
 ```
 
 Execution expects a `compiled-sql.v1` operation:
@@ -305,10 +305,10 @@ provider adapter that:
 Backend coordination uses:
 
 ```text
-POST /orm/api/ts_manager/meta_table/
-POST /orm/api/ts_manager/dynamic_table/
-POST /orm/api/ts_manager/meta_table/<meta_table_uid>/migration-connection/
-POST /orm/api/ts_manager/meta_table/finalize-managed/
+POST /api/v1/meta-tables/
+POST /api/v1/time-index-meta-tables/
+POST /api/v1/meta-tables/<meta_table_uid>/migration-connection/
+POST /api/v1/meta-tables/finalize-managed/
 ```
 
 The migration-connection request does not include MetaTable UIDs; the provider

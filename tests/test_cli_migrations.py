@@ -263,7 +263,7 @@ def test_migrations_current_skips_provider_metatable_reservations(monkeypatch):
 
     assert result.exit_code == 0
     output = _combined_output(result)
-    assert "POST /orm/api/ts_manager/meta_table/" not in output
+    assert "POST /api/v1/meta-tables/" not in output
     assert "reserved MetaTable identifier=example_assets__account" not in output
     assert not hasattr(captured["connection_request"], "meta_table_uids")
     assert (
@@ -308,7 +308,7 @@ def test_migrations_current_prints_alembic_registry_registration(monkeypatch):
 
     assert result.exit_code == 0
     output = _combined_output(result)
-    assert "POST /orm/api/ts_manager/meta_table/register/" in output
+    assert "POST /api/v1/meta-tables/register/" in output
     assert "registered MetaTable identifier=msm.alembic_version" in output
     assert "uid=registry-meta-table-uid" in output
     assert "physical_table=alembic_version" in output
@@ -755,7 +755,7 @@ def test_migrations_upgrade_calls_alembic_and_finalizes_catalog(monkeypatch):
     assert captured["finalize_revision"] == "head"
     assert "temporary-secret" not in result.output
     output = _combined_output(result)
-    assert "POST /orm/api/ts_manager/meta_table/finalize-managed/" in output
+    assert "POST /api/v1/meta-tables/finalize-managed/" in output
     assert "finalized MetaTable identifier=markets.Asset" in output
     assert "physical_table=mt_asset" in output
 

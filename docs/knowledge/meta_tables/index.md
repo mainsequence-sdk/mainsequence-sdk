@@ -25,7 +25,7 @@ A `MetaTable` record binds these things together:
 The backend route namespace is:
 
 ```text
-/orm/api/ts_manager/meta_table/
+/api/v1/meta-tables/
 ```
 
 The SDK transport objects live in:

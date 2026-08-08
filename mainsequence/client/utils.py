@@ -26,7 +26,7 @@ from mainsequence.logconf import logger
 
 # ---- Backend defaults (single source of truth) ----
 MAINSEQUENCE_ENDPOINT = resolve_backend_endpoint()
-API_ENDPOINT = f"{MAINSEQUENCE_ENDPOINT}/orm/api"
+API_ENDPOINT = f"{MAINSEQUENCE_ENDPOINT}/api/v1"
 AUTH_ENDPOINT = MAINSEQUENCE_ENDPOINT.rstrip("/")
 
 DEFAULT_STATUS_FORCELIST = (429, 500, 502, 503, 504)
@@ -66,7 +66,7 @@ def set_mainsequence_endpoint(endpoint: str) -> None:
     global MAINSEQUENCE_ENDPOINT, API_ENDPOINT, AUTH_ENDPOINT
     normalized = endpoint.rstrip("/")
     MAINSEQUENCE_ENDPOINT = normalized
-    API_ENDPOINT = f"{normalized}/orm/api"
+    API_ENDPOINT = f"{normalized}/api/v1"
     AUTH_ENDPOINT = normalized
 
 
@@ -196,7 +196,7 @@ class RuntimeCredentialAuthProvider(BaseAuthProvider):
         if self.credential_secret is None:
             self.credential_secret = os.getenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET")
         if not self.token_url:
-            self.token_url = f"{API_ENDPOINT}/pods/runtime-credentials/token/"
+            self.token_url = f"{API_ENDPOINT}/runtime-credentials/token/"
 
     def _current_access_token(self) -> str | None:
         return (os.getenv("MAINSEQUENCE_ACCESS_TOKEN") or "").strip() or None
@@ -648,7 +648,7 @@ session = build_session(loaders=loaders)
 
 
 def get_constants_tdag():
-    url = f"{MAINSEQUENCE_ENDPOINT}/orm/api/ts_manager/api/constants"
+    url = f"{MAINSEQUENCE_ENDPOINT}/api/v1/data-node-constants/"
     r = make_request(s=session, loaders=loaders, r_type="GET", url=url)
     return r.json()
 

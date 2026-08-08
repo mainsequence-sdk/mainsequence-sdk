@@ -124,7 +124,7 @@ def test_logconf_import_requests_job_run_detail_startup_state(monkeypatch):
     assert captured
     assert (
         captured[0]["url"]
-        == "https://backend.example/orm/api/pods/job-run/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/startup-state/"
+        == "https://backend.example/api/v1/job-runs/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/startup-state/"
     )
     assert captured[0]["params"] == {}
     assert captured[0]["headers"]["Authorization"] == "Bearer access-token"

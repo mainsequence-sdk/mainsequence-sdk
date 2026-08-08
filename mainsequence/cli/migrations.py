@@ -27,10 +27,10 @@ from mainsequence.meta_tables.migrations import (
 )
 
 migrations = typer.Typer(help="Alembic-owned MetaTable migration commands")
-REGISTER_ENDPOINT = "/orm/api/ts_manager/meta_table/register/"
-METATABLE_COLLECTION_ENDPOINT = "/orm/api/ts_manager/meta_table/"
-TIME_INDEX_META_TABLE_COLLECTION_ENDPOINT = "/orm/api/ts_manager/time_index_meta_table/"
-FINALIZE_MANAGED_ENDPOINT = "/orm/api/ts_manager/meta_table/finalize-managed/"
+REGISTER_ENDPOINT = "/api/v1/meta-tables/register/"
+METATABLE_COLLECTION_ENDPOINT = "/api/v1/meta-tables/"
+TIME_INDEX_META_TABLE_COLLECTION_ENDPOINT = "/api/v1/time-index-meta-tables/"
+FINALIZE_MANAGED_ENDPOINT = "/api/v1/meta-tables/finalize-managed/"
 DEFAULT_SCAFFOLD_PROJECT_ROOT = pathlib.Path(".")
 DEFAULT_SCAFFOLD_SOURCE_ROOT = pathlib.Path("src")
 

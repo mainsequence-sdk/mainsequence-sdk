@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import datetime
-import os
 from collections.abc import Mapping
 from threading import RLock
 from typing import TYPE_CHECKING, Any, ClassVar
@@ -22,10 +21,7 @@ from .dtype_codec import (
 from .exceptions import raise_for_response
 from .metatables import DataSource as _DataSource
 from .utils import (
-    MAINSEQUENCE_ENDPOINT,
-    loaders,
     make_request,
-    session,
 )
 
 if TYPE_CHECKING:
@@ -326,7 +322,7 @@ class Project(LabelableObjectMixin, ShareableObjectMixin, BasePydanticModel, Bas
         Return project quick-search matches visible to the authenticated user.
 
         This hits:
-            GET /orm/api/pods/projects/quick-search/?q=...
+            GET /api/v1/projects/quick-search/?q=...
 
         Parameters
         ----------
@@ -378,7 +374,7 @@ class Project(LabelableObjectMixin, ShareableObjectMixin, BasePydanticModel, Bas
         Validate whether a project name is available for creation on the platform.
 
         This hits:
-            GET /orm/api/pods/projects/validate-name/?project_name=...
+            GET /api/v1/projects/validate-name/?project_name=...
 
         Parameters
         ----------
@@ -818,59 +814,6 @@ class DynamicResource(BasePydanticModel, BaseObjectOrm):
         return super().create(*args, **kwargs)
 
 
-def query_agent(json_payload: dict, timeout=None):
-    url = MAINSEQUENCE_ENDPOINT + "/orm/api/tdag-gpt/query_agent/"
-    r = make_request(
-        s=session,
-        r_type="POST",
-        url=url,
-        payload={"json": json_payload},
-        loaders=loaders,
-        time_out=(timeout if timeout is not None else 200),
-    )
-    from .exceptions import raise_for_response
-
-    raise_for_response(r, payload={"json": json_payload})
-    return r
-
-
-def add_created_object_to_jobrun(
-    model_name: str, app_label: str, object_id: int, timeout: int | None = None
-) -> dict:
-    """
-    Logs a new object that was created by this JobRun instance.
-
-    Args:
-        model_name: The string name of the created model (e.g., "Project").
-        app_label: The Django app label where the model is defined (e.g., "pod_manager").
-        object_id: The primary key of the created object instance.
-        timeout: Optional request timeout in seconds.
-
-    Returns:
-        A dictionary representing the created record.
-    """
-    job_run_uid = (os.getenv("JOB_RUN_UID") or "").strip()
-    if not job_run_uid:
-        raise RuntimeError("JOB_RUN_UID is required to attach created objects to a job run.")
-
-    url = MAINSEQUENCE_ENDPOINT + f"/orm/api/pods/job-run/{job_run_uid}/add_created_object/"
-    payload = {"json": {"app_label": app_label, "model_name": model_name, "object_id": object_id}}
-
-    r = make_request(
-        s=session,
-        loaders=loaders,
-        r_type="POST",
-        url=url,
-        payload=payload,
-        time_out=timeout,
-    )
-
-    from .exceptions import raise_for_response
-
-    raise_for_response(r, payload=payload)
-    return r.json()
-
-
 class Bucket(ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
         "uid": ["in", "exact"],
@@ -954,7 +897,7 @@ class Artifact(ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
 
     @classmethod
     def get_or_create(cls, filepath, name, bucket_name):
-        url = cls.get_object_url() + "/get_or_create/"
+        url = cls.get_object_url() + "/get-or-create/"
         s = cls.build_session()
         with open(filepath, "rb") as f:
             data = {

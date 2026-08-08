@@ -139,7 +139,7 @@ def test_logconf_runtime_credential_exchanges_before_startup_state_request(monke
 
     assert post_calls == [
         {
-            "url": "https://backend.example/orm/api/pods/runtime-credentials/token/",
+            "url": "https://backend.example/api/v1/runtime-credentials/token/",
             "headers": {"Content-Type": "application/json"},
             "json": {
                 "credential_id": "cred-id",
@@ -216,7 +216,7 @@ def test_runtime_credential_provider_exchanges_and_writes_access_token(monkeypat
         "credential_id": "cred-id",
         "credential_secret": "cred-secret",
     }
-    assert calls[0]["url"].endswith("/orm/api/pods/runtime-credentials/token/")
+    assert calls[0]["url"].endswith("/api/v1/runtime-credentials/token/")
     assert calls[0]["headers"]["Content-Type"] == "application/json"
     assert os.environ["MAINSEQUENCE_ACCESS_TOKEN"] == "runtime-access"
     assert os.environ["MAINSEQUENCE_REFRESH_TOKEN"] == "must-not-be-used"
@@ -357,7 +357,7 @@ def test_runtime_credential_make_request_401_forces_exchange_and_retry(monkeypat
     response = utils.make_request(
         session,
         "GET",
-        "https://backend.example/orm/api/example/",
+        "https://backend.example/api/v1/example/",
         utils.AuthLoaders(),
     )
 

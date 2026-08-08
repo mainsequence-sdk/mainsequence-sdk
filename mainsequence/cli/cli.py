@@ -803,7 +803,7 @@ def _exchange_runtime_credential_for_cli_login(backend_url: str) -> str:
     except Exception as exc:
         raise ApiError(f"Runtime credential auth is unavailable: {exc}") from exc
 
-    token_url = f"{backend_url.rstrip('/')}/orm/api/pods/runtime-credentials/token/"
+    token_url = f"{backend_url.rstrip('/')}/api/v1/runtime-credentials/token/"
     try:
         RuntimeCredentialAuthProvider(token_url=token_url).refresh(force=True)
     except Exception as exc:
@@ -6858,7 +6858,7 @@ def data_node_storage_search_cmd(
     Search data node storages through MetaTable metadata.
 
     Default search uses `TimeIndexMetaTable.description_search()`, backed by
-    `/orm/api/ts_manager/meta_table/description-search/`. Column mode is a
+    `/api/v1/meta-tables/description-search/`. Column mode is a
     separate schema lookup path and filters narrow results; they are not the
     semantic discovery path itself.
 

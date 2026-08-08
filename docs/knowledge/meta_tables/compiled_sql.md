@@ -162,7 +162,7 @@ result = MetaTable.execute_operation(operation)
 The backend endpoint is:
 
 ```text
-POST /orm/api/ts_manager/meta_table/execute-operation/
+POST /api/v1/meta-tables/execute-operation/
 ```
 
 ## Scope Is Required
@@ -232,7 +232,7 @@ operations.
 
 The SDK uses:
 
-- `POST /orm/api/ts_manager/meta_table/{meta_table_uid}/run_query/`
+- `POST /api/v1/meta-tables/{meta_table_uid}/run-query/`
 
 Request contract:
 

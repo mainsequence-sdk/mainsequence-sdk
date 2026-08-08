@@ -101,7 +101,7 @@ def _request_job_startup_state(*, timeout_s: float = 10.0) -> dict[str, Any]:
 
         try:
             token_resp = requests.post(
-                f"{_backend_base_url()}/orm/api/pods/runtime-credentials/token/",
+                f"{_backend_base_url()}/api/v1/runtime-credentials/token/",
                 headers={"Content-Type": "application/json"},
                 json={
                     "credential_id": credential_id,
@@ -187,7 +187,7 @@ def _request_job_startup_state(*, timeout_s: float = 10.0) -> dict[str, Any]:
     if not job_run_uid:
         return {}
 
-    endpoint = f"{_backend_base_url()}/orm/api/pods/job-run/{job_run_uid}/startup-state/"
+    endpoint = f"{_backend_base_url()}/api/v1/job-runs/{job_run_uid}/startup-state/"
     params: dict[str, Any] = {}
 
     resp = requests.get(endpoint, headers=headers, params=params, timeout=timeout_s)

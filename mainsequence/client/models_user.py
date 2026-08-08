@@ -35,14 +35,11 @@ _CURRENT_USER: ContextVar[Any | None] = ContextVar(
 
 
 class UserApiBaseObjectOrm(BaseObjectOrm):
-    USER_API_PREFIX: ClassVar[str] = "user/api"
     ENDPOINT: ClassVar[str]
 
     @classmethod
     def _user_api_root(cls) -> str:
         root = str(getattr(cls, "ROOT_URL", BaseObjectOrm.ROOT_URL)).rstrip("/")
-        if root.endswith("/orm/api"):
-            root = root[: -len("/orm/api")]
         return root
 
     @classmethod
@@ -51,11 +48,7 @@ class UserApiBaseObjectOrm(BaseObjectOrm):
         if not endpoint:
             raise ValueError(f"{cls.__name__} must define ENDPOINT.")
 
-        return (
-            f"{cls._user_api_root().rstrip('/')}/"
-            f"{cls.USER_API_PREFIX.strip('/')}/"
-            f"{endpoint.strip('/')}"
-        )
+        return f"{cls._user_api_root().rstrip('/')}/{endpoint.strip('/')}"
 
 
 def _logged_user_header_context(
@@ -127,7 +120,7 @@ def _build_request_bound_outbound_headers(headers: Mapping[str, Any]) -> dict[st
     return outbound
 
 class Organization(UserApiBaseObjectOrm, BasePydanticModel):
-    ENDPOINT: ClassVar[str] = "organization"
+    ENDPOINT: ClassVar[str] = "organizations"
 
     id: int | None = Field(
         None,
@@ -336,7 +329,7 @@ class TeamMembershipUpdateResult(BasePydanticModel):
 
 
 class Team(PermissionManagedObjectMixin, BasePydanticModel, UserApiBaseObjectOrm):
-    ENDPOINT: ClassVar[str] = "team"
+    ENDPOINT: ClassVar[str] = "teams"
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]] | None] = {
         "uid": ["exact", "in"],
         "organization_uid": ["exact"],
@@ -698,7 +691,7 @@ class Notification(DetailActionObjectMixin, BasePydanticModel, UserApiBaseObject
         timeout: int | float | tuple[float, float] | None = None,
     ) -> Notification | list[Notification]:
         """
-        Create one or more organization-scoped notifications via `POST /user/api/notifications/`.
+        Create one or more organization-scoped notifications via `POST /api/v1/notifications/`.
         """
         base_url = cls.get_object_url().rstrip("/")
         payload = {
@@ -738,7 +731,7 @@ class Notification(DetailActionObjectMixin, BasePydanticModel, UserApiBaseObject
         timeout: int | float | tuple[float, float] | None = None,
     ) -> Notification:
         """
-        Create an organization-scoped self notification via `POST /user/api/notifications/send-self/`.
+        Create an organization-scoped self notification via `POST /api/v1/notifications/send-self/`.
         """
         base_url = cls.get_object_url().rstrip("/")
         payload = {
@@ -777,7 +770,7 @@ class Notification(DetailActionObjectMixin, BasePydanticModel, UserApiBaseObject
         timeout: int | float | tuple[float, float] | None = None,
     ) -> Notification:
         """
-        Create a system-scoped notification via `POST /user/api/notifications/send-system/`.
+        Create a system-scoped notification via `POST /api/v1/notifications/send-system/`.
         """
         base_url = cls.get_object_url().rstrip("/")
         payload = {
@@ -810,7 +803,7 @@ class Notification(DetailActionObjectMixin, BasePydanticModel, UserApiBaseObject
         timeout: int | float | tuple[float, float] | None = None,
     ) -> Notification:
         """
-        Mark this notification as read via `POST /user/api/notifications/<id>/mark-read/`.
+        Mark this notification as read via `POST /api/v1/notifications/<id>/mark-read/`.
         """
         payload = self._request_detail_action(
             r_type="POST",
@@ -827,7 +820,7 @@ class Notification(DetailActionObjectMixin, BasePydanticModel, UserApiBaseObject
         timeout: int | float | tuple[float, float] | None = None,
     ) -> None:
         """
-        Dismiss this notification via `POST /user/api/notifications/<id>/dismiss/`.
+        Dismiss this notification via `POST /api/v1/notifications/<id>/dismiss/`.
         """
         self._request_detail_action(
             r_type="POST",
@@ -846,7 +839,7 @@ class Notification(DetailActionObjectMixin, BasePydanticModel, UserApiBaseObject
         timeout: int | float | tuple[float, float] | None = None,
     ) -> NotificationBulkActionResult:
         """
-        Mark all visible notifications as read via `POST /user/api/notifications/mark-all-read/`.
+        Mark all visible notifications as read via `POST /api/v1/notifications/mark-all-read/`.
         """
         base_url = cls.get_object_url().rstrip("/")
         payload: dict[str, Any] = {}
@@ -872,7 +865,7 @@ class Notification(DetailActionObjectMixin, BasePydanticModel, UserApiBaseObject
         timeout: int | float | tuple[float, float] | None = None,
     ) -> NotificationBulkActionResult:
         """
-        Dismiss all visible notifications via `POST /user/api/notifications/dismiss-all/`.
+        Dismiss all visible notifications via `POST /api/v1/notifications/dismiss-all/`.
         """
         base_url = cls.get_object_url().rstrip("/")
         payload: dict[str, Any] = {}
@@ -924,7 +917,7 @@ class ShareableAccessState(BasePydanticModel):
 
 
 class User(UserApiBaseObjectOrm, BasePydanticModel):
-    ENDPOINT: ClassVar[str] = "user"
+    ENDPOINT: ClassVar[str] = "users"
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]] | None] = {
         "uid": ["exact", "in"],
         "email": ["exact", "contains", "in"],
@@ -1164,11 +1157,11 @@ class User(UserApiBaseObjectOrm, BasePydanticModel):
 
         Use this in standalone authenticated CLI or script code that is not
         running inside a request-bound identity context. This method reads the
-        authenticated user through the backend `/user/api/user/get_user_details/`
+        authenticated user through the backend `/api/v1/users/me/`
         endpoint and does not depend on request headers, Streamlit context, or
         `_CURRENT_AUTH_HEADERS`.
         """
-        url = f"{cls.get_object_url()}/get_user_details/"
+        url = f"{cls.get_object_url()}/me/"
         r = make_request(
             s=cls.build_session(),
             loaders=cls.LOADERS,
@@ -1195,10 +1188,10 @@ class User(UserApiBaseObjectOrm, BasePydanticModel):
     ) -> User:
         outbound_headers = _build_request_bound_outbound_headers(headers)
         if user_uid:
-            url = f"{cls.get_object_url()}/get_user_details/"
+            url = f"{cls.get_object_url()}/me/"
             params = None
         elif user_id is None:
-            url = f"{cls.get_object_url()}/get_user_details/"
+            url = f"{cls.get_object_url()}/me/"
             params = None
         else:
             url = f"{cls.get_object_url()}/{user_id}/"
@@ -1327,11 +1320,11 @@ class User(UserApiBaseObjectOrm, BasePydanticModel):
                 except Exception as auth_exc:
                     logger.exception(
                         "User.get_logged_user could not inspect request-bound outgoing auth headers "
-                        "for /user/api/user/get_user_details/: %s",
+                        "for /api/v1/users/me/: %s",
                         auth_exc,
                     )
                 logger.info(
-                    "User.get_logged_user bearer fallback to /user/api/user/get_user_details/ "
+                    "User.get_logged_user bearer fallback to /api/v1/users/me/ "
                     "outgoing_authorization_present=%s outgoing_authorization_scheme=%r",
                     bool(outgoing_authorization),
                     outgoing_authorization_scheme,

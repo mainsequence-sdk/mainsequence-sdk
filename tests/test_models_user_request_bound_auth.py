@@ -45,7 +45,7 @@ def test_get_authenticated_user_details_accepts_user_details_summary_contract(mo
 
     user = models_user_mod.User.get_authenticated_user_details()
 
-    assert str(captured["url"]).endswith("/user/api/user/get_user_details/")
+    assert str(captured["url"]).endswith("/api/v1/users/me/")
     assert user.groups[0].name == "Organization Admin"
     assert user.groups[0].normalized_name == "org_admin"
     assert not hasattr(user.groups[0], "id")
@@ -153,7 +153,7 @@ def test_get_logged_user_uses_request_bound_headers_for_user_lookup(monkeypatch)
         models_user_mod._CURRENT_AUTH_HEADERS.reset(auth_token)
 
     assert user.id == 4
-    assert str(captured["url"]).endswith("/user/api/user/4/")
+    assert str(captured["url"]).endswith("/api/v1/users/4/")
     assert captured["params"] == {"serializer": "full"}
     assert captured["headers"]["Authorization"] == "Bearer inbound-token"
     assert captured["headers"]["Cookie"] == "sessionid=abc"
@@ -209,7 +209,7 @@ def test_get_logged_user_uses_request_bound_uid_header_for_user_lookup(monkeypat
         models_user_mod._CURRENT_AUTH_HEADERS.reset(auth_token)
 
     assert user.uid == "user-uid-4"
-    assert str(captured["url"]).endswith("/user/api/user/get_user_details/")
+    assert str(captured["url"]).endswith("/api/v1/users/me/")
     assert captured["params"] is None
     assert captured["headers"]["Authorization"] == "Bearer inbound-token"
     assert captured["headers"]["Cookie"] == "sessionid=abc"
@@ -343,7 +343,7 @@ def test_get_logged_user_bearer_fallback_uses_request_bound_headers(monkeypatch)
         models_user_mod._CURRENT_AUTH_HEADERS.reset(auth_token)
 
     assert user.id == 7
-    assert str(captured["url"]).endswith("/user/api/user/get_user_details/")
+    assert str(captured["url"]).endswith("/api/v1/users/me/")
     assert captured["params"] is None
     assert captured["headers"]["Authorization"] == "Bearer inbound-token"
     assert captured["headers"]["Cookie"] == "sessionid=abc"

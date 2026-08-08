@@ -80,11 +80,11 @@ def _normalize_api_path(p: str) -> str:
     Only allow calls to known API namespaces to avoid accidental SSRF/path misuse.
 
     Allowed prefixes:
-        /api, /auth, /pods, /orm, /user
+        /api, /auth
     """
     p = "/" + (p or "").lstrip("/")
-    if not re.match(r"^/(api|auth|pods|orm|user)(/|$)", p):
-        raise ApiError("Only /api/*, /auth/*, /pods/*, /orm/*, /user/* allowed")
+    if not re.match(r"^/(api|auth)(?:/|\Z)", p):
+        raise ApiError("Only /api/* and /auth/* are allowed")
     return p
 
 
@@ -113,7 +113,7 @@ def _set_client_utils_endpoint(client_utils, endpoint: str) -> None:
 
     normalized = endpoint.rstrip("/")
     client_utils.MAINSEQUENCE_ENDPOINT = normalized
-    client_utils.API_ENDPOINT = f"{normalized}/orm/api"
+    client_utils.API_ENDPOINT = f"{normalized}/api/v1"
     client_utils.AUTH_ENDPOINT = normalized
 
 
@@ -377,7 +377,7 @@ def refresh_access() -> str:
         except Exception as exc:
             raise NotLoggedIn(f"Runtime credential auth is unavailable: {exc}") from exc
 
-        token_url = f"{backend_url().rstrip('/')}/orm/api/pods/runtime-credentials/token/"
+        token_url = f"{backend_url().rstrip('/')}/api/v1/runtime-credentials/token/"
         try:
             RuntimeCredentialAuthProvider(token_url=token_url).refresh(force=True)
         except Exception as exc:
@@ -615,7 +615,7 @@ def _run_sdk_model_operation(
         raise NotLoggedIn("Not logged in.")
 
     endpoint = backend_url().rstrip("/")
-    root_url = f"{endpoint}/orm/api"
+    root_url = f"{endpoint}/api/v1"
 
     old_env = {
         "MAINSEQUENCE_AUTH_MODE": os.environ.get("MAINSEQUENCE_AUTH_MODE"),
@@ -701,7 +701,7 @@ def get_current_user_profile() -> dict:
     Returns:
         dict: {"username": "...", "organization": "..."} or {}
     """
-    details = authed("GET", "/user/api/user/get_user_details/")
+    details = authed("GET", "/api/v1/users/me/")
     payload = details.json() if details.ok else {}
     user = payload.get("user") if isinstance(payload, dict) else {}
     if not isinstance(user, dict):
@@ -742,7 +742,7 @@ def get_logged_user_details() -> dict[str, Any]:
         raise NotLoggedIn("Not logged in.")
 
     endpoint = backend_url().rstrip("/")
-    root_url = f"{endpoint}/orm/api"
+    root_url = f"{endpoint}/api/v1"
 
     old_env = {
         "MAINSEQUENCE_AUTH_MODE": os.environ.get("MAINSEQUENCE_AUTH_MODE"),
@@ -864,7 +864,7 @@ def get_projects() -> list[dict]:
     Raises:
         ApiError: on non-200 response
     """
-    r = authed("GET", "/orm/api/pods/projects/")
+    r = authed("GET", "/api/v1/projects/")
     if not r.ok:
         raise ApiError(f"Projects fetch failed ({r.status_code}).")
     data = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
@@ -915,7 +915,7 @@ def get_project_branch(project_branch_uid: str) -> dict[str, Any]:
     normalized_uid = str(project_branch_uid).strip()
     if not normalized_uid:
         raise ApiError("ProjectBranch UID is required.")
-    r = authed("GET", f"/orm/api/pods/project-branches/{normalized_uid}/")
+    r = authed("GET", f"/api/v1/project-branches/{normalized_uid}/")
     if not r.ok:
         raise ApiError(f"ProjectBranch fetch failed ({r.status_code}).")
     payload = r.json()
@@ -1685,7 +1685,7 @@ def get_project(project_id: int | str) -> dict:
     """
     Fetch a single project by public reference.
     """
-    r = authed("GET", f"/orm/api/pods/projects/{project_id}/")
+    r = authed("GET", f"/api/v1/projects/{project_id}/")
     if not r.ok:
         msg = r.text or ""
         try:
@@ -2031,7 +2031,7 @@ def get_project_data_node_updates(
         raise NotLoggedIn("Not logged in.")
 
     endpoint = backend_url().rstrip("/")
-    root_url = f"{endpoint}/orm/api"
+    root_url = f"{endpoint}/api/v1"
 
     old_env = {
         "MAINSEQUENCE_AUTH_MODE": os.environ.get("MAINSEQUENCE_AUTH_MODE"),
@@ -2142,7 +2142,7 @@ def create_project_image(
         raise NotLoggedIn("Not logged in.")
 
     endpoint = backend_url().rstrip("/")
-    root_url = f"{endpoint}/orm/api"
+    root_url = f"{endpoint}/api/v1"
 
     old_env = {
         "MAINSEQUENCE_AUTH_MODE": os.environ.get("MAINSEQUENCE_AUTH_MODE"),
@@ -2249,7 +2249,7 @@ def list_project_images(
         raise NotLoggedIn("Not logged in.")
 
     endpoint = backend_url().rstrip("/")
-    root_url = f"{endpoint}/orm/api"
+    root_url = f"{endpoint}/api/v1"
 
     old_env = {
         "MAINSEQUENCE_AUTH_MODE": os.environ.get("MAINSEQUENCE_AUTH_MODE"),
@@ -2476,7 +2476,7 @@ def list_project_jobs(
         raise NotLoggedIn("Not logged in.")
 
     endpoint = backend_url().rstrip("/")
-    root_url = f"{endpoint}/orm/api"
+    root_url = f"{endpoint}/api/v1"
 
     old_env = {
         "MAINSEQUENCE_AUTH_MODE": os.environ.get("MAINSEQUENCE_AUTH_MODE"),
@@ -2588,7 +2588,7 @@ def list_project_resources(
         raise NotLoggedIn("Not logged in.")
 
     endpoint = backend_url().rstrip("/")
-    root_url = f"{endpoint}/orm/api"
+    root_url = f"{endpoint}/api/v1"
 
     old_env = {
         "MAINSEQUENCE_AUTH_MODE": os.environ.get("MAINSEQUENCE_AUTH_MODE"),
@@ -2717,7 +2717,7 @@ def create_project_resource_release(
         raise NotLoggedIn("Not logged in.")
 
     endpoint = backend_url().rstrip("/")
-    root_url = f"{endpoint}/orm/api"
+    root_url = f"{endpoint}/api/v1"
 
     old_env = {
         "MAINSEQUENCE_AUTH_MODE": os.environ.get("MAINSEQUENCE_AUTH_MODE"),
@@ -4401,7 +4401,7 @@ def create_project_job(
         raise NotLoggedIn("Not logged in.")
 
     endpoint = backend_url().rstrip("/")
-    root_url = f"{endpoint}/orm/api"
+    root_url = f"{endpoint}/api/v1"
 
     old_env = {
         "MAINSEQUENCE_AUTH_MODE": os.environ.get("MAINSEQUENCE_AUTH_MODE"),
@@ -4522,7 +4522,7 @@ def schedule_batch_project_jobs(
         raise NotLoggedIn("Not logged in.")
 
     endpoint = backend_url().rstrip("/")
-    root_url = f"{endpoint}/orm/api"
+    root_url = f"{endpoint}/api/v1"
 
     old_env = {
         "MAINSEQUENCE_AUTH_MODE": os.environ.get("MAINSEQUENCE_AUTH_MODE"),
@@ -4660,7 +4660,7 @@ def run_project_job(
         raise NotLoggedIn("Not logged in.")
 
     endpoint = backend_url().rstrip("/")
-    root_url = f"{endpoint}/orm/api"
+    root_url = f"{endpoint}/api/v1"
 
     old_env = {
         "MAINSEQUENCE_AUTH_MODE": os.environ.get("MAINSEQUENCE_AUTH_MODE"),
@@ -4784,7 +4784,7 @@ def list_project_job_runs(
         raise NotLoggedIn("Not logged in.")
 
     endpoint = backend_url().rstrip("/")
-    root_url = f"{endpoint}/orm/api"
+    root_url = f"{endpoint}/api/v1"
 
     old_env = {
         "MAINSEQUENCE_AUTH_MODE": os.environ.get("MAINSEQUENCE_AUTH_MODE"),
@@ -4888,7 +4888,7 @@ def get_project_job_run_logs(
         raise NotLoggedIn("Not logged in.")
 
     endpoint = backend_url().rstrip("/")
-    root_url = f"{endpoint}/orm/api"
+    root_url = f"{endpoint}/api/v1"
 
     old_env = {
         "MAINSEQUENCE_AUTH_MODE": os.environ.get("MAINSEQUENCE_AUTH_MODE"),
@@ -5119,7 +5119,7 @@ def list_data_sources(status: str | None = "AVAILABLE") -> list[dict]:
     query = ""
     if status:
         query = "?" + urlencode({"status": status})
-    r = authed("GET", f"/orm/api/connections/data_source/{query}")
+    r = authed("GET", f"/api/v1/data-sources/{query}")
     if not r.ok:
         raise ApiError(f"Data sources fetch failed ({r.status_code}).")
     return _json_results(r)
@@ -5129,7 +5129,7 @@ def list_project_base_images() -> list[dict]:
     """
     List available ProjectBaseImage rows.
     """
-    r = authed("GET", "/orm/api/pods/project-base-image/")
+    r = authed("GET", "/api/v1/project-base-images/")
     if not r.ok:
         raise ApiError(f"Project base images fetch failed ({r.status_code}).")
     return _json_results(r)
@@ -5139,7 +5139,7 @@ def list_github_organizations() -> list[dict]:
     """
     List available GitHub organizations for the current user.
     """
-    r = authed("GET", "/orm/api/pods/github-organization/")
+    r = authed("GET", "/api/v1/github-organizations/")
     if not r.ok:
         raise ApiError(f"GitHub organizations fetch failed ({r.status_code}).")
     return _json_results(r)
@@ -5177,7 +5177,7 @@ def create_project(
     if labels is not None:
         payload["labels"] = list(labels)
 
-    r = authed("POST", "/orm/api/pods/projects/", payload)
+    r = authed("POST", "/api/v1/projects/", payload)
     if not r.ok:
         msg = r.text or ""
         try:
@@ -5203,10 +5203,10 @@ def delete_project(project_id: int | str) -> dict[str, Any] | None:
     Delete a project by public reference.
 
     Mirrors backend behavior:
-      - DELETE /orm/api/pods/projects/{uid}/
+      - DELETE /api/v1/projects/{uid}/
     """
     project_uid = resolve_project_uid(project_id)
-    path = f"/orm/api/pods/projects/{project_uid}/"
+    path = f"/api/v1/projects/{project_uid}/"
 
     r = authed("DELETE", path)
     if not r.ok:
@@ -5236,7 +5236,7 @@ def bulk_delete_projects(
         "selection": {"mode": "explicit", "uids": list(uids)},
         "options": {"delete_repositories": delete_repositories},
     }
-    r = authed("POST", "/orm/api/pods/projects/bulk-delete/", payload)
+    r = authed("POST", "/api/v1/projects/bulk-delete/", payload)
     if not r.ok:
         raise ApiError(f"Project bulk delete failed ({r.status_code}). {(r.text or '').strip()}")
     data = r.json()
@@ -5254,7 +5254,7 @@ def add_deploy_key(project_branch_uid: str, key_title: str, public_key: str) -> 
     """
     r = authed(
         "POST",
-        f"/orm/api/pods/project-branches/{resolve_project_branch_uid(project_branch_uid)}/add_deploy_key/",
+        f"/api/v1/project-branches/{resolve_project_branch_uid(project_branch_uid)}/add-deploy-key/",
         {"key_title": key_title, "public_key": public_key},
     )
     r.raise_for_status()

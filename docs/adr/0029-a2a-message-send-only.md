@@ -27,7 +27,7 @@ The canonical A2A send flow is:
 The SDK calls Django only for runtime access:
 
 ```http
-POST /orm/api/agents/v1/sessions/{agent_session_uid}/resolve_runtime_access/
+POST /api/v1/agent-sessions/{agent_session_uid}/resolve-runtime-access/
 ```
 
 The SDK sends the message only to:

@@ -720,7 +720,7 @@ class Job(BaseObjectOrm, BasePydanticModel):
 
     @classmethod
     def create_from_configuration(cls, job_configuration):
-        url = cls.get_object_url() + "/create_from_configuration/"
+        url = cls.get_object_url() + "/create-from-configuration/"
         s = cls.build_session()
         payload = dict(job_configuration)
         payload["project_branch_uid"] = _require_local_pod_project_branch(
@@ -933,7 +933,7 @@ class JobRun(BaseObjectOrm, BasePydanticModel):
         Update the backend job-run status detail action for this run.
 
         This hits:
-            POST /pods/job-run/{uid}/status/
+            POST /job-runs/{uid}/status/
         """
         job_run_uid = self._public_detail_reference()
         url = f"{self.get_object_url()}/{job_run_uid}/status/"
@@ -1467,7 +1467,7 @@ class DeploymentRunLogPage(BaseModel):
 
 
 class DeploymentRun(BaseObjectOrm, BasePydanticModel):
-    ENDPOINT: ClassVar[str] = "pods/deployment-runs"
+    ENDPOINT: ClassVar[str] = "deployment-runs"
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
         "project_branch_uid": ["exact", "in"],
         "target_type": ["exact", "in"],

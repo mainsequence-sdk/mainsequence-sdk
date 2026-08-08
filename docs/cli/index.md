@@ -470,8 +470,8 @@ ontology and each installed platform skill.
 - `mainsequence agent list`, `detail`, `create`, and `delete` use the SDK client `mainsequence.client.agent_runtime_models.Agent` paths.
 - `mainsequence agent session list` and `detail` use the SDK client `mainsequence.client.agent_runtime_models.AgentSession` path.
 - `mainsequence agent session list --agent-uid <AGENT_UID>` lists sessions for one agent directly.
-- `mainsequence agent session get_or_create <AGENT_UID> --session-uid <SESSION_UID>` resolves one existing session through `POST /orm/api/agents/v1/agents/{agent_uid}/sessions/get_or_create_session/`.
-- `mainsequence agent session get_or_create <AGENT_UID> --handle-unique-id <HANDLE>` gets or creates a reusable session handle through `POST /orm/api/agents/v1/agents/{agent_uid}/sessions/get_or_create_session/`.
+- `mainsequence agent session get_or_create <AGENT_UID> --session-uid <SESSION_UID>` resolves one existing session through `POST /api/v1/agents/{agent_uid}/sessions/get-or-create-session/`.
+- `mainsequence agent session get_or_create <AGENT_UID> --handle-unique-id <HANDLE>` gets or creates a reusable session handle through `POST /api/v1/agents/{agent_uid}/sessions/get-or-create-session/`.
 - `mainsequence agent session get_or_create` sends exactly one lookup key: either `session_uid` or `handle_unique_id`. Creation options such as `--name`, `--parent-session-uid`, `--llm-provider`, `--llm-model`, and `--llm-thinking` are valid only with `--handle-unique-id`.
 - `mainsequence agent session a2a send <SESSION_UID> --message "..."` resolves runtime access internally, sends a standard A2A message, and always returns the standard A2A JSON response.
 - `mainsequence agent session a2a send <SESSION_UID> --message "..." --strict-dictionary` requests a strict JSON dictionary using the standard A2A output contract.
@@ -501,7 +501,7 @@ ontology and each installed platform skill.
 - `mainsequence data-node list --show-filters` prints the filters exposed by `TimeIndexMetaTable.FILTERSET_FIELDS` and the expected value shapes from `FILTER_VALUE_NORMALIZERS`.
 - `mainsequence data-node list --filter namespace=...` is the first-class CLI form for narrowing data node storages by storage namespace.
 - `mainsequence data-node list --data-source-id 2` is the first-class shortcut for the common `data_source__id` filter.
-- `mainsequence data-node search` is the public semantic discovery command for data nodes and MetaTable metadata. It uses `TimeIndexMetaTable.description_search()` against `/orm/api/ts_manager/meta_table/description-search/?q=<text>`.
+- `mainsequence data-node search` is the public semantic discovery command for data nodes and MetaTable metadata. It uses `TimeIndexMetaTable.description_search()` against `/api/v1/meta-tables/description-search/?q=<text>`.
 - `mainsequence data-node search --data-source-id 2` narrows semantic discovery results by data source.
 - `mainsequence data-node search --trigram-k 200 --embed-k 200 --w-trgm 0.65 --w-emb 0.35` tunes description-search ranking.
 - `mainsequence data-node list --filter KEY=VALUE` and `mainsequence data-node list --show-filters` are the structured filtering path. Do not treat list filters as semantic discovery.

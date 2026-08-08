@@ -30,8 +30,8 @@ The backend now exposes normal typed collection-create semantics instead of a
 special `reserve-managed/` reservation engine:
 
 ```text
-POST /orm/api/ts_manager/meta_table/
-POST /orm/api/ts_manager/dynamic_table/
+POST /api/v1/meta-tables/
+POST /api/v1/time-index-meta-tables/
 ```
 
 The SDK must move to that contract.
@@ -55,8 +55,8 @@ pre-provisioning path.
 reserved-row create payloads and split them by SDK model type:
 
 ```text
-PlatformManagedMetaTable     -> POST /orm/api/ts_manager/meta_table/
-PlatformTimeIndexMetaTable    -> POST /orm/api/ts_manager/dynamic_table/
+PlatformManagedMetaTable     -> POST /api/v1/meta-tables/
+PlatformTimeIndexMetaTable    -> POST /api/v1/time-index-meta-tables/
 ```
 
 Both calls use a raw JSON list body. There is no `{ "items": [...] }` wrapper
@@ -156,14 +156,14 @@ Remove or stop using:
 
 - `MetaTable.reserve_managed(...)`
 - SDK code that posts to
-  `POST /orm/api/ts_manager/meta_table/reserve-managed/`
+  `POST /api/v1/meta-tables/reserve-managed/`
 
 Add or use collection-create methods:
 
 - `MetaTable.bulk_create(...)`, posting a raw list to
-  `POST /orm/api/ts_manager/meta_table/`
+  `POST /api/v1/meta-tables/`
 - `TimeIndexMetaTable.bulk_create(...)`, posting a raw list to
-  `POST /orm/api/ts_manager/dynamic_table/`
+  `POST /api/v1/time-index-meta-tables/`
 
 The method name may remain `bulk_create(...)` as a client convenience, but the
 HTTP contract is normal collection `POST` with a list body.
@@ -208,9 +208,9 @@ the old reservation conflict-diagnostic engine.
 - [x] Remove managed-reservation-only Pydantic models when no remaining callers
   need them.
 - [x] Add or update `MetaTable.bulk_create(...)` to post a raw list to
-  `/orm/api/ts_manager/meta_table/`.
+  `/api/v1/meta-tables/`.
 - [x] Add or update `TimeIndexMetaTable.bulk_create(...)` to post a raw list to
-  `/orm/api/ts_manager/dynamic_table/`.
+  `/api/v1/time-index-meta-tables/`.
 - [x] Change `AlembicMetaTableMigration.prepare_for_alembic()` to split
   reservation rows by model type and call the correct typed endpoint before
   provisioning.

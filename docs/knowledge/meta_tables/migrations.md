@@ -180,8 +180,8 @@ stays stable.
 `prepare_for_alembic()` runs for `upgrade` and `downgrade`; revision generation
 does not provision provider MetaTables. When it runs, it sends provider model rows through typed
 collection-create endpoints. Plain `PlatformManagedMetaTable` rows go to
-`POST /orm/api/ts_manager/meta_table/`; `PlatformTimeIndexMetaTable` rows go to
-`POST /orm/api/ts_manager/dynamic_table/`. The SDK sends raw JSON lists with
+`POST /api/v1/meta-tables/`; `PlatformTimeIndexMetaTable` rows go to
+`POST /api/v1/time-index-meta-tables/`. The SDK sends raw JSON lists with
 `provisioning_status="reserved"` and `is_alembic_managed=true`; it does not
 wrap the rows in a reservation request object. Alembic is the authority for
 schema changes, and TS Manager is the authoritative owner of MetaTable catalog
@@ -268,16 +268,16 @@ after provider-scoped backend finalization succeeds. The hook receives an
 
 The migration CLI coordinates with backend endpoints around Alembic:
 
-- `POST /orm/api/ts_manager/meta_table/` creates or resolves regular
+- `POST /api/v1/meta-tables/` creates or resolves regular
   platform-managed MetaTable catalog rows without creating physical application
   tables.
-- `POST /orm/api/ts_manager/dynamic_table/` creates or resolves time-indexed
+- `POST /api/v1/time-index-meta-tables/` creates or resolves time-indexed
   platform-managed MetaTable catalog rows without creating physical application
   tables.
-- `POST /orm/api/ts_manager/meta_table/<meta_table_uid>/migration-connection/`
+- `POST /api/v1/meta-tables/<meta_table_uid>/migration-connection/`
   issues a temporary provider migration credential through an authoritative
   MetaTable. The server derives the canonical DataSource from that table.
-- `POST /orm/api/ts_manager/meta_table/finalize-managed/` activates reserved
+- `POST /api/v1/meta-tables/finalize-managed/` activates reserved
   MetaTables after Alembic creates or alters the physical tables.
 
 The returned database URI is a secret and should not be printed, logged, or

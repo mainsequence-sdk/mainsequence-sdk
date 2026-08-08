@@ -17,7 +17,7 @@ from .utils import session as _global_session
 @dataclass(frozen=True)
 class MainSequenceClientConfig:
     endpoint: str = resolve_backend_endpoint()
-    api_prefix: str = "/orm/api"
+    api_prefix: str = "/api/v1"
     # (connect, read) — align with your utils DEFAULT_TIMEOUT behavior
     timeout: tuple[float, float] = (5.0, 120.0)
     retries: int = 3

@@ -36,7 +36,7 @@ dependency execution.
 The backend exposes:
 
 ```text
-POST /orm/api/ts_manager/local_time_serie/{uid}/clear-dependencies/
+POST /api/v1/local-time-series/{uid}/clear-dependencies/
 ```
 
 This endpoint clears outgoing dependency edges for the selected update node and
@@ -83,7 +83,7 @@ DataNodeUpdate.clear_dependencies(timeout=None)
 The method should call:
 
 ```text
-POST /orm/api/ts_manager/local_time_serie/{uid}/clear-dependencies/
+POST /api/v1/local-time-series/{uid}/clear-dependencies/
 ```
 
 and return the structured backend response.

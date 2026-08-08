@@ -1110,7 +1110,7 @@ class DataSource(BasePydanticModel, BaseObjectOrm):
 
 
 class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, BaseObjectOrm):
-    ENDPOINT: ClassVar[str] = "ts_manager/meta_table"
+    ENDPOINT: ClassVar[str] = "meta-tables"
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
         "identifier": ["in", "exact", "contains"],
         "uid": ["in", "exact"],
@@ -1618,8 +1618,8 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
             raise ValueError("sql is required.")
 
         cls = type(self)
-        url = f"{cls.get_object_url().rstrip('/')}/{self._public_uid()}/run_query/"
-        if cls.ENDPOINT == "ts_manager/time_index_meta_table":
+        url = f"{cls.get_object_url().rstrip('/')}/{self._public_uid()}/run-query/"
+        if cls.ENDPOINT == "time-index-meta-tables":
             session = cls.build_session()
             old_content_type = session.headers.get("Content-Type")
             session.headers["Content-Type"] = "text/plain"
@@ -2988,7 +2988,7 @@ class TableMetaData(BaseModel):
 
 
 class TimeIndexMetaTable(MetaTable):
-    ENDPOINT: ClassVar[str] = "ts_manager/time_index_meta_table"
+    ENDPOINT: ClassVar[str] = "time-index-meta-tables"
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
         "identifier": ["in", "exact", "contains"],
         "uid": ["in", "exact"],
@@ -3323,7 +3323,7 @@ class TimeIndexMetaTable(MetaTable):
         )
 
         cls = type(self)
-        url = f"{cls.get_object_url()}/{self._public_uid()}/delete_after_date/"
+        url = f"{cls.get_object_url()}/{self._public_uid()}/delete-after-date/"
         r = make_request(
             s=cls.build_session(),
             loaders=cls.LOADERS,

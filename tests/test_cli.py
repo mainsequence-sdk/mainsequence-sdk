@@ -1830,7 +1830,7 @@ def test_api_refresh_access_runtime_credential_reexchange(cli_mod, monkeypatch):
 
     out = api_mod.refresh_access()
     assert out == "runtime-new-access"
-    assert saved["token_url"] == "http://127.0.0.1:8000/orm/api/pods/runtime-credentials/token/"
+    assert saved["token_url"] == "http://127.0.0.1:8000/api/v1/runtime-credentials/token/"
     assert saved["force"] is True
     assert saved["access"] == "runtime-new-access"
     assert saved["refresh"] == ""
@@ -2521,7 +2521,7 @@ def test_get_current_user_profile_uses_user_details_endpoint(cli_mod, monkeypatc
     monkeypatch.setattr(api_mod, "authed", _authed)
 
     out = api_mod.get_current_user_profile()
-    assert seen == {"method": "GET", "path": "/user/api/user/get_user_details/"}
+    assert seen == {"method": "GET", "path": "/api/v1/users/me/"}
     assert out == {"username": "jose@main-sequence.io", "organization": "Main Sequence"}
 
 
@@ -2792,13 +2792,13 @@ def test_get_project_data_node_updates_sets_project_env(cli_mod, monkeypatch):
 
     fake_utils.loaders = FakeLoaders()
     fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
-    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+    fake_utils.API_ENDPOINT = "https://old.test/api/v1"
     fake_utils.AUTH_ENDPOINT = "https://old.test"
 
     def _set_mainsequence_endpoint(endpoint):
         normalized = endpoint.rstrip("/")
         fake_utils.MAINSEQUENCE_ENDPOINT = normalized
-        fake_utils.API_ENDPOINT = f"{normalized}/orm/api"
+        fake_utils.API_ENDPOINT = f"{normalized}/api/v1"
         fake_utils.AUTH_ENDPOINT = normalized
         captured["endpoint"] = normalized
 
@@ -2808,7 +2808,7 @@ def test_get_project_data_node_updates_sets_project_env(cli_mod, monkeypatch):
     def _set_mainsequence_endpoint(endpoint):
         normalized = endpoint.rstrip("/")
         fake_utils.MAINSEQUENCE_ENDPOINT = normalized
-        fake_utils.API_ENDPOINT = f"{normalized}/orm/api"
+        fake_utils.API_ENDPOINT = f"{normalized}/api/v1"
         fake_utils.AUTH_ENDPOINT = normalized
         captured["endpoint"] = normalized
 
@@ -2817,21 +2817,21 @@ def test_get_project_data_node_updates_sets_project_env(cli_mod, monkeypatch):
 
     def _set_mainsequence_endpoint(endpoint):
         fake_utils.MAINSEQUENCE_ENDPOINT = endpoint
-        fake_utils.API_ENDPOINT = f"{endpoint.rstrip('/')}/orm/api"
+        fake_utils.API_ENDPOINT = f"{endpoint.rstrip('/')}/api/v1"
         fake_utils.AUTH_ENDPOINT = endpoint.rstrip("/")
         captured["endpoint"] = endpoint
 
     fake_utils.set_mainsequence_endpoint = _set_mainsequence_endpoint
 
     class FakeBaseObjectOrm:
-        ROOT_URL = "https://old.test/orm/api"
+        ROOT_URL = "https://old.test/api/v1"
 
     class FakeUpdate:
         def model_dump(self):
             return {"id": 10, "update_hash": "abc123"}
 
     class FakeProject:
-        ROOT_URL = "https://old.test/orm/api/pods/project"
+        ROOT_URL = "https://old.test/api/v1/projects"
 
         @classmethod
         def get(cls, pk, timeout=None):
@@ -2878,23 +2878,23 @@ def test_list_project_users_can_view_uses_client_model(cli_mod, monkeypatch):
 
     fake_utils.loaders = FakeLoaders()
     fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
-    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+    fake_utils.API_ENDPOINT = "https://old.test/api/v1"
     fake_utils.AUTH_ENDPOINT = "https://old.test"
 
     def _set_mainsequence_endpoint(endpoint):
         normalized = endpoint.rstrip("/")
         fake_utils.MAINSEQUENCE_ENDPOINT = normalized
-        fake_utils.API_ENDPOINT = f"{normalized}/orm/api"
+        fake_utils.API_ENDPOINT = f"{normalized}/api/v1"
         fake_utils.AUTH_ENDPOINT = normalized
         captured["endpoint"] = normalized
 
     fake_utils.set_mainsequence_endpoint = _set_mainsequence_endpoint
 
     class FakeBaseObjectOrm:
-        ROOT_URL = "https://old.test/orm/api"
+        ROOT_URL = "https://old.test/api/v1"
 
     class FakeProject:
-        ROOT_URL = "https://old.test/orm/api/pods/projects"
+        ROOT_URL = "https://old.test/api/v1/projects"
 
         @classmethod
         def get_by_uid(cls, uid, timeout=None):
@@ -2961,23 +2961,23 @@ def test_add_project_user_to_edit_uses_client_model(cli_mod, monkeypatch):
 
     fake_utils.loaders = FakeLoaders()
     fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
-    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+    fake_utils.API_ENDPOINT = "https://old.test/api/v1"
     fake_utils.AUTH_ENDPOINT = "https://old.test"
 
     def _set_mainsequence_endpoint(endpoint):
         normalized = endpoint.rstrip("/")
         fake_utils.MAINSEQUENCE_ENDPOINT = normalized
-        fake_utils.API_ENDPOINT = f"{normalized}/orm/api"
+        fake_utils.API_ENDPOINT = f"{normalized}/api/v1"
         fake_utils.AUTH_ENDPOINT = normalized
         captured["endpoint"] = normalized
 
     fake_utils.set_mainsequence_endpoint = _set_mainsequence_endpoint
 
     class FakeBaseObjectOrm:
-        ROOT_URL = "https://old.test/orm/api"
+        ROOT_URL = "https://old.test/api/v1"
 
     class FakeProject:
-        ROOT_URL = "https://old.test/orm/api/pods/projects"
+        ROOT_URL = "https://old.test/api/v1/projects"
 
         @classmethod
         def get_by_uid(cls, uid, timeout=None):
@@ -3043,13 +3043,13 @@ def test_list_constants_uses_client_model(cli_mod, monkeypatch):
 
     fake_utils.loaders = FakeLoaders()
     fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
-    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+    fake_utils.API_ENDPOINT = "https://old.test/api/v1"
 
     class FakeBaseObjectOrm:
-        ROOT_URL = "https://old.test/orm/api"
+        ROOT_URL = "https://old.test/api/v1"
 
     class FakeConstant:
-        ROOT_URL = "https://old.test/orm/api/pods/constant"
+        ROOT_URL = "https://old.test/api/v1/constants"
 
         @classmethod
         def filter(cls, timeout=None, **kwargs):
@@ -3101,13 +3101,13 @@ def test_create_constant_uses_client_model(cli_mod, monkeypatch):
 
     fake_utils.loaders = FakeLoaders()
     fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
-    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+    fake_utils.API_ENDPOINT = "https://old.test/api/v1"
 
     class FakeBaseObjectOrm:
-        ROOT_URL = "https://old.test/orm/api"
+        ROOT_URL = "https://old.test/api/v1"
 
     class FakeConstant:
-        ROOT_URL = "https://old.test/orm/api/pods/constant"
+        ROOT_URL = "https://old.test/api/v1/constants"
 
         @classmethod
         def create(cls, *, name, value, timeout=None):
@@ -3161,13 +3161,13 @@ def test_delete_constant_uses_client_model(cli_mod, monkeypatch):
 
     fake_utils.loaders = FakeLoaders()
     fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
-    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+    fake_utils.API_ENDPOINT = "https://old.test/api/v1"
 
     class FakeBaseObjectOrm:
-        ROOT_URL = "https://old.test/orm/api"
+        ROOT_URL = "https://old.test/api/v1"
 
     class FakeConstant:
-        ROOT_URL = "https://old.test/orm/api/pods/constant"
+        ROOT_URL = "https://old.test/api/v1/constants"
 
         @classmethod
         def get_by_uid(cls, uid, timeout=None):
@@ -3224,13 +3224,13 @@ def test_list_constant_users_can_edit_uses_client_model(cli_mod, monkeypatch):
 
     fake_utils.loaders = FakeLoaders()
     fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
-    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+    fake_utils.API_ENDPOINT = "https://old.test/api/v1"
 
     class FakeBaseObjectOrm:
-        ROOT_URL = "https://old.test/orm/api"
+        ROOT_URL = "https://old.test/api/v1"
 
     class FakeConstant:
-        ROOT_URL = "https://old.test/orm/api/pods/constant"
+        ROOT_URL = "https://old.test/api/v1/constants"
 
         @classmethod
         def get_by_uid(cls, uid, timeout=None):
@@ -3297,13 +3297,13 @@ def test_add_constant_user_to_edit_uses_client_model(cli_mod, monkeypatch):
 
     fake_utils.loaders = FakeLoaders()
     fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
-    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+    fake_utils.API_ENDPOINT = "https://old.test/api/v1"
 
     class FakeBaseObjectOrm:
-        ROOT_URL = "https://old.test/orm/api"
+        ROOT_URL = "https://old.test/api/v1"
 
     class FakeConstant:
-        ROOT_URL = "https://old.test/orm/api/pods/constant"
+        ROOT_URL = "https://old.test/api/v1/constants"
 
         @classmethod
         def get_by_uid(cls, uid, timeout=None):
@@ -3369,13 +3369,13 @@ def test_list_secrets_uses_client_model(cli_mod, monkeypatch):
 
     fake_utils.loaders = FakeLoaders()
     fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
-    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+    fake_utils.API_ENDPOINT = "https://old.test/api/v1"
 
     class FakeBaseObjectOrm:
-        ROOT_URL = "https://old.test/orm/api"
+        ROOT_URL = "https://old.test/api/v1"
 
     class FakeSecret:
-        ROOT_URL = "https://old.test/orm/api/pods/secret"
+        ROOT_URL = "https://old.test/api/v1/secrets"
 
         @classmethod
         def filter(cls, timeout=None, **kwargs):
@@ -3426,13 +3426,13 @@ def test_list_secret_users_can_view_uses_client_model(cli_mod, monkeypatch):
 
     fake_utils.loaders = FakeLoaders()
     fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
-    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+    fake_utils.API_ENDPOINT = "https://old.test/api/v1"
 
     class FakeBaseObjectOrm:
-        ROOT_URL = "https://old.test/orm/api"
+        ROOT_URL = "https://old.test/api/v1"
 
     class FakeSecret:
-        ROOT_URL = "https://old.test/orm/api/pods/secret"
+        ROOT_URL = "https://old.test/api/v1/secrets"
 
         @classmethod
         def get_by_uid(cls, uid, timeout=None):
@@ -3503,13 +3503,13 @@ def test_add_secret_user_to_edit_uses_client_model(cli_mod, monkeypatch):
 
     fake_utils.loaders = FakeLoaders()
     fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
-    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+    fake_utils.API_ENDPOINT = "https://old.test/api/v1"
 
     class FakeBaseObjectOrm:
-        ROOT_URL = "https://old.test/orm/api"
+        ROOT_URL = "https://old.test/api/v1"
 
     class FakeSecret:
-        ROOT_URL = "https://old.test/orm/api/pods/secret"
+        ROOT_URL = "https://old.test/api/v1/secrets"
 
         @classmethod
         def get_by_uid(cls, uid, timeout=None):
@@ -3575,13 +3575,13 @@ def test_create_secret_uses_client_model(cli_mod, monkeypatch):
 
     fake_utils.loaders = FakeLoaders()
     fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
-    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+    fake_utils.API_ENDPOINT = "https://old.test/api/v1"
 
     class FakeBaseObjectOrm:
-        ROOT_URL = "https://old.test/orm/api"
+        ROOT_URL = "https://old.test/api/v1"
 
     class FakeSecret:
-        ROOT_URL = "https://old.test/orm/api/pods/secret"
+        ROOT_URL = "https://old.test/api/v1/secrets"
 
         @classmethod
         def create(cls, *, name, value, timeout=None):
@@ -3634,13 +3634,13 @@ def test_delete_secret_uses_client_model(cli_mod, monkeypatch):
 
     fake_utils.loaders = FakeLoaders()
     fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
-    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+    fake_utils.API_ENDPOINT = "https://old.test/api/v1"
 
     class FakeBaseObjectOrm:
-        ROOT_URL = "https://old.test/orm/api"
+        ROOT_URL = "https://old.test/api/v1"
 
     class FakeSecret:
-        ROOT_URL = "https://old.test/orm/api/pods/secret"
+        ROOT_URL = "https://old.test/api/v1/secrets"
 
         @classmethod
         def get(cls, pk=None, timeout=None, **filters):
@@ -3699,13 +3699,13 @@ def test_create_project_image_uses_client_model(cli_mod, monkeypatch):
 
     fake_utils.loaders = FakeLoaders()
     fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
-    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+    fake_utils.API_ENDPOINT = "https://old.test/api/v1"
 
     class FakeBaseObjectOrm:
-        ROOT_URL = "https://old.test/orm/api"
+        ROOT_URL = "https://old.test/api/v1"
 
     class FakeProjectImage:
-        ROOT_URL = "https://old.test/orm/api/pods/project-image"
+        ROOT_URL = "https://old.test/api/v1/project-images"
 
         @classmethod
         def create(
@@ -3769,13 +3769,13 @@ def test_list_project_images_uses_client_model(cli_mod, monkeypatch):
 
     fake_utils.loaders = FakeLoaders()
     fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
-    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+    fake_utils.API_ENDPOINT = "https://old.test/api/v1"
 
     class FakeBaseObjectOrm:
-        ROOT_URL = "https://old.test/orm/api"
+        ROOT_URL = "https://old.test/api/v1"
 
     class FakeProjectImage:
-        ROOT_URL = "https://old.test/orm/api/pods/project-image"
+        ROOT_URL = "https://old.test/api/v1/project-images"
 
         @classmethod
         def filter(cls, timeout=None, **kwargs):
@@ -3848,13 +3848,13 @@ def test_delete_project_image_uses_client_model(cli_mod, monkeypatch):
 
     fake_utils.loaders = FakeLoaders()
     fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
-    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+    fake_utils.API_ENDPOINT = "https://old.test/api/v1"
 
     class FakeBaseObjectOrm:
-        ROOT_URL = "https://old.test/orm/api"
+        ROOT_URL = "https://old.test/api/v1"
 
     class FakeProjectImage:
-        ROOT_URL = "https://old.test/orm/api/pods/project-image"
+        ROOT_URL = "https://old.test/api/v1/project-images"
 
         @classmethod
         def get(cls, pk=None, timeout=None, **filters):
@@ -3915,13 +3915,13 @@ def test_list_project_jobs_uses_client_model(cli_mod, monkeypatch):
 
     fake_utils.loaders = FakeLoaders()
     fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
-    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+    fake_utils.API_ENDPOINT = "https://old.test/api/v1"
 
     class FakeBaseObjectOrm:
-        ROOT_URL = "https://old.test/orm/api"
+        ROOT_URL = "https://old.test/api/v1"
 
     class FakeJob:
-        ROOT_URL = "https://old.test/orm/api/pods/job"
+        ROOT_URL = "https://old.test/api/v1/jobs"
 
         @classmethod
         def filter(cls, timeout=None, **kwargs):
@@ -4002,13 +4002,13 @@ def test_list_project_resources_uses_client_model(cli_mod, monkeypatch):
 
     fake_utils.loaders = FakeLoaders()
     fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
-    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+    fake_utils.API_ENDPOINT = "https://old.test/api/v1"
 
     class FakeBaseObjectOrm:
-        ROOT_URL = "https://old.test/orm/api"
+        ROOT_URL = "https://old.test/api/v1"
 
     class FakeProjectResource:
-        ROOT_URL = "https://old.test/orm/api/pods/project-resource"
+        ROOT_URL = "https://old.test/api/v1/project-resources"
 
         @classmethod
         def filter(cls, timeout=None, **kwargs):
@@ -4077,13 +4077,13 @@ def test_create_project_resource_release_uses_client_model(cli_mod, monkeypatch)
 
     fake_utils.loaders = FakeLoaders()
     fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
-    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+    fake_utils.API_ENDPOINT = "https://old.test/api/v1"
 
     class FakeBaseObjectOrm:
-        ROOT_URL = "https://old.test/orm/api"
+        ROOT_URL = "https://old.test/api/v1"
 
     class FakeProjectResource:
-        ROOT_URL = "https://old.test/orm/api/pods/project-resource"
+        ROOT_URL = "https://old.test/api/v1/project-resources"
 
         @classmethod
         def get(cls, pk=None, timeout=None, **filters):
@@ -4174,13 +4174,13 @@ def test_create_project_resource_release_uses_client_model_for_fastapi(cli_mod, 
 
     fake_utils.loaders = FakeLoaders()
     fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
-    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+    fake_utils.API_ENDPOINT = "https://old.test/api/v1"
 
     class FakeBaseObjectOrm:
-        ROOT_URL = "https://old.test/orm/api"
+        ROOT_URL = "https://old.test/api/v1"
 
     class FakeProjectResource:
-        ROOT_URL = "https://old.test/orm/api/pods/project-resource"
+        ROOT_URL = "https://old.test/api/v1/project-resources"
 
         @classmethod
         def get(cls, pk=None, timeout=None, **filters):
@@ -4251,13 +4251,13 @@ def test_delete_resource_release_uses_client_model(cli_mod, monkeypatch):
 
     fake_utils.loaders = FakeLoaders()
     fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
-    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+    fake_utils.API_ENDPOINT = "https://old.test/api/v1"
 
     class FakeBaseObjectOrm:
-        ROOT_URL = "https://old.test/orm/api"
+        ROOT_URL = "https://old.test/api/v1"
 
     class FakeResourceRelease:
-        ROOT_URL = "https://old.test/orm/api/pods/resource-release"
+        ROOT_URL = "https://old.test/api/v1/resource-releases"
 
         @classmethod
         def get(cls, pk=None, timeout=None, **filters):
@@ -4322,13 +4322,13 @@ def test_list_data_node_storages_uses_client_model(cli_mod, monkeypatch):
 
     fake_utils.loaders = FakeLoaders()
     fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
-    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+    fake_utils.API_ENDPOINT = "https://old.test/api/v1"
 
     class FakeBaseObjectOrm:
-        ROOT_URL = "https://old.test/orm/api"
+        ROOT_URL = "https://old.test/api/v1"
 
     class FakeDataNodeStorage:
-        ROOT_URL = "https://old.test/orm/api/ts_manager/dynamic_table"
+        ROOT_URL = "https://old.test/api/v1/time-index-meta-tables"
 
         @classmethod
         def filter(cls, timeout=None, **kwargs):
@@ -4408,13 +4408,13 @@ def test_meta_table_api_uses_client_model(cli_mod, monkeypatch):
 
     fake_utils.loaders = FakeLoaders()
     fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
-    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+    fake_utils.API_ENDPOINT = "https://old.test/api/v1"
 
     class FakeBaseObjectOrm:
-        ROOT_URL = "https://old.test/orm/api"
+        ROOT_URL = "https://old.test/api/v1"
 
     class FakeMetaTable:
-        ROOT_URL = "https://old.test/orm/api/ts_manager/meta_table"
+        ROOT_URL = "https://old.test/api/v1/meta-tables"
 
         @classmethod
         def filter(cls, timeout=None, **kwargs):
@@ -4492,13 +4492,13 @@ def test_validate_project_name_uses_client_model(cli_mod, monkeypatch):
 
     fake_utils.loaders = FakeLoaders()
     fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
-    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+    fake_utils.API_ENDPOINT = "https://old.test/api/v1"
 
     class FakeBaseObjectOrm:
-        ROOT_URL = "https://old.test/orm/api"
+        ROOT_URL = "https://old.test/api/v1"
 
     class FakeProject:
-        ROOT_URL = "https://old.test/orm/api/pods/projects"
+        ROOT_URL = "https://old.test/api/v1/projects"
 
         @classmethod
         def validate_name(cls, *, project_name, timeout=None):
@@ -4557,13 +4557,13 @@ def test_data_node_storage_description_search_uses_client_model(cli_mod, monkeyp
 
     fake_utils.loaders = FakeLoaders()
     fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
-    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+    fake_utils.API_ENDPOINT = "https://old.test/api/v1"
 
     class FakeBaseObjectOrm:
-        ROOT_URL = "https://old.test/orm/api"
+        ROOT_URL = "https://old.test/api/v1"
 
     class FakeDataNodeStorage:
-        ROOT_URL = "https://old.test/orm/api/ts_manager/dynamic_table"
+        ROOT_URL = "https://old.test/api/v1/time-index-meta-tables"
 
         @classmethod
         def description_search(
@@ -4670,13 +4670,13 @@ def test_data_node_storage_column_search_uses_client_model(cli_mod, monkeypatch)
 
     fake_utils.loaders = FakeLoaders()
     fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
-    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+    fake_utils.API_ENDPOINT = "https://old.test/api/v1"
 
     class FakeBaseObjectOrm:
-        ROOT_URL = "https://old.test/orm/api"
+        ROOT_URL = "https://old.test/api/v1"
 
     class FakeDataNodeStorage:
-        ROOT_URL = "https://old.test/orm/api/ts_manager/dynamic_table"
+        ROOT_URL = "https://old.test/api/v1/time-index-meta-tables"
 
         @classmethod
         def column_search(cls, q, **filters):
@@ -4740,13 +4740,13 @@ def test_refresh_data_node_storage_search_index_uses_client_model(cli_mod, monke
 
     fake_utils.loaders = FakeLoaders()
     fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
-    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+    fake_utils.API_ENDPOINT = "https://old.test/api/v1"
 
     class FakeBaseObjectOrm:
-        ROOT_URL = "https://old.test/orm/api"
+        ROOT_URL = "https://old.test/api/v1"
 
     class FakeDataNodeStorage:
-        ROOT_URL = "https://old.test/orm/api/ts_manager/dynamic_table"
+        ROOT_URL = "https://old.test/api/v1/time-index-meta-tables"
 
         @classmethod
         def get(cls, uid=None, timeout=None, **filters):
@@ -4802,13 +4802,13 @@ def test_delete_data_node_storage_uses_client_model(cli_mod, monkeypatch):
 
     fake_utils.loaders = FakeLoaders()
     fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
-    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+    fake_utils.API_ENDPOINT = "https://old.test/api/v1"
 
     class FakeBaseObjectOrm:
-        ROOT_URL = "https://old.test/orm/api"
+        ROOT_URL = "https://old.test/api/v1"
 
     class FakeDataNodeStorage:
-        ROOT_URL = "https://old.test/orm/api/ts_manager/dynamic_table"
+        ROOT_URL = "https://old.test/api/v1/time-index-meta-tables"
 
         @classmethod
         def get(cls, uid=None, timeout=None, **filters):
@@ -4900,13 +4900,13 @@ def test_list_data_node_storage_users_can_view_uses_client_model(cli_mod, monkey
 
     fake_utils.loaders = FakeLoaders()
     fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
-    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+    fake_utils.API_ENDPOINT = "https://old.test/api/v1"
 
     class FakeBaseObjectOrm:
-        ROOT_URL = "https://old.test/orm/api"
+        ROOT_URL = "https://old.test/api/v1"
 
     class FakeDataNodeStorage:
-        ROOT_URL = "https://old.test/orm/api/ts_manager/dynamic_table"
+        ROOT_URL = "https://old.test/api/v1/time-index-meta-tables"
 
         @classmethod
         def get(cls, uid=None, timeout=None, **filters):
@@ -4977,13 +4977,13 @@ def test_add_data_node_storage_user_to_edit_uses_client_model(cli_mod, monkeypat
 
     fake_utils.loaders = FakeLoaders()
     fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
-    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+    fake_utils.API_ENDPOINT = "https://old.test/api/v1"
 
     class FakeBaseObjectOrm:
-        ROOT_URL = "https://old.test/orm/api"
+        ROOT_URL = "https://old.test/api/v1"
 
     class FakeDataNodeStorage:
-        ROOT_URL = "https://old.test/orm/api/ts_manager/dynamic_table"
+        ROOT_URL = "https://old.test/api/v1/time-index-meta-tables"
 
         @classmethod
         def get(cls, uid=None, timeout=None, **filters):
@@ -5073,25 +5073,25 @@ def test_get_logged_user_details_uses_client_model(cli_mod, monkeypatch):
 
     fake_utils.loaders = FakeLoaders()
     fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
-    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+    fake_utils.API_ENDPOINT = "https://old.test/api/v1"
     fake_utils.AUTH_ENDPOINT = "https://old.test"
 
     def _set_mainsequence_endpoint(endpoint):
         normalized = endpoint.rstrip("/")
         fake_utils.MAINSEQUENCE_ENDPOINT = normalized
-        fake_utils.API_ENDPOINT = f"{normalized}/orm/api"
+        fake_utils.API_ENDPOINT = f"{normalized}/api/v1"
         fake_utils.AUTH_ENDPOINT = normalized
         captured["endpoint"] = normalized
 
     fake_utils.set_mainsequence_endpoint = _set_mainsequence_endpoint
 
     class FakeBaseObjectOrm:
-        ROOT_URL = "https://old.test/orm/api"
+        ROOT_URL = "https://old.test/api/v1"
 
     fake_headers = FakeHeadersContext()
 
     class FakeUser:
-        ROOT_URL = "https://old.test/orm/api/user/user"
+        ROOT_URL = "https://old.test/api/v1/users"
 
         @classmethod
         def get_logged_user(cls):
@@ -5118,7 +5118,7 @@ def test_get_logged_user_details_uses_client_model(cli_mod, monkeypatch):
     out = api_mod.get_logged_user_details()
     assert captured["endpoint"] == "https://backend.test"
     assert fake_utils.MAINSEQUENCE_ENDPOINT == "https://backend.test"
-    assert fake_utils.API_ENDPOINT == "https://backend.test/orm/api"
+    assert fake_utils.API_ENDPOINT == "https://backend.test/api/v1"
     assert fake_utils.AUTH_ENDPOINT == "https://backend.test"
     assert captured["jwt"] == ("acc", "ref")
     assert captured["headers_set"] == {"X-User-UID": "user-uid-7", "Authorization": "Bearer acc"}
@@ -5152,13 +5152,13 @@ def test_search_projects_uses_client_model(cli_mod, monkeypatch):
 
     fake_utils.loaders = FakeLoaders()
     fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
-    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+    fake_utils.API_ENDPOINT = "https://old.test/api/v1"
 
     class FakeBaseObjectOrm:
-        ROOT_URL = "https://old.test/orm/api"
+        ROOT_URL = "https://old.test/api/v1"
 
     class FakeProject:
-        ROOT_URL = "https://old.test/orm/api/pods/projects"
+        ROOT_URL = "https://old.test/api/v1/projects"
 
         @classmethod
         def quick_search(cls, q, *, limit=20, timeout=None):
@@ -5238,13 +5238,13 @@ def test_create_project_job_uses_client_model_task_schedule(cli_mod, monkeypatch
 
     fake_utils.loaders = FakeLoaders()
     fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
-    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+    fake_utils.API_ENDPOINT = "https://old.test/api/v1"
 
     class FakeBaseObjectOrm:
-        ROOT_URL = "https://old.test/orm/api"
+        ROOT_URL = "https://old.test/api/v1"
 
     class FakeJob:
-        ROOT_URL = "https://old.test/orm/api/pods/job"
+        ROOT_URL = "https://old.test/api/v1/jobs"
 
         @classmethod
         def create(
@@ -5339,13 +5339,13 @@ def test_schedule_batch_project_jobs_uses_client_model(cli_mod, monkeypatch, tmp
 
     fake_utils.loaders = FakeLoaders()
     fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
-    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+    fake_utils.API_ENDPOINT = "https://old.test/api/v1"
 
     class FakeBaseObjectOrm:
-        ROOT_URL = "https://old.test/orm/api"
+        ROOT_URL = "https://old.test/api/v1"
 
     class FakeJob:
-        ROOT_URL = "https://old.test/orm/api/pods/job"
+        ROOT_URL = "https://old.test/api/v1/jobs"
 
         @classmethod
         def bulk_get_or_create(cls, *, yaml_file, project_id, strict=False, timeout=None):
@@ -5416,7 +5416,7 @@ def test_create_project_does_not_send_project_visible(cli_mod, monkeypatch):
     )
 
     assert captured["method"] == "POST"
-    assert captured["api_path"] == "/orm/api/pods/projects/"
+    assert captured["api_path"] == "/api/v1/projects/"
     assert captured["body"] == {
         "project_name": "demo-project",
         "project_type": "python",
@@ -5451,13 +5451,13 @@ def test_run_project_job_uses_client_model(cli_mod, monkeypatch):
 
     fake_utils.loaders = FakeLoaders()
     fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
-    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+    fake_utils.API_ENDPOINT = "https://old.test/api/v1"
 
     class FakeBaseObjectOrm:
-        ROOT_URL = "https://old.test/orm/api"
+        ROOT_URL = "https://old.test/api/v1"
 
     class FakeJob:
-        ROOT_URL = "https://old.test/orm/api/pods/job"
+        ROOT_URL = "https://old.test/api/v1/jobs"
 
         @classmethod
         def get(cls, pk, timeout=None):
@@ -5521,13 +5521,13 @@ def test_list_project_job_runs_uses_client_model(cli_mod, monkeypatch):
 
     fake_utils.loaders = FakeLoaders()
     fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
-    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+    fake_utils.API_ENDPOINT = "https://old.test/api/v1"
 
     class FakeBaseObjectOrm:
-        ROOT_URL = "https://old.test/orm/api"
+        ROOT_URL = "https://old.test/api/v1"
 
     class FakeJobRun:
-        ROOT_URL = "https://old.test/orm/api/pods/job-run"
+        ROOT_URL = "https://old.test/api/v1/job-runs"
 
         @classmethod
         def filter(cls, timeout=None, **kwargs):
@@ -5587,13 +5587,13 @@ def test_get_project_job_run_logs_uses_client_model(cli_mod, monkeypatch):
 
     fake_utils.loaders = FakeLoaders()
     fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
-    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+    fake_utils.API_ENDPOINT = "https://old.test/api/v1"
 
     class FakeBaseObjectOrm:
-        ROOT_URL = "https://old.test/orm/api"
+        ROOT_URL = "https://old.test/api/v1"
 
     class FakeJobRun:
-        ROOT_URL = "https://old.test/orm/api/pods/job-run"
+        ROOT_URL = "https://old.test/api/v1/job-runs"
 
         @classmethod
         def get(cls, pk, timeout=None):

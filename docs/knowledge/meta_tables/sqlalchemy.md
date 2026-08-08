@@ -179,7 +179,7 @@ than a generic relational MetaTable. It inherits the platform-managed MetaTable
 authoring behavior, but registers through:
 
 ```text
-/orm/api/ts_manager/dynamic_table/register/
+/api/v1/time-index-meta-tables/register/
 ```
 
 The client sends only the explicit time-indexed table contract:

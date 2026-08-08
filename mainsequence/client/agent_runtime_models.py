@@ -224,7 +224,7 @@ def _join_runtime_url(rpc_url: str, runtime_path: str) -> str:
 
 
 class Agent(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
-    ENDPOINT: ClassVar[str] = "agents/v1/agents"
+    ENDPOINT: ClassVar[str] = "agents"
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]] | None] = {
         "uid": ["exact", "in"],
         "agent_type": ["exact"],
@@ -359,7 +359,7 @@ class Agent(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
         Get an existing session by UID, or get/create one by handle for this Agent.
 
         Hits:
-            POST <detail_url>sessions/get_or_create_session/
+            POST <detail_url>sessions/get-or-create-session/
 
         Request contract:
         - Send exactly one lookup key: `session_uid` or `handle_unique_id`.
@@ -393,7 +393,7 @@ class Agent(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
                 if value is not None:
                     body[key] = str(value)
 
-        url = f"{self.get_detail_url()}sessions/get_or_create_session/"
+        url = f"{self.get_detail_url()}sessions/get-or-create-session/"
         payload = {"json": serialize_to_json(body)}
         response = make_request(
             s=self.build_session(),
@@ -413,7 +413,7 @@ class Agent(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
 
 
 class CodingAgentService(BaseObjectOrm, BasePydanticModel):
-    ENDPOINT: ClassVar[str] = "agents/v1/coding-agent-services"
+    ENDPOINT: ClassVar[str] = "coding-agent-services"
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]] | None] = {
         "uid": ["exact", "in"],
         "agent_uid": ["exact"],
@@ -750,7 +750,7 @@ AgentSessionInsights = PiAgentSessionInsights | TauAgentSessionInsights
 
 
 class AgentSession(BaseObjectOrm, BasePydanticModel):
-    ENDPOINT: ClassVar[str] = "agents/v1/sessions"
+    ENDPOINT: ClassVar[str] = "agent-sessions"
     _RUNTIME_ACCESS_CACHE: ClassVar[dict[str, tuple[float | None, AgentSessionRuntimeAccess]]] = {}
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]] | None] = {
         "uid": ["exact", "in"],
@@ -1092,7 +1092,7 @@ class AgentSession(BaseObjectOrm, BasePydanticModel):
     ) -> AgentSessionRuntimeAccess:
         """
         Hits:
-            POST <object_url>/<session_uid>/resolve_runtime_access/
+            POST <object_url>/<session_uid>/resolve-runtime-access/
 
         Server behavior:
         - resolves the coding-agent runtime that owns the session
@@ -1109,7 +1109,7 @@ class AgentSession(BaseObjectOrm, BasePydanticModel):
 
         body: dict[str, Any] = {}
         payload: dict[str, Any] = {"json": serialize_to_json(body)}
-        url = f"{cls.get_object_url()}/{session_uid}/resolve_runtime_access/"
+        url = f"{cls.get_object_url()}/{session_uid}/resolve-runtime-access/"
         response = make_request(
             s=cls.build_session(),
             loaders=cls.LOADERS,

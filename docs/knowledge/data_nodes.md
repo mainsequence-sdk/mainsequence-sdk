@@ -605,7 +605,7 @@ This is for inspection and diagnostics on the storage that already exists. It is
 
 The SDK uses:
 
-- `POST /orm/api/ts_manager/dynamic_table/{data_node_storage_uid}/run_query/`
+- `POST /api/v1/time-index-meta-tables/{data_node_storage_uid}/run-query/`
 
 Request contract:
 
@@ -666,7 +666,7 @@ This is not arbitrary range deletion:
 
 The SDK uses:
 
-- `POST /orm/api/ts_manager/dynamic_table/{data_node_storage_uid}/delete_after_date/`
+- `POST /api/v1/time-index-meta-tables/{data_node_storage_uid}/delete-after-date/`
 
 Use this for rollback-style cleanup when a bad tail load or backfill needs to be removed.
 
