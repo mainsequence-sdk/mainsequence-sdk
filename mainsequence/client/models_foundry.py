@@ -526,7 +526,7 @@ class ProjectBranch(BasePydanticModel, BaseObjectOrm):
             s=type(self).build_session(),
             loaders=type(self).LOADERS,
             r_type="POST",
-            url=self._action_url("add_deploy_key"),
+            url=self._action_url("add-deploy-key"),
             payload={"json": {"key_title": key_title, "public_key": public_key}},
             time_out=timeout,
         )

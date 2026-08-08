@@ -80,11 +80,11 @@ def _normalize_api_path(p: str) -> str:
     Only allow calls to known API namespaces to avoid accidental SSRF/path misuse.
 
     Allowed prefixes:
-        /api, /auth
+        /api/v1, /auth
     """
     p = "/" + (p or "").lstrip("/")
-    if not re.match(r"^/(api|auth)(?:/|\Z)", p):
-        raise ApiError("Only /api/* and /auth/* are allowed")
+    if not re.match(r"^/(?:api/v1|auth)(?:/|\Z)", p):
+        raise ApiError("Only /api/v1/* and /auth/* are allowed")
     return p
 
 
@@ -1013,7 +1013,7 @@ def list_organization_teams(
 
 
 def get_organization_team(
-    team_id: int | str,
+    team_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -1024,13 +1024,13 @@ def get_organization_team(
         team = _run_sdk_model_operation(
             module_name="mainsequence.client.models_user",
             class_name="Team",
-            operation=lambda ClientTeam: ClientTeam.get(pk=int(team_id), timeout=timeout),
+            operation=lambda ClientTeam: ClientTeam.get_by_uid(str(team_uid), timeout=timeout),
         )
         return _sdk_object_to_dict(team)
     except Exception as e:
         err_name = type(e).__name__
         if err_name == "NotFoundError":
-            raise ApiError(f"Team not found: {team_id}") from e
+            raise ApiError(f"Team not found: {team_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
         raise ApiError(f"Organization team fetch failed: {e}") from e
@@ -1063,7 +1063,7 @@ def create_organization_team(
 
 
 def update_organization_team(
-    team_id: int | str,
+    team_uid: str,
     *,
     name: str | None = None,
     description: str | None = None,
@@ -1089,7 +1089,9 @@ def update_organization_team(
         team = _run_sdk_model_operation(
             module_name="mainsequence.client.models_user",
             class_name="Team",
-            operation=lambda ClientTeam: ClientTeam.get(pk=int(team_id), timeout=timeout).patch(
+            operation=lambda ClientTeam: ClientTeam.get_by_uid(
+                str(team_uid), timeout=timeout
+            ).patch(
                 **updates
             ),
         )
@@ -1097,14 +1099,14 @@ def update_organization_team(
     except Exception as e:
         err_name = type(e).__name__
         if err_name == "NotFoundError":
-            raise ApiError(f"Team not found: {team_id}") from e
+            raise ApiError(f"Team not found: {team_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
         raise ApiError(f"Organization team update failed: {e}") from e
 
 
 def delete_organization_team(
-    team_id: int | str,
+    team_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -1114,7 +1116,7 @@ def delete_organization_team(
     try:
 
         def _delete(ClientTeam):
-            team = ClientTeam.get(pk=int(team_id), timeout=timeout)
+            team = ClientTeam.get_by_uid(str(team_uid), timeout=timeout)
             payload = _sdk_object_to_dict(team)
             team.delete(timeout=timeout)
             return payload
@@ -1127,7 +1129,7 @@ def delete_organization_team(
     except Exception as e:
         err_name = type(e).__name__
         if err_name == "NotFoundError":
-            raise ApiError(f"Team not found: {team_id}") from e
+            raise ApiError(f"Team not found: {team_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
         raise ApiError(f"Organization team deletion failed: {e}") from e
@@ -1632,60 +1634,14 @@ def remove_agent_team_from_edit(
     )
 
 
-def list_agent_runs(
-    *,
-    timeout: int | None = None,
-    filters: dict[str, Any] | None = None,
-) -> list[dict[str, Any]]:
+def get_project(project_uid: str) -> dict:
     """
-    List agent runs via SDK client model.
+    Fetch a single project by public UID.
     """
-    try:
-        payload = _run_sdk_model_operation(
-            module_name="mainsequence.client.agent_runtime_models",
-            class_name="AgentRun",
-            operation=lambda ClientAgentRun: ClientAgentRun.filter(
-                timeout=timeout, **(filters or {})
-            ),
-        )
-        return [_sdk_object_to_dict(item) for item in list(payload or [])]
-    except Exception as e:
-        if isinstance(e, (ApiError, NotLoggedIn)):
-            raise
-        raise ApiError(f"Agent runs fetch failed: {e}") from e
-
-
-def get_agent_run(
-    agent_run_id: int | str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    """
-    Retrieve one agent run via SDK client model.
-    """
-    try:
-        agent_run = _run_sdk_model_operation(
-            module_name="mainsequence.client.agent_runtime_models",
-            class_name="AgentRun",
-            operation=lambda ClientAgentRun: ClientAgentRun.get(
-                pk=int(agent_run_id), timeout=timeout
-            ),
-        )
-        return _sdk_object_to_dict(agent_run)
-    except Exception as e:
-        err_name = type(e).__name__
-        if err_name == "NotFoundError":
-            raise ApiError(f"Agent run not found: {agent_run_id}") from e
-        if isinstance(e, (ApiError, NotLoggedIn)):
-            raise
-        raise ApiError(f"Agent run fetch failed: {e}") from e
-
-
-def get_project(project_id: int | str) -> dict:
-    """
-    Fetch a single project by public reference.
-    """
-    r = authed("GET", f"/api/v1/projects/{project_id}/")
+    normalized_uid = str(project_uid).strip()
+    if not normalized_uid:
+        raise ApiError("Project UID is required.")
+    r = authed("GET", f"/api/v1/projects/{normalized_uid}/")
     if not r.ok:
         msg = r.text or ""
         try:
@@ -2082,7 +2038,7 @@ def get_project_data_node_updates(
             elif hasattr(u, "model_dump"):
                 out.append(u.model_dump())
             else:
-                out.append({"id": getattr(u, "id", None)})
+                out.append({"uid": getattr(u, "uid", None)})
         return out
 
     except Exception as e:
@@ -2192,7 +2148,7 @@ def create_project_image(
             return created
         if hasattr(created, "model_dump"):
             return created.model_dump()
-        return {"id": getattr(created, "id", None)}
+        return {"uid": getattr(created, "uid", None)}
 
     except Exception as e:
         err_name = type(e).__name__
@@ -2300,7 +2256,7 @@ def list_project_images(
             elif hasattr(image, "model_dump"):
                 out.append(image.model_dump())
             else:
-                out.append({"id": getattr(image, "id", None)})
+                out.append({"uid": getattr(image, "uid", None)})
         return out
 
     except Exception as e:
@@ -2399,7 +2355,7 @@ def _normalize_release_kind_value(value: Any) -> str | None:
 
 def get_resource_release(
     *,
-    release_id: int | str,
+    release_uid: str,
     expected_release_kind: str | None = None,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -2408,19 +2364,19 @@ def get_resource_release(
             module_name="mainsequence.client.models_helpers",
             class_name="ResourceRelease",
             operation=lambda ClientResourceRelease: ClientResourceRelease.get(
-                pk=int(release_id),
+                pk=str(release_uid),
                 timeout=timeout,
             ),
         )
         payload = _sdk_object_to_dict(release)
         actual_kind = _normalize_release_kind_value(payload.get("release_kind"))
         if expected_release_kind and actual_kind != expected_release_kind:
-            raise ApiError(f"Resource release {release_id} is not {expected_release_kind}.")
+            raise ApiError(f"Resource release {release_uid} is not {expected_release_kind}.")
         return payload
     except Exception as e:
         err_name = type(e).__name__
         if err_name == "NotFoundError":
-            raise ApiError(f"Resource release not found: {release_id}") from e
+            raise ApiError(f"Resource release not found: {release_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
         raise ApiError(f"Resource release fetch failed: {e}") from e
@@ -2428,18 +2384,18 @@ def get_resource_release(
 
 def delete_resource_release(
     *,
-    release_id: int | str,
+    release_uid: str,
     expected_release_kind: str | None = None,
     timeout: int | None = None,
 ) -> dict[str, Any]:
     try:
 
         def _delete(ClientResourceRelease):
-            release = ClientResourceRelease.get(pk=int(release_id), timeout=timeout)
+            release = ClientResourceRelease.get(pk=str(release_uid), timeout=timeout)
             payload = _sdk_object_to_dict(release)
             actual_kind = _normalize_release_kind_value(payload.get("release_kind"))
             if expected_release_kind and actual_kind != expected_release_kind:
-                raise ApiError(f"Resource release {release_id} is not {expected_release_kind}.")
+                raise ApiError(f"Resource release {release_uid} is not {expected_release_kind}.")
             release.delete()
             return payload
 
@@ -2451,7 +2407,7 @@ def delete_resource_release(
     except Exception as e:
         err_name = type(e).__name__
         if err_name == "NotFoundError":
-            raise ApiError(f"Resource release not found: {release_id}") from e
+            raise ApiError(f"Resource release not found: {release_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
         raise ApiError(f"Resource release deletion failed: {e}") from e
@@ -2529,7 +2485,7 @@ def list_project_jobs(
             elif hasattr(job, "model_dump"):
                 out.append(job.model_dump())
             else:
-                out.append({"id": getattr(job, "id", None)})
+                out.append({"uid": getattr(job, "uid", None)})
         return out
 
     except Exception as e:
@@ -2648,7 +2604,7 @@ def list_project_resources(
             elif hasattr(resource, "model_dump"):
                 out.append(resource.model_dump())
             else:
-                out.append({"id": getattr(resource, "id", None)})
+                out.append({"uid": getattr(resource, "uid", None)})
         return out
 
     except Exception as e:
@@ -2693,7 +2649,6 @@ def create_project_resource_release(
     release_kind: str,
     resource_uid: str,
     related_image_uid: str | None = None,
-    readme_resource_id: int | None = None,
     cpu_request: str | int | float | None = None,
     memory_request: str | int | float | None = None,
     gpu_request: str | int | None = None,
@@ -2758,7 +2713,6 @@ def create_project_resource_release(
         resource = ClientProjectResource.get(pk=resource_uid, timeout=timeout)
         create_kwargs: dict[str, Any] = {
             "related_image_uid": related_image_uid,
-            "readme_resource_id": readme_resource_id,
             "cpu_request": cpu_request,
             "memory_request": memory_request,
             "gpu_request": gpu_request,
@@ -2784,7 +2738,7 @@ def create_project_resource_release(
             return created
         if hasattr(created, "model_dump"):
             return created.model_dump()
-        return {"id": getattr(created, "id", None)}
+        return {"uid": getattr(created, "uid", None)}
 
     except Exception as e:
         err_name = type(e).__name__
@@ -3382,9 +3336,9 @@ def _get_client_object_by_lookup(
     lookup_field: str,
     timeout: int | None = None,
 ):
-    if lookup_field == "uid":
-        return ClientObject.get_by_uid(str(object_id), timeout=timeout)
-    return ClientObject.get(pk=int(object_id), timeout=timeout)
+    if lookup_field != "uid":
+        raise ApiError(f"Unsupported public lookup field: {lookup_field}")
+    return ClientObject.get_by_uid(str(object_id), timeout=timeout)
 
 
 def _get_shareable_object_access_state(
@@ -4460,7 +4414,7 @@ def create_project_job(
             return created
         if hasattr(created, "model_dump"):
             return created.model_dump()
-        return {"id": getattr(created, "id", None)}
+        return {"uid": getattr(created, "uid", None)}
 
     except Exception as e:
         err_name = type(e).__name__
@@ -4497,128 +4451,8 @@ def create_project_job(
                 os.environ[k] = v
 
 
-def schedule_batch_project_jobs(
-    *,
-    file_path: str,
-    project_branch_uid: str,
-    strict: bool = False,
-    timeout: int | None = None,
-) -> list[dict[str, Any]] | dict[str, Any]:
-    """
-    Create or update a batch of project jobs from a YAML file via SDK client model.
-
-    Single source of truth:
-      - delegates file validation, payload normalization, and request behavior to
-        `Job.bulk_get_or_create()`
-
-    Response can be either:
-      - a list of jobs, or
-      - a summary dict with counts/results/deleted/not_deleted details from `sync_jobs`
-    """
-    tokens = get_tokens()
-    access = (tokens.get("access") or "").strip()
-    refresh = (tokens.get("refresh") or "").strip()
-    if not access:
-        raise NotLoggedIn("Not logged in.")
-
-    endpoint = backend_url().rstrip("/")
-    root_url = f"{endpoint}/api/v1"
-
-    old_env = {
-        "MAINSEQUENCE_AUTH_MODE": os.environ.get("MAINSEQUENCE_AUTH_MODE"),
-        "MAINSEQUENCE_ACCESS_TOKEN": os.environ.get("MAINSEQUENCE_ACCESS_TOKEN"),
-        "MAINSEQUENCE_REFRESH_TOKEN": os.environ.get("MAINSEQUENCE_REFRESH_TOKEN"),
-        "MAINSEQUENCE_ENDPOINT": os.environ.get("MAINSEQUENCE_ENDPOINT"),
-        "MAIN_SEQUENCE_PROJECT_UID": os.environ.get("MAIN_SEQUENCE_PROJECT_UID"),
-    }
-
-    client_utils = None
-    old_provider = None
-    old_base_root_url = None
-    old_job_root_url = None
-
-    try:
-        os.environ["MAINSEQUENCE_AUTH_MODE"] = "jwt"
-        os.environ["MAINSEQUENCE_ACCESS_TOKEN"] = access
-        if refresh:
-            os.environ["MAINSEQUENCE_REFRESH_TOKEN"] = refresh
-        else:
-            os.environ.pop("MAINSEQUENCE_REFRESH_TOKEN", None)
-        os.environ["MAINSEQUENCE_ENDPOINT"] = endpoint
-        resolved_branch_uid = resolve_project_branch_uid(project_branch_uid)
-
-        from mainsequence.client import utils as _client_utils
-        from mainsequence.client.base import BaseObjectOrm
-        from mainsequence.client.models_helpers import Job as ClientJob
-
-        client_utils = _client_utils
-        old_provider = getattr(client_utils.loaders, "provider", None)
-        old_base_root_url = BaseObjectOrm.ROOT_URL
-        old_job_root_url = getattr(ClientJob, "ROOT_URL", None)
-
-        _set_client_utils_endpoint(client_utils, endpoint)
-        client_utils.loaders.use_jwt(access=access, refresh=refresh or None)
-
-        BaseObjectOrm.ROOT_URL = root_url
-        ClientJob.ROOT_URL = root_url
-
-        created = ClientJob.bulk_get_or_create(
-            yaml_file=file_path,
-            project_branch_uid=resolved_branch_uid,
-            strict=bool(strict),
-            timeout=timeout,
-        )
-        if isinstance(created, list):
-            out: list[dict[str, Any]] = []
-            for item in created:
-                if hasattr(item, "model_dump"):
-                    out.append(item.model_dump())
-                elif isinstance(item, dict):
-                    out.append(item)
-                else:
-                    out.append({"id": getattr(item, "id", None)})
-            return out
-        if isinstance(created, dict):
-            return created
-        return {"result": created}
-
-    except Exception as e:
-        err_name = type(e).__name__
-        if err_name in {"AuthenticationError", "PermissionDeniedError"}:
-            raise NotLoggedIn(str(e) or "Not logged in.") from e
-        if err_name == "NotFoundError":
-            raise ApiError(f"ProjectBranch not found: {project_branch_uid}") from e
-        raise ApiError(f"Project batch job scheduling failed: {e}") from e
-    finally:
-        if client_utils is not None:
-            try:
-                client_utils.loaders.provider = old_provider
-            except Exception:
-                pass
-        if old_base_root_url is not None:
-            try:
-                from mainsequence.client.base import BaseObjectOrm
-
-                BaseObjectOrm.ROOT_URL = old_base_root_url
-            except Exception:
-                pass
-        if old_job_root_url is not None:
-            try:
-                from mainsequence.client.models_helpers import Job as ClientJob
-
-                ClientJob.ROOT_URL = old_job_root_url
-            except Exception:
-                pass
-
-        for k, v in old_env.items():
-            if v is None:
-                os.environ.pop(k, None)
-            else:
-                os.environ[k] = v
-
-
 def get_project_job(
-    job_id: int | str,
+    job_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -4629,20 +4463,20 @@ def get_project_job(
         job = _run_sdk_model_operation(
             module_name="mainsequence.client.models_helpers",
             class_name="Job",
-            operation=lambda ClientJob: ClientJob.get(pk=int(job_id), timeout=timeout),
+            operation=lambda ClientJob: ClientJob.get_by_uid(str(job_uid), timeout=timeout),
         )
         return _sdk_object_to_dict(job)
     except Exception as e:
         err_name = type(e).__name__
         if err_name == "NotFoundError":
-            raise ApiError(f"Job not found: {job_id}") from e
+            raise ApiError(f"Job not found: {job_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
         raise ApiError(f"Project job fetch failed: {e}") from e
 
 
 def run_project_job(
-    job_id: int | str,
+    job_uid: str,
     *,
     command_args: list[str] | None = None,
     timeout: int | None = None,
@@ -4698,7 +4532,7 @@ def run_project_job(
         BaseObjectOrm.ROOT_URL = root_url
         ClientJob.ROOT_URL = root_url
 
-        job = ClientJob.get(pk=int(job_id), timeout=timeout)
+        job = ClientJob.get_by_uid(str(job_uid), timeout=timeout)
         payload = job.run_job(timeout=timeout, command_args=command_args)
         effective_tokens: list[str] = []
         execution_path = str(getattr(job, "execution_path", "") or "").strip()
@@ -4723,7 +4557,7 @@ def run_project_job(
             if command_args is not None:
                 payload.setdefault("command_args", list(command_args))
             return payload
-        out = {"job_id": int(job_id)}
+        out = {"job_uid": str(job_uid)}
         if effective_run:
             out["effective_run"] = effective_run
         if command_args is not None:
@@ -4735,7 +4569,7 @@ def run_project_job(
         if err_name in {"AuthenticationError", "PermissionDeniedError"}:
             raise NotLoggedIn(str(e) or "Not logged in.") from e
         if err_name == "NotFoundError":
-            raise ApiError(f"Job not found: {job_id}") from e
+            raise ApiError(f"Job not found: {job_uid}") from e
         raise ApiError(f"Project job run failed: {e}") from e
     finally:
         if client_utils is not None:
@@ -4767,7 +4601,7 @@ def run_project_job(
 
 def list_project_job_runs(
     *,
-    job_id: int | str,
+    job_uid: str,
     filters: dict[str, Any] | None = None,
     timeout: int | None = None,
 ) -> list[dict[str, Any]]:
@@ -4823,7 +4657,7 @@ def list_project_job_runs(
         ClientJobRun.ROOT_URL = root_url
 
         merged_filters = dict(filters or {})
-        merged_filters["job__id"] = [int(job_id)]
+        merged_filters["job__uid"] = [str(job_uid)]
         runs = ClientJobRun.filter(timeout=timeout, **merged_filters)
         out: list[dict[str, Any]] = []
         for run in runs:
@@ -4832,7 +4666,7 @@ def list_project_job_runs(
             elif hasattr(run, "model_dump"):
                 out.append(run.model_dump())
             else:
-                out.append({"id": getattr(run, "id", None)})
+                out.append({"uid": getattr(run, "uid", None)})
         return out
 
     except Exception as e:
@@ -4840,7 +4674,7 @@ def list_project_job_runs(
         if err_name in {"AuthenticationError", "PermissionDeniedError"}:
             raise NotLoggedIn(str(e) or "Not logged in.") from e
         if err_name == "NotFoundError":
-            raise ApiError(f"Job not found: {job_id}") from e
+            raise ApiError(f"Job not found: {job_uid}") from e
         raise ApiError(f"Project job runs fetch failed: {e}") from e
     finally:
         if client_utils is not None:
@@ -5198,15 +5032,15 @@ def create_project(
     return data
 
 
-def delete_project(project_id: int | str) -> dict[str, Any] | None:
+def delete_project(project_uid: str) -> dict[str, Any] | None:
     """
-    Delete a project by public reference.
+    Delete a project by public UID.
 
     Mirrors backend behavior:
       - DELETE /api/v1/projects/{uid}/
     """
-    project_uid = resolve_project_uid(project_id)
-    path = f"/api/v1/projects/{project_uid}/"
+    normalized_uid = resolve_project_uid(project_uid)
+    path = f"/api/v1/projects/{normalized_uid}/"
 
     r = authed("DELETE", path)
     if not r.ok:

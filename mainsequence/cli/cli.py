@@ -35,7 +35,6 @@ import shlex
 import shutil
 import subprocess
 import sys
-import tempfile
 import time
 import uuid
 from decimal import ROUND_UP, Decimal
@@ -44,7 +43,6 @@ from textwrap import dedent
 
 import click
 import typer
-import yaml
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.version import InvalidVersion, Version
 
@@ -108,7 +106,6 @@ from .api import (
     delete_secret,
     fetch_platform_project_skill_catalog,
     get_agent,
-    get_agent_run,
     get_agent_session,
     get_constant,
     get_current_user_profile,
@@ -125,7 +122,6 @@ from .api import (
     get_projects,
     get_resource_release,
     get_secret,
-    list_agent_runs,
     list_agent_sessions,
     list_agent_users_can_edit,
     list_agent_users_can_view,
@@ -191,7 +187,6 @@ from .api import (
     run_meta_table_query,
     run_project_job,
     safe_slug,
-    schedule_batch_project_jobs,
     search_projects,
     semantic_search_agents,
     send_agent_session_a2a_message,
@@ -328,7 +323,6 @@ app = typer.Typer(
 )
 
 agent = typer.Typer(help="Agent commands")
-agent_run_group = typer.Typer(help="Agent runtime commands")
 agent_session_group = typer.Typer(help="Agent session commands")
 agent_session_a2a_group = typer.Typer(help="Agent session A2A commands")
 constants = typer.Typer(help="Constant commands")
@@ -349,11 +343,8 @@ sdk = typer.Typer(help="SDK utilities (latest version, status)")
 skills = typer.Typer(help="Installed scaffold skill commands")
 
 app.add_typer(agent, name="agent")
-agent.add_typer(agent_run_group, name="run")
 agent.add_typer(agent_session_group, name="session")
 agent_session_group.add_typer(agent_session_a2a_group, name="a2a")
-app.add_typer(agent_run_group, name="agent_runtime", hidden=True)
-app.add_typer(agent_run_group, name="agent-runtime", hidden=True)
 app.add_typer(constants, name="constants")
 app.add_typer(secrets, name="secrets")
 app.add_typer(organization, name="organization")
@@ -400,13 +391,13 @@ JOB_DEFAULT_MAX_RUNTIME_SECONDS = 86400
 JOB_ALLOWED_INTERVAL_PERIODS = ("seconds", "minutes", "hours", "days")
 AGENT_MODEL_REF = "mainsequence.client.agent_runtime_models.Agent"
 AGENT_SESSION_MODEL_REF = "mainsequence.client.agent_runtime_models.AgentSession"
-AGENT_RUN_MODEL_REF = "mainsequence.client.agent_runtime_models.AgentRun"
 JOB_MODEL_REF = "mainsequence.client.models_helpers.Job"
 INTERVAL_SCHEDULE_MODEL_REF = "mainsequence.client.models_helpers.IntervalSchedule"
 CRONTAB_SCHEDULE_MODEL_REF = "mainsequence.client.models_helpers.CrontabSchedule"
 JOB_RUN_MODEL_REF = "mainsequence.client.models_helpers.JobRun"
 PROJECT_IMAGE_MODEL_REF = "mainsequence.client.models_foundry.ProjectImage"
 PROJECT_RESOURCE_MODEL_REF = "mainsequence.client.models_helpers.ProjectResource"
+RESOURCE_RELEASE_MODEL_REF = "mainsequence.client.models_helpers.ResourceRelease"
 DATA_NODE_STORAGE_MODEL_REF = "mainsequence.client.metatables.TimeIndexMetaTable"
 META_TABLE_MODEL_REF = "mainsequence.client.metatables.MetaTable"
 CONSTANT_MODEL_REF = "mainsequence.client.models_foundry.Constant"
@@ -1405,24 +1396,6 @@ def _merge_cli_filter_alias(
     return merged
 
 
-def _prompt_select_id(
-    *,
-    title: str,
-    prompt_label: str,
-    items: list[dict],
-    rows: list[list[str]],
-) -> int:
-    if not items:
-        raise RuntimeError(f"No options available for {prompt_label}.")
-    print_table(title, ["ID", "Name", "Details"], rows)
-    default_id = str(items[0].get("id"))
-    picked = typer.prompt(prompt_label, default=default_id).strip()
-    try:
-        return int(picked)
-    except ValueError as e:
-        raise RuntimeError(f"Invalid {prompt_label}: {picked}") from e
-
-
 def _require_item_uid(item: dict, *, prompt_label: str) -> str:
     uid = str(item.get("uid") or "").strip()
     if not uid:
@@ -1445,131 +1418,6 @@ def _prompt_select_uid(
     if not picked:
         raise RuntimeError(f"Invalid {prompt_label}: {picked}")
     return picked
-
-
-def _prepare_batch_jobs_file_with_selected_related_image(
-    *,
-    project_id: str,
-    project_dir: pathlib.Path,
-    batch_file: pathlib.Path,
-    timeout: int | None,
-) -> pathlib.Path:
-    try:
-        raw_config = yaml.safe_load(batch_file.read_text(encoding="utf-8")) or {}
-    except Exception:
-        return batch_file
-
-    jobs_config = raw_config.get("jobs") if isinstance(raw_config, dict) else None
-    if not isinstance(jobs_config, list):
-        return batch_file
-
-    if not jobs_config:
-        return batch_file
-    for raw_job in jobs_config:
-        if not isinstance(raw_job, dict):
-            return batch_file
-
-    project_branch_uid = _resolve_project_branch_uid_for_command(
-        project_id,
-        project_dir=project_dir,
-    )
-    project_images = list_project_images(
-        related_project_branch_uid=project_branch_uid,
-        timeout=timeout,
-    )
-    if not project_images:
-        raise RuntimeError(
-            "No project images are available. Create a project image before scheduling batch jobs."
-        )
-
-    rows = [
-        [
-            str(img.get("uid") or "-"),
-            str(img.get("project_repo_hash") or "-"),
-            _format_base_image_label(img.get("base_image")),
-        ]
-        for img in project_images
-    ]
-    warn(
-        f"All {len(jobs_config)} job(s) in {batch_file.name} will be scheduled on one project image. "
-        "Select the image to use for this batch."
-    )
-    related_image_uid = _prompt_select_uid(
-        title="Available Project Images",
-        prompt_label="Related image UID",
-        items=project_images,
-        rows=rows,
-    )
-    selected_image = _find_image_by_uid(project_images, related_image_uid)
-    if selected_image is None:
-        raise RuntimeError(f"Related image not found: {related_image_uid}")
-
-    patched_config = dict(raw_config)
-    patched_jobs: list[dict] = []
-    overwritten_count = 0
-    for raw_job in jobs_config:
-        job_copy = dict(raw_job)
-        existing_image_ref = job_copy.get("related_image_uid")
-        if existing_image_ref in (None, ""):
-            existing_image_ref = job_copy.get("related_image")
-        if existing_image_ref not in (None, "") and str(existing_image_ref) != str(
-            related_image_uid
-        ):
-            overwritten_count += 1
-        job_copy.pop("related_image", None)
-        job_copy["related_image_uid"] = related_image_uid
-        patched_jobs.append(job_copy)
-    patched_config["jobs"] = patched_jobs
-
-    with tempfile.NamedTemporaryFile(
-        mode="w",
-        encoding="utf-8",
-        suffix=".yaml",
-        prefix=f"{batch_file.stem}.",
-        delete=False,
-    ) as tmp_file:
-        yaml.safe_dump(patched_config, tmp_file, sort_keys=False)
-        temp_path = pathlib.Path(tmp_file.name)
-
-    if overwritten_count:
-        warn(
-            f"Overriding related_image_uid for {overwritten_count} job(s) so the entire batch uses image {related_image_uid}."
-        )
-    info(f"Using project image {related_image_uid} for all {len(jobs_config)} job(s) in this batch.")
-    return temp_path
-
-
-def _confirm_schedule_batch_jobs_submission(batch_file: pathlib.Path) -> bool:
-    prompt_text = f"Schedule jobs from {batch_file.name}?"
-    try:
-        raw_config = yaml.safe_load(batch_file.read_text(encoding="utf-8")) or {}
-    except Exception:
-        raw_config = {}
-
-    jobs_config = raw_config.get("jobs") if isinstance(raw_config, dict) else None
-    if isinstance(jobs_config, list) and jobs_config:
-        image_uids: list[str] = []
-        for raw_job in jobs_config:
-            if not isinstance(raw_job, dict):
-                continue
-            image_ref = raw_job.get("related_image_uid")
-            if image_ref in (None, ""):
-                image_ref = raw_job.get("related_image")
-            if image_ref not in (None, ""):
-                image_uids.append(str(image_ref))
-        unique_image_uids = sorted(set(image_uids))
-        if len(unique_image_uids) == 1:
-            prompt_text = (
-                f"This will schedule all {len(jobs_config)} job(s) on the same image "
-                f"({unique_image_uids[0]}). Continue?"
-            )
-        else:
-            prompt_text = f"This will schedule {len(jobs_config)} job(s). Continue?"
-
-    if not typer.confirm(prompt_text, default=False):
-        info("Cancelled.")
-        return False
-    return True
 
 
 def _confirm_delete_action(
@@ -1639,7 +1487,7 @@ def _format_project_image_delete_preview(image: dict[str, object]) -> list[tuple
 
 def _format_resource_release_delete_preview(release: dict[str, object]) -> list[tuple[str, str]]:
     return [
-        ("ID", str(release.get("id") or "-")),
+        ("UID", str(release.get("uid") or "-")),
         ("Release Kind", str(release.get("release_kind") or "-")),
         ("Subdomain", str(release.get("subdomain") or "-")),
         ("Resource", str(release.get("resource") or "-")),
@@ -1860,8 +1708,8 @@ def _format_data_node_storage_data_source(value) -> str:
             return display_name
         if class_type:
             return class_type
-        if value.get("id") is not None:
-            return str(value.get("id"))
+        if value.get("uid") is not None:
+            return str(value.get("uid"))
         return "-"
     if value is None:
         return "-"
@@ -1911,36 +1759,6 @@ def _format_job_schedule_summary(task_schedule) -> str:
     task_name = str(task_schedule.get("task") or "").strip()
     if prefix or task_name:
         return f"{prefix}{task_name}".strip() or "-"
-    return "-"
-
-
-def _extract_batch_job_dict(item) -> dict:
-    if isinstance(item, dict):
-        nested_job = item.get("job")
-        if isinstance(nested_job, dict):
-            return nested_job
-        return item
-    return {}
-
-
-def _format_batch_job_ref(item) -> tuple[str, str, str, str]:
-    job = _extract_batch_job_dict(item)
-    fallback_id = item.get("id") if isinstance(item, dict) else "-"
-    fallback_name = item.get("name") if isinstance(item, dict) else "-"
-    job_id = str(job.get("id") or fallback_id or "-")
-    name = str(job.get("name") or fallback_name or "-")
-    execution_path = str(job.get("execution_path") or "-")
-    app_name = str(job.get("app_name") or "-")
-    return job_id, name, execution_path, app_name
-
-
-def _format_batch_job_reason(item) -> str:
-    if not isinstance(item, dict):
-        return "-"
-    for field_name in ("reason", "detail", "message", "error"):
-        value = item.get(field_name)
-        if value not in (None, ""):
-            return str(value)
     return "-"
 
 
@@ -2386,6 +2204,7 @@ def _render_project_runtime_env_text(
         "MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET=",
         "MAINSEQUENCE_ENDPOINT=",
         "MAIN_SEQUENCE_PROJECT_UID=",
+        "MAIN_SEQUENCE_PROJECT_ID=",
         "MAINSEQUENCE_TOKEN=",
     )
     lines = [
@@ -2919,12 +2738,12 @@ def organization_github_organizations_cmd():
     if organizations:
         print_table(
             "GitHub Organizations",
-            ["ID", "Name", "Login"],
+            ["UID", "Name", "Login"],
             [
                 [
-                    str(org.get("id") or "-"),
-                    str(org.get("name") or "-"),
-                    str(org.get("login") or org.get("slug") or "-"),
+                    str(org.get("uid") or "-"),
+                    str(org.get("display_name") or "-"),
+                    str(org.get("login") or "-"),
                 ]
                 for org in organizations
             ],
@@ -2965,7 +2784,7 @@ def _organization_teams_list_impl(
             member_count = len(members) if isinstance(members, list) else "-"
         rows.append(
             [
-                str(team.get("id") or "-"),
+                str(team.get("uid") or "-"),
                 str(team.get("name") or "-"),
                 str(team.get("description") or "-"),
                 str(member_count),
@@ -2974,7 +2793,9 @@ def _organization_teams_list_impl(
         )
 
     if rows:
-        print_table("Organization Teams", ["ID", "Name", "Description", "Members", "Active"], rows)
+        print_table(
+            "Organization Teams", ["UID", "Name", "Description", "Members", "Active"], rows
+        )
     else:
         info("No organization teams.")
     info(f"Total organization teams: {len(teams_payload)}")
@@ -3016,7 +2837,7 @@ def _organization_teams_create_impl(
 
 def _organization_teams_edit_impl(
     *,
-    team_id: int,
+    team_uid: str,
     name: str | None,
     description: str | None,
     is_active: bool | None,
@@ -3025,7 +2846,7 @@ def _organization_teams_edit_impl(
     _require_login()
 
     try:
-        current = get_organization_team(team_id, timeout=timeout)
+        current = get_organization_team(team_uid, timeout=timeout)
     except ApiError as e:
         error(f"Organization team fetch failed: {e}")
         raise typer.Exit(1) from e
@@ -3050,7 +2871,7 @@ def _organization_teams_edit_impl(
 
     try:
         updated = update_organization_team(
-            team_id,
+            team_uid,
             name=next_name,
             description=next_description,
             is_active=next_active,
@@ -3063,33 +2884,33 @@ def _organization_teams_edit_impl(
     if _emit_json(updated):
         return
 
-    success(f"Organization team updated: id={team_id}")
+    success(f"Organization team updated: uid={team_uid}")
     print_kv("Updated Team", _format_team_preview(updated))
 
 
 def _organization_teams_delete_impl(
     *,
-    team_id: int,
+    team_uid: str,
     timeout: int | None,
 ) -> None:
     _require_login()
 
     try:
-        team = get_organization_team(team_id, timeout=timeout)
+        team = get_organization_team(team_uid, timeout=timeout)
     except ApiError as e:
         error(f"Organization team fetch failed: {e}")
         raise typer.Exit(1) from e
 
-    verification_value = str(team.get("name") or team.get("id") or team_id)
+    verification_value = str(team.get("name") or team.get("uid") or team_uid)
     _require_delete_verification(
         preview_title="Organization Team Delete Preview",
         preview_items=_format_team_preview(team),
         verification_value=verification_value,
-        verification_label="team name" if team.get("name") else "team id",
+        verification_label="team name" if team.get("name") else "team UID",
     )
 
     try:
-        deleted = delete_organization_team(team_id, timeout=timeout)
+        deleted = delete_organization_team(team_uid, timeout=timeout)
     except ApiError as e:
         error(f"Organization team deletion failed: {e}")
         raise typer.Exit(1) from e
@@ -3097,7 +2918,7 @@ def _organization_teams_delete_impl(
     if _emit_json(deleted):
         return
 
-    success(f"Organization team deleted: id={team_id}")
+    success(f"Organization team deleted: uid={team_uid}")
     print_kv("Deleted Team", _format_team_preview(deleted))
 
 
@@ -3135,7 +2956,7 @@ def organization_teams_create_cmd(
 
 @organization_teams_group.command("edit")
 def organization_teams_edit_cmd(
-    team_id: int = typer.Argument(..., help="Team ID."),
+    team_uid: str = pydantic_argument(TEAM_MODEL_REF, "uid", ..., help="Team UID."),
     name: str | None = typer.Option(None, "--name", help="New team name."),
     description: str | None = typer.Option(None, "--description", help="New team description."),
     is_active: bool | None = typer.Option(None, "--active/--inactive", help="Set active status."),
@@ -3145,7 +2966,7 @@ def organization_teams_edit_cmd(
     Edit one organization team.
     """
     _organization_teams_edit_impl(
-        team_id=team_id,
+        team_uid=team_uid,
         name=name,
         description=description,
         is_active=is_active,
@@ -3155,46 +2976,46 @@ def organization_teams_edit_cmd(
 
 @organization_teams_group.command("delete")
 def organization_teams_delete_cmd(
-    team_id: int = typer.Argument(..., help="Team ID."),
+    team_uid: str = pydantic_argument(TEAM_MODEL_REF, "uid", ..., help="Team UID."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
     Delete one organization team.
     """
-    _organization_teams_delete_impl(team_id=team_id, timeout=timeout)
+    _organization_teams_delete_impl(team_uid=team_uid, timeout=timeout)
 
 
 @organization_teams_group.command("can_view")
 def organization_teams_can_view_cmd(
-    team_id: int = typer.Argument(..., help="Team ID."),
+    team_uid: str = pydantic_argument(TEAM_MODEL_REF, "uid", ..., help="Team UID."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     _shareable_user_list_impl(
         fetch_fn=list_team_users_can_view,
         object_label="Team",
         access_label="view",
-        object_id=team_id,
+        object_id=team_uid,
         timeout=timeout,
     )
 
 
 @organization_teams_group.command("can_edit")
 def organization_teams_can_edit_cmd(
-    team_id: int = typer.Argument(..., help="Team ID."),
+    team_uid: str = pydantic_argument(TEAM_MODEL_REF, "uid", ..., help="Team UID."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     _shareable_user_list_impl(
         fetch_fn=list_team_users_can_edit,
         object_label="Team",
         access_label="edit",
-        object_id=team_id,
+        object_id=team_uid,
         timeout=timeout,
     )
 
 
 @organization_teams_group.command("add_to_view")
 def organization_teams_add_to_view_cmd(
-    team_id: int = typer.Argument(..., help="Team ID."),
+    team_uid: str = pydantic_argument(TEAM_MODEL_REF, "uid", ..., help="Team UID."),
     user_id: int = typer.Argument(..., help="User ID to grant view access."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
@@ -3202,7 +3023,7 @@ def organization_teams_add_to_view_cmd(
         action_fn=add_team_user_to_view,
         object_label="Team",
         action_label="add_to_view",
-        object_id=team_id,
+        object_id=team_uid,
         user_id=user_id,
         timeout=timeout,
     )
@@ -3210,7 +3031,7 @@ def organization_teams_add_to_view_cmd(
 
 @organization_teams_group.command("add_to_edit")
 def organization_teams_add_to_edit_cmd(
-    team_id: int = typer.Argument(..., help="Team ID."),
+    team_uid: str = pydantic_argument(TEAM_MODEL_REF, "uid", ..., help="Team UID."),
     user_id: int = typer.Argument(..., help="User ID to grant edit access."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
@@ -3218,7 +3039,7 @@ def organization_teams_add_to_edit_cmd(
         action_fn=add_team_user_to_edit,
         object_label="Team",
         action_label="add_to_edit",
-        object_id=team_id,
+        object_id=team_uid,
         user_id=user_id,
         timeout=timeout,
     )
@@ -3226,7 +3047,7 @@ def organization_teams_add_to_edit_cmd(
 
 @organization_teams_group.command("remove_from_view")
 def organization_teams_remove_from_view_cmd(
-    team_id: int = typer.Argument(..., help="Team ID."),
+    team_uid: str = pydantic_argument(TEAM_MODEL_REF, "uid", ..., help="Team UID."),
     user_id: int = typer.Argument(..., help="User ID to remove explicit view access from."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
@@ -3234,7 +3055,7 @@ def organization_teams_remove_from_view_cmd(
         action_fn=remove_team_user_from_view,
         object_label="Team",
         action_label="remove_from_view",
-        object_id=team_id,
+        object_id=team_uid,
         user_id=user_id,
         timeout=timeout,
     )
@@ -3242,7 +3063,7 @@ def organization_teams_remove_from_view_cmd(
 
 @organization_teams_group.command("remove_from_edit")
 def organization_teams_remove_from_edit_cmd(
-    team_id: int = typer.Argument(..., help="Team ID."),
+    team_uid: str = pydantic_argument(TEAM_MODEL_REF, "uid", ..., help="Team UID."),
     user_id: int = typer.Argument(..., help="User ID to remove explicit edit access from."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
@@ -3250,7 +3071,7 @@ def organization_teams_remove_from_edit_cmd(
         action_fn=remove_team_user_from_edit,
         object_label="Team",
         action_label="remove_from_edit",
-        object_id=team_id,
+        object_id=team_uid,
         user_id=user_id,
         timeout=timeout,
     )
@@ -3542,7 +3363,7 @@ def _format_team_preview(team: dict[str, object]) -> list[tuple[str, str]]:
         member_count = len(members) if isinstance(members, list) else "-"
 
     return [
-        ("ID", str(team.get("id") or "-")),
+        ("UID", str(team.get("uid") or "-")),
         ("Name", str(team.get("name") or "-")),
         ("Description", str(team.get("description") or "-")),
         ("Organization", organization_label),
@@ -3682,52 +3503,6 @@ def _format_agent_details(agent_payload: dict[str, object]) -> list[tuple[str, s
         ("Runtime Config", _format_json_value(agent_payload.get("runtime_config"))),
         ("Configuration", _format_json_value(agent_payload.get("configuration"))),
         ("Metadata", _format_json_value(agent_payload.get("metadata"))),
-    ]
-
-
-def _format_agent_ref_label(agent_ref: object) -> str:
-    if isinstance(agent_ref, dict):
-        return str(agent_ref.get("name") or agent_ref.get("uid") or "-")
-    return str(agent_ref or "-")
-
-
-def _format_user_summary_label(user_ref: object) -> str:
-    if isinstance(user_ref, dict):
-        return str(user_ref.get("username") or user_ref.get("email") or user_ref.get("id") or "-")
-    return str(user_ref or "-")
-
-
-def _format_agent_run_preview(agent_run_payload: dict[str, object]) -> list[tuple[str, str]]:
-    return [
-        ("ID", str(agent_run_payload.get("id") or "-")),
-        ("Agent", _format_agent_ref_label(agent_run_payload.get("agent"))),
-        ("Status", str(agent_run_payload.get("status") or "-")),
-        ("Started At", str(agent_run_payload.get("started_at") or "-")),
-        ("Ended At", str(agent_run_payload.get("ended_at") or "-")),
-        ("LLM Provider", str(agent_run_payload.get("llm_provider") or "-")),
-        ("LLM Model", str(agent_run_payload.get("llm_model") or "-")),
-        ("Engine", str(agent_run_payload.get("engine_name") or "-")),
-    ]
-
-
-def _format_agent_run_details(agent_run_payload: dict[str, object]) -> list[tuple[str, str]]:
-    return [
-        ("Triggered By", _format_user_summary_label(agent_run_payload.get("triggered_by_user"))),
-        ("Parent Run", str(agent_run_payload.get("parent_run") or "-")),
-        ("Root Run", str(agent_run_payload.get("root_run") or "-")),
-        ("Spawned By Step", str(agent_run_payload.get("spawned_by_step") or "-")),
-        ("Session ID", str(agent_run_payload.get("session_id") or "-")),
-        ("Thread ID", str(agent_run_payload.get("thread_id") or "-")),
-        ("External Run ID", str(agent_run_payload.get("external_run_id") or "-")),
-        ("Input Text", str(agent_run_payload.get("input_text") or "-")),
-        ("Output Text", str(agent_run_payload.get("output_text") or "-")),
-        ("Error Detail", str(agent_run_payload.get("error_detail") or "-")),
-        (
-            "Runtime Config Snapshot",
-            _format_json_value(agent_run_payload.get("runtime_config_snapshot")),
-        ),
-        ("Usage Summary", _format_json_value(agent_run_payload.get("usage_summary"))),
-        ("Run Metadata", _format_json_value(agent_run_payload.get("run_metadata"))),
     ]
 
 
@@ -4304,74 +4079,6 @@ def _agent_session_detail_impl(
     print_kv("Agent Session Details", _format_agent_session_details(agent_session_payload))
 
 
-def _agent_run_list_impl(
-    timeout: int | None,
-    filter_entries: list[str] | None,
-    show_filters: bool,
-) -> None:
-    filters = _resolve_cli_list_filters(
-        model_ref=AGENT_RUN_MODEL_REF,
-        filter_entries=filter_entries,
-        show_filters=show_filters,
-        command_label="Agent Runs",
-    )
-    _require_login()
-
-    try:
-        agent_runs = list_agent_runs(timeout=timeout, filters=filters)
-    except ApiError as e:
-        error(f"Agent runs fetch failed: {e}")
-        raise typer.Exit(1) from e
-
-    if _emit_json(agent_runs):
-        return
-
-    rows: list[list[str]] = []
-    for agent_run_payload in agent_runs:
-        rows.append(
-            [
-                str(agent_run_payload.get("id") or "-"),
-                _format_agent_ref_label(agent_run_payload.get("agent")),
-                str(agent_run_payload.get("status") or "-"),
-                str(agent_run_payload.get("started_at") or "-"),
-                str(agent_run_payload.get("ended_at") or "-"),
-                str(agent_run_payload.get("llm_provider") or "-"),
-                str(agent_run_payload.get("llm_model") or "-"),
-                str(agent_run_payload.get("engine_name") or "-"),
-            ]
-        )
-
-    if rows:
-        print_table(
-            "Agent Runs",
-            ["ID", "Agent", "Status", "Started At", "Ended At", "Provider", "Model", "Engine"],
-            rows,
-        )
-    else:
-        info("No agent runs.")
-    info(f"Total agent runs: {len(agent_runs)}")
-
-
-def _agent_run_detail_impl(
-    *,
-    agent_run_id: int,
-    timeout: int | None,
-) -> None:
-    _require_login()
-
-    try:
-        agent_run_payload = get_agent_run(agent_run_id, timeout=timeout)
-    except ApiError as e:
-        error(f"Agent run fetch failed: {e}")
-        raise typer.Exit(1) from e
-
-    if _emit_json(agent_run_payload):
-        return
-
-    print_kv("Agent Run", _format_agent_run_preview(agent_run_payload))
-    print_kv("Agent Run Details", _format_agent_run_details(agent_run_payload))
-
-
 def _constants_list_impl(
     timeout: int | None,
     filter_entries: list[str] | None,
@@ -4798,7 +4505,7 @@ def _data_node_storage_list_impl(
     timeout: int | None,
     filter_entries: list[str] | None,
     show_filters: bool,
-    data_source_id: int | None = None,
+    data_source_uid: str | None = None,
 ) -> None:
     filters = _resolve_cli_list_filters(
         model_ref=DATA_NODE_STORAGE_MODEL_REF,
@@ -4808,9 +4515,9 @@ def _data_node_storage_list_impl(
     )
     filters = _merge_cli_filter_alias(
         filters,
-        filter_key="data_source__id",
-        value=data_source_id,
-        option_name="data-source-id",
+        filter_key="data_source__uid",
+        value=data_source_uid,
+        option_name="data-source-uid",
     )
     _require_login()
 
@@ -5559,35 +5266,6 @@ def agent_remove_team_from_edit_cmd(
         team_id=team_id,
         timeout=timeout,
     )
-
-
-@agent_run_group.command("list")
-def agent_run_list_cmd(
-    filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
-    show_filters: bool = typer.Option(
-        False, "--show-filters", help="Show the filters supported by this list command and exit."
-    ),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    """
-    List agent runtime records.
-    """
-    _agent_run_list_impl(
-        timeout=timeout,
-        filter_entries=filter_entries,
-        show_filters=show_filters,
-    )
-
-
-@agent_run_group.command("detail")
-def agent_run_detail_cmd(
-    agent_run_id: int = pydantic_argument(AGENT_RUN_MODEL_REF, "id", ..., help="Agent run ID."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    """
-    Show one agent runtime record in detail.
-    """
-    _agent_run_detail_impl(agent_run_id=agent_run_id, timeout=timeout)
 
 
 @constants.command("list")
@@ -6689,8 +6367,8 @@ def meta_table_remove_team_from_edit_cmd(
 
 @data_node_storage_group.command("list")
 def data_node_storage_list_cmd(
-    data_source_id: int | None = typer.Option(
-        None, "--data-source-id", help="Filter by data source ID."
+    data_source_uid: str | None = typer.Option(
+        None, "--data-source-uid", help="Filter by data source UID."
     ),
     filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
     show_filters: bool = typer.Option(
@@ -6714,7 +6392,7 @@ def data_node_storage_list_cmd(
     mainsequence data-node list
     mainsequence data_node list
     mainsequence data-node list --filter namespace=pytest_alice
-    mainsequence data-node list --data-source-id 2
+    mainsequence data-node list --data-source-uid <DATA_SOURCE_UID>
     mainsequence data-node list --timeout 60
     ```
     """
@@ -6722,7 +6400,7 @@ def data_node_storage_list_cmd(
         timeout=timeout,
         filter_entries=filter_entries,
         show_filters=show_filters,
-        data_source_id=data_source_id,
+        data_source_uid=data_source_uid,
     )
 
 
@@ -6830,8 +6508,8 @@ def data_node_storage_search_cmd(
             "Use column only for schema-name lookup, or both when explicitly needed."
         ),
     ),
-    data_source_id: int | None = typer.Option(
-        None, "--data-source-id", help="Filter by data source ID."
+    data_source_uid: str | None = typer.Option(
+        None, "--data-source-uid", help="Filter by data source UID."
     ),
     q_embedding: str | None = typer.Option(
         None,
@@ -6858,7 +6536,7 @@ def data_node_storage_search_cmd(
     Search data node storages through MetaTable metadata.
 
     Default search uses `TimeIndexMetaTable.description_search()`, backed by
-    `/api/v1/meta-tables/description-search/`. Column mode is a
+    `/api/v1/time-index-meta-tables/description-search/`. Column mode is a
     separate schema lookup path and filters narrow results; they are not the
     semantic discovery path itself.
 
@@ -6866,7 +6544,7 @@ def data_node_storage_search_cmd(
     --------
     ```bash
     mainsequence data_node search "close price"
-    mainsequence data-node search "node weights" --data-source-id 2
+    mainsequence data-node search "node weights" --data-source-uid <DATA_SOURCE_UID>
     mainsequence data-node search "close" --mode column
     mainsequence data-node search "node weights" --q-embedding 0.1,0.2,0.3
     ```
@@ -6885,9 +6563,9 @@ def data_node_storage_search_cmd(
     )
     filters = _merge_cli_filter_alias(
         filters,
-        filter_key="data_source__id",
-        value=data_source_id,
-        option_name="data-source-id",
+        filter_key="data_source__uid",
+        value=data_source_uid,
+        option_name="data-source-uid",
     )
     _require_login()
 
@@ -6957,8 +6635,8 @@ def data_node_storage_description_search_cmd(
     q: str = typer.Argument(
         ..., help="Natural-language query to match against data node descriptions."
     ),
-    data_source_id: int | None = typer.Option(
-        None, "--data-source-id", help="Filter by data source ID."
+    data_source_uid: str | None = typer.Option(
+        None, "--data-source-uid", help="Filter by data source UID."
     ),
     q_embedding: str | None = typer.Option(
         None,
@@ -6993,9 +6671,9 @@ def data_node_storage_description_search_cmd(
     )
     filters = _merge_cli_filter_alias(
         filters,
-        filter_key="data_source__id",
-        value=data_source_id,
-        option_name="data-source-id",
+        filter_key="data_source__uid",
+        value=data_source_uid,
+        option_name="data-source-uid",
     )
     _require_login()
     try:
@@ -7024,8 +6702,8 @@ def data_node_storage_description_search_cmd(
 @data_node_storage_group.command("column-search", hidden=True)
 def data_node_storage_column_search_cmd(
     q: str = typer.Argument(..., help="Column name or term to search in data node columns."),
-    data_source_id: int | None = typer.Option(
-        None, "--data-source-id", help="Filter by data source ID."
+    data_source_uid: str | None = typer.Option(
+        None, "--data-source-uid", help="Filter by data source UID."
     ),
     filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
     show_filters: bool = typer.Option(
@@ -7054,9 +6732,9 @@ def data_node_storage_column_search_cmd(
     )
     filters = _merge_cli_filter_alias(
         filters,
-        filter_key="data_source__id",
-        value=data_source_id,
-        option_name="data-source-id",
+        filter_key="data_source__uid",
+        value=data_source_uid,
+        option_name="data-source-uid",
     )
     _require_login()
     try:
@@ -7515,30 +7193,28 @@ def _print_project_data_node_updates(
     for u in updates:
         storage = u.get("data_node_storage")
         if isinstance(storage, dict):
-            storage_value = (
-                storage.get("physical_table_name") or storage.get("uid") or storage.get("id") or "-"
-            )
+            storage_value = storage.get("physical_table_name") or storage.get("uid") or "-"
         else:
             storage_value = storage if storage is not None else "-"
 
         details = u.get("update_details")
         if isinstance(details, dict):
-            details_id = details.get("id") or "-"
+            details_uid = details.get("related_table_uid") or "-"
         else:
-            details_id = details if details is not None else "-"
+            details_uid = details if details is not None else "-"
 
         rows.append(
             [
-                str(u.get("id") or "-"),
+                str(u.get("uid") or "-"),
                 str(u.get("update_hash") or "-"),
                 str(storage_value),
-                str(details_id),
+                str(details_uid),
             ]
         )
 
     print_table(
         "Project Data Node Updates",
-        ["ID", "Update Hash", "Data Node Storage", "Update Details"],
+        ["UID", "Update Hash", "Data Node Storage", "Update Details"],
         rows,
     )
     info(f"Total updates: {len(rows)}")
@@ -7831,7 +7507,7 @@ def project_create_cmd(
                 ds_name = (
                     item.get("display_name")
                     or item.get("class_type")
-                    or f"data-source-{item.get('id')}"
+                    or f"data-source-{uid}"
                 )
                 ds_details = (
                     f"class={item.get('class_type') or '-'}, status={item.get('status') or '-'}"
@@ -7849,7 +7525,7 @@ def project_create_cmd(
             img_rows: list[list[str]] = []
             for item in img_items:
                 uid = _require_item_uid(item, prompt_label="default base image uid")
-                name = item.get("title") or f"image-{item.get('id')}"
+                name = item.get("title") or f"image-{uid}"
                 details = item.get("description") or item.get("latest_digest") or "-"
                 img_rows.append([uid, str(name), str(details)])
             default_base_image_uid = _prompt_select_uid(
@@ -7865,7 +7541,7 @@ def project_create_cmd(
                 org_rows: list[list[str]] = []
                 for item in org_items:
                     uid = _require_item_uid(item, prompt_label="github organization uid")
-                    name = item.get("display_name") or item.get("login") or f"org-{item.get('id')}"
+                    name = item.get("display_name") or item.get("login") or f"org-{uid}"
                     details = item.get("login") or "-"
                     org_rows.append([uid, str(name), str(details)])
                 github_org_uid = _prompt_select_uid(
@@ -8357,7 +8033,7 @@ def _project_resources_list_impl(
     for resource in resources:
         rows.append(
             [
-                str(resource.get("id") or "-"),
+                str(resource.get("uid") or "-"),
                 str(resource.get("name") or "-"),
                 str(resource.get("resource_type") or "-"),
                 str(resource.get("path") or "-"),
@@ -8369,7 +8045,7 @@ def _project_resources_list_impl(
     if rows:
         print_table(
             "Project Resources",
-            ["ID", "Name", "Type", "Path", "File Size", "Last Modified"],
+            ["UID", "Name", "Type", "Path", "File Size", "Last Modified"],
             rows,
         )
     else:
@@ -8430,7 +8106,6 @@ def _project_resource_release_create_impl(
     resource_uid: str | None,
     path: str | None,
     related_image_uid: str | None,
-    readme_resource_id: int | None,
     cpu_request: str | None,
     memory_request: str | None,
     gpu_request: str | None,
@@ -8561,7 +8236,6 @@ def _project_resource_release_create_impl(
             release_kind=release_kind,
             resource_uid=resource_uid,
             related_image_uid=related_image_uid,
-            readme_resource_id=readme_resource_id,
             cpu_request=cpu_request,
             memory_request=memory_request,
             gpu_request=gpu_request,
@@ -8577,11 +8251,11 @@ def _project_resource_release_create_impl(
     if _emit_json(created):
         return
 
-    success(f"Project resource release created: id={created.get('id') or '-'}")
+    success(f"Project resource release created: uid={created.get('uid') or '-'}")
     print_kv(
         "Project Resource Release",
         [
-            ("ID", str(created.get("id") or "-")),
+            ("UID", str(created.get("uid") or "-")),
             ("Release Kind", release_kind),
             ("Resource", str(created.get("resource") or resource_uid)),
             (
@@ -8617,9 +8291,6 @@ def project_project_resource_create_dashboard_cmd(
     related_image_uid: str | None = typer.Option(
         None, "--related-image-uid", help="Project image UID."
     ),
-    readme_resource_id: int | None = typer.Option(
-        None, "--readme-resource-id", help="Optional README resource ID."
-    ),
     cpu_request: str | None = typer.Option(
         None, "--cpu-request", help="CPU request (accepts 0.5 or 500m; default: 0.25)."
     ),
@@ -8650,7 +8321,6 @@ def project_project_resource_create_dashboard_cmd(
         resource_uid=resource_uid,
         path=path,
         related_image_uid=related_image_uid,
-        readme_resource_id=readme_resource_id,
         cpu_request=cpu_request,
         memory_request=memory_request,
         gpu_request=gpu_request,
@@ -8672,9 +8342,6 @@ def project_project_resource_create_fastapi_cmd(
     ),
     related_image_uid: str | None = typer.Option(
         None, "--related-image-uid", help="Project image UID."
-    ),
-    readme_resource_id: int | None = typer.Option(
-        None, "--readme-resource-id", help="Optional README resource ID."
     ),
     cpu_request: str | None = typer.Option(
         None, "--cpu-request", help="CPU request (accepts 0.5 or 500m; default: 0.25)."
@@ -8706,7 +8373,6 @@ def project_project_resource_create_fastapi_cmd(
         resource_uid=resource_uid,
         path=path,
         related_image_uid=related_image_uid,
-        readme_resource_id=readme_resource_id,
         cpu_request=cpu_request,
         memory_request=memory_request,
         gpu_request=gpu_request,
@@ -8719,7 +8385,7 @@ def project_project_resource_create_fastapi_cmd(
 
 def _project_resource_release_delete_impl(
     *,
-    release_id: int,
+    release_uid: str,
     expected_release_kind: str,
     yes: bool,
     timeout: int | None,
@@ -8728,7 +8394,7 @@ def _project_resource_release_delete_impl(
 
     try:
         release = get_resource_release(
-            release_id=release_id,
+            release_uid=release_uid,
             expected_release_kind=expected_release_kind,
             timeout=timeout,
         )
@@ -8743,13 +8409,13 @@ def _project_resource_release_delete_impl(
     _confirm_delete_action(
         preview_title="Project Resource Release Delete Preview",
         preview_items=_format_resource_release_delete_preview(release),
-        prompt_text=f"Delete {release_label} {release_id}?",
+        prompt_text=f"Delete {release_label} {release_uid}?",
         yes=yes,
     )
 
     try:
         deleted = delete_resource_release(
-            release_id=release_id,
+            release_uid=release_uid,
             expected_release_kind=expected_release_kind,
             timeout=timeout,
         )
@@ -8760,13 +8426,15 @@ def _project_resource_release_delete_impl(
     if _emit_json(deleted):
         return
 
-    success(f"Project resource release deleted: id={release_id}")
+    success(f"Project resource release deleted: uid={release_uid}")
     print_kv("Deleted Project Resource Release", _format_resource_release_delete_preview(deleted))
 
 
 @project_project_resource_group.command("delete_dashboard")
 def project_project_resource_delete_dashboard_cmd(
-    release_id: int = typer.Argument(..., help="Dashboard resource release ID."),
+    release_uid: str = pydantic_argument(
+        RESOURCE_RELEASE_MODEL_REF, "uid", ..., help="Dashboard resource release UID."
+    ),
     yes: bool = typer.Option(False, "--yes", help="Delete without confirmation."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
@@ -8776,12 +8444,12 @@ def project_project_resource_delete_dashboard_cmd(
     Examples
     --------
     ```bash
-    mainsequence project project_resource delete_dashboard 501
-    mainsequence project project_resource delete_dashboard 501 --yes
+    mainsequence project project_resource delete_dashboard <RELEASE_UID>
+    mainsequence project project_resource delete_dashboard <RELEASE_UID> --yes
     ```
     """
     _project_resource_release_delete_impl(
-        release_id=release_id,
+        release_uid=release_uid,
         expected_release_kind="streamlit_dashboard",
         yes=yes,
         timeout=timeout,
@@ -8790,7 +8458,9 @@ def project_project_resource_delete_dashboard_cmd(
 
 @project_project_resource_group.command("delete_fastapi")
 def project_project_resource_delete_fastapi_cmd(
-    release_id: int = typer.Argument(..., help="FastAPI resource release ID."),
+    release_uid: str = pydantic_argument(
+        RESOURCE_RELEASE_MODEL_REF, "uid", ..., help="FastAPI resource release UID."
+    ),
     yes: bool = typer.Option(False, "--yes", help="Delete without confirmation."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
@@ -8800,12 +8470,12 @@ def project_project_resource_delete_fastapi_cmd(
     Examples
     --------
     ```bash
-    mainsequence project project_resource delete_fastapi 701
-    mainsequence project project_resource delete_fastapi 701 --yes
+    mainsequence project project_resource delete_fastapi <RELEASE_UID>
+    mainsequence project project_resource delete_fastapi <RELEASE_UID> --yes
     ```
     """
     _project_resource_release_delete_impl(
-        release_id=release_id,
+        release_uid=release_uid,
         expected_release_kind="fastapi",
         yes=yes,
         timeout=timeout,
@@ -8859,7 +8529,7 @@ def _project_images_list_impl(
         )
 
     if rows:
-        print_table("Project Images", ["ID", "Project Repo Hash", "Base Image"], rows)
+        print_table("Project Images", ["UID", "Project Repo Hash", "Base Image"], rows)
     else:
         info("No project images.")
     info(f"Total images: {len(images)}")
@@ -8956,8 +8626,8 @@ def project_images_delete_cmd(
     Examples
     --------
     ```bash
-    mainsequence project images delete 94
-    mainsequence project images delete 94 --yes
+    mainsequence project images delete <IMAGE_UID>
+    mainsequence project images delete <IMAGE_UID> --yes
     ```
     """
     _project_images_delete_impl(image_uid=image_uid, yes=yes, timeout=timeout)
@@ -9026,7 +8696,7 @@ def _project_images_create_impl(
             ]
             for c in commits
         ]
-        print_table("Pushed Commits", ["Hash", "Date/Time", "Subject", "Image IDs"], rows)
+        print_table("Pushed Commits", ["Hash", "Date/Time", "Subject", "Image UIDs"], rows)
         project_repo_hash = typer.prompt("project_repo_hash", default=commits[0]["hash"]).strip()
 
     if not project_repo_hash:
@@ -9285,7 +8955,7 @@ def _project_jobs_list_impl(
     for job in jobs:
         rows.append(
             [
-                str(job.get("id") or "-"),
+                str(job.get("uid") or "-"),
                 str(job.get("name") or "-"),
                 str(job.get("project_repo_hash") or "-"),
                 str(job.get("execution_path") or "-"),
@@ -9298,7 +8968,15 @@ def _project_jobs_list_impl(
     if rows:
         print_table(
             "Project Jobs",
-            ["ID", "Name", "Repo Hash", "Execution Path", "App Name", "Schedule", "Related Image"],
+            [
+                "UID",
+                "Name",
+                "Repo Hash",
+                "Execution Path",
+                "App Name",
+                "Schedule",
+                "Related Image",
+            ],
             rows,
         )
     else:
@@ -9307,7 +8985,7 @@ def _project_jobs_list_impl(
 
 
 def _project_job_runs_list_impl(
-    job_id: int,
+    job_uid: str,
     filter_entries: list[str] | None,
     show_filters: bool,
     timeout: int | None,
@@ -9317,13 +8995,13 @@ def _project_job_runs_list_impl(
         filter_entries=filter_entries,
         show_filters=show_filters,
         command_label="Project Job Runs",
-        reserved_filter_descriptions={"job__id": "always set from JOB_ID"},
+        reserved_filter_descriptions={"job__uid": "always set from JOB_UID"},
     )
 
     _require_login()
 
     try:
-        runs = list_project_job_runs(job_id=job_id, filters=filters, timeout=timeout)
+        runs = list_project_job_runs(job_uid=job_uid, filters=filters, timeout=timeout)
     except ApiError as e:
         error(f"Project job runs fetch failed: {e}")
         raise typer.Exit(1) from e
@@ -9335,7 +9013,7 @@ def _project_job_runs_list_impl(
     for run in runs:
         rows.append(
             [
-                str(run.get("id") or "-"),
+                str(run.get("uid") or "-"),
                 str(run.get("name") or "-"),
                 str(run.get("status") or run.get("response_status") or "-"),
                 str(run.get("execution_start") or "-"),
@@ -9349,7 +9027,7 @@ def _project_job_runs_list_impl(
         print_table(
             "Project Job Runs",
             [
-                "ID",
+                "UID",
                 "Name",
                 "Status",
                 "Execution Start",
@@ -9427,10 +9105,10 @@ def project_jobs_list_cmd(
 
 @project_jobs_group.command("run")
 def project_jobs_run_cmd(
-    job_id: int = pydantic_argument(JOB_MODEL_REF, "id", ..., help="Job ID to run."),
+    job_uid: str = pydantic_argument(JOB_MODEL_REF, "uid", ..., help="Job UID to run."),
     passthrough_args: list[str] | None = typer.Argument(
         None,
-        help="Additional per-run args after `--`, for example `mainsequence project jobs run 91 -- --name demo`.",
+        help="Additional per-run args after `--`, for example `mainsequence project jobs run <JOB_UID> -- --name demo`.",
     ),
     command_args: list[str] | None = typer.Option(
         None,
@@ -9448,10 +9126,10 @@ def project_jobs_run_cmd(
     Examples
     --------
     ```bash
-    mainsequence project jobs run 91
-    mainsequence project jobs run 91 --arg demo-from-cli
-    mainsequence project jobs run 91 -- --name demo-from-cli
-    mainsequence project jobs run 91 --timeout 60
+    mainsequence project jobs run <JOB_UID>
+    mainsequence project jobs run <JOB_UID> --arg demo-from-cli
+    mainsequence project jobs run <JOB_UID> -- --name demo-from-cli
+    mainsequence project jobs run <JOB_UID> --timeout 60
     ```
     """
     _require_login()
@@ -9461,7 +9139,7 @@ def project_jobs_run_cmd(
         merged_command_args.extend(str(arg) for arg in passthrough_args)
 
     try:
-        job_payload = get_project_job(job_id, timeout=timeout)
+        job_payload = get_project_job(job_uid, timeout=timeout)
     except ApiError as e:
         error(f"Project job fetch failed: {e}")
         raise typer.Exit(1) from e
@@ -9478,7 +9156,7 @@ def project_jobs_run_cmd(
 
     try:
         payload = run_project_job(
-            job_id=job_id,
+            job_uid=job_uid,
             command_args=merged_command_args or None,
             timeout=timeout,
         )
@@ -9489,11 +9167,11 @@ def project_jobs_run_cmd(
     if _emit_json(payload):
         return
 
-    success(f"Project job run requested: job_id={job_id}")
+    success(f"Project job run requested: job_uid={job_uid}")
 
     if payload:
         preferred_keys = [
-            ("Job ID", str(payload.get("job") or payload.get("job_id") or job_id)),
+            ("Job UID", str(payload.get("job_uid") or payload.get("job") or job_uid)),
             ("Job Run UID", str(payload.get("uid") or payload.get("job_run_uid") or "-")),
             ("Name", str(payload.get("name") or payload.get("job_name") or "-")),
             ("Unique Identifier", str(payload.get("unique_identifier") or "-")),
@@ -9504,7 +9182,7 @@ def project_jobs_run_cmd(
         for key, value in payload.items():
             if key in {
                 "job",
-                "job_id",
+                "job_uid",
                 "id",
                 "uid",
                 "job_run_uid",
@@ -9522,8 +9200,8 @@ def project_jobs_run_cmd(
 
 @project_job_runs_group.command("list")
 def project_job_runs_list_cmd(
-    job_id: int = pydantic_argument(
-        JOB_MODEL_REF, "id", ..., help="Job ID whose runs will be listed."
+    job_uid: str = pydantic_argument(
+        JOB_MODEL_REF, "uid", ..., help="Job UID whose runs will be listed."
     ),
     filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
     show_filters: bool = typer.Option(
@@ -9534,17 +9212,17 @@ def project_job_runs_list_cmd(
     """
     List runs for a specific job.
 
-    Uses SDK client `JobRun.filter(job__id=[job_id])` as the single source of truth.
+    Uses SDK client `JobRun.filter(job__uid=[job_uid])` as the single source of truth.
 
     Examples
     --------
     ```bash
-    mainsequence project jobs runs list 91
-    mainsequence project jobs runs list 91 --timeout 60
+    mainsequence project jobs runs list <JOB_UID>
+    mainsequence project jobs runs list <JOB_UID> --timeout 60
     ```
     """
     _project_job_runs_list_impl(
-        job_id=job_id,
+        job_uid=job_uid,
         filter_entries=filter_entries,
         show_filters=show_filters,
         timeout=timeout,
@@ -9810,11 +9488,11 @@ def _project_jobs_create_impl(
     if _emit_json(created):
         return
 
-    success(f"Project job created: id={created.get('id') or '-'}")
+    success(f"Project job created: uid={created.get('uid') or '-'}")
     print_kv(
         "Project Job",
         [
-            ("ID", str(created.get("id") or "-")),
+            ("UID", str(created.get("uid") or "-")),
             ("Name", str(created.get("name") or name)),
             ("Project UID", str(project_id)),
             ("Execution Path", str(created.get("execution_path") or execution_path or "-")),
@@ -9970,174 +9648,6 @@ def project_jobs_create_cmd(
         max_runtime_seconds=max_runtime_seconds,
         timeout=timeout,
     )
-
-
-@project.command("schedule_batch_jobs")
-def project_schedule_batch_jobs_cmd(
-    file_path: str = typer.Argument(..., help="Path to the scheduled jobs YAML file."),
-    project_id: str | None = typer.Argument(
-        None, help="Project UID. Defaults to local .env when omitted."
-    ),
-    path: str | None = typer.Option(
-        None, "--path", help="Project repository path used to resolve project uid."
-    ),
-    strict: bool = typer.Option(
-        False,
-        "--strict/--no-strict",
-        help=(
-            "If enabled, jobs that exist remotely but are not listed in the file may be removed. "
-            "Jobs linked to dashboards or resource releases are protected."
-        ),
-    ),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    """
-    Validate and submit a batch of jobs from a YAML file.
-
-    Uses SDK client `Job.bulk_get_or_create()` as the single source of truth.
-    In strict mode, jobs linked to dashboards or resource releases are not deleted.
-
-    Examples
-    --------
-    ```bash
-    mainsequence project schedule_batch_jobs scheduled_jobs.yaml
-    mainsequence project schedule_batch_jobs scheduled_jobs.yaml project-uid-123
-    mainsequence project schedule_batch_jobs scheduled_jobs.yaml --strict
-    mainsequence project schedule_batch_jobs configs/scheduled_jobs.yaml --path .
-    ```
-    """
-    _require_login()
-
-    project_dir = normalize_path(path) if path else pathlib.Path.cwd()
-    if not project_dir.exists():
-        error(f"Project folder does not exist: {project_dir}")
-        raise typer.Exit(1)
-
-    if project_id is None:
-        project_id = _resolve_project_id_from_local_env(str(project_dir))
-
-    batch_file = pathlib.Path(file_path).expanduser()
-    if not batch_file.is_absolute():
-        batch_file = (project_dir / batch_file).resolve()
-
-    if not batch_file.is_file():
-        error(f"Jobs file not found: {batch_file}")
-        raise typer.Exit(1)
-
-    prepared_batch_file = batch_file
-    try:
-        prepared_batch_file = _prepare_batch_jobs_file_with_selected_related_image(
-            project_id=project_id,
-            project_dir=project_dir,
-            batch_file=batch_file,
-            timeout=timeout,
-        )
-        if not _confirm_schedule_batch_jobs_submission(prepared_batch_file):
-            return
-        created = schedule_batch_project_jobs(
-            file_path=str(prepared_batch_file),
-            project_branch_uid=_resolve_project_branch_uid_for_command(
-                project_id,
-                project_dir=project_dir,
-            ),
-            strict=strict,
-            timeout=timeout,
-        )
-    except ApiError as e:
-        error(f"Batch job scheduling failed: {e}")
-        raise typer.Exit(1) from e
-    except RuntimeError as e:
-        error(str(e))
-        raise typer.Exit(1) from e
-    finally:
-        if prepared_batch_file != batch_file:
-            try:
-                prepared_batch_file.unlink(missing_ok=True)
-            except Exception:
-                pass
-
-    if _emit_json(created):
-        return
-
-    if isinstance(created, list):
-        success(f"Scheduled {len(created)} jobs from {batch_file.name}.")
-        rows = [
-            [
-                str(item.get("id") or "-"),
-                str(item.get("name") or "-"),
-                str(item.get("execution_path") or "-"),
-                str(item.get("app_name") or "-"),
-                _format_job_schedule_summary(item.get("task_schedule")),
-            ]
-            for item in created
-        ]
-        print_table(
-            "Scheduled Jobs",
-            ["ID", "Name", "Execution Path", "App Name", "Schedule"],
-            rows,
-        )
-        return
-
-    success(f"Scheduled jobs from {batch_file.name}.")
-    summary_items = [
-        ("Project UID", str(project_id)),
-        ("File", str(batch_file)),
-        ("Strict", str(bool(created.get("strict", strict))).lower()),
-        ("Created", str(created.get("created_count", 0))),
-        ("Existing", str(created.get("existing_count", 0))),
-        ("Deleted", str(created.get("deleted_count", 0))),
-        ("Not Deleted", str(created.get("not_deleted_count", 0))),
-    ]
-    print_kv("Batch Scheduling Summary", summary_items)
-
-    results = created.get("results")
-    if isinstance(results, list) and results:
-        rows: list[list[str]] = []
-        for item in results:
-            job = item.get("job") if isinstance(item, dict) else {}
-            status_label = "created" if bool(item.get("created")) else "existing"
-            rows.append(
-                [
-                    status_label,
-                    str(job.get("id") or "-"),
-                    str(job.get("name") or "-"),
-                    str(job.get("execution_path") or "-"),
-                    str(job.get("app_name") or "-"),
-                    _format_job_schedule_summary(job.get("task_schedule")),
-                ]
-            )
-        print_table(
-            "Batch Job Results",
-            ["Status", "ID", "Name", "Execution Path", "App Name", "Schedule"],
-            rows,
-        )
-
-    deleted_items = created.get("deleted")
-    if isinstance(deleted_items, list) and deleted_items:
-        rows = []
-        for item in deleted_items:
-            job_id, name, execution_path, app_name = _format_batch_job_ref(item)
-            rows.append([job_id, name, execution_path, app_name])
-        print_table(
-            "Deleted Jobs",
-            ["ID", "Name", "Execution Path", "App Name"],
-            rows,
-        )
-
-    not_deleted_items = created.get("not_deleted")
-    if isinstance(not_deleted_items, list) and not_deleted_items:
-        rows = []
-        for item in not_deleted_items:
-            job_id, name, execution_path, app_name = _format_batch_job_ref(item)
-            rows.append([job_id, name, execution_path, app_name, _format_batch_job_reason(item)])
-        print_table(
-            "Not Deleted Jobs",
-            ["ID", "Name", "Execution Path", "App Name", "Reason"],
-            rows,
-        )
-        warn(
-            "Strict mode will not delete jobs that are still linked to dashboards or resource releases."
-        )
 
 
 @project.command("set-up-locally")

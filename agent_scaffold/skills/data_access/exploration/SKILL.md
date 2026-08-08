@@ -97,13 +97,13 @@ Discovery priority:
 - use column lookup only when the user is specifically searching for a schema or column name
 - use detail only after you have identified the candidate object you want to inspect
 
-Semantic description discovery searches `MetaTable` metadata rows through:
+Semantic description discovery for published DataNode storage searches
+`TimeIndexMetaTable` metadata rows through:
 
-- `GET /orm/api/ts_manager/meta_table/description-search/?q=<text>`
+- `GET /api/v1/time-index-meta-tables/description-search/?q=<text>`
 
-The same discovery surface applies to `MetaTable` metadata and to published
-`DataNode` storage tables, because `DataNode` storage is represented by
-`TimeIndexMetaTable` metadata.
+This is the DataNode discovery surface because published DataNode storage is
+represented by `TimeIndexMetaTable` metadata.
 
 Typical semantic discovery commands:
 

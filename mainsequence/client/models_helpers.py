@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import datetime
 import json
-import pathlib
 from collections.abc import Collection
 from decimal import Decimal
 from enum import Enum
@@ -10,7 +9,6 @@ from pathlib import PurePosixPath
 from typing import Any, ClassVar, Literal
 from uuid import UUID
 
-import yaml
 from pydantic import BaseModel, Field, PositiveInt
 
 from .base import BaseObjectOrm, BasePydanticModel, ShareableObjectMixin
@@ -20,7 +18,7 @@ from .compute_validation import (
     validate_and_normalize_compute_fields,
 )
 from .exceptions import raise_for_response
-from .metatables.core import _require_local_pod_project_branch, _resolve_local_pod_project
+from .metatables.core import _resolve_local_pod_project
 from .models_foundry import (
     ProjectBranch,
     ProjectImage,
@@ -609,136 +607,6 @@ class Job(BaseObjectOrm, BasePydanticModel):
 
         return cls(**r.json())
 
-    @classmethod
-    def bulk_get_or_create(
-        cls,
-        *,
-        yaml_file: str | pathlib.Path,
-        project_branch_uid: str | ProjectBranch | dict[str, Any],
-        strict: bool = False,
-        timeout: int | None = None,
-    ) -> list[Job] | dict[str, Any]:
-        """
-        Validate a batch YAML file and synchronize its jobs with the backend.
-
-        Request body:
-          - project_branch_uid
-          - jobs
-          - strict
-
-        Strict mode notes:
-          - jobs that exist remotely but are not present in the YAML may be deleted
-          - jobs linked to dashboards or resource releases are protected and may be returned
-            in the response under `not_deleted`
-        """
-        resolved_project_branch_uid = cls._coerce_uid(
-            project_branch_uid,
-            field_name="project_branch_uid",
-        )
-        if resolved_project_branch_uid is None:
-            raise ValueError("project_branch_uid is required.")
-
-        yaml_path = pathlib.Path(yaml_file).expanduser()
-        if not yaml_path.is_file():
-            raise FileNotFoundError(f"Jobs file not found: {yaml_path}")
-
-        with yaml_path.open("r", encoding="utf-8") as f:
-            raw_config = yaml.safe_load(f) or {}
-
-        if not isinstance(raw_config, dict) or "jobs" not in raw_config:
-            raise ValueError("Job batch file must define a top-level 'jobs' key.")
-
-        jobs_config = raw_config["jobs"]
-        if not isinstance(jobs_config, list):
-            raise ValueError("The 'jobs' key must contain a list.")
-
-        normalized_jobs: list[dict[str, Any]] = []
-        for index, raw_job in enumerate(jobs_config):
-            if not isinstance(raw_job, dict):
-                raise ValueError(f"jobs[{index}] must be a mapping.")
-
-            job_data = dict(raw_job)
-
-            if {"project", "project_id", "project_uid", "project_branch_uid"} & set(job_data):
-                raise ValueError(
-                    f"jobs[{index}] must not define a project identity. "
-                    "Pass project_branch_uid to Job.bulk_get_or_create()."
-                )
-            if "timeout" in job_data:
-                raise ValueError(f"jobs[{index}] must not define timeout.")
-            if {"related_image", "related_image_id"} & set(job_data):
-                raise ValueError(
-                    f"jobs[{index}] must use related_image_uid, not related_image or related_image_id."
-                )
-
-            try:
-                normalized_job = cls._build_create_payload(
-                    project_branch_uid=resolved_project_branch_uid,
-                    **job_data,
-                )
-                normalized_job.pop("project_branch_uid", None)
-                normalized_jobs.append(normalized_job)
-            except TypeError as exc:
-                raise ValueError(f"jobs[{index}] has unsupported or missing fields: {exc}") from exc
-            except Exception as exc:
-                raise ValueError(f"jobs[{index}] is invalid: {exc}") from exc
-
-        request_payload = {
-            "json": cls.serialize_for_json(
-                {
-                    "project_branch_uid": resolved_project_branch_uid,
-                    "jobs": normalized_jobs,
-                    "strict": bool(strict),
-                }
-            )
-        }
-        r = make_request(
-            s=cls.build_session(),
-            loaders=cls.LOADERS,
-            r_type="POST",
-            url=f"{cls.get_object_url()}/sync_jobs/",
-            payload=request_payload,
-            time_out=timeout,
-        )
-        if r.status_code not in (200, 201, 202):
-            raise_for_response(r, payload=request_payload)
-
-        response_data = r.json()
-        if not isinstance(response_data, list):
-            return response_data
-
-        jobs_out: list[Job] = []
-        for item in response_data:
-            if not isinstance(item, dict):
-                return response_data
-            try:
-                jobs_out.append(cls(**item))
-            except Exception:
-                return response_data
-
-        return jobs_out
-
-    @classmethod
-    def create_from_configuration(cls, job_configuration):
-        url = cls.get_object_url() + "/create-from-configuration/"
-        s = cls.build_session()
-        payload = dict(job_configuration)
-        payload["project_branch_uid"] = _require_local_pod_project_branch(
-            f"{cls.__name__}.create_from_configuration"
-        ).uid
-
-        r = make_request(
-            s=s,
-            loaders=cls.LOADERS,
-            r_type="POST",
-            url=url,
-            payload={"json": cls.serialize_for_json(payload)},
-        )
-        if r.status_code not in [200, 201, 202]:
-            raise_for_response(r)
-
-        return r.json()
-
     def run_job(
         self,
         *,
@@ -749,7 +617,7 @@ class Job(BaseObjectOrm, BasePydanticModel):
         if command_args is not None and not all(isinstance(arg, str) for arg in command_args):
             raise TypeError("command_args must be a list of strings.")
 
-        url = f"{self.get_object_url()}/{job_uid}/run_job/"
+        url = f"{self.get_object_url()}/{job_uid}/run-job/"
         s = self.build_session()
 
         payload: dict[str, Any] = {}
@@ -905,7 +773,7 @@ class JobRun(BaseObjectOrm, BasePydanticModel):
 
     def get_logs(self, *, timeout: int | None = None) -> dict[str, Any]:
         job_run_uid = self._public_detail_reference()
-        url = f"{self.get_object_url()}/{job_run_uid}/get_logs/"
+        url = f"{self.get_object_url()}/{job_run_uid}/get-logs/"
         s = self.build_session()
 
         r = make_request(
@@ -1056,13 +924,6 @@ class ProjectResource(BaseObjectOrm, BasePydanticModel):
         **kwargs,
     ) -> ResourceRelease:
         resource_uid = self._public_detail_reference()
-        readme_resource_id = kwargs.pop("readme_resource_id", None)
-        if readme_resource_id is not None:
-            raise ValueError(
-                "readme_resource_id is not supported by ResourceRelease.create(); "
-                "README resources are resolved by the backend."
-            )
-
         kwargs["resource_uid"] = resource_uid
         kwargs["release_kind"] = release_kind.value
         return ResourceRelease.create(*args, timeout=timeout, files=files, **kwargs)

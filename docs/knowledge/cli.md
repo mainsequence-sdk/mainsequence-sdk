@@ -52,11 +52,11 @@ combined with `--export`.
 mainsequence login
 
 mainsequence project list
-mainsequence project set-up-locally 123
-mainsequence project open-signed-terminal 123
+mainsequence project set-up-locally <PROJECT_UID>
+mainsequence project open-signed-terminal <PROJECT_UID>
 
 # Project operations
-mainsequence project add-label 123 --label rates --label research
+mainsequence project add-label <PROJECT_UID> --label rates --label research
 mainsequence data-node add-label <DATA_NODE_STORAGE_UID> --label curated
 
 # Compile environment

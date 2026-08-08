@@ -157,7 +157,7 @@ def test_meta_table_bulk_create_posts_raw_collection_payload(monkeypatch):
     assert result[0].uid == "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
     assert result[0].provisioning_status == "reserved"
     assert captured["r_type"] == "POST"
-    assert captured["url"].endswith("/ts_manager/meta_table/")
+    assert captured["url"].endswith("/meta-tables/")
     assert isinstance(captured["payload"]["json"], list)
     assert captured["payload"]["json"] == [row]
 
@@ -213,7 +213,7 @@ def test_time_index_meta_table_bulk_create_posts_raw_collection_payload(monkeypa
 
     assert result[0].uid == "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
     assert captured["r_type"] == "POST"
-    assert captured["url"].endswith("/ts_manager/time_index_meta_table/")
+    assert captured["url"].endswith("/time-index-meta-tables/")
     assert isinstance(captured["payload"]["json"], list)
     assert captured["payload"]["json"] == [row]
 
@@ -341,7 +341,7 @@ def test_meta_table_register_posts_contract_to_meta_table_endpoint(monkeypatch):
     assert table.columns[0].name == "uid"
     assert table.registration == {"created": True, "mode": "platform_managed"}
     assert captured["r_type"] == "POST"
-    assert captured["url"].endswith("/ts_manager/meta_table/register/")
+    assert captured["url"].endswith("/meta-tables/register/")
     assert captured["payload"]["json"]["physical_schema"] == "analytics"
     assert captured["payload"]["json"]["table_contract"]["physical"] == {
         "schema": "analytics",
@@ -400,7 +400,7 @@ def test_meta_table_filter_by_body_posts_identifier_filters(monkeypatch):
     assert len(rows) == 1
     assert rows[0].identifier == "Asset"
     assert captured["r_type"] == "POST"
-    assert captured["url"].endswith("/ts_manager/meta_table/filter/")
+    assert captured["url"].endswith("/meta-tables/filter/")
     assert captured["payload"]["json"] == {
         "identifiers": ["mainsequence.examples.Asset"],
         "limit": 1,
@@ -449,7 +449,7 @@ def test_meta_table_execute_operation_serializes_scope_uid(monkeypatch):
 
     assert result["ok"] is True
     assert captured["r_type"] == "POST"
-    assert captured["url"].endswith("/ts_manager/meta_table/execute-operation/")
+    assert captured["url"].endswith("/meta-tables/execute-operation/")
     assert (
         captured["payload"]["json"]["scope"]["data_source_uid"]
         == "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
@@ -683,7 +683,7 @@ def test_meta_table_issue_migration_connection_posts_scope(monkeypatch):
     assert result.owner_role_name == "ms_owner"
     assert captured["r_type"] == "POST"
     assert captured["url"].endswith(
-        "/ts_manager/meta_table/"
+        "/meta-tables/"
         "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/migration-connection/"
     )
     assert captured["payload"]["json"] == {
@@ -778,7 +778,7 @@ def test_meta_table_finalize_managed_posts_finalize_payload(monkeypatch):
     assert response.tables[0].physical_schema == "analytics"
     assert response.tables[0].deleted is False
     assert captured["r_type"] == "POST"
-    assert captured["url"].endswith("/ts_manager/meta_table/finalize-managed/")
+    assert captured["url"].endswith("/meta-tables/finalize-managed/")
     assert captured["payload"]["json"] == {
         "meta_table_uids": ["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"],
         "migration_package": "msm",
@@ -917,7 +917,7 @@ def test_meta_table_get_schema_graph_requests_incoming_edges(monkeypatch):
     assert result == graph_payload
     assert captured["r_type"] == "GET"
     assert captured["url"].endswith(
-        "/ts_manager/meta_table/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/schema-graph/"
+        "/meta-tables/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/schema-graph/"
     )
     assert captured["payload"]["params"] == {
         "depth": 2,
@@ -1237,7 +1237,7 @@ def test_meta_table_introspect_updates_local_snapshot(monkeypatch):
     assert table.introspection_snapshot == {
         "columns": [{"name": "uid", "backend_type": "uuid"}],
     }
-    assert captured["url"].endswith(f"/ts_manager/meta_table/{table.uid}/introspect/")
+    assert captured["url"].endswith(f"/meta-tables/{table.uid}/introspect/")
 
 
 def test_meta_table_is_exported_from_client_package():

@@ -298,8 +298,8 @@ Typical verification commands:
 
 - `mainsequence project current --debug`
 - `mainsequence project jobs list`
-- `mainsequence project jobs runs list <JOB_ID>`
-- `mainsequence project jobs runs logs <JOB_RUN_ID> --max-wait-seconds 900`
+- `mainsequence project jobs runs list <JOB_UID>`
+- `mainsequence project jobs runs logs <JOB_RUN_UID> --max-wait-seconds 900`
 - `mainsequence project images list`
 - `mainsequence project project_resource list`
 

@@ -1874,7 +1874,7 @@ def test_resource_release_create_sends_automatic_deployment(monkeypatch):
     assert captured["timeout"] == 11
 
 
-def test_project_resource_create_release_translates_related_image_id_alias(monkeypatch):
+def test_project_resource_create_release_uses_related_image_uid(monkeypatch):
     captured = {}
     resource_uid = "857bec7b-dd77-4272-aecd-13fc2138eacc"
     image_uid = "6cfdb152-923e-45b9-a150-c4541c68b0d1"
@@ -1910,7 +1910,7 @@ def test_project_resource_create_release_translates_related_image_id_alias(monke
     monkeypatch.setattr(models_helpers_mod, "make_request", _fake_make_request)
 
     release = resource.create_dashboard(
-        related_image_id=image_uid,
+        related_image_uid=image_uid,
         cpu_request="500m",
         memory_request="1Gi",
         automatic_deployment=True,
@@ -1920,7 +1920,6 @@ def test_project_resource_create_release_translates_related_image_id_alias(monke
     assert release.uid == release_uid
     assert captured["r_type"] == "POST"
     assert captured["payload"]["json"]["related_image_uid"] == image_uid
-    assert "related_image_id" not in captured["payload"]["json"]
     assert captured["payload"]["json"]["automatic_deployment"] is True
     assert captured["timeout"] == 7
 

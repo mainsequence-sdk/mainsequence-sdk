@@ -99,7 +99,7 @@ for path in tqdm(vector_files):
         bucket_name=BUCKET_NAME,
         created_by_resource_name="vector-upload-script",
     )
-    logger.info("Artifact available: %s (id=%s)", path.name, artifact.id)
+    logger.info("Artifact available: %s (uid=%s)", path.name, artifact.uid)
 ```
 
 ### Why this version is simpler

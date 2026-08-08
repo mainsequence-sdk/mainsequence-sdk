@@ -486,14 +486,14 @@ import mainsequence.client as msc
 
 results = msc.TimeIndexMetaTable.description_search(
     "daily close price",
-    data_source__id=2,
+    data_source__uid="<DATA_SOURCE_UID>",
 )
 ```
 
 CLI equivalent:
 
 ```bash
-mainsequence data_node search "daily close price" --data-source-id 2
+mainsequence data_node search "daily close price" --data-source-uid <DATA_SOURCE_UID>
 ```
 
 The CLI also exposes the ranking knobs:
@@ -551,14 +551,14 @@ import mainsequence.client as msc
 
 results = msc.TimeIndexMetaTable.column_search(
     "close",
-    data_source__id=2,
+    data_source__uid="<DATA_SOURCE_UID>",
 )
 ```
 
 CLI equivalent:
 
 ```bash
-mainsequence data_node search "close" --mode column --data-source-id 2
+mainsequence data_node search "close" --mode column --data-source-uid <DATA_SOURCE_UID>
 ```
 
 #### Refreshing the search index

@@ -908,19 +908,7 @@ class DataSource(BasePydanticModel, BaseObjectOrm):
 
     @classmethod
     def get_or_create_duck_db(cls, time_out=None, *args, **kwargs):
-        url = cls.get_object_url() + "/get_or_create_duck_db/"
-        payload = {"json": serialize_to_json(kwargs)}
-        s = cls.build_session()
-        r = make_request(
-            s=s, loaders=cls.LOADERS, r_type="POST", url=url, payload=payload, time_out=time_out
-        )
-        if r.status_code not in [200, 201]:
-            raise Exception(f"Error in request {r.text}")
-        return cls(**r.json())
-
-    @classmethod
-    def get_or_create_sqlite(cls, time_out=None, *args, **kwargs):
-        url = cls.get_object_url() + "/get_or_create_sqlite/"
+        url = cls.get_object_url() + "/get-or-create-duck-db/"
         payload = {"json": serialize_to_json(kwargs)}
         s = cls.build_session()
         r = make_request(
@@ -947,24 +935,6 @@ class DataSource(BasePydanticModel, BaseObjectOrm):
         payload.setdefault("host_mac_address", host_uid)
         payload.setdefault("display_name", display_name or f"DuckDB_{host_uid}")
         return cls.get_or_create_duck_db(time_out=time_out, **payload)
-
-    @classmethod
-    def create_sqlite(
-        cls,
-        time_out: int | None = None,
-        *,
-        display_name: str | None = None,
-        host_mac_address: str | None = None,
-        **kwargs,
-    ):
-        """
-        Explicitly create or resolve the physical SQLite DataSource for this host.
-        """
-        host_uid = host_mac_address or bios_uuid()
-        payload = dict(kwargs)
-        payload.setdefault("host_mac_address", host_uid)
-        payload.setdefault("display_name", display_name or f"SQLite_{host_uid}")
-        return cls.get_or_create_sqlite(time_out=time_out, **payload)
 
     def insert_data_into_table(
         self,
@@ -1514,7 +1484,7 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
         """
         Refresh this MetaTable's physical database shape snapshot.
 
-        This calls the backend ``POST /meta_table/<uid>/introspect/`` action.
+        This calls the backend ``POST /api/v1/meta-tables/<uid>/introspect/`` action.
         The backend reads the real physical table through the MetaTable's data
         source, reflects columns, indexes, and constraints, stores that data on
         ``MetaTable.introspection_snapshot``, and returns the full response.
@@ -2216,7 +2186,6 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
     NODE_TYPE: ClassVar[str] = "local_time_serie"
 
     data_node_storage: str | UUID | TimeIndexMetaTable
-    tags: list[str] | None = Field(default=[], description="List of tags")
     labels: list[str] = Field(
         default_factory=list,
         description=(
@@ -2246,7 +2215,7 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
 
     @classmethod
     def get_or_create(cls, **kwargs):
-        url = cls.get_object_url() + "/get_or_create/"
+        url = cls.get_object_url() + "/get-or-create/"
         kwargs = serialize_to_json(kwargs)
         project_branch = _require_local_pod_project_branch("DataNodeUpdate.get_or_create")
         project_branch_uid = str(getattr(project_branch, "uid", "") or "").strip()
@@ -2266,40 +2235,11 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
 
         return cls(**data)
 
-    def add_tags(self, tags: list, timeout=None):
-        base_url = self.get_object_url()
-        s = self.build_session()
-        payload = {"json": {"tags": tags}}
-        # r = self.s.get(, )
-        url = f"{base_url}/{self._public_uid()}/add_tags/"
-        r = make_request(
-            s=s, loaders=self.LOADERS, r_type="PATCH", url=url, payload=payload, time_out=timeout
-        )
-        if r.status_code != 200:
-            raise Exception(f"Error in request {r.json()}")
-        return r.json()
-
-    @classmethod
-    def filter_by_hash_id(cls, local_hash_id_list: list, timeout=None):
-        s = cls.build_session()
-        base_url = cls.get_object_url()
-        url = f"{base_url}/filter_by_hash_id/"
-        payload = {
-            "json": {"local_hash_id__in": local_hash_id_list},
-        }
-        r = make_request(
-            s=s, loaders=cls.LOADERS, r_type="POST", url=url, payload=payload, time_out=timeout
-        )
-        if r.status_code != 200:
-            raise Exception(f"{r.text}")
-        all_data_node_storage = {m["update_hash"]: m for m in r.json()}
-        return all_data_node_storage
-
     def set_start_of_execution(self, **kwargs):
         s = self.build_session()
         base_url = self.get_object_url()
         payload = {"json": kwargs}
-        url = f"{base_url}/{self._public_uid()}/set_start_of_execution/"
+        url = f"{base_url}/{self._public_uid()}/set-start-of-execution/"
         r = make_request(
             s=s, loaders=self.LOADERS, r_type="PATCH", url=url, payload=payload, accept_gzip=True
         )
@@ -2333,7 +2273,7 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
         self, historical_update_uid: str, timeout=None, threaded_request=True, **kwargs
     ):
         s = self.build_session()
-        url = self.get_object_url() + f"/{self._public_uid()}/set_end_of_execution/"
+        url = self.get_object_url() + f"/{self._public_uid()}/set-end-of-execution/"
         if historical_update_uid in (None, ""):
             raise ValueError("Historical update uid is required to end execution.")
         kwargs.update(dict(historical_update_uid=str(historical_update_uid)))
@@ -2373,7 +2313,7 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
     @classmethod
     def batch_set_end_of_execution(cls, update_map: dict, timeout=None):
         s = cls.build_session()
-        url = f"{cls.get_object_url()}/batch_set_end_of_execution/"
+        url = f"{cls.get_object_url()}/batch-set-end-of-execution/"
         payload = {"json": {"update_map": update_map}}
         r = make_request(
             s=s, loaders=cls.LOADERS, r_type="PATCH", url=url, payload=payload, time_out=timeout
@@ -2385,7 +2325,7 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
     def set_last_update_index_time(cls, data_node_storage, timeout=None):
         s = cls.build_session()
         storage_uid = data_node_storage["uid"]
-        url = cls.get_object_url() + f"/{storage_uid}/set_last_update_index_time/"
+        url = cls.get_object_url() + f"/{storage_uid}/set-last-update-index-time/"
         r = make_request(s=s, loaders=cls.LOADERS, r_type="GET", url=url, time_out=timeout)
 
         if r.status_code == 404:
@@ -2408,7 +2348,7 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
         s = self.build_session()
         url = (
             self.get_object_url()
-            + f"/{self._public_uid()}/set_last_update_index_time_from_update_stats/"
+            + f"/{self._public_uid()}/set-last-update-index-time-from-update-stats/"
         )
 
         data_to_comp = build_last_update_index_time_payload(
@@ -2454,7 +2394,7 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
 
     def get_all_dependencies_update_priority(self, timeout=None) -> pd.DataFrame:
         s = self.build_session()
-        url = self.get_object_url() + f"/{self._public_uid()}/get_all_dependencies_update_priority/"
+        url = self.get_object_url() + f"/{self._public_uid()}/get-all-dependencies-update-priority/"
         r = make_request(s=s, loaders=self.LOADERS, r_type="GET", url=url, time_out=timeout)
         if r.status_code != 200:
             raise Exception(f"Error in request {r.text}")
@@ -2502,33 +2442,6 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
             return None
         return r.json()
 
-    @classmethod
-    def get_upstream_nodes(cls, table_name, data_source_uid, timeout=None):
-        s = cls.build_session()
-        url = (
-            cls.get_object_url("DataNode")
-            + f"/{table_name}/get_upstream_nodes?data_source_uid={data_source_uid}"
-        )
-        r = make_request(s=s, loaders=cls.LOADERS, r_type="GET", url=url, time_out=timeout)
-        if r.status_code != 200:
-            raise Exception(f"Error in request {r.text}")
-
-        depth_df = pd.DataFrame(r.json())
-        return depth_df
-
-    @classmethod
-    def create(cls, timeout=None, *args, **kwargs):
-        url = cls.get_object_url("DataNode") + "/"
-        payload = {"json": serialize_to_json(kwargs)}
-        s = cls.build_session()
-        r = make_request(
-            s=s, loaders=cls.LOADERS, r_type="POST", url=url, payload=payload, time_out=timeout
-        )
-        if r.status_code != 201:
-            raise Exception(f"Error in request {r.text}")
-        instance = cls(**r.json())
-        return instance
-
     def verify_if_direct_dependencies_are_updated(self) -> dict:
         """
         Response({
@@ -2539,7 +2452,7 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
         s = self.build_session()
         url = (
             self.get_object_url()
-            + f"/{self._public_uid()}/verify_if_direct_dependencies_are_updated/"
+            + f"/{self._public_uid()}/verify-if-direct-dependencies-are-updated/"
         )
         r = make_request(s=s, loaders=None, r_type="GET", url=url)
         if r.status_code != 200:
@@ -2567,7 +2480,7 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
         """
         s = cls.build_session()
         update_uid = _require_public_uid(data_node_update, "DataNodeUpdate")
-        url = cls.get_object_url() + f"/{update_uid}/insert_data_into_table/"
+        url = cls.get_object_url() + f"/{update_uid}/insert-data-into-table/"
 
         def _send_chunk_recursively(
             df_chunk: pd.DataFrame, chunk_idx: int, total_chunks: int, is_sub_chunk: bool = False
@@ -2688,8 +2601,7 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
                 update_priority_dict=update_priority_dict,
             )
         }
-        # r = self.s.post(f"{base_url}/get_metadatas_and_set_updates/", **payload)
-        url = f"{base_url}/get_metadatas_and_set_updates/"
+        url = f"{base_url}/get-metadatas-and-set-updates/"
         r = make_request(s=s, loaders=cls.LOADERS, r_type="POST", url=url, payload=payload)
         if r.status_code != 200:
             raise Exception(f"Error in request {r.text}")
@@ -2715,7 +2627,7 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
         )
 
     def depends_on_connect(self, target_update_node_uid):
-        url = self.get_object_url() + f"/{self._public_uid()}/depends_on_connect/"
+        url = self.get_object_url() + f"/{self._public_uid()}/depends-on-connect/"
         s = self.build_session()
         payload = dict(
             json={
@@ -2727,7 +2639,7 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
             raise Exception(f"Error in request {r.text}")
 
     def depends_on_connect_to_api_table(self, target_table_uid, timeout=None):
-        url = self.get_object_url() + f"/{self._public_uid()}/depends_on_connect_to_api_table/"
+        url = self.get_object_url() + f"/{self._public_uid()}/depends-on-connect-to-api-table/"
         s = self.build_session()
         payload = dict(
             json={
@@ -3209,7 +3121,7 @@ class TimeIndexMetaTable(MetaTable):
     @classmethod
     def get_or_create(cls, **kwargs):
         kwargs = serialize_to_json(kwargs)
-        url = cls.get_object_url() + "/get_or_create/"
+        url = cls.get_object_url() + "/get-or-create/"
         payload = {"json": kwargs}
         s = cls.build_session()
         r = make_request(s=s, loaders=cls.LOADERS, r_type="POST", url=url, payload=payload)
@@ -3388,7 +3300,7 @@ class TimeIndexMetaTable(MetaTable):
             )
         }
         s = self.build_session()
-        url = f"{base_url}/{self._public_uid()}/get_last_observation/"
+        url = f"{base_url}/{self._public_uid()}/get-last-observation/"
         r = make_request(
             r_type="POST",
             url=url,
@@ -3435,7 +3347,7 @@ class TimeIndexMetaTable(MetaTable):
     ) -> pd.DataFrame:
         """Internal shared implementation for fetching data between dates."""
         return_storage_node = False
-        if "get_data_between_dates_from_node_identifier" in url:
+        if "get-data-between-dates-from-node-identifier" in url:
             return_storage_node = True
 
         def fetch_one_batch(chunk_dimension_range_map):
@@ -3525,8 +3437,8 @@ class TimeIndexMetaTable(MetaTable):
         dimension_range_map: list[dict[str, Any]] | None = None,
         columns: list = None,
     ):
-        """Public helper for /{uid}/get_data_between_dates_from_remote/."""
-        url = self.get_object_url() + f"/{self._public_uid()}/get_data_between_dates_from_remote/"
+        """Read remote rows through the canonical detail action."""
+        url = self.get_object_url() + f"/{self._public_uid()}/get-data-between-dates-from-remote/"
         dimension_payload = self._build_dimension_payload(
             dimension_filters=dimension_filters,
             index_coordinates=index_coordinates,
@@ -3563,7 +3475,7 @@ class TimeIndexMetaTable(MetaTable):
         Same behaviour as get_data_between_dates_from_api,
         but calls the node-identifier endpoint and includes node_identifier in payload.
         """
-        url = cls.get_object_url() + "/get_data_between_dates_from_node_identifier/"
+        url = cls.get_object_url() + "/get-data-between-dates-from-node-identifier/"
         dimension_range_map = cls._normalize_dimension_range_map(dimension_range_map)
 
         return cls._get_data_between_dates_common(
@@ -3631,14 +3543,14 @@ class Scheduler(BasePydanticModel, BaseObjectOrm):
         **kwargs,
     ):
         """
-        POST /schedulers/build_and_assign_to_update_nodes/
+        POST /schedulers/build-and-assign-to-update-nodes/
         body: {
           scheduler_name, update_node_uids, delink_all_ts?,
           remove_from_other_schedulers?, scheduler_kwargs?
         }
         """
         s = cls.build_session()
-        url = cls.get_object_url() + "/build_and_assign_to_update_nodes/"
+        url = cls.get_object_url() + "/build-and-assign-to-update-nodes/"
         request_body = {
             "scheduler_name": scheduler_name,
             "delink_all_update_nodes": delink_all_ts,
@@ -4885,7 +4797,7 @@ class PodDataSource:
         if data_source is None:
             raise ValueError(
                 "set_local_db requires an explicit local DataSource. "
-                "Create one with DataSource.create_duckdb() or DataSource.create_sqlite() and pass "
+                "Create one with DataSource.create_duckdb() and pass "
                 "SessionDataSource.set_local_db(data_source=data_source)."
             )
         class_type = getattr(data_source, "class_type", None)

@@ -803,7 +803,7 @@ class Notification(DetailActionObjectMixin, BasePydanticModel, UserApiBaseObject
         timeout: int | float | tuple[float, float] | None = None,
     ) -> Notification:
         """
-        Mark this notification as read via `POST /api/v1/notifications/<id>/mark-read/`.
+        Mark this notification as read via `POST /api/v1/notifications/<uid>/mark-read/`.
         """
         payload = self._request_detail_action(
             r_type="POST",
@@ -820,7 +820,7 @@ class Notification(DetailActionObjectMixin, BasePydanticModel, UserApiBaseObject
         timeout: int | float | tuple[float, float] | None = None,
     ) -> None:
         """
-        Dismiss this notification via `POST /api/v1/notifications/<id>/dismiss/`.
+        Dismiss this notification via `POST /api/v1/notifications/<uid>/dismiss/`.
         """
         self._request_detail_action(
             r_type="POST",
@@ -1187,15 +1187,8 @@ class User(UserApiBaseObjectOrm, BasePydanticModel):
         user_id: int | None = None,
     ) -> User:
         outbound_headers = _build_request_bound_outbound_headers(headers)
-        if user_uid:
-            url = f"{cls.get_object_url()}/me/"
-            params = None
-        elif user_id is None:
-            url = f"{cls.get_object_url()}/me/"
-            params = None
-        else:
-            url = f"{cls.get_object_url()}/{user_id}/"
-            params = {"serializer": "full"}
+        url = f"{cls.get_object_url()}/me/"
+        params = None
 
         response = cls.build_session().get(
             url,

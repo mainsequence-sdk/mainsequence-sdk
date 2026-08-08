@@ -165,8 +165,7 @@ def test_data_node_update_get_or_create_uses_current_project_branch_uid(monkeypa
                 "build_configuration": {},
                 "orm_class": "DataNodeUpdate",
                 "data_node_storage": "storage-1",
-                "tags": [],
-                "labels": [],
+                    "labels": [],
                 "description": None,
                 "update_details": None,
                 "run_configuration": None,
@@ -498,33 +497,6 @@ def test_data_source_create_duckdb_makes_creation_explicit(monkeypatch):
     }
 
 
-def test_data_source_create_sqlite_makes_creation_explicit(monkeypatch):
-    captured = {}
-    monkeypatch.setattr(models_metatables, "bios_uuid", lambda: "host-456")
-
-    def _get_or_create(cls, time_out=None, **kwargs):
-        captured["time_out"] = time_out
-        captured["kwargs"] = kwargs
-        return types.SimpleNamespace(id=8, class_type=models_metatables.SQLITE)
-
-    monkeypatch.setattr(
-        models_metatables.DataSource,
-        "get_or_create_sqlite",
-        classmethod(_get_or_create),
-    )
-
-    data_source = models_metatables.DataSource.create_sqlite(time_out=20)
-
-    assert data_source.id == 8
-    assert captured == {
-        "time_out": 20,
-        "kwargs": {
-            "display_name": "SQLite_host-456",
-            "host_mac_address": "host-456",
-        },
-    }
-
-
 def test_set_local_db_requires_explicit_duckdb_data_source():
     with pytest.raises(ValueError, match="DataSource.create_duckdb"):
         models_metatables.PodDataSource().set_local_db()
@@ -588,9 +560,6 @@ def test_set_local_db_accepts_explicit_sqlite_source_without_hidden_creation(mon
     )
     captured = {}
 
-    def _hidden_create(*args, **kwargs):
-        raise AssertionError("set_local_db should not create the physical SQLite DataSource")
-
     def _filter_storages(cls, **kwargs):
         captured["filter_kwargs"] = kwargs
         return []
@@ -606,11 +575,6 @@ def test_set_local_db_accepts_explicit_sqlite_source_without_hidden_creation(mon
         def drop_table(table):
             raise AssertionError(f"unexpected drop_table({table!r})")
 
-    monkeypatch.setattr(
-        models_metatables.DataSource,
-        "get_or_create_sqlite",
-        classmethod(_hidden_create),
-    )
     monkeypatch.setattr(
         models_metatables.TimeIndexMetaTable,
         "filter",

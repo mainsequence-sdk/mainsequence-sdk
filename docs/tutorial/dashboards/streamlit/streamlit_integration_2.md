@@ -64,12 +64,12 @@ Once the commit is pushed, list the resources discovered from the current remote
 mainsequence project project_resource list
 ```
 
-Find the resource ids for:
+Find the resource UIDs for:
 
 - `dashboards/tutorial_fixed_income_dashboard/app.py`
 - `dashboards/tutorial_fixed_income_dashboard/README.md`
 
-You will also need the image id from the previous step.
+You will also need the image UID from the previous step.
 
 ## 4) Create the dashboard release
 
@@ -77,9 +77,8 @@ Create the dashboard release with:
 
 ```bash
 mainsequence project project_resource create_dashboard \
-  --related-image-id <IMAGE_ID> \
-  --resource-id <APP_RESOURCE_ID> \
-  --readme-resource-id <README_RESOURCE_ID>
+  --related-image-uid <IMAGE_UID> \
+  --resource-uid <APP_RESOURCE_UID>
 ```
 
 This is the current CLI flow for dashboard deployment.
@@ -96,7 +95,7 @@ The simplest verification flow is:
 
 1. confirm the image exists with `mainsequence project images list`
 2. confirm the dashboard resources exist with `mainsequence project project_resource list`
-3. confirm `create_dashboard` returned a release id
+3. confirm `create_dashboard` returned a release UID
 
 If you want a direct SDK verification, you can query releases for the dashboard resource:
 
@@ -105,16 +104,16 @@ PYTHONPATH=/Users/jose/code/MainSequenceClientSide/mainsequence-sdk \
 .venv/bin/python - <<'PY'
 from mainsequence.client.models_helpers import ProjectResource, ResourceRelease
 
-app_resource = ProjectResource.get(path="dashboards/tutorial_fixed_income_dashboard/app.py")
-releases = ResourceRelease.filter(resource=app_resource.id)
+app_resource = ProjectResource.get_by_uid("<APP_RESOURCE_UID>")
+releases = ResourceRelease.filter(resource__uid=app_resource.uid)
 
 for release in releases:
     print(
         {
-            "id": release.id,
+            "uid": release.uid,
             "release_kind": release.release_kind,
             "subdomain": release.subdomain,
-            "related_image": release.related_image,
+            "resource_uid": release.resource_uid,
         }
     )
 PY

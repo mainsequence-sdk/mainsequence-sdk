@@ -97,13 +97,13 @@ def _patch_preflight(monkeypatch, migration_cli, migration, *, emit_reservation=
                 )
             if on_metatable_reservation_status is not None:
                 on_metatable_reservation_status(
-                    "Serializing POST http://example.test/ts_manager/meta_table/ payload..."
+                    "Serializing POST http://example.test/api/v1/meta-tables/ payload..."
                 )
                 on_metatable_reservation_status(
-                    "Sending HTTP POST http://example.test/ts_manager/meta_table/..."
+                    "Sending HTTP POST http://example.test/api/v1/meta-tables/..."
                 )
                 on_metatable_reservation_status(
-                    "Received HTTP 200 from POST http://example.test/ts_manager/meta_table/."
+                    "Received HTTP 200 from POST http://example.test/api/v1/meta-tables/."
                 )
             on_metatable_reserved(
                 Account,

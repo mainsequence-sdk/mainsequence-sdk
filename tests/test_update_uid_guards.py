@@ -17,7 +17,6 @@ def _data_node_update_without_uid() -> models_metatables.DataNodeUpdate:
 @pytest.mark.parametrize(
     ("method_name", "args", "kwargs"),
     [
-        ("add_tags", (["curated"],), {}),
         ("set_start_of_execution", (), {}),
         ("set_end_of_execution", (), {"historical_update_uid": "historical-update-uid"}),
         ("set_last_update_index_time_from_update_stats", (), {}),

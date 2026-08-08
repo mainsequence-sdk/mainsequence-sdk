@@ -90,7 +90,7 @@ def test_data_node_storage_uses_time_index_meta_table_endpoint():
     assert isinstance(storage, MetaTable)
     assert storage.management_mode == "platform_managed"
     assert storage.physical_table_name == "prices_storage_hash"
-    assert TimeIndexMetaTable.get_object_url().endswith("/ts_manager/time_index_meta_table")
+    assert TimeIndexMetaTable.get_object_url().endswith("/time-index-meta-tables")
 
 
 def test_metatable_update_models_are_not_exported_from_models_foundry():
@@ -174,7 +174,7 @@ def test_data_node_update_details_patches_by_data_node_update_uid(monkeypatch):
     assert details.related_table_uid == "data-node-update-44"
     assert captured["r_type"] == "PATCH"
     assert captured["url"].endswith(
-        "/ts_manager/local_time_serie_update_details/data-node-update-44/"
+        "/local-time-series-update-details/data-node-update-44/"
     )
     assert captured["payload"] == {"json": {"update_priority": 7}}
     assert captured["time_out"] == 12

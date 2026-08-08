@@ -588,27 +588,6 @@ class CodingAgentService(BaseObjectOrm, BasePydanticModel):
             expected_statuses=(200, 201, 202),
         )
 
-    def reconcile_runtime(
-        self,
-        *,
-        reason: str | None = None,
-        timeout=None,
-    ) -> dict[str, Any]:
-        body = {} if reason is None else {"reason": str(reason)}
-        payload = {"json": serialize_to_json(body)}
-        response = make_request(
-            s=type(self).build_session(),
-            loaders=type(self).LOADERS,
-            r_type="POST",
-            url=self.get_action_url("reconcile-runtime"),
-            payload=payload,
-            time_out=timeout,
-        )
-        if response.status_code not in (200, 202):
-            raise_for_response(response, payload=payload)
-        return response.json()
-
-
 class AgentSessionInsightsBase(BasePydanticModel):
     has_insights: bool = Field(
         True,

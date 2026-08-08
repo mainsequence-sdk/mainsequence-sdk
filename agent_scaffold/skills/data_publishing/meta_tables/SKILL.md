@@ -392,7 +392,7 @@ stream cleanup. Route that work to the DataNode skill and use
 The DataNode delete path is:
 
 ```text
-POST /orm/api/ts_manager/dynamic_table/<dynamic_table_uid>/delete_after_date/
+POST /api/v1/time-index-meta-tables/<table_uid>/delete-after-date/
 ```
 
 Use `after_date` for global tail rollback. Use `dimension_filters` or

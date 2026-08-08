@@ -226,8 +226,8 @@ the old reservation conflict-diagnostic engine.
 - [x] Update SDK knowledge/tutorial docs that still mention
   `reserve-managed/`.
 - [x] Add focused SDK tests for typed reservation routing:
-  `PlatformManagedMetaTable` uses `/meta_table/` and
-  `PlatformTimeIndexMetaTable` uses `/dynamic_table/`.
+  `PlatformManagedMetaTable` uses `/api/v1/meta-tables/` and
+  `PlatformTimeIndexMetaTable` uses `/api/v1/time-index-meta-tables/`.
 - [x] Add focused SDK tests proving the request body is a raw JSON list and
   contains `is_alembic_managed=true`.
 

@@ -160,16 +160,16 @@ Example CLI flow for constants:
 
 ```bash
 mainsequence constants create MODEL__DEFAULT_WINDOW 252
-mainsequence constants can_view 42
-mainsequence constants add_to_view 42 7
+mainsequence constants can_view <CONSTANT_UID>
+mainsequence constants add_to_view <CONSTANT_UID> 7
 ```
 
 Example CLI flow for secrets:
 
 ```bash
 mainsequence secrets create POLYGON_API_KEY your-secret-value
-mainsequence secrets can_view 42
-mainsequence secrets add_to_view 42 7
+mainsequence secrets can_view <SECRET_UID>
+mainsequence secrets add_to_view <SECRET_UID> 7
 ```
 
 ## Why this matters for the rest of the tutorial

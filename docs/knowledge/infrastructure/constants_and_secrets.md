@@ -409,7 +409,7 @@ Constants:
 mainsequence constants list
 mainsequence constants create MODEL__DEFAULT_WINDOW 252
 mainsequence constants create BROKER__DEFAULTS '{"mode":"paper"}'
-mainsequence constants delete 42
+mainsequence constants delete <CONSTANT_UID>
 ```
 
 Secrets:
@@ -417,7 +417,7 @@ Secrets:
 ```bash
 mainsequence secrets list
 mainsequence secrets create POLYGON_API_KEY your-secret-value
-mainsequence secrets delete 42
+mainsequence secrets delete <SECRET_UID>
 ```
 
 Important behavior:
@@ -431,17 +431,17 @@ Important behavior:
 These commands show the resource-level sharing model directly:
 
 ```bash
-mainsequence constants can_view 42
-mainsequence constants can_edit 42
-mainsequence constants add_to_view 42 7
-mainsequence constants add_to_edit 42 7
-mainsequence constants remove_from_view 42 7
-mainsequence constants remove_from_edit 42 7
+mainsequence constants can_view <CONSTANT_UID>
+mainsequence constants can_edit <CONSTANT_UID>
+mainsequence constants add_to_view <CONSTANT_UID> 7
+mainsequence constants add_to_edit <CONSTANT_UID> 7
+mainsequence constants remove_from_view <CONSTANT_UID> 7
+mainsequence constants remove_from_edit <CONSTANT_UID> 7
 ```
 
 Interpretation:
 
-- `42` is the constant id
+- `<CONSTANT_UID>` is the constant public UID
 - `7` is the user id receiving or losing access
 
 This is the most concrete CLI example of Main Sequence RBAC at the resource level.

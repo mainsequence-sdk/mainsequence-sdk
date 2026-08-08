@@ -562,10 +562,6 @@ class BasePersistManager:
             "metadata no longer stores source code fields."
         )
 
-    def add_tags(self, tags: list[str]) -> None:
-        if any(t not in self.data_node_update.tags for t in tags):
-            self.data_node_update.add_tags(tags=tags)
-
     @property
     def persist_size(self) -> int:
         return getattr(self.storage_metadata, "table_size", 0)

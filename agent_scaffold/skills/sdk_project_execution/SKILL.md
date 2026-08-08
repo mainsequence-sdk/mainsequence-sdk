@@ -145,11 +145,11 @@ Also maintain these standard project areas when relevant:
 - `dashboards/`
 - `dashboards/components/`
 
-If the project has recurring scheduled jobs, keep:
-
-- `scheduled_jobs.yaml`
-
-Treat `scheduled_jobs.yaml` as the repository-managed input file for batch job sync/create, not as a separate scheduler system.
+If the project has recurring scheduled jobs or repository-managed releases,
+keep backend-managed declarations as direct `.yaml` or `.yml` children of
+`.mainsequence/workflows/`. Never create `scheduled_jobs.yaml`; retrieve and
+validate the current workflow contract through the backend-owned ProjectBranch
+workflow endpoints.
 
 Use the standard Main Sequence project structure unless the repository explicitly documents a different layout.
 

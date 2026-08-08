@@ -574,25 +574,6 @@ class BaseObjectOrm:
         return cls(**r.json())
 
     @classmethod
-    def update_or_create(cls, timeout=None, *args, **kwargs):
-        url = f"{cls.get_object_url()}/update_or_create/"
-        data = cls.serialize_for_json(kwargs)
-        payload = {"json": data}
-
-        r = make_request(
-            s=cls.build_session(),
-            loaders=cls.LOADERS,
-            r_type="POST",
-            url=url,
-            payload=payload,
-            time_out=timeout,
-        )
-        if r.status_code not in [201, 200]:
-            raise_for_response(r)
-
-        return cls(**r.json())
-
-    @classmethod
     def _destroy_by_reference(cls, public_reference, *args, timeout=None, **kwargs):
         base_url = cls.get_object_url()
         payload: dict[str, Any] = {}

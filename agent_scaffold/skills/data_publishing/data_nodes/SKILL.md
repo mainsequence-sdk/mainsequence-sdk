@@ -345,7 +345,7 @@ delete helpers to clean DataNode storage rows.
 The SDK call targets:
 
 ```text
-POST /orm/api/ts_manager/dynamic_table/<dynamic_table_uid>/delete_after_date/
+POST /api/v1/time-index-meta-tables/<table_uid>/delete-after-date/
 ```
 
 Use a global tail delete only when all streams in the table should be rolled

@@ -153,8 +153,8 @@ def test_get_logged_user_uses_request_bound_headers_for_user_lookup(monkeypatch)
         models_user_mod._CURRENT_AUTH_HEADERS.reset(auth_token)
 
     assert user.id == 4
-    assert str(captured["url"]).endswith("/api/v1/users/4/")
-    assert captured["params"] == {"serializer": "full"}
+    assert str(captured["url"]).endswith("/api/v1/users/me/")
+    assert captured["params"] is None
     assert captured["headers"]["Authorization"] == "Bearer inbound-token"
     assert captured["headers"]["Cookie"] == "sessionid=abc"
     assert "Host" not in captured["headers"]

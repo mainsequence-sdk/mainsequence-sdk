@@ -81,21 +81,14 @@ provider MetaTable UIDs.
 ## External Managed
 
 Use external-registered mode when your application already owns the physical
-tables. This example creates a local SQLite `DataSource`, creates the
-Account/Asset tables locally with
-SQLAlchemy, and registers those tables with TS Manager.
+tables. This example creates the Account/Asset tables through your SQLAlchemy
+connection and registers those tables against an existing backend `DataSource`.
 
 Register existing externally managed tables:
 
 ```bash
-python -m examples.meta_tables.external_managed.account_asset
-```
-
-By default, the SQLite database file is the SDK local SQLite file. Override it
-only when you need a different local file:
-
-```bash
-export SQLITE_PATH="/tmp/mainsequence-meta-table-example.sqlite"
+export MAINSEQUENCE_META_TABLE_DATA_SOURCE_UID="<registered-data-source-uid>"
+export MAINSEQUENCE_META_TABLE_SQLALCHEMY_URL="<sqlalchemy-connection-url>"
 python -m examples.meta_tables.external_managed.account_asset
 ```
 

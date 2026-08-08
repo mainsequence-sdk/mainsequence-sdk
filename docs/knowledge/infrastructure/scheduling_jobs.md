@@ -11,7 +11,7 @@ In this guide, you will:
 - understand the lifecycle from project code to scheduled execution
 - manage jobs from the CLI
 - create the same jobs from the Python client
-- decide when to use `scheduled_jobs.yaml` and when to create jobs directly
+- decide when to use backend-managed project workflows and when to create jobs directly
 - inspect runs, logs, and frozen images
 
 ## The mental model
@@ -43,11 +43,13 @@ For shared projects, treat recurring schedules as part of the repository.
 
 That means:
 
-- define recurring jobs in `scheduled_jobs.yaml`
-- submit the batch with `mainsequence project schedule_batch_jobs`
+- define recurring Jobs and ResourceReleases under `.mainsequence/workflows/`
+- validate each document against the current backend ProjectBranch workflow contract
+- commit and push the validated file so repository events apply it
 - use direct CLI or client-created jobs mainly for experiments, backfills, or one-off operational tasks
 
-`scheduled_jobs.yaml` is not a separate platform scheduler model. It is the repository-managed input file for the batch job sync/create flow.
+The removed `scheduled_jobs.yaml` format and `schedule_batch_jobs` CLI command
+are not compatibility surfaces.
 
 !!! tip "Default rule"
     If a job is important enough to run every day, it is usually important enough to review in version control.
@@ -60,40 +62,17 @@ There are two valid workflows, and they serve different purposes.
 
 This is the best option for long-lived schedules used by a team.
 
-You define the jobs in `scheduled_jobs.yaml`, commit that file, and submit the batch with:
+Retrieve the current YAML from
+`GET /api/v1/project-branches/{uid}/workflow-template/`. Validate the proposed
+repository `path` and `content` with
+`POST /api/v1/project-branches/{uid}/validate-workflow/`, save the result as a
+direct `.yaml` or `.yml` child of `.mainsequence/workflows/`, then commit it.
 
-```bash
-mainsequence project schedule_batch_jobs scheduled_jobs.yaml
-```
-
-That file is just the reviewed repository representation of the batch operation. The CLI reads it, validates each job with the same rules used for individual creation, and then submits the batch through the same bulk job sync/create path.
-
-Before submission, the CLI shows the project's existing images and asks you to choose which image the batch should use. The selected image is then applied to every job in the submitted batch.
-
-After that selection, the CLI asks for confirmation and explicitly warns that the whole batch will be scheduled on the same image.
-
-Example:
-
-```yaml
-jobs:
-  - name: "Simulated Prices"
-    execution_path: "scripts/simulated_prices_launcher.py"
-    task_schedule:
-      type: "crontab"
-      expression: "0 0 * * *"
-    related_image_id: 77
-    cpu_request: "0.25"
-    memory_request: "0.5"
-    spot: false
-```
-
-Each entry is validated with the same rules used by individual job creation. That means the job still needs a related image id, valid compute settings, and a valid target. If one definition is invalid, the batch submission fails before anything is sent.
-
-Set `spot` explicitly in repository-managed job files. `spot: true` means the
-job is allowed to prefer lower-cost interruptible capacity, conceptually similar
-to GCP Spot capacity. `spot: false` means the job should stay on standard
-capacity. For long-lived reviewed schedules, make that choice explicit in the
-YAML instead of leaving it implicit.
+The backend owns the parser, accepted `api_version`, resource kinds, defaults,
+permissions, and application semantics. Clients must not reproduce that logic.
+Repository events process each file independently. There is no prune or
+strict-delete mode, and removing a declaration does not delete its backend
+resource.
 
 This approach is easier to review, easier to reproduce, and much easier to reason about later.
 
@@ -122,27 +101,17 @@ mainsequence project sync -m "Prepare scheduling changes"
 
 That command is more than a `git push`. It updates the local environment, exports `requirements.txt`, creates a commit, and pushes the result in the platform-compatible flow.
 
-### Submit a reviewed batch file
+### Apply a reviewed project workflow
 
-Once your repository state is ready, apply the scheduled jobs batch explicitly:
-
-```bash
-mainsequence project schedule_batch_jobs scheduled_jobs.yaml
-```
-
-This command reads the YAML file, checks that it contains a top-level `jobs` list, validates each job with the same rules as `Job.create()`, and then submits the normalized list to the backend in one request. Internally, this is still the bulk job sync/create path, not a separate scheduler-specific configuration system.
-
-Before submission, the CLI shows the project's existing images and asks you to choose which image the batch should use. That selected image is then applied to every job in the submitted batch.
-
-If you want the file to act as the full desired state for project jobs, add strict mode:
+After backend validation, commit the workflow through the standard sync:
 
 ```bash
-mainsequence project schedule_batch_jobs scheduled_jobs.yaml --strict
+mainsequence project sync -m "Update project workflow"
 ```
 
-In strict mode, jobs that exist remotely but are not present in the YAML file may be removed. Jobs that are still linked to dashboards or resource releases are protected and will appear as not deleted in the batch result. The default is `--no-strict`.
-
-For reviewed batch files, also make the compute intent explicit:
+The push triggers backend repository processing. Inspect the repository-event
+result and resulting jobs or deployment runs; Git success is not deployment
+success. For reviewed job declarations, make compute intent explicit:
 
 - `spot: false` for stable standard capacity
 - `spot: true` only for retry-safe workloads that can be interrupted
@@ -151,10 +120,10 @@ If you want to validate one of the synchronized jobs immediately instead of wait
 
 ```bash
 mainsequence project jobs list
-mainsequence project jobs run <JOB_ID>
-mainsequence project jobs run <JOB_ID> --arg demo-from-cli
-mainsequence project jobs run <JOB_ID> -- --name demo-from-cli
-mainsequence project jobs runs list <JOB_ID>
+mainsequence project jobs run <JOB_UID>
+mainsequence project jobs run <JOB_UID> --arg demo-from-cli
+mainsequence project jobs run <JOB_UID> -- --name demo-from-cli
+mainsequence project jobs runs list <JOB_UID>
 mainsequence project jobs runs logs <JOB_RUN_UID> --max-wait-seconds 900
 ```
 
@@ -166,17 +135,17 @@ Use this when you want a job that only runs when someone triggers it:
 mainsequence project jobs create \
   --name "Simulated Prices - Manual" \
   --execution-path scripts/simulated_prices_launcher.py \
-  --related-image-id <IMAGE_ID>
+  --related-image-uid <IMAGE_UID>
 ```
 
 Then run it:
 
 ```bash
 mainsequence project jobs list
-mainsequence project jobs run <JOB_ID>
-mainsequence project jobs run <JOB_ID> --arg demo-from-cli
-mainsequence project jobs run <JOB_ID> -- --name demo-from-cli
-mainsequence project jobs runs list <JOB_ID>
+mainsequence project jobs run <JOB_UID>
+mainsequence project jobs run <JOB_UID> --arg demo-from-cli
+mainsequence project jobs run <JOB_UID> -- --name demo-from-cli
+mainsequence project jobs runs list <JOB_UID>
 mainsequence project jobs runs logs <JOB_RUN_UID> --max-wait-seconds 900
 ```
 
@@ -188,7 +157,7 @@ Use interval schedules when the cadence is simple, for example every hour:
 mainsequence project jobs create \
   --name "Simulated Prices - Hourly" \
   --execution-path scripts/simulated_prices_launcher.py \
-  --related-image-id <IMAGE_ID> \
+  --related-image-uid <IMAGE_UID> \
   --schedule-type interval \
   --schedule-every 1 \
   --schedule-period hours
@@ -202,7 +171,7 @@ Use crontab when you want calendar-based timing such as nightly runs:
 mainsequence project jobs create \
   --name "Simulated Prices - Nightly" \
   --execution-path scripts/simulated_prices_launcher.py \
-  --related-image-id <IMAGE_ID> \
+  --related-image-uid <IMAGE_UID> \
   --schedule-type crontab \
   --schedule-expression "0 0 * * *"
 ```
@@ -213,7 +182,7 @@ You can also add a start time or mark the schedule as one-off:
 mainsequence project jobs create \
   --name "One-time Backfill" \
   --execution-path scripts/simulated_prices_launcher.py \
-  --related-image-id <IMAGE_ID> \
+  --related-image-uid <IMAGE_UID> \
   --schedule-type crontab \
   --schedule-expression "0 2 * * *" \
   --schedule-start-time "2026-03-15T02:00:00Z" \
@@ -226,7 +195,7 @@ Once the job exists, the basic operational loop is:
 
 ```bash
 mainsequence project jobs list
-mainsequence project jobs runs list <JOB_ID>
+mainsequence project jobs runs list <JOB_UID>
 mainsequence project jobs runs logs <JOB_RUN_UID> --max-wait-seconds 900
 ```
 
@@ -254,7 +223,7 @@ Then create the job against that image:
 mainsequence project jobs create \
   --name "Simulated Prices - Frozen" \
   --execution-path scripts/simulated_prices_launcher.py \
-  --related-image-id <IMAGE_ID>
+  --related-image-uid <IMAGE_UID>
 ```
 
 This is the right pattern when you need confidence that the job will keep running with the same code and base image even after the repository evolves.
@@ -279,9 +248,9 @@ from mainsequence.client import CrontabSchedule, IntervalSchedule, Job, JobRun
 ```python
 manual_job = Job.create(
     name="Simulated Prices - Manual",
-    project_id=123,
+    project_branch_uid="<PROJECT_BRANCH_UID>",
     execution_path="scripts/simulated_prices_launcher.py",
-    related_image_id=77,
+    related_image_uid="<PROJECT_IMAGE_UID>",
     cpu_request="0.25",
     memory_request="0.5",
 )
@@ -292,9 +261,9 @@ manual_job = Job.create(
 ```python
 hourly_job = Job.create(
     name="Simulated Prices - Hourly",
-    project_id=123,
+    project_branch_uid="<PROJECT_BRANCH_UID>",
     execution_path="scripts/simulated_prices_launcher.py",
-    related_image_id=77,
+    related_image_uid="<PROJECT_IMAGE_UID>",
     task_schedule=IntervalSchedule(
         every=1,
         period="hours",
@@ -310,9 +279,9 @@ hourly_job = Job.create(
 ```python
 nightly_job = Job.create(
     name="Simulated Prices - Nightly",
-    project_id=123,
+    project_branch_uid="<PROJECT_BRANCH_UID>",
     execution_path="scripts/simulated_prices_launcher.py",
-    related_image_id=77,
+    related_image_uid="<PROJECT_IMAGE_UID>",
     task_schedule={
         "schedule": CrontabSchedule(
             expression="0 0 * * *",
@@ -328,10 +297,10 @@ nightly_job = Job.create(
 ### List jobs, trigger a run, and fetch logs
 
 ```python
-jobs = Job.filter(project=123)
+jobs = Job.filter(project__uid="<PROJECT_BRANCH_UID>")
 
 run_payload = nightly_job.run_job()
-job_runs = JobRun.filter(job__id=[nightly_job.id])
+job_runs = JobRun.filter(job__uid=[nightly_job.uid])
 
 latest_run = job_runs[0]
 logs = latest_run.get_logs()
@@ -345,7 +314,7 @@ In practice, the client gives you the same lifecycle as the CLI:
 - read logs for the run you care about
 
 !!! note "One practical difference"
-    The CLI applies safe defaults for `cpu_request`, `memory_request`, `spot`, and `max_runtime_seconds` when you omit them. The Python client expects you to pass the compute values yourself, and jobs still require `related_image_id`.
+    The CLI applies safe defaults for `cpu_request`, `memory_request`, `spot`, and `max_runtime_seconds` when you omit them. The Python client expects you to pass the compute values yourself, and jobs still require `related_image_uid`.
 
 ## What the schedule fields mean
 
@@ -426,14 +395,15 @@ If a job is operationally important, ask whether it should follow the latest pro
 
 ### Keep recurring jobs reviewable
 
-For production-like schedules, prefer `scheduled_jobs.yaml` plus `mainsequence project schedule_batch_jobs`.
+For production-like schedules, prefer validated declarations under
+`.mainsequence/workflows/`.
 
 That gives you:
 
 - review in pull requests
 - a visible history of schedule changes
 - less ambiguity about why a job exists
-- a repository-managed wrapper around the same bulk job sync/create operation
+- backend-owned validation and repository-event application
 
 ### Separate creation from observation
 
@@ -441,7 +411,7 @@ Creating a schedule is only half of the work. Always verify:
 
 ```bash
 mainsequence project jobs list
-mainsequence project jobs runs list <JOB_ID>
+mainsequence project jobs runs list <JOB_UID>
 mainsequence project jobs runs logs <JOB_RUN_UID>
 ```
 
@@ -455,11 +425,11 @@ Usually this means one of three things:
 
 - the `execution_path` points at the wrong launcher
 - the repository changed after the job was created and the job was not pinned to an image
-- the schedule exists, but the actual logic should have been stored in `scheduled_jobs.yaml` and reviewed first
+- the schedule exists, but the workflow declaration was not validated and reviewed first
 
 ### "The client example fails, but the CLI worked"
 
-The most common reasons are missing compute values or a missing `related_image_id`. The CLI supplies compute defaults. `Job.create()` does not.
+The most common reasons are missing compute values or a missing `related_image_uid`. The CLI supplies compute defaults. `Job.create()` does not.
 
 ### "The cron expression looks valid, but the API rejects it"
 

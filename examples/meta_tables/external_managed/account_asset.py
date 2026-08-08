@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import uuid
 
 from sqlalchemy import ForeignKey, Index, MetaData, String, Uuid, create_engine
@@ -10,8 +11,7 @@ from examples.meta_tables.common import (
     DEFAULT_TIMEOUT,
     print_json,
 )
-from mainsequence.client import DataSource, MetaTable
-from mainsequence.client.data_sources_interfaces import get_sqlite_interface_class
+from mainsequence.client import MetaTable
 from mainsequence.meta_tables import (
     external_registered_registration_request_from_sqlalchemy_model,
     schema_table_name,
@@ -57,52 +57,46 @@ class Asset(Base):
     symbol: Mapped[str] = mapped_column(String(64), nullable=False)
 
 
-def local_sqlite_database_url() -> str:
-    sqlite_interface = get_sqlite_interface_class()()
-    sqlite_file = sqlite_interface.db_file
-    sqlite_interface.con.close()
-    return f"sqlite:///{sqlite_file.as_posix()}"
+def required_environment_value(name: str) -> str:
+    value = (os.environ.get(name) or "").strip()
+    if not value:
+        raise ValueError(f"{name} is required.")
+    return value
 
 
-def create_physical_tables_for_demo() -> None:
-    """Create the externally managed SQLite tables before registration."""
+def create_physical_tables_for_demo(sqlalchemy_url: str) -> None:
+    """Create the externally managed tables before registration."""
 
-    engine = create_engine(local_sqlite_database_url())
+    engine = create_engine(sqlalchemy_url)
     try:
         Base.metadata.create_all(engine)
     finally:
         engine.dispose()
 
 
-def create_local_sqlite_data_source() -> DataSource:
-    data_source = DataSource.create_sqlite(time_out=DEFAULT_TIMEOUT)
-    if not data_source.uid:
-        raise ValueError("SQLite DataSource response did not include a uid.")
-    return data_source
-
-
 def main() -> None:
-    data_source = create_local_sqlite_data_source()
-    create_physical_tables_for_demo()
-    print("\nCreated physical Account and Asset tables in local SQLite.")
+    data_source_uid = required_environment_value("MAINSEQUENCE_META_TABLE_DATA_SOURCE_UID")
+    sqlalchemy_url = required_environment_value("MAINSEQUENCE_META_TABLE_SQLALCHEMY_URL")
+    create_physical_tables_for_demo(sqlalchemy_url)
+    print("\nCreated physical Account and Asset tables in the external database.")
 
     account_request = external_registered_registration_request_from_sqlalchemy_model(
         Account,
-        data_source_uid=data_source.uid,
+        data_source_uid=data_source_uid,
         schema=DEFAULT_SCHEMA,
         introspect=False,
         description="Example externally managed account table.",
-        labels=["sdk-example", "external-managed", "sqlite"],
+        labels=["sdk-example", "external-managed"],
     )
     account_meta_table = MetaTable.register(account_request, timeout=DEFAULT_TIMEOUT)
 
     asset_request = external_registered_registration_request_from_sqlalchemy_model(
         Asset,
-        data_source_uid=data_source.uid,
+        data_source_uid=data_source_uid,
         schema=DEFAULT_SCHEMA,
         introspect=False,
         description="Example externally managed asset table.",
-        labels=["sdk-example", "external-managed", "sqlite"],
+        labels=["sdk-example", "external-managed"],
     )
     asset_meta_table = MetaTable.register(asset_request, timeout=DEFAULT_TIMEOUT)
     print_json("Registered Account MetaTable", account_meta_table)
