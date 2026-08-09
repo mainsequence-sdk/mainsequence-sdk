@@ -165,6 +165,15 @@ class Organization(UserApiBaseObjectOrm, BasePydanticModel):
         description="Whether the organization currently has unpaid invoices.",
         examples=[False],
     )
+    production_environment_uid: str | None = Field(
+        None,
+        title="Production Environment UID",
+        description=(
+            "Stable public UID of the organization's backend-managed production "
+            "project environment."
+        ),
+        examples=["00000000-0000-4000-8000-000000000002"],
+    )
 
 
 class Group(BasePydanticModel):

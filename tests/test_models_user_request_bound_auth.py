@@ -26,6 +26,17 @@ def test_get_authenticated_user_details_accepts_user_details_summary_contract(mo
                 "is_active": True,
                 "api_request_limit": 10000,
                 "mfa_enabled": False,
+                "organization": {
+                    "uid": "org-uid-1",
+                    "name": "Main Sequence",
+                    "url": "https://backend.test",
+                    "organization_domain": "main-sequence.io",
+                    "identity_platform_tenant_id": None,
+                    "has_pending_invoices": False,
+                    "production_environment_uid": (
+                        "00000000-0000-4000-8000-000000000002"
+                    ),
+                },
                 "groups": [
                     {
                         "name": "Organization Admin",
@@ -51,6 +62,10 @@ def test_get_authenticated_user_details_accepts_user_details_summary_contract(mo
     assert not hasattr(user.groups[0], "id")
     assert user.user_permissions == []
     assert user.organization_teams[0].uid == "team-uid-1"
+    assert (
+        user.organization.production_environment_uid
+        == "00000000-0000-4000-8000-000000000002"
+    )
 
     dumped = user.model_dump()
     assert "user_permissions" not in dumped

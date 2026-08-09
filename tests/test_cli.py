@@ -5174,6 +5174,9 @@ def test_get_logged_user_details_uses_canonical_authenticated_user_method(cli_mo
                         "id": 2,
                         "uid": "org-uid-2",
                         "name": "Main Sequence",
+                        "production_environment_uid": (
+                            "00000000-0000-4000-8000-000000000002"
+                        ),
                     },
                 }
             )
@@ -5198,6 +5201,10 @@ def test_get_logged_user_details_uses_canonical_authenticated_user_method(cli_mo
     assert "id" not in out["organization"]
     assert out["uid"] == "user-uid-7"
     assert out["username"] == "jose"
+    assert (
+        out["organization"]["production_environment_uid"]
+        == "00000000-0000-4000-8000-000000000002"
+    )
 
 
 def test_search_projects_uses_client_model(cli_mod, monkeypatch):

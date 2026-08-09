@@ -1229,6 +1229,7 @@ def test_team_manage_members_posts_bulk_membership_payload(monkeypatch):
 
 def test_user_org_team_models_deserialize_current_backend_uid_payloads():
     org_uid = "8f5d6b54-2f5e-4a8b-bb10-0b17f3f4c123"
+    production_environment_uid = "00000000-0000-4000-8000-000000000002"
     user_uid = "fdf409f7-d16f-4f71-986b-9057db6c7eca"
     team_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
     organization_payload = {
@@ -1238,10 +1239,12 @@ def test_user_org_team_models_deserialize_current_backend_uid_payloads():
         "organization_domain": "main-sequence.io",
         "identity_platform_tenant_id": None,
         "has_pending_invoices": False,
+        "production_environment_uid": production_environment_uid,
     }
 
     organization = models_user_mod.Organization.model_validate(organization_payload)
     assert organization.uid == org_uid
+    assert organization.production_environment_uid == production_environment_uid
     assert "id" not in organization.model_dump()
 
     current_user = models_user_mod.User.model_validate(
@@ -1264,6 +1267,7 @@ def test_user_org_team_models_deserialize_current_backend_uid_payloads():
         }
     )
     assert current_user.uid == user_uid
+    assert current_user.organization.production_environment_uid == production_environment_uid
     assert current_user.user_permissions == []
 
     user = models_user_mod.User.model_validate(
