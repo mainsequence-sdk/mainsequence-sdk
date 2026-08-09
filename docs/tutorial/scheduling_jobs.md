@@ -66,7 +66,8 @@ Before scheduling anything, make sure your environment is consistent and your la
    - Runs `uv lock` and `uv sync`.
    - Exports locked production dependencies to `requirements.txt`.
    - Runs `git add -A` and creates your commit.
-   - Creates an annotated `v<version>` tag.
+   - Requests the backend-owned default tag for the current ProjectBranch and
+     creates that annotated tag (`v<version>` on `main`, branch-qualified elsewhere).
    - Pushes the branch and tag with `git push --follow-tags`.
    - Uses your project SSH key setup for secure push flow.
 

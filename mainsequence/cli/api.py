@@ -924,6 +924,38 @@ def get_project_branch(project_branch_uid: str) -> dict[str, Any]:
     return payload
 
 
+def render_project_branch_default_redeployment_tag(
+    project_branch_uid: str,
+    *,
+    version: str,
+) -> str:
+    normalized_uid = str(project_branch_uid).strip()
+    normalized_version = str(version).strip()
+    if not normalized_uid:
+        raise ApiError("ProjectBranch UID is required.")
+    if not normalized_version:
+        raise ApiError("Project version is required.")
+
+    r = authed(
+        "POST",
+        f"/api/v1/project-branches/{normalized_uid}/default-redeployment-tag/",
+        {"version": normalized_version},
+    )
+    if not r.ok:
+        raise ApiError(
+            f"Default redeployment tag rendering failed ({r.status_code})."
+        )
+    payload = r.json()
+    if not isinstance(payload, dict):
+        raise ApiError("Default redeployment tag rendering returned an unexpected payload.")
+    if str(payload.get("version") or "").strip() != normalized_version:
+        raise ApiError("Default redeployment tag rendering returned another version.")
+    tag_name = str(payload.get("tag_name") or "").strip()
+    if not tag_name:
+        raise ApiError("Default redeployment tag rendering returned no tag name.")
+    return tag_name
+
+
 def resolve_project_branch_uid(project_branch_ref: str) -> str:
     payload = get_project_branch(project_branch_ref)
     normalized_uid = str(payload.get("uid") or "").strip()

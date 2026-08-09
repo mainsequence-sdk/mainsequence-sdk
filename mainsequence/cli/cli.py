@@ -181,6 +181,7 @@ from .api import (
     remove_secret_user_from_view,
     remove_team_user_from_edit,
     remove_team_user_from_view,
+    render_project_branch_default_redeployment_tag,
     repo_name_from_git_url,
     resolve_project,
     run_data_node_storage_query,
@@ -10192,10 +10193,10 @@ def project_sync(
 
     Workflow:
     1. patch the package version via `uv version`,
-    2. run `uv lock` + `uv sync`,
-    3. export locked `requirements.txt`,
-    4. commit the changes,
-    5. create an annotated `v<version>` tag,
+    2. request the backend-owned default tag for this ProjectBranch,
+    3. run `uv lock` + `uv sync`,
+    4. export locked `requirements.txt`,
+    5. commit the changes and create that annotated tag,
     6. push the branch and tag with `--follow-tags`.
 
     Parameters
@@ -10262,12 +10263,13 @@ def project_sync(
     steps = [
         "resolve uv executable",
         "uv version --bump patch",
+        "request backend default redeployment tag",
         "uv lock",
         "uv sync",
         "uv export (locked) -> requirements.txt",
         "git add -A",
         f'git commit -m "{safe_message}"',
-        "git tag -a v<version> -m v<version>",
+        "git tag -a <backend tag> -m <backend tag>",
         "git push --follow-tags",
     ]
 
@@ -10283,6 +10285,15 @@ def project_sync(
     uv = ensure_uv_installed(project_dir)
     with status("Running uv + git sync steps..."):
         run_uv(uv, ["version", "--bump", "patch"], cwd=project_dir, env=env)
+        version = uv_project_version(uv, cwd=project_dir, env=env)
+        try:
+            tag = render_project_branch_default_redeployment_tag(
+                project_branch_uid,
+                version=version,
+            )
+        except ApiError as exc:
+            error(f"Project sync tag resolution failed: {exc}")
+            raise typer.Exit(1) from exc
         run_uv(uv, ["lock"], cwd=project_dir, env=env)
         run_uv(uv, ["sync"], cwd=project_dir, env=env)
         # `uv sync` can prune ad hoc packages from `.venv`, including a `uv`
@@ -10299,8 +10310,6 @@ def project_sync(
 
         run_cmd(["git", "add", "-A"], cwd=project_dir, env=env)
         run_cmd(["git", "commit", "-m", safe_message], cwd=project_dir, env=env)
-        version = uv_project_version(uv, cwd=project_dir, env=env)
-        tag = f"v{version}"
         run_cmd(["git", "tag", "-a", tag, "-m", tag], cwd=project_dir, env=env)
         run_cmd(["git", "push", "--follow-tags"], cwd=project_dir, env=env)
 

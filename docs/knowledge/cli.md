@@ -67,7 +67,7 @@ mainsequence project freeze-env --path .
 mainsequence project sync -m "Update deps" --path .
 # first resolves the current named Git branch under MAIN_SEQUENCE_PROJECT_UID;
 # detached or unregistered branches fail before local mutations
-# then runs: uv version bump, uv lock/sync, export requirements, git commit + push
+# then requests the backend-owned branch tag and runs lock/sync/export/commit/push
 
 # Docker environment build
 mainsequence project build-docker-env --path .

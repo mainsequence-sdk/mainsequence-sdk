@@ -2538,6 +2538,43 @@ def test_get_current_user_profile_accepts_top_level_organization_object(cli_mod,
     assert out == {"username": "jose@main-sequence.io", "organization": "Main Sequence Dev"}
 
 
+def test_render_project_branch_default_redeployment_tag_uses_backend_contract(
+    cli_mod,
+    monkeypatch,
+):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {}
+
+    class _Response:
+        ok = True
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {"version": "1.2.3", "tag_name": "v1.2.3-dev.1"}
+
+    def _authed(method, path, body=None):
+        captured.update(method=method, path=path, body=body)
+        return _Response()
+
+    monkeypatch.setattr(api_mod, "authed", _authed)
+
+    tag_name = api_mod.render_project_branch_default_redeployment_tag(
+        "project-branch-uid-123",
+        version="1.2.3",
+    )
+
+    assert tag_name == "v1.2.3-dev.1"
+    assert captured == {
+        "method": "POST",
+        "path": (
+            "/api/v1/project-branches/project-branch-uid-123/"
+            "default-redeployment-tag/"
+        ),
+        "body": {"version": "1.2.3"},
+    }
+
+
 def test_org_slug_from_profile_handles_organization_object(cli_mod, monkeypatch):
     monkeypatch.setattr(
         cli_mod,
@@ -9822,7 +9859,22 @@ def test_project_freeze_env(cli_mod, runner, monkeypatch, tmp_path):
     assert calls[0][2]["output_file"] == "requirements.txt"
 
 
-def test_project_sync(cli_mod, runner, monkeypatch, tmp_path):
+@pytest.mark.parametrize(
+    ("git_branch", "rendered_tag"),
+    [
+        ("main", "v1.2.4"),
+        ("dev", "v1.2.4-dev.1"),
+        ("feature/foo", "v1.2.4-feature-foo-12345678.1"),
+    ],
+)
+def test_project_sync(
+    cli_mod,
+    runner,
+    monkeypatch,
+    tmp_path,
+    git_branch,
+    rendered_tag,
+):
     target = tmp_path / "project"
     target.mkdir(parents=True, exist_ok=True)
     (target / ".env").write_text(
@@ -9832,12 +9884,13 @@ def test_project_sync(cli_mod, runner, monkeypatch, tmp_path):
     uv_path = target / ".venv" / "bin" / "uv"
     uv_calls = []
     git_calls = []
+    tag_requests = []
 
     monkeypatch.setattr(cli_mod, "ensure_venv", lambda *_: None)
     monkeypatch.setattr(
         cli_mod,
         "_resolve_git_project_branch_context",
-        lambda *args, **kwargs: ("main", "project-branch-uid-123"),
+        lambda *args, **kwargs: (git_branch, "project-branch-uid-123"),
     )
     monkeypatch.setattr(cli_mod, "git_origin", lambda *_: "git@github.com:org/repo.git")
     monkeypatch.setattr(
@@ -9845,6 +9898,11 @@ def test_project_sync(cli_mod, runner, monkeypatch, tmp_path):
     )
     monkeypatch.setattr(cli_mod, "ensure_uv_installed", lambda *_: uv_path)
     monkeypatch.setattr(cli_mod, "uv_project_version", lambda *_, **__: "1.2.4")
+    monkeypatch.setattr(
+        cli_mod,
+        "render_project_branch_default_redeployment_tag",
+        lambda uid, *, version: tag_requests.append((uid, version)) or rendered_tag,
+    )
     monkeypatch.setattr(
         cli_mod,
         "run_uv",
@@ -9870,8 +9928,9 @@ def test_project_sync(cli_mod, runner, monkeypatch, tmp_path):
     assert ["sync"] in uv_calls
     assert ["git", "add", "-A"] in git_calls
     assert ["git", "commit", "-m", "Update deps"] in git_calls
-    assert ["git", "tag", "-a", "v1.2.4", "-m", "v1.2.4"] in git_calls
+    assert ["git", "tag", "-a", rendered_tag, "-m", rendered_tag] in git_calls
     assert ["git", "push", "--follow-tags"] in git_calls
+    assert tag_requests == [("project-branch-uid-123", "1.2.4")]
 
 
 def test_project_sync_defaults_to_cwd_with_positional_message(
@@ -9899,6 +9958,11 @@ def test_project_sync_defaults_to_cwd_with_positional_message(
     )
     monkeypatch.setattr(cli_mod, "ensure_uv_installed", lambda *_: uv_path)
     monkeypatch.setattr(cli_mod, "uv_project_version", lambda *_, **__: "1.2.4")
+    monkeypatch.setattr(
+        cli_mod,
+        "render_project_branch_default_redeployment_tag",
+        lambda uid, *, version: "v1.2.4",
+    )
     monkeypatch.setattr(cli_mod, "run_uv", lambda uv, args, cwd, env=None: None)
     monkeypatch.setattr(cli_mod, "uv_export_requirements", lambda uv, cwd, **kwargs: None)
     monkeypatch.setattr(
@@ -9993,6 +10057,11 @@ def test_project_sync_project(cli_mod, runner, monkeypatch, tmp_path):
     monkeypatch.setattr(cli_mod, "uv_project_version", lambda *_, **__: "1.2.4")
     monkeypatch.setattr(
         cli_mod,
+        "render_project_branch_default_redeployment_tag",
+        lambda uid, *, version: "v1.2.4",
+    )
+    monkeypatch.setattr(
+        cli_mod,
         "run_uv",
         lambda uv, args, cwd, env=None: uv_calls.append(args),
     )
@@ -10050,6 +10119,11 @@ def test_project_sync_project_defaults_to_current_project_dir(
     )
     monkeypatch.setattr(cli_mod, "ensure_uv_installed", lambda *_: uv_path)
     monkeypatch.setattr(cli_mod, "uv_project_version", lambda *_, **__: "1.2.4")
+    monkeypatch.setattr(
+        cli_mod,
+        "render_project_branch_default_redeployment_tag",
+        lambda uid, *, version: "v1.2.4",
+    )
     monkeypatch.setattr(
         cli_mod,
         "run_uv",
