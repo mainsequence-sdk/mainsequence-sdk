@@ -2665,7 +2665,7 @@ def user_show():
     """
     Show the authenticated MainSequence user.
 
-    Uses SDK client `User.get_logged_user()` as the single source of truth.
+    Uses SDK client `User.get_authenticated_user_details()` as the single source of truth.
 
     Examples
     --------

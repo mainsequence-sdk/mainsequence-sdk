@@ -49,7 +49,6 @@ AUTH_PATHS = {
     "cli_revoke": "/auth/cli/revoke/",
     "refresh": "/auth/jwt-token/token/refresh/",
     "logout": "/auth/jwt-token/logout/",
-    "ping": "/auth/rest-auth/user/",
     "mcp_cli_handoff_start": "/auth/mcp/cli-handoff/start/",
 }
 CLI_BROWSER_CLIENT_ID = "mainsequence-cli"
@@ -727,13 +726,11 @@ def get_current_user_profile() -> dict:
 
 def get_logged_user_details() -> dict[str, Any]:
     """
-    Return the authenticated user via SDK client `User.get_logged_user()`.
+    Return the authenticated user through the canonical standalone SDK method.
 
-    The CLI does not naturally run inside a request context, so this bridge resolves
-    the current user UID from the authenticated API session and temporarily binds
-    `X-User-UID` plus `Authorization` into
-    `mainsequence.client.models_user._CURRENT_AUTH_HEADERS`
-    before calling the SDK method.
+    CLI sessions are not request-bound application contexts. Configure the SDK's
+    JWT provider and let `User.get_authenticated_user_details()` resolve identity
+    directly from `/api/v1/users/me/`.
     """
     tokens = get_tokens()
     access = (tokens.get("access") or "").strip()
@@ -755,16 +752,8 @@ def get_logged_user_details() -> dict[str, Any]:
     old_provider = None
     old_base_root_url = None
     old_user_root_url = None
-    headers_token = None
-    current_auth_headers = None
 
     try:
-        who = authed("GET", AUTH_PATHS["ping"])
-        data = who.json() if who.ok else {}
-        user_uid = data.get("uid") or (data.get("user") or {}).get("uid") or data.get("user_uid")
-        if user_uid in (None, ""):
-            raise ApiError("Could not determine the authenticated user uid.")
-
         os.environ["MAINSEQUENCE_AUTH_MODE"] = "jwt"
         os.environ["MAINSEQUENCE_ACCESS_TOKEN"] = access
         if refresh:
@@ -776,14 +765,10 @@ def get_logged_user_details() -> dict[str, Any]:
         from mainsequence.client import utils as _client_utils
         from mainsequence.client.base import BaseObjectOrm
         from mainsequence.client.models_user import (
-            _CURRENT_AUTH_HEADERS,
-        )
-        from mainsequence.client.models_user import (
             User as ClientUser,
         )
 
         client_utils = _client_utils
-        current_auth_headers = _CURRENT_AUTH_HEADERS
         old_provider = getattr(client_utils.loaders, "provider", None)
         old_base_root_url = BaseObjectOrm.ROOT_URL
         old_user_root_url = getattr(ClientUser, "ROOT_URL", None)
@@ -793,14 +778,8 @@ def get_logged_user_details() -> dict[str, Any]:
 
         BaseObjectOrm.ROOT_URL = root_url
         ClientUser.ROOT_URL = root_url
-        headers_token = current_auth_headers.set(
-            {
-                "X-User-UID": str(user_uid),
-                "Authorization": f"Bearer {access}",
-            }
-        )
 
-        user = ClientUser.get_logged_user()
+        user = ClientUser.get_authenticated_user_details()
         if isinstance(user, dict):
             user.pop("id", None)
             organization = user.get("organization")
@@ -822,11 +801,6 @@ def get_logged_user_details() -> dict[str, Any]:
             raise NotLoggedIn(str(e) or "Not logged in.") from e
         raise ApiError(f"Current user fetch failed: {e}") from e
     finally:
-        if current_auth_headers is not None and headers_token is not None:
-            try:
-                current_auth_headers.reset(headers_token)
-            except Exception:
-                pass
         if client_utils is not None:
             try:
                 client_utils.loaders.provider = old_provider

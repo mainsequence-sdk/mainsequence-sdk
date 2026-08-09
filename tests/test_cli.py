@@ -5116,7 +5116,7 @@ def test_add_data_node_storage_user_to_edit_uses_client_model(cli_mod, monkeypat
     assert out["action"] == "add_to_edit"
 
 
-def test_get_logged_user_details_uses_client_model(cli_mod, monkeypatch):
+def test_get_logged_user_details_uses_canonical_authenticated_user_method(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
 
@@ -5124,14 +5124,11 @@ def test_get_logged_user_details_uses_client_model(cli_mod, monkeypatch):
         api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"}
     )
     monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
-    monkeypatch.setattr(
-        api_mod,
-        "authed",
-        lambda method, api_path, body=None: types.SimpleNamespace(
-            ok=True,
-            json=lambda: {"uid": "user-uid-7"},
-        ),
-    )
+
+    def _reject_legacy_request(*args, **kwargs):
+        raise AssertionError("get_logged_user_details must not call a legacy auth endpoint")
+
+    monkeypatch.setattr(api_mod, "authed", _reject_legacy_request)
 
     fake_client_pkg = types.ModuleType("mainsequence.client")
     fake_utils = types.ModuleType("mainsequence.client.utils")
@@ -5143,18 +5140,6 @@ def test_get_logged_user_details_uses_client_model(cli_mod, monkeypatch):
 
         def use_jwt(self, *, access=None, refresh=None):
             captured["jwt"] = (access, refresh)
-
-    class FakeHeadersContext:
-        current = None
-
-        def set(self, value):
-            self.current = value
-            captured["headers_set"] = value
-            return "token"
-
-        def reset(self, token):
-            captured["headers_reset"] = token
-            self.current = None
 
     fake_utils.loaders = FakeLoaders()
     fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
@@ -5173,26 +5158,28 @@ def test_get_logged_user_details_uses_client_model(cli_mod, monkeypatch):
     class FakeBaseObjectOrm:
         ROOT_URL = "https://old.test/api/v1"
 
-    fake_headers = FakeHeadersContext()
-
     class FakeUser:
         ROOT_URL = "https://old.test/api/v1/users"
 
         @classmethod
-        def get_logged_user(cls):
-            captured["headers_seen"] = fake_headers.current
+        def get_authenticated_user_details(cls):
+            captured["current_user_url"] = f"{cls.ROOT_URL}/users/me/"
             return types.SimpleNamespace(
                 model_dump=lambda: {
+                    "id": 7,
                     "uid": "user-uid-7",
                     "username": "jose",
                     "email": "jose@main-sequence.io",
-                    "organization": {"uid": "org-uid-2", "name": "Main Sequence"},
+                    "organization": {
+                        "id": 2,
+                        "uid": "org-uid-2",
+                        "name": "Main Sequence",
+                    },
                 }
             )
 
     fake_base.BaseObjectOrm = FakeBaseObjectOrm
     fake_models_user.User = FakeUser
-    fake_models_user._CURRENT_AUTH_HEADERS = fake_headers
     fake_client_pkg.utils = fake_utils
 
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
@@ -5206,9 +5193,7 @@ def test_get_logged_user_details_uses_client_model(cli_mod, monkeypatch):
     assert fake_utils.API_ENDPOINT == "https://backend.test/api/v1"
     assert fake_utils.AUTH_ENDPOINT == "https://backend.test"
     assert captured["jwt"] == ("acc", "ref")
-    assert captured["headers_set"] == {"X-User-UID": "user-uid-7", "Authorization": "Bearer acc"}
-    assert captured["headers_seen"] == {"X-User-UID": "user-uid-7", "Authorization": "Bearer acc"}
-    assert captured["headers_reset"] == "token"
+    assert captured["current_user_url"] == "https://backend.test/api/v1/users/me/"
     assert "id" not in out
     assert "id" not in out["organization"]
     assert out["uid"] == "user-uid-7"

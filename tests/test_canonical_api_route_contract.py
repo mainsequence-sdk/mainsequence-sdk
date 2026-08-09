@@ -62,7 +62,6 @@ def test_cli_auth_and_resource_roots_match_backend_contract():
         "cli_revoke": "/auth/cli/revoke/",
         "refresh": "/auth/jwt-token/token/refresh/",
         "logout": "/auth/jwt-token/logout/",
-        "ping": "/auth/rest-auth/user/",
         "mcp_cli_handoff_start": "/auth/mcp/cli-handoff/start/",
     }
     resource_endpoints = set(BaseObjectOrm.END_POINTS.values()) | {
@@ -168,6 +167,7 @@ def test_cli_does_not_reintroduce_legacy_numeric_detail_routes_or_agent_runs():
     assert '"data_source__id"' not in cli_sources
     assert "--data-source-id" not in cli_sources
     assert "AgentRun" not in cli_sources
+    assert "/auth/rest-auth/user/" not in cli_sources
     assert not hasattr(api, "list_agent_runs")
     assert not hasattr(api, "get_agent_run")
     assert not hasattr(agent_runtime_models, "AgentRun")
