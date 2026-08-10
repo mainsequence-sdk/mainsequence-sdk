@@ -8,6 +8,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, ClassVar, Literal
 
+from mainsequence.client.exceptions import ConflictError
 from mainsequence.client.metatables import (
     AlembicManagementRequest,
     DataSource,
@@ -319,6 +320,7 @@ class AlembicVersionMetaTable:
         meta_table = rows[0]
         _validate_alembic_registry_catalog_state(
             meta_table,
+            request=request,
             migration_package=migration_package,
             migration_namespace=migration_namespace,
             migration_provider_key=migration_provider_key,
@@ -496,13 +498,61 @@ class AlembicMetaTableMigration:
         timeout: int | float | tuple[float, float] | None = None,
         on_metatable_reserved: Callable[[type[Any], Any], Any] | None = None,
     ) -> MetaTable:
-        return self.register_alembic_registry(
-            project_context=project_context,
+        project_context = project_context or _current_metatable_project_context()
+        request = self.alembic_registry.build_registration_request(
+            migration_package=self.package,
+            migration_namespace=self.migration_namespace,
+            migration_provider_key=self.migration_provider_key,
             data_source=data_source,
             data_source_uid=data_source_uid,
-            timeout=timeout,
-            on_metatable_reserved=on_metatable_reserved,
         )
+        existing = _find_existing_alembic_registry(
+            request,
+            migration_package=self.package,
+            migration_namespace=self.migration_namespace,
+            migration_provider_key=self.migration_provider_key,
+            timeout=timeout,
+        )
+        if existing is not None:
+            return self._bind_alembic_registry(
+                existing,
+                on_metatable_reserved=on_metatable_reserved,
+            )
+
+        try:
+            return self.register_alembic_registry(
+                project_context=project_context,
+                data_source_uid=request.data_source_uid,
+                timeout=timeout,
+                on_metatable_reserved=on_metatable_reserved,
+            )
+        except ConflictError:
+            # Another process may have created the same registry after our
+            # preflight. Reuse it only after the complete compatibility check.
+            existing = _find_existing_alembic_registry(
+                request,
+                migration_package=self.package,
+                migration_namespace=self.migration_namespace,
+                migration_provider_key=self.migration_provider_key,
+                timeout=timeout,
+            )
+            if existing is None:
+                raise
+            return self._bind_alembic_registry(
+                existing,
+                on_metatable_reserved=on_metatable_reserved,
+            )
+
+    def _bind_alembic_registry(
+        self,
+        meta_table: MetaTable,
+        *,
+        on_metatable_reserved: Callable[[type[Any], Any], Any] | None,
+    ) -> MetaTable:
+        self.alembic_registry._bind_meta_table(meta_table)
+        if on_metatable_reserved is not None:
+            on_metatable_reserved(self.alembic_registry, meta_table)
+        return meta_table
 
     def sync_metatable_catalog(
         self,
@@ -525,8 +575,8 @@ class AlembicMetaTableMigration:
                 request = model.build_registration_request(
                     data_source_uid=data_source_uid,
                     provisioning={"create_table": create_table, "if_not_exists": True},
+                    schema_management=schema_management,
                 )
-                request.schema_management = schema_management
                 meta_table_cls = _metatable_resource_class_for_model(model)
                 meta_table = meta_table_cls.register(
                     _registration_request_with_project_context(
@@ -1387,6 +1437,46 @@ def _get_metatables_by_physical_identity(
     return matched_by_identity
 
 
+def _find_existing_alembic_registry(
+    request: MetaTableRegistrationRequest,
+    *,
+    migration_package: str,
+    migration_namespace: str,
+    migration_provider_key: str,
+    timeout: int | float | tuple[float, float] | None = None,
+) -> MetaTable | None:
+    physical_schema, physical_table_name = _request_contract_physical_identity(request)
+    if physical_schema in (None, "") or physical_table_name in (None, ""):
+        raise ValueError(
+            "Alembic registry resolution requires physical schema and table name."
+        )
+    identity = (
+        str(request.data_source_uid),
+        str(physical_schema),
+        str(physical_table_name),
+    )
+    matches = _get_metatables_by_physical_identity(
+        [identity],
+        timeout=timeout,
+        meta_table_cls=MetaTable,
+    )
+    meta_table = matches.get(identity)
+    if meta_table is None:
+        return None
+    _validate_alembic_registry_catalog_state(
+        meta_table,
+        request=request,
+        migration_package=migration_package,
+        migration_namespace=migration_namespace,
+        migration_provider_key=migration_provider_key,
+    )
+    _validate_metatable_runtime_data_source(
+        meta_table,
+        data_source_uid=request.data_source_uid,
+    )
+    return meta_table
+
+
 def _meta_table_identifier(meta_table: MetaTable) -> str | None:
     identifier = meta_table.identifier
     if identifier in (None, ""):
@@ -1436,6 +1526,7 @@ def _meta_table_full_physical_identity(
 def _validate_alembic_registry_catalog_state(
     meta_table: MetaTable,
     *,
+    request: MetaTableRegistrationRequest,
     migration_package: str,
     migration_namespace: str,
     migration_provider_key: str | None,
@@ -1470,6 +1561,20 @@ def _validate_alembic_registry_catalog_state(
         "migration_provider_key": migration_provider_key,
     }
     for field_name, expected in expected_provider_fields.items():
+        actual = getattr(meta_table, field_name, None)
+        if actual != expected:
+            errors.append(f"{field_name}={actual!r}, expected {expected!r}")
+
+    expected_physical_schema, expected_physical_table_name = (
+        _request_contract_physical_identity(request)
+    )
+    expected_identity_fields = {
+        "identifier": request.identifier,
+        "namespace": request.namespace,
+        "physical_schema": expected_physical_schema,
+        "physical_table_name": expected_physical_table_name,
+    }
+    for field_name, expected in expected_identity_fields.items():
         actual = getattr(meta_table, field_name, None)
         if actual != expected:
             errors.append(f"{field_name}={actual!r}, expected {expected!r}")

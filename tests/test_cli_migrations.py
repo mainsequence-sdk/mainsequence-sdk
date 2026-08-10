@@ -350,39 +350,45 @@ def test_migrations_current_reserves_scoped_platform_registry(monkeypatch):
     import mainsequence.client.metatables.core as metatable_models
 
     class _Response:
-        status_code = 201
+        def __init__(self, payload, status_code):
+            self._payload = payload
+            self.status_code = status_code
 
-        @staticmethod
-        def json():
-            return [
-                {
-                    "uid": "registry-meta-table-uid",
-                    "data_source_uid": "data-source-uid",
-                    "identifier": "msm.alembic_version",
-                    "namespace": "msm",
-                    "management_mode": "platform_managed",
-                    "provisioning_status": "reserved",
-                    "schema_management_mode": "alembic_managed",
-                    "migration_package": "msm",
-                    "migration_namespace": "markets",
-                    "migration_provider_key": "msm:markets",
-                    "alembic_version_meta_table_uid": None,
-                    "physical_schema": "public",
-                    "physical_table_name": "alembic_version",
-                    "table_contract": {
-                        "version": "relational-table.v1",
-                        "physical": {
-                            "schema": "public",
-                            "table_name": "alembic_version",
-                        },
-                        "columns": [],
-                    },
-                }
-            ]
+        def json(self):
+            return self._payload
+
+    registry_payload = [
+        {
+            "uid": "registry-meta-table-uid",
+            "data_source_uid": "data-source-uid",
+            "identifier": "msm.alembic_version",
+            "namespace": "msm",
+            "management_mode": "platform_managed",
+            "provisioning_status": "reserved",
+            "schema_management_mode": "alembic_managed",
+            "migration_package": "msm",
+            "migration_namespace": "markets",
+            "migration_provider_key": "msm:markets",
+            "alembic_version_meta_table_uid": None,
+            "physical_schema": "public",
+            "physical_table_name": "alembic_version",
+            "table_contract": {
+                "version": "relational-table.v1",
+                "physical": {
+                    "schema": "public",
+                    "table_name": "alembic_version",
+                },
+                "columns": [],
+            },
+        }
+    ]
 
     def fake_make_request(**kwargs):
+        if kwargs["url"].endswith("/filter/"):
+            captured["registry_lookup"] = kwargs
+            return _Response([], 200)
         captured["registry_request"] = kwargs
-        return _Response()
+        return _Response(registry_payload, 201)
 
     monkeypatch.setattr(metatable_models, "make_request", fake_make_request)
     monkeypatch.setattr(
@@ -414,6 +420,100 @@ def test_migrations_current_reserves_scoped_platform_registry(monkeypatch):
     assert registry.schema_management_mode == "alembic_managed"
     assert registry.provisioning_status == "reserved"
     assert "Alembic current finished." in _combined_output(result)
+
+
+def test_migrations_current_reuses_registry_across_independent_cli_operations(
+    monkeypatch,
+):
+    cli_mod = _load_cli_module()
+    runner = CliRunner()
+    migration_cli = importlib.import_module("mainsequence.cli.migrations")
+    import mainsequence.client.metatables.core as metatable_models
+
+    persisted_registry = None
+    create_count = 0
+
+    class _Response:
+        def __init__(self, payload, status_code):
+            self._payload = payload
+            self.status_code = status_code
+            self.content = b"{}"
+
+        def json(self):
+            return self._payload
+
+    def registry_payload():
+        return {
+            "uid": "persistent-registry-meta-table-uid",
+            "data_source_uid": "data-source-uid",
+            "identifier": "msm.alembic_version",
+            "namespace": "msm",
+            "management_mode": "platform_managed",
+            "provisioning_status": "reserved",
+            "schema_management_mode": "alembic_managed",
+            "migration_package": "msm",
+            "migration_namespace": "markets",
+            "migration_provider_key": "msm:markets",
+            "alembic_version_meta_table_uid": None,
+            "physical_schema": "public",
+            "physical_table_name": "alembic_version",
+            "table_contract": {
+                "version": "relational-table.v1",
+                "physical": {
+                    "schema": "public",
+                    "table_name": "alembic_version",
+                },
+                "columns": [],
+            },
+        }
+
+    def fake_make_request(**kwargs):
+        nonlocal persisted_registry, create_count
+        if kwargs["url"].endswith("/filter/"):
+            rows = [] if persisted_registry is None else [persisted_registry]
+            return _Response(rows, 200)
+        create_count += 1
+        persisted_registry = registry_payload()
+        return _Response([persisted_registry], 201)
+
+    monkeypatch.setattr(migration_cli, "_load_migration", lambda provider: _migration())
+    monkeypatch.setattr(metatable_models, "make_request", fake_make_request)
+    monkeypatch.setattr(
+        MetaTable,
+        "build_session",
+        classmethod(lambda cls: types.SimpleNamespace(headers={})),
+    )
+    monkeypatch.setattr(
+        migration_cli,
+        "_current_metatable_project_context",
+        _project_context,
+    )
+    monkeypatch.setattr(
+        MetaTable,
+        "issue_migration_connection",
+        lambda self, request, *, timeout=None: types.SimpleNamespace(
+            uri="postgresql://temporary-secret",
+            owner_role_name="connection-owner",
+        ),
+    )
+
+    from alembic import command
+
+    monkeypatch.setattr(command, "current", lambda config, verbose=False: None)
+
+    first = runner.invoke(
+        cli_mod.app,
+        ["migrations", "current", "--provider", "ignored:migration"],
+    )
+    second = runner.invoke(
+        cli_mod.app,
+        ["migrations", "current", "--provider", "ignored:migration"],
+    )
+
+    assert first.exit_code == 0
+    assert second.exit_code == 0
+    assert create_count == 1
+    assert "uid=persistent-registry-meta-table-uid" in _combined_output(second)
 
 
 def test_migrations_revision_forwards_alembic_logs_and_scans_revision_id(monkeypatch):

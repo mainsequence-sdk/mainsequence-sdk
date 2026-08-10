@@ -77,7 +77,19 @@ Valid common combinations are:
 | Imported physical table | `external_registered` | `external_registered` | `active` |
 
 `external_registered` catalog ownership combined with `alembic_managed` schema
-ownership is invalid. Do not infer one axis from another.
+ownership is invalid. The concepts remain separate, but SDK creation requests
+do not permit arbitrary combinations. They normalize and enforce exactly these
+intents:
+
+- `platform_managed` + `backend_managed`: backend creation is required;
+- `platform_managed` + `alembic_managed`: Alembic metadata is required and
+  backend creation is forbidden;
+- `external_registered` + `external_registered`: the physical table must
+  already exist and provisioning is forbidden.
+
+Omitting `schema_management` selects the only non-Alembic mode compatible with
+`management_mode`: backend-managed for platform catalog ownership and external
+schema ownership for external registration.
 
 ## Management Modes
 

@@ -164,6 +164,7 @@ def test_meta_table_bulk_create_posts_raw_collection_payload(monkeypatch):
         "identifier": "Asset",
         "namespace": "example.assets",
         "data_source_uid": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+        "physical_schema": "public",
         "physical_table_name": "example_assets__asset",
         "management_mode": "platform_managed",
         "provisioning_status": "reserved",
@@ -229,6 +230,7 @@ def test_time_index_meta_table_bulk_create_posts_raw_collection_payload(monkeypa
         "identifier": "Prices",
         "namespace": "example.assets",
         "data_source_uid": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+        "physical_schema": "public",
         "physical_table_name": "example_assets__prices",
         "management_mode": "platform_managed",
         "provisioning_status": "reserved",
@@ -502,6 +504,186 @@ def test_meta_table_registration_rejects_physical_schema_mismatch():
                 columns=[],
             ),
         )
+
+
+def _registration_fields():
+    return {
+        "data_source_uid": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+        "physical_schema": "public",
+        "table_contract": {
+            "version": "relational-table.v1",
+            "physical": {"schema": "public", "table_name": "orders"},
+            "columns": [],
+        },
+    }
+
+
+def test_meta_table_registration_normalizes_the_three_lifecycle_intents():
+    backend_managed = meta_table_models.MetaTableRegistrationRequest(
+        management_mode="platform_managed",
+        **_registration_fields(),
+    )
+    alembic_managed = meta_table_models.MetaTableRegistrationRequest(
+        management_mode="platform_managed",
+        schema_management={
+            "mode": "alembic_managed",
+            "alembic": {
+                "package": "sample",
+                "migration_namespace": "markets",
+            },
+        },
+        **_registration_fields(),
+    )
+    external_registered = meta_table_models.MetaTableRegistrationRequest(
+        management_mode="external_registered",
+        **_registration_fields(),
+    )
+
+    assert backend_managed.schema_management.mode == "backend_managed"
+    assert backend_managed.provisioning == {
+        "create_table": True,
+        "if_not_exists": True,
+    }
+    assert alembic_managed.schema_management.mode == "alembic_managed"
+    assert alembic_managed.provisioning == {
+        "create_table": False,
+        "if_not_exists": True,
+    }
+    assert external_registered.schema_management.mode == "external_registered"
+    assert external_registered.provisioning is None
+
+
+@pytest.mark.parametrize(
+    ("management_mode", "schema_management", "provisioning", "error"),
+    [
+        (
+            "external_registered",
+            {"mode": "backend_managed"},
+            None,
+            "external_registered catalog ownership requires",
+        ),
+        (
+            "external_registered",
+            {"mode": "external_registered"},
+            {"create_table": False},
+            "cannot include provisioning",
+        ),
+        (
+            "platform_managed",
+            {"mode": "external_registered"},
+            None,
+            "platform_managed catalog ownership cannot use",
+        ),
+        (
+            "platform_managed",
+            {"mode": "backend_managed"},
+            {"create_table": False},
+            "backend-managed schema ownership requires",
+        ),
+        (
+            "platform_managed",
+            {
+                "mode": "alembic_managed",
+                "alembic": {
+                    "package": "sample",
+                    "migration_namespace": "markets",
+                },
+            },
+            {"create_table": True},
+            "Alembic-managed schema ownership requires",
+        ),
+    ],
+)
+def test_meta_table_registration_rejects_invalid_lifecycle_combinations(
+    management_mode,
+    schema_management,
+    provisioning,
+    error,
+):
+    with pytest.raises(ValidationError, match=error):
+        meta_table_models.MetaTableRegistrationRequest(
+            management_mode=management_mode,
+            schema_management=schema_management,
+            provisioning=provisioning,
+            **_registration_fields(),
+        )
+
+
+def test_schema_management_rejects_missing_or_irrelevant_alembic_metadata():
+    with pytest.raises(ValidationError, match="alembic is required"):
+        meta_table_models.SchemaManagementRequest(mode="alembic_managed")
+
+    with pytest.raises(ValidationError, match="only valid"):
+        meta_table_models.SchemaManagementRequest(
+            mode="backend_managed",
+            alembic={
+                "package": "sample",
+                "migration_namespace": "markets",
+            },
+        )
+
+
+def test_meta_table_register_validates_raw_mapping_before_http(monkeypatch):
+    called = False
+
+    def fake_make_request(**kwargs):
+        nonlocal called
+        called = True
+        raise AssertionError("invalid lifecycle request reached HTTP")
+
+    monkeypatch.setattr(meta_table_models, "make_request", fake_make_request)
+
+    with pytest.raises(ValidationError, match="catalog ownership requires"):
+        meta_table_models.MetaTable.register(
+            {
+                "management_mode": "external_registered",
+                "schema_management": {"mode": "backend_managed"},
+                **_registration_fields(),
+            }
+        )
+
+    assert called is False
+
+
+def test_managed_bulk_create_rejects_non_alembic_reservation_before_http(monkeypatch):
+    called = False
+
+    def fake_make_request(**kwargs):
+        nonlocal called
+        called = True
+        raise AssertionError("invalid managed reservation reached HTTP")
+
+    monkeypatch.setattr(meta_table_models, "make_request", fake_make_request)
+    monkeypatch.setattr(
+        meta_table_models,
+        "_current_metatable_project_context",
+        _project_context,
+    )
+
+    with pytest.raises(ValidationError, match="Input should be 'reserved'"):
+        meta_table_models.MetaTable.bulk_create(
+            [
+                {
+                    "data_source_uid": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+                    "management_mode": "platform_managed",
+                    "provisioning_status": "active",
+                    "is_alembic_managed": True,
+                    "migration_package": "sample",
+                    "migration_namespace": "markets",
+                    "physical_schema": "public",
+                    "physical_table_name": "orders",
+                    "table_contract": {
+                        "physical": {
+                            "schema": "public",
+                            "table_name": "orders",
+                        },
+                        "columns": [],
+                    },
+                }
+            ]
+        )
+
+    assert called is False
 
 
 def test_meta_table_filter_by_body_posts_identifier_filters(monkeypatch):

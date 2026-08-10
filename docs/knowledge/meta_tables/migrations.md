@@ -189,14 +189,24 @@ wrap the rows in a reservation request object. Alembic is the authority for
 schema changes, and TS Manager is the authoritative owner of MetaTable catalog
 rows and migration-scoped credentials.
 
+Raw describes the list-shaped HTTP body, not unchecked SDK input. Before HTTP,
+each relational row is validated as `ManagedMetaTableCollectionCreateRow` and
+each time-indexed row as `ManagedTimeIndexMetaTableCollectionCreateRow`. These
+models fix catalog ownership to `platform_managed`, schema ownership to
+Alembic through `is_alembic_managed=true`, and provisioning to `reserved`.
+
 ## Alembic Version MetaTable
 
 `AlembicVersionMetaTable` is the platform-managed root MetaTable for the
 provider migration stream. The SDK reserves its catalog row with
 `schema_management_mode="alembic_managed"`; Alembic and PostgreSQL remain
 responsible for the physical version table. Migration commands force this
-reservation idempotently so the backend row is recreated if it was deleted;
-the SDK class cache is not considered authoritative.
+reservation idempotently. Before creation, the SDK resolves the registry by
+its physical identity: DataSource UID, physical schema, and physical table
+name. A compatible provider root is reused; a missing row is created; an
+ambiguous or incompatible row fails clearly. The SDK class cache is not
+considered authoritative, and a create conflict triggers one validated lookup
+to handle concurrent CLI processes.
 
 The three lifecycle axes are independent:
 

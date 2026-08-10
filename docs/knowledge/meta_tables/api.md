@@ -71,14 +71,14 @@ Request fields:
 | --- | --- |
 | `data_source_uid` | Canonical `DataSource.uid` that owns connection, capabilities, and execution. |
 | `management_mode` | `external_registered` or `platform_managed`. |
-| `schema_management` | Physical schema owner. Alembic providers use `mode="alembic_managed"`; backend-created tables use `backend_managed`. |
+| `schema_management` | Physical schema owner. Alembic providers use `mode="alembic_managed"` with provider metadata; backend-created tables use `backend_managed`; external registration resolves to `external_registered`. |
 | `project_context` | SDK-resolved Project UID and actual Git branch for platform-managed operations. Users do not provide an environment UID. |
 | `identifier` | Optional logical MetaTable identifier, such as `Asset`. Non-empty values are globally unique per organization. Alembic migration preparation resolves provider MetaTables by authored SQLAlchemy table name instead. |
 | `namespace` | Logical namespace, such as `sdk-examples`. |
 | `description` | Optional discovery text. |
 | `labels` | Optional table labels. |
 | `protect_from_deletion` | Prevent accidental deletion through the platform. |
-| `provisioning` | Platform-managed DDL options, such as `create_table` and `if_not_exists`. |
+| `provisioning` | Platform-managed DDL options. Backend ownership requires `create_table=true`; Alembic ownership requires `create_table=false`; external registration forbids this field. |
 | `introspect` | Ask the backend to refresh the physical metadata snapshot during registration. |
 | `table_contract` | Neutral relational contract. It does not include `data_source_uid`. |
 
@@ -96,6 +96,12 @@ Do not treat management, schema ownership, and provisioning as one state:
 
 The Alembic registry is the platform-managed, Alembic-managed root of its
 provider. It is never an `external_registered` table.
+
+`MetaTableRegistrationRequest` validates this matrix during construction, and
+`MetaTable.register(...)` revalidates model and mapping inputs before HTTP.
+`TimeIndexMetaTable.register(...)` has fixed platform catalog ownership and
+applies the same backend-versus-Alembic DDL rule. Invalid combinations never
+reach the backend.
 
 `PlatformManagedMetaTable` exists so SQLAlchemy table construction and
 migration-managed registration produce the same table contract while preserving

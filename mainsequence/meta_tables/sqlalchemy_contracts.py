@@ -26,6 +26,7 @@ from mainsequence.client.metatables import (
     MetaTableContract,
     MetaTablePhysicalContract,
     MetaTableRegistrationRequest,
+    SchemaManagementRequest,
     TimeIndexMetaTable,
 )
 
@@ -208,6 +209,7 @@ class PlatformManagedMetaTable:
         labels: Sequence[str] | None = None,
         protect_from_deletion: bool | None = None,
         provisioning: Mapping[str, Any] | None = None,
+        schema_management: SchemaManagementRequest | Mapping[str, Any] | None = None,
         introspect: bool | None = None,
     ) -> MetaTableRegistrationRequest:
         resolved_data_source_uid = _resolve_model_data_source_uid(
@@ -224,6 +226,7 @@ class PlatformManagedMetaTable:
             labels=labels,
             protect_from_deletion=protect_from_deletion,
             provisioning=provisioning,
+            schema_management=schema_management,
             introspect=introspect,
         )
 
@@ -378,6 +381,7 @@ class PlatformTimeIndexMetaTable(PlatformManagedMetaTable):
         labels: Sequence[str] | None = None,
         protect_from_deletion: bool | None = None,
         provisioning: Mapping[str, Any] | None = None,
+        schema_management: SchemaManagementRequest | Mapping[str, Any] | None = None,
         time_index_name: str | None = None,
         index_names: Sequence[str] | None = None,
         storage_layout: Mapping[str, Any] | None = None,
@@ -396,6 +400,7 @@ class PlatformTimeIndexMetaTable(PlatformManagedMetaTable):
             labels=labels,
             protect_from_deletion=protect_from_deletion,
             provisioning=provisioning,
+            schema_management=schema_management,
             time_index_name=time_index_name,
             index_names=index_names,
             storage_layout=storage_layout,
@@ -488,6 +493,7 @@ def time_indexed_registration_request_from_sqlalchemy_model(
     labels: Sequence[str] | None = None,
     protect_from_deletion: bool | None = None,
     provisioning: Mapping[str, Any] | None = None,
+    schema_management: SchemaManagementRequest | Mapping[str, Any] | None = None,
     schema: str | None = None,
     time_index_name: str | None = None,
     index_names: Sequence[str] | None = None,
@@ -553,6 +559,7 @@ def time_indexed_registration_request_from_sqlalchemy_model(
         ),
         labels=_resolve_labels(model_or_table, labels=labels),
         provisioning=_resolve_provisioning(model_or_table, provisioning=provisioning),
+        schema_management=schema_management,
         time_index_name=resolved_time_index_name,
         cadence=resolved_cadence,
         table_contract={
@@ -595,6 +602,7 @@ def platform_managed_registration_request_from_sqlalchemy_model(
     labels: Sequence[str] | None = None,
     protect_from_deletion: bool | None = None,
     provisioning: Mapping[str, Any] | None = None,
+    schema_management: SchemaManagementRequest | Mapping[str, Any] | None = None,
     introspect: bool | None = None,
     schema: str | None = None,
 ) -> MetaTableRegistrationRequest:
@@ -628,6 +636,7 @@ def platform_managed_registration_request_from_sqlalchemy_model(
         ),
         labels=_resolve_labels(model_or_table, labels=labels),
         provisioning=_resolve_provisioning(model_or_table, provisioning=provisioning),
+        schema_management=schema_management,
         introspect=_resolve_bool_metadata(
             model_or_table,
             value=introspect,

@@ -1483,6 +1483,14 @@ def test_time_index_meta_table_register_posts_to_canonical_endpoint(monkeypatch)
         return Response()
 
     monkeypatch.setattr(models_metatables, "make_request", fake_make_request)
+    monkeypatch.setattr(
+        models_metatables,
+        "_current_metatable_project_context",
+        lambda: models_metatables.MetaTableProjectContextRequest(
+            project_uid="11111111-1111-4111-8111-111111111111",
+            repository_branch="feature/runtime",
+        ),
+    )
 
     with platform_managed_migration_registration_context():
         registered = AccountHoldings.register(

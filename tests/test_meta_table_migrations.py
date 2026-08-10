@@ -10,6 +10,7 @@ import pytest
 from sqlalchemy import Column, DateTime, ForeignKey, Index, Integer, MetaData, String, Table, Uuid
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
+from mainsequence.client.exceptions import ConflictError
 from mainsequence.client.metatables import (
     ManagedMetaTableFinalizeResponse,
     ManagedMetaTableFinalizeTableResult,
@@ -104,6 +105,8 @@ def _reserved_registry_metatable(
     management_mode: str = "platform_managed",
     schema_management_mode: str = "alembic_managed",
     provisioning_status: str = "reserved",
+    physical_schema: str = DEFAULT_ALEMBIC_VERSION_SCHEMA,
+    physical_table_name: str = DEFAULT_ALEMBIC_VERSION_TABLE_NAME,
 ) -> MetaTable:
     return MetaTable.model_construct(
         uid="registry-uid",
@@ -117,13 +120,13 @@ def _reserved_registry_metatable(
         migration_namespace=migration_namespace,
         migration_provider_key=f"{migration_package}:{migration_namespace}",
         alembic_version_meta_table_uid=None,
-        physical_schema=DEFAULT_ALEMBIC_VERSION_SCHEMA,
-        physical_table_name=DEFAULT_ALEMBIC_VERSION_TABLE_NAME,
+        physical_schema=physical_schema,
+        physical_table_name=physical_table_name,
         table_contract={
             "version": "relational-table.v1",
             "physical": {
-                "schema": DEFAULT_ALEMBIC_VERSION_SCHEMA,
-                "table_name": DEFAULT_ALEMBIC_VERSION_TABLE_NAME,
+                "schema": physical_schema,
+                "table_name": physical_table_name,
             },
             "columns": [],
         },
@@ -221,7 +224,8 @@ def test_alembic_version_metatable_register_reserves_managed_root(monkeypatch):
         captured["rows"] = rows
         captured["timeout"] = timeout
         registry = _reserved_registry_metatable(
-            data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+            data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+            physical_schema="markets",
         )
         registry.uid = "registered-uid"
         return [registry]
@@ -404,6 +408,7 @@ def test_ensure_alembic_registry_forces_backend_registration_for_stale_cache(mon
         registry.uid = "fresh-registry-uid"
         return [registry]
 
+    monkeypatch.setattr(MetaTable, "filter_by_body", staticmethod(lambda **kwargs: []))
     monkeypatch.setattr(MetaTable, "bulk_create", staticmethod(fake_bulk_create))
 
     meta_table = migration.ensure_alembic_registry(timeout=7)
@@ -432,14 +437,159 @@ def test_alembic_registry_rejects_legacy_external_registered_catalog_row(monkeyp
     )
     monkeypatch.setattr(
         MetaTable,
+        "filter_by_body",
+        staticmethod(lambda **kwargs: [legacy_registry]),
+    )
+    monkeypatch.setattr(
+        MetaTable,
         "bulk_create",
-        staticmethod(lambda rows, *, timeout=None, on_status=None: [legacy_registry]),
+        staticmethod(
+            lambda rows, *, timeout=None, on_status=None: pytest.fail(
+                "incompatible existing registry must not be collection-created"
+            )
+        ),
     )
 
     with pytest.raises(
         RuntimeError,
         match="Do not reuse an external_registered Alembic registry",
     ):
+        migration.ensure_alembic_registry()
+
+
+def test_ensure_alembic_registry_reuses_persistent_registry_across_operations(
+    monkeypatch,
+):
+    class ProjectAlembicVersion(AlembicVersionMetaTable):
+        __metatable_uid__ = None
+        __metatable_data_source_uid__ = "data-source-uid"
+        __metatable__ = None
+
+    migration = AlembicMetaTableMigration(
+        package="sample",
+        migration_namespace="markets",
+        script_location="sample:migrations",
+        target_metadata=MetaData(),
+        alembic_registry=ProjectAlembicVersion,
+    )
+    persisted: list[MetaTable] = []
+    create_calls = 0
+
+    def fake_filter_by_body(**kwargs):
+        assert kwargs["data_source__uid__in"] == ["data-source-uid"]
+        assert kwargs["physical_schema__in"] == ["public"]
+        assert kwargs["physical_table_name__in"] == ["alembic_version"]
+        return list(persisted)
+
+    def fake_bulk_create(rows, *, timeout=None, on_status=None):
+        nonlocal create_calls
+        create_calls += 1
+        registry = _reserved_registry_metatable()
+        registry.uid = "persistent-registry-uid"
+        persisted.append(registry)
+        return [registry]
+
+    monkeypatch.setattr(MetaTable, "filter_by_body", staticmethod(fake_filter_by_body))
+    monkeypatch.setattr(MetaTable, "bulk_create", staticmethod(fake_bulk_create))
+
+    first = migration.ensure_alembic_registry()
+
+    # A separate CLI process starts without any class-level binding.
+    ProjectAlembicVersion.__metatable__ = None
+    ProjectAlembicVersion.__metatable_uid__ = None
+    second = migration.ensure_alembic_registry()
+
+    assert first.uid == "persistent-registry-uid"
+    assert second.uid == first.uid
+    assert create_calls == 1
+    assert ProjectAlembicVersion.get_meta_table_uid() == "persistent-registry-uid"
+
+
+def test_ensure_alembic_registry_recovers_from_concurrent_create_conflict(
+    monkeypatch,
+):
+    class ProjectAlembicVersion(AlembicVersionMetaTable):
+        __metatable_uid__ = None
+        __metatable_data_source_uid__ = "data-source-uid"
+        __metatable__ = None
+
+    migration = AlembicMetaTableMigration(
+        package="sample",
+        migration_namespace="markets",
+        script_location="sample:migrations",
+        target_metadata=MetaData(),
+        alembic_registry=ProjectAlembicVersion,
+    )
+    registry = _reserved_registry_metatable()
+    registry.uid = "concurrent-registry-uid"
+    lookup_count = 0
+
+    def fake_filter_by_body(**kwargs):
+        nonlocal lookup_count
+        lookup_count += 1
+        return [] if lookup_count == 1 else [registry]
+
+    def fake_bulk_create(rows, *, timeout=None, on_status=None):
+        raise ConflictError("registry was created concurrently")
+
+    monkeypatch.setattr(MetaTable, "filter_by_body", staticmethod(fake_filter_by_body))
+    monkeypatch.setattr(MetaTable, "bulk_create", staticmethod(fake_bulk_create))
+
+    resolved = migration.ensure_alembic_registry()
+
+    assert resolved.uid == "concurrent-registry-uid"
+    assert lookup_count == 2
+
+
+@pytest.mark.parametrize(
+    ("field_name", "invalid_value", "error"),
+    [
+        ("migration_provider_key", "other:provider", "migration_provider_key"),
+        (
+            "alembic_version_meta_table_uid",
+            "unexpected-parent-uid",
+            "must be empty",
+        ),
+        ("namespace", "other.namespace", "namespace"),
+    ],
+)
+def test_ensure_alembic_registry_rejects_incompatible_existing_root(
+    monkeypatch,
+    field_name,
+    invalid_value,
+    error,
+):
+    class ProjectAlembicVersion(AlembicVersionMetaTable):
+        __metatable_uid__ = None
+        __metatable_data_source_uid__ = "data-source-uid"
+        __metatable__ = None
+
+    migration = AlembicMetaTableMigration(
+        package="sample",
+        migration_namespace="markets",
+        script_location="sample:migrations",
+        target_metadata=MetaData(),
+        alembic_registry=ProjectAlembicVersion,
+    )
+    registry = _reserved_registry_metatable()
+    setattr(registry, field_name, invalid_value)
+
+    monkeypatch.setattr(
+        MetaTable,
+        "filter_by_body",
+        staticmethod(lambda **kwargs: [registry]),
+    )
+    monkeypatch.setattr(
+        MetaTable,
+        "bulk_create",
+        staticmethod(
+            lambda rows, *, timeout=None, on_status=None: pytest.fail(
+                "incompatible existing registry must not be collection-created"
+            )
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match=error):
         migration.ensure_alembic_registry()
 
 

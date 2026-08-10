@@ -88,6 +88,12 @@ Never classify the registry as `external_registered`. Alembic owning its
 physical DDL is represented by `schema_management_mode="alembic_managed"`, not
 by external catalog ownership.
 
+Do not handcraft or mutate lifecycle combinations. SDK request models enforce
+three creation intents: platform/backend with backend table creation,
+platform/Alembic with backend table creation disabled, and external/external
+with no provisioning. Managed migration collection rows are always
+platform-managed, Alembic-managed reservations and are validated before HTTP.
+
 ## Rules
 
 - Keep Alembic as the schema migration engine; do not build custom operation
@@ -111,6 +117,10 @@ by external catalog ownership.
 - Reject a returned registry unless it is a platform-managed,
   Alembic-managed root in `reserved` or `active` state. Do not silently reuse a
   legacy organization-scoped `external_registered` registry.
+- Treat `ensure_alembic_registry()` as resolve-or-create. Resolve by DataSource
+  UID, physical schema, and physical table name; then validate provider key,
+  lifecycle modes, and the empty parent relationship before reuse. Never
+  collection-create a compatible registry that already exists.
 
 ## Debugging
 

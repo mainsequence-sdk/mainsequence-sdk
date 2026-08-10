@@ -65,6 +65,12 @@ PlatformTimeIndexMetaTable    -> POST /api/v1/time-index-meta-tables/
 Both calls use a raw JSON list body. There is no `{ "items": [...] }` wrapper
 and no `/bulk-create/` endpoint.
 
+"Raw JSON list" defines the backend transport shape. It does not mean callers
+may submit unchecked lifecycle combinations. The SDK validates relational rows
+with `ManagedMetaTableCollectionCreateRow` and time-indexed rows with
+`ManagedTimeIndexMetaTableCollectionCreateRow` before serialization. Their
+literal fields admit only platform-managed, Alembic-managed, reserved intent.
+
 Each list item must explicitly declare Alembic ownership with:
 
 ```json
@@ -250,6 +256,13 @@ the old reservation conflict-diagnostic engine.
   `PlatformTimeIndexMetaTable` uses `/api/v1/time-index-meta-tables/`.
 - [x] Add focused SDK tests proving the request body is a raw JSON list and
   contains `is_alembic_managed=true`.
+- [x] Validate every row through its endpoint-specific typed SDK model before
+  HTTP and reject non-managed, non-Alembic, or non-reserved input.
+- [x] Make Alembic registry ensure idempotent across CLI processes: resolve by
+  DataSource/schema/table physical identity, validate provider-root ownership,
+  reuse compatible rows, and create only when missing.
+- [x] Recheck and validate registry identity after a collection-create conflict
+  so concurrent ensure operations cannot produce duplicate roots.
 
 ## Consequences
 

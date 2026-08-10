@@ -667,6 +667,15 @@ class MetaTableRegistrationRequest(MetaTableRequestFields):
     provisioning: dict[str, Any] | None = None
     introspect: bool = False
 
+    @model_validator(mode="after")
+    def _validate_lifecycle_intent(self) -> MetaTableRegistrationRequest:
+        self.schema_management, self.provisioning = _normalize_registration_lifecycle(
+            management_mode=self.management_mode,
+            schema_management=self.schema_management,
+            provisioning=self.provisioning,
+        )
+        return self
+
 
 class MetaTableValidateContractRequest(BasePydanticModel):
     table_contract: MetaTableContract | dict[str, Any]
@@ -691,10 +700,12 @@ class MetaTableValidateContractRequest(BasePydanticModel):
 class AlembicManagementRequest(BasePydanticModel):
     package: str = Field(
         ...,
+        min_length=1,
         description="Client package or migration stream package that owns the Alembic revisions.",
     )
     migration_namespace: str = Field(
         ...,
+        min_length=1,
         description="Provider-scoped migration namespace inside the package.",
     )
     provider_key: str | None = Field(
@@ -715,6 +726,26 @@ class AlembicManagementRequest(BasePydanticModel):
         description="Optional last finalized Alembic revision for this MetaTable.",
     )
 
+    @field_validator("package", "migration_namespace")
+    @classmethod
+    def _require_nonempty_identity(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Alembic package and migration_namespace must be non-empty.")
+        return normalized
+
+    @field_validator(
+        "provider_key",
+        "alembic_version_meta_table_uid",
+        "revision",
+    )
+    @classmethod
+    def _normalize_optional_identity(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
 
 class SchemaManagementRequest(BasePydanticModel):
     mode: MetaTableSchemaManagementMode = Field(
@@ -728,6 +759,170 @@ class SchemaManagementRequest(BasePydanticModel):
         None,
         description="Alembic lifecycle metadata. Required when mode is alembic_managed.",
     )
+
+    @model_validator(mode="after")
+    def _validate_owner_metadata(self) -> SchemaManagementRequest:
+        if self.mode == "alembic_managed":
+            if self.alembic is None:
+                raise ValueError(
+                    "schema_management.alembic is required when mode is "
+                    "'alembic_managed'."
+                )
+            if isinstance(self.alembic, Mapping):
+                self.alembic = AlembicManagementRequest.model_validate(self.alembic)
+            return self
+        if self.alembic is not None:
+            raise ValueError(
+                "schema_management.alembic is only valid when mode is "
+                "'alembic_managed'."
+            )
+        return self
+
+
+def _normalize_provisioning(
+    provisioning: Mapping[str, Any] | None,
+    *,
+    create_table: bool,
+) -> dict[str, Any]:
+    normalized = dict(provisioning or {})
+    requested_create_table = normalized.get("create_table", create_table)
+    if not isinstance(requested_create_table, bool):
+        raise ValueError("provisioning.create_table must be a boolean.")
+    if requested_create_table is not create_table:
+        owner = "backend" if create_table else "Alembic"
+        raise ValueError(
+            f"{owner}-managed schema ownership requires "
+            f"provisioning.create_table={str(create_table).lower()}."
+        )
+    if "if_not_exists" in normalized and not isinstance(
+        normalized["if_not_exists"], bool
+    ):
+        raise ValueError("provisioning.if_not_exists must be a boolean.")
+    normalized["create_table"] = create_table
+    normalized.setdefault("if_not_exists", True)
+    return normalized
+
+
+def _normalize_registration_lifecycle(
+    *,
+    management_mode: MetaTableManagementMode,
+    schema_management: SchemaManagementRequest | Mapping[str, Any] | None,
+    provisioning: Mapping[str, Any] | None,
+) -> tuple[SchemaManagementRequest, dict[str, Any] | None]:
+    if schema_management is None:
+        default_mode: MetaTableSchemaManagementMode = (
+            "external_registered"
+            if management_mode == "external_registered"
+            else "backend_managed"
+        )
+        normalized_schema_management = SchemaManagementRequest(mode=default_mode)
+    else:
+        normalized_schema_management = SchemaManagementRequest.model_validate(
+            schema_management
+        )
+
+    schema_mode = normalized_schema_management.mode
+    if management_mode == "external_registered":
+        if schema_mode != "external_registered":
+            raise ValueError(
+                "external_registered catalog ownership requires "
+                "schema_management.mode='external_registered'."
+            )
+        if provisioning is not None:
+            raise ValueError(
+                "external_registered tables already exist and cannot include provisioning."
+            )
+        return normalized_schema_management, None
+
+    if schema_mode == "external_registered":
+        raise ValueError(
+            "platform_managed catalog ownership cannot use "
+            "schema_management.mode='external_registered'."
+        )
+    if schema_mode == "backend_managed":
+        return normalized_schema_management, _normalize_provisioning(
+            provisioning,
+            create_table=True,
+        )
+    return normalized_schema_management, _normalize_provisioning(
+        provisioning,
+        create_table=False,
+    )
+
+
+class ManagedMetaTableCollectionCreateRow(BasePydanticModel):
+    """Alembic reservation intent for the relational MetaTable collection."""
+
+    data_source_uid: str = Field(..., min_length=1)
+    identifier: str | None = None
+    namespace: str | None = None
+    description: str | None = None
+    labels: list[str] = Field(default_factory=list)
+    management_mode: Literal["platform_managed"] = "platform_managed"
+    provisioning_status: Literal["reserved"] = "reserved"
+    is_alembic_managed: Literal[True] = True
+    migration_package: str = Field(..., min_length=1)
+    migration_namespace: str = Field(..., min_length=1)
+    migration_provider_key: str | None = None
+    alembic_version_meta_table_uid: str | None = None
+    alembic_revision: str | None = None
+    physical_schema: str = Field(..., min_length=1)
+    physical_table_name: str = Field(..., min_length=1)
+    protect_from_deletion: bool = False
+    project_context: MetaTableProjectContextRequest
+    table_contract: dict[str, Any]
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_contract_model(cls, value: Any) -> Any:
+        if not isinstance(value, Mapping):
+            return value
+        data = dict(value)
+        table_contract = data.get("table_contract")
+        if isinstance(table_contract, BaseModel):
+            data["table_contract"] = table_contract.model_dump(
+                mode="json",
+                by_alias=True,
+                exclude_none=True,
+            )
+        return data
+
+    @model_validator(mode="after")
+    def _validate_physical_identity(self) -> ManagedMetaTableCollectionCreateRow:
+        self.table_contract = _normalize_contract_mapping(self.table_contract)
+        physical = self.table_contract.get("physical")
+        if not isinstance(physical, Mapping):
+            raise ValueError("table_contract.physical is required for managed reservation.")
+        normalized_physical = dict(physical)
+        contract_schema = _contract_physical_schema(self.table_contract)
+        if contract_schema not in (None, self.physical_schema):
+            raise ValueError(
+                "physical_schema must match table_contract.physical.schema."
+            )
+        contract_table_name = normalized_physical.get("table_name")
+        if contract_table_name != self.physical_table_name:
+            raise ValueError(
+                "physical_table_name must match table_contract.physical.table_name."
+            )
+        normalized_physical["schema"] = self.physical_schema
+        normalized_physical.pop("schema_", None)
+        self.table_contract["physical"] = normalized_physical
+        return self
+
+
+class ManagedTimeIndexMetaTableCollectionCreateRow(
+    ManagedMetaTableCollectionCreateRow
+):
+    """Alembic reservation intent for the time-indexed MetaTable collection."""
+
+    time_index_name: str = Field(..., min_length=1)
+    cadence: str | None = Field(None, max_length=32)
+    partition_strategy: str = Field(..., min_length=1)
+
+    @field_validator("cadence")
+    @classmethod
+    def _normalize_managed_cadence(cls, value: str | None) -> str | None:
+        return _normalize_time_indexed_cadence(value)
 
 
 class MetaTableMigrationConnectionRequest(BasePydanticModel):
@@ -1089,6 +1284,9 @@ class DataSource(BasePydanticModel, BaseObjectOrm):
 
 class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, BaseObjectOrm):
     ENDPOINT: ClassVar[str] = "meta-tables"
+    COLLECTION_CREATE_ROW_MODEL: ClassVar[
+        type[ManagedMetaTableCollectionCreateRow]
+    ] = ManagedMetaTableCollectionCreateRow
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
         "identifier": ["in", "exact", "contains"],
         "uid": ["in", "exact"],
@@ -1398,14 +1596,14 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
     ) -> MetaTable:
         if request is not None and kwargs:
             raise ValueError("Pass either request or keyword fields, not both.")
-        payload = request if request is not None else MetaTableRegistrationRequest(**kwargs)
-        management_mode = (
-            payload.get("management_mode")
-            if isinstance(payload, Mapping)
-            else payload.management_mode
-        )
-        if management_mode != "external_registered":
-            payload = _with_current_metatable_project_context(payload)
+        unvalidated_payload = _payload_json(request) if request is not None else dict(kwargs)
+        project_context = unvalidated_payload.pop("project_context", None)
+        payload = MetaTableRegistrationRequest.model_validate(unvalidated_payload)
+        if payload.management_mode != "external_registered":
+            payload_json = _payload_json(payload)
+            if project_context is not None:
+                payload_json["project_context"] = project_context
+            payload = _with_current_metatable_project_context(payload_json)
         response_json = cls._post_action(
             "register",
             payload,
@@ -1427,6 +1625,9 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
             on_status(f"Serializing POST {url} payload...")
         payload_json = _payload_json_sequence(rows)
         payload_json = _with_current_metatable_project_context_collection(payload_json)
+        _ = [
+            cls.COLLECTION_CREATE_ROW_MODEL.model_validate(row) for row in payload_json
+        ]
         if on_status is not None:
             payload_size = len(json.dumps(payload_json, default=str))
             on_status(f"Serialized POST {url} payload bytes={payload_size}.")
@@ -1992,6 +2193,15 @@ class TimeIndexMetaTableRegistrationRequest(BasePydanticModel):
                 self.table_contract,
                 str(self.physical_schema),
             )
+        return self
+
+    @model_validator(mode="after")
+    def _validate_lifecycle_intent(self) -> TimeIndexMetaTableRegistrationRequest:
+        self.schema_management, self.provisioning = _normalize_registration_lifecycle(
+            management_mode="platform_managed",
+            schema_management=self.schema_management,
+            provisioning=self.provisioning,
+        )
         return self
 
     @field_validator("cadence")
@@ -2927,6 +3137,9 @@ class TableMetaData(BaseModel):
 
 class TimeIndexMetaTable(MetaTable):
     ENDPOINT: ClassVar[str] = "time-index-meta-tables"
+    COLLECTION_CREATE_ROW_MODEL: ClassVar[
+        type[ManagedTimeIndexMetaTableCollectionCreateRow]
+    ] = ManagedTimeIndexMetaTableCollectionCreateRow
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
         "identifier": ["in", "exact", "contains"],
         "uid": ["in", "exact"],
@@ -3171,13 +3384,14 @@ class TimeIndexMetaTable(MetaTable):
     ) -> TimeIndexMetaTable:
         if request is not None and kwargs:
             raise ValueError("Pass either request or keyword fields, not both.")
-        payload = (
-            request if request is not None else TimeIndexMetaTableRegistrationRequest(**kwargs)
+        unvalidated_payload = _payload_json(request) if request is not None else dict(kwargs)
+        project_context = unvalidated_payload.pop("project_context", None)
+        payload = TimeIndexMetaTableRegistrationRequest.model_validate(
+            unvalidated_payload
         )
-        if isinstance(payload, BaseModel):
-            payload_json = payload.model_dump(mode="json", exclude_none=True)
-        else:
-            payload_json = dict(payload)
+        payload_json = _payload_json(payload)
+        if project_context is not None:
+            payload_json["project_context"] = project_context
         payload_json = _with_current_metatable_project_context(payload_json)
         request_payload = {"json": serialize_to_json(payload_json)}
         response = make_request(
@@ -4992,6 +5206,8 @@ TimeIndexMetaTable.model_rebuild()
 DataSource.model_rebuild()
 MetaTableRequestFields.model_rebuild()
 MetaTableRegistrationRequest.model_rebuild()
+ManagedMetaTableCollectionCreateRow.model_rebuild()
+ManagedTimeIndexMetaTableCollectionCreateRow.model_rebuild()
 TimeIndexMetaTableRegistrationRequest.model_rebuild()
 MetaTable.model_rebuild()
 
@@ -5013,6 +5229,8 @@ __all__ = [
     "ManagedMetaTableFinalizeRequest",
     "ManagedMetaTableFinalizeResponse",
     "ManagedMetaTableFinalizeTableResult",
+    "ManagedMetaTableCollectionCreateRow",
+    "ManagedTimeIndexMetaTableCollectionCreateRow",
     "MetaTable",
     "MetaTableMigrationConnection",
     "MetaTableMigrationConnectionRequest",
