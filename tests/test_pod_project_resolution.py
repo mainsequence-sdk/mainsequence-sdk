@@ -11,6 +11,7 @@ PROJECT_UID = "1d0530c0-65d1-4db0-856b-dc29d8260a09"
 PROJECT_BRANCH_UID = "5a28020a-0f1b-47ee-aab8-334286234bea"
 DATA_SOURCE_UID = "864e7c22-482a-464a-8758-0d3408abd77f"
 ORGANIZATION_UID = "56db6c13-235f-4ea4-adb7-f21fd9cebc67"
+ENVIRONMENT_UID = "a5e95092-a77a-45a6-835c-46d327e8b5e7"
 
 
 @pytest.fixture(autouse=True)
@@ -63,6 +64,8 @@ def _project_branch_payload_public() -> dict:
             "storage_access_mode": "read_write",
         },
         "metatables_data_source_uid": DATA_SOURCE_UID,
+        "organization_project_environment_uid": ENVIRONMENT_UID,
+        "organization_project_environment_name": "development",
         "default_base_image": {
             "uid": "c3ddb792-a3c0-428c-b5cf-31ed99dad10f",
             "title": "Python",
@@ -101,6 +104,8 @@ def test_project_branch_deserializes_public_uid_serializer_payload():
     assert project_branch.metatables_data_source.storage_access_mode == "read_write"
     assert project_branch.metatables_data_source.allows_runtime_reads is True
     assert project_branch.metatables_data_source.allows_runtime_writes is True
+    assert project_branch.organization_project_environment_uid == ENVIRONMENT_UID
+    assert project_branch.organization_project_environment_name == "development"
 
 
 def test_project_branch_deserializes_nullable_data_source_fields():

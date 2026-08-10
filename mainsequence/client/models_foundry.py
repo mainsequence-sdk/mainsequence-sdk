@@ -474,6 +474,8 @@ class ProjectBranch(BasePydanticModel, BaseObjectOrm):
     framework: str
     metatables_data_source: _DataSource | None = None
     metatables_data_source_uid: str | None = None
+    organization_project_environment_uid: str | None = None
+    organization_project_environment_name: str | None = None
     default_base_image: ProjectBaseImage
     sdks: list[ProjectSDKObservation] = Field(default_factory=list)
     git_repository_uid: str | None = None
