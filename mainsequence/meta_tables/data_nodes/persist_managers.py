@@ -23,6 +23,7 @@ from mainsequence.client.metatables import (
     DataSource,
     TimeIndexMetaTable,
     UpdateStatistics,
+    get_session_data_source,
 )
 from mainsequence.instrumentation import tracer
 from mainsequence.logconf import logger
@@ -41,6 +42,8 @@ class _StorageTableLookupResult:
     table_name: str | None
     filters: dict[str, Any]
     matches: list[TimeIndexMetaTable]
+    data_source_resolution_error: str | None = None
+    data_source_mismatch: tuple[str, str] | None = None
 
 
 def get_data_node_source_code(DataNodeClass: type[Any]) -> str:
@@ -148,7 +151,23 @@ def _registered_storage_table_lookup(
 ) -> _StorageTableLookupResult:
     table_name = _storage_table_physical_table_name(storage_table)
     physical_schema = _storage_table_physical_schema(storage_table)
-    data_source_uid = storage_table.get_data_source_uid()
+    (
+        data_source_uid,
+        data_source_resolution_error,
+        data_source_mismatch,
+    ) = _storage_table_lookup_data_source_uid(storage_table)
+
+    if data_source_mismatch is not None:
+        return _StorageTableLookupResult(
+            data_source_uid=data_source_uid,
+            physical_schema=physical_schema,
+            table_name=table_name,
+            filters={},
+            matches=[],
+            data_source_resolution_error=data_source_resolution_error,
+            data_source_mismatch=data_source_mismatch,
+        )
+
     if table_name and physical_schema and data_source_uid:
         filters = {
             "data_source__uid": data_source_uid,
@@ -162,6 +181,7 @@ def _registered_storage_table_lookup(
             for match in raw_matches
             if _time_index_meta_table_identity(match)
             == (data_source_uid, physical_schema, table_name)
+            and _time_index_meta_table_is_active(match)
         ]
         return _StorageTableLookupResult(
             data_source_uid=data_source_uid,
@@ -169,6 +189,7 @@ def _registered_storage_table_lookup(
             table_name=table_name,
             filters=filters,
             matches=matches,
+            data_source_resolution_error=data_source_resolution_error,
         )
 
     return _StorageTableLookupResult(
@@ -177,7 +198,43 @@ def _registered_storage_table_lookup(
         table_name=table_name,
         filters={},
         matches=[],
+        data_source_resolution_error=data_source_resolution_error,
     )
+
+
+def _storage_table_lookup_data_source_uid(
+    storage_table: type[PlatformTimeIndexMetaTable],
+) -> tuple[str | None, str | None, tuple[str, str] | None]:
+    explicit_uid = storage_table.get_data_source_uid()
+    explicit_uid = str(explicit_uid) if explicit_uid not in (None, "") else None
+
+    session_uid: str | None = None
+    resolution_error: str | None = None
+    try:
+        session_data_source = get_session_data_source()
+    except Exception as exc:
+        resolution_error = str(exc)
+    else:
+        resolved_uid = getattr(session_data_source, "uid", None) or getattr(
+            session_data_source,
+            "data_source_uid",
+            None,
+        )
+        if resolved_uid not in (None, ""):
+            session_uid = str(resolved_uid)
+
+    if explicit_uid is not None:
+        if session_uid is not None and explicit_uid != session_uid:
+            return explicit_uid, resolution_error, (explicit_uid, session_uid)
+        return explicit_uid, resolution_error, None
+    return session_uid, resolution_error, None
+
+
+def _time_index_meta_table_is_active(meta_table: TimeIndexMetaTable) -> bool:
+    status = getattr(meta_table, "provisioning_status", None)
+    if status in (None, ""):
+        return True
+    return str(status) == "active"
 
 
 def _storage_table_physical_schema(
@@ -244,9 +301,23 @@ def _unbound_storage_table_message(
             "the storage model, so no backend catalog lookup was possible."
         )
     if lookup_result.data_source_uid is None:
+        resolution_detail = ""
+        if lookup_result.data_source_resolution_error:
+            resolution_detail = (
+                " Project/session default data-source resolution failed: "
+                f"{lookup_result.data_source_resolution_error}."
+            )
         return (
             f"{message} The SDK could not determine a data-source UID from "
-            "the storage model, so no backend catalog lookup was possible."
+            "the storage model or the current project/session default, so no "
+            f"backend catalog lookup was possible.{resolution_detail}"
+        )
+    if lookup_result.data_source_mismatch is not None:
+        explicit_uid, session_uid = lookup_result.data_source_mismatch
+        return (
+            f"{message} Storage model data-source UID {explicit_uid!r} does "
+            "not match current project/session default data-source UID "
+            f"{session_uid!r}; refusing to bind this storage model."
         )
 
     filters = _format_lookup_filters(lookup_result.filters)

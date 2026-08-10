@@ -1590,6 +1590,49 @@ def test_ensure_registered_storage_table_rejects_unbound_storage(monkeypatch):
     assert "example_assets__asset_snapshots" in message
 
 
+def test_ensure_registered_storage_table_uses_session_data_source_for_unbound_model(
+    monkeypatch,
+):
+    columns = [
+        FakeColumn("time_index", DateTime(timezone=True), nullable=False),
+        FakeColumn("asset_uid", Uuid(), nullable=False),
+    ]
+    table = FakeTable("example_assets__asset_snapshots", columns=columns)
+    AssetSnapshots = _time_index_model_class(
+        "AssetSnapshots",
+        table,
+        index_names=["time_index", "asset_uid"],
+    )
+    backend_metadata = TimeIndexMetaTable.model_construct(
+        uid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+        storage_hash="storage-hash",
+        physical_schema="public",
+        physical_table_name="example_assets__asset_snapshots",
+        provisioning_status="active",
+    )
+    captured = {}
+
+    def fake_filter_by_body(cls, **filters):
+        captured.update(filters)
+        return [backend_metadata]
+
+    monkeypatch.setattr(
+        TimeIndexMetaTable,
+        "filter_by_body",
+        classmethod(fake_filter_by_body),
+    )
+
+    assert (
+        ensure_registered_storage_table(AssetSnapshots, context="DataNode")
+        is AssetSnapshots
+    )
+    assert AssetSnapshots.get_time_index_meta_table() is backend_metadata
+    assert captured["data_source__uid"] == "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+    assert captured["physical_schema__in"] == ["public"]
+    assert captured["physical_table_name__in"] == ["example_assets__asset_snapshots"]
+
+
 def test_ensure_registered_storage_table_binds_existing_time_index_meta_table(monkeypatch):
     columns = [
         FakeColumn("time_index", DateTime(timezone=True), nullable=False),
@@ -1608,6 +1651,7 @@ def test_ensure_registered_storage_table_binds_existing_time_index_meta_table(mo
         storage_hash="storage-hash",
         physical_schema="public",
         physical_table_name="example_assets__asset_snapshots",
+        provisioning_status="active",
     )
     captured = {}
 
@@ -1635,6 +1679,39 @@ def test_ensure_registered_storage_table_binds_existing_time_index_meta_table(mo
     }
 
 
+def test_ensure_registered_storage_table_rejects_data_source_mismatch(monkeypatch):
+    columns = [
+        FakeColumn("time_index", DateTime(timezone=True), nullable=False),
+        FakeColumn("asset_uid", Uuid(), nullable=False),
+    ]
+    table = FakeTable("example_assets__asset_snapshots", columns=columns)
+    AssetSnapshots = _time_index_model_class(
+        "AssetSnapshots",
+        table,
+        index_names=["time_index", "asset_uid"],
+    )
+    AssetSnapshots.__metatable_data_source_uid__ = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
+    called = False
+
+    def fake_filter_by_body(cls, **filters):
+        nonlocal called
+        called = True
+        return []
+
+    monkeypatch.setattr(
+        TimeIndexMetaTable,
+        "filter_by_body",
+        classmethod(fake_filter_by_body),
+    )
+
+    with pytest.raises(ValueError) as exc_info:
+        ensure_registered_storage_table(AssetSnapshots, context="DataNode")
+    assert not called
+    message = str(exc_info.value)
+    assert "does not match current project/session default data-source UID" in message
+    assert "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee" in message
+
+
 def test_ensure_registered_storage_table_reports_duplicate_matches(monkeypatch):
     columns = [
         FakeColumn("time_index", DateTime(timezone=True), nullable=False),
@@ -1660,6 +1737,7 @@ def test_ensure_registered_storage_table_reports_duplicate_matches(monkeypatch):
         storage_hash="storage-hash",
         physical_schema="public",
         physical_table_name="example_assets__asset_snapshots",
+        provisioning_status="active",
     )
 
     monkeypatch.setattr(
