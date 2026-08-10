@@ -209,6 +209,13 @@ def test_time_index_meta_table_bulk_create_posts_raw_collection_payload(monkeypa
                     provisioning_status="reserved",
                     physical_table_name="example_assets__prices",
                     time_indexed=True,
+                    time_indexed_profile={
+                        "time_index_meta_table_uid": (
+                            "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+                        ),
+                        "time_index_name": "time_index",
+                        "index_names": ["time_index"],
+                    },
                 )
             ],
             status_code=201,
@@ -251,6 +258,11 @@ def test_time_index_meta_table_bulk_create_posts_raw_collection_payload(monkeypa
     result = meta_table_models.TimeIndexMetaTable.bulk_create([row])
 
     assert result[0].uid == "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+    assert result[0].time_indexed_profile is not None
+    assert (
+        result[0].time_indexed_profile.time_index_meta_table_uid
+        == "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+    )
     assert captured["r_type"] == "POST"
     assert captured["url"].endswith("/time-index-meta-tables/")
     assert isinstance(captured["payload"]["json"], list)
@@ -289,6 +301,26 @@ def test_time_index_meta_table_accepts_backend_top_level_cadence():
     )
 
     assert table_with_null_cadence.cadence is None
+
+
+def test_time_index_meta_table_rejects_conflicting_profile_uid():
+    with pytest.raises(
+        ValidationError,
+        match="time_indexed_profile.time_index_meta_table_uid must match",
+    ):
+        meta_table_models.TimeIndexMetaTable(
+            **_meta_table_response(
+                uid="cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+                time_indexed=True,
+                time_indexed_profile={
+                    "time_index_meta_table_uid": (
+                        "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+                    ),
+                    "time_index_name": "time_index",
+                    "index_names": ["time_index"],
+                },
+            )
+        )
 
 
 def test_time_index_meta_table_register_injects_runtime_project_context(monkeypatch):

@@ -7932,7 +7932,7 @@ def test_run_data_node_storage_query_uses_client_model(cli_mod, monkeypatch):
                         return {
                             "ok": True,
                             "query_id": "query-456",
-                            "dynamic_table_uid": uid,
+                            "time_index_meta_table_uid": uid,
                             "results": [{"value": 1}],
                             "truncated": False,
                             "max_rows": 0,
@@ -7958,7 +7958,7 @@ def test_run_data_node_storage_query_uses_client_model(cli_mod, monkeypatch):
         "query_timeout": 14,
     }
     assert out["ok"] is True
-    assert out["dynamic_table_uid"] == "data-node-storage-42"
+    assert out["time_index_meta_table_uid"] == "data-node-storage-42"
     assert out["results"] == [{"value": 1}]
 
 
@@ -8022,7 +8022,7 @@ def test_data_node_storage_run_query(cli_mod, runner, monkeypatch):
         return {
             "ok": True,
             "query_id": "query-456",
-            "dynamic_table_uid": storage_uid,
+            "time_index_meta_table_uid": storage_uid,
             "results": [{"value": 1}],
             "truncated": False,
             "max_rows": 0,
@@ -8045,6 +8045,8 @@ def test_data_node_storage_run_query(cli_mod, runner, monkeypatch):
     assert "Data node query completed: uid=data-node-storage-42" in result.output
     assert "Data Node Query" in result.output
     assert "query-456" in result.output
+    assert "Time Index MetaTable UID" in result.output
+    assert "data-node-storage-42" in result.output
     assert '"value": 1' in result.output
 
 

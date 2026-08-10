@@ -2333,8 +2333,8 @@ class TimeIndexedProfile(TimeIndexedProfileBase, BasePydanticModel):
     updates are routed through TimeIndexMetaTable.
     """
 
-    dynamic_table_uid: str | None = Field(
-        None, description="Backend response alias for the related TimeIndexMetaTable uid"
+    time_index_meta_table_uid: str | None = Field(
+        None, description="Canonical public uid of the related TimeIndexMetaTable"
     )
     related_table_uid: str | None = Field(
         None, description="Public uid of the related TimeIndexMetaTable"
@@ -3191,6 +3191,21 @@ class TimeIndexMetaTable(MetaTable):
     @classmethod
     def _normalize_cadence(cls, value: str | None) -> str | None:
         return _normalize_time_indexed_cadence(value)
+
+    @model_validator(mode="after")
+    def _validate_time_indexed_profile_identity(self) -> TimeIndexMetaTable:
+        profile = self.time_indexed_profile
+        if (
+            self.uid is not None
+            and profile is not None
+            and profile.time_index_meta_table_uid is not None
+            and str(profile.time_index_meta_table_uid) != str(self.uid)
+        ):
+            raise ValueError(
+                "time_indexed_profile.time_index_meta_table_uid must match "
+                "TimeIndexMetaTable.uid."
+            )
+        return self
 
     def _time_indexed_storage_layout(self) -> dict[str, Any]:
         profile = self.time_indexed_profile

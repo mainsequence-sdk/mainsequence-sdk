@@ -1464,7 +1464,7 @@ def test_time_index_meta_table_register_posts_to_canonical_endpoint(monkeypatch)
                     },
                 },
                 "time_indexed_profile": {
-                    "dynamic_table_uid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                    "time_index_meta_table_uid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
                     "time_index_name": "time_index",
                     "index_names": ["time_index", "account_uid", "unique_identifier"],
                     "column_dtypes_map": {

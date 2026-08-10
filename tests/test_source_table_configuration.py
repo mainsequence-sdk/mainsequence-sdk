@@ -8,6 +8,7 @@ from mainsequence.client import metatables as models_metatables
 
 def _source_config_payload():
     return {
+        "time_index_meta_table_uid": "storage-uid-44",
         "related_table_uid": "storage-uid-44",
         "time_index_name": "time_index",
         "index_names": ["time_index", "account_uid", "unique_identifier"],
@@ -46,6 +47,7 @@ def _source_config_payload():
 def test_time_indexed_profile_parses_canonical_response():
     config = models_metatables.TimeIndexedProfile(**_source_config_payload())
 
+    assert config.time_index_meta_table_uid == "storage-uid-44"
     assert config.storage_layout == {
         "time_index": "time_index",
         "identity_dimensions": ["account_uid", "unique_identifier"],
@@ -57,6 +59,15 @@ def test_time_indexed_profile_parses_canonical_response():
     assert config.multi_index_stats["_GLOBAL_"]["max"] == "2026-05-01T03:00:00Z"
     assert config.last_time_index_value == datetime.datetime(2026, 5, 1, 3, tzinfo=datetime.UTC)
     assert config.earliest_index_value == datetime.datetime(2026, 5, 1, tzinfo=datetime.UTC)
+
+
+def test_time_indexed_profile_rejects_removed_legacy_profile_uid():
+    payload = _source_config_payload()
+    removed_field = "_".join(("dynamic", "table", "uid"))
+    payload[removed_field] = payload.pop("time_index_meta_table_uid")
+
+    with pytest.raises(ValidationError, match=removed_field):
+        models_metatables.TimeIndexedProfile(**payload)
 
 
 def test_time_indexed_profile_rejects_foreign_keys():

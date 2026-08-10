@@ -533,6 +533,9 @@ The response shape is metadata, not raw table rows:
 }
 ```
 
+When present, `time_indexed_profile.time_index_meta_table_uid` is the canonical
+profile-to-table identity and must match the parent `TimeIndexMetaTable.uid`.
+
 #### `column_search(...)`
 
 This search hits:

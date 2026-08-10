@@ -143,6 +143,9 @@ The response is paginated metadata:
 }
 ```
 
+When present, `time_indexed_profile.time_index_meta_table_uid` is the canonical
+profile-to-table identity and must match the parent `TimeIndexMetaTable.uid`.
+
 Structured filtering is a different path. Use it only when you already know the
 field to filter by:
 

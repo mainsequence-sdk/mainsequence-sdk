@@ -4482,7 +4482,10 @@ def _print_storage_query_payload(title: str, payload: dict[str, object]) -> None
             ("OK", str(payload.get("ok"))),
             ("Query ID", str(payload.get("query_id") or "-")),
             ("MetaTable UID", str(payload.get("meta_table_uid") or "-")),
-            ("Dynamic Table UID", str(payload.get("dynamic_table_uid") or "-")),
+            (
+                "Time Index MetaTable UID",
+                str(payload.get("time_index_meta_table_uid") or "-"),
+            ),
             ("Row Count", str(payload.get("row_count") or 0)),
             ("Truncated", str(payload.get("truncated"))),
             ("Max Rows", str(payload.get("max_rows") or "-")),
