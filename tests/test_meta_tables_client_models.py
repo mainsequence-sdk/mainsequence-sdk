@@ -70,6 +70,26 @@ def _meta_table_response(**overrides):
     return payload
 
 
+def _project_context():
+    return meta_table_models.MetaTableProjectContextRequest(
+        project_uid="11111111-1111-4111-8111-111111111111",
+        repository_branch="feature/runtime",
+    )
+
+
+@pytest.mark.parametrize(
+    "legacy_field",
+    ["organization_project_environment_uid", "project_branch_uid"],
+)
+def test_metatable_project_context_rejects_legacy_routing_fields(legacy_field):
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        meta_table_models.MetaTableProjectContextRequest(
+            project_uid="11111111-1111-4111-8111-111111111111",
+            repository_branch="feature/runtime",
+            **{legacy_field: "22222222-2222-4222-8222-222222222222"},
+        )
+
+
 def test_metatable_identifier_field_descriptions_state_org_global_uniqueness():
     expected = "globally unique per organization"
 
@@ -134,6 +154,11 @@ def test_meta_table_bulk_create_posts_raw_collection_payload(monkeypatch):
         "build_session",
         classmethod(lambda cls: SimpleNamespace(headers={})),
     )
+    monkeypatch.setattr(
+        meta_table_models,
+        "_current_metatable_project_context",
+        _project_context,
+    )
 
     row = {
         "identifier": "Asset",
@@ -161,7 +186,12 @@ def test_meta_table_bulk_create_posts_raw_collection_payload(monkeypatch):
     assert captured["r_type"] == "POST"
     assert captured["url"].endswith("/meta-tables/")
     assert isinstance(captured["payload"]["json"], list)
-    assert captured["payload"]["json"] == [row]
+    assert captured["payload"]["json"] == [
+        {
+            **row,
+            "project_context": _project_context().model_dump(mode="json"),
+        }
+    ]
 
 
 def test_time_index_meta_table_bulk_create_posts_raw_collection_payload(monkeypatch):
@@ -188,6 +218,11 @@ def test_time_index_meta_table_bulk_create_posts_raw_collection_payload(monkeypa
         meta_table_models.TimeIndexMetaTable,
         "build_session",
         classmethod(lambda cls: SimpleNamespace(headers={})),
+    )
+    monkeypatch.setattr(
+        meta_table_models,
+        "_current_metatable_project_context",
+        _project_context,
     )
 
     row = {
@@ -217,7 +252,12 @@ def test_time_index_meta_table_bulk_create_posts_raw_collection_payload(monkeypa
     assert captured["r_type"] == "POST"
     assert captured["url"].endswith("/time-index-meta-tables/")
     assert isinstance(captured["payload"]["json"], list)
-    assert captured["payload"]["json"] == [row]
+    assert captured["payload"]["json"] == [
+        {
+            **row,
+            "project_context": _project_context().model_dump(mode="json"),
+        }
+    ]
 
 
 def test_time_index_meta_table_accepts_backend_top_level_cadence():
@@ -247,6 +287,54 @@ def test_time_index_meta_table_accepts_backend_top_level_cadence():
     )
 
     assert table_with_null_cadence.cadence is None
+
+
+def test_time_index_meta_table_register_injects_runtime_project_context(monkeypatch):
+    captured = {}
+
+    def fake_make_request(**kwargs):
+        captured.update(kwargs)
+        return _Response(
+            _meta_table_response(
+                time_indexed=True,
+                cadence="1d",
+                time_indexed_profile={
+                    "time_index_name": "time_index",
+                    "cadence": "1d",
+                    "index_names": ["time_index"],
+                },
+            ),
+            status_code=201,
+        )
+
+    monkeypatch.setattr(meta_table_models, "make_request", fake_make_request)
+    monkeypatch.setattr(
+        meta_table_models.TimeIndexMetaTable,
+        "build_session",
+        classmethod(lambda cls: SimpleNamespace(headers={})),
+    )
+    monkeypatch.setattr(
+        meta_table_models,
+        "_current_metatable_project_context",
+        _project_context,
+    )
+
+    meta_table_models.TimeIndexMetaTable.register(
+        data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+        identifier="Prices",
+        namespace="example.assets",
+        time_index_name="time_index",
+        cadence="1d",
+        table_contract={
+            "physical": {"schema": "analytics", "table_name": "prices"},
+            "columns": [],
+        },
+    )
+
+    assert captured["payload"]["json"]["project_context"] == (
+        _project_context().model_dump(mode="json")
+    )
+    assert "organization_project_environment_uid" not in captured["payload"]["json"]
 
 
 @pytest.mark.parametrize(
@@ -349,6 +437,11 @@ def test_meta_table_register_posts_contract_to_meta_table_endpoint(monkeypatch):
         "build_session",
         classmethod(lambda cls: SimpleNamespace(headers={})),
     )
+    monkeypatch.setattr(
+        meta_table_models,
+        "_current_metatable_project_context",
+        _project_context,
+    )
 
     table = meta_table_models.MetaTable.register(
         data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
@@ -388,6 +481,11 @@ def test_meta_table_register_posts_contract_to_meta_table_endpoint(monkeypatch):
         "create_table": True,
         "if_not_exists": True,
     }
+    assert captured["payload"]["json"]["project_context"] == {
+        "project_uid": "11111111-1111-4111-8111-111111111111",
+        "repository_branch": "feature/runtime",
+    }
+    assert "organization_project_environment_uid" not in captured["payload"]["json"]
 
 
 def test_meta_table_registration_rejects_physical_schema_mismatch():
@@ -700,6 +798,11 @@ def test_meta_table_issue_migration_connection_posts_scope(monkeypatch):
         "build_session",
         classmethod(lambda cls: SimpleNamespace(headers={})),
     )
+    monkeypatch.setattr(
+        meta_table_models,
+        "_current_metatable_project_context",
+        lambda: (_ for _ in ()).throw(AssertionError("context must be reused")),
+    )
 
     meta_table = meta_table_models.MetaTable.model_construct(
         uid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
@@ -710,6 +813,7 @@ def test_meta_table_issue_migration_connection_posts_scope(monkeypatch):
             migration_namespace="markets",
             migration_provider_key="msm:markets",
             ttl_seconds=60,
+            project_context=_project_context(),
         )
     )
 
@@ -727,6 +831,10 @@ def test_meta_table_issue_migration_connection_posts_scope(monkeypatch):
         "migration_namespace": "markets",
         "migration_provider_key": "msm:markets",
         "ttl_seconds": 60,
+        "project_context": {
+            "project_uid": "11111111-1111-4111-8111-111111111111",
+            "repository_branch": "feature/runtime",
+        },
     }
 
 

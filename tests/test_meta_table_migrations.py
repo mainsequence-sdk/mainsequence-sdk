@@ -16,6 +16,7 @@ from mainsequence.client.metatables import (
     MetaTable,
     TimeIndexMetaTable,
 )
+from mainsequence.client.metatables.core import MetaTableProjectContextRequest
 from mainsequence.meta_tables import (
     PlatformManagedMetaTable,
     PlatformTimeIndexMetaTable,
@@ -43,6 +44,25 @@ from mainsequence.meta_tables.migrations import (
     resolve_alembic_revision_metadata,
     scaffold_migration_package,
 )
+
+PROJECT_UID = "11111111-1111-4111-8111-111111111111"
+
+
+@pytest.fixture(autouse=True)
+def _project_context(monkeypatch):
+    context = MetaTableProjectContextRequest(
+        project_uid=PROJECT_UID,
+        repository_branch="main",
+    )
+    monkeypatch.setattr(
+        "mainsequence.meta_tables.migrations._current_metatable_project_context",
+        lambda: context,
+    )
+    monkeypatch.setattr(
+        "mainsequence.meta_tables.migrations.get_session_data_source",
+        lambda: types.SimpleNamespace(uid="data-source-uid"),
+    )
+    return context
 
 
 def _reserved_metatable(
@@ -752,9 +772,13 @@ def test_alembic_metatable_migration_sync_catalog_hook_has_no_reserved_policy(
     )
 
     def fake_register(request, *, timeout=None):
+        assert request["project_context"] == {
+            "project_uid": PROJECT_UID,
+            "repository_branch": "main",
+        }
         return MetaTable.model_construct(
             uid="asset-meta-table-uid",
-            data_source_uid=request.data_source_uid,
+            data_source_uid=request["data_source_uid"],
             physical_table_name="mt_asset",
             management_mode="platform_managed",
         )

@@ -18,6 +18,7 @@ from mainsequence.client.metatables import (
     MetaTableMigrationConnectionRequest,
     TimeIndexMetaTable,
 )
+from mainsequence.client.metatables.core import _current_metatable_project_context
 from mainsequence.meta_tables.migrations import (
     AlembicMetaTableMigration,
     alembic_config_for_provider,
@@ -474,6 +475,7 @@ def _prepare_alembic_config(
             data_source_uid=migration._resolve_provider_data_source_uid(),
             meta_table_uids=[],
             owner_role_name=None,
+            project_context=_current_metatable_project_context(),
         )
     _include_alembic_registry_in_scope(migration, prepared, registry_meta_table)
     _emit_status(
@@ -491,6 +493,7 @@ def _prepare_alembic_config(
             migration_namespace=migration.migration_namespace,
             migration_provider_key=migration.migration_provider_key,
             ttl_seconds=ttl_seconds,
+            project_context=prepared.project_context,
         ),
         timeout=timeout,
     )
@@ -534,6 +537,7 @@ def _build_revision_alembic_config(
                 migration_namespace=migration.migration_namespace,
                 migration_provider_key=migration.migration_provider_key,
                 ttl_seconds=ttl_seconds,
+                project_context=_current_metatable_project_context(),
             ),
             timeout=timeout,
         )

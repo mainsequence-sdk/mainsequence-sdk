@@ -125,6 +125,17 @@ def test_project_branch_deserializes_null_metatables_data_source():
     assert project.metatables_data_source is None
 
 
+def test_current_repository_branch_does_not_accept_environment_override(monkeypatch):
+    monkeypatch.setenv("MAINSEQUENCE_REPOSITORY_BRANCH", "injected-branch")
+    monkeypatch.setattr(
+        models_metatables.subprocess,
+        "run",
+        lambda *args, **kwargs: types.SimpleNamespace(returncode=1, stdout=""),
+    )
+
+    assert models_metatables._current_repository_branch() is None
+
+
 def test_data_node_update_get_or_create_uses_current_project_branch_uid(monkeypatch):
     monkeypatch.setenv("MAIN_SEQUENCE_PROJECT_UID", PROJECT_UID)
     monkeypatch.delenv("MAIN_SEQUENCE_PROJECT_ID", raising=False)
@@ -218,6 +229,45 @@ def test_resolve_local_pod_project_uses_uid_lookup_and_caches(monkeypatch):
     assert resolution_first.project_branch is project_branch
     assert resolution_first.repository_branch == "main"
     assert resolution_second.project is project
+    assert project_calls == [{"pk": PROJECT_UID}]
+    assert branch_calls == [{"pk": PROJECT_BRANCH_UID}]
+
+
+def test_metatable_project_context_reuses_local_project_resolution(monkeypatch):
+    monkeypatch.setenv("MAIN_SEQUENCE_PROJECT_UID", PROJECT_UID)
+    monkeypatch.setattr(models_metatables, "_current_repository_branch", lambda: "main")
+    project_calls = []
+    branch_calls = []
+    project = types.SimpleNamespace(
+        uid=PROJECT_UID,
+        branches=[types.SimpleNamespace(uid=PROJECT_BRANCH_UID, repository_branch="main")],
+        default_metatables_data_source=None,
+    )
+    project_branch = types.SimpleNamespace(
+        uid=PROJECT_BRANCH_UID,
+        metatables_data_source=None,
+        metatables_data_source_uid=DATA_SOURCE_UID,
+    )
+
+    def _project_get(*args, **kwargs):
+        project_calls.append(kwargs)
+        return project
+
+    def _project_branch_get(*args, **kwargs):
+        branch_calls.append(kwargs)
+        return project_branch
+
+    monkeypatch.setattr(models_foundry.Project, "get", _project_get)
+    monkeypatch.setattr(models_foundry.ProjectBranch, "get", _project_branch_get)
+
+    first = models_metatables._current_metatable_project_context()
+    second = models_metatables._current_metatable_project_context()
+
+    assert first.model_dump(mode="json") == {
+        "project_uid": PROJECT_UID,
+        "repository_branch": "main",
+    }
+    assert second == first
     assert project_calls == [{"pk": PROJECT_UID}]
     assert branch_calls == [{"pk": PROJECT_BRANCH_UID}]
 

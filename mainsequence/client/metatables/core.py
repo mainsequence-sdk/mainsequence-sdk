@@ -565,6 +565,13 @@ class MetaTableOperationScope(BasePydanticModel):
         return self
 
 
+class MetaTableProjectContextRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    project_uid: str = Field(..., min_length=1)
+    repository_branch: str = Field(..., min_length=1)
+
+
 DEFAULT_META_TABLE_OPERATION_MAX_ROWS = 1_000
 DEFAULT_META_TABLE_OPERATION_STATEMENT_TIMEOUT_MS = 15_000
 
@@ -729,6 +736,7 @@ class MetaTableMigrationConnectionRequest(BasePydanticModel):
     migration_namespace: str = ""
     migration_provider_key: str = ""
     ttl_seconds: int = Field(default=900, ge=60, le=3600)
+    project_context: MetaTableProjectContextRequest | None = None
 
 
 class MetaTableMigrationConnection(BasePydanticModel):
@@ -1200,6 +1208,10 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
         )
         if isinstance(payload, Mapping):
             payload = MetaTableMigrationConnectionRequest(**payload)
+        if payload.project_context is None:
+            payload = payload.model_copy(
+                update={"project_context": _current_metatable_project_context()}
+            )
         response = self._post_detail_action(
             "migration-connection",
             payload,
@@ -1387,6 +1399,13 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
         if request is not None and kwargs:
             raise ValueError("Pass either request or keyword fields, not both.")
         payload = request if request is not None else MetaTableRegistrationRequest(**kwargs)
+        management_mode = (
+            payload.get("management_mode")
+            if isinstance(payload, Mapping)
+            else payload.management_mode
+        )
+        if management_mode != "external_registered":
+            payload = _with_current_metatable_project_context(payload)
         response_json = cls._post_action(
             "register",
             payload,
@@ -1407,6 +1426,7 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
         if on_status is not None:
             on_status(f"Serializing POST {url} payload...")
         payload_json = _payload_json_sequence(rows)
+        payload_json = _with_current_metatable_project_context_collection(payload_json)
         if on_status is not None:
             payload_size = len(json.dumps(payload_json, default=str))
             on_status(f"Serialized POST {url} payload bytes={payload_size}.")
@@ -3130,9 +3150,9 @@ class TimeIndexMetaTable(MetaTable):
 
     @classmethod
     def get_or_create(cls, **kwargs):
-        kwargs = serialize_to_json(kwargs)
+        kwargs = _with_current_metatable_project_context(kwargs)
         url = cls.get_object_url() + "/get-or-create/"
-        payload = {"json": kwargs}
+        payload = {"json": serialize_to_json(kwargs)}
         s = cls.build_session()
         r = make_request(s=s, loaders=cls.LOADERS, r_type="POST", url=url, payload=payload)
         if r.status_code not in [201, 200]:
@@ -3158,6 +3178,7 @@ class TimeIndexMetaTable(MetaTable):
             payload_json = payload.model_dump(mode="json", exclude_none=True)
         else:
             payload_json = dict(payload)
+        payload_json = _with_current_metatable_project_context(payload_json)
         request_payload = {"json": serialize_to_json(payload_json)}
         response = make_request(
             s=cls.build_session(),
@@ -4560,9 +4581,7 @@ def _current_repository_branch() -> str | None:
             return branch
     except (OSError, subprocess.SubprocessError):
         pass
-
-    branch = (os.environ.get("MAINSEQUENCE_REPOSITORY_BRANCH") or "").strip()
-    return branch or None
+    return None
 
 
 def _build_local_pod_project_resolution(
@@ -4620,10 +4639,7 @@ def _build_local_pod_project_resolution(
             project_branch=None,
             repository_branch=None,
             status="branch_missing",
-            detail=(
-                "Could not determine the active repository branch from Git or "
-                "MAINSEQUENCE_REPOSITORY_BRANCH"
-            ),
+            detail="Could not determine the active repository branch from Git.",
         )
 
     branch_ref = next(
@@ -4747,6 +4763,74 @@ def _require_local_pod_project_branch(operation: str) -> Any:
     _log_local_pod_project_resolution(resolution)
     detail = (resolution.detail or "No local ProjectBranch attached.").strip()
     raise RuntimeError(f"{operation} requires a registered active ProjectBranch. {detail}")
+
+
+def _metatable_project_context_from_resolution(
+    resolution: _PodProjectResolution,
+) -> MetaTableProjectContextRequest:
+    if resolution.project is None:
+        detail = (resolution.detail or "No local Project is configured.").strip()
+        raise RuntimeError(
+            "Platform-managed MetaTable operations require a configured Project. " + detail
+        )
+    if resolution.repository_branch in (None, ""):
+        detail = (resolution.detail or "The current Git branch is unavailable.").strip()
+        raise RuntimeError(
+            "Platform-managed MetaTable operations require an attached Git branch. " + detail
+        )
+
+    project_uid = getattr(resolution.project, "uid", None) or resolution.running_project_uid
+    if project_uid in (None, ""):
+        raise RuntimeError("The configured Project does not expose a public UID.")
+    return MetaTableProjectContextRequest(
+        project_uid=str(project_uid),
+        repository_branch=str(resolution.repository_branch),
+    )
+
+
+def _current_metatable_project_context() -> MetaTableProjectContextRequest:
+    return _metatable_project_context_from_resolution(_resolve_local_pod_project())
+
+
+def _with_current_metatable_project_context(
+    payload: Mapping[str, Any] | BasePydanticModel,
+) -> dict[str, Any]:
+    payload_json = _payload_json(payload)
+    if payload_json.get("management_mode") == "external_registered":
+        return payload_json
+    project_context = payload_json.get("project_context")
+    if project_context is None:
+        project_context = _current_metatable_project_context()
+    else:
+        project_context = MetaTableProjectContextRequest.model_validate(project_context)
+    payload_json["project_context"] = project_context.model_dump(mode="json")
+    return payload_json
+
+
+def _with_current_metatable_project_context_collection(
+    payloads: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    payload_rows = [dict(payload) for payload in payloads]
+    managed_rows = [
+        row for row in payload_rows if row.get("management_mode") != "external_registered"
+    ]
+    if not managed_rows:
+        return payload_rows
+
+    current_project_context: dict[str, str] | None = None
+    for row in managed_rows:
+        project_context = row.get("project_context")
+        if project_context is None:
+            if current_project_context is None:
+                current_project_context = _current_metatable_project_context().model_dump(
+                    mode="json"
+                )
+            row["project_context"] = current_project_context
+        else:
+            row["project_context"] = MetaTableProjectContextRequest.model_validate(
+                project_context
+            ).model_dump(mode="json")
+    return payload_rows
 
 
 @dataclass

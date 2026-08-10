@@ -12,6 +12,7 @@ from sqlalchemy import MetaData
 from typer.testing import CliRunner
 
 from mainsequence.client.metatables import MetaTable
+from mainsequence.client.metatables.core import MetaTableProjectContextRequest
 from mainsequence.meta_tables.migrations import (
     AlembicMetaTableMigration,
     AlembicVersionMetaTable,
@@ -62,6 +63,13 @@ def _migration(
         alembic_registry=Registry,
         version_locations=version_locations,
         version_path=version_path,
+    )
+
+
+def _project_context() -> MetaTableProjectContextRequest:
+    return MetaTableProjectContextRequest(
+        project_uid="11111111-1111-4111-8111-111111111111",
+        repository_branch="main",
     )
 
 
@@ -120,6 +128,7 @@ def _patch_preflight(monkeypatch, migration_cli, migration, *, emit_reservation=
             data_source_uid="data-source-uid",
             meta_table_uids=["meta-table-uid"],
             owner_role_name="prepared-owner",
+            project_context=_project_context(),
         )
 
     monkeypatch.setattr(
@@ -139,6 +148,12 @@ def _combined_output(result):
 
 
 def _patch_scoped_connection(monkeypatch, migration_cli, captured):
+    monkeypatch.setattr(
+        migration_cli,
+        "_current_metatable_project_context",
+        _project_context,
+    )
+
     def fake_issue_migration_connection(self, request, *, timeout=None):
         captured["meta_table_uid"] = self.uid
         captured["connection_request"] = request
@@ -219,6 +234,7 @@ def test_migrations_current_uses_scoped_connection_without_printing_secret(monke
     assert result.exit_code == 0
     assert captured["meta_table_uid"] == "registry-meta-table-uid"
     assert not hasattr(captured["connection_request"], "meta_table_uids")
+    assert captured["connection_request"].project_context == _project_context()
     assert captured["connection_timeout"] == 5.0
     assert captured["sqlalchemy_url"] == "postgresql://temporary-secret"
     assert captured["owner_role"] == "connection-owner"
