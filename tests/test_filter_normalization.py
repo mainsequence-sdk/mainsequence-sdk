@@ -6,10 +6,11 @@ import uuid
 from types import SimpleNamespace
 
 import pytest
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, ValidationError
 
 import mainsequence.client.agent_runtime_models as agent_models_mod
 import mainsequence.client.base as base_mod
+import mainsequence.client.metatables as models_metatables_mod
 import mainsequence.client.models_foundry as models_foundry_mod
 import mainsequence.client.models_helpers as models_helpers_mod
 import mainsequence.client.models_user as models_user_mod
@@ -77,9 +78,9 @@ class DemoReadModel(BaseObjectOrm):
 
 
 class DemoShareableModel(ShareableObjectMixin, BaseObjectOrm):
-    def __init__(self, uid: str, object_id: int | None = None):
+    def __init__(self, uid: str, internal_id: int | None = None):
         self.uid = uid
-        self.id = object_id
+        self.id = internal_id
 
     @classmethod
     def get_object_url(cls, custom_endpoint_name=None):
@@ -91,8 +92,8 @@ class DemoShareableModel(ShareableObjectMixin, BaseObjectOrm):
 
 
 class DemoIdOnlyResource(ShareableObjectMixin, BaseObjectOrm):
-    def __init__(self, object_id: int):
-        self.id = object_id
+    def __init__(self, internal_id: int):
+        self.id = internal_id
 
     @classmethod
     def get_object_url(cls, custom_endpoint_name=None):
@@ -1048,7 +1049,7 @@ def test_shareable_can_view_parses_permission_state(monkeypatch):
         @staticmethod
         def json():
             return {
-                "object_id": 11,
+                "object_uid": "11111111-1111-4111-8111-111111111111",
                 "object_type": "tdag.constant",
                 "access_level": "view",
                 "users": [
@@ -1068,7 +1069,7 @@ def test_shareable_can_view_parses_permission_state(monkeypatch):
 
     access_state = DemoShareableModel(11).can_view()
 
-    assert access_state.object_id == 11
+    assert access_state.object_uid == "11111111-1111-4111-8111-111111111111"
     assert access_state.access_level == "view"
     assert len(access_state.users) == 1
     assert access_state.users[0].id == 7
@@ -1086,7 +1087,7 @@ def test_shareable_can_edit_parses_permission_state(monkeypatch):
         @staticmethod
         def json():
             return {
-                "object_id": 15,
+                "object_uid": "22222222-2222-4222-8222-222222222222",
                 "object_type": "tdag.secret",
                 "access_level": "edit",
                 "users": [
@@ -1120,7 +1121,7 @@ def test_shareable_can_edit_parses_permission_state(monkeypatch):
 
     access_state = DemoShareableModel(15).list_users_can_edit(timeout=20)
 
-    assert access_state.object_id == 15
+    assert access_state.object_uid == "22222222-2222-4222-8222-222222222222"
     assert access_state.access_level == "edit"
     assert len(access_state.users) == 1
     assert access_state.users[0].id == 9
@@ -1132,6 +1133,65 @@ def test_shareable_can_edit_parses_permission_state(monkeypatch):
         "payload": {},
         "timeout": 20,
     }
+
+
+def test_shareable_access_state_rejects_removed_internal_identity():
+    removed_field = "_".join(("object", "id"))
+    payload = {
+        "object_uid": "33333333-3333-4333-8333-333333333333",
+        "object_type": "tdag.constant",
+        "access_level": "view",
+        "users": [],
+        "teams": [],
+        removed_field: 17,
+    }
+
+    with pytest.raises(ValidationError, match=removed_field):
+        models_user_mod.ShareableAccessState.model_validate(payload)
+
+
+@pytest.mark.parametrize(
+    ("resource_cls", "accessor_name", "access_level"),
+    [
+        (models_metatables_mod.MetaTable, "can_view", "view"),
+        (models_metatables_mod.TimeIndexMetaTable, "can_view", "view"),
+        (models_foundry_mod.Constant, "can_edit", "edit"),
+    ],
+)
+def test_shareable_resources_parse_canonical_public_identity(
+    monkeypatch,
+    resource_cls,
+    accessor_name,
+    access_level,
+):
+    resource_uid = "44444444-4444-4444-8444-444444444444"
+    resource = resource_cls.model_construct(uid=resource_uid)
+    monkeypatch.setattr(
+        resource_cls,
+        "_request_detail_action",
+        lambda self, **kwargs: {
+            "object_uid": resource_uid,
+            "object_type": type(self).__name__,
+            "access_level": access_level,
+            "users": [],
+            "teams": [],
+        },
+    )
+
+    access_state = getattr(resource, accessor_name)()
+
+    assert access_state.object_uid == resource_uid
+    assert access_state.access_level == access_level
+
+
+def test_shareable_access_state_accepts_nullable_canonical_identity():
+    access_state = models_user_mod.ShareableAccessState(
+        object_uid=None,
+        object_type="tdag.constant",
+        access_level="view",
+    )
+
+    assert access_state.object_uid is None
 
 
 def test_team_uses_user_api_team_endpoint():

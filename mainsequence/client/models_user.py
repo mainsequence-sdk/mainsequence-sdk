@@ -894,11 +894,11 @@ class Notification(DetailActionObjectMixin, BasePydanticModel, UserApiBaseObject
 
 
 class ShareableAccessState(BasePydanticModel):
-    object_id: int = Field(
+    object_uid: str | None = Field(
         ...,
-        title="Object ID",
-        description="Primary key of the shareable object whose access is being described.",
-        examples=[123],
+        title="Object UID",
+        description="Public uid of the shareable object whose access is being described.",
+        examples=["24001fc7-098c-40fa-b398-1d2352b7c224"],
     )
     object_type: str = Field(
         ...,

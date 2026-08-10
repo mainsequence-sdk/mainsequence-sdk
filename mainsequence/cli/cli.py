@@ -3001,7 +3001,7 @@ def organization_teams_can_view_cmd(
         fetch_fn=list_team_users_can_view,
         object_label="Team",
         access_label="view",
-        object_id=team_uid,
+        object_uid=team_uid,
         timeout=timeout,
     )
 
@@ -3015,7 +3015,7 @@ def organization_teams_can_edit_cmd(
         fetch_fn=list_team_users_can_edit,
         object_label="Team",
         access_label="edit",
-        object_id=team_uid,
+        object_uid=team_uid,
         timeout=timeout,
     )
 
@@ -3030,7 +3030,7 @@ def organization_teams_add_to_view_cmd(
         action_fn=add_team_user_to_view,
         object_label="Team",
         action_label="add_to_view",
-        object_id=team_uid,
+        object_uid=team_uid,
         user_id=user_id,
         timeout=timeout,
     )
@@ -3046,7 +3046,7 @@ def organization_teams_add_to_edit_cmd(
         action_fn=add_team_user_to_edit,
         object_label="Team",
         action_label="add_to_edit",
-        object_id=team_uid,
+        object_uid=team_uid,
         user_id=user_id,
         timeout=timeout,
     )
@@ -3062,7 +3062,7 @@ def organization_teams_remove_from_view_cmd(
         action_fn=remove_team_user_from_view,
         object_label="Team",
         action_label="remove_from_view",
-        object_id=team_uid,
+        object_uid=team_uid,
         user_id=user_id,
         timeout=timeout,
     )
@@ -3078,7 +3078,7 @@ def organization_teams_remove_from_edit_cmd(
         action_fn=remove_team_user_from_edit,
         object_label="Team",
         action_label="remove_from_edit",
-        object_id=team_uid,
+        object_uid=team_uid,
         user_id=user_id,
         timeout=timeout,
     )
@@ -3400,7 +3400,7 @@ def _format_shareable_permission_change(payload: dict[str, object]) -> list[tupl
     return [
         ("Action", str(payload.get("action") or "-")),
         ("Detail", str(payload.get("detail") or "-")),
-        ("Object Reference", str(payload.get("object_uid") or payload.get("object_id") or "-")),
+        ("Object Reference", str(payload.get("object_uid") or "-")),
         ("Object Type", str(payload.get("object_type") or "-")),
         ("User ID", str(user.get("id") or "-")),
         ("Username", str(user.get("username") or "-")),
@@ -4202,13 +4202,13 @@ def _shareable_user_list_impl(
     fetch_fn,
     object_label: str,
     access_label: str,
-    object_id: int | str,
+    object_uid: int | str,
     timeout: int | None,
 ) -> None:
     _require_login()
 
     try:
-        access_state = fetch_fn(object_id, timeout=timeout)
+        access_state = fetch_fn(object_uid, timeout=timeout)
     except ApiError as e:
         error(f"{object_label} {access_label} fetch failed: {e}")
         raise typer.Exit(1) from e
@@ -4272,14 +4272,14 @@ def _shareable_user_access_update_impl(
     action_fn,
     object_label: str,
     action_label: str,
-    object_id: int | str,
+    object_uid: int | str,
     user_id: int,
     timeout: int | None,
 ) -> None:
     _require_login()
 
     try:
-        payload = action_fn(object_id, user_id, timeout=timeout)
+        payload = action_fn(object_uid, user_id, timeout=timeout)
     except ApiError as e:
         error(f"{object_label} {action_label} failed: {e}")
         raise typer.Exit(1) from e
@@ -4296,14 +4296,14 @@ def _shareable_team_access_update_impl(
     action_fn,
     object_label: str,
     action_label: str,
-    object_id: int | str,
+    object_uid: int | str,
     team_id: int,
     timeout: int | None,
 ) -> None:
     _require_login()
 
     try:
-        payload = action_fn(object_id, team_id, timeout=timeout)
+        payload = action_fn(object_uid, team_id, timeout=timeout)
     except ApiError as e:
         error(f"{object_label} {action_label} failed: {e}")
         raise typer.Exit(1) from e
@@ -4341,7 +4341,7 @@ def _labelable_object_labels_update_impl(
     action_fn,
     object_label: str,
     action_label: str,
-    object_id: int | str,
+    object_uid: int | str,
     labels: list[str] | None,
     timeout: int | None,
 ) -> None:
@@ -4353,7 +4353,7 @@ def _labelable_object_labels_update_impl(
     _require_login()
 
     try:
-        payload = action_fn(object_id, parsed_labels, timeout=timeout)
+        payload = action_fn(object_uid, parsed_labels, timeout=timeout)
     except ApiError as e:
         error(f"{object_label} {action_label} failed: {e}")
         raise typer.Exit(1) from e
@@ -5131,7 +5131,7 @@ def agent_can_view_cmd(
         fetch_fn=list_agent_users_can_view,
         object_label="Agent",
         access_label="view",
-        object_id=agent_uid,
+        object_uid=agent_uid,
         timeout=timeout,
     )
 
@@ -5145,7 +5145,7 @@ def agent_can_edit_cmd(
         fetch_fn=list_agent_users_can_edit,
         object_label="Agent",
         access_label="edit",
-        object_id=agent_uid,
+        object_uid=agent_uid,
         timeout=timeout,
     )
 
@@ -5160,7 +5160,7 @@ def agent_add_to_view_cmd(
         action_fn=add_agent_user_to_view,
         object_label="Agent",
         action_label="add_to_view",
-        object_id=agent_uid,
+        object_uid=agent_uid,
         user_id=user_id,
         timeout=timeout,
     )
@@ -5176,7 +5176,7 @@ def agent_add_to_edit_cmd(
         action_fn=add_agent_user_to_edit,
         object_label="Agent",
         action_label="add_to_edit",
-        object_id=agent_uid,
+        object_uid=agent_uid,
         user_id=user_id,
         timeout=timeout,
     )
@@ -5192,7 +5192,7 @@ def agent_remove_from_view_cmd(
         action_fn=remove_agent_user_from_view,
         object_label="Agent",
         action_label="remove_from_view",
-        object_id=agent_uid,
+        object_uid=agent_uid,
         user_id=user_id,
         timeout=timeout,
     )
@@ -5208,7 +5208,7 @@ def agent_remove_from_edit_cmd(
         action_fn=remove_agent_user_from_edit,
         object_label="Agent",
         action_label="remove_from_edit",
-        object_id=agent_uid,
+        object_uid=agent_uid,
         user_id=user_id,
         timeout=timeout,
     )
@@ -5224,7 +5224,7 @@ def agent_add_team_to_view_cmd(
         action_fn=add_agent_team_to_view,
         object_label="Agent",
         action_label="add_team_to_view",
-        object_id=agent_uid,
+        object_uid=agent_uid,
         team_id=team_id,
         timeout=timeout,
     )
@@ -5240,7 +5240,7 @@ def agent_add_team_to_edit_cmd(
         action_fn=add_agent_team_to_edit,
         object_label="Agent",
         action_label="add_team_to_edit",
-        object_id=agent_uid,
+        object_uid=agent_uid,
         team_id=team_id,
         timeout=timeout,
     )
@@ -5256,7 +5256,7 @@ def agent_remove_team_from_view_cmd(
         action_fn=remove_agent_team_from_view,
         object_label="Agent",
         action_label="remove_team_from_view",
-        object_id=agent_uid,
+        object_uid=agent_uid,
         team_id=team_id,
         timeout=timeout,
     )
@@ -5272,7 +5272,7 @@ def agent_remove_team_from_edit_cmd(
         action_fn=remove_agent_team_from_edit,
         object_label="Agent",
         action_label="remove_team_from_edit",
-        object_id=agent_uid,
+        object_uid=agent_uid,
         team_id=team_id,
         timeout=timeout,
     )
@@ -5373,7 +5373,7 @@ def constants_can_view_cmd(
         fetch_fn=list_constant_users_can_view,
         object_label="Constant",
         access_label="view",
-        object_id=constant_uid,
+        object_uid=constant_uid,
         timeout=timeout,
     )
 
@@ -5398,7 +5398,7 @@ def constants_can_edit_cmd(
         fetch_fn=list_constant_users_can_edit,
         object_label="Constant",
         access_label="edit",
-        object_id=constant_uid,
+        object_uid=constant_uid,
         timeout=timeout,
     )
 
@@ -5422,7 +5422,7 @@ def constants_add_to_view_cmd(
         action_fn=add_constant_user_to_view,
         object_label="Constant",
         action_label="add_to_view",
-        object_id=constant_uid,
+        object_uid=constant_uid,
         user_id=user_id,
         timeout=timeout,
     )
@@ -5447,7 +5447,7 @@ def constants_add_to_edit_cmd(
         action_fn=add_constant_user_to_edit,
         object_label="Constant",
         action_label="add_to_edit",
-        object_id=constant_uid,
+        object_uid=constant_uid,
         user_id=user_id,
         timeout=timeout,
     )
@@ -5472,7 +5472,7 @@ def constants_remove_from_view_cmd(
         action_fn=remove_constant_user_from_view,
         object_label="Constant",
         action_label="remove_from_view",
-        object_id=constant_uid,
+        object_uid=constant_uid,
         user_id=user_id,
         timeout=timeout,
     )
@@ -5497,7 +5497,7 @@ def constants_remove_from_edit_cmd(
         action_fn=remove_constant_user_from_edit,
         object_label="Constant",
         action_label="remove_from_edit",
-        object_id=constant_uid,
+        object_uid=constant_uid,
         user_id=user_id,
         timeout=timeout,
     )
@@ -5513,7 +5513,7 @@ def constants_add_team_to_view_cmd(
         action_fn=add_constant_team_to_view,
         object_label="Constant",
         action_label="add_team_to_view",
-        object_id=constant_uid,
+        object_uid=constant_uid,
         team_id=team_id,
         timeout=timeout,
     )
@@ -5529,7 +5529,7 @@ def constants_add_team_to_edit_cmd(
         action_fn=add_constant_team_to_edit,
         object_label="Constant",
         action_label="add_team_to_edit",
-        object_id=constant_uid,
+        object_uid=constant_uid,
         team_id=team_id,
         timeout=timeout,
     )
@@ -5545,7 +5545,7 @@ def constants_remove_team_from_view_cmd(
         action_fn=remove_constant_team_from_view,
         object_label="Constant",
         action_label="remove_team_from_view",
-        object_id=constant_uid,
+        object_uid=constant_uid,
         team_id=team_id,
         timeout=timeout,
     )
@@ -5561,7 +5561,7 @@ def constants_remove_team_from_edit_cmd(
         action_fn=remove_constant_team_from_edit,
         object_label="Constant",
         action_label="remove_team_from_edit",
-        object_id=constant_uid,
+        object_uid=constant_uid,
         team_id=team_id,
         timeout=timeout,
     )
@@ -5654,7 +5654,7 @@ def secrets_can_view_cmd(
         fetch_fn=list_secret_users_can_view,
         object_label="Secret",
         access_label="view",
-        object_id=secret_uid,
+        object_uid=secret_uid,
         timeout=timeout,
     )
 
@@ -5679,7 +5679,7 @@ def secrets_can_edit_cmd(
         fetch_fn=list_secret_users_can_edit,
         object_label="Secret",
         access_label="edit",
-        object_id=secret_uid,
+        object_uid=secret_uid,
         timeout=timeout,
     )
 
@@ -5703,7 +5703,7 @@ def secrets_add_to_view_cmd(
         action_fn=add_secret_user_to_view,
         object_label="Secret",
         action_label="add_to_view",
-        object_id=secret_uid,
+        object_uid=secret_uid,
         user_id=user_id,
         timeout=timeout,
     )
@@ -5728,7 +5728,7 @@ def secrets_add_to_edit_cmd(
         action_fn=add_secret_user_to_edit,
         object_label="Secret",
         action_label="add_to_edit",
-        object_id=secret_uid,
+        object_uid=secret_uid,
         user_id=user_id,
         timeout=timeout,
     )
@@ -5753,7 +5753,7 @@ def secrets_remove_from_view_cmd(
         action_fn=remove_secret_user_from_view,
         object_label="Secret",
         action_label="remove_from_view",
-        object_id=secret_uid,
+        object_uid=secret_uid,
         user_id=user_id,
         timeout=timeout,
     )
@@ -5778,7 +5778,7 @@ def secrets_remove_from_edit_cmd(
         action_fn=remove_secret_user_from_edit,
         object_label="Secret",
         action_label="remove_from_edit",
-        object_id=secret_uid,
+        object_uid=secret_uid,
         user_id=user_id,
         timeout=timeout,
     )
@@ -5794,7 +5794,7 @@ def secrets_add_team_to_view_cmd(
         action_fn=add_secret_team_to_view,
         object_label="Secret",
         action_label="add_team_to_view",
-        object_id=secret_uid,
+        object_uid=secret_uid,
         team_id=team_id,
         timeout=timeout,
     )
@@ -5810,7 +5810,7 @@ def secrets_add_team_to_edit_cmd(
         action_fn=add_secret_team_to_edit,
         object_label="Secret",
         action_label="add_team_to_edit",
-        object_id=secret_uid,
+        object_uid=secret_uid,
         team_id=team_id,
         timeout=timeout,
     )
@@ -5826,7 +5826,7 @@ def secrets_remove_team_from_view_cmd(
         action_fn=remove_secret_team_from_view,
         object_label="Secret",
         action_label="remove_team_from_view",
-        object_id=secret_uid,
+        object_uid=secret_uid,
         team_id=team_id,
         timeout=timeout,
     )
@@ -5842,7 +5842,7 @@ def secrets_remove_team_from_edit_cmd(
         action_fn=remove_secret_team_from_edit,
         object_label="Secret",
         action_label="remove_team_from_edit",
-        object_id=secret_uid,
+        object_uid=secret_uid,
         team_id=team_id,
         timeout=timeout,
     )
@@ -6159,7 +6159,7 @@ def meta_table_can_view_cmd(
         fetch_fn=list_meta_table_users_can_view,
         object_label="MetaTable",
         access_label="view",
-        object_id=meta_table_uid,
+        object_uid=meta_table_uid,
         timeout=timeout,
     )
 
@@ -6174,7 +6174,7 @@ def meta_table_can_edit_cmd(
         fetch_fn=list_meta_table_users_can_edit,
         object_label="MetaTable",
         access_label="edit",
-        object_id=meta_table_uid,
+        object_uid=meta_table_uid,
         timeout=timeout,
     )
 
@@ -6194,7 +6194,7 @@ def meta_table_add_label_cmd(
         action_fn=add_meta_table_labels,
         object_label="MetaTable",
         action_label="add-label",
-        object_id=meta_table_uid,
+        object_uid=meta_table_uid,
         labels=labels,
         timeout=timeout,
     )
@@ -6225,7 +6225,7 @@ def meta_table_remove_label_cmd(
         action_fn=remove_meta_table_labels,
         object_label="MetaTable",
         action_label="remove-label",
-        object_id=meta_table_uid,
+        object_uid=meta_table_uid,
         labels=labels,
         timeout=timeout,
     )
@@ -6254,7 +6254,7 @@ def meta_table_add_to_view_cmd(
         action_fn=add_meta_table_user_to_view,
         object_label="MetaTable",
         action_label="add_to_view",
-        object_id=meta_table_uid,
+        object_uid=meta_table_uid,
         user_id=user_id,
         timeout=timeout,
     )
@@ -6271,7 +6271,7 @@ def meta_table_add_to_edit_cmd(
         action_fn=add_meta_table_user_to_edit,
         object_label="MetaTable",
         action_label="add_to_edit",
-        object_id=meta_table_uid,
+        object_uid=meta_table_uid,
         user_id=user_id,
         timeout=timeout,
     )
@@ -6288,7 +6288,7 @@ def meta_table_remove_from_view_cmd(
         action_fn=remove_meta_table_user_from_view,
         object_label="MetaTable",
         action_label="remove_from_view",
-        object_id=meta_table_uid,
+        object_uid=meta_table_uid,
         user_id=user_id,
         timeout=timeout,
     )
@@ -6305,7 +6305,7 @@ def meta_table_remove_from_edit_cmd(
         action_fn=remove_meta_table_user_from_edit,
         object_label="MetaTable",
         action_label="remove_from_edit",
-        object_id=meta_table_uid,
+        object_uid=meta_table_uid,
         user_id=user_id,
         timeout=timeout,
     )
@@ -6321,7 +6321,7 @@ def meta_table_add_team_to_view_cmd(
         action_fn=add_meta_table_team_to_view,
         object_label="MetaTable",
         action_label="add_team_to_view",
-        object_id=meta_table_uid,
+        object_uid=meta_table_uid,
         team_id=team_id,
         timeout=timeout,
     )
@@ -6337,7 +6337,7 @@ def meta_table_add_team_to_edit_cmd(
         action_fn=add_meta_table_team_to_edit,
         object_label="MetaTable",
         action_label="add_team_to_edit",
-        object_id=meta_table_uid,
+        object_uid=meta_table_uid,
         team_id=team_id,
         timeout=timeout,
     )
@@ -6353,7 +6353,7 @@ def meta_table_remove_team_from_view_cmd(
         action_fn=remove_meta_table_team_from_view,
         object_label="MetaTable",
         action_label="remove_team_from_view",
-        object_id=meta_table_uid,
+        object_uid=meta_table_uid,
         team_id=team_id,
         timeout=timeout,
     )
@@ -6369,7 +6369,7 @@ def meta_table_remove_team_from_edit_cmd(
         action_fn=remove_meta_table_team_from_edit,
         object_label="MetaTable",
         action_label="remove_team_from_edit",
-        object_id=meta_table_uid,
+        object_uid=meta_table_uid,
         team_id=team_id,
         timeout=timeout,
     )
@@ -6830,7 +6830,7 @@ def data_node_storage_can_view_cmd(
         fetch_fn=list_data_node_storage_users_can_view,
         object_label="Data Node",
         access_label="view",
-        object_id=storage_uid,
+        object_uid=storage_uid,
         timeout=timeout,
     )
 
@@ -6856,7 +6856,7 @@ def data_node_storage_can_edit_cmd(
         fetch_fn=list_data_node_storage_users_can_edit,
         object_label="Data Node",
         access_label="edit",
-        object_id=storage_uid,
+        object_uid=storage_uid,
         timeout=timeout,
     )
 
@@ -6880,7 +6880,7 @@ def data_node_storage_add_label_cmd(
         action_fn=add_data_node_storage_labels,
         object_label="Data Node",
         action_label="add-label",
-        object_id=storage_uid,
+        object_uid=storage_uid,
         labels=labels,
         timeout=timeout,
     )
@@ -6915,7 +6915,7 @@ def data_node_storage_remove_label_cmd(
         action_fn=remove_data_node_storage_labels,
         object_label="Data Node",
         action_label="remove-label",
-        object_id=storage_uid,
+        object_uid=storage_uid,
         labels=labels,
         timeout=timeout,
     )
@@ -6953,7 +6953,7 @@ def data_node_storage_add_to_view_cmd(
         action_fn=add_data_node_storage_user_to_view,
         object_label="Data Node",
         action_label="add_to_view",
-        object_id=storage_uid,
+        object_uid=storage_uid,
         user_id=user_id,
         timeout=timeout,
     )
@@ -6979,7 +6979,7 @@ def data_node_storage_add_to_edit_cmd(
         action_fn=add_data_node_storage_user_to_edit,
         object_label="Data Node",
         action_label="add_to_edit",
-        object_id=storage_uid,
+        object_uid=storage_uid,
         user_id=user_id,
         timeout=timeout,
     )
@@ -7005,7 +7005,7 @@ def data_node_storage_remove_from_view_cmd(
         action_fn=remove_data_node_storage_user_from_view,
         object_label="Data Node",
         action_label="remove_from_view",
-        object_id=storage_uid,
+        object_uid=storage_uid,
         user_id=user_id,
         timeout=timeout,
     )
@@ -7031,7 +7031,7 @@ def data_node_storage_remove_from_edit_cmd(
         action_fn=remove_data_node_storage_user_from_edit,
         object_label="Data Node",
         action_label="remove_from_edit",
-        object_id=storage_uid,
+        object_uid=storage_uid,
         user_id=user_id,
         timeout=timeout,
     )
@@ -7047,7 +7047,7 @@ def data_node_storage_add_team_to_view_cmd(
         action_fn=add_data_node_storage_team_to_view,
         object_label="Data Node",
         action_label="add_team_to_view",
-        object_id=storage_uid,
+        object_uid=storage_uid,
         team_id=team_id,
         timeout=timeout,
     )
@@ -7063,7 +7063,7 @@ def data_node_storage_add_team_to_edit_cmd(
         action_fn=add_data_node_storage_team_to_edit,
         object_label="Data Node",
         action_label="add_team_to_edit",
-        object_id=storage_uid,
+        object_uid=storage_uid,
         team_id=team_id,
         timeout=timeout,
     )
@@ -7079,7 +7079,7 @@ def data_node_storage_remove_team_from_view_cmd(
         action_fn=remove_data_node_storage_team_from_view,
         object_label="Data Node",
         action_label="remove_team_from_view",
-        object_id=storage_uid,
+        object_uid=storage_uid,
         team_id=team_id,
         timeout=timeout,
     )
@@ -7095,7 +7095,7 @@ def data_node_storage_remove_team_from_edit_cmd(
         action_fn=remove_data_node_storage_team_from_edit,
         object_label="Data Node",
         action_label="remove_team_from_edit",
-        object_id=storage_uid,
+        object_uid=storage_uid,
         team_id=team_id,
         timeout=timeout,
     )
@@ -7723,7 +7723,7 @@ def project_can_view_cmd(
         fetch_fn=list_project_users_can_view,
         object_label="Project",
         access_label="view",
-        object_id=project_id,
+        object_uid=project_id,
         timeout=timeout,
     )
 
@@ -7748,7 +7748,7 @@ def project_can_edit_cmd(
         fetch_fn=list_project_users_can_edit,
         object_label="Project",
         access_label="edit",
-        object_id=project_id,
+        object_uid=project_id,
         timeout=timeout,
     )
 
@@ -7772,7 +7772,7 @@ def project_add_label_cmd(
         action_fn=add_project_labels,
         object_label="Project",
         action_label="add-label",
-        object_id=project_id,
+        object_uid=project_id,
         labels=labels,
         timeout=timeout,
     )
@@ -7807,7 +7807,7 @@ def project_remove_label_cmd(
         action_fn=remove_project_labels,
         object_label="Project",
         action_label="remove-label",
-        object_id=project_id,
+        object_uid=project_id,
         labels=labels,
         timeout=timeout,
     )
@@ -7844,7 +7844,7 @@ def project_add_to_view_cmd(
         action_fn=add_project_user_to_view,
         object_label="Project",
         action_label="add_to_view",
-        object_id=project_id,
+        object_uid=project_id,
         user_id=user_id,
         timeout=timeout,
     )
@@ -7869,7 +7869,7 @@ def project_add_to_edit_cmd(
         action_fn=add_project_user_to_edit,
         object_label="Project",
         action_label="add_to_edit",
-        object_id=project_id,
+        object_uid=project_id,
         user_id=user_id,
         timeout=timeout,
     )
@@ -7894,7 +7894,7 @@ def project_remove_from_view_cmd(
         action_fn=remove_project_user_from_view,
         object_label="Project",
         action_label="remove_from_view",
-        object_id=project_id,
+        object_uid=project_id,
         user_id=user_id,
         timeout=timeout,
     )
@@ -7919,7 +7919,7 @@ def project_remove_from_edit_cmd(
         action_fn=remove_project_user_from_edit,
         object_label="Project",
         action_label="remove_from_edit",
-        object_id=project_id,
+        object_uid=project_id,
         user_id=user_id,
         timeout=timeout,
     )
@@ -7935,7 +7935,7 @@ def project_add_team_to_view_cmd(
         action_fn=add_project_team_to_view,
         object_label="Project",
         action_label="add_team_to_view",
-        object_id=project_id,
+        object_uid=project_id,
         team_id=team_id,
         timeout=timeout,
     )
@@ -7951,7 +7951,7 @@ def project_add_team_to_edit_cmd(
         action_fn=add_project_team_to_edit,
         object_label="Project",
         action_label="add_team_to_edit",
-        object_id=project_id,
+        object_uid=project_id,
         team_id=team_id,
         timeout=timeout,
     )
@@ -7967,7 +7967,7 @@ def project_remove_team_from_view_cmd(
         action_fn=remove_project_team_from_view,
         object_label="Project",
         action_label="remove_team_from_view",
-        object_id=project_id,
+        object_uid=project_id,
         team_id=team_id,
         timeout=timeout,
     )
@@ -7983,7 +7983,7 @@ def project_remove_team_from_edit_cmd(
         action_fn=remove_project_team_from_edit,
         object_label="Project",
         action_label="remove_team_from_edit",
-        object_id=project_id,
+        object_uid=project_id,
         team_id=team_id,
         timeout=timeout,
     )

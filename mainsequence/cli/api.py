@@ -1505,7 +1505,7 @@ def list_agent_users_can_view(
     return _get_shareable_object_access_state(
         module_name="mainsequence.client.agent_runtime_models",
         class_name="Agent",
-        object_id=agent_uid,
+        object_uid=agent_uid,
         accessor_name="can_view",
         object_lookup_field="uid",
         timeout=timeout,
@@ -1523,7 +1523,7 @@ def list_agent_users_can_edit(
     return _get_shareable_object_access_state(
         module_name="mainsequence.client.agent_runtime_models",
         class_name="Agent",
-        object_id=agent_uid,
+        object_uid=agent_uid,
         accessor_name="can_edit",
         object_lookup_field="uid",
         timeout=timeout,
@@ -1539,7 +1539,7 @@ def add_agent_user_to_view(
     return _mutate_shareable_object_access(
         module_name="mainsequence.client.agent_runtime_models",
         class_name="Agent",
-        object_id=agent_uid,
+        object_uid=agent_uid,
         action_name="add_to_view",
         object_lookup_field="uid",
         user_id=user_id,
@@ -1556,7 +1556,7 @@ def add_agent_user_to_edit(
     return _mutate_shareable_object_access(
         module_name="mainsequence.client.agent_runtime_models",
         class_name="Agent",
-        object_id=agent_uid,
+        object_uid=agent_uid,
         action_name="add_to_edit",
         object_lookup_field="uid",
         user_id=user_id,
@@ -1573,7 +1573,7 @@ def remove_agent_user_from_view(
     return _mutate_shareable_object_access(
         module_name="mainsequence.client.agent_runtime_models",
         class_name="Agent",
-        object_id=agent_uid,
+        object_uid=agent_uid,
         action_name="remove_from_view",
         object_lookup_field="uid",
         user_id=user_id,
@@ -1590,7 +1590,7 @@ def remove_agent_user_from_edit(
     return _mutate_shareable_object_access(
         module_name="mainsequence.client.agent_runtime_models",
         class_name="Agent",
-        object_id=agent_uid,
+        object_uid=agent_uid,
         action_name="remove_from_edit",
         object_lookup_field="uid",
         user_id=user_id,
@@ -1607,7 +1607,7 @@ def add_agent_team_to_view(
     return _mutate_shareable_object_team_access(
         module_name="mainsequence.client.agent_runtime_models",
         class_name="Agent",
-        object_id=agent_uid,
+        object_uid=agent_uid,
         action_name="add_team_to_view",
         object_lookup_field="uid",
         team_id=team_id,
@@ -1624,7 +1624,7 @@ def add_agent_team_to_edit(
     return _mutate_shareable_object_team_access(
         module_name="mainsequence.client.agent_runtime_models",
         class_name="Agent",
-        object_id=agent_uid,
+        object_uid=agent_uid,
         action_name="add_team_to_edit",
         object_lookup_field="uid",
         team_id=team_id,
@@ -1641,7 +1641,7 @@ def remove_agent_team_from_view(
     return _mutate_shareable_object_team_access(
         module_name="mainsequence.client.agent_runtime_models",
         class_name="Agent",
-        object_id=agent_uid,
+        object_uid=agent_uid,
         action_name="remove_team_from_view",
         object_lookup_field="uid",
         team_id=team_id,
@@ -1658,7 +1658,7 @@ def remove_agent_team_from_edit(
     return _mutate_shareable_object_team_access(
         module_name="mainsequence.client.agent_runtime_models",
         class_name="Agent",
-        object_id=agent_uid,
+        object_uid=agent_uid,
         action_name="remove_team_from_edit",
         object_lookup_field="uid",
         team_id=team_id,
@@ -1705,7 +1705,7 @@ def list_project_users_can_view(
     return _get_shareable_object_access_state(
         module_name="mainsequence.client.models_foundry",
         class_name="Project",
-        object_id=project_id,
+        object_uid=project_id,
         accessor_name="can_view",
         timeout=timeout,
     )
@@ -1722,7 +1722,7 @@ def list_project_users_can_edit(
     return _get_shareable_object_access_state(
         module_name="mainsequence.client.models_foundry",
         class_name="Project",
-        object_id=project_id,
+        object_uid=project_id,
         accessor_name="can_edit",
         timeout=timeout,
     )
@@ -1740,7 +1740,7 @@ def add_project_user_to_view(
     return _mutate_shareable_object_access(
         module_name="mainsequence.client.models_foundry",
         class_name="Project",
-        object_id=project_id,
+        object_uid=project_id,
         action_name="add_to_view",
         user_id=user_id,
         timeout=timeout,
@@ -1759,7 +1759,7 @@ def add_project_user_to_edit(
     return _mutate_shareable_object_access(
         module_name="mainsequence.client.models_foundry",
         class_name="Project",
-        object_id=project_id,
+        object_uid=project_id,
         action_name="add_to_edit",
         user_id=user_id,
         timeout=timeout,
@@ -1778,7 +1778,7 @@ def remove_project_user_from_view(
     return _mutate_shareable_object_access(
         module_name="mainsequence.client.models_foundry",
         class_name="Project",
-        object_id=project_id,
+        object_uid=project_id,
         action_name="remove_from_view",
         user_id=user_id,
         timeout=timeout,
@@ -1797,7 +1797,7 @@ def remove_project_user_from_edit(
     return _mutate_shareable_object_access(
         module_name="mainsequence.client.models_foundry",
         class_name="Project",
-        object_id=project_id,
+        object_uid=project_id,
         action_name="remove_from_edit",
         user_id=user_id,
         timeout=timeout,
@@ -1815,7 +1815,7 @@ def list_team_users_can_view(
     return _get_shareable_object_access_state(
         module_name="mainsequence.client.models_user",
         class_name="Team",
-        object_id=team_id,
+        object_uid=team_id,
         accessor_name="can_view",
         timeout=timeout,
     )
@@ -1832,7 +1832,7 @@ def list_team_users_can_edit(
     return _get_shareable_object_access_state(
         module_name="mainsequence.client.models_user",
         class_name="Team",
-        object_id=team_id,
+        object_uid=team_id,
         accessor_name="can_edit",
         timeout=timeout,
     )
@@ -1847,7 +1847,7 @@ def add_team_user_to_view(
     return _mutate_shareable_object_access(
         module_name="mainsequence.client.models_user",
         class_name="Team",
-        object_id=team_id,
+        object_uid=team_id,
         action_name="add_to_view",
         user_id=user_id,
         timeout=timeout,
@@ -1863,7 +1863,7 @@ def add_team_user_to_edit(
     return _mutate_shareable_object_access(
         module_name="mainsequence.client.models_user",
         class_name="Team",
-        object_id=team_id,
+        object_uid=team_id,
         action_name="add_to_edit",
         user_id=user_id,
         timeout=timeout,
@@ -1879,7 +1879,7 @@ def remove_team_user_from_view(
     return _mutate_shareable_object_access(
         module_name="mainsequence.client.models_user",
         class_name="Team",
-        object_id=team_id,
+        object_uid=team_id,
         action_name="remove_from_view",
         user_id=user_id,
         timeout=timeout,
@@ -1895,7 +1895,7 @@ def remove_team_user_from_edit(
     return _mutate_shareable_object_access(
         module_name="mainsequence.client.models_user",
         class_name="Team",
-        object_id=team_id,
+        object_uid=team_id,
         action_name="remove_from_edit",
         user_id=user_id,
         timeout=timeout,
@@ -1911,7 +1911,7 @@ def add_project_team_to_view(
     return _mutate_shareable_object_team_access(
         module_name="mainsequence.client.models_foundry",
         class_name="Project",
-        object_id=project_id,
+        object_uid=project_id,
         action_name="add_team_to_view",
         team_id=team_id,
         timeout=timeout,
@@ -1927,7 +1927,7 @@ def add_project_team_to_edit(
     return _mutate_shareable_object_team_access(
         module_name="mainsequence.client.models_foundry",
         class_name="Project",
-        object_id=project_id,
+        object_uid=project_id,
         action_name="add_team_to_edit",
         team_id=team_id,
         timeout=timeout,
@@ -1943,7 +1943,7 @@ def remove_project_team_from_view(
     return _mutate_shareable_object_team_access(
         module_name="mainsequence.client.models_foundry",
         class_name="Project",
-        object_id=project_id,
+        object_uid=project_id,
         action_name="remove_team_from_view",
         team_id=team_id,
         timeout=timeout,
@@ -1959,7 +1959,7 @@ def remove_project_team_from_edit(
     return _mutate_shareable_object_team_access(
         module_name="mainsequence.client.models_foundry",
         class_name="Project",
-        object_id=project_id,
+        object_uid=project_id,
         action_name="remove_team_from_edit",
         team_id=team_id,
         timeout=timeout,
@@ -1977,7 +1977,7 @@ def add_project_labels(
     return _mutate_labelable_object_labels(
         module_name="mainsequence.client.models_foundry",
         class_name="Project",
-        object_id=project_id,
+        object_uid=project_id,
         action_name="add_label",
         labels=labels,
         timeout=timeout,
@@ -1995,7 +1995,7 @@ def remove_project_labels(
     return _mutate_labelable_object_labels(
         module_name="mainsequence.client.models_foundry",
         class_name="Project",
-        object_id=project_id,
+        object_uid=project_id,
         action_name="remove_label",
         labels=labels,
         timeout=timeout,
@@ -3106,7 +3106,7 @@ def list_secret_users_can_view(
     return _get_shareable_object_access_state(
         module_name="mainsequence.client.models_foundry",
         class_name="Secret",
-        object_id=secret_uid,
+        object_uid=secret_uid,
         accessor_name="can_view",
         timeout=timeout,
     )
@@ -3123,7 +3123,7 @@ def list_secret_users_can_edit(
     return _get_shareable_object_access_state(
         module_name="mainsequence.client.models_foundry",
         class_name="Secret",
-        object_id=secret_uid,
+        object_uid=secret_uid,
         accessor_name="can_edit",
         timeout=timeout,
     )
@@ -3141,7 +3141,7 @@ def add_secret_user_to_view(
     return _mutate_shareable_object_access(
         module_name="mainsequence.client.models_foundry",
         class_name="Secret",
-        object_id=secret_uid,
+        object_uid=secret_uid,
         action_name="add_to_view",
         user_id=user_id,
         timeout=timeout,
@@ -3160,7 +3160,7 @@ def add_secret_user_to_edit(
     return _mutate_shareable_object_access(
         module_name="mainsequence.client.models_foundry",
         class_name="Secret",
-        object_id=secret_uid,
+        object_uid=secret_uid,
         action_name="add_to_edit",
         user_id=user_id,
         timeout=timeout,
@@ -3179,7 +3179,7 @@ def remove_secret_user_from_view(
     return _mutate_shareable_object_access(
         module_name="mainsequence.client.models_foundry",
         class_name="Secret",
-        object_id=secret_uid,
+        object_uid=secret_uid,
         action_name="remove_from_view",
         user_id=user_id,
         timeout=timeout,
@@ -3198,7 +3198,7 @@ def remove_secret_user_from_edit(
     return _mutate_shareable_object_access(
         module_name="mainsequence.client.models_foundry",
         class_name="Secret",
-        object_id=secret_uid,
+        object_uid=secret_uid,
         action_name="remove_from_edit",
         user_id=user_id,
         timeout=timeout,
@@ -3214,7 +3214,7 @@ def add_secret_team_to_view(
     return _mutate_shareable_object_team_access(
         module_name="mainsequence.client.models_foundry",
         class_name="Secret",
-        object_id=secret_uid,
+        object_uid=secret_uid,
         action_name="add_team_to_view",
         team_id=team_id,
         timeout=timeout,
@@ -3230,7 +3230,7 @@ def add_secret_team_to_edit(
     return _mutate_shareable_object_team_access(
         module_name="mainsequence.client.models_foundry",
         class_name="Secret",
-        object_id=secret_uid,
+        object_uid=secret_uid,
         action_name="add_team_to_edit",
         team_id=team_id,
         timeout=timeout,
@@ -3246,7 +3246,7 @@ def remove_secret_team_from_view(
     return _mutate_shareable_object_team_access(
         module_name="mainsequence.client.models_foundry",
         class_name="Secret",
-        object_id=secret_uid,
+        object_uid=secret_uid,
         action_name="remove_team_from_view",
         team_id=team_id,
         timeout=timeout,
@@ -3262,7 +3262,7 @@ def remove_secret_team_from_edit(
     return _mutate_shareable_object_team_access(
         module_name="mainsequence.client.models_foundry",
         class_name="Secret",
-        object_id=secret_uid,
+        object_uid=secret_uid,
         action_name="remove_team_from_edit",
         team_id=team_id,
         timeout=timeout,
@@ -3364,20 +3364,20 @@ def delete_constant(
 def _get_client_object_by_lookup(
     ClientObject,
     *,
-    object_id: int | str,
+    object_uid: int | str,
     lookup_field: str,
     timeout: int | None = None,
 ):
     if lookup_field != "uid":
         raise ApiError(f"Unsupported public lookup field: {lookup_field}")
-    return ClientObject.get_by_uid(str(object_id), timeout=timeout)
+    return ClientObject.get_by_uid(str(object_uid), timeout=timeout)
 
 
 def _get_shareable_object_access_state(
     *,
     module_name: str,
     class_name: str,
-    object_id: int | str,
+    object_uid: int | str,
     accessor_name: str,
     object_lookup_field: str = "uid",
     timeout: int | None = None,
@@ -3389,7 +3389,7 @@ def _get_shareable_object_access_state(
             operation=lambda ClientObject: getattr(
                 _get_client_object_by_lookup(
                     ClientObject,
-                    object_id=object_id,
+                    object_uid=object_uid,
                     lookup_field=object_lookup_field,
                     timeout=timeout,
                 ),
@@ -3400,7 +3400,7 @@ def _get_shareable_object_access_state(
     except Exception as e:
         err_name = type(e).__name__
         if err_name == "NotFoundError":
-            raise ApiError(f"{class_name} not found: {object_id}") from e
+            raise ApiError(f"{class_name} not found: {object_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
         raise ApiError(f"{class_name} share access fetch failed: {e}") from e
@@ -3410,7 +3410,7 @@ def _mutate_shareable_object_access(
     *,
     module_name: str,
     class_name: str,
-    object_id: int | str,
+    object_uid: int | str,
     action_name: str,
     user_id: int | str,
     object_lookup_field: str = "uid",
@@ -3423,7 +3423,7 @@ def _mutate_shareable_object_access(
             operation=lambda ClientObject: getattr(
                 _get_client_object_by_lookup(
                     ClientObject,
-                    object_id=object_id,
+                    object_uid=object_uid,
                     lookup_field=object_lookup_field,
                     timeout=timeout,
                 ),
@@ -3434,7 +3434,7 @@ def _mutate_shareable_object_access(
     except Exception as e:
         err_name = type(e).__name__
         if err_name == "NotFoundError":
-            raise ApiError(f"{class_name} not found: {object_id}") from e
+            raise ApiError(f"{class_name} not found: {object_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
         raise ApiError(f"{class_name} share access update failed: {e}") from e
@@ -3444,7 +3444,7 @@ def _mutate_shareable_object_team_access(
     *,
     module_name: str,
     class_name: str,
-    object_id: int | str,
+    object_uid: int | str,
     action_name: str,
     team_id: int | str,
     object_lookup_field: str = "uid",
@@ -3457,7 +3457,7 @@ def _mutate_shareable_object_team_access(
             operation=lambda ClientObject: getattr(
                 _get_client_object_by_lookup(
                     ClientObject,
-                    object_id=object_id,
+                    object_uid=object_uid,
                     lookup_field=object_lookup_field,
                     timeout=timeout,
                 ),
@@ -3468,7 +3468,7 @@ def _mutate_shareable_object_team_access(
     except Exception as e:
         err_name = type(e).__name__
         if err_name == "NotFoundError":
-            raise ApiError(f"{class_name} not found: {object_id}") from e
+            raise ApiError(f"{class_name} not found: {object_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
         raise ApiError(f"{class_name} team share access update failed: {e}") from e
@@ -3478,7 +3478,7 @@ def _mutate_labelable_object_labels(
     *,
     module_name: str,
     class_name: str,
-    object_id: int | str,
+    object_uid: int | str,
     action_name: str,
     labels: list[str],
     object_lookup_field: str = "uid",
@@ -3491,7 +3491,7 @@ def _mutate_labelable_object_labels(
             operation=lambda ClientObject: getattr(
                 _get_client_object_by_lookup(
                     ClientObject,
-                    object_id=object_id,
+                    object_uid=object_uid,
                     lookup_field=object_lookup_field,
                     timeout=timeout,
                 ),
@@ -3502,7 +3502,7 @@ def _mutate_labelable_object_labels(
     except Exception as e:
         err_name = type(e).__name__
         if err_name == "NotFoundError":
-            raise ApiError(f"{class_name} not found: {object_id}") from e
+            raise ApiError(f"{class_name} not found: {object_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
         raise ApiError(f"{class_name} label update failed: {e}") from e
@@ -3519,7 +3519,7 @@ def list_constant_users_can_view(
     return _get_shareable_object_access_state(
         module_name="mainsequence.client.models_foundry",
         class_name="Constant",
-        object_id=constant_uid,
+        object_uid=constant_uid,
         accessor_name="can_view",
         timeout=timeout,
     )
@@ -3536,7 +3536,7 @@ def list_constant_users_can_edit(
     return _get_shareable_object_access_state(
         module_name="mainsequence.client.models_foundry",
         class_name="Constant",
-        object_id=constant_uid,
+        object_uid=constant_uid,
         accessor_name="can_edit",
         timeout=timeout,
     )
@@ -3554,7 +3554,7 @@ def add_constant_user_to_view(
     return _mutate_shareable_object_access(
         module_name="mainsequence.client.models_foundry",
         class_name="Constant",
-        object_id=constant_uid,
+        object_uid=constant_uid,
         action_name="add_to_view",
         user_id=user_id,
         timeout=timeout,
@@ -3573,7 +3573,7 @@ def add_constant_user_to_edit(
     return _mutate_shareable_object_access(
         module_name="mainsequence.client.models_foundry",
         class_name="Constant",
-        object_id=constant_uid,
+        object_uid=constant_uid,
         action_name="add_to_edit",
         user_id=user_id,
         timeout=timeout,
@@ -3592,7 +3592,7 @@ def remove_constant_user_from_view(
     return _mutate_shareable_object_access(
         module_name="mainsequence.client.models_foundry",
         class_name="Constant",
-        object_id=constant_uid,
+        object_uid=constant_uid,
         action_name="remove_from_view",
         user_id=user_id,
         timeout=timeout,
@@ -3611,7 +3611,7 @@ def remove_constant_user_from_edit(
     return _mutate_shareable_object_access(
         module_name="mainsequence.client.models_foundry",
         class_name="Constant",
-        object_id=constant_uid,
+        object_uid=constant_uid,
         action_name="remove_from_edit",
         user_id=user_id,
         timeout=timeout,
@@ -3627,7 +3627,7 @@ def add_constant_team_to_view(
     return _mutate_shareable_object_team_access(
         module_name="mainsequence.client.models_foundry",
         class_name="Constant",
-        object_id=constant_uid,
+        object_uid=constant_uid,
         action_name="add_team_to_view",
         team_id=team_id,
         timeout=timeout,
@@ -3643,7 +3643,7 @@ def add_constant_team_to_edit(
     return _mutate_shareable_object_team_access(
         module_name="mainsequence.client.models_foundry",
         class_name="Constant",
-        object_id=constant_uid,
+        object_uid=constant_uid,
         action_name="add_team_to_edit",
         team_id=team_id,
         timeout=timeout,
@@ -3659,7 +3659,7 @@ def remove_constant_team_from_view(
     return _mutate_shareable_object_team_access(
         module_name="mainsequence.client.models_foundry",
         class_name="Constant",
-        object_id=constant_uid,
+        object_uid=constant_uid,
         action_name="remove_team_from_view",
         team_id=team_id,
         timeout=timeout,
@@ -3675,7 +3675,7 @@ def remove_constant_team_from_edit(
     return _mutate_shareable_object_team_access(
         module_name="mainsequence.client.models_foundry",
         class_name="Constant",
-        object_id=constant_uid,
+        object_uid=constant_uid,
         action_name="remove_team_from_edit",
         team_id=team_id,
         timeout=timeout,
@@ -3925,7 +3925,7 @@ def list_data_node_storage_users_can_view(
     return _get_shareable_object_access_state(
         module_name="mainsequence.client.metatables",
         class_name="TimeIndexMetaTable",
-        object_id=storage_uid,
+        object_uid=storage_uid,
         object_lookup_field="uid",
         accessor_name="can_view",
         timeout=timeout,
@@ -3943,7 +3943,7 @@ def list_meta_table_users_can_view(
     return _get_shareable_object_access_state(
         module_name="mainsequence.client.metatables",
         class_name="MetaTable",
-        object_id=meta_table_uid,
+        object_uid=meta_table_uid,
         object_lookup_field="uid",
         accessor_name="can_view",
         timeout=timeout,
@@ -3961,7 +3961,7 @@ def list_data_node_storage_users_can_edit(
     return _get_shareable_object_access_state(
         module_name="mainsequence.client.metatables",
         class_name="TimeIndexMetaTable",
-        object_id=storage_uid,
+        object_uid=storage_uid,
         object_lookup_field="uid",
         accessor_name="can_edit",
         timeout=timeout,
@@ -3979,7 +3979,7 @@ def list_meta_table_users_can_edit(
     return _get_shareable_object_access_state(
         module_name="mainsequence.client.metatables",
         class_name="MetaTable",
-        object_id=meta_table_uid,
+        object_uid=meta_table_uid,
         object_lookup_field="uid",
         accessor_name="can_edit",
         timeout=timeout,
@@ -3998,7 +3998,7 @@ def add_data_node_storage_user_to_view(
     return _mutate_shareable_object_access(
         module_name="mainsequence.client.metatables",
         class_name="TimeIndexMetaTable",
-        object_id=storage_uid,
+        object_uid=storage_uid,
         object_lookup_field="uid",
         action_name="add_to_view",
         user_id=user_id,
@@ -4018,7 +4018,7 @@ def add_meta_table_user_to_view(
     return _mutate_shareable_object_access(
         module_name="mainsequence.client.metatables",
         class_name="MetaTable",
-        object_id=meta_table_uid,
+        object_uid=meta_table_uid,
         object_lookup_field="uid",
         action_name="add_to_view",
         user_id=user_id,
@@ -4038,7 +4038,7 @@ def add_data_node_storage_user_to_edit(
     return _mutate_shareable_object_access(
         module_name="mainsequence.client.metatables",
         class_name="TimeIndexMetaTable",
-        object_id=storage_uid,
+        object_uid=storage_uid,
         object_lookup_field="uid",
         action_name="add_to_edit",
         user_id=user_id,
@@ -4058,7 +4058,7 @@ def add_meta_table_user_to_edit(
     return _mutate_shareable_object_access(
         module_name="mainsequence.client.metatables",
         class_name="MetaTable",
-        object_id=meta_table_uid,
+        object_uid=meta_table_uid,
         object_lookup_field="uid",
         action_name="add_to_edit",
         user_id=user_id,
@@ -4078,7 +4078,7 @@ def remove_data_node_storage_user_from_view(
     return _mutate_shareable_object_access(
         module_name="mainsequence.client.metatables",
         class_name="TimeIndexMetaTable",
-        object_id=storage_uid,
+        object_uid=storage_uid,
         object_lookup_field="uid",
         action_name="remove_from_view",
         user_id=user_id,
@@ -4098,7 +4098,7 @@ def remove_meta_table_user_from_view(
     return _mutate_shareable_object_access(
         module_name="mainsequence.client.metatables",
         class_name="MetaTable",
-        object_id=meta_table_uid,
+        object_uid=meta_table_uid,
         object_lookup_field="uid",
         action_name="remove_from_view",
         user_id=user_id,
@@ -4118,7 +4118,7 @@ def remove_data_node_storage_user_from_edit(
     return _mutate_shareable_object_access(
         module_name="mainsequence.client.metatables",
         class_name="TimeIndexMetaTable",
-        object_id=storage_uid,
+        object_uid=storage_uid,
         object_lookup_field="uid",
         action_name="remove_from_edit",
         user_id=user_id,
@@ -4138,7 +4138,7 @@ def remove_meta_table_user_from_edit(
     return _mutate_shareable_object_access(
         module_name="mainsequence.client.metatables",
         class_name="MetaTable",
-        object_id=meta_table_uid,
+        object_uid=meta_table_uid,
         object_lookup_field="uid",
         action_name="remove_from_edit",
         user_id=user_id,
@@ -4155,7 +4155,7 @@ def add_data_node_storage_team_to_view(
     return _mutate_shareable_object_team_access(
         module_name="mainsequence.client.metatables",
         class_name="TimeIndexMetaTable",
-        object_id=storage_uid,
+        object_uid=storage_uid,
         object_lookup_field="uid",
         action_name="add_team_to_view",
         team_id=team_id,
@@ -4172,7 +4172,7 @@ def add_meta_table_team_to_view(
     return _mutate_shareable_object_team_access(
         module_name="mainsequence.client.metatables",
         class_name="MetaTable",
-        object_id=meta_table_uid,
+        object_uid=meta_table_uid,
         object_lookup_field="uid",
         action_name="add_team_to_view",
         team_id=team_id,
@@ -4189,7 +4189,7 @@ def add_data_node_storage_team_to_edit(
     return _mutate_shareable_object_team_access(
         module_name="mainsequence.client.metatables",
         class_name="TimeIndexMetaTable",
-        object_id=storage_uid,
+        object_uid=storage_uid,
         object_lookup_field="uid",
         action_name="add_team_to_edit",
         team_id=team_id,
@@ -4206,7 +4206,7 @@ def add_meta_table_team_to_edit(
     return _mutate_shareable_object_team_access(
         module_name="mainsequence.client.metatables",
         class_name="MetaTable",
-        object_id=meta_table_uid,
+        object_uid=meta_table_uid,
         object_lookup_field="uid",
         action_name="add_team_to_edit",
         team_id=team_id,
@@ -4223,7 +4223,7 @@ def remove_data_node_storage_team_from_view(
     return _mutate_shareable_object_team_access(
         module_name="mainsequence.client.metatables",
         class_name="TimeIndexMetaTable",
-        object_id=storage_uid,
+        object_uid=storage_uid,
         object_lookup_field="uid",
         action_name="remove_team_from_view",
         team_id=team_id,
@@ -4240,7 +4240,7 @@ def remove_meta_table_team_from_view(
     return _mutate_shareable_object_team_access(
         module_name="mainsequence.client.metatables",
         class_name="MetaTable",
-        object_id=meta_table_uid,
+        object_uid=meta_table_uid,
         object_lookup_field="uid",
         action_name="remove_team_from_view",
         team_id=team_id,
@@ -4257,7 +4257,7 @@ def remove_data_node_storage_team_from_edit(
     return _mutate_shareable_object_team_access(
         module_name="mainsequence.client.metatables",
         class_name="TimeIndexMetaTable",
-        object_id=storage_uid,
+        object_uid=storage_uid,
         object_lookup_field="uid",
         action_name="remove_team_from_edit",
         team_id=team_id,
@@ -4274,7 +4274,7 @@ def remove_meta_table_team_from_edit(
     return _mutate_shareable_object_team_access(
         module_name="mainsequence.client.metatables",
         class_name="MetaTable",
-        object_id=meta_table_uid,
+        object_uid=meta_table_uid,
         object_lookup_field="uid",
         action_name="remove_team_from_edit",
         team_id=team_id,
@@ -4293,7 +4293,7 @@ def add_data_node_storage_labels(
     return _mutate_labelable_object_labels(
         module_name="mainsequence.client.metatables",
         class_name="TimeIndexMetaTable",
-        object_id=storage_uid,
+        object_uid=storage_uid,
         object_lookup_field="uid",
         action_name="add_label",
         labels=labels,
@@ -4312,7 +4312,7 @@ def add_meta_table_labels(
     return _mutate_labelable_object_labels(
         module_name="mainsequence.client.metatables",
         class_name="MetaTable",
-        object_id=meta_table_uid,
+        object_uid=meta_table_uid,
         object_lookup_field="uid",
         action_name="add_label",
         labels=labels,
@@ -4331,7 +4331,7 @@ def remove_data_node_storage_labels(
     return _mutate_labelable_object_labels(
         module_name="mainsequence.client.metatables",
         class_name="TimeIndexMetaTable",
-        object_id=storage_uid,
+        object_uid=storage_uid,
         object_lookup_field="uid",
         action_name="remove_label",
         labels=labels,
@@ -4350,7 +4350,7 @@ def remove_meta_table_labels(
     return _mutate_labelable_object_labels(
         module_name="mainsequence.client.metatables",
         class_name="MetaTable",
-        object_id=meta_table_uid,
+        object_uid=meta_table_uid,
         object_lookup_field="uid",
         action_name="remove_label",
         labels=labels,

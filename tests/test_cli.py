@@ -2790,7 +2790,7 @@ def test_project_add_to_edit(cli_mod, runner, monkeypatch):
             "ok": True,
             "action": "add_to_edit",
             "detail": "User now has explicit edit access.",
-            "object_id": project_id,
+            "object_uid": project_id,
             "object_type": "tdag.project",
             "user": {
                 "id": user_id,
@@ -2827,7 +2827,7 @@ def test_project_add_team_to_view(cli_mod, runner, monkeypatch):
         return {
             "action": "add_team_to_view",
             "detail": "Team now has explicit view access.",
-            "object_id": project_id,
+            "object_uid": project_id,
             "object_type": "tdag.project",
             "team": {
                 "id": team_id,
@@ -2990,7 +2990,7 @@ def test_list_project_users_can_view_uses_client_model(cli_mod, monkeypatch):
                     captured["can_view_timeout"] = timeout
                     return types.SimpleNamespace(
                         model_dump=lambda mode="python": {
-                            "object_id": uid,
+                            "object_uid": uid,
                             "object_type": "tdag.project",
                             "access_level": "view",
                             "users": [
@@ -3075,7 +3075,7 @@ def test_add_project_user_to_edit_uses_client_model(cli_mod, monkeypatch):
                         "ok": True,
                         "action": "add_to_edit",
                         "detail": "User now has explicit edit access.",
-                        "object_id": uid,
+                        "object_uid": uid,
                         "object_type": "tdag.project",
                         "user": {
                             "id": user_id,
@@ -3326,7 +3326,7 @@ def test_list_constant_users_can_edit_uses_client_model(cli_mod, monkeypatch):
                     captured["can_edit_timeout"] = timeout
                     return types.SimpleNamespace(
                         model_dump=lambda mode="python": {
-                            "object_id": 7,
+                            "object_uid": uid,
                             "object_type": "tdag.constant",
                             "access_level": "edit",
                             "users": [
@@ -3401,7 +3401,7 @@ def test_add_constant_user_to_edit_uses_client_model(cli_mod, monkeypatch):
                         "ok": True,
                         "action": "add_to_edit",
                         "detail": "User now has explicit edit access.",
-                        "object_id": uid,
+                        "object_uid": uid,
                         "object_type": "tdag.constant",
                         "user": {
                             "id": user_id,
@@ -3528,7 +3528,7 @@ def test_list_secret_users_can_view_uses_client_model(cli_mod, monkeypatch):
                     captured["can_view_timeout"] = timeout
                     return types.SimpleNamespace(
                         model_dump=lambda mode="python": {
-                            "object_id": 8,
+                            "object_uid": uid,
                             "object_type": "tdag.secret",
                             "access_level": "view",
                             "users": [
@@ -3607,7 +3607,7 @@ def test_add_secret_user_to_edit_uses_client_model(cli_mod, monkeypatch):
                         "ok": True,
                         "action": "add_to_edit",
                         "detail": "User now has explicit edit access.",
-                        "object_id": uid,
+                        "object_uid": uid,
                         "object_type": "tdag.secret",
                         "user": {
                             "id": user_id,
@@ -5042,7 +5042,7 @@ def test_list_data_node_storage_users_can_view_uses_client_model(cli_mod, monkey
                     captured["can_view_timeout"] = timeout
                     return types.SimpleNamespace(
                         model_dump=lambda mode="python": {
-                            "object_id": uid,
+                            "object_uid": uid,
                             "object_type": "tdag.datanodestorage",
                             "access_level": "view",
                             "users": [
@@ -5121,7 +5121,7 @@ def test_add_data_node_storage_user_to_edit_uses_client_model(cli_mod, monkeypat
                         "ok": True,
                         "action": "add_to_edit",
                         "detail": "User now has explicit edit access.",
-                        "object_id": uid,
+                        "object_uid": uid,
                         "object_type": "tdag.datanodestorage",
                         "user": {
                             "id": user_id,
@@ -6894,7 +6894,7 @@ def test_agent_add_team_to_edit(cli_mod, runner, monkeypatch):
             "ok": True,
             "action": "add_team_to_edit",
             "detail": "Team now has explicit edit access.",
-            "object_id": agent_uid_arg,
+            "object_uid": agent_uid_arg,
             "object_type": "agent.agent",
             "team": {
                 "id": team_id,
@@ -7212,7 +7212,7 @@ def test_secrets_can_view(cli_mod, runner, monkeypatch):
         cli_mod,
         "list_secret_users_can_view",
         lambda secret_uid, timeout=None: {
-            "object_id": secret_uid,
+            "object_uid": secret_uid,
             "object_type": "tdag.secret",
             "access_level": "view",
             "users": [
@@ -7253,7 +7253,7 @@ def test_secrets_add_to_edit(cli_mod, runner, monkeypatch):
             "ok": True,
             "action": "add_to_edit",
             "detail": "User now has explicit edit access.",
-            "object_id": secret_uid,
+            "object_uid": secret_uid,
             "object_type": "tdag.secret",
             "user": {
                 "id": user_id,
@@ -8181,7 +8181,7 @@ def test_data_node_storage_add_to_edit(cli_mod, runner, monkeypatch):
             "ok": True,
             "action": "add_to_edit",
             "detail": "User now has explicit edit access.",
-            "object_id": storage_uid,
+            "object_uid": storage_uid,
             "object_type": "tdag.datanodestorage",
             "user": {
                 "id": user_id,
