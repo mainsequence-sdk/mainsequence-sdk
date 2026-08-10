@@ -56,7 +56,8 @@ meta_table = MetaTable.register(request)
 For platform-managed SQLAlchemy models this is SDK plumbing used by the
 migration workflow, not a bootstrap call users should place in application
 code. External-registered callers may still build a request and call this
-primitive directly when the application owns the physical table lifecycle.
+primitive directly when both catalog registration and physical DDL remain
+external authority.
 
 Backend route:
 
@@ -70,6 +71,8 @@ Request fields:
 | --- | --- |
 | `data_source_uid` | Canonical `DataSource.uid` that owns connection, capabilities, and execution. |
 | `management_mode` | `external_registered` or `platform_managed`. |
+| `schema_management` | Physical schema owner. Alembic providers use `mode="alembic_managed"`; backend-created tables use `backend_managed`. |
+| `project_context` | SDK-resolved Project UID and actual Git branch for platform-managed operations. Users do not provide an environment UID. |
 | `identifier` | Optional logical MetaTable identifier, such as `Asset`. Non-empty values are globally unique per organization. Alembic migration preparation resolves provider MetaTables by authored SQLAlchemy table name instead. |
 | `namespace` | Logical namespace, such as `sdk-examples`. |
 | `description` | Optional discovery text. |
@@ -82,6 +85,17 @@ Request fields:
 For `platform_managed`, `table_contract.physical.table_name` is the authored
 SQLAlchemy table name that Alembic sees. The platform identity is the MetaTable
 `uid`; the stable logical application identity is `identifier` when provided.
+
+Do not treat management, schema ownership, and provisioning as one state:
+
+| Catalog ownership | Schema ownership | Provisioning |
+| --- | --- | --- |
+| `platform_managed` | `backend_managed` | normally `active` after backend creation |
+| `platform_managed` | `alembic_managed` | `reserved` before Alembic, `active` after finalize |
+| `external_registered` | `external_registered` | `active` for an imported physical table |
+
+The Alembic registry is the platform-managed, Alembic-managed root of its
+provider. It is never an `external_registered` table.
 
 `PlatformManagedMetaTable` exists so SQLAlchemy table construction and
 migration-managed registration produce the same table contract while preserving
@@ -296,10 +310,11 @@ provider adapter that:
 1. loads the selected `AlembicMetaTableMigration` provider;
 2. asks the backend for a temporary migration URI when a command needs database
    access and no explicit SQLAlchemy URL was supplied;
-3. for `current`, `upgrade`, and `downgrade`, registers or resolves its
-   `AlembicVersionMetaTable`;
-4. for `upgrade` and `downgrade`, creates or resolves provider platform-managed
-   MetaTable rows before Alembic runs and finalizes them after successful DDL;
+3. for `current`, `upgrade`, and `downgrade`, reserves or resolves its
+   platform-managed, Alembic-managed `AlembicVersionMetaTable` root;
+4. for `upgrade` and `downgrade`, reserves provider platform-managed MetaTable
+   children before Alembic runs and finalizes the root and children after
+   successful DDL;
 5. calls Alembic `current`, `revision`, `upgrade`, or `downgrade` directly.
 
 Backend coordination uses:

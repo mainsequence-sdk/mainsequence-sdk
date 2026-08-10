@@ -115,15 +115,9 @@ Every `mapped_column(...)` in a storage class must include
 what the value means for this dataset and how downstream users should interpret
 it; do not merely repeat the column name or dtype.
 
-Use `__metatable_extra_hash_components__` on storage classes when distinct
-DataNode storage tables could otherwise have the same storage-relevant shape.
-For example, two one-index daily tables with one float column need a stable
-component such as `{"storage_name": "daily_random_number"}` versus
-`{"storage_name": "daily_random_addition"}`.
-
-This is storage identity. Changing it creates a different storage table. Do not
-use it for labels, descriptions, runtime options, test isolation, backend UIDs,
-data-source UIDs, or updater scope.
+When a caller explicitly needs a deterministic contract fingerprint, use
+`compute_metatable_contract_hash(..., extra_components={...})` as a utility. The
+result is not MetaTable identity and is not sent to the backend.
 
 Do not put those concerns in `DataNodeConfiguration`.
 
@@ -149,7 +143,6 @@ class PricesTable(PlatformTimeIndexMetaTable, Base):
     __tablename__ = PRICES_TABLE_NAME
     __metatable_namespace__ = "<domain_namespace>"
     __metatable_identifier__ = "<project_name>.<table_identifier>"
-    __metatable_extra_hash_components__ = {"storage_name": "<stable_storage_name>"}
     __metatable_description__ = (
         "Daily close prices keyed by asset unique identifier for portfolio and "
         "risk analytics."

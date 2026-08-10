@@ -78,11 +78,14 @@ def _patch_preflight(monkeypatch, migration_cli, migration, *, emit_reservation=
     monkeypatch.setattr(
         AlembicMetaTableMigration,
         "ensure_alembic_registry",
-        lambda self, timeout=None, on_metatable_registered=None: self.alembic_registry.get_meta_table(),
+        lambda self, project_context=None, timeout=None, on_metatable_reserved=None: (
+            self.alembic_registry.get_meta_table()
+        ),
     )
 
     def fake_prepare_for_alembic(
         self,
+        project_context=None,
         timeout=None,
         on_metatable_reservation_request=None,
         on_metatable_reservation_status=None,
@@ -128,7 +131,7 @@ def _patch_preflight(monkeypatch, migration_cli, migration, *, emit_reservation=
             data_source_uid="data-source-uid",
             meta_table_uids=["meta-table-uid"],
             owner_role_name="prepared-owner",
-            project_context=_project_context(),
+            project_context=project_context or _project_context(),
         )
 
     monkeypatch.setattr(
@@ -288,7 +291,7 @@ def test_migrations_current_skips_provider_metatable_reservations(monkeypatch):
     ) in output
 
 
-def test_migrations_current_prints_alembic_registry_registration(monkeypatch):
+def test_migrations_current_prints_alembic_registry_reservation(monkeypatch):
     cli_mod = _load_cli_module()
     runner = CliRunner()
     migration_cli = importlib.import_module("mainsequence.cli.migrations")
@@ -297,9 +300,14 @@ def test_migrations_current_prints_alembic_registry_registration(monkeypatch):
     _patch_preflight(monkeypatch, migration_cli, migration)
     _patch_scoped_connection(monkeypatch, migration_cli, captured)
 
-    def fake_ensure(self, timeout=None, on_metatable_registered=None):
-        if on_metatable_registered is not None:
-            on_metatable_registered(
+    def fake_ensure(
+        self,
+        project_context=None,
+        timeout=None,
+        on_metatable_reserved=None,
+    ):
+        if on_metatable_reserved is not None:
+            on_metatable_reserved(
                 self.alembic_registry,
                 types.SimpleNamespace(
                     identifier="msm.alembic_version",
@@ -324,13 +332,13 @@ def test_migrations_current_prints_alembic_registry_registration(monkeypatch):
 
     assert result.exit_code == 0
     output = _combined_output(result)
-    assert "POST /api/v1/meta-tables/register/" in output
-    assert "registered MetaTable identifier=msm.alembic_version" in output
+    assert "POST /api/v1/meta-tables/" in output
+    assert "reserved MetaTable identifier=msm.alembic_version" in output
     assert "uid=registry-meta-table-uid" in output
     assert "physical_table=alembic_version" in output
 
 
-def test_migrations_current_parses_registry_environment_identity(monkeypatch):
+def test_migrations_current_reserves_scoped_platform_registry(monkeypatch):
     cli_mod = _load_cli_module()
     runner = CliRunner()
     migration_cli = importlib.import_module("mainsequence.cli.migrations")
@@ -339,30 +347,49 @@ def test_migrations_current_parses_registry_environment_identity(monkeypatch):
 
     monkeypatch.setattr(migration_cli, "_load_migration", lambda provider: migration)
 
-    def fake_post_action(
-        cls,
-        action_name,
-        payload,
-        *,
-        timeout=None,
-        expected_statuses=(200,),
-        on_status=None,
-    ):
-        captured["action_name"] = action_name
-        captured["registration_request"] = payload
-        return {
-            "uid": "registry-meta-table-uid",
-            "data_source_uid": "data-source-uid",
-            "identifier": "msm.alembic_version",
-            "namespace": "msm",
-            "management_mode": "external_registered",
-            "physical_schema": "public",
-            "physical_table_name": "alembic_version",
-            "organization_project_environment_uid": None,
-            "organization_project_environment_name": None,
-        }
+    import mainsequence.client.metatables.core as metatable_models
 
-    monkeypatch.setattr(MetaTable, "_post_action", classmethod(fake_post_action))
+    class _Response:
+        status_code = 201
+
+        @staticmethod
+        def json():
+            return [
+                {
+                    "uid": "registry-meta-table-uid",
+                    "data_source_uid": "data-source-uid",
+                    "identifier": "msm.alembic_version",
+                    "namespace": "msm",
+                    "management_mode": "platform_managed",
+                    "provisioning_status": "reserved",
+                    "schema_management_mode": "alembic_managed",
+                    "migration_package": "msm",
+                    "migration_namespace": "markets",
+                    "migration_provider_key": "msm:markets",
+                    "alembic_version_meta_table_uid": None,
+                    "physical_schema": "public",
+                    "physical_table_name": "alembic_version",
+                    "table_contract": {
+                        "version": "relational-table.v1",
+                        "physical": {
+                            "schema": "public",
+                            "table_name": "alembic_version",
+                        },
+                        "columns": [],
+                    },
+                }
+            ]
+
+    def fake_make_request(**kwargs):
+        captured["registry_request"] = kwargs
+        return _Response()
+
+    monkeypatch.setattr(metatable_models, "make_request", fake_make_request)
+    monkeypatch.setattr(
+        MetaTable,
+        "build_session",
+        classmethod(lambda cls: types.SimpleNamespace(headers={})),
+    )
     _patch_scoped_connection(monkeypatch, migration_cli, captured)
 
     from alembic import command
@@ -375,12 +402,17 @@ def test_migrations_current_parses_registry_environment_identity(monkeypatch):
     )
 
     assert result.exit_code == 0
-    assert captured["action_name"] == "register"
-    assert captured["registration_request"].identifier == "msm.alembic_version"
+    registry_row = captured["registry_request"]["payload"]["json"][0]
+    assert registry_row["management_mode"] == "platform_managed"
+    assert registry_row["provisioning_status"] == "reserved"
+    assert registry_row["is_alembic_managed"] is True
+    assert registry_row["alembic_version_meta_table_uid"] is None
+    assert registry_row["project_context"] == _project_context().model_dump(mode="json")
     registry = migration.alembic_registry.get_meta_table()
     assert registry is not None
-    assert registry.organization_project_environment_uid is None
-    assert registry.organization_project_environment_name is None
+    assert registry.management_mode == "platform_managed"
+    assert registry.schema_management_mode == "alembic_managed"
+    assert registry.provisioning_status == "reserved"
     assert "Alembic current finished." in _combined_output(result)
 
 
@@ -571,7 +603,9 @@ def test_migrations_revision_default_uses_registry_without_provider_reservations
     monkeypatch.setattr(
         AlembicMetaTableMigration,
         "ensure_alembic_registry",
-        lambda self, timeout=None, on_metatable_registered=None: self.alembic_registry.get_meta_table(),
+        lambda self, project_context=None, timeout=None, on_metatable_reserved=None: (
+            self.alembic_registry.get_meta_table()
+        ),
     )
 
     def fail_backend_call(*args, **kwargs):
@@ -823,6 +857,9 @@ def test_migrations_upgrade_calls_alembic_and_finalizes_catalog(monkeypatch):
     assert captured["upgrade_url"] == "postgresql://temporary-secret"
     assert captured["finalize_timeout"] == 7.0
     assert captured["finalize_revision"] == "head"
+    assert captured["finalize_prepared"].meta_table_uids == [
+        "meta-table-uid",
+    ]
     assert "temporary-secret" not in result.output
     output = _combined_output(result)
     assert "POST /api/v1/meta-tables/finalize-managed/" in output

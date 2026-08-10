@@ -153,8 +153,9 @@ it must not become an FK/index schema-management path.
 The SDK migration layer becomes smaller and less ambiguous:
 
 - FK/index changes appear only as Alembic revision changes.
-- FK/index changes also change the SDK storage hash through normalized local
-  semantics, without creating a second FK/index contract language.
+- FK/index changes also change the optional SDK contract fingerprint through
+  normalized local semantics, without creating a second FK/index contract
+  language or a first-class MetaTable identity.
 - Alembic autogenerate no longer competes with SDK FK/index contract metadata.
 - backend MetaTable reservations only coordinate table identity and migration
   scope, not physical relational constraints.

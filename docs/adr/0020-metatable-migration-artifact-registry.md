@@ -57,14 +57,15 @@ registration, and backend execution. It supplies:
   after SQL execution
 - the optional post-registration catalog hook
 
-`AlembicVersionMetaTable` is a catalog binding for Alembic's version table. It
-registers as a normal `external_registered` MetaTable with the minimal Alembic
-revision column the backend needs to read current state:
+`AlembicVersionMetaTable` is the platform-managed root catalog binding for an
+Alembic migration stream. The SDK reserves it with
+`schema_management_mode="alembic_managed"` before Alembic runs and with the
+minimal revision column the backend needs to read current state:
 
 ```json
 {
   "version": "relational-table.v1",
-  "physical": {"table_name": "msm_alembic_version"},
+  "physical": {"schema": "public", "table_name": "msm_alembic_version"},
   "columns": [
     {
       "name": "version_num",
@@ -75,8 +76,6 @@ revision column the backend needs to read current state:
     }
   ],
   "constraints": [],
-  "indexes": [],
-  "foreign_keys": [],
   "authoring": {
     "owner": "alembic",
     "schema": "public",
@@ -88,14 +87,17 @@ revision column the backend needs to read current state:
 That contract means:
 
 - Alembic owns the actual version-table DDL.
-- The SDK registers a stable pointer for catalog/discovery and current-revision
+- The SDK reserves a stable managed root for catalog/discovery and current-revision
   reads.
 - The `version_num` declaration is not an SDK-owned SQLAlchemy model. It is the
-  minimal metadata required by the existing MetaTable registration contract.
+  minimal metadata required by the managed MetaTable reservation contract.
 - The backend does not use this contract to validate Alembic inserts or DDL.
   PostgreSQL and Alembic remain the authority for the physical version table.
-- The binding is external-registered; it must not create or mutate the physical
-  Alembic version table.
+- The binding is `platform_managed` because the SDK owns its catalog lifecycle.
+- Its schema management mode is `alembic_managed` because Alembic owns the
+  physical version-table DDL.
+- It starts `reserved` and becomes `active` only after managed finalization
+  confirms that the physical version table exists.
 
 There is no `[tool.mainsequence.migrations].enabled` provider list yet. The
 first implementation uses one conventional provider per host project, with an
@@ -196,8 +198,8 @@ Recommended provider discovery order:
 3. `--provider module.path:migration` as an explicit override.
 
 The CLI must not require `data_source_uid` in project config. Initial
-`AlembicVersionMetaTable` registration resolves its data source through the
-same registration resolver used by other MetaTables. After registration, the
+`AlembicVersionMetaTable` reservation resolves its data source through the same
+resolver used by other MetaTables. After reservation, the
 bound `AlembicVersionMetaTable` supplies the target data source for Alembic
 status checks and backend SQL execution. Migration provider methods and CLI
 commands must not accept a `data_source_uid` override.
@@ -226,8 +228,8 @@ Catalog sync after a migration must:
    reservation `identifier`.
 3. Let TS Manager resolve existing catalog rows or create missing reserved
    rows in one batch.
-4. Bind the model class to the MetaTable UID, storage hash, and physical table
-   name returned by the reservation response.
+4. Bind the model class to the MetaTable UID, data source UID, and physical
+   table name returned by the reservation response.
 5. Fail if TS Manager reports that the table-name identity is not unique.
 
 This is the mechanism that lets Alembic change a shape-addressed
@@ -236,24 +238,36 @@ SQLAlchemy class shape must not decide which deployed MetaTable is refreshed,
 and the SDK must not skip reservation because a previous catalog contract
 appears to match.
 
-## Alembic Version MetaTable Registration Contract
+## Alembic Version MetaTable Reservation Contract
 
-The SDK registration request for Alembic's version table is a normal
-`external_registered` MetaTable:
+The SDK reservation request for Alembic's version table is the root
+`platform_managed` and `alembic_managed` MetaTable for the provider:
 
 ```json
 {
   "data_source_uid": "uuid",
-  "management_mode": "external_registered",
-  "storage_hash": "identifier-derived stable hash",
+  "management_mode": "platform_managed",
+  "provisioning_status": "reserved",
+  "is_alembic_managed": true,
+  "migration_package": "msm",
+  "migration_namespace": "markets",
+  "migration_provider_key": "msm:markets",
+  "alembic_version_meta_table_uid": null,
+  "alembic_revision": null,
+  "physical_schema": "public",
+  "physical_table_name": "msm_alembic_version",
+  "project_context": {
+    "project_uid": "uuid",
+    "repository_branch": "main"
+  },
   "identifier": "msm.alembic_version",
   "namespace": "msm",
   "description": "Alembic revision state table.",
   "labels": [],
-  "introspect": false,
   "table_contract": {
     "version": "relational-table.v1",
     "physical": {
+      "schema": "public",
       "table_name": "msm_alembic_version"
     },
     "columns": [
@@ -266,8 +280,6 @@ The SDK registration request for Alembic's version table is a normal
       }
     ],
     "constraints": [],
-    "indexes": [],
-    "foreign_keys": [],
     "authoring": {
       "owner": "alembic",
       "schema": "public",
@@ -277,30 +289,32 @@ The SDK registration request for Alembic's version table is a normal
 }
 ```
 
-The request uses `introspect=false`, so initial migration setup does not require
-the physical `alembic_version` table to exist before Alembic SQL runs. The
-backend still enforces normal MetaTable permissions, data-source ownership,
-labels, namespace, identifier, physical table binding rules, and non-empty
-contract columns.
+The registry has no `alembic_version_meta_table_uid` because it is the provider
+root. Initial migration setup does not require the physical `alembic_version`
+table to exist: the catalog row remains `reserved` until Alembic runs and
+managed finalization confirms the physical table. The backend still enforces
+project context, permissions, data-source ownership, provider identity,
+physical identity, and non-empty contract columns.
 
 ## Client Workflow
 
-The client workflow has two separate tracks:
+The client workflow has one provider-scoped lifecycle:
 
-1. Register a MetaTable catalog pointer to Alembic's version table.
-2. Render and apply Alembic SQL artifacts through the backend migration apply
-   endpoint.
+1. Reserve the platform-managed Alembic registry root.
+2. Reserve provider tables as children of that registry.
+3. Run Alembic through a backend-issued migration connection.
+4. Finalize the registry and provider tables together.
 
-The client does not run a migration "on" a MetaTable. The registered
+The client does not run a migration "on" a MetaTable. The reserved
 `AlembicVersionMetaTable` only tells the backend where Alembic revision state
 lives for a data source. The migration SQL runs on the target data source and
 Alembic's own SQL updates the physical `alembic_version` table.
 
-### 1. Register The Alembic Version MetaTable
+### 1. Reserve The Alembic Version MetaTable
 
-The selected `AlembicMetaTableMigration` provider must first register its
-`alembic_registry` binding. This registration uses the same data-source
-resolver as other MetaTable registrations: an explicit class binding when one
+The selected `AlembicMetaTableMigration` provider must first reserve its
+`alembic_registry` binding. This reservation uses the same data-source
+resolver as other MetaTable operations: an explicit class binding when one
 exists, otherwise the active Main Sequence project/session data source.
 
 ```python
@@ -318,11 +332,14 @@ class MarketsAlembicVersion(AlembicVersionMetaTable):
 alembic_version_meta_table = migration.ensure_alembic_registry()
 ```
 
-The registration request generated by the SDK still contains the resolved data
-source UID:
+The reservation request generated by the SDK contains the resolved data source
+and provider identity:
 
 ```python
 request = migration.alembic_registry.build_registration_request(
+    migration_package=migration.package,
+    migration_namespace=migration.migration_namespace,
+    migration_provider_key=migration.migration_provider_key,
     data_source_uid=resolved_registration_data_source_uid,
 )
 ```
@@ -330,14 +347,25 @@ request = migration.alembic_registry.build_registration_request(
 ```json
 {
   "data_source_uid": "uuid",
-  "management_mode": "external_registered",
-  "storage_hash": "computed-by-sdk",
+  "management_mode": "platform_managed",
+  "provisioning_status": "reserved",
+  "is_alembic_managed": true,
+  "migration_package": "msm",
+  "migration_namespace": "markets",
+  "migration_provider_key": "msm:markets",
+  "alembic_version_meta_table_uid": null,
+  "alembic_revision": null,
+  "physical_schema": "public",
+  "physical_table_name": "msm_alembic_version",
+  "project_context": {
+    "project_uid": "uuid",
+    "repository_branch": "main"
+  },
   "identifier": "msm.alembic_version",
   "namespace": "msm",
   "description": "Alembic revision state table.",
   "protect_from_deletion": false,
   "labels": [],
-  "introspect": false,
   "table_contract": {
     "version": "relational-table.v1",
     "physical": {
@@ -364,11 +392,11 @@ request = migration.alembic_registry.build_registration_request(
 }
 ```
 
-The `schema`, `version_table`, and `version_num` column must match the
-project's Alembic configuration. For an initial migration, the physical
-`alembic_version` table may not exist yet. This registration is still valid
-because it is a catalog pointer, not an instruction for TS Manager to create or
-validate Alembic's table schema.
+The `schema`, `version_table`, and `version_num` column must match the project's
+Alembic configuration. For an initial migration, the physical
+`alembic_version` table may not exist yet. The reservation remains unusable
+until Alembic creates the table and `finalize-managed` changes the registry to
+`active`.
 
 ### 2. Generate An Alembic Revision
 
@@ -423,7 +451,7 @@ emit SDK operation lists.
 
 ADR 0022 removed the backend migration-status helper. Current SDK tooling reads
 the current Alembic revision by configuring Alembic with the provider's
-registered version-table binding and calling Alembic `current` through the
+reserved version-table binding and calling Alembic `current` through the
 migration connection.
 
 The version table remains discoverable because the provider declares an
@@ -546,8 +574,8 @@ backend does not render or apply SQL artifacts for normal users.
 
 Command responsibilities:
 
-- `current` resolves the provider, registers or resolves the provider's
-  `alembic_registry` binding when needed, requests a read-only scoped
+- `current` resolves the provider, reserves or resolves the provider's managed
+  `alembic_registry` root when needed, requests a read-only scoped
   connection, and calls Alembic `current`.
 - `revision` creates a normal Alembic revision file under
   `migration.script_location`; project code may keep generated Alembic
@@ -628,12 +656,12 @@ Required extension points:
 - `AlembicMetaTableMigration` must accept `target_metadata`; Alembic
   autogenerate/rendering must never scan every imported SQLAlchemy model.
 - `AlembicMetaTableMigration` must accept `metatable_models`; catalog
-  registration must be scoped to that list.
+  reservation and finalization must be scoped to that list.
 - Application MetaTable catalog sync in the Alembic workflow must resolve by
   exact SQLAlchemy table-name identifier.
-- Application MetaTable catalog sync must call each provider-scoped model's
-  normal `register()` path without passing the Alembic registry data source.
-  Each model owns its own data-source binding.
+- Application MetaTable preparation must reserve each provider-scoped model as
+  a child of the managed Alembic registry without copying a provider-wide data
+  source override. Each model owns its own data-source binding.
 - `__metatable_identifier__` must not be used as Alembic migration identity.
   Normal non-migration MetaTable registration may still expose it as catalog
   metadata.
@@ -649,10 +677,10 @@ Required extension points:
 
 ## Catalog Binding
 
-MetaTables are catalog metadata. The Alembic apply request points only to the
-registered `AlembicVersionMetaTable` binding so the backend can locate
-Alembic's version table on the target data source. Catalog registration or
-refresh for changed application tables is a separate SDK/project tooling step.
+MetaTables are catalog metadata. Migration connection requests use the reserved
+`AlembicVersionMetaTable` root so the backend can locate Alembic's version table
+on the target data source. Provider application tables are reserved as children
+of that root and finalized with it after Alembic succeeds.
 
 ## Removal Inventory
 
@@ -705,8 +733,8 @@ stable identifier.
 - [x] Remove registry upsert and sync helpers.
 - [x] Remove custom schema-operation tests.
 - [x] Add `AlembicVersionMetaTable`.
-- [x] Make `AlembicVersionMetaTable` Alembic-owned with the minimal
-  `version_num` contract required for normal external registration.
+- [x] Make `AlembicVersionMetaTable` a platform-managed, Alembic-managed root
+  reservation with the minimal `version_num` contract.
 - [x] Superseded by ADR 0022: remove the normal-user offline SQL render/backend
   apply artifact path. The CLI calls Alembic directly through a scoped
   migration connection.

@@ -69,10 +69,11 @@ Before changing code, collect or infer:
 - relation shape between tables
 - expected read patterns
 - expected mutation patterns
-- whether TS Manager should create the physical table
+- who owns the MetaTable catalog lifecycle
+- who owns physical DDL: TS Manager, Alembic, or an external authority
 - for `external_registered`, the target canonical `DataSource` UID
 - for contract changes, the selected `AlembicMetaTableMigration` provider or provider module path
-- for contract changes, the provider's `AlembicVersionMetaTable` binding and whether it has been registered
+- for contract changes, the provider's `AlembicVersionMetaTable` root and whether it has been reserved
 - for contract changes, the intended Alembic revision, parent/current revision, target revision, and updated SQLAlchemy declarations
 
 If ownership of the physical table lifecycle is unclear, stop before choosing a management mode.
@@ -83,13 +84,18 @@ For every non-trivial task, decide:
 
 1. Is this table really row-oriented, or should it be a DataNode?
 2. What is the business key?
-3. Should the table be `platform_managed` or `external_registered`?
-4. What namespace and identifier define the logical table identity?
-5. Are foreign-key dependencies aligned with registration order?
-6. What governed operations should be allowed by the declared table scope?
-7. If the table already exists and its contract changes, is this an Alembic migration rather than normal registration?
-8. For a migration, which provider object controls `target_metadata`, `script_location`, `alembic_registry`, and `metatable_models`?
-9. For a migration, has the provider's Alembic version-table binding been registered?
+3. Who owns the catalog boundary: `platform_managed` or `external_registered`?
+4. Who owns physical DDL: `backend_managed`, `alembic_managed`, or `external_registered`?
+5. What namespace and identifier define the logical table identity?
+6. Are foreign-key dependencies aligned with registration order?
+7. What governed operations should be allowed by the declared table scope?
+8. If the table already exists and its contract changes, is this an Alembic migration rather than normal registration?
+9. For a migration, which provider object controls `target_metadata`, `script_location`, `alembic_registry`, and `metatable_models`?
+10. For a migration, has the provider's platform-managed Alembic registry root been reserved?
+
+Do not infer catalog ownership from DDL ownership. SDK migration resources are
+`platform_managed` while Alembic DDL is `alembic_managed`. A genuinely imported
+table is `external_registered` on both axes and is already `active`.
 
 ## Build Rules
 
@@ -113,6 +119,11 @@ mainsequence migrations current --provider sdk_examples.migrations:migration
 mainsequence migrations revision --provider sdk_examples.migrations:migration
 mainsequence migrations upgrade --provider sdk_examples.migrations:migration head
 ```
+
+For this workflow, the Alembic registry and provider tables are
+`platform_managed` + `alembic_managed`. They are `reserved` before Alembic runs
+and `active` only after managed finalization. The registry is the root and has
+no parent registry UID.
 
 ### 1. SQLAlchemy metadata is the authoring source
 
@@ -138,9 +149,9 @@ def schema_table_name(
 
 Use `app` for the project/package prefix, `concept` for the table concept, and
 `suffix` for a namespace, variant, or bounded specialization when the same
-concept exists in multiple logical scopes. The mixin derives only the logical
-`storage_hash` from storage-relevant configuration and table shape; it must not
-use that hash as the SQLAlchemy table name.
+concept exists in multiple logical scopes. The authored SQLAlchemy table name is
+the physical database binding. A computed contract hash is an optional utility,
+not a MetaTable property or table name.
 
 When a platform-managed table must support in-place contract migrations from its
 first version, use Alembic. Keep the SDK model as a normal
@@ -165,15 +176,10 @@ Every mapped column must include `info={"label": ..., "description": ...}`.
 The column description must explain what the value means in this table and how
 it is used, not just restate the column name or dtype.
 
-Use `__metatable_extra_hash_components__` when two backend-managed tables could
-otherwise produce the same storage hash because their storage-relevant shape is
-identical or intentionally generic. The value must be stable and deterministic,
-usually a small mapping such as `{"storage_name": "account_holdings"}`.
-
-This attribute is part of storage identity. Changing it defines a different
-table. Do not use it for labels, descriptions, runtime options, test isolation,
-backend UIDs, data-source UIDs, or updater scope. Use `hash_namespace` for test
-or experiment isolation.
+If a caller explicitly needs a deterministic fingerprint for drift detection,
+caching, or validation, call
+`compute_metatable_contract_hash(..., extra_components={...})`. Never send that
+result as MetaTable identity.
 
 Prefix explicit table identifiers, explicit physical table names, and Alembic
 version table names with the project or package name. Bare names such as
@@ -196,7 +202,6 @@ class Account(PlatformManagedMetaTable, Base):
     __tablename__ = ACCOUNT_TABLE_NAME
     __metatable_namespace__ = "sdk-examples"
     __metatable_identifier__ = "sdk_examples.Account"
-    __metatable_extra_hash_components__ = {"storage_name": "account"}
     __metatable_description__ = (
         "Customer account master records used to scope balances, holdings, and "
         "account-level limits."
@@ -438,7 +443,7 @@ Do not claim success until you have checked:
 - compiled SQL operations declare table scope
 - migrations use Alembic-rendered SQL
 - migrations are scoped by an `AlembicMetaTableMigration` provider
-- the provider's Alembic version-table binding is registered before apply/current
+- the provider's managed Alembic registry root is reserved before apply/current
 - post-apply catalog registration is scoped to `migration.metatable_models`
 - catalog sync resolves application MetaTables by exact `identifier`
 - user-facing migration instructions stay on the documented CLI/provider lifecycle
@@ -456,7 +461,7 @@ For related tables, also check:
 - the target data source is unknown for an `external_registered` workflow
 - the task really requires a time-series published table
 - the workflow requires direct database credentials outside TS Manager governance
-- a requested contract change lacks a selected provider or registered Alembic version-table binding
+- a requested contract change lacks a selected provider or reserved Alembic registry root
 - the user expects the SDK to invent schema changes without Alembic/provider metadata
 - the task is actually an API or orchestration problem
 

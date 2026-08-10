@@ -8,6 +8,10 @@ Superseded-in-part note: ADR 0023 supersedes the FK/index reservation-contract
 policy in this ADR. Foreign keys and indexes are Alembic-owned DDL and must not
 be resolved or serialized by the SDK migration path.
 
+ADR 0028 also supersedes every `storage_hash` request/response field described
+in this ADR. Contract hashing remains an explicit utility, not MetaTable
+identity.
+
 The server's canonical DataSource cutover also supersedes every
 `DynamicTableDataSource` reference in this ADR. `DataSource.uid` is the sole
 database identity, and migration credentials are issued through an
@@ -59,7 +63,8 @@ SDK provider -> reserve MetaTables -> bind SQLAlchemy metadata
 The SDK must not be the migration executor. It should only:
 
 1. discover/load the project migration provider;
-2. register or resolve the provider's `AlembicVersionMetaTable`;
+2. reserve or resolve the provider's platform-managed, Alembic-managed
+   `AlembicVersionMetaTable` root;
 3. reserve/resolve provider-scoped platform-managed MetaTables;
 4. bind returned MetaTable UID/storage metadata while preserving authored
    SQLAlchemy table names before Alembic runs;
@@ -73,11 +78,11 @@ The SDK must not be the migration executor. It should only:
 
 Keep `AlembicVersionMetaTable`.
 
-It remains the SDK class that registers a catalog pointer to Alembic's version
-table. It is not a migration ledger and it does not validate application table
-contracts. It exists so the platform can discover and display the Alembic
-version table through the MetaTable registry. Migration commands must force an
-idempotent backend registration for this pointer before issuing migration
+It remains the SDK class that reserves the managed root binding for Alembic's
+version table. It is not a migration ledger and it does not validate
+application table contracts. It exists so the platform can own the provider
+catalog lifecycle while Alembic owns the physical version-table DDL. Migration
+commands must force an idempotent backend reservation before issuing migration
 credentials; the SDK's in-memory bound `AlembicVersionMetaTable` object is only
 a cache and must not be treated as proof that the backend catalog row exists.
 
@@ -160,7 +165,6 @@ class MetaTableRequestFields(BasePydanticModel):
     identifier: str | None = Field(None, description="Migration table identity; use authored SQLAlchemy Table.name for Alembic-managed tables.")
     namespace: str | None = Field(None, description="Optional MetaTable namespace.")
     data_source_uid: str = Field(..., description="Canonical DataSource UID that owns this MetaTable.")
-    storage_hash: str = Field(..., max_length=63, description="Canonical table storage hash.")
     description: str | None = Field(None, description="Optional MetaTable description.")
     labels: list[str] = Field(default_factory=list, description="Labels to apply to the MetaTable.")
     protect_from_deletion: bool = Field(False, description="Whether to protect the MetaTable from deletion.")
@@ -190,7 +194,6 @@ class ManagedMetaTableReservationItem(BasePydanticModel):
     data_source_uid: str = Field(..., description="Canonical DataSource UID that owns the reservation.")
     management_mode: Literal["platform_managed"] = Field(..., description="Backend-confirmed management mode.")
     provisioning_status: Literal["reserved", "active"] = Field(..., description="First-class backend provisioning state.")
-    storage_hash: str = Field(..., description="Reserved storage hash.")
     physical_table_name: str = Field(..., description="Backend-confirmed authored physical table name for Alembic rendering.")
     table_contract: dict[str, Any] = Field(..., description="Backend-normalized contract with resolved names.")
     created: bool = Field(..., description="Whether the backend created a new reservation row.")
@@ -275,7 +278,7 @@ reservation is an apply-time concern, not a revision-file generation concern.
 `current` must:
 
 1. load the provider;
-2. register/resolve `AlembicVersionMetaTable`;
+2. reserve/resolve the managed `AlembicVersionMetaTable` root;
 3. issue a provider migration connection without MetaTable UIDs;
 4. call Alembic current/head APIs directly.
 
@@ -286,12 +289,12 @@ state should not mutate or restage application catalog rows.
 `upgrade` must:
 
 1. load the provider;
-2. register/resolve `AlembicVersionMetaTable`;
+2. reserve/resolve the managed `AlembicVersionMetaTable` root;
 3. reserve and bind platform-managed MetaTables;
 4. issue a provider migration connection without MetaTable UIDs;
 5. call Alembic `upgrade(...)` directly;
 6. after success, call `POST /api/v1/meta-tables/finalize-managed/`
-   once with the provider MetaTable UIDs;
+   once with the registry and provider MetaTable UIDs;
 7. call `after_register_metatables` with an
    `AlembicMetaTableCatalogRefreshContext` containing the finalized rows and
    `reserved_policy="reconcile"` for post-Alembic catalog writes.

@@ -61,10 +61,11 @@ The lifecycle is:
 ```text
 provider object
 -> Alembic revision from provider.target_metadata
+-> SDK reserves the platform-managed, Alembic-managed registry root
 -> SDK obtains a provider migration database URI
 -> SDK reserves provider.metatable_models only for upgrade/downgrade
 -> Alembic executes current/revision/upgrade directly
--> SDK finalizes reserved provider.metatable_models
+-> SDK finalizes the registry and reserved provider.metatable_models
 ```
 
 The backend does not receive SDK custom operations such as `add_column`, and it
@@ -75,7 +76,8 @@ execution.
 The SDK layer is intentionally thin. Before delegating to Alembic, it:
 
 - imports the selected provider
-- registers or resolves the provider's `AlembicVersionMetaTable`
+- reserves or resolves the provider's `AlembicVersionMetaTable` as a
+  `platform_managed` + `alembic_managed` root with no parent registry UID
 - reserves or resolves the provider-scoped platform-managed MetaTables for
   commands that mutate provider schema, without creating physical application
   tables
@@ -89,14 +91,14 @@ The SDK layer is intentionally thin. Before delegating to Alembic, it:
   `target_metadata`, version-table settings, owner role, and output streams
 - calls Alembic `current`, `revision`, `upgrade`, or `downgrade` directly
 
-`current` is the cheap read-only path. It registers or resolves only the
+`current` is the cheap read-only path. It reserves or resolves only the
 Alembic version MetaTable, requests a provider migration credential, and asks
 Alembic for current state. It must not restage provider application MetaTables.
 
 After Alembic `upgrade` or `downgrade`, the SDK calls TS Manager's
-`finalize-managed` endpoint once for the reserved provider MetaTable UIDs. The
-backend introspects the physical tables Alembic created and flips the catalog
-rows from `reserved` to `active`. If the provider defines
+`finalize-managed` endpoint once for the registry UID and reserved provider
+MetaTable UIDs. The backend introspects the physical tables Alembic created and
+flips the catalog rows from `reserved` to `active`. If the provider defines
 `after_register_metatables`, the hook runs only after finalization reports every
 provider MetaTable active.
 
@@ -154,8 +156,8 @@ your-project/
 ```
 
 The provider module itself is not registered with the backend. The Alembic
-version-table binding is registered automatically by commands that need backend
-state, such as `mainsequence migrations current` and
+registry root is reserved automatically by commands that need backend state,
+such as `mainsequence migrations current` and
 `mainsequence migrations upgrade`.
 
 After scaffolding, add the provider-scoped model list. The provider below uses
@@ -330,19 +332,20 @@ def downgrade() -> None:
 
 ## 3. Version Table Binding Is Automatic
 
-The provider's `AlembicVersionMetaTable` is registered automatically when a
-command needs backend migration state. `current` uses only that registry
+The provider's `AlembicVersionMetaTable` is reserved automatically as the
+managed provider root when a command needs backend migration state. `current`
+uses only that registry
 MetaTable because it is read-only. `revision` is local Alembic authoring and
 does not register, reserve, or finalize provider application MetaTables.
 `upgrade` and `downgrade` reserve or resolve provider application MetaTables
 before Alembic applies schema changes.
 
-Initial registration resolves the data source through the same resolver used by
-normal MetaTable registration. After registration, the bound
+Initial reservation resolves the data source through the same resolver used by
+normal MetaTable registration. After reservation, the bound
 `AlembicVersionMetaTable` supplies the backend-resolved target data source for
 status and apply.
 
-The registered UID becomes `alembic_version_meta_table_uid` in backend status
+The reserved UID becomes `alembic_version_meta_table_uid` in backend status
 and apply requests. It is the UID of Alembic's version-table catalog binding,
 not the UID of `Account` or `AccountLimit`.
 

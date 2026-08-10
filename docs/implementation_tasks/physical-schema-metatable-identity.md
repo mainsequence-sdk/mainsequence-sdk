@@ -273,7 +273,7 @@ Implemented SDK change set:
 
 5. Alembic registry MetaTable.
 
-   - Ensure Alembic version MetaTable registration sends
+   - Ensure Alembic version MetaTable reservation sends
      `table_contract.physical.schema`.
    - Treat authoring metadata as descriptive only, not physical identity.
 

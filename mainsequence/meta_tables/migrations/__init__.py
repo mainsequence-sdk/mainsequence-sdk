@@ -166,11 +166,11 @@ def _configure_alembic_version_locations(
 
 
 class AlembicVersionMetaTable:
-    """MetaTable catalog binding for Alembic's version table.
+    """Platform-managed catalog binding for Alembic's version table.
 
-    Alembic owns this physical table and its schema. The SDK registers a stable
-    catalog pointer with the minimal known Alembic revision column. The backend
-    uses the binding to locate the version table, not to validate Alembic DDL.
+    The platform owns the catalog lifecycle while Alembic owns the physical DDL.
+    The registry is reserved before migration and finalized with its provider
+    tables after Alembic creates or updates the physical relations.
     """
 
     __alembic_version_table_name__: ClassVar[str] = DEFAULT_ALEMBIC_VERSION_TABLE_NAME
@@ -187,6 +187,9 @@ class AlembicVersionMetaTable:
     def build_registration_request(
         cls,
         *,
+        migration_package: str,
+        migration_namespace: str,
+        migration_provider_key: str | None = None,
         data_source: DataSource | None = None,
         data_source_uid: str | None = None,
         identifier: str | None = None,
@@ -231,13 +234,23 @@ class AlembicVersionMetaTable:
         return MetaTableRegistrationRequest(
             data_source_uid=resolved_data_source_uid,
             physical_schema=resolved_schema,
-            management_mode="external_registered",
+            management_mode="platform_managed",
             identifier=resolved_identifier,
             namespace=resolved_namespace,
             description=resolved_description,
             protect_from_deletion=protect_from_deletion,
             labels=list(labels or []),
             introspect=introspect,
+            schema_management=SchemaManagementRequest(
+                mode="alembic_managed",
+                alembic=AlembicManagementRequest(
+                    package=migration_package,
+                    migration_namespace=migration_namespace,
+                    provider_key=migration_provider_key,
+                    alembic_version_meta_table_uid=None,
+                    revision=None,
+                ),
+            ),
             table_contract=MetaTableContract(
                 physical=MetaTablePhysicalContract(
                     schema_=resolved_schema,
@@ -265,20 +278,57 @@ class AlembicVersionMetaTable:
     def register(
         cls,
         *,
+        migration_package: str,
+        migration_namespace: str,
+        migration_provider_key: str | None = None,
+        project_context: MetaTableProjectContextRequest | None = None,
         data_source: DataSource | None = None,
         data_source_uid: str | None = None,
         timeout: int | float | tuple[float, float] | None = None,
-        on_registered: Callable[[type[Any], Any], Any] | None = None,
+        on_reserved: Callable[[type[Any], Any], Any] | None = None,
         **kwargs: Any,
     ) -> MetaTable:
+        project_context = project_context or _current_metatable_project_context()
         request = cls.build_registration_request(
+            migration_package=migration_package,
+            migration_namespace=migration_namespace,
+            migration_provider_key=migration_provider_key,
             data_source=data_source,
             data_source_uid=data_source_uid,
             **kwargs,
         )
-        meta_table = MetaTable.register(request, timeout=timeout)
-        if on_registered is not None:
-            on_registered(cls, meta_table)
+        rows = MetaTable.bulk_create(
+            [
+                _collection_create_row_from_registration_request(
+                    request,
+                    migration_package=migration_package,
+                    migration_namespace=migration_namespace,
+                    migration_provider_key=migration_provider_key,
+                    alembic_version_meta_table_uid=None,
+                    alembic_revision=None,
+                    project_context=project_context,
+                )
+            ],
+            timeout=timeout,
+        )
+        if len(rows) != 1:
+            raise RuntimeError(
+                "Alembic registry reservation returned an unexpected row count; "
+                f"expected 1, got {len(rows)}."
+            )
+        meta_table = rows[0]
+        _validate_alembic_registry_catalog_state(
+            meta_table,
+            migration_package=migration_package,
+            migration_namespace=migration_namespace,
+            migration_provider_key=migration_provider_key,
+        )
+        _validate_metatable_runtime_data_source(
+            meta_table,
+            data_source_uid=request.data_source_uid,
+        )
+        if on_reserved is not None:
+            on_reserved(cls, meta_table)
         cls._bind_meta_table(meta_table)
         return meta_table
 
@@ -419,36 +469,45 @@ class AlembicMetaTableMigration:
     def register_alembic_registry(
         self,
         *,
+        project_context: MetaTableProjectContextRequest | None = None,
         data_source: DataSource | None = None,
         data_source_uid: str | None = None,
         timeout: int | float | tuple[float, float] | None = None,
-        on_metatable_registered: Callable[[type[Any], Any], Any] | None = None,
+        on_metatable_reserved: Callable[[type[Any], Any], Any] | None = None,
     ) -> MetaTable:
+        project_context = project_context or _current_metatable_project_context()
         return self.alembic_registry.register(
+            migration_package=self.package,
+            migration_namespace=self.migration_namespace,
+            migration_provider_key=self.migration_provider_key,
+            project_context=project_context,
             data_source=data_source,
             data_source_uid=data_source_uid,
             timeout=timeout,
-            on_registered=on_metatable_registered,
+            on_reserved=on_metatable_reserved,
         )
 
     def ensure_alembic_registry(
         self,
         *,
+        project_context: MetaTableProjectContextRequest | None = None,
         data_source: DataSource | None = None,
         data_source_uid: str | None = None,
         timeout: int | float | tuple[float, float] | None = None,
-        on_metatable_registered: Callable[[type[Any], Any], Any] | None = None,
+        on_metatable_reserved: Callable[[type[Any], Any], Any] | None = None,
     ) -> MetaTable:
         return self.register_alembic_registry(
+            project_context=project_context,
             data_source=data_source,
             data_source_uid=data_source_uid,
             timeout=timeout,
-            on_metatable_registered=on_metatable_registered,
+            on_metatable_reserved=on_metatable_reserved,
         )
 
     def sync_metatable_catalog(
         self,
         *,
+        project_context: MetaTableProjectContextRequest | None = None,
         timeout: int | float | tuple[float, float] | None = None,
         create_table: bool = False,
         on_metatable_registered: Callable[[type[Any], Any], Any] | None = None,
@@ -456,7 +515,7 @@ class AlembicMetaTableMigration:
     ) -> list[MetaTable]:
         registered: list[MetaTable] = []
         data_source_uid = self._resolve_provider_data_source_uid()
-        project_context = _current_metatable_project_context()
+        project_context = project_context or _current_metatable_project_context()
         _validate_provider_runtime_data_source(data_source_uid=data_source_uid)
         schema_management = self._schema_management_request(
             alembic_version_meta_table_uid=self.alembic_registry.get_meta_table_uid(),
@@ -518,12 +577,21 @@ class AlembicMetaTableMigration:
         on_metatable_finalize_status: Callable[[str], Any] | None = None,
     ) -> ManagedMetaTableFinalizeResponse:
         prepared = prepared or self.prepare_for_alembic(timeout=timeout)
+        registry_uid = self.alembic_registry.get_meta_table_uid()
+        if registry_uid in (None, ""):
+            raise RuntimeError(
+                "Cannot finalize an Alembic MetaTable provider without its managed "
+                "Alembic registry root. Reserve the registry before finalization."
+            )
+        finalize_meta_table_uids = list(
+            dict.fromkeys([str(registry_uid), *prepared.meta_table_uids])
+        )
         request = ManagedMetaTableFinalizeRequest(
-            meta_table_uids=prepared.meta_table_uids,
+            meta_table_uids=finalize_meta_table_uids,
             migration_package=self.package,
             migration_namespace=self.migration_namespace,
             migration_provider_key=self.migration_provider_key,
-            alembic_version_meta_table_uid=self.alembic_registry.get_meta_table_uid(),
+            alembic_version_meta_table_uid=str(registry_uid),
             alembic_revision=alembic_revision,
         )
         response = MetaTable.finalize_managed(
@@ -604,6 +672,7 @@ class AlembicMetaTableMigration:
     def prepare_for_alembic(
         self,
         *,
+        project_context: MetaTableProjectContextRequest | None = None,
         timeout: int | float | tuple[float, float] | None = None,
         on_metatable_reservation_request: Callable[
             [Sequence[type[Any]], Sequence[Mapping[str, Any]]], Any
@@ -613,7 +682,7 @@ class AlembicMetaTableMigration:
         on_metatable_reserved: Callable[[type[Any], Any], Any] | None = None,
     ) -> PreparedAlembicMetaTableMigration:
         data_source_uid = self._resolve_provider_data_source_uid()
-        project_context = _current_metatable_project_context()
+        project_context = project_context or _current_metatable_project_context()
         _validate_provider_runtime_data_source(data_source_uid=data_source_uid)
         reserved_by_model: dict[type[Any], MetaTable] = {}
         reserved_tables: list[MetaTable] = []
@@ -1362,6 +1431,58 @@ def _meta_table_full_physical_identity(
         return None
     schema, table_name = identity
     return data_source_uid, schema, table_name
+
+
+def _validate_alembic_registry_catalog_state(
+    meta_table: MetaTable,
+    *,
+    migration_package: str,
+    migration_namespace: str,
+    migration_provider_key: str | None,
+) -> None:
+    errors: list[str] = []
+    management_mode = getattr(meta_table, "management_mode", None)
+    if management_mode != "platform_managed":
+        errors.append(f"management_mode={management_mode!r}, expected 'platform_managed'")
+
+    schema_management_mode = getattr(meta_table, "schema_management_mode", None)
+    if schema_management_mode != "alembic_managed":
+        errors.append(
+            f"schema_management_mode={schema_management_mode!r}, expected 'alembic_managed'"
+        )
+
+    provisioning_status = getattr(meta_table, "provisioning_status", None)
+    if provisioning_status not in {"reserved", "active"}:
+        errors.append(
+            f"provisioning_status={provisioning_status!r}, expected 'reserved' or 'active'"
+        )
+
+    parent_registry_uid = getattr(meta_table, "alembic_version_meta_table_uid", None)
+    if parent_registry_uid not in (None, ""):
+        errors.append(
+            "alembic_version_meta_table_uid must be empty because the provider registry "
+            "is the migration root"
+        )
+
+    expected_provider_fields = {
+        "migration_package": migration_package,
+        "migration_namespace": migration_namespace,
+        "migration_provider_key": migration_provider_key,
+    }
+    for field_name, expected in expected_provider_fields.items():
+        actual = getattr(meta_table, field_name, None)
+        if actual != expected:
+            errors.append(f"{field_name}={actual!r}, expected {expected!r}")
+
+    if errors:
+        identifier = getattr(meta_table, "identifier", None) or _meta_table_uid(meta_table)
+        raise RuntimeError(
+            "Alembic registry reservation returned an incompatible catalog row "
+            f"{identifier!r}: "
+            + "; ".join(errors)
+            + ". The registry must be a platform-managed, Alembic-managed root. "
+            "Do not reuse an external_registered Alembic registry."
+        )
 
 
 def _meta_table_provisioning_status(meta_table: MetaTable) -> str | None:

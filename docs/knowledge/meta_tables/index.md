@@ -57,13 +57,35 @@ version table:
 from mainsequence.meta_tables.migrations import AlembicVersionMetaTable
 ```
 
-## Management Modes
+## Lifecycle Axes
 
-MetaTables support two registration modes.
+MetaTable lifecycle state is expressed by three independent fields:
+
+| Field | Question | Values |
+| --- | --- | --- |
+| `management_mode` | Who owns the catalog/registration boundary? | `platform_managed`, `external_registered` |
+| `schema_management_mode` | Who owns physical DDL? | `backend_managed`, `alembic_managed`, `external_registered` |
+| `provisioning_status` | Is the row usable against a physical table? | `reserved`, `active` |
+
+Valid common combinations are:
+
+| Case | `management_mode` | `schema_management_mode` | `provisioning_status` |
+| --- | --- | --- | --- |
+| Backend-created table | `platform_managed` | `backend_managed` | usually `active` |
+| Alembic table before migration | `platform_managed` | `alembic_managed` | `reserved` |
+| Alembic table after finalize | `platform_managed` | `alembic_managed` | `active` |
+| Imported physical table | `external_registered` | `external_registered` | `active` |
+
+`external_registered` catalog ownership combined with `alembic_managed` schema
+ownership is invalid. Do not infer one axis from another.
+
+## Management Modes
 
 ### `external_registered`
 
-Use this when your app owns the physical table lifecycle.
+Use this only when the MetaTable represents an externally existing physical
+table and the platform does not own its catalog lifecycle. Physical DDL is also
+external authority.
 
 Typical flow:
 
@@ -79,8 +101,9 @@ application identity is the optional `identifier`.
 
 ### `platform_managed`
 
-Use this when Alembic should create and evolve the physical table while TS
-Manager keeps the MetaTable catalog binding.
+Use this when the SDK/platform owns the MetaTable catalog lifecycle. Physical
+DDL may be backend-managed or Alembic-managed; `schema_management_mode`
+specifies which.
 
 Typical flow:
 
@@ -119,9 +142,10 @@ The practical benefits are:
 - The server applies a neutral contract. It does not import the user's ORM code
   or become a second ORM.
 
-Choose `external_registered` when you already have a migration system, need
-complex DDL that TS Manager does not support, or intentionally want the
-application to own the physical table lifecycle.
+Choose `external_registered` only for an imported external table whose catalog
+and physical schema remain external authority. An SDK Alembic provider is not
+external registration: its registry and provider tables are
+`platform_managed` with `schema_management_mode="alembic_managed"`.
 
 ## What Belongs In The Contract
 
@@ -185,9 +209,9 @@ TimeIndexMetaTable endpoint.
 
 For schema migrations, use Alembic with ordinary SQLAlchemy models. The SDK no
 longer provides schema-migration MetaTable bases or custom operation lists.
-Register `AlembicVersionMetaTable` as the catalog pointer to Alembic's version
-table, then register or refresh changed MetaTable catalog bindings separately
-after Alembic applies SQL.
+Reserve `AlembicVersionMetaTable` as the platform-managed,
+Alembic-managed root, reserve provider tables as its children, and finalize the
+root and children after Alembic applies SQL.
 
 When a custom fingerprint needs additional stable inputs beyond the default
 contract and physical table name, pass `extra_components` to the utility:

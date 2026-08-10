@@ -290,8 +290,8 @@ class AccountHoldings(PlatformTimeIndexMetaTable, Base):
     quantity: Mapped[float] = mapped_column(Float, nullable=False)
 ```
 
-Alembic owns physical DDL. MetaTable registration remains a catalog binding and
-can be refreshed after Alembic applies schema changes.
+Alembic owns physical DDL. The platform-managed MetaTable reservation remains a
+catalog binding and is finalized after Alembic applies schema changes.
 
 ## External Registration
 
@@ -358,8 +358,8 @@ request = Asset.build_registration_request(
 )
 ```
 
-Labels and descriptions help discovery and search. They do not affect the
-storage hash.
+Labels and descriptions help discovery and search. They do not affect
+MetaTable identity or the optional contract-hash utility.
 
 ## Common Mistakes
 

@@ -28,7 +28,6 @@ from mainsequence.meta_tables.migrations import (
 )
 
 migrations = typer.Typer(help="Alembic-owned MetaTable migration commands")
-REGISTER_ENDPOINT = "/api/v1/meta-tables/register/"
 METATABLE_COLLECTION_ENDPOINT = "/api/v1/meta-tables/"
 TIME_INDEX_META_TABLE_COLLECTION_ENDPOINT = "/api/v1/time-index-meta-tables/"
 FINALIZE_MANAGED_ENDPOINT = "/api/v1/meta-tables/finalize-managed/"
@@ -300,18 +299,6 @@ def _meta_table_uid(item: Any) -> str | None:
     return str(uid)
 
 
-def _include_alembic_registry_in_scope(
-    migration: AlembicMetaTableMigration,
-    prepared: Any,
-    registry_meta_table: Any,
-) -> None:
-    registry_meta_table = registry_meta_table or migration.alembic_registry.get_meta_table()
-    registry_uid = _meta_table_uid(registry_meta_table)
-    if registry_uid in (None, ""):
-        return
-    prepared.meta_table_uids = list(dict.fromkeys([registry_uid, *list(prepared.meta_table_uids)]))
-
-
 def _metatable_message(
     *,
     endpoint: str,
@@ -378,17 +365,6 @@ def _collection_create_endpoint_for_item(item: Any) -> str:
     return METATABLE_COLLECTION_ENDPOINT
 
 
-def _emit_metatable_registration(model: type[Any], item: Any) -> None:
-    _emit_progress(
-        _metatable_message(
-            endpoint=REGISTER_ENDPOINT,
-            action="registered",
-            model=model,
-            item=item,
-        ),
-    )
-
-
 def _emit_metatable_reservation_request(
     models: Sequence[type[Any]],
     tables: Sequence[Any],
@@ -411,10 +387,11 @@ def _emit_metatable_reservation_request(
 
 
 def _emit_metatable_reservation(model: type[Any], item: Any) -> None:
+    action = "active" if _item_value(item, "provisioning_status") == "active" else "reserved"
     _emit_progress(
         _metatable_message(
             endpoint=_collection_create_endpoint_for_item(item),
-            action="reserved",
+            action=action,
             model=model,
             item=item,
         ),
@@ -455,15 +432,18 @@ def _prepare_alembic_config(
     alembic_output: _AlembicOutput,
     prepare_provider_metatables: bool = True,
 ) -> tuple[Any, Any]:
+    project_context = _current_metatable_project_context()
     _emit_status("Ensuring Alembic registry MetaTable...")
     registry_meta_table = migration.ensure_alembic_registry(
+        project_context=project_context,
         timeout=timeout,
-        on_metatable_registered=_emit_metatable_registration,
+        on_metatable_reserved=_emit_metatable_reservation,
     )
 
     if prepare_provider_metatables:
         _emit_status("Preparing platform-managed MetaTable reservations...")
         prepared = migration.prepare_for_alembic(
+            project_context=project_context,
             timeout=timeout,
             on_metatable_reservation_request=_emit_metatable_reservation_request,
             on_metatable_reservation_status=_emit_status,
@@ -475,13 +455,12 @@ def _prepare_alembic_config(
             data_source_uid=migration._resolve_provider_data_source_uid(),
             meta_table_uids=[],
             owner_role_name=None,
-            project_context=_current_metatable_project_context(),
+            project_context=project_context,
         )
-    _include_alembic_registry_in_scope(migration, prepared, registry_meta_table)
     _emit_status(
         "Prepared migration scope "
         f"data_source_uid={prepared.data_source_uid} "
-        f"meta_table_count={len(prepared.meta_table_uids)}"
+        f"provider_meta_table_count={len(prepared.meta_table_uids)}"
     )
     _emit_status(
         "Requesting migration connection through Alembic registry MetaTable "
@@ -522,10 +501,12 @@ def _build_revision_alembic_config(
     _emit_status("Building local Alembic config for revision...")
     owner_role_name = None
     if requires_database and sqlalchemy_url in (None, ""):
+        project_context = _current_metatable_project_context()
         _emit_status("Ensuring Alembic registry MetaTable for revision...")
         registry_meta_table = migration.ensure_alembic_registry(
+            project_context=project_context,
             timeout=timeout,
-            on_metatable_registered=_emit_metatable_registration,
+            on_metatable_reserved=_emit_metatable_reservation,
         )
         _emit_status(
             "Requesting revision migration connection through Alembic registry MetaTable "
@@ -537,7 +518,7 @@ def _build_revision_alembic_config(
                 migration_namespace=migration.migration_namespace,
                 migration_provider_key=migration.migration_provider_key,
                 ttl_seconds=ttl_seconds,
-                project_context=_current_metatable_project_context(),
+                project_context=project_context,
             ),
             timeout=timeout,
         )

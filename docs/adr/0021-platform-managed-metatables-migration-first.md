@@ -78,13 +78,13 @@ The required lifecycle is:
 
 ```text
 1. load AlembicMetaTableMigration provider
-2. ensure/register AlembicVersionMetaTable
+2. reserve/resolve the platform-managed, Alembic-managed AlembicVersionMetaTable root
 3. reserve or resolve provider.metatable_models
 4. bind SQLAlchemy models to returned/existing MetaTable UID and storage
    metadata
 5. request a temporary provider migration connection
 6. call Alembic upgrade directly
-7. finalize reserved MetaTable catalog rows
+7. finalize the registry root and reserved provider MetaTable catalog rows
 8. SDK runs after_register_metatables(catalog_refresh_context)
 ```
 

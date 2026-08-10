@@ -44,7 +44,8 @@ Before calling Alembic, the SDK layer does only the platform-specific setup
 Alembic cannot know on its own:
 
 - load the selected `AlembicMetaTableMigration` provider
-- register or resolve the provider's `AlembicVersionMetaTable` catalog binding
+- reserve or resolve the provider's platform-managed, Alembic-managed
+  `AlembicVersionMetaTable` root
 - reserve or resolve the provider-scoped platform-managed MetaTables without
   creating physical application tables for `upgrade` and `downgrade`
 - preserve authored SQLAlchemy table names and bind backend MetaTable
@@ -58,9 +59,9 @@ Alembic cannot know on its own:
   CLI output streams
 - call Alembic `current`, `revision`, `upgrade`, or `downgrade` directly
 
-After Alembic `upgrade` or `downgrade`, the SDK refreshes only the
-provider-scoped MetaTable catalog rows with physical table creation disabled and
-then runs `after_register_metatables` when the provider defines that hook.
+After Alembic `upgrade` or `downgrade`, the SDK finalizes the registry and
+provider-scoped MetaTable catalog rows, then runs `after_register_metatables`
+when the provider defines that hook.
 
 The SDK layer does not:
 
@@ -108,8 +109,9 @@ The scaffolded `env.py` delegates to the SDK-owned Alembic environment, and the
 scaffolded `script.py.mako` is the SDK-owned Alembic revision template.
 
 The provider module is not registered with the backend. The CLI imports it to
-build Alembic configuration and backend request metadata. The backend
-registration step is only for the provider's `AlembicVersionMetaTable` binding.
+build Alembic configuration and backend request metadata. The backend reserves
+the provider's `AlembicVersionMetaTable` root, then reserves application
+MetaTables as its children for schema-mutating commands.
 
 ```python
 from mainsequence.meta_tables.migrations import (
@@ -189,12 +191,24 @@ rows and migration-scoped credentials.
 
 ## Alembic Version MetaTable
 
-`AlembicVersionMetaTable` registers a catalog pointer for Alembic's version
-table. It uses the minimal known `version_num` contract required by normal
-external MetaTable registration; Alembic and PostgreSQL remain responsible for
-the physical version table. Migration commands force this registration
-idempotently so the backend `MetaTable` pointer is recreated if it was deleted;
+`AlembicVersionMetaTable` is the platform-managed root MetaTable for the
+provider migration stream. The SDK reserves its catalog row with
+`schema_management_mode="alembic_managed"`; Alembic and PostgreSQL remain
+responsible for the physical version table. Migration commands force this
+reservation idempotently so the backend row is recreated if it was deleted;
 the SDK class cache is not considered authoritative.
+
+The three lifecycle axes are independent:
+
+| Field | Registry value before migration | Meaning |
+| --- | --- | --- |
+| `management_mode` | `platform_managed` | The SDK/platform owns the catalog lifecycle. |
+| `schema_management_mode` | `alembic_managed` | Alembic owns physical DDL. |
+| `provisioning_status` | `reserved` | The catalog row is not usable until its physical table exists. |
+
+After successful managed finalization, only `provisioning_status` changes to
+`active`. The registry has no parent `alembic_version_meta_table_uid`; provider
+application tables reference the registry UID as their parent.
 
 The generated contract declares the Alembic revision column:
 
@@ -218,8 +232,8 @@ The generated contract declares the Alembic revision column:
 }
 ```
 
-The CLI registers this binding automatically when a command needs backend
-migration state, such as `current` or `upgrade`. Initial registration resolves
+The CLI reserves this binding automatically when a command needs backend
+migration state, such as `current` or `upgrade`. Initial reservation resolves
 the data source through the same resolver used by normal MetaTable
 registration; it does not accept a data-source override.
 

@@ -7,6 +7,9 @@ Status: Implemented
 Supersedes-in-part: ADR 0022 `MetaTable.reserve_managed(...)` reservation
 surface.
 
+ADR 0028 supersedes the `storage_hash` request fields shown in the original
+decision. Current collection-create rows do not send a storage hash.
+
 Depends on backend ADR: TS Manager ADR-019, "Remove `reserve-managed/` And Use
 Typed Collection Create".
 
@@ -40,7 +43,7 @@ The critical requirement is that the SDK must call the correct endpoint before
 provisioning:
 
 - `PlatformManagedMetaTable` must reserve through the MetaTable endpoint;
-- `PlatformTimeIndexMetaTable` must reserve through the DynamicTable endpoint.
+- `PlatformTimeIndexMetaTable` must reserve through the time-index MetaTable endpoint.
 
 Calling the MetaTable endpoint for a time-indexed model creates the wrong
 backend model: a plain parent `MetaTable` row instead of the concrete
@@ -83,7 +86,6 @@ The relational MetaTable reservation payload must include:
 [
   {
     "data_source_uid": "864e7c22-482a-464a-8758-0d3408abd77f",
-    "storage_hash": "mt_mainsequence_examples_asset",
     "identifier": "mainsequence.examples.Asset",
     "namespace": "mainsequence.examples",
     "description": "",
@@ -95,10 +97,16 @@ The relational MetaTable reservation payload must include:
     "migration_provider_key": "msm:mainsequence.examples",
     "alembic_version_meta_table_uid": "00000000-0000-4000-8000-000000000000",
     "alembic_revision": null,
+    "physical_schema": "public",
     "physical_table_name": "ms_markets__asset__mainsequence_examples",
+    "project_context": {
+      "project_uid": "00000000-0000-4000-8000-000000000001",
+      "repository_branch": "main"
+    },
     "table_contract": {
       "version": "relational-table.v1",
       "physical": {
+        "schema": "public",
         "table_name": "ms_markets__asset__mainsequence_examples"
       },
       "columns": []
@@ -108,14 +116,13 @@ The relational MetaTable reservation payload must include:
 ]
 ```
 
-The time-indexed reservation payload uses the DynamicTable endpoint and must
-also include first-class DynamicTable fields:
+The time-indexed reservation payload uses the time-index MetaTable endpoint and
+must also include its first-class fields:
 
 ```json
 [
   {
     "data_source_uid": "864e7c22-482a-464a-8758-0d3408abd77f",
-    "storage_hash": "mt_mainsequence_examples_prices",
     "identifier": "mainsequence.examples.Prices",
     "namespace": "mainsequence.examples",
     "description": "",
@@ -127,12 +134,18 @@ also include first-class DynamicTable fields:
     "migration_provider_key": "msm:mainsequence.examples",
     "alembic_version_meta_table_uid": "00000000-0000-4000-8000-000000000000",
     "alembic_revision": null,
+    "physical_schema": "public",
     "physical_table_name": "ms_markets__prices__mainsequence_examples",
+    "project_context": {
+      "project_uid": "00000000-0000-4000-8000-000000000001",
+      "repository_branch": "main"
+    },
     "time_index_name": "time_index",
     "partition_strategy": "backend_default",
     "table_contract": {
       "version": "relational-table.v1",
       "physical": {
+        "schema": "public",
         "table_name": "ms_markets__prices__mainsequence_examples"
       },
       "columns": []
@@ -181,11 +194,13 @@ HTTP contract is normal collection `POST` with a list body.
    `alembic_version_meta_table_uid`, and `alembic_revision`;
 8. include authored `physical_table_name` before Alembic runs so Alembic renders
    against the correct SQLAlchemy table name;
-9. include `time_index_name` and `partition_strategy` only for the
+9. include the SDK-resolved Project UID and actual Git branch in
+   `project_context` on every managed row;
+10. include `time_index_name` and `partition_strategy` only for the
    time-indexed endpoint;
-10. bind returned `MetaTable` and `TimeIndexMetaTable` rows back to the
+11. bind returned `MetaTable` and `TimeIndexMetaTable` rows back to the
     SQLAlchemy models that produced each reservation intent;
-11. keep `finalize_managed(...)` as the post-Alembic activation call.
+12. keep `finalize_managed(...)` as the post-Alembic activation call.
 
 ## Non-Goals
 
@@ -214,7 +229,7 @@ the old reservation conflict-diagnostic engine.
 - [x] Change `AlembicMetaTableMigration.prepare_for_alembic()` to split
   reservation rows by model type and call the correct typed endpoint before
   provisioning.
-- [ ] Ensure every reservation row includes `is_alembic_managed=true`.
+- [x] Ensure every reservation row includes `is_alembic_managed=true`.
 - [x] Ensure every reservation row includes
   `provisioning_status="reserved"`.
 - [x] Ensure `PlatformTimeIndexMetaTable` rows include `time_index_name`,
@@ -223,6 +238,11 @@ the old reservation conflict-diagnostic engine.
   endpoint.
 - [x] Keep `MetaTable.finalize_managed(...)` and
   `AlembicMetaTableMigration.finalize_metatable_catalog(...)`.
+- [x] Reserve the Alembic version MetaTable through the same collection-create
+  contract as a platform-managed, Alembic-managed root with no parent registry
+  UID.
+- [x] Include the registry root UID with provider child UIDs in managed
+  finalization.
 - [x] Update SDK knowledge/tutorial docs that still mention
   `reserve-managed/`.
 - [x] Add focused SDK tests for typed reservation routing:

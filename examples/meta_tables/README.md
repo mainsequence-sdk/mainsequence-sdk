@@ -3,15 +3,17 @@
 These examples show the Account/Asset flow from the MetaTable ADR using the SDK
 helpers.
 
-There are two registration modes:
+Catalog ownership, physical schema ownership, and provisioning state are
+separate. The common example combinations are:
 
-- `external_registered`: your application creates and migrates the physical
-  table. TS Manager registers metadata, permissions, search/discovery, and
-  governed execution for that table.
-- `platform_managed`: migration tooling sends the neutral table contract. TS
-  Manager reserves catalog rows and backend-owned physical names before Alembic
-  runs. Alembic creates or changes the physical application tables, then TS
-  Manager finalizes the reserved catalog rows.
+- `external_registered` + `external_registered` + `active`: an imported
+  physical table remains external catalog and DDL authority.
+- `platform_managed` + `alembic_managed` + `reserved|active`: migration tooling
+  reserves platform-owned catalog rows, Alembic creates or changes physical
+  tables, and TS Manager finalizes the rows to `active`.
+
+The provider's Alembic registry uses the second combination. It is the managed
+root of the migration stream, not an external registration.
 
 The external-registered examples call TS Manager by default. Platform-managed
 examples are migration-first and do not call `Model.register()` directly.
@@ -140,7 +142,7 @@ examples.meta_tables.migrations:migration
 It defines:
 
 - `AlembicMetaTableMigration` for provider identity and Alembic configuration
-- `ExampleAlembicVersion` as the external catalog binding for Alembic's version table
+- `ExampleAlembicVersion` as the platform-managed, Alembic-managed registry root
 - `metatable_models=[Account, Asset]` as the provider reservation and finalization scope
 - `versions/0001_initial_account_asset.py` as a normal Alembic revision that
   creates and drops the provider-bound SQLAlchemy tables
@@ -169,7 +171,7 @@ mainsequence migrations upgrade \
   head
 ```
 
-The provider's `AlembicVersionMetaTable` binding is registered automatically
+The provider's `AlembicVersionMetaTable` root is reserved automatically
 by commands that need backend migration state, such as `current` and
 `upgrade`. `revision` accepts an optional `-m/--message`; if omitted, the CLI
 uses `migration`.

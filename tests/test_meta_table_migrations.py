@@ -96,12 +96,54 @@ def _reserved_metatable(
     )
 
 
-def test_alembic_version_metatable_builds_external_registration_request():
-    request = AlembicVersionMetaTable.build_registration_request(
-        data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+def _reserved_registry_metatable(
+    *,
+    data_source_uid: str = "data-source-uid",
+    migration_package: str = "sample",
+    migration_namespace: str = "markets",
+    management_mode: str = "platform_managed",
+    schema_management_mode: str = "alembic_managed",
+    provisioning_status: str = "reserved",
+) -> MetaTable:
+    return MetaTable.model_construct(
+        uid="registry-uid",
+        data_source_uid=data_source_uid,
+        identifier=DEFAULT_ALEMBIC_VERSION_IDENTIFIER,
+        namespace=DEFAULT_ALEMBIC_VERSION_NAMESPACE,
+        management_mode=management_mode,
+        provisioning_status=provisioning_status,
+        schema_management_mode=schema_management_mode,
+        migration_package=migration_package,
+        migration_namespace=migration_namespace,
+        migration_provider_key=f"{migration_package}:{migration_namespace}",
+        alembic_version_meta_table_uid=None,
+        physical_schema=DEFAULT_ALEMBIC_VERSION_SCHEMA,
+        physical_table_name=DEFAULT_ALEMBIC_VERSION_TABLE_NAME,
+        table_contract={
+            "version": "relational-table.v1",
+            "physical": {
+                "schema": DEFAULT_ALEMBIC_VERSION_SCHEMA,
+                "table_name": DEFAULT_ALEMBIC_VERSION_TABLE_NAME,
+            },
+            "columns": [],
+        },
     )
 
-    assert request.management_mode == "external_registered"
+
+def test_alembic_version_metatable_builds_platform_managed_registration_request():
+    request = AlembicVersionMetaTable.build_registration_request(
+        migration_package="sample",
+        migration_namespace="markets",
+        migration_provider_key="sample:markets",
+        data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+    )
+
+    assert request.management_mode == "platform_managed"
+    assert request.schema_management.mode == "alembic_managed"
+    assert request.schema_management.alembic.package == "sample"
+    assert request.schema_management.alembic.migration_namespace == "markets"
+    assert request.schema_management.alembic.provider_key == "sample:markets"
+    assert request.schema_management.alembic.alembic_version_meta_table_uid is None
     assert request.identifier == DEFAULT_ALEMBIC_VERSION_IDENTIFIER
     assert request.namespace == DEFAULT_ALEMBIC_VERSION_NAMESPACE
     assert request.introspect is False
@@ -136,7 +178,11 @@ def test_alembic_version_metatable_uses_session_data_source(monkeypatch):
         lambda: types.SimpleNamespace(uid="session-data-source-uid"),
     )
 
-    request = ProjectAlembicVersion.build_registration_request()
+    request = ProjectAlembicVersion.build_registration_request(
+        migration_package="sample",
+        migration_namespace="markets",
+        migration_provider_key="sample:markets",
+    )
 
     assert request.data_source_uid == "session-data-source-uid"
 
@@ -150,6 +196,9 @@ def test_project_can_scope_alembic_version_metatable():
         __metatable_description__ = "Markets Alembic version table."
 
     request = ProjectAlembicVersion.build_registration_request(
+        migration_package="sample",
+        migration_namespace="markets",
+        migration_provider_key="sample:markets",
         data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
         labels=["migrations"],
     )
@@ -162,32 +211,40 @@ def test_project_can_scope_alembic_version_metatable():
     assert request.table_contract.authoring["schema"] == "markets"
 
 
-def test_alembic_version_metatable_register_posts_registration_request(monkeypatch):
+def test_alembic_version_metatable_register_reserves_managed_root(monkeypatch):
     class ProjectAlembicVersion(AlembicVersionMetaTable):
         __metatable_data_source_uid__ = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
 
     captured = {}
 
-    def fake_register(request, *, timeout=None):
-        captured["request"] = request
+    def fake_bulk_create(rows, *, timeout=None, on_status=None):
+        captured["rows"] = rows
         captured["timeout"] = timeout
-        return types.SimpleNamespace(
-            uid="registered-uid",
-            data_source_uid=request.data_source_uid,
+        registry = _reserved_registry_metatable(
+            data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd"
         )
+        registry.uid = "registered-uid"
+        return [registry]
 
-    monkeypatch.setattr(MetaTable, "register", staticmethod(fake_register))
+    monkeypatch.setattr(MetaTable, "bulk_create", staticmethod(fake_bulk_create))
 
     result = ProjectAlembicVersion.register(
+        migration_package="sample",
+        migration_namespace="markets",
+        migration_provider_key="sample:markets",
         timeout=10,
         schema="markets",
     )
 
     assert result.uid == "registered-uid"
     assert captured["timeout"] == 10
-    assert captured["request"].data_source_uid == "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
-    assert captured["request"].table_contract.columns[0].name == "version_num"
-    assert captured["request"].table_contract.authoring["schema"] == "markets"
+    assert captured["rows"][0]["data_source_uid"] == ("dddddddd-dddd-4ddd-8ddd-dddddddddddd")
+    assert captured["rows"][0]["management_mode"] == "platform_managed"
+    assert captured["rows"][0]["provisioning_status"] == "reserved"
+    assert captured["rows"][0]["is_alembic_managed"] is True
+    assert captured["rows"][0]["alembic_version_meta_table_uid"] is None
+    assert captured["rows"][0]["table_contract"]["columns"][0]["name"] == "version_num"
+    assert captured["rows"][0]["table_contract"]["authoring"]["schema"] == "markets"
 
 
 def test_alembic_version_metatable_binds_uid_and_data_source_uid(monkeypatch):
@@ -195,15 +252,18 @@ def test_alembic_version_metatable_binds_uid_and_data_source_uid(monkeypatch):
         __metatable_uid__ = None
         __metatable_data_source_uid__ = "data-source-uid"
 
-    def fake_register(request, *, timeout=None):
-        return types.SimpleNamespace(
-            uid="metatable-uid",
-            data_source_uid=request.data_source_uid,
-        )
+    def fake_bulk_create(rows, *, timeout=None, on_status=None):
+        registry = _reserved_registry_metatable()
+        registry.uid = "metatable-uid"
+        return [registry]
 
-    monkeypatch.setattr(MetaTable, "register", staticmethod(fake_register))
+    monkeypatch.setattr(MetaTable, "bulk_create", staticmethod(fake_bulk_create))
 
-    ProjectAlembicVersion.register()
+    ProjectAlembicVersion.register(
+        migration_package="sample",
+        migration_namespace="markets",
+        migration_provider_key="sample:markets",
+    )
 
     assert ProjectAlembicVersion.get_meta_table_uid() == "metatable-uid"
     assert ProjectAlembicVersion.get_data_source_uid() == "data-source-uid"
@@ -246,15 +306,35 @@ def test_alembic_metatable_migration_registers_registry_from_bound_data_source(m
     )
     captured = {}
 
-    def fake_register(request, *, timeout=None):
-        captured["request"] = request
-        return types.SimpleNamespace(uid="registry-uid", data_source_uid=request.data_source_uid)
+    def fake_bulk_create(rows, *, timeout=None, on_status=None):
+        captured["rows"] = rows
+        captured["timeout"] = timeout
+        return [_reserved_registry_metatable(migration_package="msm")]
 
-    monkeypatch.setattr(MetaTable, "register", staticmethod(fake_register))
+    monkeypatch.setattr(MetaTable, "bulk_create", staticmethod(fake_bulk_create))
 
     migration.register_alembic_registry()
 
-    assert captured["request"].data_source_uid == "data-source-uid"
+    assert len(captured["rows"]) == 1
+    row = captured["rows"][0]
+    assert row["data_source_uid"] == "data-source-uid"
+    assert row["management_mode"] == "platform_managed"
+    assert row["provisioning_status"] == "reserved"
+    assert row["is_alembic_managed"] is True
+    assert row["migration_package"] == "msm"
+    assert row["migration_namespace"] == "markets"
+    assert row["migration_provider_key"] == "msm:markets"
+    assert row["alembic_version_meta_table_uid"] is None
+    assert row["project_context"] == {
+        "project_uid": PROJECT_UID,
+        "repository_branch": "main",
+    }
+    assert row["physical_schema"] == "public"
+    assert row["physical_table_name"] == "alembic_version"
+    assert row["table_contract"]["physical"]["schema"] == "public"
+    assert row["table_contract"]["physical"]["table_name"] == "alembic_version"
+    assert row["table_contract"]["columns"][0]["name"] == "version_num"
+    assert "schema_management" not in row
     assert ProjectAlembicVersion.get_meta_table_uid() == "registry-uid"
 
 
@@ -282,15 +362,20 @@ def test_alembic_metatable_migration_registers_registry_from_session_data_source
         lambda: types.SimpleNamespace(uid="session-data-source-uid"),
     )
 
-    def fake_register(request, *, timeout=None):
-        captured["request"] = request
-        return types.SimpleNamespace(uid="registry-uid", data_source_uid=request.data_source_uid)
+    def fake_bulk_create(rows, *, timeout=None, on_status=None):
+        captured["rows"] = rows
+        return [
+            _reserved_registry_metatable(
+                data_source_uid="session-data-source-uid",
+                migration_package="msm",
+            )
+        ]
 
-    monkeypatch.setattr(MetaTable, "register", staticmethod(fake_register))
+    monkeypatch.setattr(MetaTable, "bulk_create", staticmethod(fake_bulk_create))
 
     migration.register_alembic_registry()
 
-    assert captured["request"].data_source_uid == "session-data-source-uid"
+    assert captured["rows"][0]["data_source_uid"] == "session-data-source-uid"
     assert ProjectAlembicVersion.get_data_source_uid() == "session-data-source-uid"
 
 
@@ -312,22 +397,50 @@ def test_ensure_alembic_registry_forces_backend_registration_for_stale_cache(mon
     )
     captured = {}
 
-    def fake_register(request, *, timeout=None):
-        captured["request"] = request
+    def fake_bulk_create(rows, *, timeout=None, on_status=None):
+        captured["rows"] = rows
         captured["timeout"] = timeout
-        return types.SimpleNamespace(
-            uid="fresh-registry-uid",
-            data_source_uid=request.data_source_uid,
-        )
+        registry = _reserved_registry_metatable(migration_package="msm")
+        registry.uid = "fresh-registry-uid"
+        return [registry]
 
-    monkeypatch.setattr(MetaTable, "register", staticmethod(fake_register))
+    monkeypatch.setattr(MetaTable, "bulk_create", staticmethod(fake_bulk_create))
 
     meta_table = migration.ensure_alembic_registry(timeout=7)
 
-    assert captured["request"].data_source_uid == "data-source-uid"
+    assert captured["rows"][0]["data_source_uid"] == "data-source-uid"
     assert captured["timeout"] == 7
     assert meta_table.uid == "fresh-registry-uid"
     assert ProjectAlembicVersion.get_meta_table_uid() == "fresh-registry-uid"
+
+
+def test_alembic_registry_rejects_legacy_external_registered_catalog_row(monkeypatch):
+    class ProjectAlembicVersion(AlembicVersionMetaTable):
+        __metatable_data_source_uid__ = "data-source-uid"
+
+    migration = AlembicMetaTableMigration(
+        package="sample",
+        migration_namespace="markets",
+        script_location="sample:migrations",
+        target_metadata=MetaData(),
+        alembic_registry=ProjectAlembicVersion,
+    )
+    legacy_registry = _reserved_registry_metatable(
+        management_mode="external_registered",
+        schema_management_mode="external_registered",
+        provisioning_status="active",
+    )
+    monkeypatch.setattr(
+        MetaTable,
+        "bulk_create",
+        staticmethod(lambda rows, *, timeout=None, on_status=None: [legacy_registry]),
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="Do not reuse an external_registered Alembic registry",
+    ):
+        migration.ensure_alembic_registry()
 
 
 def test_alembic_metatable_migration_requires_callable_after_register_hook():
@@ -612,7 +725,10 @@ def test_alembic_metatable_migration_finalizes_catalog_after_alembic(monkeypatch
 
     assert response.ok is True
     assert captured["timeout"] == 15
-    assert captured["request"].meta_table_uids == ["asset-meta-table-uid"]
+    assert captured["request"].meta_table_uids == [
+        "registry-meta-table-uid",
+        "asset-meta-table-uid",
+    ]
     assert captured["request"].migration_package == "msm"
     assert captured["request"].migration_namespace == "markets"
     assert captured["request"].migration_provider_key == "msm:markets"
@@ -631,6 +747,28 @@ def test_alembic_metatable_migration_finalizes_catalog_after_alembic(monkeypatch
             ["Asset"],
         )
     ]
+
+
+def test_finalize_metatable_catalog_requires_managed_registry_root():
+    class ProjectAlembicVersion(AlembicVersionMetaTable):
+        __metatable_uid__ = None
+        __metatable_data_source_uid__ = "data-source-uid"
+
+    migration = AlembicMetaTableMigration(
+        package="msm",
+        migration_namespace="markets",
+        script_location="msm:alembic",
+        target_metadata=MetaData(),
+        alembic_registry=ProjectAlembicVersion,
+    )
+
+    with pytest.raises(RuntimeError, match="managed Alembic registry root"):
+        migration.finalize_metatable_catalog(
+            prepared=PreparedAlembicMetaTableMigration(
+                data_source_uid="data-source-uid",
+                meta_table_uids=[],
+            )
+        )
 
 
 def test_finalize_metatable_catalog_passes_full_bound_provider_scope_to_hook(monkeypatch):
