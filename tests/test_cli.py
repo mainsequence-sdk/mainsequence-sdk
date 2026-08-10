@@ -559,6 +559,46 @@ def test_list_agents_uses_client_model(cli_mod, monkeypatch):
     ]
 
 
+def test_get_project_repository_uses_public_client_model(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {}
+    repository_uid = "2bcf47e3-3a79-4f1e-a428-176c0218a8d1"
+
+    class FakeRepository:
+        def model_dump(self, mode="json"):
+            return {
+                "uid": repository_uid,
+                "git_ssh_url": "git@github.com:mainsequence-projects/tutorial.git",
+                "git_repo_url": "https://github.com/mainsequence-projects/tutorial.git",
+            }
+
+    def _run_sdk_model_operation(*, module_name, class_name, operation, **kwargs):
+        captured["module_name"] = module_name
+        captured["class_name"] = class_name
+
+        class ClientGitRepository:
+            @classmethod
+            def get_by_uid(cls, uid, timeout=None):
+                captured["uid"] = uid
+                captured["timeout"] = timeout
+                return FakeRepository()
+
+        return operation(ClientGitRepository)
+
+    monkeypatch.setattr(api_mod, "_run_sdk_model_operation", _run_sdk_model_operation)
+
+    result = api_mod.get_project_repository(repository_uid, timeout=12)
+
+    assert captured == {
+        "module_name": "mainsequence.client.models_foundry",
+        "class_name": "GitRepository",
+        "uid": repository_uid,
+        "timeout": 12,
+    }
+    assert result["uid"] == repository_uid
+    assert result["git_ssh_url"].startswith("git@github.com:")
+
+
 def test_semantic_search_agents_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
@@ -9101,7 +9141,6 @@ def test_project_create_interactive_defaults(cli_mod, runner, monkeypatch):
         return {
             "uid": "project-uid-321",
             "project_name": kwargs["project_name"],
-            "git_ssh_url": "git@github.com:org/repo.git",
         }
 
     monkeypatch.setattr(cli_mod, "create_project", _create_project)
@@ -9237,6 +9276,59 @@ def test_project_delete_remote_yes(cli_mod, runner, monkeypatch):
     assert "Project deleted: Demo Project (uid=project-uid-321; deleted=1)" in result.output
 
 
+def test_resolve_project_repository_ssh_url_uses_canonical_repository(
+    cli_mod,
+    monkeypatch,
+):
+    repository_uid = "2bcf47e3-3a79-4f1e-a428-176c0218a8d1"
+    captured = {}
+
+    def _get_project_repository(uid):
+        captured["uid"] = uid
+        return {
+            "uid": uid,
+            "git_ssh_url": "git@github.com:mainsequence-projects/tutorial.git",
+            "git_repo_url": "https://github.com/mainsequence-projects/tutorial.git",
+        }
+
+    monkeypatch.setattr(cli_mod, "get_project_repository", _get_project_repository)
+
+    result = cli_mod._resolve_project_repository_ssh_url(
+        {"git_repository_uid": repository_uid}
+    )
+
+    assert captured["uid"] == repository_uid
+    assert result == "git@github.com:mainsequence-projects/tutorial.git"
+
+
+def test_resolve_project_repository_ssh_url_requires_linked_repository(cli_mod, monkeypatch):
+    monkeypatch.setattr(
+        cli_mod,
+        "get_project_repository",
+        lambda uid: (_ for _ in ()).throw(AssertionError("must not fetch")),
+    )
+
+    with pytest.raises(cli_mod.ApiError, match="no linked GitRepository"):
+        cli_mod._resolve_project_repository_ssh_url({})
+
+
+def test_resolve_project_repository_ssh_url_requires_ssh_url(cli_mod, monkeypatch):
+    repository_uid = "2bcf47e3-3a79-4f1e-a428-176c0218a8d1"
+    monkeypatch.setattr(
+        cli_mod,
+        "get_project_repository",
+        lambda uid: {
+            "uid": uid,
+            "git_repo_url": "https://github.com/mainsequence-projects/tutorial.git",
+        },
+    )
+
+    with pytest.raises(cli_mod.ApiError, match="has no SSH clone URL"):
+        cli_mod._resolve_project_repository_ssh_url(
+            {"git_repository_uid": repository_uid}
+        )
+
+
 def test_project_set_up_locally(cli_mod, runner, monkeypatch, tmp_path):
     base = tmp_path / "base"
     base.mkdir(parents=True, exist_ok=True)
@@ -9272,8 +9364,18 @@ def test_project_set_up_locally(cli_mod, runner, monkeypatch, tmp_path):
             "project_uid": "project-uid-123",
             "project_name": "Demo",
             "repository_branch": "main",
-            "git_ssh_url": "git@github.com:org/repo.git",
             "is_initialized": True,
+        },
+    )
+    repository_requests = []
+    monkeypatch.setattr(
+        cli_mod,
+        "get_project_repository",
+        lambda repository_uid: repository_requests.append(repository_uid)
+        or {
+            "uid": repository_uid,
+            "git_ssh_url": "git@github.com:org/repo.git",
+            "git_repo_url": "https://github.com/org/repo.git",
         },
     )
     monkeypatch.setattr(
@@ -9300,6 +9402,7 @@ def test_project_set_up_locally(cli_mod, runner, monkeypatch, tmp_path):
         ["project", "set-up-locally", "project-uid-123", "--branch", "main"],
     )
     assert result.exit_code == 0
+    assert repository_requests == ["repository-uid-123"]
 
     env_file = base / "org" / "projects" / "demo-project-uid-123" / ".env"
     assert env_file.exists()
@@ -9352,8 +9455,18 @@ def test_project_set_up_locally_runtime_credential(cli_mod, runner, monkeypatch,
             "project_uid": "project-uid-123",
             "project_name": "Demo",
             "repository_branch": "main",
-            "git_ssh_url": "git@github.com:org/repo.git",
             "is_initialized": True,
+        },
+    )
+    repository_requests = []
+    monkeypatch.setattr(
+        cli_mod,
+        "get_project_repository",
+        lambda repository_uid: repository_requests.append(repository_uid)
+        or {
+            "uid": repository_uid,
+            "git_ssh_url": "git@github.com:org/repo.git",
+            "git_repo_url": "https://github.com/org/repo.git",
         },
     )
     monkeypatch.setattr(
@@ -9385,6 +9498,7 @@ def test_project_set_up_locally_runtime_credential(cli_mod, runner, monkeypatch,
         ["project", "set-up-locally", "project-uid-123", "--branch", "main"],
     )
     assert result.exit_code == 0
+    assert repository_requests == ["repository-uid-123"]
 
     env_file = base / "org" / "projects" / "demo-project-uid-123" / ".env"
     env_text = env_file.read_text(encoding="utf-8")
@@ -9436,7 +9550,6 @@ def test_project_set_up_locally_rejects_uninitialized_project(
             "project_uid": "project-uid-123",
             "project_name": "Demo",
             "repository_branch": "main",
-            "git_ssh_url": "git@github.com:org/repo.git",
             "is_initialized": False,
         },
     )

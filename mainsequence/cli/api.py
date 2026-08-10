@@ -898,6 +898,32 @@ def get_project_branch(project_branch_uid: str) -> dict[str, Any]:
     return payload
 
 
+def get_project_repository(
+    repository_uid: str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """Fetch a Git repository aggregate through the public SDK model."""
+    normalized_uid = str(repository_uid).strip()
+    if not normalized_uid:
+        raise ApiError("GitRepository UID is required.")
+
+    try:
+        repository = _run_sdk_model_operation(
+            module_name="mainsequence.client.models_foundry",
+            class_name="GitRepository",
+            operation=lambda ClientGitRepository: ClientGitRepository.get_by_uid(
+                normalized_uid,
+                timeout=timeout,
+            ),
+        )
+        return _sdk_object_to_dict(repository)
+    except Exception as e:
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"GitRepository fetch failed: {e}") from e
+
+
 def render_project_branch_default_redeployment_tag(
     project_branch_uid: str,
     *,

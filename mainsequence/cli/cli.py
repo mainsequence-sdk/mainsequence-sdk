@@ -119,6 +119,7 @@ from .api import (
     get_project_image,
     get_project_job,
     get_project_job_run_logs,
+    get_project_repository,
     get_projects,
     get_resource_release,
     get_secret,
@@ -661,11 +662,16 @@ def _org_slug_from_profile() -> str:
     return re.sub(r"[^a-z0-9-_]+", "-", name.lower()).strip("-") or "default"
 
 
-def _determine_repo_url(p: dict) -> str:
-    repo = (p.get("git_ssh_url") or "").strip()
-    if repo.lower() == "none":
-        repo = ""
-    return repo
+def _resolve_project_repository_ssh_url(project: dict) -> str:
+    repository_uid = str(project.get("git_repository_uid") or "").strip()
+    if not repository_uid:
+        raise ApiError("The Project has no linked GitRepository.")
+
+    repository = get_project_repository(repository_uid)
+    repository_ssh_url = str(repository.get("git_ssh_url") or "").strip()
+    if not repository_ssh_url:
+        raise ApiError(f"GitRepository {repository_uid} has no SSH clone URL.")
+    return repository_ssh_url
 
 
 def _project_identity_value(project: dict) -> str:
@@ -9729,10 +9735,11 @@ def project_set_up_locally(
         )
         raise typer.Exit(1)
 
-    repo = _determine_repo_url(project_branch)
-    if not repo:
-        error("No repository URL found for this project.")
-        raise typer.Exit(1)
+    try:
+        repo = _resolve_project_repository_ssh_url(p)
+    except ApiError as e:
+        error(str(e))
+        raise typer.Exit(1) from e
 
     name = safe_slug(p.get("project_name") or f"project-{project_uid}")
     projects_root = _projects_root(base, org_slug)
