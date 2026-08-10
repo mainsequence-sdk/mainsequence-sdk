@@ -314,6 +314,60 @@ def test_migrations_current_prints_alembic_registry_registration(monkeypatch):
     assert "physical_table=alembic_version" in output
 
 
+def test_migrations_current_parses_registry_environment_identity(monkeypatch):
+    cli_mod = _load_cli_module()
+    runner = CliRunner()
+    migration_cli = importlib.import_module("mainsequence.cli.migrations")
+    migration = _migration()
+    captured = {}
+
+    monkeypatch.setattr(migration_cli, "_load_migration", lambda provider: migration)
+
+    def fake_post_action(
+        cls,
+        action_name,
+        payload,
+        *,
+        timeout=None,
+        expected_statuses=(200,),
+        on_status=None,
+    ):
+        captured["action_name"] = action_name
+        captured["registration_request"] = payload
+        return {
+            "uid": "registry-meta-table-uid",
+            "data_source_uid": "data-source-uid",
+            "identifier": "msm.alembic_version",
+            "namespace": "msm",
+            "management_mode": "external_registered",
+            "physical_schema": "public",
+            "physical_table_name": "alembic_version",
+            "organization_project_environment_uid": None,
+            "organization_project_environment_name": None,
+        }
+
+    monkeypatch.setattr(MetaTable, "_post_action", classmethod(fake_post_action))
+    _patch_scoped_connection(monkeypatch, migration_cli, captured)
+
+    from alembic import command
+
+    monkeypatch.setattr(command, "current", lambda config, verbose=False: None)
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["migrations", "current", "--provider", "ignored:migration", "--timeout", "5"],
+    )
+
+    assert result.exit_code == 0
+    assert captured["action_name"] == "register"
+    assert captured["registration_request"].identifier == "msm.alembic_version"
+    registry = migration.alembic_registry.get_meta_table()
+    assert registry is not None
+    assert registry.organization_project_environment_uid is None
+    assert registry.organization_project_environment_name is None
+    assert "Alembic current finished." in _combined_output(result)
+
+
 def test_migrations_revision_forwards_alembic_logs_and_scans_revision_id(monkeypatch):
     cli_mod = _load_cli_module()
     runner = CliRunner()

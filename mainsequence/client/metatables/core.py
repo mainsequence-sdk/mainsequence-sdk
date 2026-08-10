@@ -1085,6 +1085,8 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
         "identifier": ["in", "exact", "contains"],
         "uid": ["in", "exact"],
         "data_source__uid": ["in", "exact"],
+        "organization_project_environment__uid": ["in", "exact"],
+        "organization_project_environment": ["isnull"],
         "namespace": ["exact", "contains", "in", "isnull"],
         "management_mode": ["exact", "in"],
         "provisioning_status": ["exact", "in"],
@@ -1099,6 +1101,8 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
         "uid__in": "str",
         "data_source__uid": "uid",
         "data_source__uid__in": "uid",
+        "organization_project_environment__uid": "uid",
+        "organization_project_environment__uid__in": "uid",
         "physical_schema": "str",
         "physical_schema__in": "str",
         "labels": "str",
@@ -1162,6 +1166,8 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
     creation_date: datetime.datetime | None = None
     created_by_user_uid: str | None = None
     organization_owner_uid: str | None = None
+    organization_project_environment_uid: str | None = None
+    organization_project_environment_name: str | None = None
     registration: dict[str, Any] = Field(default_factory=dict)
 
     model_config = ConfigDict(populate_by_name=True)
@@ -2905,6 +2911,8 @@ class TimeIndexMetaTable(MetaTable):
         "identifier": ["in", "exact", "contains"],
         "uid": ["in", "exact"],
         "data_source__uid": ["in", "exact"],
+        "organization_project_environment__uid": ["in", "exact"],
+        "organization_project_environment": ["isnull"],
         "namespace": ["exact", "contains", "in", "isnull"],
         "physical_schema": ["exact", "in"],
         "physical_table_name": ["exact", "contains", "in"],
@@ -2915,6 +2923,8 @@ class TimeIndexMetaTable(MetaTable):
         "uid__in": "uid",
         "data_source__uid": "uid",
         "data_source__uid__in": "uid",
+        "organization_project_environment__uid": "uid",
+        "organization_project_environment__uid__in": "uid",
         "physical_schema": "str",
         "physical_schema__in": "str",
         "labels": "str",

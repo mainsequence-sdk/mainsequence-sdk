@@ -63,6 +63,8 @@ def _meta_table_response(**overrides):
         "creation_date": "2026-05-25T08:00:00Z",
         "created_by_user_uid": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
         "organization_owner_uid": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+        "organization_project_environment_uid": None,
+        "organization_project_environment_name": None,
     }
     payload.update(overrides)
     return payload
@@ -245,6 +247,39 @@ def test_time_index_meta_table_accepts_backend_top_level_cadence():
     )
 
     assert table_with_null_cadence.cadence is None
+
+
+@pytest.mark.parametrize(
+    ("model", "environment_uid", "environment_name"),
+    [
+        (meta_table_models.MetaTable, None, None),
+        (
+            meta_table_models.MetaTable,
+            "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+            "development",
+        ),
+        (meta_table_models.TimeIndexMetaTable, None, None),
+        (
+            meta_table_models.TimeIndexMetaTable,
+            "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+            "development",
+        ),
+    ],
+)
+def test_meta_table_models_accept_backend_environment_identity(
+    model,
+    environment_uid,
+    environment_name,
+):
+    table = model(
+        **_meta_table_response(
+            organization_project_environment_uid=environment_uid,
+            organization_project_environment_name=environment_name,
+        )
+    )
+
+    assert table.organization_project_environment_uid == environment_uid
+    assert table.organization_project_environment_name == environment_name
 
 
 def test_metatable_accepts_projection_relation_fields():

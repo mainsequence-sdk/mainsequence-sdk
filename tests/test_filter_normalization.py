@@ -281,6 +281,26 @@ def test_data_node_storage_normalizes_data_source_uid_filters():
     }
 
 
+def test_data_node_storage_normalizes_environment_filters():
+    from mainsequence.client.metatables import TimeIndexMetaTable
+
+    uid = uuid.UUID("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb")
+
+    normalized = TimeIndexMetaTable._normalize_filter_kwargs(
+        {
+            "organization_project_environment__uid": {"uid": uid},
+            "organization_project_environment__uid__in": [{"uid": uid}],
+            "organization_project_environment__isnull": "false",
+        }
+    )
+
+    assert normalized == {
+        "organization_project_environment__uid": str(uid),
+        "organization_project_environment__uid__in": [str(uid)],
+        "organization_project_environment__isnull": False,
+    }
+
+
 def test_data_node_storage_rejects_data_source_id_filter():
     from mainsequence.client.metatables import TimeIndexMetaTable
 
@@ -696,6 +716,26 @@ def test_meta_table_normalizes_data_source_uid_filters():
     assert normalized == {
         "data_source__uid": uid,
         "data_source__uid__in": [uid],
+    }
+
+
+def test_meta_table_normalizes_environment_filters():
+    from mainsequence.client.metatables import MetaTable
+
+    uid = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+
+    normalized = MetaTable._normalize_filter_kwargs(
+        {
+            "organization_project_environment__uid": {"uid": uid},
+            "organization_project_environment__uid__in": [{"uid": uid}],
+            "organization_project_environment__isnull": True,
+        }
+    )
+
+    assert normalized == {
+        "organization_project_environment__uid": uid,
+        "organization_project_environment__uid__in": [uid],
+        "organization_project_environment__isnull": True,
     }
 
 
