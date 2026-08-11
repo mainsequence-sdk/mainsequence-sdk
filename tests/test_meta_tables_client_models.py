@@ -72,20 +72,18 @@ def _meta_table_response(**overrides):
 
 def _project_context():
     return meta_table_models.MetaTableProjectContextRequest(
-        project_uid="11111111-1111-4111-8111-111111111111",
-        repository_branch="feature/runtime",
+        project_branch_uid="22222222-2222-4222-8222-222222222222",
     )
 
 
 @pytest.mark.parametrize(
     "legacy_field",
-    ["organization_project_environment_uid", "project_branch_uid"],
+    ["organization_project_environment_uid", "project_uid", "repository_branch"],
 )
 def test_metatable_project_context_rejects_legacy_routing_fields(legacy_field):
     with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
         meta_table_models.MetaTableProjectContextRequest(
-            project_uid="11111111-1111-4111-8111-111111111111",
-            repository_branch="feature/runtime",
+            project_branch_uid="22222222-2222-4222-8222-222222222222",
             **{legacy_field: "22222222-2222-4222-8222-222222222222"},
         )
 
@@ -516,8 +514,7 @@ def test_meta_table_register_posts_contract_to_meta_table_endpoint(monkeypatch):
         "if_not_exists": True,
     }
     assert captured["payload"]["json"]["project_context"] == {
-        "project_uid": "11111111-1111-4111-8111-111111111111",
-        "repository_branch": "feature/runtime",
+        "project_branch_uid": "22222222-2222-4222-8222-222222222222",
     }
     assert "organization_project_environment_uid" not in captured["payload"]["json"]
 
@@ -1046,8 +1043,7 @@ def test_meta_table_issue_migration_connection_posts_scope(monkeypatch):
         "migration_provider_key": "msm:markets",
         "ttl_seconds": 60,
         "project_context": {
-            "project_uid": "11111111-1111-4111-8111-111111111111",
-            "repository_branch": "feature/runtime",
+            "project_branch_uid": "22222222-2222-4222-8222-222222222222",
         },
     }
 
@@ -1127,6 +1123,7 @@ def test_meta_table_finalize_managed_posts_finalize_payload(monkeypatch):
             migration_provider_key="msm:markets",
             alembic_version_meta_table_uid="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
             alembic_revision="0001",
+            project_context=_project_context(),
         )
     )
 
@@ -1143,6 +1140,9 @@ def test_meta_table_finalize_managed_posts_finalize_payload(monkeypatch):
         "migration_provider_key": "msm:markets",
         "alembic_version_meta_table_uid": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
         "alembic_revision": "0001",
+        "project_context": {
+            "project_branch_uid": "22222222-2222-4222-8222-222222222222",
+        },
     }
     for forbidden in (
         "data_source_uid",
@@ -1196,6 +1196,7 @@ def test_meta_table_finalize_managed_accepts_conflict_response(monkeypatch):
             meta_table_uids=["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"],
             migration_package="msm",
             migration_namespace="markets",
+            project_context=_project_context(),
         )
     )
 

@@ -199,9 +199,13 @@ the current supported authentication shape. They do not carry forward obsolete
 `MAINSEQUENCE_TOKEN` or `MAIN_SEQUENCE_PROJECT_ID` entries.
 
 `MAIN_SEQUENCE_PROJECT_UID` identifies the logical Project, not one branch.
-The SDK matches the checkout's current Git branch to the corresponding
-`ProjectBranch` whenever a branch-owned operation needs its UID. Switching or
-creating Git branches therefore does not rewrite local Project credentials.
+In a local checkout, the SDK matches the current Git branch to the corresponding
+`ProjectBranch`; switching branches does not rewrite local credentials. In a
+deployed Job, Resource Release, or Project Executor image there may be no `.git`
+directory. Those runtimes receive the backend-issued
+`MAIN_SEQUENCE_PROJECT_BRANCH_UID`, exact `MAINSEQUENCE_REPOSITORY_BRANCH`, and
+`MAIN_SEQUENCE_ORGANIZATION_PROJECT_ENVIRONMENT_UID`, and the SDK uses that
+authoritative context instead of invoking Git.
 
 Functionally:
 
@@ -209,6 +213,7 @@ Functionally:
 - the SDK exchanges that credential for a short-lived JWT access token
 - the returned access token is used as `Authorization: Bearer <token>`
 - the returned access token is stored in `MAINSEQUENCE_ACCESS_TOKEN` for the current process environment
+- a branch-owned exchange also installs its returned `runtime_project_context` in the reserved process environment
 - child processes launched after the exchange can inherit `MAINSEQUENCE_ACCESS_TOKEN`
 - when the access token is missing, near expiry, expired, or rejected with `401`, the SDK exchanges the runtime credential again
 

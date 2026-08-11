@@ -68,8 +68,7 @@ def _migration(
 
 def _project_context() -> MetaTableProjectContextRequest:
     return MetaTableProjectContextRequest(
-        project_uid="11111111-1111-4111-8111-111111111111",
-        repository_branch="main",
+        project_branch_uid="11111111-1111-4111-8111-111111111111",
     )
 
 

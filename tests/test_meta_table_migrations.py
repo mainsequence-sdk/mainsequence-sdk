@@ -46,14 +46,13 @@ from mainsequence.meta_tables.migrations import (
     scaffold_migration_package,
 )
 
-PROJECT_UID = "11111111-1111-4111-8111-111111111111"
+PROJECT_BRANCH_UID = "11111111-1111-4111-8111-111111111111"
 
 
 @pytest.fixture(autouse=True)
 def _project_context(monkeypatch):
     context = MetaTableProjectContextRequest(
-        project_uid=PROJECT_UID,
-        repository_branch="main",
+        project_branch_uid=PROJECT_BRANCH_UID,
     )
     monkeypatch.setattr(
         "mainsequence.meta_tables.migrations._current_metatable_project_context",
@@ -330,8 +329,7 @@ def test_alembic_metatable_migration_registers_registry_from_bound_data_source(m
     assert row["migration_provider_key"] == "msm:markets"
     assert row["alembic_version_meta_table_uid"] is None
     assert row["project_context"] == {
-        "project_uid": PROJECT_UID,
-        "repository_branch": "main",
+        "project_branch_uid": PROJECT_BRANCH_UID,
     }
     assert row["physical_schema"] == "public"
     assert row["physical_table_name"] == "alembic_version"
@@ -1061,8 +1059,7 @@ def test_alembic_metatable_migration_sync_catalog_hook_has_no_reserved_policy(
 
     def fake_register(request, *, timeout=None):
         assert request["project_context"] == {
-            "project_uid": PROJECT_UID,
-            "repository_branch": "main",
+            "project_branch_uid": PROJECT_BRANCH_UID,
         }
         return MetaTable.model_construct(
             uid="asset-meta-table-uid",

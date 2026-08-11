@@ -3,7 +3,7 @@ from __future__ import annotations
 import datetime
 from collections.abc import Mapping
 from threading import RLock
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, Literal
 from uuid import UUID
 
 import pandas as pd
@@ -621,6 +621,20 @@ class GitRepository(BasePydanticModel, BaseObjectOrm):
         return GitRepositoryImportResult.model_validate(r.json())
 
 
+class ProjectImageSourceProvenance(BasePydanticModel):
+    verification_state: Literal["verified", "unverified", "building", "failed"]
+    project_uid: str | None = None
+    project_branch_uid: str | None = None
+    git_repository_uid: str | None = None
+    repository_branch: str | None = None
+    repository_ref: str | None = None
+    commit_sha: str | None = None
+    source_archive_sha256: str | None = None
+    build_context_checksum: str | None = None
+    base_image_uid: str | None = None
+    output_image_digest: str | None = None
+
+
 class ProjectImage(BasePydanticModel, BaseObjectOrm):
     """
     Image build from a a project
@@ -644,6 +658,13 @@ class ProjectImage(BasePydanticModel, BaseObjectOrm):
     related_project_branch_uid: str | None = Field(
         None,
         description="Public UID of the owning ProjectBranch",
+    )
+    source_provenance: ProjectImageSourceProvenance = Field(
+        ...,
+        description=(
+            "Backend-attested branch, commit, source archive, recipe, and build "
+            "identity evidence. Unverified images must be rebuilt before use."
+        ),
     )
     base_image: ProjectBaseImage | None = Field(None, description="Persisted parent base image")
     tags: list[str] | None = Field(

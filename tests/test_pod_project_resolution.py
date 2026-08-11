@@ -141,6 +141,71 @@ def test_current_repository_branch_does_not_accept_environment_override(monkeypa
     assert models_metatables._current_repository_branch() is None
 
 
+def test_runtime_project_branch_uid_resolves_without_git_checkout(monkeypatch):
+    monkeypatch.setenv("MAIN_SEQUENCE_PROJECT_UID", PROJECT_UID)
+    monkeypatch.setenv("MAIN_SEQUENCE_PROJECT_BRANCH_UID", PROJECT_BRANCH_UID)
+    monkeypatch.setenv("MAINSEQUENCE_REPOSITORY_BRANCH", "main")
+    monkeypatch.setattr(
+        models_metatables.subprocess,
+        "run",
+        lambda *args, **kwargs: pytest.fail("Git must not run in deployed runtime"),
+    )
+    project_branch = types.SimpleNamespace(
+        uid=PROJECT_BRANCH_UID,
+        repository_branch="main",
+        metatables_data_source=None,
+    )
+    monkeypatch.setattr(
+        models_foundry.Project,
+        "get",
+        lambda *args, **kwargs: types.SimpleNamespace(
+            uid=PROJECT_UID,
+            branches=[
+                types.SimpleNamespace(
+                    uid=PROJECT_BRANCH_UID,
+                    repository_branch="main",
+                )
+            ],
+        ),
+    )
+    monkeypatch.setattr(
+        models_foundry.ProjectBranch,
+        "get",
+        lambda *args, **kwargs: project_branch,
+    )
+
+    resolution = models_metatables._resolve_local_pod_project()
+
+    assert resolution.status == "resolved"
+    assert resolution.project_branch is project_branch
+    assert resolution.repository_branch == "main"
+
+
+def test_deployed_runtime_missing_branch_context_fails_before_git_or_api(monkeypatch):
+    monkeypatch.setenv("MAINSEQUENCE_AUTH_MODE", "session_jwt")
+    monkeypatch.setenv("MAIN_SEQUENCE_PROJECT_UID", PROJECT_UID)
+    monkeypatch.delenv("MAIN_SEQUENCE_PROJECT_BRANCH_UID", raising=False)
+    monkeypatch.delenv("MAINSEQUENCE_REPOSITORY_BRANCH", raising=False)
+    monkeypatch.setattr(
+        models_metatables.subprocess,
+        "run",
+        lambda *args, **kwargs: pytest.fail("Git must not run in deployed runtime"),
+    )
+    monkeypatch.setattr(
+        models_foundry.Project,
+        "get",
+        lambda *args, **kwargs: pytest.fail(
+            "Project lookup must not run before runtime context is complete"
+        ),
+    )
+
+    resolution = models_metatables._resolve_local_pod_project()
+
+    assert resolution.status == "runtime_project_context_missing"
+    assert resolution.project is None
+    assert resolution.project_branch is None
+
+
 def test_data_node_update_get_or_create_uses_current_project_branch_uid(monkeypatch):
     monkeypatch.setenv("MAIN_SEQUENCE_PROJECT_UID", PROJECT_UID)
     monkeypatch.delenv("MAIN_SEQUENCE_PROJECT_ID", raising=False)
@@ -269,8 +334,7 @@ def test_metatable_project_context_reuses_local_project_resolution(monkeypatch):
     second = models_metatables._current_metatable_project_context()
 
     assert first.model_dump(mode="json") == {
-        "project_uid": PROJECT_UID,
-        "repository_branch": "main",
+        "project_branch_uid": PROJECT_BRANCH_UID,
     }
     assert second == first
     assert project_calls == [{"pk": PROJECT_UID}]

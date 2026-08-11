@@ -72,8 +72,8 @@ Request fields:
 | `data_source_uid` | Canonical `DataSource.uid` that owns connection, capabilities, and execution. |
 | `management_mode` | `external_registered` or `platform_managed`. |
 | `schema_management` | Physical schema owner. Alembic providers use `mode="alembic_managed"` with provider metadata; backend-created tables use `backend_managed`; external registration resolves to `external_registered`. |
-| `project_context` | SDK-resolved Project UID and actual Git branch for platform-managed operations. Users do not provide an environment UID. |
-| `identifier` | Optional logical MetaTable identifier, such as `Asset`. Non-empty values are globally unique per organization. Alembic migration preparation resolves provider MetaTables by authored SQLAlchemy table name instead. |
+| `project_context` | SDK-resolved exact `project_branch_uid` for platform-managed operations. Authenticated branch-owned runtimes derive the same context from the backend and never select an environment UID. |
+| `identifier` | Optional logical MetaTable identifier, such as `Asset`. A non-empty value is unique within its Organization Environment, or within the Organization for an Organization-scoped external row. Alembic migration preparation resolves provider MetaTables by authored SQLAlchemy table name instead. |
 | `namespace` | Logical namespace, such as `sdk-examples`. |
 | `description` | Optional discovery text. |
 | `labels` | Optional table labels. |

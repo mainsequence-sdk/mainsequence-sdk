@@ -257,8 +257,7 @@ The SDK reservation request for Alembic's version table is the root
   "physical_schema": "public",
   "physical_table_name": "msm_alembic_version",
   "project_context": {
-    "project_uid": "uuid",
-    "repository_branch": "main"
+    "project_branch_uid": "uuid"
   },
   "identifier": "msm.alembic_version",
   "namespace": "msm",
@@ -364,8 +363,7 @@ request = migration.alembic_registry.build_registration_request(
   "physical_schema": "public",
   "physical_table_name": "msm_alembic_version",
   "project_context": {
-    "project_uid": "uuid",
-    "repository_branch": "main"
+    "project_branch_uid": "uuid"
   },
   "identifier": "msm.alembic_version",
   "namespace": "msm",

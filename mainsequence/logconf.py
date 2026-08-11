@@ -25,6 +25,39 @@ from .runtime_flags import is_running_in_pod
 
 logger = None
 
+RUNTIME_PROJECT_CONTEXT_ENV = {
+    "project_uid": "MAIN_SEQUENCE_PROJECT_UID",
+    "project_branch_uid": "MAIN_SEQUENCE_PROJECT_BRANCH_UID",
+    "repository_branch": "MAINSEQUENCE_REPOSITORY_BRANCH",
+    "organization_project_environment_uid": (
+        "MAIN_SEQUENCE_ORGANIZATION_PROJECT_ENVIRONMENT_UID"
+    ),
+}
+
+
+def _apply_runtime_project_context(payload: Mapping[str, Any]) -> None:
+    context = payload.get("runtime_project_context")
+    if context is None:
+        return
+    if not isinstance(context, Mapping):
+        raise RuntimeError("runtime_project_context must be an object.")
+    missing = [key for key in RUNTIME_PROJECT_CONTEXT_ENV if not context.get(key)]
+    if missing:
+        raise RuntimeError(
+            "runtime_project_context is incomplete: " + ", ".join(sorted(missing))
+        )
+    for key, environment_name in RUNTIME_PROJECT_CONTEXT_ENV.items():
+        expected = str(context[key])
+        current = str(os.environ.get(environment_name) or "").strip()
+        if current and current != expected:
+            raise RuntimeError(
+                "runtime_project_context does not match the existing deployed "
+                f"context for {key}."
+            )
+    for key, environment_name in RUNTIME_PROJECT_CONTEXT_ENV.items():
+        expected = str(context[key])
+        os.environ[environment_name] = expected
+
 
 def _get_sdk_version() -> str:
     """Return the installed SDK package version for automatic log binding."""
@@ -124,6 +157,7 @@ def _request_job_startup_state(*, timeout_s: float = 10.0) -> dict[str, Any]:
         if not access_token:
             return False
 
+        _apply_runtime_project_context(data)
         os.environ["MAINSEQUENCE_ACCESS_TOKEN"] = access_token
         return True
 
@@ -213,6 +247,16 @@ def _request_job_startup_state(*, timeout_s: float = 10.0) -> dict[str, Any]:
 
 
 def _apply_additional_environment(startup_state: Mapping[str, Any]) -> None:
+    if (
+        startup_state.get("runtime_project_context") is None
+        and (os.getenv("MAINSEQUENCE_AUTH_MODE") or "").strip() == "session_jwt"
+        and bool((os.getenv("JOB_RUN_UID") or "").strip())
+    ):
+        raise RuntimeError(
+            "runtime_project_context_missing: JobRun startup state did not "
+            "include backend-issued ProjectBranch context."
+        )
+    _apply_runtime_project_context(startup_state)
     extra = startup_state.get("additional_environment")
     if isinstance(extra, dict):
         for k, v in extra.items():
@@ -226,22 +270,20 @@ def _build_backend_bindings(
     Pure function: compute the keys you want to bind on the logger
     from the backend response + current env.
     """
-    bindings: dict[str, Any] = {}
+    bindings: dict[str, Any] = {
+        "job_run_uid": startup_state.get("job_run_uid"),
+        "command_id": startup_state.get("command_id"),
+    }
+    runtime_context = startup_state.get("runtime_project_context")
+    if not isinstance(runtime_context, Mapping):
+        runtime_context = {}
+    for field, environment_name in RUNTIME_PROJECT_CONTEXT_ENV.items():
+        bindings[field] = runtime_context.get(field) or os.environ.get(environment_name)
 
-    # prefer backend payload, fall back to env if needed
-    project_id = startup_state.get("project_id")
-    if project_id is None and "project_id" in os.environ:
-        project_id = os.environ.get("project_id")
-
-    if project_id is not None:
-        bindings["project_id"] = project_id
-        bindings["data_source_id"] = startup_state.get("data_source_id")
-        bindings["job_run_uid"] = startup_state.get("job_run_uid")
-        bindings["command_id"] = startup_state.get("command_id")
-    else:
+    if not bindings.get("project_branch_uid"):
         if "user_id" in startup_state:
             bindings["user_id"] = startup_state.get("user_id")
-        else:
+        elif not bindings.get("job_run_uid"):
             bindings["local_mode"] = "no_app"
 
     # drop None values

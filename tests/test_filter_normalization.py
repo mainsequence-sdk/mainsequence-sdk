@@ -234,6 +234,9 @@ def test_project_image_accepts_creation_date():
         base_image=None,
         build_error=False,
         is_ready=False,
+        source_provenance={
+            "verification_state": "unverified",
+        },
         creation_date="2026-04-07T09:00:00Z",
     )
 
@@ -256,6 +259,19 @@ def _project_image_response(*, uid: str, build_error: bool, is_ready: bool = Fal
         "tags": [],
         "build_error": build_error,
         "is_ready": is_ready,
+        "source_provenance": {
+            "verification_state": "verified",
+            "project_uid": "1d0530c0-65d1-4db0-856b-dc29d8260a09",
+            "project_branch_uid": "5a28020a-0f1b-47ee-aab8-334286234bea",
+            "git_repository_uid": "3c2113e7-40ba-4d8c-ad65-51ca236c3b0c",
+            "repository_branch": "main",
+            "repository_ref": "refs/heads/main",
+            "commit_sha": "abc123abc123abc123abc123abc123abc123abcd",
+            "source_archive_sha256": "a" * 64,
+            "build_context_checksum": "b" * 64,
+            "base_image_uid": "c3ddb792-a3c0-428c-b5cf-31ed99dad10f",
+            "output_image_digest": "sha256:" + "c" * 64,
+        },
         "creation_date": "2026-04-07T09:00:00Z",
     }
 

@@ -96,7 +96,20 @@ def test_logconf_refreshes_jwt_before_startup_state_request(monkeypatch):
 
     def _fake_get(url, **kwargs):
         get_calls.append({"url": url, **kwargs})
-        return _FakeResponse(200, {})
+        return _FakeResponse(
+            200,
+            {
+                "job_run_uid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                "runtime_project_context": {
+                    "project_uid": "11111111-1111-4111-8111-111111111111",
+                    "project_branch_uid": "22222222-2222-4222-8222-222222222222",
+                    "repository_branch": "main",
+                    "organization_project_environment_uid": (
+                        "33333333-3333-4333-8333-333333333333"
+                    ),
+                },
+            },
+        )
 
     def _fake_post(url, **kwargs):
         post_calls.append({"url": url, **kwargs})
@@ -457,6 +470,48 @@ def test_build_default_auth_provider_uses_session_jwt(monkeypatch):
     assert provider.get_headers()["Authorization"] == "Bearer runtime-access"
 
 
+def test_runtime_project_context_mismatch_fails_without_partial_environment(
+    monkeypatch,
+):
+    monkeypatch.delenv("MAIN_SEQUENCE_PROJECT_UID", raising=False)
+    monkeypatch.setenv(
+        "MAIN_SEQUENCE_PROJECT_BRANCH_UID",
+        "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    )
+    monkeypatch.delenv("MAINSEQUENCE_REPOSITORY_BRANCH", raising=False)
+    monkeypatch.delenv(
+        "MAIN_SEQUENCE_ORGANIZATION_PROJECT_ENVIRONMENT_UID",
+        raising=False,
+    )
+    utils = _load_mainsequence_submodule("mainsequence.client.utils")
+
+    try:
+        utils.apply_runtime_project_context(
+            {
+                "runtime_project_context": {
+                    "project_uid": "11111111-1111-4111-8111-111111111111",
+                    "project_branch_uid": (
+                        "22222222-2222-4222-8222-222222222222"
+                    ),
+                    "repository_branch": "main",
+                    "organization_project_environment_uid": (
+                        "33333333-3333-4333-8333-333333333333"
+                    ),
+                }
+            }
+        )
+        raise AssertionError("Expected AuthError")
+    except utils.AuthError as exc:
+        assert "project_branch_uid" in str(exc)
+
+    assert os.environ.get("MAIN_SEQUENCE_PROJECT_UID") is None
+    assert (
+        os.environ["MAIN_SEQUENCE_PROJECT_BRANCH_UID"]
+        == "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    )
+    assert os.environ.get("MAINSEQUENCE_REPOSITORY_BRANCH") is None
+
+
 def test_session_jwt_rejects_refresh_token(monkeypatch):
     monkeypatch.delenv("MAINSEQUENCE_ACCESS_TOKEN", raising=False)
     monkeypatch.delenv("MAINSEQUENCE_REFRESH_TOKEN", raising=False)
@@ -504,7 +559,20 @@ def test_logconf_session_jwt_does_not_refresh(monkeypatch):
 
     def _fake_get(url, **kwargs):
         get_calls.append({"url": url, **kwargs})
-        return _FakeResponse(200, {})
+        return _FakeResponse(
+            200,
+            {
+                "job_run_uid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                "runtime_project_context": {
+                    "project_uid": "11111111-1111-4111-8111-111111111111",
+                    "project_branch_uid": "22222222-2222-4222-8222-222222222222",
+                    "repository_branch": "main",
+                    "organization_project_environment_uid": (
+                        "33333333-3333-4333-8333-333333333333"
+                    ),
+                },
+            },
+        )
 
     def _fake_post(url, **kwargs):
         post_calls.append({"url": url, **kwargs})

@@ -568,8 +568,7 @@ class MetaTableOperationScope(BasePydanticModel):
 class MetaTableProjectContextRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    project_uid: str = Field(..., min_length=1)
-    repository_branch: str = Field(..., min_length=1)
+    project_branch_uid: str = Field(..., min_length=1)
 
 
 DEFAULT_META_TABLE_OPERATION_MAX_ROWS = 1_000
@@ -948,6 +947,7 @@ class MetaTableMigrationConnection(BasePydanticModel):
 
 
 class ManagedMetaTableFinalizeRequest(BasePydanticModel):
+    project_context: MetaTableProjectContextRequest | None = None
     meta_table_uids: list[str] = Field(
         ...,
         min_length=1,
@@ -1665,6 +1665,12 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
         if request is not None and kwargs:
             raise ValueError("Pass either request or keyword fields, not both.")
         payload = request if request is not None else ManagedMetaTableFinalizeRequest(**kwargs)
+        if isinstance(payload, Mapping):
+            payload = ManagedMetaTableFinalizeRequest(**payload)
+        if payload.project_context is None:
+            payload = payload.model_copy(
+                update={"project_context": _current_metatable_project_context()}
+            )
         response_json = cls._post_action(
             "finalize-managed",
             payload,
@@ -2002,7 +2008,7 @@ _executor = concurrent.futures.ThreadPoolExecutor(max_workers=5)
 
 _POD_PROJECT_RESOLUTION_LOCK = RLock()
 _POD_PROJECT_RESOLUTION_CACHE = None
-_POD_PROJECT_RESOLUTION_CACHE_KEY: tuple[str, str] | None = None
+_POD_PROJECT_RESOLUTION_CACHE_KEY: tuple[str, str, str] | None = None
 _POD_PROJECT_LOGGED_STATES: set[tuple[str, str]] = set()
 POD_PROJECT = None
 POD_PROJECT_BRANCH = None
@@ -4768,6 +4774,7 @@ class UpdateBatchResponse[UpdateT, UpdateDetailsT, TimeIndexedProfileT](BaseMode
 @dataclass(frozen=True)
 class _PodProjectResolution:
     running_project_uid: str
+    running_project_branch_uid: str
     project: Any | None
     project_branch: Any | None
     repository_branch: str | None
@@ -4775,8 +4782,12 @@ class _PodProjectResolution:
     detail: str = ""
 
     @property
-    def remote_cache_key(self) -> tuple[str, str]:
-        return self.running_project_uid, self.repository_branch or ""
+    def remote_cache_key(self) -> tuple[str, str, str]:
+        return (
+            self.running_project_uid,
+            self.running_project_branch_uid,
+            self.repository_branch or "",
+        )
 
 
 def _reset_local_pod_project_resolution_cache() -> None:
@@ -4796,6 +4807,14 @@ def _reset_local_pod_project_resolution_cache() -> None:
 
 
 def _current_repository_branch() -> str | None:
+    runtime_auth_mode = (os.environ.get("MAINSEQUENCE_AUTH_MODE") or "").strip()
+    runtime_project_branch_uid = (
+        os.environ.get("MAIN_SEQUENCE_PROJECT_BRANCH_UID") or ""
+    ).strip()
+    if runtime_project_branch_uid:
+        return (os.environ.get("MAINSEQUENCE_REPOSITORY_BRANCH") or "").strip() or None
+    if runtime_auth_mode in {"session_jwt", "runtime_credential"}:
+        return None
     try:
         result = subprocess.run(
             ["git", "branch", "--show-current"],
@@ -4816,13 +4835,32 @@ def _current_repository_branch() -> str | None:
 def _build_local_pod_project_resolution(
     *,
     running_project_uid: str,
+    running_project_branch_uid: str = "",
     repository_branch: str | None,
 ) -> _PodProjectResolution:
     from ..models_foundry import Project, ProjectBranch
 
+    runtime_auth_mode = (os.environ.get("MAINSEQUENCE_AUTH_MODE") or "").strip()
+    if runtime_auth_mode in {"session_jwt", "runtime_credential"} and (
+        not running_project_uid or not running_project_branch_uid
+    ):
+        return _PodProjectResolution(
+            running_project_uid=running_project_uid,
+            running_project_branch_uid=running_project_branch_uid,
+            project=None,
+            project_branch=None,
+            repository_branch=repository_branch,
+            status="runtime_project_context_missing",
+            detail=(
+                "Deployed runtime authentication did not provide a complete "
+                "backend-issued ProjectBranch context."
+            ),
+        )
+
     if not running_project_uid:
         return _PodProjectResolution(
             running_project_uid=running_project_uid,
+            running_project_branch_uid=running_project_branch_uid,
             project=None,
             project_branch=None,
             repository_branch=repository_branch,
@@ -4842,6 +4880,7 @@ def _build_local_pod_project_resolution(
     except DoesNotExist:
         return _PodProjectResolution(
             running_project_uid=running_project_uid,
+            running_project_branch_uid=running_project_branch_uid,
             project=None,
             project_branch=None,
             repository_branch=repository_branch,
@@ -4851,6 +4890,7 @@ def _build_local_pod_project_resolution(
     except Exception as exc:
         return _PodProjectResolution(
             running_project_uid=running_project_uid,
+            running_project_branch_uid=running_project_branch_uid,
             project=None,
             project_branch=None,
             repository_branch=repository_branch,
@@ -4861,9 +4901,10 @@ def _build_local_pod_project_resolution(
             ),
         )
 
-    if not repository_branch:
+    if not repository_branch and not running_project_branch_uid:
         return _PodProjectResolution(
             running_project_uid=running_project_uid,
+            running_project_branch_uid=running_project_branch_uid,
             project=project,
             project_branch=None,
             repository_branch=None,
@@ -4871,23 +4912,34 @@ def _build_local_pod_project_resolution(
             detail="Could not determine the active repository branch from Git.",
         )
 
-    branch_ref = next(
-        (
-            branch
-            for branch in project.branches
-            if branch.repository_branch == repository_branch
-        ),
-        None,
-    )
+    if running_project_branch_uid:
+        branch_ref = next(
+            (
+                branch
+                for branch in project.branches
+                if str(branch.uid) == running_project_branch_uid
+            ),
+            None,
+        )
+    else:
+        branch_ref = next(
+            (
+                branch
+                for branch in project.branches
+                if branch.repository_branch == repository_branch
+            ),
+            None,
+        )
     if branch_ref is None:
         return _PodProjectResolution(
             running_project_uid=running_project_uid,
+            running_project_branch_uid=running_project_branch_uid,
             project=project,
             project_branch=None,
             repository_branch=repository_branch,
             status="branch_not_registered",
             detail=(
-                f"Repository branch {repository_branch!r} is not registered as a "
+                f"ProjectBranch {running_project_branch_uid or repository_branch!r} is not registered as a "
                 f"ProjectBranch of Project {running_project_uid!r}"
             ),
         )
@@ -4902,6 +4954,7 @@ def _build_local_pod_project_resolution(
     except DoesNotExist:
         return _PodProjectResolution(
             running_project_uid=running_project_uid,
+            running_project_branch_uid=running_project_branch_uid,
             project=project,
             project_branch=None,
             repository_branch=repository_branch,
@@ -4911,18 +4964,35 @@ def _build_local_pod_project_resolution(
     except Exception as exc:
         return _PodProjectResolution(
             running_project_uid=running_project_uid,
+            running_project_branch_uid=running_project_branch_uid,
             project=project,
             project_branch=None,
-            repository_branch=repository_branch,
+            repository_branch=repository_branch or branch_ref.repository_branch,
             status="branch_lookup_failed",
             detail=f"Could not load ProjectBranch {branch_ref.uid!r}: {exc}",
         )
 
+    resolved_repository_branch = str(branch_ref.repository_branch or "").strip()
+    if repository_branch and repository_branch != resolved_repository_branch:
+        return _PodProjectResolution(
+            running_project_uid=running_project_uid,
+            running_project_branch_uid=running_project_branch_uid,
+            project=project,
+            project_branch=None,
+            repository_branch=repository_branch,
+            status="runtime_branch_mismatch",
+            detail=(
+                "Runtime repository branch does not match the authoritative "
+                "ProjectBranch response."
+            ),
+        )
+
     return _PodProjectResolution(
         running_project_uid=running_project_uid,
+        running_project_branch_uid=running_project_branch_uid,
         project=project,
         project_branch=project_branch,
-        repository_branch=repository_branch,
+        repository_branch=resolved_repository_branch,
         status="resolved",
     )
 
@@ -4932,8 +5002,15 @@ def _resolve_local_pod_project(*, refresh: bool = False) -> _PodProjectResolutio
     global POD_PROJECT, POD_PROJECT_BRANCH
 
     running_project_uid = (os.environ.get("MAIN_SEQUENCE_PROJECT_UID") or "").strip()
+    running_project_branch_uid = (
+        os.environ.get("MAIN_SEQUENCE_PROJECT_BRANCH_UID") or ""
+    ).strip()
     repository_branch = _current_repository_branch()
-    cache_key = (running_project_uid, repository_branch or "")
+    cache_key = (
+        running_project_uid,
+        running_project_branch_uid,
+        repository_branch or "",
+    )
 
     with _POD_PROJECT_RESOLUTION_LOCK:
         if (
@@ -4943,6 +5020,7 @@ def _resolve_local_pod_project(*, refresh: bool = False) -> _PodProjectResolutio
         ):
             _POD_PROJECT_RESOLUTION_CACHE = _build_local_pod_project_resolution(
                 running_project_uid=running_project_uid,
+                running_project_branch_uid=running_project_branch_uid,
                 repository_branch=repository_branch,
             )
             _POD_PROJECT_RESOLUTION_CACHE_KEY = cache_key
@@ -4997,24 +5075,14 @@ def _require_local_pod_project_branch(operation: str) -> Any:
 def _metatable_project_context_from_resolution(
     resolution: _PodProjectResolution,
 ) -> MetaTableProjectContextRequest:
-    if resolution.project is None:
-        detail = (resolution.detail or "No local Project is configured.").strip()
+    project_branch_uid = getattr(resolution.project_branch, "uid", None)
+    if project_branch_uid in (None, ""):
+        detail = (resolution.detail or "No exact ProjectBranch is configured.").strip()
         raise RuntimeError(
-            "Platform-managed MetaTable operations require a configured Project. " + detail
+            "Platform-managed MetaTable operations require an exact ProjectBranch UID. "
+            + detail
         )
-    if resolution.repository_branch in (None, ""):
-        detail = (resolution.detail or "The current Git branch is unavailable.").strip()
-        raise RuntimeError(
-            "Platform-managed MetaTable operations require an attached Git branch. " + detail
-        )
-
-    project_uid = getattr(resolution.project, "uid", None) or resolution.running_project_uid
-    if project_uid in (None, ""):
-        raise RuntimeError("The configured Project does not expose a public UID.")
-    return MetaTableProjectContextRequest(
-        project_uid=str(project_uid),
-        repository_branch=str(resolution.repository_branch),
-    )
+    return MetaTableProjectContextRequest(project_branch_uid=str(project_branch_uid))
 
 
 def _current_metatable_project_context() -> MetaTableProjectContextRequest:

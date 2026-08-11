@@ -62,6 +62,42 @@ class AuthError(Exception):
     pass
 
 
+RUNTIME_PROJECT_CONTEXT_ENV = {
+    "project_uid": "MAIN_SEQUENCE_PROJECT_UID",
+    "project_branch_uid": "MAIN_SEQUENCE_PROJECT_BRANCH_UID",
+    "repository_branch": "MAINSEQUENCE_REPOSITORY_BRANCH",
+    "organization_project_environment_uid": (
+        "MAIN_SEQUENCE_ORGANIZATION_PROJECT_ENVIRONMENT_UID"
+    ),
+}
+
+
+def apply_runtime_project_context(payload: object) -> None:
+    if not isinstance(payload, dict):
+        return
+    context = payload.get("runtime_project_context")
+    if context is None:
+        return
+    if not isinstance(context, dict):
+        raise AuthError("runtime_project_context must be an object.")
+    missing = [key for key in RUNTIME_PROJECT_CONTEXT_ENV if not context.get(key)]
+    if missing:
+        raise AuthError(
+            "runtime_project_context is incomplete: " + ", ".join(sorted(missing))
+        )
+    for key, environment_name in RUNTIME_PROJECT_CONTEXT_ENV.items():
+        expected = str(context[key])
+        current = str(os.environ.get(environment_name) or "").strip()
+        if current and current != expected:
+            raise AuthError(
+                "runtime_project_context does not match the existing deployed "
+                f"context for {key}."
+            )
+    for key, environment_name in RUNTIME_PROJECT_CONTEXT_ENV.items():
+        expected = str(context[key])
+        os.environ[environment_name] = expected
+
+
 def set_mainsequence_endpoint(endpoint: str) -> None:
     global MAINSEQUENCE_ENDPOINT, API_ENDPOINT, AUTH_ENDPOINT
     normalized = endpoint.rstrip("/")
@@ -258,6 +294,7 @@ class RuntimeCredentialAuthProvider(BaseAuthProvider):
                 )
 
             data = response.json()
+            apply_runtime_project_context(data)
             access = str(data.get("access") or "").strip()
             if not access:
                 raise AuthError(

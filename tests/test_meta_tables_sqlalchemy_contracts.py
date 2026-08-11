@@ -1487,8 +1487,7 @@ def test_time_index_meta_table_register_posts_to_canonical_endpoint(monkeypatch)
         models_metatables,
         "_current_metatable_project_context",
         lambda: models_metatables.MetaTableProjectContextRequest(
-            project_uid="11111111-1111-4111-8111-111111111111",
-            repository_branch="feature/runtime",
+            project_branch_uid="22222222-2222-4222-8222-222222222222",
         ),
     )
 

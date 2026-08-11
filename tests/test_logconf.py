@@ -101,9 +101,15 @@ def test_logconf_import_requests_job_run_detail_startup_state(monkeypatch):
         def json(self):
             return {
                 "job_run_uid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-                "project_id": 123,
-                "data_source_id": 456,
                 "command_id": 12,
+                "runtime_project_context": {
+                    "project_uid": "11111111-1111-4111-8111-111111111111",
+                    "project_branch_uid": "22222222-2222-4222-8222-222222222222",
+                    "repository_branch": "main",
+                    "organization_project_environment_uid": (
+                        "33333333-3333-4333-8333-333333333333"
+                    ),
+                },
             }
 
     def _fake_get(url, *, headers, params, timeout):
@@ -119,7 +125,7 @@ def test_logconf_import_requests_job_run_detail_startup_state(monkeypatch):
 
     monkeypatch.setattr(requests, "get", _fake_get)
 
-    _load_mainsequence_submodule("mainsequence.logconf")
+    logconf = _load_mainsequence_submodule("mainsequence.logconf")
 
     assert captured
     assert (
@@ -128,3 +134,8 @@ def test_logconf_import_requests_job_run_detail_startup_state(monkeypatch):
     )
     assert captured[0]["params"] == {}
     assert captured[0]["headers"]["Authorization"] == "Bearer access-token"
+    bindings = logconf._build_backend_bindings(_FakeResponse().json())
+    assert bindings["project_uid"] == "11111111-1111-4111-8111-111111111111"
+    assert bindings["project_branch_uid"] == "22222222-2222-4222-8222-222222222222"
+    assert "project_id" not in bindings
+    assert "data_source_id" not in bindings
