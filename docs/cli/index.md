@@ -516,7 +516,7 @@ ontology and each installed platform skill.
 - `mainsequence data-node delete` executes the SDK client `TimeIndexMetaTable.delete()` path and exposes the same delete flags as the client: `full_delete_selected`, `full_delete_downstream_tables`, `delete_with_no_table`, and `override_protection`.
 - `mainsequence data-node delete` always requires typed verification before the delete call is sent.
 - `mainsequence project images list` lists project images using the SDK client `ProjectImage.filter()` path.
-- `ProjectImage` responses include backend metadata such as `creation_date`, and the SDK model accepts that field.
+- `ProjectImage` responses include backend metadata such as `creation_date` and the required boolean `build_error` build-status flag.
 - All list commands share the same `--filter KEY=VALUE` and `--show-filters` pattern. Commands that already enforce scoping filters reject overriding those keys.
 - `mainsequence project images create` only accepts pushed commits for `project_repo_hash`. If omitted, it lists commits from the current branch upstream (or remote refs as fallback), shows which commits already have image ids, and waits until `is_ready=true` by polling every 30 seconds for up to 5 minutes by default.
 - `mainsequence project jobs list` lists project jobs through the SDK client `Job.filter()` path.

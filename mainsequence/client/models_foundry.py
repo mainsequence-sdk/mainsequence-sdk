@@ -649,7 +649,7 @@ class ProjectImage(BasePydanticModel, BaseObjectOrm):
     tags: list[str] | None = Field(
         default=[], description="Observed registry tags for the project image"
     )
-    build_error: str | None = Field(None, description="Backend build error, when present")
+    build_error: bool = Field(..., description="Whether the backend image build failed")
     is_ready: bool = Field(..., description="Whether the image is ready in Artifact Registry")
     creation_date: datetime.datetime | None = Field(None, description="Creation timestamp")
 

@@ -3807,6 +3807,8 @@ def test_create_project_image_uses_client_model(cli_mod, monkeypatch):
                     "project_repo_hash": project_repo_hash,
                     "related_project": related_project_branch_uid,
                     "base_image": base_image_uid,
+                    "build_error": False,
+                    "is_ready": False,
                     "creation_date": "2026-04-07T09:00:00Z",
                 }
             )
@@ -3831,6 +3833,7 @@ def test_create_project_image_uses_client_model(cli_mod, monkeypatch):
     assert captured["env_project_uid"] is None
     assert captured["jwt"] == ("acc", "ref")
     assert out["uid"] == "8b62d1dd-e146-44af-957c-38c5f5b1d8d5"
+    assert out["build_error"] is False
     assert os.environ.get("MAIN_SEQUENCE_PROJECT_UID") is None
 
 
@@ -3878,6 +3881,8 @@ def test_list_project_images_uses_client_model(cli_mod, monkeypatch):
                             "project_repo_hash": "abc123",
                             "related_project": 123,
                             "base_image": {"id": 22, "title": "Python 3.12"},
+                            "build_error": False,
+                            "is_ready": False,
                             "creation_date": "2026-04-07T09:00:00Z",
                         }
                     )
@@ -3909,6 +3914,8 @@ def test_list_project_images_uses_client_model(cli_mod, monkeypatch):
             "project_repo_hash": "abc123",
             "related_project": 123,
             "base_image": {"id": 22, "title": "Python 3.12"},
+            "build_error": False,
+            "is_ready": False,
             "creation_date": "2026-04-07T09:00:00Z",
         }
     ]
@@ -8919,6 +8926,7 @@ def test_project_create_image_polls_until_ready(cli_mod, runner, monkeypatch, tm
                     "uid": "8b62d1dd-e146-44af-957c-38c5f5b1d8d5",
                     "project_repo_hash": "abc123abc123abc123abc123abc123abc123abcd",
                     "base_image": 22,
+                    "build_error": False,
                     "is_ready": False,
                 }
             ]
@@ -8927,6 +8935,7 @@ def test_project_create_image_polls_until_ready(cli_mod, runner, monkeypatch, tm
                 "uid": "8b62d1dd-e146-44af-957c-38c5f5b1d8d5",
                 "project_repo_hash": "abc123abc123abc123abc123abc123abc123abcd",
                 "base_image": 22,
+                "build_error": False,
                 "is_ready": True,
             }
         ]
@@ -8939,6 +8948,7 @@ def test_project_create_image_polls_until_ready(cli_mod, runner, monkeypatch, tm
             "uid": "8b62d1dd-e146-44af-957c-38c5f5b1d8d5",
             "project_repo_hash": kwargs["project_repo_hash"],
             "base_image": 22,
+            "build_error": False,
             "is_ready": False,
         },
     )

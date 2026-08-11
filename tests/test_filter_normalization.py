@@ -232,6 +232,7 @@ def test_project_image_accepts_creation_date():
         project_repo_hash="abc123",
         related_project_branch_uid="5a28020a-0f1b-47ee-aab8-334286234bea",
         base_image=None,
+        build_error=False,
         is_ready=False,
         creation_date="2026-04-07T09:00:00Z",
     )
@@ -244,6 +245,119 @@ def test_project_image_accepts_creation_date():
         0,
         tzinfo=datetime.UTC,
     )
+
+
+def _project_image_response(*, uid: str, build_error: bool, is_ready: bool = False):
+    return {
+        "uid": uid,
+        "project_repo_hash": "abc123abc123abc123abc123abc123abc123abcd",
+        "related_project_branch_uid": "5a28020a-0f1b-47ee-aab8-334286234bea",
+        "base_image": None,
+        "tags": [],
+        "build_error": build_error,
+        "is_ready": is_ready,
+        "creation_date": "2026-04-07T09:00:00Z",
+    }
+
+
+@pytest.mark.parametrize("build_error", [False, True])
+def test_project_image_accepts_boolean_build_error(build_error):
+    image = models_foundry_mod.ProjectImage.model_validate(
+        _project_image_response(
+            uid="f3cb8477-df47-49cb-a151-80b746fb1243",
+            build_error=build_error,
+        )
+    )
+
+    assert image.build_error is build_error
+
+
+@pytest.mark.parametrize("build_error", [False, True])
+def test_project_image_create_accepts_boolean_build_error(monkeypatch, build_error):
+    payload = _project_image_response(
+        uid="f3cb8477-df47-49cb-a151-80b746fb1243",
+        build_error=build_error,
+    )
+
+    class FakeResponse:
+        status_code = 202
+
+        @staticmethod
+        def json():
+            return payload
+
+    monkeypatch.setattr(
+        models_foundry_mod.ProjectImage,
+        "build_session",
+        classmethod(lambda cls: object()),
+    )
+    monkeypatch.setattr(models_foundry_mod, "make_request", lambda **kwargs: FakeResponse())
+
+    image = models_foundry_mod.ProjectImage.create(
+        project_repo_hash=payload["project_repo_hash"],
+        related_project_branch_uid=payload["related_project_branch_uid"],
+    )
+
+    assert image.build_error is build_error
+
+
+@pytest.mark.parametrize("build_error", [False, True])
+def test_project_image_get_accepts_boolean_build_error(monkeypatch, build_error):
+    payload = _project_image_response(
+        uid="f3cb8477-df47-49cb-a151-80b746fb1243",
+        build_error=build_error,
+    )
+
+    class FakeResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return payload
+
+    monkeypatch.setattr(
+        models_foundry_mod.ProjectImage,
+        "build_session",
+        classmethod(lambda cls: object()),
+    )
+    monkeypatch.setattr(base_mod, "make_request", lambda **kwargs: FakeResponse())
+
+    image = models_foundry_mod.ProjectImage.get(pk=payload["uid"])
+
+    assert image.build_error is build_error
+
+
+def test_project_image_filter_accepts_boolean_build_error(monkeypatch):
+    payloads = [
+        _project_image_response(
+            uid="f3cb8477-df47-49cb-a151-80b746fb1243",
+            build_error=False,
+        ),
+        _project_image_response(
+            uid="39dc72dc-d905-43af-8012-d67c026c2970",
+            build_error=True,
+        ),
+    ]
+
+    class FakeResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {"results": payloads, "next": None}
+
+    monkeypatch.setattr(
+        models_foundry_mod.ProjectImage,
+        "build_session",
+        classmethod(lambda cls: object()),
+    )
+    monkeypatch.setattr(base_mod, "make_request", lambda **kwargs: FakeResponse())
+
+    images = models_foundry_mod.ProjectImage.filter(
+        related_project_branch_uid="5a28020a-0f1b-47ee-aab8-334286234bea"
+    )
+
+    assert [image.build_error for image in images] == [False, True]
 
 
 def test_data_node_storage_normalizes_namespace_filters():
