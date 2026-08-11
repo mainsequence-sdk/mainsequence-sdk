@@ -22,11 +22,7 @@ from mainsequence.client.metatables import (
     SchemaManagementRequest,
     TimeIndexMetaTable,
 )
-from mainsequence.client.metatables.core import (
-    MetaTableProjectContextRequest,
-    _current_metatable_project_context,
-    get_session_data_source,
-)
+from mainsequence.client.metatables.core import get_session_data_source
 from mainsequence.meta_tables.sqlalchemy_contracts import (
     PlatformManagedMetaTable,
     PlatformTimeIndexMetaTable,
@@ -72,7 +68,6 @@ class PreparedAlembicMetaTableMigration:
     meta_table_uids: list[str]
     reserved_tables: list[MetaTable] = field(default_factory=list)
     owner_role_name: str | None = None
-    project_context: MetaTableProjectContextRequest | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -282,14 +277,12 @@ class AlembicVersionMetaTable:
         migration_package: str,
         migration_namespace: str,
         migration_provider_key: str | None = None,
-        project_context: MetaTableProjectContextRequest | None = None,
         data_source: DataSource | None = None,
         data_source_uid: str | None = None,
         timeout: int | float | tuple[float, float] | None = None,
         on_reserved: Callable[[type[Any], Any], Any] | None = None,
         **kwargs: Any,
     ) -> MetaTable:
-        project_context = project_context or _current_metatable_project_context()
         request = cls.build_registration_request(
             migration_package=migration_package,
             migration_namespace=migration_namespace,
@@ -307,7 +300,6 @@ class AlembicVersionMetaTable:
                     migration_provider_key=migration_provider_key,
                     alembic_version_meta_table_uid=None,
                     alembic_revision=None,
-                    project_context=project_context,
                 )
             ],
             timeout=timeout,
@@ -471,18 +463,15 @@ class AlembicMetaTableMigration:
     def register_alembic_registry(
         self,
         *,
-        project_context: MetaTableProjectContextRequest | None = None,
         data_source: DataSource | None = None,
         data_source_uid: str | None = None,
         timeout: int | float | tuple[float, float] | None = None,
         on_metatable_reserved: Callable[[type[Any], Any], Any] | None = None,
     ) -> MetaTable:
-        project_context = project_context or _current_metatable_project_context()
         return self.alembic_registry.register(
             migration_package=self.package,
             migration_namespace=self.migration_namespace,
             migration_provider_key=self.migration_provider_key,
-            project_context=project_context,
             data_source=data_source,
             data_source_uid=data_source_uid,
             timeout=timeout,
@@ -492,13 +481,11 @@ class AlembicMetaTableMigration:
     def ensure_alembic_registry(
         self,
         *,
-        project_context: MetaTableProjectContextRequest | None = None,
         data_source: DataSource | None = None,
         data_source_uid: str | None = None,
         timeout: int | float | tuple[float, float] | None = None,
         on_metatable_reserved: Callable[[type[Any], Any], Any] | None = None,
     ) -> MetaTable:
-        project_context = project_context or _current_metatable_project_context()
         request = self.alembic_registry.build_registration_request(
             migration_package=self.package,
             migration_namespace=self.migration_namespace,
@@ -521,7 +508,6 @@ class AlembicMetaTableMigration:
 
         try:
             return self.register_alembic_registry(
-                project_context=project_context,
                 data_source_uid=request.data_source_uid,
                 timeout=timeout,
                 on_metatable_reserved=on_metatable_reserved,
@@ -557,7 +543,6 @@ class AlembicMetaTableMigration:
     def sync_metatable_catalog(
         self,
         *,
-        project_context: MetaTableProjectContextRequest | None = None,
         timeout: int | float | tuple[float, float] | None = None,
         create_table: bool = False,
         on_metatable_registered: Callable[[type[Any], Any], Any] | None = None,
@@ -565,7 +550,6 @@ class AlembicMetaTableMigration:
     ) -> list[MetaTable]:
         registered: list[MetaTable] = []
         data_source_uid = self._resolve_provider_data_source_uid()
-        project_context = project_context or _current_metatable_project_context()
         _validate_provider_runtime_data_source(data_source_uid=data_source_uid)
         schema_management = self._schema_management_request(
             alembic_version_meta_table_uid=self.alembic_registry.get_meta_table_uid(),
@@ -578,13 +562,7 @@ class AlembicMetaTableMigration:
                     schema_management=schema_management,
                 )
                 meta_table_cls = _metatable_resource_class_for_model(model)
-                meta_table = meta_table_cls.register(
-                    _registration_request_with_project_context(
-                        request,
-                        project_context=project_context,
-                    ),
-                    timeout=timeout,
-                )
+                meta_table = meta_table_cls.register(request, timeout=timeout)
                 _validate_metatable_runtime_data_source(
                     meta_table, data_source_uid=data_source_uid
                 )
@@ -722,7 +700,6 @@ class AlembicMetaTableMigration:
     def prepare_for_alembic(
         self,
         *,
-        project_context: MetaTableProjectContextRequest | None = None,
         timeout: int | float | tuple[float, float] | None = None,
         on_metatable_reservation_request: Callable[
             [Sequence[type[Any]], Sequence[Mapping[str, Any]]], Any
@@ -732,7 +709,6 @@ class AlembicMetaTableMigration:
         on_metatable_reserved: Callable[[type[Any], Any], Any] | None = None,
     ) -> PreparedAlembicMetaTableMigration:
         data_source_uid = self._resolve_provider_data_source_uid()
-        project_context = project_context or _current_metatable_project_context()
         _validate_provider_runtime_data_source(data_source_uid=data_source_uid)
         reserved_by_model: dict[type[Any], MetaTable] = {}
         reserved_tables: list[MetaTable] = []
@@ -809,7 +785,6 @@ class AlembicMetaTableMigration:
                                 self.alembic_registry.get_meta_table_uid()
                             ),
                             alembic_revision=None,
-                            project_context=project_context,
                         ),
                     )
                 )
@@ -862,7 +837,6 @@ class AlembicMetaTableMigration:
             meta_table_uids=list(dict.fromkeys(meta_table_uids)),
             reserved_tables=reserved_tables,
             owner_role_name=owner_role_name,
-            project_context=project_context,
         )
 
     def _resolve_provider_data_source_uid(self) -> str:
@@ -1073,7 +1047,6 @@ def _collection_create_row_from_registration_request(
     migration_provider_key: str | None,
     alembic_version_meta_table_uid: str | None,
     alembic_revision: str | None,
-    project_context: MetaTableProjectContextRequest,
 ) -> dict[str, Any]:
     data_source_uid = getattr(request, "data_source_uid", None)
     if data_source_uid in (None, ""):
@@ -1105,7 +1078,6 @@ def _collection_create_row_from_registration_request(
         "physical_schema": str(physical_schema),
         "physical_table_name": str(physical_table_name),
         "protect_from_deletion": bool(getattr(request, "protect_from_deletion", False)),
-        "project_context": project_context.model_dump(mode="json"),
         "table_contract": _collection_create_table_contract_payload(
             request.table_contract
         ),
@@ -1120,27 +1092,6 @@ def _collection_create_row_from_registration_request(
     if partition_strategy not in (None, ""):
         row["partition_strategy"] = str(partition_strategy)
     return row
-
-
-def _registration_request_with_project_context(
-    request: Any,
-    *,
-    project_context: MetaTableProjectContextRequest,
-) -> dict[str, Any]:
-    if hasattr(request, "model_dump"):
-        payload = request.model_dump(
-            mode="json",
-            by_alias=True,
-            exclude_none=True,
-        )
-    elif isinstance(request, Mapping):
-        payload = dict(request)
-    else:
-        raise TypeError("MetaTable registration request must be a model or mapping.")
-    payload["project_context"] = project_context.model_dump(mode="json")
-    return payload
-
-
 def _validate_provider_runtime_data_source(
     *,
     data_source_uid: str,

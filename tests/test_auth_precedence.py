@@ -9,7 +9,24 @@ import sys
 import time
 import types
 
+import pytest
 import requests
+
+_RUNTIME_CONTEXT_ENV_NAMES = (
+    "MAIN_SEQUENCE_PROJECT_UID",
+    "MAIN_SEQUENCE_PROJECT_BRANCH_UID",
+    "MAINSEQUENCE_REPOSITORY_BRANCH",
+    "MAIN_SEQUENCE_ORGANIZATION_PROJECT_ENVIRONMENT_UID",
+)
+
+
+@pytest.fixture(autouse=True)
+def _clear_runtime_context_environment():
+    for name in _RUNTIME_CONTEXT_ENV_NAMES:
+        os.environ.pop(name, None)
+    yield
+    for name in _RUNTIME_CONTEXT_ENV_NAMES:
+        os.environ.pop(name, None)
 
 
 def _load_mainsequence_submodule(module_name: str):
@@ -46,6 +63,17 @@ def _jwt_with_exp(exp: int) -> str:
     header = base64.urlsafe_b64encode(json.dumps({"alg": "none"}).encode()).rstrip(b"=").decode()
     payload = base64.urlsafe_b64encode(json.dumps({"exp": exp}).encode()).rstrip(b"=").decode()
     return f"{header}.{payload}.signature"
+
+
+def _runtime_project_context() -> dict[str, str]:
+    return {
+        "project_uid": "11111111-1111-4111-8111-111111111111",
+        "project_branch_uid": "22222222-2222-4222-8222-222222222222",
+        "repository_branch": "main",
+        "organization_project_environment_uid": (
+            "33333333-3333-4333-8333-333333333333"
+        ),
+    }
 
 
 def test_build_default_auth_provider_uses_jwt(monkeypatch):
@@ -143,7 +171,14 @@ def test_logconf_runtime_credential_exchanges_before_startup_state_request(monke
 
     def _fake_post(url, **kwargs):
         post_calls.append({"url": url, **kwargs})
-        return _FakeResponse(200, {"access": "runtime-access", "expires_in": 300})
+        return _FakeResponse(
+            200,
+            {
+                "access": "runtime-access",
+                "expires_in": 300,
+                "runtime_project_context": _runtime_project_context(),
+            },
+        )
 
     monkeypatch.setattr(requests, "get", _fake_get)
     monkeypatch.setattr(requests, "post", _fake_post)
@@ -185,7 +220,14 @@ def test_logconf_runtime_credential_retries_after_auth_failure(monkeypatch):
 
     def _fake_post(url, **kwargs):
         post_calls.append({"url": url, **kwargs})
-        return _FakeResponse(200, {"access": "fresh-runtime-access", "expires_in": 300})
+        return _FakeResponse(
+            200,
+            {
+                "access": "fresh-runtime-access",
+                "expires_in": 300,
+                "runtime_project_context": _runtime_project_context(),
+            },
+        )
 
     monkeypatch.setattr(requests, "get", _fake_get)
     monkeypatch.setattr(requests, "post", _fake_post)
@@ -216,6 +258,7 @@ def test_runtime_credential_provider_exchanges_and_writes_access_token(monkeypat
                 "access": "runtime-access",
                 "token_type": "Bearer",
                 "expires_in": 300,
+                "runtime_project_context": _runtime_project_context(),
             },
         )
 
@@ -252,6 +295,7 @@ def test_runtime_credential_provider_reuses_valid_exchanged_access_token(monkeyp
                 "access": f"runtime-access-{calls['count']}",
                 "token_type": "Bearer",
                 "expires_in": 300,
+                "runtime_project_context": _runtime_project_context(),
             },
         )
 
@@ -264,6 +308,44 @@ def test_runtime_credential_provider_reuses_valid_exchanged_access_token(monkeyp
     assert first_headers["Authorization"] == "Bearer runtime-access-1"
     assert second_headers["Authorization"] == "Bearer runtime-access-1"
     assert calls["count"] == 1
+
+
+def test_runtime_credential_provider_accepts_authenticated_null_branch_context(
+    monkeypatch,
+):
+    monkeypatch.delenv("MAINSEQUENCE_ACCESS_TOKEN", raising=False)
+    monkeypatch.setenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_ID", "cred-id")
+    monkeypatch.setenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET", "cred-secret")
+    monkeypatch.setenv(
+        "MAIN_SEQUENCE_PROJECT_BRANCH_UID",
+        "caller-supplied-branch-must-be-cleared",
+    )
+
+    utils = _load_mainsequence_submodule("mainsequence.client.utils")
+    calls = {"count": 0}
+
+    def _fake_post(url, **kwargs):
+        calls["count"] += 1
+        return _FakeResponse(
+            200,
+            {
+                "access": "organization-runtime-access",
+                "token_type": "Bearer",
+                "expires_in": 300,
+                "runtime_project_context": None,
+            },
+        )
+
+    monkeypatch.setattr(requests, "post", _fake_post)
+
+    provider = utils.RuntimeCredentialAuthProvider()
+    first_headers = provider.get_headers()
+    second_headers = provider.get_headers()
+
+    assert first_headers["Authorization"] == "Bearer organization-runtime-access"
+    assert second_headers == first_headers
+    assert calls["count"] == 1
+    assert "MAIN_SEQUENCE_PROJECT_BRANCH_UID" not in os.environ
 
 
 def test_runtime_credential_provider_force_refresh_exchanges_again(monkeypatch):
@@ -283,6 +365,7 @@ def test_runtime_credential_provider_force_refresh_exchanges_again(monkeypatch):
                 "access": f"runtime-access-{calls['count']}",
                 "token_type": "Bearer",
                 "expires_in": 300,
+                "runtime_project_context": _runtime_project_context(),
             },
         )
 
@@ -313,6 +396,7 @@ def test_runtime_credential_provider_exchanges_near_expiry_access_token(monkeypa
                 "access": "runtime-access",
                 "token_type": "Bearer",
                 "expires_in": 300,
+                "runtime_project_context": _runtime_project_context(),
             },
         )
 
@@ -345,6 +429,7 @@ def test_runtime_credential_make_request_401_forces_exchange_and_retry(monkeypat
                 "access": "fresh-runtime-access",
                 "token_type": "Bearer",
                 "expires_in": 300,
+                "runtime_project_context": _runtime_project_context(),
             },
         )
 
@@ -376,10 +461,10 @@ def test_runtime_credential_make_request_401_forces_exchange_and_retry(monkeypat
 
     assert response.status_code == 200
     assert [call["authorization"] for call in session.get_calls] == [
-        "Bearer stale-runtime-access",
+        "Bearer fresh-runtime-access",
         "Bearer fresh-runtime-access",
     ]
-    assert len(post_calls) == 1
+    assert len(post_calls) == 2
     assert post_calls[0]["json"] == {
         "credential_id": "cred-id",
         "credential_secret": "cred-secret",
@@ -486,7 +571,7 @@ def test_runtime_project_context_mismatch_fails_without_partial_environment(
     utils = _load_mainsequence_submodule("mainsequence.client.utils")
 
     try:
-        utils.apply_runtime_project_context(
+        utils._apply_runtime_project_context_from_exchange(
             {
                 "runtime_project_context": {
                     "project_uid": "11111111-1111-4111-8111-111111111111",

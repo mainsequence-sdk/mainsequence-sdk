@@ -77,14 +77,13 @@ def _patch_preflight(monkeypatch, migration_cli, migration, *, emit_reservation=
     monkeypatch.setattr(
         AlembicMetaTableMigration,
         "ensure_alembic_registry",
-        lambda self, project_context=None, timeout=None, on_metatable_reserved=None: (
+        lambda self, timeout=None, on_metatable_reserved=None: (
             self.alembic_registry.get_meta_table()
         ),
     )
 
     def fake_prepare_for_alembic(
         self,
-        project_context=None,
         timeout=None,
         on_metatable_reservation_request=None,
         on_metatable_reservation_status=None,
@@ -130,7 +129,6 @@ def _patch_preflight(monkeypatch, migration_cli, migration, *, emit_reservation=
             data_source_uid="data-source-uid",
             meta_table_uids=["meta-table-uid"],
             owner_role_name="prepared-owner",
-            project_context=project_context or _project_context(),
         )
 
     monkeypatch.setattr(
@@ -150,8 +148,10 @@ def _combined_output(result):
 
 
 def _patch_scoped_connection(monkeypatch, migration_cli, captured):
+    import mainsequence.client.metatables.core as metatable_models
+
     monkeypatch.setattr(
-        migration_cli,
+        metatable_models,
         "_current_metatable_project_context",
         _project_context,
     )
@@ -236,7 +236,7 @@ def test_migrations_current_uses_scoped_connection_without_printing_secret(monke
     assert result.exit_code == 0
     assert captured["meta_table_uid"] == "registry-meta-table-uid"
     assert not hasattr(captured["connection_request"], "meta_table_uids")
-    assert captured["connection_request"].project_context == _project_context()
+    assert not hasattr(captured["connection_request"], "project_context")
     assert captured["connection_timeout"] == 5.0
     assert captured["sqlalchemy_url"] == "postgresql://temporary-secret"
     assert captured["owner_role"] == "connection-owner"
@@ -301,7 +301,6 @@ def test_migrations_current_prints_alembic_registry_reservation(monkeypatch):
 
     def fake_ensure(
         self,
-        project_context=None,
         timeout=None,
         on_metatable_reserved=None,
     ):
@@ -483,7 +482,7 @@ def test_migrations_current_reuses_registry_across_independent_cli_operations(
         classmethod(lambda cls: types.SimpleNamespace(headers={})),
     )
     monkeypatch.setattr(
-        migration_cli,
+        metatable_models,
         "_current_metatable_project_context",
         _project_context,
     )
@@ -702,7 +701,7 @@ def test_migrations_revision_default_uses_registry_without_provider_reservations
     monkeypatch.setattr(
         AlembicMetaTableMigration,
         "ensure_alembic_registry",
-        lambda self, project_context=None, timeout=None, on_metatable_reserved=None: (
+        lambda self, timeout=None, on_metatable_reserved=None: (
             self.alembic_registry.get_meta_table()
         ),
     )

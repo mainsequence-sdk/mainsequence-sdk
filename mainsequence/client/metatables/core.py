@@ -31,6 +31,7 @@ from pydantic import (
 )
 
 from mainsequence.logconf import logger
+from mainsequence.runtime_context import _get_backend_runtime_project_context_state
 
 from ..base import BaseObjectOrm, BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin
 from ..data_sources_interfaces import get_duckdb_interface_class, get_sqlite_interface_class
@@ -53,6 +54,7 @@ from ..utils import (
     bios_uuid,
     get_network_ip,
     is_process_running,
+    loaders,
     make_request,
     serialize_to_json,
 )
@@ -868,7 +870,6 @@ class ManagedMetaTableCollectionCreateRow(BasePydanticModel):
     physical_schema: str = Field(..., min_length=1)
     physical_table_name: str = Field(..., min_length=1)
     protect_from_deletion: bool = False
-    project_context: MetaTableProjectContextRequest
     table_contract: dict[str, Any]
 
     @model_validator(mode="before")
@@ -930,7 +931,6 @@ class MetaTableMigrationConnectionRequest(BasePydanticModel):
     migration_namespace: str = ""
     migration_provider_key: str = ""
     ttl_seconds: int = Field(default=900, ge=60, le=3600)
-    project_context: MetaTableProjectContextRequest | None = None
 
 
 class MetaTableMigrationConnection(BasePydanticModel):
@@ -947,7 +947,6 @@ class MetaTableMigrationConnection(BasePydanticModel):
 
 
 class ManagedMetaTableFinalizeRequest(BasePydanticModel):
-    project_context: MetaTableProjectContextRequest | None = None
     meta_table_uids: list[str] = Field(
         ...,
         min_length=1,
@@ -1406,10 +1405,7 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
         )
         if isinstance(payload, Mapping):
             payload = MetaTableMigrationConnectionRequest(**payload)
-        if payload.project_context is None:
-            payload = payload.model_copy(
-                update={"project_context": _current_metatable_project_context()}
-            )
+        payload = _with_current_metatable_project_context(payload)
         response = self._post_detail_action(
             "migration-connection",
             payload,
@@ -1597,13 +1593,13 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
         if request is not None and kwargs:
             raise ValueError("Pass either request or keyword fields, not both.")
         unvalidated_payload = _payload_json(request) if request is not None else dict(kwargs)
-        project_context = unvalidated_payload.pop("project_context", None)
+        if "project_context" in unvalidated_payload:
+            raise ValueError(
+                "project_context is SDK-controlled and cannot be supplied by the caller."
+            )
         payload = MetaTableRegistrationRequest.model_validate(unvalidated_payload)
         if payload.management_mode != "external_registered":
-            payload_json = _payload_json(payload)
-            if project_context is not None:
-                payload_json["project_context"] = project_context
-            payload = _with_current_metatable_project_context(payload_json)
+            payload = _with_current_metatable_project_context(payload)
         response_json = cls._post_action(
             "register",
             payload,
@@ -1624,10 +1620,10 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
         if on_status is not None:
             on_status(f"Serializing POST {url} payload...")
         payload_json = _payload_json_sequence(rows)
-        payload_json = _with_current_metatable_project_context_collection(payload_json)
         _ = [
             cls.COLLECTION_CREATE_ROW_MODEL.model_validate(row) for row in payload_json
         ]
+        payload_json = _with_current_metatable_project_context_collection(payload_json)
         if on_status is not None:
             payload_size = len(json.dumps(payload_json, default=str))
             on_status(f"Serialized POST {url} payload bytes={payload_size}.")
@@ -1667,10 +1663,7 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
         payload = request if request is not None else ManagedMetaTableFinalizeRequest(**kwargs)
         if isinstance(payload, Mapping):
             payload = ManagedMetaTableFinalizeRequest(**payload)
-        if payload.project_context is None:
-            payload = payload.model_copy(
-                update={"project_context": _current_metatable_project_context()}
-            )
+        payload = _with_current_metatable_project_context(payload)
         response_json = cls._post_action(
             "finalize-managed",
             payload,
@@ -2458,15 +2451,26 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
     @classmethod
     def get_or_create(cls, **kwargs):
         url = cls.get_object_url() + "/get-or-create/"
+        if "current_project_branch_uid" in kwargs:
+            raise ValueError(
+                "current_project_branch_uid is SDK-controlled and cannot be supplied "
+                "by the caller."
+            )
         kwargs = serialize_to_json(kwargs)
-        project_branch = _require_local_pod_project_branch("DataNodeUpdate.get_or_create")
+        resolution = _resolve_local_pod_project()
+        project_branch = resolution.project_branch
+        if project_branch is None:
+            project_branch = _require_local_pod_project_branch(
+                "DataNodeUpdate.get_or_create"
+            )
         project_branch_uid = str(getattr(project_branch, "uid", "") or "").strip()
         if not project_branch_uid:
             raise RuntimeError(
                 "DataNodeUpdate.get_or_create requires a ProjectBranch uid, "
                 "but the active branch does not expose one."
             )
-        kwargs["current_project_branch_uid"] = project_branch_uid
+        if not resolution.backend_runtime_context:
+            kwargs["current_project_branch_uid"] = project_branch_uid
         payload = {"json": kwargs}
         s = cls.build_session()
         r = make_request(s=s, loaders=cls.LOADERS, r_type="POST", url=url, payload=payload)
@@ -3406,14 +3410,14 @@ class TimeIndexMetaTable(MetaTable):
         if request is not None and kwargs:
             raise ValueError("Pass either request or keyword fields, not both.")
         unvalidated_payload = _payload_json(request) if request is not None else dict(kwargs)
-        project_context = unvalidated_payload.pop("project_context", None)
+        if "project_context" in unvalidated_payload:
+            raise ValueError(
+                "project_context is SDK-controlled and cannot be supplied by the caller."
+            )
         payload = TimeIndexMetaTableRegistrationRequest.model_validate(
             unvalidated_payload
         )
-        payload_json = _payload_json(payload)
-        if project_context is not None:
-            payload_json["project_context"] = project_context
-        payload_json = _with_current_metatable_project_context(payload_json)
+        payload_json = _with_current_metatable_project_context(payload)
         request_payload = {"json": serialize_to_json(payload_json)}
         response = make_request(
             s=cls.build_session(),
@@ -4780,6 +4784,7 @@ class _PodProjectResolution:
     repository_branch: str | None
     status: str
     detail: str = ""
+    backend_runtime_context: bool = False
 
     @property
     def remote_cache_key(self) -> tuple[str, str, str]:
@@ -4808,11 +4813,9 @@ def _reset_local_pod_project_resolution_cache() -> None:
 
 def _current_repository_branch() -> str | None:
     runtime_auth_mode = (os.environ.get("MAINSEQUENCE_AUTH_MODE") or "").strip()
-    runtime_project_branch_uid = (
-        os.environ.get("MAIN_SEQUENCE_PROJECT_BRANCH_UID") or ""
-    ).strip()
-    if runtime_project_branch_uid:
-        return (os.environ.get("MAINSEQUENCE_REPOSITORY_BRANCH") or "").strip() or None
+    runtime_state = _get_backend_runtime_project_context_state()
+    if runtime_state.verified and runtime_state.context is not None:
+        return runtime_state.context.repository_branch
     if runtime_auth_mode in {"session_jwt", "runtime_credential"}:
         return None
     try:
@@ -4837,11 +4840,11 @@ def _build_local_pod_project_resolution(
     running_project_uid: str,
     running_project_branch_uid: str = "",
     repository_branch: str | None,
+    backend_runtime_context: bool = False,
 ) -> _PodProjectResolution:
     from ..models_foundry import Project, ProjectBranch
 
-    runtime_auth_mode = (os.environ.get("MAINSEQUENCE_AUTH_MODE") or "").strip()
-    if runtime_auth_mode in {"session_jwt", "runtime_credential"} and (
+    if backend_runtime_context and (
         not running_project_uid or not running_project_branch_uid
     ):
         return _PodProjectResolution(
@@ -4855,6 +4858,7 @@ def _build_local_pod_project_resolution(
                 "Deployed runtime authentication did not provide a complete "
                 "backend-issued ProjectBranch context."
             ),
+            backend_runtime_context=True,
         )
 
     if not running_project_uid:
@@ -4994,6 +4998,7 @@ def _build_local_pod_project_resolution(
         project_branch=project_branch,
         repository_branch=resolved_repository_branch,
         status="resolved",
+        backend_runtime_context=backend_runtime_context,
     )
 
 
@@ -5001,11 +5006,29 @@ def _resolve_local_pod_project(*, refresh: bool = False) -> _PodProjectResolutio
     global _POD_PROJECT_RESOLUTION_CACHE, _POD_PROJECT_RESOLUTION_CACHE_KEY
     global POD_PROJECT, POD_PROJECT_BRANCH
 
-    running_project_uid = (os.environ.get("MAIN_SEQUENCE_PROJECT_UID") or "").strip()
-    running_project_branch_uid = (
-        os.environ.get("MAIN_SEQUENCE_PROJECT_BRANCH_UID") or ""
-    ).strip()
-    repository_branch = _current_repository_branch()
+    runtime_auth_mode = (os.environ.get("MAINSEQUENCE_AUTH_MODE") or "").strip()
+    runtime_state = _get_backend_runtime_project_context_state()
+    if runtime_auth_mode == "runtime_credential" and not runtime_state.verified:
+        loaders.refresh_headers()
+        runtime_state = _get_backend_runtime_project_context_state()
+
+    backend_runtime_context = runtime_auth_mode in {
+        "session_jwt",
+        "runtime_credential",
+    }
+    runtime_context = runtime_state.context if runtime_state.verified else None
+    if backend_runtime_context and runtime_context is not None:
+        running_project_uid = runtime_context.project_uid
+        running_project_branch_uid = runtime_context.project_branch_uid
+        repository_branch = runtime_context.repository_branch
+    elif backend_runtime_context:
+        running_project_uid = ""
+        running_project_branch_uid = ""
+        repository_branch = None
+    else:
+        running_project_uid = (os.environ.get("MAIN_SEQUENCE_PROJECT_UID") or "").strip()
+        running_project_branch_uid = ""
+        repository_branch = _current_repository_branch()
     cache_key = (
         running_project_uid,
         running_project_branch_uid,
@@ -5022,6 +5045,7 @@ def _resolve_local_pod_project(*, refresh: bool = False) -> _PodProjectResolutio
                 running_project_uid=running_project_uid,
                 running_project_branch_uid=running_project_branch_uid,
                 repository_branch=repository_branch,
+                backend_runtime_context=backend_runtime_context,
             )
             _POD_PROJECT_RESOLUTION_CACHE_KEY = cache_key
             POD_PROJECT = _POD_PROJECT_RESOLUTION_CACHE.project
@@ -5089,18 +5113,28 @@ def _current_metatable_project_context() -> MetaTableProjectContextRequest:
     return _metatable_project_context_from_resolution(_resolve_local_pod_project())
 
 
+def _metatable_project_context_for_request() -> MetaTableProjectContextRequest | None:
+    resolution = _resolve_local_pod_project()
+    if resolution.backend_runtime_context:
+        if resolution.project_branch is None:
+            _metatable_project_context_from_resolution(resolution)
+        return None
+    return _current_metatable_project_context()
+
+
 def _with_current_metatable_project_context(
     payload: Mapping[str, Any] | BasePydanticModel,
 ) -> dict[str, Any]:
     payload_json = _payload_json(payload)
+    if "project_context" in payload_json:
+        raise ValueError(
+            "project_context is SDK-controlled and cannot be supplied by the caller."
+        )
     if payload_json.get("management_mode") == "external_registered":
         return payload_json
-    project_context = payload_json.get("project_context")
-    if project_context is None:
-        project_context = _current_metatable_project_context()
-    else:
-        project_context = MetaTableProjectContextRequest.model_validate(project_context)
-    payload_json["project_context"] = project_context.model_dump(mode="json")
+    project_context = _metatable_project_context_for_request()
+    if project_context is not None:
+        payload_json["project_context"] = project_context.model_dump(mode="json")
     return payload_json
 
 
@@ -5108,25 +5142,21 @@ def _with_current_metatable_project_context_collection(
     payloads: Sequence[Mapping[str, Any]],
 ) -> list[dict[str, Any]]:
     payload_rows = [dict(payload) for payload in payloads]
+    if any("project_context" in row for row in payload_rows):
+        raise ValueError(
+            "project_context is SDK-controlled and cannot be supplied by the caller."
+        )
     managed_rows = [
         row for row in payload_rows if row.get("management_mode") != "external_registered"
     ]
     if not managed_rows:
         return payload_rows
 
-    current_project_context: dict[str, str] | None = None
-    for row in managed_rows:
-        project_context = row.get("project_context")
-        if project_context is None:
-            if current_project_context is None:
-                current_project_context = _current_metatable_project_context().model_dump(
-                    mode="json"
-                )
+    project_context = _metatable_project_context_for_request()
+    if project_context is not None:
+        current_project_context = project_context.model_dump(mode="json")
+        for row in managed_rows:
             row["project_context"] = current_project_context
-        else:
-            row["project_context"] = MetaTableProjectContextRequest.model_validate(
-                project_context
-            ).model_dump(mode="json")
     return payload_rows
 
 

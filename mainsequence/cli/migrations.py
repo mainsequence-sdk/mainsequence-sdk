@@ -18,7 +18,6 @@ from mainsequence.client.metatables import (
     MetaTableMigrationConnectionRequest,
     TimeIndexMetaTable,
 )
-from mainsequence.client.metatables.core import _current_metatable_project_context
 from mainsequence.meta_tables.migrations import (
     AlembicMetaTableMigration,
     alembic_config_for_provider,
@@ -432,10 +431,8 @@ def _prepare_alembic_config(
     alembic_output: _AlembicOutput,
     prepare_provider_metatables: bool = True,
 ) -> tuple[Any, Any]:
-    project_context = _current_metatable_project_context()
     _emit_status("Ensuring Alembic registry MetaTable...")
     registry_meta_table = migration.ensure_alembic_registry(
-        project_context=project_context,
         timeout=timeout,
         on_metatable_reserved=_emit_metatable_reservation,
     )
@@ -443,7 +440,6 @@ def _prepare_alembic_config(
     if prepare_provider_metatables:
         _emit_status("Preparing platform-managed MetaTable reservations...")
         prepared = migration.prepare_for_alembic(
-            project_context=project_context,
             timeout=timeout,
             on_metatable_reservation_request=_emit_metatable_reservation_request,
             on_metatable_reservation_status=_emit_status,
@@ -455,7 +451,6 @@ def _prepare_alembic_config(
             data_source_uid=migration._resolve_provider_data_source_uid(),
             meta_table_uids=[],
             owner_role_name=None,
-            project_context=project_context,
         )
     _emit_status(
         "Prepared migration scope "
@@ -472,7 +467,6 @@ def _prepare_alembic_config(
             migration_namespace=migration.migration_namespace,
             migration_provider_key=migration.migration_provider_key,
             ttl_seconds=ttl_seconds,
-            project_context=prepared.project_context,
         ),
         timeout=timeout,
     )
@@ -501,10 +495,8 @@ def _build_revision_alembic_config(
     _emit_status("Building local Alembic config for revision...")
     owner_role_name = None
     if requires_database and sqlalchemy_url in (None, ""):
-        project_context = _current_metatable_project_context()
         _emit_status("Ensuring Alembic registry MetaTable for revision...")
         registry_meta_table = migration.ensure_alembic_registry(
-            project_context=project_context,
             timeout=timeout,
             on_metatable_reserved=_emit_metatable_reservation,
         )
@@ -518,7 +510,6 @@ def _build_revision_alembic_config(
                 migration_namespace=migration.migration_namespace,
                 migration_provider_key=migration.migration_provider_key,
                 ttl_seconds=ttl_seconds,
-                project_context=project_context,
             ),
             timeout=timeout,
         )

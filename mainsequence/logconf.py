@@ -21,42 +21,26 @@ from structlog.stdlib import BoundLogger
 
 from .defaults import resolve_backend_endpoint
 from .instrumentation import OTelJSONRenderer
+from .runtime_context import (
+    RUNTIME_PROJECT_CONTEXT_ENV,
+    BackendRuntimeContextSource,
+    BackendRuntimeProjectContextError,
+    _get_backend_runtime_project_context_state,
+    _install_backend_runtime_project_context,
+)
 from .runtime_flags import is_running_in_pod
 
 logger = None
 
-RUNTIME_PROJECT_CONTEXT_ENV = {
-    "project_uid": "MAIN_SEQUENCE_PROJECT_UID",
-    "project_branch_uid": "MAIN_SEQUENCE_PROJECT_BRANCH_UID",
-    "repository_branch": "MAINSEQUENCE_REPOSITORY_BRANCH",
-    "organization_project_environment_uid": (
-        "MAIN_SEQUENCE_ORGANIZATION_PROJECT_ENVIRONMENT_UID"
-    ),
-}
-
-
-def _apply_runtime_project_context(payload: Mapping[str, Any]) -> None:
-    context = payload.get("runtime_project_context")
-    if context is None:
-        return
-    if not isinstance(context, Mapping):
-        raise RuntimeError("runtime_project_context must be an object.")
-    missing = [key for key in RUNTIME_PROJECT_CONTEXT_ENV if not context.get(key)]
-    if missing:
-        raise RuntimeError(
-            "runtime_project_context is incomplete: " + ", ".join(sorted(missing))
-        )
-    for key, environment_name in RUNTIME_PROJECT_CONTEXT_ENV.items():
-        expected = str(context[key])
-        current = str(os.environ.get(environment_name) or "").strip()
-        if current and current != expected:
-            raise RuntimeError(
-                "runtime_project_context does not match the existing deployed "
-                f"context for {key}."
-            )
-    for key, environment_name in RUNTIME_PROJECT_CONTEXT_ENV.items():
-        expected = str(context[key])
-        os.environ[environment_name] = expected
+def _apply_runtime_project_context(
+    payload: Mapping[str, Any],
+    *,
+    source: BackendRuntimeContextSource,
+) -> None:
+    try:
+        _install_backend_runtime_project_context(payload, source=source)
+    except BackendRuntimeProjectContextError as exc:
+        raise RuntimeError(str(exc)) from exc
 
 
 def _get_sdk_version() -> str:
@@ -157,7 +141,7 @@ def _request_job_startup_state(*, timeout_s: float = 10.0) -> dict[str, Any]:
         if not access_token:
             return False
 
-        _apply_runtime_project_context(data)
+        _apply_runtime_project_context(data, source="runtime_credential_exchange")
         os.environ["MAINSEQUENCE_ACCESS_TOKEN"] = access_token
         return True
 
@@ -256,7 +240,8 @@ def _apply_additional_environment(startup_state: Mapping[str, Any]) -> None:
             "runtime_project_context_missing: JobRun startup state did not "
             "include backend-issued ProjectBranch context."
         )
-    _apply_runtime_project_context(startup_state)
+    if "runtime_project_context" in startup_state:
+        _apply_runtime_project_context(startup_state, source="job_run_startup")
     extra = startup_state.get("additional_environment")
     if isinstance(extra, dict):
         for k, v in extra.items():
@@ -274,11 +259,10 @@ def _build_backend_bindings(
         "job_run_uid": startup_state.get("job_run_uid"),
         "command_id": startup_state.get("command_id"),
     }
-    runtime_context = startup_state.get("runtime_project_context")
-    if not isinstance(runtime_context, Mapping):
-        runtime_context = {}
-    for field, environment_name in RUNTIME_PROJECT_CONTEXT_ENV.items():
-        bindings[field] = runtime_context.get(field) or os.environ.get(environment_name)
+    runtime_state = _get_backend_runtime_project_context_state()
+    runtime_context = runtime_state.context.as_dict() if runtime_state.context else {}
+    for field in RUNTIME_PROJECT_CONTEXT_ENV:
+        bindings[field] = runtime_context.get(field)
 
     if not bindings.get("project_branch_uid"):
         if "user_id" in startup_state:

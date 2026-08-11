@@ -321,7 +321,7 @@ def test_time_index_meta_table_rejects_conflicting_profile_uid():
         )
 
 
-def test_time_index_meta_table_register_injects_runtime_project_context(monkeypatch):
+def test_time_index_meta_table_register_injects_sdk_resolved_local_context(monkeypatch):
     captured = {}
 
     def fake_make_request(**kwargs):
@@ -367,6 +367,22 @@ def test_time_index_meta_table_register_injects_runtime_project_context(monkeypa
         _project_context().model_dump(mode="json")
     )
     assert "organization_project_environment_uid" not in captured["payload"]["json"]
+
+
+def test_metatable_register_rejects_caller_project_context():
+    with pytest.raises(ValueError, match="SDK-controlled"):
+        meta_table_models.TimeIndexMetaTable.register(
+            data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+            identifier="Prices",
+            namespace="example.assets",
+            time_index_name="time_index",
+            cadence="1d",
+            table_contract={
+                "physical": {"schema": "analytics", "table_name": "prices"},
+                "columns": [],
+            },
+            project_context=_project_context(),
+        )
 
 
 @pytest.mark.parametrize(
@@ -1012,7 +1028,7 @@ def test_meta_table_issue_migration_connection_posts_scope(monkeypatch):
     monkeypatch.setattr(
         meta_table_models,
         "_current_metatable_project_context",
-        lambda: (_ for _ in ()).throw(AssertionError("context must be reused")),
+        _project_context,
     )
 
     meta_table = meta_table_models.MetaTable.model_construct(
@@ -1024,7 +1040,6 @@ def test_meta_table_issue_migration_connection_posts_scope(monkeypatch):
             migration_namespace="markets",
             migration_provider_key="msm:markets",
             ttl_seconds=60,
-            project_context=_project_context(),
         )
     )
 
@@ -1114,6 +1129,11 @@ def test_meta_table_finalize_managed_posts_finalize_payload(monkeypatch):
         "build_session",
         classmethod(lambda cls: SimpleNamespace(headers={})),
     )
+    monkeypatch.setattr(
+        meta_table_models,
+        "_current_metatable_project_context",
+        _project_context,
+    )
 
     response = meta_table_models.MetaTable.finalize_managed(
         meta_table_models.ManagedMetaTableFinalizeRequest(
@@ -1123,7 +1143,6 @@ def test_meta_table_finalize_managed_posts_finalize_payload(monkeypatch):
             migration_provider_key="msm:markets",
             alembic_version_meta_table_uid="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
             alembic_revision="0001",
-            project_context=_project_context(),
         )
     )
 
@@ -1190,13 +1209,17 @@ def test_meta_table_finalize_managed_accepts_conflict_response(monkeypatch):
         "build_session",
         classmethod(lambda cls: SimpleNamespace(headers={})),
     )
+    monkeypatch.setattr(
+        meta_table_models,
+        "_current_metatable_project_context",
+        _project_context,
+    )
 
     response = meta_table_models.MetaTable.finalize_managed(
         meta_table_models.ManagedMetaTableFinalizeRequest(
             meta_table_uids=["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"],
             migration_package="msm",
             migration_namespace="markets",
-            project_context=_project_context(),
         )
     )
 

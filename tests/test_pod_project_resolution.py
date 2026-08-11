@@ -4,6 +4,7 @@ import pytest
 
 import mainsequence.client.metatables as models_metatables
 import mainsequence.client.models_foundry as models_foundry
+import mainsequence.runtime_context as runtime_context
 from mainsequence.client.exceptions import AuthenticationError
 from mainsequence.meta_tables.data_nodes import build_operations
 
@@ -16,9 +17,25 @@ ENVIRONMENT_UID = "a5e95092-a77a-45a6-835c-46d327e8b5e7"
 
 @pytest.fixture(autouse=True)
 def _reset_pod_project_resolution_cache():
+    runtime_context._reset_backend_runtime_project_context()
     models_metatables._reset_local_pod_project_resolution_cache()
     yield
+    runtime_context._reset_backend_runtime_project_context()
     models_metatables._reset_local_pod_project_resolution_cache()
+
+
+def _install_backend_runtime_context() -> None:
+    runtime_context._install_backend_runtime_project_context(
+        {
+            "runtime_project_context": {
+                "project_uid": PROJECT_UID,
+                "project_branch_uid": PROJECT_BRANCH_UID,
+                "repository_branch": "main",
+                "organization_project_environment_uid": ENVIRONMENT_UID,
+            }
+        },
+        source="job_run_startup",
+    )
 
 
 def _project_payload_public() -> dict:
@@ -141,10 +158,25 @@ def test_current_repository_branch_does_not_accept_environment_override(monkeypa
     assert models_metatables._current_repository_branch() is None
 
 
-def test_runtime_project_branch_uid_resolves_without_git_checkout(monkeypatch):
-    monkeypatch.setenv("MAIN_SEQUENCE_PROJECT_UID", PROJECT_UID)
+def test_reserved_branch_uid_does_not_activate_runtime_context(monkeypatch):
+    monkeypatch.delenv("MAINSEQUENCE_AUTH_MODE", raising=False)
     monkeypatch.setenv("MAIN_SEQUENCE_PROJECT_BRANCH_UID", PROJECT_BRANCH_UID)
-    monkeypatch.setenv("MAINSEQUENCE_REPOSITORY_BRANCH", "main")
+    monkeypatch.setenv("MAINSEQUENCE_REPOSITORY_BRANCH", "injected-branch")
+    monkeypatch.setattr(
+        models_metatables.subprocess,
+        "run",
+        lambda *args, **kwargs: types.SimpleNamespace(
+            returncode=0,
+            stdout="local-checkout\n",
+        ),
+    )
+
+    assert models_metatables._current_repository_branch() == "local-checkout"
+
+
+def test_runtime_project_branch_uid_resolves_without_git_checkout(monkeypatch):
+    monkeypatch.setenv("MAINSEQUENCE_AUTH_MODE", "session_jwt")
+    _install_backend_runtime_context()
     monkeypatch.setattr(
         models_metatables.subprocess,
         "run",
@@ -265,6 +297,121 @@ def test_data_node_update_get_or_create_uses_current_project_branch_uid(monkeypa
     assert payload["current_project_branch_uid"] == PROJECT_BRANCH_UID
     assert "current_project_uid" not in payload
     assert "current_project_id" not in payload
+
+
+def test_deployed_data_node_update_omits_project_branch_input(monkeypatch):
+    monkeypatch.setenv("MAINSEQUENCE_AUTH_MODE", "session_jwt")
+    _install_backend_runtime_context()
+    monkeypatch.setattr(
+        models_metatables.subprocess,
+        "run",
+        lambda *args, **kwargs: pytest.fail("Git must not run in deployed runtime"),
+    )
+    monkeypatch.setattr(
+        models_foundry.Project,
+        "get",
+        lambda *args, **kwargs: types.SimpleNamespace(
+            uid=PROJECT_UID,
+            branches=[
+                types.SimpleNamespace(
+                    uid=PROJECT_BRANCH_UID,
+                    repository_branch="main",
+                )
+            ],
+        ),
+    )
+    monkeypatch.setattr(
+        models_foundry.ProjectBranch,
+        "get",
+        lambda *args, **kwargs: types.SimpleNamespace(
+            uid=PROJECT_BRANCH_UID,
+            repository_branch="main",
+            metatables_data_source=None,
+        ),
+    )
+    monkeypatch.setattr(
+        models_metatables.DataNodeUpdate,
+        "build_session",
+        classmethod(lambda cls: types.SimpleNamespace(headers={})),
+    )
+    captured = {}
+
+    class _Response:
+        status_code = 201
+
+        @staticmethod
+        def json():
+            return {
+                "uid": "update-uid-1",
+                "update_hash": "abc123",
+                "build_configuration": {},
+                "orm_class": "DataNodeUpdate",
+                "data_node_storage": "storage-1",
+                "labels": [],
+                "description": None,
+                "update_details": None,
+                "run_configuration": None,
+                "open_for_everyone": False,
+            }
+
+    def _make_request(**kwargs):
+        captured.update(kwargs)
+        return _Response()
+
+    monkeypatch.setattr(models_metatables, "make_request", _make_request)
+
+    models_metatables.DataNodeUpdate.get_or_create(update_hash="abc123")
+
+    assert "current_project_branch_uid" not in captured["payload"]["json"]
+
+
+def test_data_node_update_rejects_caller_project_branch_uid():
+    with pytest.raises(ValueError, match="SDK-controlled"):
+        models_metatables.DataNodeUpdate.get_or_create(
+            update_hash="abc123",
+            current_project_branch_uid=PROJECT_BRANCH_UID,
+        )
+
+
+def test_deployed_metatable_request_omits_project_context(monkeypatch):
+    monkeypatch.setenv("MAINSEQUENCE_AUTH_MODE", "session_jwt")
+    _install_backend_runtime_context()
+    monkeypatch.setattr(
+        models_metatables.subprocess,
+        "run",
+        lambda *args, **kwargs: pytest.fail("Git must not run in deployed runtime"),
+    )
+    monkeypatch.setattr(
+        models_foundry.Project,
+        "get",
+        lambda *args, **kwargs: types.SimpleNamespace(
+            uid=PROJECT_UID,
+            branches=[
+                types.SimpleNamespace(
+                    uid=PROJECT_BRANCH_UID,
+                    repository_branch="main",
+                )
+            ],
+        ),
+    )
+    monkeypatch.setattr(
+        models_foundry.ProjectBranch,
+        "get",
+        lambda *args, **kwargs: types.SimpleNamespace(
+            uid=PROJECT_BRANCH_UID,
+            repository_branch="main",
+            metatables_data_source=None,
+        ),
+    )
+
+    payload = models_metatables._with_current_metatable_project_context(
+        {
+            "management_mode": "platform_managed",
+            "data_source_uid": DATA_SOURCE_UID,
+        }
+    )
+
+    assert "project_context" not in payload
 
 
 def test_resolve_local_pod_project_uses_uid_lookup_and_caches(monkeypatch):

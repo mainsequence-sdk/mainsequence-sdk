@@ -55,7 +55,7 @@ def _project_context(monkeypatch):
         project_branch_uid=PROJECT_BRANCH_UID,
     )
     monkeypatch.setattr(
-        "mainsequence.meta_tables.migrations._current_metatable_project_context",
+        "mainsequence.client.metatables.core._current_metatable_project_context",
         lambda: context,
     )
     monkeypatch.setattr(
@@ -328,9 +328,7 @@ def test_alembic_metatable_migration_registers_registry_from_bound_data_source(m
     assert row["migration_namespace"] == "markets"
     assert row["migration_provider_key"] == "msm:markets"
     assert row["alembic_version_meta_table_uid"] is None
-    assert row["project_context"] == {
-        "project_branch_uid": PROJECT_BRANCH_UID,
-    }
+    assert "project_context" not in row
     assert row["physical_schema"] == "public"
     assert row["physical_table_name"] == "alembic_version"
     assert row["table_contract"]["physical"]["schema"] == "public"
@@ -1058,12 +1056,10 @@ def test_alembic_metatable_migration_sync_catalog_hook_has_no_reserved_policy(
     )
 
     def fake_register(request, *, timeout=None):
-        assert request["project_context"] == {
-            "project_branch_uid": PROJECT_BRANCH_UID,
-        }
+        assert "project_context" not in request.model_dump(exclude_none=True)
         return MetaTable.model_construct(
             uid="asset-meta-table-uid",
-            data_source_uid=request["data_source_uid"],
+            data_source_uid=request.data_source_uid,
             physical_table_name="mt_asset",
             management_mode="platform_managed",
         )

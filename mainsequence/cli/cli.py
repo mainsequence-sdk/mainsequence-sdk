@@ -2163,7 +2163,8 @@ def _current_project_runtime_auth_env(backend_url: str) -> dict[str, str]:
     Return auth environment entries for local project `.env` provisioning.
 
     The output follows the active auth mode:
-    - runtime credential mode writes runtime credential keys and an exchanged access token
+    - a backend-injected runtime credential mode preserves its credential keys
+      and an exchanged access token
     - default JWT mode writes the current CLI session access/refresh token pair
     """
     if _runtime_credential_mode_enabled():
@@ -2308,9 +2309,11 @@ def login(
     Interactive login uses browser-based authentication and finishes with
     standard JWT access/refresh tokens persisted by the CLI.
 
-    If `MAINSEQUENCE_AUTH_MODE=runtime_credential`, login exchanges the
-    configured runtime credential for a short-lived access token instead of
-    opening the browser or persisting CLI JWT tokens.
+    When a backend-launched process already has
+    `MAINSEQUENCE_AUTH_MODE=runtime_credential`, login exchanges the injected
+    runtime credential for a short-lived access token instead of opening the
+    browser or persisting CLI JWT tokens. This is not a user branch/runtime
+    selection mechanism.
 
     Parameters
     ----------
@@ -2345,7 +2348,6 @@ def login(
     mainsequence login --access-token "$TOKEN" --refresh-token "$REFRESH"
     mainsequence login --access-token "$TOKEN" --refresh-token "$REFRESH" --backend http://127.0.0.1:8000 --projects-base mainsequence-dev
     mainsequence login --export
-    MAINSEQUENCE_AUTH_MODE=runtime_credential mainsequence login
     ```
     """
     using_jwt = bool((access_token or "").strip() or (refresh_token or "").strip())

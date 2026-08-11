@@ -1,11 +1,29 @@
 from __future__ import annotations
 
 import importlib
+import os
 import pathlib
 import sys
 import types
 
+import pytest
 import requests
+
+_RUNTIME_CONTEXT_ENV_NAMES = (
+    "MAIN_SEQUENCE_PROJECT_UID",
+    "MAIN_SEQUENCE_PROJECT_BRANCH_UID",
+    "MAINSEQUENCE_REPOSITORY_BRANCH",
+    "MAIN_SEQUENCE_ORGANIZATION_PROJECT_ENVIRONMENT_UID",
+)
+
+
+@pytest.fixture(autouse=True)
+def _clear_runtime_context_environment():
+    for name in _RUNTIME_CONTEXT_ENV_NAMES:
+        os.environ.pop(name, None)
+    yield
+    for name in _RUNTIME_CONTEXT_ENV_NAMES:
+        os.environ.pop(name, None)
 
 
 def _load_mainsequence_submodule(module_name: str):

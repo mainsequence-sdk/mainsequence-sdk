@@ -32,7 +32,7 @@ Use request-bound access-token auth when:
 Use runtime credential auth when:
 
 - a long-running runtime needs to authenticate without a user login prompt
-- the environment provides a runtime credential id and secret
+- the backend launcher injects a runtime credential id and secret
 - the process should mint short-lived access tokens as needed
 
 ## JWT Auth
@@ -151,9 +151,12 @@ Do not use this mode for standalone scripts that need to run independently for a
 
 ## Runtime Credential Auth
 
-Runtime credential auth is for non-interactive runtimes that need to obtain short-lived access tokens from a durable runtime credential.
+Runtime credential auth is for non-interactive runtimes that need to obtain
+short-lived access tokens from a durable runtime credential. In deployed Main
+Sequence workloads, the backend injects this authentication mode and its
+credential. It is not a user-facing runtime or branch selector.
 
-Enable it with:
+The backend launcher supplies:
 
 ```bash
 MAINSEQUENCE_AUTH_MODE=runtime_credential
@@ -161,13 +164,16 @@ MAINSEQUENCE_RUNTIME_CREDENTIAL_ID=<credential id>
 MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET=<credential secret>
 ```
 
-To explicitly perform the exchange from the CLI, run:
+Inside that already provisioned runtime, explicitly perform the exchange with:
 
 ```bash
 mainsequence login
 ```
 
-In runtime credential mode, `mainsequence login` does not open browser login and does not persist CLI JWT refresh tokens. It exchanges the configured runtime credential and stores the returned access token in `MAINSEQUENCE_ACCESS_TOKEN` for that process.
+In runtime credential mode, `mainsequence login` does not open browser login and
+does not persist CLI JWT refresh tokens. It exchanges the backend-injected
+runtime credential and stores the returned access token in
+`MAINSEQUENCE_ACCESS_TOKEN` for that process.
 
 If the parent shell needs the exchanged token, use:
 
@@ -182,7 +188,9 @@ mainsequence project set-up-locally <PROJECT_UID>
 mainsequence project refresh_token --path .
 ```
 
-When `MAINSEQUENCE_AUTH_MODE=runtime_credential`, these commands write the runtime credential auth shape into the project `.env`:
+When an already authenticated coding-agent runtime uses
+`MAINSEQUENCE_AUTH_MODE=runtime_credential`, these commands preserve the
+backend-injected runtime credential auth shape in the project `.env`:
 
 ```bash
 MAINSEQUENCE_AUTH_MODE=runtime_credential
@@ -202,10 +210,13 @@ the current supported authentication shape. They do not carry forward obsolete
 In a local checkout, the SDK matches the current Git branch to the corresponding
 `ProjectBranch`; switching branches does not rewrite local credentials. In a
 deployed Job, Resource Release, or Project Executor image there may be no `.git`
-directory. Those runtimes receive the backend-issued
-`MAIN_SEQUENCE_PROJECT_BRANCH_UID`, exact `MAINSEQUENCE_REPOSITORY_BRANCH`, and
-`MAIN_SEQUENCE_ORGANIZATION_PROJECT_ENVIRONMENT_UID`, and the SDK uses that
-authoritative context instead of invoking Git.
+directory. Those runtimes receive reserved diagnostic environment values for
+the exact ProjectBranch and Organization Environment. The values are written
+by the backend and are never user configuration. The SDK activates deployed
+runtime context only after an authenticated JobRun startup or
+runtime-credential exchange returns `runtime_project_context`; environment
+values alone are not authority and cannot activate or select a runtime
+context.
 
 Functionally:
 
@@ -213,7 +224,9 @@ Functionally:
 - the SDK exchanges that credential for a short-lived JWT access token
 - the returned access token is used as `Authorization: Bearer <token>`
 - the returned access token is stored in `MAINSEQUENCE_ACCESS_TOKEN` for the current process environment
-- a branch-owned exchange also installs its returned `runtime_project_context` in the reserved process environment
+- a branch-owned exchange installs its returned `runtime_project_context` as
+  verified in-process state and mirrors it to the reserved process environment
+  for child-process transport and diagnostics
 - child processes launched after the exchange can inherit `MAINSEQUENCE_ACCESS_TOKEN`
 - when the access token is missing, near expiry, expired, or rejected with `401`, the SDK exchanges the runtime credential again
 
@@ -225,6 +238,15 @@ Important constraints:
 - runtime credential mode wins when `MAINSEQUENCE_AUTH_MODE=runtime_credential`
 - the exchanged access token should be treated as short-lived runtime material
 - project `.env` files may contain runtime credential material; keep `.env` out of version control
+- users and application code never set runtime mode, ProjectBranch UID,
+  repository branch, or Organization Environment UID to choose deployed
+  execution context
+- deployed SDK requests omit branch/environment selection; the backend derives
+  and authorizes it from the authenticated JobRun, Project Executor, or
+  ResourceRelease target
+- a genuine local checkout may select a Git branch, but the SDK resolves its
+  persisted ProjectBranch internally and never treats that local choice as a
+  deployed runtime authority
 
 Use this for:
 
