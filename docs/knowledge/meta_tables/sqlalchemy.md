@@ -320,17 +320,12 @@ In this mode:
 - TS Manager registers metadata and can introspect the existing table
 - MetaTable `uid` is the platform identity
 
-## Complete Examples
+## Runnable application ownership
 
-The SDK repository includes complete Account/Asset examples:
-
-- [platform_managed/account_asset.py](../../../examples/meta_tables/platform_managed/account_asset.py)
-- [external_managed/account_asset.py](../../../examples/meta_tables/external_managed/account_asset.py)
-- [compiled_sql_account_asset_query.py](../../../examples/meta_tables/compiled_sql_account_asset_query.py)
-
-The platform-managed example is migration-first. The external-managed example
-uses the low-level TS Manager registration primitive. The compiled query example
-prints the generated operation unless you set `MAINSEQUENCE_META_TABLE_EXECUTE=1`.
+Complete runnable applications belong in their own Project repositories, where
+their migrations, dependencies, fixtures, tests, and documentation can remain
+synchronized. This SDK page documents the public SQLAlchemy contract without
+maintaining a second application source tree.
 
 ## Validation Rules
 

@@ -1,1 +1,0 @@
-"""Externally managed MetaTable examples."""

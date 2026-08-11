@@ -1,1 +1,0 @@
-"""Platform-managed MetaTable examples."""

@@ -46,6 +46,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Removed `DynamicTableDataSource`, its deleted TS Manager endpoint, wrapper
   traversal, migration-connection models, and compatibility exports.
 
+## [6.0.26] - 2026-08-11
+
+### Changed
+
+- Made the separate `mainsequence-sdk-tutorial` Project the sole source of
+  beginner tutorial documentation and kept one repository link for discovery.
+- Clarified that runnable applications own their code, migrations, fixtures,
+  tests, and documentation in self-contained Project repositories.
+
+### Removed
+
+- Removed the SDK-hosted tutorial, example source tree, generated examples page,
+  navigation entries, and examples-index generator.
+
 ## [6.0.25] - 2026-08-11
 
 ### Fixed

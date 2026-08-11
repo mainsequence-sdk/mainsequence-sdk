@@ -252,9 +252,9 @@ If `Team A` has `edit` access to a dashboard or dataset:
 
 Keep your thinking resource by resource.
 
-## How this connects to the tutorial
+## How access fits the platform workflow
 
-In the tutorial, you already saw this pattern in practice:
+The same resource-scoped pattern applies across the platform:
 
 - `TimeIndexMetaTable` controls access to published data
 - `Constant` and `Secret` control access to runtime configuration
@@ -273,4 +273,5 @@ That is why RBAC appears early in the Main Sequence workflow. The moment a resou
 - do not assume team membership means team administration
 - think in terms of resource boundaries: project, dataset, secret, bucket, artifact, release
 
-For the CLI workflow around sharing specific resources, see [Role-Based Access Control Tutorial](../../tutorial/role_based_access_control.md) and [Constants and Secrets](./constants_and_secrets.md).
+For related configuration guidance, see
+[Constants and Secrets](./constants_and_secrets.md).

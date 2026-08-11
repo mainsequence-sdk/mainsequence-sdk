@@ -276,10 +276,10 @@ detected and rejected until a deliberate two-phase contract flow exists.
   explicit target UID mapping.
 - [x] Update `docs/knowledge/meta_tables/sqlalchemy.md` to teach
   `MetaTableForeignKey(Account, column="uid", ...)`.
-- [x] Update `docs/tutorial/working_with_meta_tables.md` with a complete parent and
-  child registration example.
-- [x] Update `docs/tutorial/creating_a_simple_data_node.md` anywhere it shows
-  MetaTable-backed FK storage.
+- [x] Update the then-current MetaTable tutorial with a complete parent and child
+  registration example.
+- [x] Update the then-current DataNode tutorial anywhere it shows MetaTable-backed
+  FK storage. The canonical tutorial was later moved to its own Project.
 - [x] Update `agent_scaffold/skills/data_publishing/meta_tables/SKILL.md` to state
   that platform-managed FKs must use `MetaTableForeignKey(TargetModel, ...)`.
 - [x] Update `agent_scaffold/skills/data_publishing/data_nodes/SKILL.md` to point

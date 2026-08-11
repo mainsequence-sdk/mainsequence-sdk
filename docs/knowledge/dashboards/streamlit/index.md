@@ -23,9 +23,8 @@ That means:
 
 The SDK should provide platform capabilities. The application should own presentation code.
 
-## Tutorial
+## Runnable example ownership
 
-The tutorial Streamlit chapters show how to build and deploy a dashboard using plain Streamlit app code plus SDK client calls:
-
-- [Part 5.1 — Streamlit Integration I](../../../tutorial/dashboards/streamlit/streamlit_integration_1.md)
-- [Part 5.2 — Streamlit Integration II](../../../tutorial/dashboards/streamlit/streamlit_integration_2.md)
+The canonical tutorial Project owns the beginner Streamlit application and its
+deployment walkthrough. This page remains the SDK knowledge reference for the
+integration boundary.

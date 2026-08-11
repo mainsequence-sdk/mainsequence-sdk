@@ -76,9 +76,9 @@ Alembic executes DDL through the provider migration credential. The backend owns
 catalog reservation and credential issuance; it does not own the Alembic
 migration lifecycle or FK/index naming.
 
-For a walkthrough that evolves the `Account` and `AccountLimit` MetaTables from
-the tutorial, see
-[Part 2.1: MetaTable Migrations](../../tutorial/metatable_migrations.md).
+The canonical tutorial Project contains the runnable beginner migration flow.
+This page remains the SDK reference for provider behavior and migration
+contracts.
 
 ## Provider Object
 

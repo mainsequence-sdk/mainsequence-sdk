@@ -637,7 +637,8 @@ The SDK owns:
 - helpers that bind MetaTable UID/storage metadata while preserving authored
   SQLAlchemy table names before Alembic runs
 - docs and examples that show Alembic, not SDK operation lists, including the
-  dedicated `docs/tutorial/metatable_migrations.md` walkthrough
+  then-current migration walkthrough later relocated to the canonical tutorial
+  Project
 
 The SDK does not own:
 
@@ -709,10 +710,11 @@ Remove these concepts from SDK public behavior:
 - SQL-or-operations fallbacks
 - custom schema-operation tests, examples, and docs
 
-Remove or rewrite these docs/examples:
+Remove or rewrite this supporting material:
 
-- `examples/meta_tables/migrations/*`
-- migration sections in `docs/tutorial/working_with_meta_tables.md`
+- the then-current SDK MetaTable migration example tree, later removed when
+  runnable applications moved to self-contained Project repositories
+- migration sections in the then-current SDK-hosted tutorial
 - stale artifact-table content in `docs/knowledge/meta_tables/migrations.md`
 - stale artifact-table content in `docs/knowledge/meta_tables/api.md`
 
@@ -768,9 +770,9 @@ stable identifier.
 - [x] Make migration catalog sync bind models to existing catalog rows before
   refresh, reserve missing table-name identifiers, and fail on duplicate
   table-name identifiers.
-- [x] Update `docs/tutorial/metatable_migrations.md` so the user-facing flow is
-  one `mainsequence migrations upgrade --provider ... head` path with
-  table-name catalog sync.
+- [x] Update the then-current tutorial migration page so the user-facing flow is
+  one `mainsequence migrations upgrade --provider ... head` path with table-name
+  catalog sync. The canonical tutorial was later moved to its own Project.
 - [x] Update `docs/knowledge/meta_tables/migrations.md` and
   `docs/knowledge/meta_tables/api.md` to remove the `--register-metatables`
   workflow and document table-name catalog sync.

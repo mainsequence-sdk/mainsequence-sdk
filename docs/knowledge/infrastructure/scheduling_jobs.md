@@ -447,6 +447,5 @@ or disable polling control if you want to handle it yourself.
 
 ## Related Reading
 
-- [Tutorial Part 4: Orchestration](../../tutorial/scheduling_jobs.md)
 - [Artifacts](./artifacts.md)
 - [CLI Deep Dive](../cli.md)

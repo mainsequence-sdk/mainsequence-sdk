@@ -40,28 +40,21 @@ Main package areas:
 
 Repository areas:
 
-- `docs/`: tutorials, knowledge guides, CLI docs, and generated reference docs
-- `examples/`: worked examples and usage patterns
+- `docs/`: knowledge guides, CLI docs, and generated reference docs
 - `tests/`: automated tests
 
 ## Documentation map
 
-The documentation is organized into four reading modes:
+The documentation is organized into three reading modes:
 
-1. **Tutorial**: the guided learning path
-2. **Knowledge**: deeper conceptual guides
-3. **CLI**: command-focused operational documentation
-4. **Reference**: generated API reference
+1. **Knowledge**: deeper conceptual guides
+2. **CLI**: command-focused operational documentation
+3. **Reference**: generated API reference
 
 Recommended entry points:
 
-- Tutorial:
-  - [Setting a Project (CLI)](docs/tutorial/setting_a_project.md)
-  - [Working With MetaTables](docs/tutorial/working_with_meta_tables.md)
-  - [Creating a Data Node](docs/tutorial/creating_a_simple_data_node.md)
-  - [Role-Based Access Control](docs/tutorial/role_based_access_control.md)
-  - [Create Your First API](docs/tutorial/create_your_first_api.md)
-  - [Turn Your Project Into an Agent](docs/tutorial/project_to_agent.md)
+- Beginner tutorial:
+  - [MainSequence SDK tutorial Project](https://github.com/mainsequence-projects/mainsequence-sdk-tutorial)
 - Knowledge:
   - [Data Nodes](docs/knowledge/data_nodes.md)
   - [MetaTables](docs/knowledge/meta_tables/index.md)
@@ -175,7 +168,7 @@ black .
 
 If you are evaluating the platform:
 
-- start with the tutorial in `docs/tutorial/`
+- start with the separate canonical tutorial Project linked above
 
 If you are building a feature and already know the area:
 

@@ -222,7 +222,8 @@ or be treated as private SDK plumbing.
 - [x] Update `docs/knowledge/meta_tables/sqlalchemy.md`.
 - [x] Update `docs/knowledge/meta_tables/migrations.md`.
 - [x] Update `docs/knowledge/meta_tables/api.md`.
-- [x] Update `docs/tutorial/metatable_migrations.md`.
+- [x] Update the then-current tutorial migration page. The canonical tutorial was
+  later moved to its own Project.
 - [x] Update MetaTable examples to be migration-first only.
 - [x] Update MetaTable skill guidance to stop recommending direct registration
   for platform-managed models.

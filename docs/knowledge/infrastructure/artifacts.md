@@ -253,18 +253,17 @@ If you need explicit pre-checks, do them intentionally. Otherwise, keep the uplo
 
 If you use `Artifact.filter(...)` first, add `continue` when you want to skip.
 
-## How this fits in the tutorial
+## How Artifacts fit the workflow
 
-The tutorial introduces Artifacts in Part 4 because that is where infrastructure concepts start to matter:
+Artifacts usually become relevant when infrastructure concepts start to matter:
 
 - first you build `DataNode`s
 - then you learn how code runs as jobs
 - then you learn how files can move through the same platform
 
-That keeps the flow coherent before the later dashboard chapters.
+That keeps file movement aligned with the same Job and consumer lifecycle.
 
 ## Related Reading
 
-- [Part 4: Orchestration](../../tutorial/scheduling_jobs.md)
 - [Scheduling Jobs](./scheduling_jobs.md)
 - [Data Nodes](../data_nodes.md)

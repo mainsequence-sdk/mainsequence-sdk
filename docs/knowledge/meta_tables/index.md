@@ -306,4 +306,3 @@ artifact.
 - [SDK API And Backend Contract](api.md)
 - [Registering SQLAlchemy Tables](sqlalchemy.md)
 - [Compiled SQL Execution](compiled_sql.md)
-- [MetaTable Examples](../../../examples/meta_tables/README.md)
