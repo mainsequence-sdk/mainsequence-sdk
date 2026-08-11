@@ -46,6 +46,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Removed `DynamicTableDataSource`, its deleted TS Manager endpoint, wrapper
   traversal, migration-connection models, and compatibility exports.
 
+## [6.0.23] - 2026-08-11
+
+### Fixed
+
+- Accepted the documented `automatic_redeployment_policy` object returned for
+  resource releases, preventing successful CLI release creation from being
+  reported as a Pydantic `extra_forbidden` failure.
+
 ## [4.0.2] - 2026-05-25
 
 ### Changed

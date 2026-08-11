@@ -2055,12 +2055,19 @@ def test_resource_release_models_support_automatic_deployment_payloads():
             "related_job_uid": job_uid,
             "release_kind": "fastapi",
             "automatic_deployment": True,
+            "automatic_redeployment_policy": {
+                "tag_regex": None,
+                "policy_revision": 3,
+            },
         }
     )
 
     assert release.uid == release_uid
     assert release.release_kind == models_helpers_mod.ResourceReleaseKind.FAST_API
     assert release.automatic_deployment is True
+    assert release.automatic_redeployment_policy is not None
+    assert release.automatic_redeployment_policy.tag_regex is None
+    assert release.automatic_redeployment_policy.policy_revision == 3
 
     run = models_helpers_mod.ResourceReleaseAutomaticDeploymentRun.model_validate(
         {
@@ -2110,6 +2117,10 @@ def test_resource_release_create_sends_automatic_deployment(monkeypatch):
                 "related_job_uid": "7d0ab07c-d1c0-4b7f-9c69-3c1a41c0a4da",
                 "release_kind": "fastapi",
                 "automatic_deployment": True,
+                "automatic_redeployment_policy": {
+                    "tag_regex": "^v[0-9]+\\.[0-9]+\\.[0-9]+$",
+                    "policy_revision": 1,
+                },
             }
 
     def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
@@ -2132,6 +2143,9 @@ def test_resource_release_create_sends_automatic_deployment(monkeypatch):
     )
 
     assert release.automatic_deployment is True
+    assert release.automatic_redeployment_policy is not None
+    assert release.automatic_redeployment_policy.tag_regex == "^v[0-9]+\\.[0-9]+\\.[0-9]+$"
+    assert release.automatic_redeployment_policy.policy_revision == 1
     assert captured["r_type"] == "POST"
     assert str(captured["url"]).endswith("/api/v1/resource-releases/")
     assert captured["payload"]["json"]["automatic_deployment"] is True

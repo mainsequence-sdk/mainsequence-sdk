@@ -963,6 +963,24 @@ class ResourceReleaseKind(str, Enum):
     STATIC_SITE = "static_site"
 
 
+class AutomaticRedeploymentPolicy(BaseModel):
+    tag_regex: str | None = Field(
+        ...,
+        title="Tag Regex",
+        description=(
+            "Regular expression matched against immutable repository tags. "
+            "Null enables redeployment for every commit."
+        ),
+        examples=[None, r"^v(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)$"],
+    )
+    policy_revision: PositiveInt = Field(
+        ...,
+        title="Policy Revision",
+        description="Immutable revision of the current automatic redeployment policy.",
+        examples=[1, 3],
+    )
+
+
 class ResourceRelease(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
         "uid": ["exact", "in"],
@@ -1064,6 +1082,14 @@ class ResourceRelease(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
             "current project commit."
         ),
         examples=[False, True],
+    )
+    automatic_redeployment_policy: AutomaticRedeploymentPolicy | None = Field(
+        default=None,
+        title="Automatic Redeployment Policy",
+        description=(
+            "Backend-owned tag matching policy and its current immutable revision. "
+            "The revision is returned by the API and is not part of create requests."
+        ),
     )
 
     @classmethod
