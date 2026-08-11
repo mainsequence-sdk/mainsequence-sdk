@@ -209,14 +209,14 @@ Validate the deployment path, not the Streamlit design.
 
 `automatic_deployment` is the automated deployment opt-in flag on a `ResourceRelease`. It means repository synchronization can rotate an existing release to the latest synced project commit for the same resource path.
 
-When `automatic_deployment=True`, repository-sync events may create a `ResourceReleaseAutomaticDeploymentRun` with source `repository_event`. That run:
+When `automatic_deployment=True`, repository-sync events may create a unified `DeploymentRun` with `target_type="resource_release"` and source `repository_event`. That run:
 
 - reads the project's current synced commit
 - resolves the current project resource at the release's existing resource path
 - resolves the current adjacent `README.md` when the release kind requires one, such as Streamlit dashboards
 - creates or resolves the project image for that commit
 - redeploys the existing release to the current resource, README, and project image
-- records status, current step, revision context, image/resource context, result, and errors on the deployment run
+- records state, phase, outcome, revision context, artifact context, steps, logs, result, and errors on the deployment run
 
 This is not a local development shortcut. It does not deploy unpushed local files. The repository must be pushed, the project repository must be synced, and project resource discovery must find the resource at the same path for the current commit.
 
@@ -247,28 +247,12 @@ The SDK surface also accepts:
 - `ProjectResource.create_dashboard(..., automatic_deployment=True)`
 - `ProjectResource.create_fastapi(..., automatic_deployment=True)`
 - `ResourceRelease.create(..., automatic_deployment=True)`
-- `ResourceRelease.deploy_current_version()` for an SDK-triggered manual deployment run
+- `ResourceRelease.deploy_current_version()` for an SDK-triggered manual deployment run; it returns `DeploymentRun`
+- `DeploymentRun.filter(target_type="resource_release", target_uid=release.uid)` to inspect runs for one release
 
 Do not claim there is a CLI command for `deploy_current_version` unless the local CLI actually exposes one. In this SDK, the manual detail action is available through the client model.
 
-Automatic deployment runs can have these statuses:
-
-- `pending`
-- `running`
-- `waiting_project_image`
-- `waiting_runtime_ready`
-- `no_action`
-- `deployed`
-- `skipped`
-- `blocked`
-- `failed`
-
-Important blocked/skipped cases include:
-
-- `automatic_deployment_disabled`: repository-event rotation skipped because the release is not opted in
-- `project_current_version_missing`: the project has no current synced version
-- `resource_missing_for_current_commit`: no resource exists at the release path for the latest synced commit
-- `readme_missing_for_current_commit`: a dashboard-style release needs an adjacent README for the current commit
+Inspect the unified run's `state`, `phase`, `outcome`, `steps`, `logs`, and `error` fields. Do not use legacy resource-release deployment status fields or filters.
 
 ## Review Rules
 

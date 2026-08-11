@@ -1174,7 +1174,7 @@ class ResourceRelease(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
         self,
         *,
         timeout: int | float | tuple[float, float] | None = None,
-    ) -> ResourceReleaseAutomaticDeploymentRun:
+    ) -> DeploymentRun:
         data = self._request_detail_action(
             r_type="POST",
             action_name="deploy-current-version",
@@ -1182,116 +1182,7 @@ class ResourceRelease(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
             timeout=timeout,
             expected_statuses=(200, 202),
         )
-        return ResourceReleaseAutomaticDeploymentRun(**data)
-
-
-class ResourceReleaseAutomaticDeploymentRun(BaseObjectOrm, BasePydanticModel):
-    FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
-        "resource_release__uid": ["exact", "in"],
-        "status": ["exact", "in"],
-        "release_kind": ["exact", "in"],
-        "automatic_deployment_source": ["exact", "in"],
-    }
-    FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
-        "resource_release__uid": "uid",
-        "status": "str",
-        "release_kind": "str",
-        "automatic_deployment_source": "str",
-    }
-
-    STATUS_PENDING: ClassVar[str] = "pending"
-    STATUS_RUNNING: ClassVar[str] = "running"
-    STATUS_WAITING_PROJECT_IMAGE: ClassVar[str] = "waiting_project_image"
-    STATUS_WAITING_RUNTIME_READY: ClassVar[str] = "waiting_runtime_ready"
-    STATUS_NO_ACTION: ClassVar[str] = "no_action"
-    STATUS_DEPLOYED: ClassVar[str] = "deployed"
-    STATUS_SKIPPED: ClassVar[str] = "skipped"
-    STATUS_BLOCKED: ClassVar[str] = "blocked"
-    STATUS_FAILED: ClassVar[str] = "failed"
-
-    SOURCE_MANUAL: ClassVar[str] = "manual"
-    SOURCE_REPOSITORY_EVENT: ClassVar[str] = "repository_event"
-
-    uid: str | None = Field(
-        None,
-        title="Resource Release Automatic Deployment Run UID",
-        description="Public UID of the automatic deployment run.",
-    )
-    resource_release_uid: str | None = Field(
-        None,
-        title="Resource Release UID",
-        description="Public UID snapshot of the resource release targeted by this run.",
-    )
-    resource_release_name: str = Field(
-        default="",
-        title="Resource Release Name",
-        description="Display-name snapshot of the targeted resource release.",
-    )
-    release_kind: ResourceReleaseKind | str | None = Field(
-        None,
-        title="Release Kind",
-        description="Resource release kind targeted by this run.",
-    )
-    status: str | None = Field(
-        None,
-        title="Status",
-        description="Deployment run status.",
-    )
-    current_step: str = Field(
-        default="",
-        title="Current Step",
-        description="Current orchestration step key.",
-    )
-    automatic_deployment_source: str | None = Field(
-        None,
-        title="Automatic Deployment Source",
-        description="Run trigger source, for example manual or repository_event.",
-    )
-    revision_context: dict[str, Any] = Field(
-        default_factory=dict,
-        title="Revision Context",
-        description="Stable project/revision/resource context for the run.",
-    )
-    trigger_context: dict[str, Any] = Field(
-        default_factory=dict,
-        title="Trigger Context",
-        description="Repository event or manual trigger correlation metadata.",
-    )
-    image_artifact_context: dict[str, Any] = Field(
-        default_factory=dict,
-        title="Image Artifact Context",
-        description="Project image and resource snapshots captured by the run.",
-    )
-    cleanup_context: dict[str, Any] = Field(
-        default_factory=dict,
-        title="Cleanup Context",
-        description="Cleanup outcomes captured by the run.",
-    )
-    started_at: datetime.datetime | None = Field(
-        None,
-        title="Started At",
-        description="Timestamp when execution started.",
-    )
-    finished_at: datetime.datetime | None = Field(
-        None,
-        title="Finished At",
-        description="Timestamp when execution finished.",
-    )
-    result: dict[str, Any] = Field(
-        default_factory=dict,
-        title="Result",
-        description="Terminal or intermediate deployment result payload.",
-    )
-    error_code: str = Field(
-        default="",
-        title="Error Code",
-        description="Machine-readable error code when the run failed or was blocked.",
-    )
-    error_detail: str = Field(
-        default="",
-        title="Error Detail",
-        description="Human-readable error detail when the run failed or was blocked.",
-    )
+        return DeploymentRun(**data)
 
 
 class DeploymentRunTarget(BaseModel):

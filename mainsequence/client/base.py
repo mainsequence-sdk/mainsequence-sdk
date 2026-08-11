@@ -100,7 +100,6 @@ class BaseObjectOrm:
         "GithubOrganization": "github-organizations",
         "ProjectResource": "project-resources",
         "ResourceRelease": "resource-releases",
-        "ResourceReleaseAutomaticDeploymentRun": "deployment-runs",
         "DeploymentRun": "deployment-runs",
         "Bucket": "buckets",
     }

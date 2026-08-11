@@ -46,6 +46,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Removed `DynamicTableDataSource`, its deleted TS Manager endpoint, wrapper
   traversal, migration-connection models, and compatibility exports.
 
+## [6.0.24] - 2026-08-11
+
+### Changed
+
+- Removed the obsolete `ResourceReleaseAutomaticDeploymentRun` model and made
+  resource-release deployment actions and queries use the unified
+  `DeploymentRun` response and filter contract.
+
 ## [6.0.23] - 2026-08-11
 
 ### Fixed

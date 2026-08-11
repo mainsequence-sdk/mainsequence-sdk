@@ -2041,7 +2041,7 @@ def test_resource_release_model_accepts_collection_payload_without_runtime_child
     assert release.related_job_uid is None
 
 
-def test_resource_release_models_support_automatic_deployment_payloads():
+def test_resource_release_model_supports_automatic_deployment_payloads():
     release_uid = "2f4c4c3d-5669-4da5-9d86-b84633c1e6ed"
     resource_uid = "857bec7b-dd77-4272-aecd-13fc2138eacc"
     job_uid = "7d0ab07c-d1c0-4b7f-9c69-3c1a41c0a4da"
@@ -2069,33 +2069,16 @@ def test_resource_release_models_support_automatic_deployment_payloads():
     assert release.automatic_redeployment_policy.tag_regex is None
     assert release.automatic_redeployment_policy.policy_revision == 3
 
-    run = models_helpers_mod.ResourceReleaseAutomaticDeploymentRun.model_validate(
-        {
-            "uid": "11111111-1111-4111-8111-111111111111",
-            "resource_release_uid": release_uid,
-            "resource_release_name": "analytics-123",
-            "release_kind": "fastapi",
-            "status": "waiting_project_image",
-            "current_step": "wait_project_image",
-            "automatic_deployment_source": "manual",
-            "revision_context": {"current_commit_sha": "abc123"},
-            "trigger_context": {},
-            "image_artifact_context": {"project_image": {"state": "waiting"}},
-            "cleanup_context": {},
-            "started_at": "2026-01-01T00:00:00Z",
-            "finished_at": None,
-            "result": {},
-            "error_code": "",
-            "error_detail": "",
-        }
-    )
 
-    assert run.resource_release_uid == release_uid
-    assert (
-        run.status
-        == models_helpers_mod.ResourceReleaseAutomaticDeploymentRun.STATUS_WAITING_PROJECT_IMAGE
-    )
-    assert run.revision_context["current_commit_sha"] == "abc123"
+def test_legacy_resource_release_deployment_run_model_is_not_exported():
+    import mainsequence.client as client_package
+
+    legacy_name = "ResourceReleaseAutomaticDeploymentRun"
+
+    assert not hasattr(models_helpers_mod, legacy_name)
+    assert not hasattr(client_package, legacy_name)
+    with pytest.raises(KeyError, match=legacy_name):
+        models_helpers_mod.get_model_class(legacy_name)
 
 
 def test_resource_release_create_sends_automatic_deployment(monkeypatch):
@@ -2223,21 +2206,31 @@ def test_resource_release_deploy_current_version_posts_detail_action(monkeypatch
         def json():
             return {
                 "uid": run_uid,
-                "resource_release_uid": release_uid,
-                "resource_release_name": "analytics-123",
-                "release_kind": "fastapi",
-                "status": "pending",
-                "current_step": "resolve_eligibility",
-                "automatic_deployment_source": "manual",
+                "target_type": "resource_release",
+                "target": {"uid": release_uid, "name": "analytics-123", "kind": "fastapi"},
+                "project_branch_uid": "33333333-3333-4333-8333-333333333333",
+                "operation": "build_and_deploy",
+                "source": "manual",
+                "commit_sha": "a" * 40,
+                "configuration_revision": 4,
+                "state": "succeeded",
+                "phase": "completed",
+                "outcome": "deployed",
+                "created_at": "2026-07-19T12:00:00Z",
+                "started_at": "2026-07-19T12:00:01Z",
+                "finished_at": "2026-07-19T12:00:05Z",
                 "revision_context": {},
                 "trigger_context": {},
-                "image_artifact_context": {},
+                "artifact_context": {},
                 "cleanup_context": {},
-                "started_at": None,
-                "finished_at": None,
                 "result": {},
-                "error_code": "",
-                "error_detail": "",
+                "steps": [],
+                "logs": {
+                    "state": "available",
+                    "url": f"/api/v1/deployment-runs/{run_uid}/logs/",
+                    "retention_expires_at": None,
+                },
+                "error": None,
             }
 
     def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
@@ -2252,7 +2245,13 @@ def test_resource_release_deploy_current_version_posts_detail_action(monkeypatch
     run = release.deploy_current_version(timeout=9)
 
     assert run.uid == run_uid
-    assert run.status == models_helpers_mod.ResourceReleaseAutomaticDeploymentRun.STATUS_PENDING
+    assert isinstance(run, models_helpers_mod.DeploymentRun)
+    assert run.target.uid == release_uid
+    assert run.state == "succeeded"
+    assert run.phase == "completed"
+    assert run.outcome == "deployed"
+    assert run.logs.state == "available"
+    assert run.error is None
     assert captured == {
         "r_type": "POST",
         "url": (
@@ -2264,24 +2263,78 @@ def test_resource_release_deploy_current_version_posts_detail_action(monkeypatch
     }
 
 
-def test_resource_release_automatic_deployment_run_filters_are_uid_based():
-    release_uid = " 2f4c4c3d-5669-4da5-9d86-b84633c1e6ed "
-
-    normalized = models_helpers_mod.ResourceReleaseAutomaticDeploymentRun._normalize_filter_kwargs(
-        {
-            "resource_release__uid": release_uid,
-            "status__in": [" deployed ", " failed "],
-            "release_kind": " fastapi ",
-            "automatic_deployment_source": " manual ",
-        }
-    )
-
-    assert normalized == {
-        "resource_release__uid": release_uid.strip(),
-        "status__in": ["deployed", "failed"],
-        "release_kind": "fastapi",
-        "automatic_deployment_source": "manual",
+def test_deployment_run_collection_and_detail_use_unified_resource_release_contract(monkeypatch):
+    captured = []
+    run_uid = "11111111-1111-4111-8111-111111111111"
+    release_uid = "2f4c4c3d-5669-4da5-9d86-b84633c1e6ed"
+    response_payload = {
+        "uid": run_uid,
+        "target_type": "resource_release",
+        "target": {"uid": release_uid, "name": "analytics-123", "kind": "fastapi"},
+        "project_branch_uid": "33333333-3333-4333-8333-333333333333",
+        "operation": "build_and_deploy",
+        "source": "repository_event",
+        "commit_sha": "a" * 40,
+        "configuration_revision": 4,
+        "state": "succeeded",
+        "phase": "completed",
+        "outcome": "deployed",
+        "created_at": "2026-07-19T12:00:00Z",
+        "started_at": "2026-07-19T12:00:01Z",
+        "finished_at": "2026-07-19T12:00:05Z",
+        "revision_context": {},
+        "trigger_context": {},
+        "artifact_context": {},
+        "cleanup_context": {},
+        "result": {},
+        "steps": [],
+        "logs": {
+            "state": "available",
+            "url": f"/api/v1/deployment-runs/{run_uid}/logs/",
+            "retention_expires_at": None,
+        },
+        "error": None,
     }
+
+    class FakeResponse:
+        status_code = 200
+
+        def __init__(self, payload):
+            self.payload = payload
+
+        def json(self):
+            return self.payload
+
+    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
+        captured.append({"r_type": r_type, "url": url, "payload": payload})
+        if url.rstrip("/") == models_helpers_mod.DeploymentRun.get_object_url():
+            return FakeResponse({"results": [dict(response_payload)], "next": None})
+        return FakeResponse(dict(response_payload))
+
+    monkeypatch.setattr(
+        models_helpers_mod.DeploymentRun,
+        "build_session",
+        classmethod(lambda cls: object()),
+    )
+    monkeypatch.setattr(base_mod, "make_request", _fake_make_request)
+
+    runs = models_helpers_mod.DeploymentRun.filter(
+        target_type="resource_release",
+        target_uid=release_uid,
+    )
+    detail = models_helpers_mod.DeploymentRun.get(pk=run_uid)
+
+    assert len(runs) == 1
+    assert runs[0].target.uid == release_uid
+    assert detail.state == "succeeded"
+    assert detail.phase == "completed"
+    assert detail.outcome == "deployed"
+    assert detail.logs.state == "available"
+    assert detail.error is None
+    assert captured[0]["payload"] == {
+        "params": {"target_type": "resource_release", "target_uid": release_uid}
+    }
+    assert captured[1]["url"].endswith(f"/deployment-runs/{run_uid}/")
 
 
 def test_unified_deployment_run_models_and_filters(monkeypatch):
