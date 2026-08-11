@@ -183,6 +183,38 @@ def test_job_run_filters_are_uid_based():
         models_helpers_mod.JobRun._normalize_filter_kwargs({"job__id": [501]})
 
 
+def test_job_run_uid_filters_send_canonical_query_parameters(monkeypatch):
+    captured_params = []
+
+    class FakeResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {"results": [], "next": None}
+
+    def _fake_make_request(**kwargs):
+        captured_params.append(kwargs["payload"]["params"])
+        return FakeResponse()
+
+    monkeypatch.setattr(
+        models_helpers_mod.JobRun,
+        "build_session",
+        classmethod(lambda cls: object()),
+    )
+    monkeypatch.setattr(base_mod, "make_request", _fake_make_request)
+
+    first_uid = "ab6a5d50-8a3e-4f0d-a9bb-7e84180bd50e"
+    second_uid = "7d0ab07c-d1c0-4b7f-9c69-3c1a41c0a4da"
+
+    assert models_helpers_mod.JobRun.filter(job__uid=first_uid) == []
+    assert models_helpers_mod.JobRun.filter(job__uid__in=[first_uid, second_uid]) == []
+    assert captured_params == [
+        {"job__uid": first_uid},
+        {"job__uid__in": f"{first_uid},{second_uid}"},
+    ]
+
+
 def test_job_run_deserializes_uid_payload_without_id():
     job_run = models_helpers_mod.JobRun(
         uid="4c1d77c8-8a42-42b8-a9c1-06be9a336e5d",

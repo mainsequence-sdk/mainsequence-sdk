@@ -4689,7 +4689,7 @@ def list_project_job_runs(
         ClientJobRun.ROOT_URL = root_url
 
         merged_filters = dict(filters or {})
-        merged_filters["job__uid"] = [str(job_uid)]
+        merged_filters["job__uid"] = str(job_uid)
         runs = ClientJobRun.filter(timeout=timeout, **merged_filters)
         out: list[dict[str, Any]] = []
         for run in runs:

@@ -300,7 +300,7 @@ nightly_job = Job.create(
 jobs = Job.filter(project__uid="<PROJECT_BRANCH_UID>")
 
 run_payload = nightly_job.run_job()
-job_runs = JobRun.filter(job__uid=[nightly_job.uid])
+job_runs = JobRun.filter(job__uid=nightly_job.uid)
 
 latest_run = job_runs[0]
 logs = latest_run.get_logs()

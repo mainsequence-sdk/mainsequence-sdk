@@ -5612,7 +5612,7 @@ def test_list_project_job_runs_uses_client_model(cli_mod, monkeypatch):
 
     job_uid = "7d0ab07c-d1c0-4b7f-9c69-3c1a41c0a4da"
     out = api_mod.list_project_job_runs(job_uid=job_uid, filters={"status": "COMPLETED"})
-    assert captured["filters"][0] == {"status": "COMPLETED", "job__uid": [job_uid]}
+    assert captured["filters"][0] == {"status": "COMPLETED", "job__uid": job_uid}
     assert captured["jwt"] == ("acc", "ref")
     assert out == [
         {

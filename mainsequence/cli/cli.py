@@ -9224,7 +9224,7 @@ def project_job_runs_list_cmd(
     """
     List runs for a specific job.
 
-    Uses SDK client `JobRun.filter(job__uid=[job_uid])` as the single source of truth.
+    Uses SDK client `JobRun.filter(job__uid=job_uid)` as the single source of truth.
 
     Examples
     --------
