@@ -1292,6 +1292,8 @@ class DeploymentRun(BaseObjectOrm, BasePydanticModel):
     artifact_context: dict[str, Any] = Field(default_factory=dict)
     cleanup_context: dict[str, Any] = Field(default_factory=dict)
     result: dict[str, Any] = Field(default_factory=dict)
+    builder_image: str = ""
+    builder_runtime: str = ""
     steps: list[DeploymentRunStep] = Field(default_factory=list)
     logs: DeploymentRunLogReference
     error: DeploymentRunError | None = None

@@ -46,6 +46,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Removed `DynamicTableDataSource`, its deleted TS Manager endpoint, wrapper
   traversal, migration-connection models, and compatibility exports.
 
+## [6.0.25] - 2026-08-11
+
+### Fixed
+
+- Added the canonical detail-only `builder_image` and `builder_runtime` fields
+  to `DeploymentRun` while preserving compatibility with collection responses
+  that omit them.
+
 ## [6.0.24] - 2026-08-11
 
 ### Changed

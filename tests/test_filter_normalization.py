@@ -2224,6 +2224,8 @@ def test_resource_release_deploy_current_version_posts_detail_action(monkeypatch
                 "artifact_context": {},
                 "cleanup_context": {},
                 "result": {},
+                "builder_image": "",
+                "builder_runtime": "",
                 "steps": [],
                 "logs": {
                     "state": "available",
@@ -2250,6 +2252,8 @@ def test_resource_release_deploy_current_version_posts_detail_action(monkeypatch
     assert run.state == "succeeded"
     assert run.phase == "completed"
     assert run.outcome == "deployed"
+    assert run.builder_image == ""
+    assert run.builder_runtime == ""
     assert run.logs.state == "available"
     assert run.error is None
     assert captured == {
@@ -2287,6 +2291,8 @@ def test_deployment_run_collection_and_detail_use_unified_resource_release_contr
         "artifact_context": {},
         "cleanup_context": {},
         "result": {},
+        "builder_image": "",
+        "builder_runtime": "",
         "steps": [],
         "logs": {
             "state": "available",
@@ -2294,6 +2300,22 @@ def test_deployment_run_collection_and_detail_use_unified_resource_release_contr
             "retention_expires_at": None,
         },
         "error": None,
+    }
+
+    collection_payload = {
+        key: value
+        for key, value in response_payload.items()
+        if key
+        not in {
+            "revision_context",
+            "trigger_context",
+            "artifact_context",
+            "cleanup_context",
+            "result",
+            "builder_image",
+            "builder_runtime",
+            "steps",
+        }
     }
 
     class FakeResponse:
@@ -2308,7 +2330,7 @@ def test_deployment_run_collection_and_detail_use_unified_resource_release_contr
     def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
         captured.append({"r_type": r_type, "url": url, "payload": payload})
         if url.rstrip("/") == models_helpers_mod.DeploymentRun.get_object_url():
-            return FakeResponse({"results": [dict(response_payload)], "next": None})
+            return FakeResponse({"results": [dict(collection_payload)], "next": None})
         return FakeResponse(dict(response_payload))
 
     monkeypatch.setattr(
@@ -2329,6 +2351,8 @@ def test_deployment_run_collection_and_detail_use_unified_resource_release_contr
     assert detail.state == "succeeded"
     assert detail.phase == "completed"
     assert detail.outcome == "deployed"
+    assert detail.builder_image == ""
+    assert detail.builder_runtime == ""
     assert detail.logs.state == "available"
     assert detail.error is None
     assert captured[0]["payload"] == {
@@ -2358,6 +2382,8 @@ def test_unified_deployment_run_models_and_filters(monkeypatch):
             "created_at": "2026-07-19T12:00:00Z",
             "started_at": "2026-07-19T12:00:01Z",
             "finished_at": None,
+            "builder_image": "us-docker.pkg.dev/platform/static-builder:latest",
+            "builder_runtime": "nodejs22",
             "logs": {
                 "state": "available",
                 "url": f"/api/v1/deployment-runs/{run_uid}/logs/",
@@ -2377,6 +2403,8 @@ def test_unified_deployment_run_models_and_filters(monkeypatch):
 
     assert run.target.uid == target_uid
     assert run.steps == []
+    assert run.builder_image == "us-docker.pkg.dev/platform/static-builder:latest"
+    assert run.builder_runtime == "nodejs22"
     assert normalized == {
         "project_branch_uid": project_branch_uid,
         "target_type__in": ["resource_release", "static_site"],

@@ -253,6 +253,7 @@ The SDK surface also accepts:
 Do not claim there is a CLI command for `deploy_current_version` unless the local CLI actually exposes one. In this SDK, the manual detail action is available through the client model.
 
 Inspect the unified run's `state`, `phase`, `outcome`, `steps`, `logs`, and `error` fields. Do not use legacy resource-release deployment status fields or filters.
+Detail responses also expose `builder_image` and `builder_runtime`; these are empty strings when the run has no static-site builder metadata.
 
 ## Review Rules
 
