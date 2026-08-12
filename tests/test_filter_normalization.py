@@ -1647,6 +1647,7 @@ def test_agent_runtime_models_deserialize_backend_uid_payloads():
     session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
     user_uid = "fdf409f7-d16f-4f71-986b-9057db6c7eca"
     service_uid = "ac9e221d-1cd6-464c-a253-e302754872c1"
+    project_branch_uid = "9d81d63f-b8c9-404d-9f1a-5f2ad29dbf16"
 
     agent = agent_models_mod.Agent.model_validate(
         {
@@ -1664,12 +1665,14 @@ def test_agent_runtime_models_deserialize_backend_uid_payloads():
             "has_agent_service": True,
             "agent_service_uid": service_uid,
             "agent_service_automatic_deployment": True,
+            "project_branch_uid": project_branch_uid,
         }
     )
     assert agent.uid == agent_uid
     assert agent.has_agent_service is True
     assert agent.agent_service_uid == service_uid
     assert agent.agent_service_automatic_deployment is True
+    assert agent.project_branch_uid == project_branch_uid
 
     search_result = agent_models_mod.AgentSemanticSearchResult.model_validate(
         {

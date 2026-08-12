@@ -292,6 +292,14 @@ class Agent(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
         None,
         description="Service-level automatic deployment flag for the resolved typed coding-agent service.",
     )
+    project_branch_uid: str | None = Field(
+        None,
+        description=(
+            "Public UID of the canonical ProjectBranch attached through the "
+            "typed Project Executor service, or null when the agent is not "
+            "ProjectBranch-scoped."
+        ),
+    )
 
     @classmethod
     def semantic_search(
