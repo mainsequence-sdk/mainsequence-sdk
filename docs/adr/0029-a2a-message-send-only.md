@@ -30,6 +30,13 @@ The SDK calls Django only for runtime access:
 POST /api/v1/agent-sessions/{agent_session_uid}/resolve-runtime-access/
 ```
 
+The successful token response identifies the target with
+`coding_agent_service_uid` and returns its canonical `rpc_url`. The SDK treats
+that URL as opaque: it must not derive a host from tenancy, a service name, a
+numeric identifier, or a remembered subdomain. An unavailable runtime may
+return `mode: "unavailable"` with null `rpc_url` and `token` values; the SDK
+must report that state without attempting an A2A HTTP request.
+
 The SDK sends the message only to:
 
 ```http

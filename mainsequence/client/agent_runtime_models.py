@@ -143,24 +143,23 @@ class AgentRuntimePaths(BasePydanticModel):
 class AgentSessionRuntimeAccess(BasePydanticModel):
     model_config = ConfigDict(extra="allow")
 
-    coding_agent_service_id: str | None = Field(
+    coding_agent_service_uid: str | None = Field(
         None,
-        description="Identifier of the backing coding-agent service that owns the runtime.",
+        description="Canonical public UID of the coding-agent service that owns the runtime.",
     )
-    coding_agent_id: str | None = Field(
-        None,
-        description="Stable coding-agent routing identifier presented to the gateway.",
-    )
-    mode: str = Field(
+    mode: Literal["token", "unavailable"] = Field(
         "token",
-        description="Runtime access mode. Currently only token-based gateway access is supported.",
+        description="Runtime access mode returned by the backend.",
     )
-    rpc_url: str = Field(
-        ...,
-        description="Gateway RPC URL that the caller should use to reach the coding-agent runtime.",
+    rpc_url: str | None = Field(
+        None,
+        description=(
+            "Opaque, server-issued gateway RPC URL for the coding-agent runtime. "
+            "Callers must not derive it from tenancy, names, numeric IDs, or subdomains."
+        ),
     )
-    token: str = Field(
-        ...,
+    token: str | None = Field(
+        None,
         description="Bearer token that authorizes calls to the coding-agent gateway.",
     )
     expires_at: str | None = Field(
@@ -174,6 +173,14 @@ class AgentSessionRuntimeAccess(BasePydanticModel):
     ready: Any | None = Field(
         None,
         description="Backend readiness metadata returned by runtime access resolution.",
+    )
+    reconciliation: dict[str, Any] | None = Field(
+        None,
+        description="Backend reconciliation metadata when runtime access is unavailable or stale.",
+    )
+    detail: str | None = Field(
+        None,
+        description="Human-readable runtime access detail returned by the backend.",
     )
     runtime_paths: AgentRuntimePaths = Field(
         default_factory=AgentRuntimePaths,
@@ -981,10 +988,18 @@ class AgentSession(BaseObjectOrm, BasePydanticModel):
         body: dict[str, Any],
         timeout=None,
     ) -> requests.Response:
+        if access.mode != "token":
+            detail = str(access.detail or "").strip()
+            message = "Coding-agent runtime access is unavailable."
+            if detail:
+                message = f"{message} {detail}"
+            raise ApiError(message)
+        if not isinstance(access.token, str) or not access.token.strip():
+            raise ApiError("Runtime access response is missing token.")
         url = _join_runtime_url(access.rpc_url, STANDARD_A2A_MESSAGE_SEND_PATH)
         request_timeout = DEFAULT_AGENT_SESSION_LONG_REQUEST_TIMEOUT if timeout is None else timeout
         headers = {
-            "Authorization": f"Bearer {access.token}",
+            "Authorization": f"Bearer {access.token.strip()}",
             "Content-Type": STANDARD_A2A_CONTENT_TYPE,
             "Accept": STANDARD_A2A_CONTENT_TYPE,
         }

@@ -1496,7 +1496,6 @@ def _format_resource_release_delete_preview(release: dict[str, object]) -> list[
     return [
         ("UID", str(release.get("uid") or "-")),
         ("Release Kind", str(release.get("release_kind") or "-")),
-        ("Subdomain", str(release.get("subdomain") or "-")),
         ("Resource", str(release.get("resource") or "-")),
         ("Related Image", _format_related_image_label(release.get("related_image"))),
     ]

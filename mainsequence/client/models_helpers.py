@@ -1003,11 +1003,6 @@ class ResourceRelease(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
         description="Public UID of the resource release.",
         examples=["0ce33c15-e3b1-4677-a66e-70460b89198f"],
     )
-    subdomain: str = Field(
-        title="Subdomain",
-        description="DNS-safe label used as the subdomain for this release.",
-        examples=["analytics-123"],
-    )
     project_branch_uid: str | None = Field(
         None,
         title="ProjectBranch UID",

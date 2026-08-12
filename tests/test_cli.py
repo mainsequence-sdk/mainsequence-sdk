@@ -933,7 +933,9 @@ def test_send_agent_session_a2a_message_uses_client_model(cli_mod, monkeypatch):
         api_mod,
         "get_runtime_access_cache",
         lambda agent_session_uid: {
-            "rpc_url": "https://runtime.main-sequence.app/rpc",
+            "coding_agent_service_uid": "7bd86be3-d11a-4ad1-8fe2-9260ccdbca7f",
+            "mode": "token",
+            "rpc_url": "https://7bd86be3-d11a-4ad1-8fe2-9260ccdbca7f.coding-agent.main-sequence.app/",
             "token": "tok-secret",
         },
     )
@@ -1000,7 +1002,9 @@ def test_send_agent_session_a2a_message_uses_client_model(cli_mod, monkeypatch):
     assert captured["cached_runtime_access"] == {
         "agent_session": session_uid,
         "runtime_access": {
-            "rpc_url": "https://runtime.main-sequence.app/rpc",
+            "coding_agent_service_uid": "7bd86be3-d11a-4ad1-8fe2-9260ccdbca7f",
+            "mode": "token",
+            "rpc_url": "https://7bd86be3-d11a-4ad1-8fe2-9260ccdbca7f.coding-agent.main-sequence.app/",
             "token": "tok-secret",
         },
     }
@@ -4398,7 +4402,6 @@ def test_delete_resource_release_uses_client_model(cli_mod, monkeypatch):
                     return {
                         "uid": pk,
                         "release_kind": "streamlit_dashboard",
-                        "subdomain": "analytics-123",
                         "resource": 381,
                         "related_image": 94,
                     }
@@ -6203,7 +6206,6 @@ def test_project_project_resource_delete_dashboard_requires_confirmation(
         lambda release_uid, expected_release_kind=None, timeout=None: {
             "uid": release_uid,
             "release_kind": expected_release_kind,
-            "subdomain": "analytics-123",
             "resource": 381,
             "related_image": 94,
         },
@@ -6215,7 +6217,6 @@ def test_project_project_resource_delete_dashboard_requires_confirmation(
         return {
             "uid": release_uid,
             "release_kind": expected_release_kind,
-            "subdomain": "analytics-123",
             "resource": 381,
             "related_image": 94,
         }
@@ -6231,6 +6232,7 @@ def test_project_project_resource_delete_dashboard_requires_confirmation(
     assert captured["release_uid"] == release_uid
     assert captured["expected_release_kind"] == "streamlit_dashboard"
     assert "Project Resource Release Delete Preview" in result.output
+    assert "Subdomain" not in result.output
     assert f"Delete dashboard release {release_uid}?" in result.output
     assert f"Project resource release deleted: uid={release_uid}" in result.output
 
@@ -6248,7 +6250,6 @@ def test_project_project_resource_delete_fastapi_requires_confirmation(
         lambda release_uid, expected_release_kind=None, timeout=None: {
             "uid": release_uid,
             "release_kind": expected_release_kind,
-            "subdomain": "api-123",
             "resource": 382,
             "related_image": 94,
         },
@@ -6260,7 +6261,6 @@ def test_project_project_resource_delete_fastapi_requires_confirmation(
         return {
             "uid": release_uid,
             "release_kind": expected_release_kind,
-            "subdomain": "api-123",
             "resource": 382,
             "related_image": 94,
         }
@@ -6275,6 +6275,7 @@ def test_project_project_resource_delete_fastapi_requires_confirmation(
     assert result.exit_code == 0
     assert captured["release_uid"] == release_uid
     assert captured["expected_release_kind"] == "fastapi"
+    assert "Subdomain" not in result.output
     assert f"Delete FastAPI release {release_uid}?" in result.output
     assert f"Project resource release deleted: uid={release_uid}" in result.output
 

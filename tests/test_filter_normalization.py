@@ -2027,7 +2027,6 @@ def test_resource_release_model_accepts_collection_payload_without_runtime_child
     release = models_helpers_mod.ResourceRelease.model_validate(
         {
             "uid": release_uid,
-            "subdomain": "competition-analysis-dc3697f1f1",
             "project_branch_uid": project_branch_uid,
             "name": "Competition Analysis",
             "release_kind": "static_site",
@@ -2042,6 +2041,7 @@ def test_resource_release_model_accepts_collection_payload_without_runtime_child
     assert release.resource_uid is None
     assert release.readme_resource_uid is None
     assert release.related_job_uid is None
+    assert "subdomain" not in models_helpers_mod.ResourceRelease.model_fields
 
 
 def test_resource_release_model_supports_automatic_deployment_payloads():
@@ -2052,7 +2052,6 @@ def test_resource_release_model_supports_automatic_deployment_payloads():
     release = models_helpers_mod.ResourceRelease.model_validate(
         {
             "uid": release_uid,
-            "subdomain": "analytics-123",
             "resource_uid": resource_uid,
             "readme_resource_uid": None,
             "related_job_uid": job_uid,
@@ -2097,7 +2096,6 @@ def test_resource_release_create_sends_automatic_deployment(monkeypatch):
         def json():
             return {
                 "uid": release_uid,
-                "subdomain": "analytics-123",
                 "resource_uid": resource_uid,
                 "readme_resource_uid": None,
                 "related_job_uid": "7d0ab07c-d1c0-4b7f-9c69-3c1a41c0a4da",
@@ -2159,7 +2157,6 @@ def test_project_resource_create_release_uses_related_image_uid(monkeypatch):
         def json():
             return {
                 "uid": release_uid,
-                "subdomain": "analytics-123",
                 "resource_uid": resource_uid,
                 "readme_resource_uid": None,
                 "related_job_uid": "7d0ab07c-d1c0-4b7f-9c69-3c1a41c0a4da",
@@ -2241,7 +2238,6 @@ def test_resource_release_deploy_current_version_posts_detail_action(monkeypatch
     run_uid = "11111111-1111-4111-8111-111111111111"
     release = models_helpers_mod.ResourceRelease(
         uid=release_uid,
-        subdomain="analytics-123",
         release_kind="fastapi",
         automatic_deployment=True,
     )
@@ -2522,10 +2518,9 @@ def test_agent_session_runtime_access_uses_session_uid_route(monkeypatch):
         @staticmethod
         def json():
             return {
-                "coding_agent_service_id": "svc-12",
-                "coding_agent_id": "agent-rt-77",
+                "coding_agent_service_uid": "7bd86be3-d11a-4ad1-8fe2-9260ccdbca7f",
                 "mode": "token",
-                "rpc_url": "https://runtime.main-sequence.app/rpc",
+                "rpc_url": "https://7bd86be3-d11a-4ad1-8fe2-9260ccdbca7f.coding-agent.main-sequence.app/",
                 "token": "tok-secret",
                 "is_ready": True,
                 "service_runtime_uid": "70c6efb9-8e80-4051-ad3a-f432b2c37f5a",
@@ -2583,7 +2578,9 @@ def test_agent_session_runtime_access_uses_session_uid_route(monkeypatch):
 
     access = agent_models_mod.AgentSession.resolve_runtime_access(session_uid, timeout=11)
 
-    assert access.coding_agent_service_id == "svc-12"
+    assert access.coding_agent_service_uid == "7bd86be3-d11a-4ad1-8fe2-9260ccdbca7f"
+    assert "coding_agent_service_id" not in agent_models_mod.AgentSessionRuntimeAccess.model_fields
+    assert "coding_agent_id" not in agent_models_mod.AgentSessionRuntimeAccess.model_fields
     assert access.is_ready is True
     assert access.service_runtime_uid == "70c6efb9-8e80-4051-ad3a-f432b2c37f5a"
     assert access.knative_service_runtime_uid == "70c6efb9-8e80-4051-ad3a-f432b2c37f5a"
@@ -2610,10 +2607,9 @@ def test_agent_session_runtime_access_accepts_minimal_image_drift(monkeypatch):
         @staticmethod
         def json():
             return {
-                "coding_agent_service_id": "39",
-                "coding_agent_id": "astro-orchestrator",
+                "coding_agent_service_uid": "7bd86be3-d11a-4ad1-8fe2-9260ccdbca7f",
                 "mode": "token",
-                "rpc_url": "https://runtime.main-sequence.app/rpc",
+                "rpc_url": "https://7bd86be3-d11a-4ad1-8fe2-9260ccdbca7f.coding-agent.main-sequence.app/",
                 "token": "tok-secret",
                 "is_ready": True,
                 "knative_service_runtime_uid": "70c6efb9-8e80-4051-ad3a-f432b2c37f5a",
@@ -2653,7 +2649,9 @@ def test_agent_session_send_a2a_message_posts_standard_contract(monkeypatch):
         @staticmethod
         def json():
             return {
-                "rpc_url": "https://runtime.main-sequence.app/rpc",
+                "coding_agent_service_uid": "7bd86be3-d11a-4ad1-8fe2-9260ccdbca7f",
+                "mode": "token",
+                "rpc_url": "https://7bd86be3-d11a-4ad1-8fe2-9260ccdbca7f.coding-agent.main-sequence.app/",
                 "token": "tok-secret",
                 "expires_at": "2999-01-01T00:00:00Z",
             }
@@ -2716,7 +2714,8 @@ def test_agent_session_send_a2a_message_posts_standard_contract(monkeypatch):
     }
     assert payload["message"]["parts"] == [{"text": "I can analyze workspaces."}]
     assert captured["runtime"]["url"] == (
-        "https://runtime.main-sequence.app/rpc/api/a2a/v1/message:send"
+        "https://7bd86be3-d11a-4ad1-8fe2-9260ccdbca7f.coding-agent.main-sequence.app/"
+        "api/a2a/v1/message:send"
     )
     assert captured["runtime"]["headers"]["Content-Type"] == "application/a2a+json"
     assert captured["runtime"]["headers"]["Accept"] == "application/a2a+json"
@@ -2737,6 +2736,51 @@ def test_agent_session_send_a2a_message_posts_standard_contract(monkeypatch):
     assert "omit_reasoning" not in captured["runtime"]["data"]
 
 
+def test_agent_session_send_a2a_message_reports_unavailable_runtime_without_post(
+    monkeypatch,
+):
+    session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
+    agent_models_mod.AgentSession.clear_cached_runtime_access(session_uid)
+
+    class FakeResolveResponse:
+        status_code = 200
+        content = b'{"ok": true}'
+
+        @staticmethod
+        def json():
+            return {
+                "coding_agent_service_uid": None,
+                "mode": "unavailable",
+                "rpc_url": None,
+                "token": None,
+                "is_ready": False,
+                "detail": "Runtime reconciliation is queued.",
+            }
+
+    monkeypatch.setattr(
+        agent_models_mod,
+        "make_request",
+        lambda **kwargs: FakeResolveResponse(),
+    )
+
+    def _unexpected_post(*args, **kwargs):
+        pytest.fail("A2A HTTP request must not run for unavailable runtime access")
+
+    monkeypatch.setattr(agent_models_mod.requests, "post", _unexpected_post)
+
+    with pytest.raises(
+        agent_models_mod.ApiError,
+        match=(
+            "Coding-agent runtime access is unavailable. "
+            "Runtime reconciliation is queued."
+        ),
+    ):
+        agent_models_mod.AgentSession.send_a2a_message(
+            session_uid,
+            message="Do not send this yet.",
+        )
+
+
 def test_agent_session_send_a2a_message_posts_strict_dictionary_contract(monkeypatch):
     captured = {"resolve_count": 0}
     session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
@@ -2750,7 +2794,9 @@ def test_agent_session_send_a2a_message_posts_strict_dictionary_contract(monkeyp
         @staticmethod
         def json():
             return {
-                "rpc_url": "https://runtime.main-sequence.app/rpc",
+                "coding_agent_service_uid": "7bd86be3-d11a-4ad1-8fe2-9260ccdbca7f",
+                "mode": "token",
+                "rpc_url": "https://7bd86be3-d11a-4ad1-8fe2-9260ccdbca7f.coding-agent.main-sequence.app/",
                 "token": "tok-secret",
             }
 
@@ -2820,7 +2866,9 @@ def test_agent_session_send_a2a_message_refreshes_access_and_reuses_body(monkeyp
         def json():
             captured["resolve_count"] += 1
             return {
-                "rpc_url": "https://runtime.main-sequence.app/rpc",
+                "coding_agent_service_uid": "7bd86be3-d11a-4ad1-8fe2-9260ccdbca7f",
+                "mode": "token",
+                "rpc_url": "https://7bd86be3-d11a-4ad1-8fe2-9260ccdbca7f.coding-agent.main-sequence.app/",
                 "token": f"tok-secret-{captured['resolve_count']}",
             }
 

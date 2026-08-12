@@ -6,11 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [6.0.27] - 2026-08-12
+
 ### Fixed
 
 - Allowed server-owned MCP platform skills to use canonical hierarchical paths
   below `skills/` while preserving path traversal, naming, identity, ownership,
   collision, and content-integrity validation.
+- Aligned coding-agent runtime access with the canonical
+  `coding_agent_service_uid` response and report unavailable runtime state
+  before attempting an A2A request.
 
 ### Added
 
@@ -21,6 +26,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- Made A2A calls treat the server-issued UID-based `rpc_url` as opaque; the
+  standard message path, body, and authentication headers remain unchanged.
 - Made `DataSource` the sole canonical database identity across ProjectBranch,
   MetaTable, DataNode persistence, SQLAlchemy registration, compiled SQL, and
   CLI discovery. Migration credentials are now requested through the owning
@@ -43,6 +50,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Removed
 
+- Removed the redundant `ResourceRelease.subdomain` SDK field and CLI preview
+  row in favor of UID-only public runtime routing.
 - Removed `DynamicTableDataSource`, its deleted TS Manager endpoint, wrapper
   traversal, migration-connection models, and compatibility exports.
 
