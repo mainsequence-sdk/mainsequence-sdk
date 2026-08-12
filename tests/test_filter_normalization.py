@@ -2187,6 +2187,51 @@ def test_project_resource_create_release_uses_related_image_uid(monkeypatch):
     assert captured["timeout"] == 7
 
 
+def _resource_release_pipeline_payload(*, running_step: str | None = None):
+    keys = (
+        "resolve_revision",
+        "validate_deployment",
+        "resolve_resource",
+        "build_project_image",
+        "deploy_runtime",
+        "verify_runtime_readiness",
+    )
+    current_index = keys.index(running_step) if running_step else None
+    steps = []
+    for index, key in enumerate(keys, start=1):
+        if current_index is None or index - 1 < current_index:
+            step_state = "succeeded"
+            outcome = "completed"
+        elif index - 1 == current_index:
+            step_state = "running"
+            outcome = ""
+        else:
+            step_state = "pending"
+            outcome = ""
+        steps.append(
+            {
+                "uid": f"00000000-0000-4000-8000-{index:012d}",
+                "sequence": index,
+                "key": key,
+                "name": key.replace("_", " ").title(),
+                "kind": "orchestration",
+                "required": True,
+                "state": step_state,
+                "outcome": outcome,
+                "artifact_context": {},
+                "started_at": None,
+                "finished_at": None,
+                "error": None,
+            }
+        )
+    return {
+        "key": "resource_release.fastapi.build_and_deploy",
+        "version": 1,
+        "current_step_key": running_step,
+        "steps": steps,
+    }
+
+
 def test_resource_release_deploy_current_version_posts_detail_action(monkeypatch):
     captured = {}
     release_uid = "2f4c4c3d-5669-4da5-9d86-b84633c1e6ed"
@@ -2214,8 +2259,8 @@ def test_resource_release_deploy_current_version_posts_detail_action(monkeypatch
                 "commit_sha": "a" * 40,
                 "configuration_revision": 4,
                 "state": "succeeded",
-                "phase": "completed",
                 "outcome": "deployed",
+                "pipeline": _resource_release_pipeline_payload(),
                 "created_at": "2026-07-19T12:00:00Z",
                 "started_at": "2026-07-19T12:00:01Z",
                 "finished_at": "2026-07-19T12:00:05Z",
@@ -2226,7 +2271,6 @@ def test_resource_release_deploy_current_version_posts_detail_action(monkeypatch
                 "result": {},
                 "builder_image": "",
                 "builder_runtime": "",
-                "steps": [],
                 "logs": {
                     "state": "available",
                     "url": f"/api/v1/deployment-runs/{run_uid}/logs/",
@@ -2250,8 +2294,9 @@ def test_resource_release_deploy_current_version_posts_detail_action(monkeypatch
     assert isinstance(run, models_helpers_mod.DeploymentRun)
     assert run.target.uid == release_uid
     assert run.state == "succeeded"
-    assert run.phase == "completed"
     assert run.outcome == "deployed"
+    assert run.pipeline.current_step_key is None
+    assert len(run.pipeline.steps) == 6
     assert run.builder_image == ""
     assert run.builder_runtime == ""
     assert run.logs.state == "available"
@@ -2281,8 +2326,8 @@ def test_deployment_run_collection_and_detail_use_unified_resource_release_contr
         "commit_sha": "a" * 40,
         "configuration_revision": 4,
         "state": "succeeded",
-        "phase": "completed",
         "outcome": "deployed",
+        "pipeline": _resource_release_pipeline_payload(),
         "created_at": "2026-07-19T12:00:00Z",
         "started_at": "2026-07-19T12:00:01Z",
         "finished_at": "2026-07-19T12:00:05Z",
@@ -2293,7 +2338,6 @@ def test_deployment_run_collection_and_detail_use_unified_resource_release_contr
         "result": {},
         "builder_image": "",
         "builder_runtime": "",
-        "steps": [],
         "logs": {
             "state": "available",
             "url": f"/api/v1/deployment-runs/{run_uid}/logs/",
@@ -2314,7 +2358,6 @@ def test_deployment_run_collection_and_detail_use_unified_resource_release_contr
             "result",
             "builder_image",
             "builder_runtime",
-            "steps",
         }
     }
 
@@ -2349,8 +2392,9 @@ def test_deployment_run_collection_and_detail_use_unified_resource_release_contr
     assert len(runs) == 1
     assert runs[0].target.uid == release_uid
     assert detail.state == "succeeded"
-    assert detail.phase == "completed"
     assert detail.outcome == "deployed"
+    assert len(runs[0].pipeline.steps) == 6
+    assert detail.pipeline.current_step_key is None
     assert detail.builder_image == ""
     assert detail.builder_runtime == ""
     assert detail.logs.state == "available"
@@ -2377,8 +2421,10 @@ def test_unified_deployment_run_models_and_filters(monkeypatch):
             "commit_sha": "a" * 40,
             "configuration_revision": None,
             "state": "running",
-            "phase": "waiting_project_image",
             "outcome": "",
+            "pipeline": _resource_release_pipeline_payload(
+                running_step="build_project_image"
+            ),
             "created_at": "2026-07-19T12:00:00Z",
             "started_at": "2026-07-19T12:00:01Z",
             "finished_at": None,
@@ -2402,7 +2448,9 @@ def test_unified_deployment_run_models_and_filters(monkeypatch):
     )
 
     assert run.target.uid == target_uid
-    assert run.steps == []
+    assert run.pipeline.current_step_key == "build_project_image"
+    assert run.pipeline.steps[3].state == "running"
+    assert run.pipeline.steps[4].state == "pending"
     assert run.builder_image == "us-docker.pkg.dev/platform/static-builder:latest"
     assert run.builder_runtime == "nodejs22"
     assert normalized == {

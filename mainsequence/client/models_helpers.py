@@ -1204,20 +1204,42 @@ class DeploymentRunError(BaseModel):
 
 class DeploymentRunStep(BaseModel):
     uid: str
-    sequence: int
+    sequence: PositiveInt
     key: str
     name: str = ""
-    kind: str
-    state: str
-    phase: str = ""
+    kind: Literal[
+        "source",
+        "image_build",
+        "validation",
+        "runtime_deploy",
+        "runtime_readiness",
+        "publish",
+        "cleanup",
+        "orchestration",
+    ]
+    required: bool = True
+    state: Literal[
+        "pending",
+        "running",
+        "succeeded",
+        "failed",
+        "cancelled",
+        "skipped",
+        "blocked",
+        "superseded",
+    ]
     outcome: str = ""
-    provider: str = ""
-    external_operation_id: str = ""
     artifact_context: dict[str, Any] = Field(default_factory=dict)
     started_at: datetime.datetime | None = None
     finished_at: datetime.datetime | None = None
-    error_code: str = ""
-    error_detail: str = ""
+    error: DeploymentRunError | None = None
+
+
+class DeploymentRunPipeline(BaseModel):
+    key: str
+    version: PositiveInt
+    current_step_key: str | None = None
+    steps: list[DeploymentRunStep] = Field(default_factory=list)
 
 
 class DeploymentRunLogEntry(BaseModel):
@@ -1282,8 +1304,8 @@ class DeploymentRun(BaseObjectOrm, BasePydanticModel):
     commit_sha: str = ""
     configuration_revision: int | None = None
     state: str
-    phase: str = ""
     outcome: str = ""
+    pipeline: DeploymentRunPipeline
     created_at: datetime.datetime
     started_at: datetime.datetime | None = None
     finished_at: datetime.datetime | None = None
@@ -1294,7 +1316,6 @@ class DeploymentRun(BaseObjectOrm, BasePydanticModel):
     result: dict[str, Any] = Field(default_factory=dict)
     builder_image: str = ""
     builder_runtime: str = ""
-    steps: list[DeploymentRunStep] = Field(default_factory=list)
     logs: DeploymentRunLogReference
     error: DeploymentRunError | None = None
 
