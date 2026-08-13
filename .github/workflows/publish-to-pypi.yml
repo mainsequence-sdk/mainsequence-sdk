@@ -29,7 +29,7 @@ jobs:
       # Step 1: Check out the repository's code
       # This downloads your source code into the runner environment.
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # Step 2: Set up a specific version of Python
       # This ensures a consistent environment for building your package.
