@@ -94,7 +94,23 @@ Record:
 
 Use `LoggedUserContextMiddleware` when the platform-authenticated request user
 must be available through `request.state`. This middleware binds request headers
-to the SDK request context; it is not an authorization policy by itself.
+to the SDK request context; it is not an authorization policy by itself. The
+application must install it explicitly with
+`app.add_middleware(LoggedUserContextMiddleware)`.
+
+The middleware exposes only the human caller's UID-based request identity:
+
+- `request.state.user` is `RequestUserIdentity`
+- `request.state.user_uid` is the canonical public user UUID
+- `request.state.user_id` does not exist
+
+In deployed runtimes, identity comes from the trusted gateway's `X-User-UID`.
+For direct local API development, a bearer-authenticated request is validated
+through `/api/v1/users/me/`; this supports testing a local service through a
+Cloudflare tunnel before deploying it. Never inject `X-User-UID` from frontend code, and
+never confuse the requesting human with the release owner, workload principal,
+or runtime target. Use the UID for application authorization after identity has
+been resolved.
 
 ### 2. Implement the provider
 

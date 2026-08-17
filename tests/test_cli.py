@@ -11,6 +11,9 @@ import types
 import pytest
 from typer.testing import CliRunner
 
+USER_UID = "8f5d6b54-2f5e-4a8b-bb10-0b17f3f4c123"
+TEAM_UID = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
+
 
 def _load_cli_module():
     """
@@ -2786,9 +2789,9 @@ def test_project_add_to_edit(cli_mod, runner, monkeypatch):
 
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
 
-    def _add(project_id, user_id, timeout=None):
+    def _add(project_id, user_uid, timeout=None):
         captured["project_id"] = project_id
-        captured["user_id"] = user_id
+        captured["user_uid"] = user_uid
         captured["timeout"] = timeout
         return {
             "ok": True,
@@ -2797,7 +2800,7 @@ def test_project_add_to_edit(cli_mod, runner, monkeypatch):
             "object_uid": project_id,
             "object_type": "tdag.project",
             "user": {
-                "id": user_id,
+                "uid": user_uid,
                 "username": "editor",
                 "email": "editor@example.com",
                 "first_name": "Edit",
@@ -2805,18 +2808,35 @@ def test_project_add_to_edit(cli_mod, runner, monkeypatch):
             },
             "explicit_can_view": True,
             "explicit_can_edit": True,
-            "explicit_can_view_user_ids": [user_id],
-            "explicit_can_edit_user_ids": [user_id],
+            "explicit_can_view_user_uids": [user_uid],
+            "explicit_can_edit_user_uids": [user_uid],
         }
 
     monkeypatch.setattr(cli_mod, "add_project_user_to_edit", _add)
 
-    result = runner.invoke(cli_mod.app, ["project", "add_to_edit", "project-uid-4", "12"])
+    result = runner.invoke(
+        cli_mod.app,
+        ["project", "add_to_edit", "project-uid-4", USER_UID],
+    )
     assert result.exit_code == 0
-    assert captured == {"project_id": "project-uid-4", "user_id": 12, "timeout": None}
+    assert captured == {
+        "project_id": "project-uid-4",
+        "user_uid": USER_UID,
+        "timeout": None,
+    }
     assert "Project add_to_edit completed." in result.output
     assert "Project Sharing Update" in result.output
     assert "editor@example.com" in result.output
+
+
+def test_project_add_to_edit_rejects_numeric_user_identifier(cli_mod, runner):
+    result = runner.invoke(
+        cli_mod.app,
+        ["project", "add_to_edit", "project-uid-4", "12"],
+    )
+
+    assert result.exit_code == 2
+    assert "invalid value" in result.output.lower()
 
 
 def test_project_add_team_to_view(cli_mod, runner, monkeypatch):
@@ -2824,9 +2844,9 @@ def test_project_add_team_to_view(cli_mod, runner, monkeypatch):
 
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
 
-    def _add(project_id, team_id, timeout=None):
+    def _add(project_id, team_uid, timeout=None):
         captured["project_id"] = project_id
-        captured["team_id"] = team_id
+        captured["team_uid"] = team_uid
         captured["timeout"] = timeout
         return {
             "action": "add_team_to_view",
@@ -2834,21 +2854,28 @@ def test_project_add_team_to_view(cli_mod, runner, monkeypatch):
             "object_uid": project_id,
             "object_type": "tdag.project",
             "team": {
-                "id": team_id,
+                "uid": team_uid,
                 "name": "Research",
                 "description": "Core team",
             },
             "explicit_can_view": True,
             "explicit_can_edit": False,
-            "explicit_can_view_team_ids": [team_id],
-            "explicit_can_edit_team_ids": [],
+            "explicit_can_view_team_uids": [team_uid],
+            "explicit_can_edit_team_uids": [],
         }
 
     monkeypatch.setattr(cli_mod, "add_project_team_to_view", _add)
 
-    result = runner.invoke(cli_mod.app, ["project", "add_team_to_view", "project-uid-4", "3"])
+    result = runner.invoke(
+        cli_mod.app,
+        ["project", "add_team_to_view", "project-uid-4", TEAM_UID],
+    )
     assert result.exit_code == 0
-    assert captured == {"project_id": "project-uid-4", "team_id": 3, "timeout": None}
+    assert captured == {
+        "project_id": "project-uid-4",
+        "team_uid": TEAM_UID,
+        "timeout": None,
+    }
     assert "Project add_team_to_view completed." in result.output
     assert "Research" in result.output
 
@@ -3073,8 +3100,8 @@ def test_add_project_user_to_edit_uses_client_model(cli_mod, monkeypatch):
             captured["get_by_uid"] = {"uid": uid, "timeout": timeout}
 
             class _Project:
-                def add_to_edit(self, user_id, timeout=None):
-                    captured["add_to_edit"] = {"user_id": user_id, "timeout": timeout}
+                def add_to_edit(self, user_uid, timeout=None):
+                    captured["add_to_edit"] = {"user_uid": user_uid, "timeout": timeout}
                     return {
                         "ok": True,
                         "action": "add_to_edit",
@@ -3082,14 +3109,14 @@ def test_add_project_user_to_edit_uses_client_model(cli_mod, monkeypatch):
                         "object_uid": uid,
                         "object_type": "tdag.project",
                         "user": {
-                            "id": user_id,
+                            "uid": user_uid,
                             "username": "editor",
                             "email": "editor@example.com",
                         },
                         "explicit_can_view": True,
                         "explicit_can_edit": True,
-                        "explicit_can_view_user_ids": [user_id],
-                        "explicit_can_edit_user_ids": [user_id],
+                        "explicit_can_view_user_uids": [user_uid],
+                        "explicit_can_edit_user_uids": [user_uid],
                     }
 
             return _Project()
@@ -3103,9 +3130,9 @@ def test_add_project_user_to_edit_uses_client_model(cli_mod, monkeypatch):
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
     monkeypatch.setitem(sys.modules, "mainsequence.client.models_foundry", fake_models)
 
-    out = api_mod.add_project_user_to_edit("project-uid-4", 12, timeout=10)
+    out = api_mod.add_project_user_to_edit("project-uid-4", USER_UID, timeout=10)
     assert captured["get_by_uid"] == {"uid": "project-uid-4", "timeout": 10}
-    assert captured["add_to_edit"] == {"user_id": 12, "timeout": 10}
+    assert captured["add_to_edit"] == {"user_uid": USER_UID, "timeout": 10}
     assert captured["jwt"] == ("acc", "ref")
     assert out["action"] == "add_to_edit"
 
@@ -3399,8 +3426,8 @@ def test_add_constant_user_to_edit_uses_client_model(cli_mod, monkeypatch):
             captured["get_by_uid"] = {"uid": uid, "timeout": timeout}
 
             class _Constant:
-                def add_to_edit(self, user_id, timeout=None):
-                    captured["add_to_edit"] = {"user_id": user_id, "timeout": timeout}
+                def add_to_edit(self, user_uid, timeout=None):
+                    captured["add_to_edit"] = {"user_uid": user_uid, "timeout": timeout}
                     return {
                         "ok": True,
                         "action": "add_to_edit",
@@ -3408,14 +3435,14 @@ def test_add_constant_user_to_edit_uses_client_model(cli_mod, monkeypatch):
                         "object_uid": uid,
                         "object_type": "tdag.constant",
                         "user": {
-                            "id": user_id,
+                            "uid": user_uid,
                             "username": "editor",
                             "email": "editor@example.com",
                         },
                         "explicit_can_view": True,
                         "explicit_can_edit": True,
-                        "explicit_can_view_user_ids": [user_id],
-                        "explicit_can_edit_user_ids": [user_id],
+                        "explicit_can_view_user_uids": [user_uid],
+                        "explicit_can_edit_user_uids": [user_uid],
                     }
 
             return _Constant()
@@ -3429,9 +3456,9 @@ def test_add_constant_user_to_edit_uses_client_model(cli_mod, monkeypatch):
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
     monkeypatch.setitem(sys.modules, "mainsequence.client.models_foundry", fake_models)
 
-    out = api_mod.add_constant_user_to_edit("constant-uid-7", 9, timeout=14)
+    out = api_mod.add_constant_user_to_edit("constant-uid-7", USER_UID, timeout=14)
     assert captured["get_by_uid"] == {"uid": "constant-uid-7", "timeout": 14}
-    assert captured["add_to_edit"] == {"user_id": 9, "timeout": 14}
+    assert captured["add_to_edit"] == {"user_uid": USER_UID, "timeout": 14}
     assert captured["jwt"] == ("acc", "ref")
     assert out["action"] == "add_to_edit"
 
@@ -3605,8 +3632,8 @@ def test_add_secret_user_to_edit_uses_client_model(cli_mod, monkeypatch):
             captured["get_by_uid"] = {"uid": uid, "timeout": timeout}
 
             class _Secret:
-                def add_to_edit(self, user_id, timeout=None):
-                    captured["add_to_edit"] = {"user_id": user_id, "timeout": timeout}
+                def add_to_edit(self, user_uid, timeout=None):
+                    captured["add_to_edit"] = {"user_uid": user_uid, "timeout": timeout}
                     return {
                         "ok": True,
                         "action": "add_to_edit",
@@ -3614,14 +3641,14 @@ def test_add_secret_user_to_edit_uses_client_model(cli_mod, monkeypatch):
                         "object_uid": uid,
                         "object_type": "tdag.secret",
                         "user": {
-                            "id": user_id,
+                            "uid": user_uid,
                             "username": "editor",
                             "email": "editor@example.com",
                         },
                         "explicit_can_view": True,
                         "explicit_can_edit": True,
-                        "explicit_can_view_user_ids": [user_id],
-                        "explicit_can_edit_user_ids": [user_id],
+                        "explicit_can_view_user_uids": [user_uid],
+                        "explicit_can_edit_user_uids": [user_uid],
                     }
 
             return _Secret()
@@ -3635,9 +3662,9 @@ def test_add_secret_user_to_edit_uses_client_model(cli_mod, monkeypatch):
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
     monkeypatch.setitem(sys.modules, "mainsequence.client.models_foundry", fake_models)
 
-    out = api_mod.add_secret_user_to_edit("secret-uid-8", 11, timeout=14)
+    out = api_mod.add_secret_user_to_edit("secret-uid-8", USER_UID, timeout=14)
     assert captured["get_by_uid"] == {"uid": "secret-uid-8", "timeout": 14}
-    assert captured["add_to_edit"] == {"user_id": 11, "timeout": 14}
+    assert captured["add_to_edit"] == {"user_uid": USER_UID, "timeout": 14}
     assert captured["jwt"] == ("acc", "ref")
     assert out["action"] == "add_to_edit"
 
@@ -5125,8 +5152,8 @@ def test_add_data_node_storage_user_to_edit_uses_client_model(cli_mod, monkeypat
             captured["get"] = {"uid": uid, "filters": filters, "timeout": timeout}
 
             class _Storage:
-                def add_to_edit(self, user_id, timeout=None):
-                    captured["add_to_edit"] = {"user_id": user_id, "timeout": timeout}
+                def add_to_edit(self, user_uid, timeout=None):
+                    captured["add_to_edit"] = {"user_uid": user_uid, "timeout": timeout}
                     return {
                         "ok": True,
                         "action": "add_to_edit",
@@ -5134,14 +5161,14 @@ def test_add_data_node_storage_user_to_edit_uses_client_model(cli_mod, monkeypat
                         "object_uid": uid,
                         "object_type": "tdag.datanodestorage",
                         "user": {
-                            "id": user_id,
+                            "uid": user_uid,
                             "username": "editor",
                             "email": "editor@example.com",
                         },
                         "explicit_can_view": True,
                         "explicit_can_edit": True,
-                        "explicit_can_view_user_ids": [user_id],
-                        "explicit_can_edit_user_ids": [user_id],
+                        "explicit_can_view_user_uids": [user_uid],
+                        "explicit_can_edit_user_uids": [user_uid],
                     }
 
             return _Storage()
@@ -5159,9 +5186,13 @@ def test_add_data_node_storage_user_to_edit_uses_client_model(cli_mod, monkeypat
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
     monkeypatch.setitem(sys.modules, "mainsequence.client.metatables", fake_models)
 
-    out = api_mod.add_data_node_storage_user_to_edit("data-node-storage-42", 9, timeout=16)
+    out = api_mod.add_data_node_storage_user_to_edit(
+        "data-node-storage-42",
+        USER_UID,
+        timeout=16,
+    )
     assert captured["get"] == {"uid": "data-node-storage-42", "filters": {}, "timeout": 16}
-    assert captured["add_to_edit"] == {"user_id": 9, "timeout": 16}
+    assert captured["add_to_edit"] == {"user_uid": USER_UID, "timeout": 16}
     assert captured["jwt"] == ("acc", "ref")
     assert out["action"] == "add_to_edit"
 
@@ -6894,9 +6925,9 @@ def test_agent_add_team_to_edit(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     agent_uid = "e0e75693-4110-464c-93e0-82c7fd9c9a23"
 
-    def _add(agent_uid_arg, team_id, timeout=None):
+    def _add(agent_uid_arg, team_uid, timeout=None):
         captured["agent_uid"] = agent_uid_arg
-        captured["team_id"] = team_id
+        captured["team_uid"] = team_uid
         captured["timeout"] = timeout
         return {
             "ok": True,
@@ -6905,21 +6936,24 @@ def test_agent_add_team_to_edit(cli_mod, runner, monkeypatch):
             "object_uid": agent_uid_arg,
             "object_type": "agent.agent",
             "team": {
-                "id": team_id,
+                "uid": team_uid,
                 "name": "Research",
                 "description": "Core team",
             },
             "explicit_can_view": True,
             "explicit_can_edit": True,
-            "explicit_can_view_team_ids": [team_id],
-            "explicit_can_edit_team_ids": [team_id],
+            "explicit_can_view_team_uids": [team_uid],
+            "explicit_can_edit_team_uids": [team_uid],
         }
 
     monkeypatch.setattr(cli_mod, "add_agent_team_to_edit", _add)
 
-    result = runner.invoke(cli_mod.app, ["agent", "add_team_to_edit", agent_uid, "3"])
+    result = runner.invoke(
+        cli_mod.app,
+        ["agent", "add_team_to_edit", agent_uid, TEAM_UID],
+    )
     assert result.exit_code == 0
-    assert captured == {"agent_uid": agent_uid, "team_id": 3, "timeout": None}
+    assert captured == {"agent_uid": agent_uid, "team_uid": TEAM_UID, "timeout": None}
     assert "Agent add_team_to_edit completed." in result.output
 
 
@@ -7073,9 +7107,9 @@ def test_constants_add_to_edit(cli_mod, runner, monkeypatch):
 
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
 
-    def _add(constant_uid, user_id, timeout=None):
+    def _add(constant_uid, user_uid, timeout=None):
         captured["constant_uid"] = constant_uid
-        captured["user_id"] = user_id
+        captured["user_uid"] = user_uid
         captured["timeout"] = timeout
         return {
             "ok": True,
@@ -7084,7 +7118,7 @@ def test_constants_add_to_edit(cli_mod, runner, monkeypatch):
             "object_uid": constant_uid,
             "object_type": "tdag.constant",
             "user": {
-                "id": user_id,
+                "uid": user_uid,
                 "username": "editor",
                 "email": "editor@example.com",
                 "first_name": "Edit",
@@ -7092,16 +7126,23 @@ def test_constants_add_to_edit(cli_mod, runner, monkeypatch):
             },
             "explicit_can_view": True,
             "explicit_can_edit": True,
-            "explicit_can_view_user_ids": [user_id],
-            "explicit_can_edit_user_ids": [user_id],
+            "explicit_can_view_user_uids": [user_uid],
+            "explicit_can_edit_user_uids": [user_uid],
         }
 
     monkeypatch.setattr(cli_mod, "add_constant_user_to_edit", _add)
 
     constant_uid = "11111111-1111-4111-8111-111111111111"
-    result = runner.invoke(cli_mod.app, ["constants", "add_to_edit", constant_uid, "9"])
+    result = runner.invoke(
+        cli_mod.app,
+        ["constants", "add_to_edit", constant_uid, USER_UID],
+    )
     assert result.exit_code == 0
-    assert captured == {"constant_uid": constant_uid, "user_id": 9, "timeout": None}
+    assert captured == {
+        "constant_uid": constant_uid,
+        "user_uid": USER_UID,
+        "timeout": None,
+    }
     assert "Constant add_to_edit completed." in result.output
     assert "Constant Sharing Update" in result.output
     assert "editor@example.com" in result.output
@@ -7253,9 +7294,9 @@ def test_secrets_add_to_edit(cli_mod, runner, monkeypatch):
 
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
 
-    def _add(secret_uid, user_id, timeout=None):
+    def _add(secret_uid, user_uid, timeout=None):
         captured["secret_uid"] = secret_uid
-        captured["user_id"] = user_id
+        captured["user_uid"] = user_uid
         captured["timeout"] = timeout
         return {
             "ok": True,
@@ -7264,7 +7305,7 @@ def test_secrets_add_to_edit(cli_mod, runner, monkeypatch):
             "object_uid": secret_uid,
             "object_type": "tdag.secret",
             "user": {
-                "id": user_id,
+                "uid": user_uid,
                 "username": "editor",
                 "email": "editor@example.com",
                 "first_name": "Edit",
@@ -7272,15 +7313,22 @@ def test_secrets_add_to_edit(cli_mod, runner, monkeypatch):
             },
             "explicit_can_view": True,
             "explicit_can_edit": True,
-            "explicit_can_view_user_ids": [user_id],
-            "explicit_can_edit_user_ids": [user_id],
+            "explicit_can_view_user_uids": [user_uid],
+            "explicit_can_edit_user_uids": [user_uid],
         }
 
     monkeypatch.setattr(cli_mod, "add_secret_user_to_edit", _add)
 
-    result = runner.invoke(cli_mod.app, ["secrets", "add_to_edit", secret_uid, "11"])
+    result = runner.invoke(
+        cli_mod.app,
+        ["secrets", "add_to_edit", secret_uid, USER_UID],
+    )
     assert result.exit_code == 0
-    assert captured == {"secret_uid": secret_uid, "user_id": 11, "timeout": None}
+    assert captured == {
+        "secret_uid": secret_uid,
+        "user_uid": USER_UID,
+        "timeout": None,
+    }
     assert "Secret add_to_edit completed." in result.output
     assert "Secret Sharing Update" in result.output
     assert "editor@example.com" in result.output
@@ -8181,9 +8229,9 @@ def test_data_node_storage_add_to_edit(cli_mod, runner, monkeypatch):
 
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
 
-    def _add(storage_uid, user_id, timeout=None):
+    def _add(storage_uid, user_uid, timeout=None):
         captured["storage_uid"] = storage_uid
-        captured["user_id"] = user_id
+        captured["user_uid"] = user_uid
         captured["timeout"] = timeout
         return {
             "ok": True,
@@ -8192,7 +8240,7 @@ def test_data_node_storage_add_to_edit(cli_mod, runner, monkeypatch):
             "object_uid": storage_uid,
             "object_type": "tdag.datanodestorage",
             "user": {
-                "id": user_id,
+                "uid": user_uid,
                 "username": "editor",
                 "email": "editor@example.com",
                 "first_name": "Edit",
@@ -8200,15 +8248,22 @@ def test_data_node_storage_add_to_edit(cli_mod, runner, monkeypatch):
             },
             "explicit_can_view": True,
             "explicit_can_edit": True,
-            "explicit_can_view_user_ids": [user_id],
-            "explicit_can_edit_user_ids": [user_id],
+            "explicit_can_view_user_uids": [user_uid],
+            "explicit_can_edit_user_uids": [user_uid],
         }
 
     monkeypatch.setattr(cli_mod, "add_data_node_storage_user_to_edit", _add)
 
-    result = runner.invoke(cli_mod.app, ["data-node", "add_to_edit", "data-node-storage-42", "9"])
+    result = runner.invoke(
+        cli_mod.app,
+        ["data-node", "add_to_edit", "data-node-storage-42", USER_UID],
+    )
     assert result.exit_code == 0
-    assert captured == {"storage_uid": "data-node-storage-42", "user_id": 9, "timeout": None}
+    assert captured == {
+        "storage_uid": "data-node-storage-42",
+        "user_uid": USER_UID,
+        "timeout": None,
+    }
     assert "Data Node add_to_edit completed." in result.output
     assert "Data Node Sharing Update" in result.output
     assert "editor@example.com" in result.output

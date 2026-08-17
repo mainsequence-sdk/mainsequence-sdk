@@ -775,16 +775,27 @@ class PermissionManagedObjectMixin(DetailActionObjectMixin):
     }
     SHARING_ACTION_PATHS: ClassVar[dict[str, str]] = PERMISSION_ACTION_PATHS
 
+    @classmethod
+    def _coerce_principal_uid(cls, value: Any, *, field_name: str) -> str:
+        normalized = cls._coerce_filter_uid(value, field_name=field_name)
+        try:
+            return str(UUID(normalized))
+        except ValueError as exc:
+            raise ValueError(f"{field_name} must be a valid UUID.") from exc
+
     def _post_sharing_action(
         self,
         action_name: str,
         *,
         subject_key: str,
-        subject_id: Any,
+        subject_uid: Any,
         timeout: int | float | tuple[float, float] | None = None,
     ) -> dict[str, Any]:
-        normalized_subject_id = type(self)._coerce_filter_id(subject_id, field_name=subject_key)
-        payload = {"json": {subject_key: normalized_subject_id}}
+        normalized_subject_uid = type(self)._coerce_principal_uid(
+            subject_uid,
+            field_name=subject_key,
+        )
+        payload = {"json": {subject_key: normalized_subject_uid}}
         data = self._request_detail_action(
             r_type="POST",
             action_name=action_name,
@@ -825,105 +836,105 @@ class PermissionManagedObjectMixin(DetailActionObjectMixin):
 
     def add_to_view(
         self,
-        user_id: Any,
+        user_uid: Any,
         *,
         timeout: int | float | tuple[float, float] | None = None,
     ) -> dict[str, Any]:
         return self._post_sharing_action(
             self.SHARING_ACTION_PATHS["add_to_view"],
-            subject_key="user_id",
-            subject_id=user_id,
+            subject_key="user_uid",
+            subject_uid=user_uid,
             timeout=timeout,
         )
 
     def add_to_edit(
         self,
-        user_id: Any,
+        user_uid: Any,
         *,
         timeout: int | float | tuple[float, float] | None = None,
     ) -> dict[str, Any]:
         return self._post_sharing_action(
             self.SHARING_ACTION_PATHS["add_to_edit"],
-            subject_key="user_id",
-            subject_id=user_id,
+            subject_key="user_uid",
+            subject_uid=user_uid,
             timeout=timeout,
         )
 
     def remove_from_edit(
         self,
-        user_id: Any,
+        user_uid: Any,
         *,
         timeout: int | float | tuple[float, float] | None = None,
     ) -> dict[str, Any]:
         return self._post_sharing_action(
             self.SHARING_ACTION_PATHS["remove_from_edit"],
-            subject_key="user_id",
-            subject_id=user_id,
+            subject_key="user_uid",
+            subject_uid=user_uid,
             timeout=timeout,
         )
 
     def remove_from_view(
         self,
-        user_id: Any,
+        user_uid: Any,
         *,
         timeout: int | float | tuple[float, float] | None = None,
     ) -> dict[str, Any]:
         return self._post_sharing_action(
             self.SHARING_ACTION_PATHS["remove_from_view"],
-            subject_key="user_id",
-            subject_id=user_id,
+            subject_key="user_uid",
+            subject_uid=user_uid,
             timeout=timeout,
         )
 
     def add_team_to_view(
         self,
-        team_id: Any,
+        team_uid: Any,
         *,
         timeout: int | float | tuple[float, float] | None = None,
     ) -> dict[str, Any]:
         return self._post_sharing_action(
             self.SHARING_ACTION_PATHS["add_team_to_view"],
-            subject_key="team_id",
-            subject_id=team_id,
+            subject_key="team_uid",
+            subject_uid=team_uid,
             timeout=timeout,
         )
 
     def add_team_to_edit(
         self,
-        team_id: Any,
+        team_uid: Any,
         *,
         timeout: int | float | tuple[float, float] | None = None,
     ) -> dict[str, Any]:
         return self._post_sharing_action(
             self.SHARING_ACTION_PATHS["add_team_to_edit"],
-            subject_key="team_id",
-            subject_id=team_id,
+            subject_key="team_uid",
+            subject_uid=team_uid,
             timeout=timeout,
         )
 
     def remove_team_from_edit(
         self,
-        team_id: Any,
+        team_uid: Any,
         *,
         timeout: int | float | tuple[float, float] | None = None,
     ) -> dict[str, Any]:
         return self._post_sharing_action(
             self.SHARING_ACTION_PATHS["remove_team_from_edit"],
-            subject_key="team_id",
-            subject_id=team_id,
+            subject_key="team_uid",
+            subject_uid=team_uid,
             timeout=timeout,
         )
 
     def remove_team_from_view(
         self,
-        team_id: Any,
+        team_uid: Any,
         *,
         timeout: int | float | tuple[float, float] | None = None,
     ) -> dict[str, Any]:
         return self._post_sharing_action(
             self.SHARING_ACTION_PATHS["remove_team_from_view"],
-            subject_key="team_id",
-            subject_id=team_id,
+            subject_key="team_uid",
+            subject_uid=team_uid,
             timeout=timeout,
         )
 

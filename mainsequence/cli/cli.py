@@ -3024,7 +3024,7 @@ def organization_teams_can_edit_cmd(
 @organization_teams_group.command("add_to_view")
 def organization_teams_add_to_view_cmd(
     team_uid: str = pydantic_argument(TEAM_MODEL_REF, "uid", ..., help="Team UID."),
-    user_id: int = typer.Argument(..., help="User ID to grant view access."),
+    user_uid: uuid.UUID = typer.Argument(..., help="User UID to grant view access."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     _shareable_user_access_update_impl(
@@ -3032,7 +3032,7 @@ def organization_teams_add_to_view_cmd(
         object_label="Team",
         action_label="add_to_view",
         object_uid=team_uid,
-        user_id=user_id,
+        user_uid=user_uid,
         timeout=timeout,
     )
 
@@ -3040,7 +3040,7 @@ def organization_teams_add_to_view_cmd(
 @organization_teams_group.command("add_to_edit")
 def organization_teams_add_to_edit_cmd(
     team_uid: str = pydantic_argument(TEAM_MODEL_REF, "uid", ..., help="Team UID."),
-    user_id: int = typer.Argument(..., help="User ID to grant edit access."),
+    user_uid: uuid.UUID = typer.Argument(..., help="User UID to grant edit access."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     _shareable_user_access_update_impl(
@@ -3048,7 +3048,7 @@ def organization_teams_add_to_edit_cmd(
         object_label="Team",
         action_label="add_to_edit",
         object_uid=team_uid,
-        user_id=user_id,
+        user_uid=user_uid,
         timeout=timeout,
     )
 
@@ -3056,7 +3056,7 @@ def organization_teams_add_to_edit_cmd(
 @organization_teams_group.command("remove_from_view")
 def organization_teams_remove_from_view_cmd(
     team_uid: str = pydantic_argument(TEAM_MODEL_REF, "uid", ..., help="Team UID."),
-    user_id: int = typer.Argument(..., help="User ID to remove explicit view access from."),
+    user_uid: uuid.UUID = typer.Argument(..., help="User UID to remove explicit view access from."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     _shareable_user_access_update_impl(
@@ -3064,7 +3064,7 @@ def organization_teams_remove_from_view_cmd(
         object_label="Team",
         action_label="remove_from_view",
         object_uid=team_uid,
-        user_id=user_id,
+        user_uid=user_uid,
         timeout=timeout,
     )
 
@@ -3072,7 +3072,7 @@ def organization_teams_remove_from_view_cmd(
 @organization_teams_group.command("remove_from_edit")
 def organization_teams_remove_from_edit_cmd(
     team_uid: str = pydantic_argument(TEAM_MODEL_REF, "uid", ..., help="Team UID."),
-    user_id: int = typer.Argument(..., help="User ID to remove explicit edit access from."),
+    user_uid: uuid.UUID = typer.Argument(..., help="User UID to remove explicit edit access from."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     _shareable_user_access_update_impl(
@@ -3080,7 +3080,7 @@ def organization_teams_remove_from_edit_cmd(
         object_label="Team",
         action_label="remove_from_edit",
         object_uid=team_uid,
-        user_id=user_id,
+        user_uid=user_uid,
         timeout=timeout,
     )
 
@@ -3394,53 +3394,53 @@ def _render_shareable_team_name(team: dict[str, object]) -> str:
 def _format_shareable_permission_change(payload: dict[str, object]) -> list[tuple[str, str]]:
     user = payload.get("user") if isinstance(payload.get("user"), dict) else {}
     team = payload.get("team") if isinstance(payload.get("team"), dict) else {}
-    explicit_view_ids = payload.get("explicit_can_view_user_ids")
-    explicit_edit_ids = payload.get("explicit_can_edit_user_ids")
-    explicit_view_team_ids = payload.get("explicit_can_view_team_ids")
-    explicit_edit_team_ids = payload.get("explicit_can_edit_team_ids")
+    explicit_view_uids = payload.get("explicit_can_view_user_uids")
+    explicit_edit_uids = payload.get("explicit_can_edit_user_uids")
+    explicit_view_team_uids = payload.get("explicit_can_view_team_uids")
+    explicit_edit_team_uids = payload.get("explicit_can_edit_team_uids")
     return [
         ("Action", str(payload.get("action") or "-")),
         ("Detail", str(payload.get("detail") or "-")),
         ("Object Reference", str(payload.get("object_uid") or "-")),
         ("Object Type", str(payload.get("object_type") or "-")),
-        ("User ID", str(user.get("id") or "-")),
+        ("User UID", str(user.get("uid") or "-")),
         ("Username", str(user.get("username") or "-")),
         ("Email", str(user.get("email") or "-")),
         ("Name", _render_shareable_user_name(user)),
-        ("Team ID", str(team.get("id") or "-")),
+        ("Team UID", str(team.get("uid") or "-")),
         ("Team Name", _render_shareable_team_name(team)),
         ("Team Description", str(team.get("description") or "-")),
         ("Explicit Can View", str(payload.get("explicit_can_view"))),
         ("Explicit Can Edit", str(payload.get("explicit_can_edit"))),
         (
-            "Explicit View User IDs",
+            "Explicit View User UIDs",
             (
-                ", ".join(str(item) for item in explicit_view_ids)
-                if isinstance(explicit_view_ids, list)
+                ", ".join(str(item) for item in explicit_view_uids)
+                if isinstance(explicit_view_uids, list)
                 else "-"
             ),
         ),
         (
-            "Explicit Edit User IDs",
+            "Explicit Edit User UIDs",
             (
-                ", ".join(str(item) for item in explicit_edit_ids)
-                if isinstance(explicit_edit_ids, list)
+                ", ".join(str(item) for item in explicit_edit_uids)
+                if isinstance(explicit_edit_uids, list)
                 else "-"
             ),
         ),
         (
-            "Explicit View Team IDs",
+            "Explicit View Team UIDs",
             (
-                ", ".join(str(item) for item in explicit_view_team_ids)
-                if isinstance(explicit_view_team_ids, list)
+                ", ".join(str(item) for item in explicit_view_team_uids)
+                if isinstance(explicit_view_team_uids, list)
                 else "-"
             ),
         ),
         (
-            "Explicit Edit Team IDs",
+            "Explicit Edit Team UIDs",
             (
-                ", ".join(str(item) for item in explicit_edit_team_ids)
-                if isinstance(explicit_edit_team_ids, list)
+                ", ".join(str(item) for item in explicit_edit_team_uids)
+                if isinstance(explicit_edit_team_uids, list)
                 else "-"
             ),
         ),
@@ -4230,7 +4230,7 @@ def _shareable_user_list_impl(
     for user in users_payload:
         user_rows.append(
             [
-                str(user.get("id") or "-"),
+                str(user.get("uid") or "-"),
                 str(user.get("username") or "-"),
                 str(user.get("email") or "-"),
                 _render_shareable_user_name(user),
@@ -4239,7 +4239,7 @@ def _shareable_user_list_impl(
 
     title = f"{object_label} Users Who Can {effective_access_label.title()}"
     if user_rows:
-        print_table(title, ["ID", "Username", "Email", "Name"], user_rows)
+        print_table(title, ["UID", "Username", "Email", "Name"], user_rows)
     else:
         info(f"No users can {effective_access_label} this {object_label.lower()}.")
 
@@ -4251,7 +4251,7 @@ def _shareable_user_list_impl(
             member_count = len(members) if isinstance(members, list) else "-"
         team_rows.append(
             [
-                str(team.get("id") or "-"),
+                str(team.get("uid") or "-"),
                 _render_shareable_team_name(team),
                 str(team.get("description") or "-"),
                 str(member_count),
@@ -4260,7 +4260,7 @@ def _shareable_user_list_impl(
 
     teams_title = f"{object_label} Teams Who Can {effective_access_label.title()}"
     if team_rows:
-        print_table(teams_title, ["ID", "Name", "Description", "Members"], team_rows)
+        print_table(teams_title, ["UID", "Name", "Description", "Members"], team_rows)
     else:
         info(f"No teams can {effective_access_label} this {object_label.lower()}.")
 
@@ -4274,13 +4274,13 @@ def _shareable_user_access_update_impl(
     object_label: str,
     action_label: str,
     object_uid: int | str,
-    user_id: int,
+    user_uid: str | uuid.UUID,
     timeout: int | None,
 ) -> None:
     _require_login()
 
     try:
-        payload = action_fn(object_uid, user_id, timeout=timeout)
+        payload = action_fn(object_uid, str(user_uid), timeout=timeout)
     except ApiError as e:
         error(f"{object_label} {action_label} failed: {e}")
         raise typer.Exit(1) from e
@@ -4298,13 +4298,13 @@ def _shareable_team_access_update_impl(
     object_label: str,
     action_label: str,
     object_uid: int | str,
-    team_id: int,
+    team_uid: str | uuid.UUID,
     timeout: int | None,
 ) -> None:
     _require_login()
 
     try:
-        payload = action_fn(object_uid, team_id, timeout=timeout)
+        payload = action_fn(object_uid, str(team_uid), timeout=timeout)
     except ApiError as e:
         error(f"{object_label} {action_label} failed: {e}")
         raise typer.Exit(1) from e
@@ -5154,7 +5154,7 @@ def agent_can_edit_cmd(
 @agent.command("add_to_view")
 def agent_add_to_view_cmd(
     agent_uid: str = pydantic_argument(AGENT_MODEL_REF, "uid", ..., help="Agent UID."),
-    user_id: int = typer.Argument(..., help="User ID to grant view access."),
+    user_uid: uuid.UUID = typer.Argument(..., help="User UID to grant view access."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     _shareable_user_access_update_impl(
@@ -5162,7 +5162,7 @@ def agent_add_to_view_cmd(
         object_label="Agent",
         action_label="add_to_view",
         object_uid=agent_uid,
-        user_id=user_id,
+        user_uid=user_uid,
         timeout=timeout,
     )
 
@@ -5170,7 +5170,7 @@ def agent_add_to_view_cmd(
 @agent.command("add_to_edit")
 def agent_add_to_edit_cmd(
     agent_uid: str = pydantic_argument(AGENT_MODEL_REF, "uid", ..., help="Agent UID."),
-    user_id: int = typer.Argument(..., help="User ID to grant edit access."),
+    user_uid: uuid.UUID = typer.Argument(..., help="User UID to grant edit access."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     _shareable_user_access_update_impl(
@@ -5178,7 +5178,7 @@ def agent_add_to_edit_cmd(
         object_label="Agent",
         action_label="add_to_edit",
         object_uid=agent_uid,
-        user_id=user_id,
+        user_uid=user_uid,
         timeout=timeout,
     )
 
@@ -5186,7 +5186,7 @@ def agent_add_to_edit_cmd(
 @agent.command("remove_from_view")
 def agent_remove_from_view_cmd(
     agent_uid: str = pydantic_argument(AGENT_MODEL_REF, "uid", ..., help="Agent UID."),
-    user_id: int = typer.Argument(..., help="User ID to remove explicit view access from."),
+    user_uid: uuid.UUID = typer.Argument(..., help="User UID to remove explicit view access from."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     _shareable_user_access_update_impl(
@@ -5194,7 +5194,7 @@ def agent_remove_from_view_cmd(
         object_label="Agent",
         action_label="remove_from_view",
         object_uid=agent_uid,
-        user_id=user_id,
+        user_uid=user_uid,
         timeout=timeout,
     )
 
@@ -5202,7 +5202,7 @@ def agent_remove_from_view_cmd(
 @agent.command("remove_from_edit")
 def agent_remove_from_edit_cmd(
     agent_uid: str = pydantic_argument(AGENT_MODEL_REF, "uid", ..., help="Agent UID."),
-    user_id: int = typer.Argument(..., help="User ID to remove explicit edit access from."),
+    user_uid: uuid.UUID = typer.Argument(..., help="User UID to remove explicit edit access from."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     _shareable_user_access_update_impl(
@@ -5210,7 +5210,7 @@ def agent_remove_from_edit_cmd(
         object_label="Agent",
         action_label="remove_from_edit",
         object_uid=agent_uid,
-        user_id=user_id,
+        user_uid=user_uid,
         timeout=timeout,
     )
 
@@ -5218,7 +5218,7 @@ def agent_remove_from_edit_cmd(
 @agent.command("add_team_to_view")
 def agent_add_team_to_view_cmd(
     agent_uid: str = pydantic_argument(AGENT_MODEL_REF, "uid", ..., help="Agent UID."),
-    team_id: int = typer.Argument(..., help="Team ID to grant view access."),
+    team_uid: uuid.UUID = typer.Argument(..., help="Team UID to grant view access."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     _shareable_team_access_update_impl(
@@ -5226,7 +5226,7 @@ def agent_add_team_to_view_cmd(
         object_label="Agent",
         action_label="add_team_to_view",
         object_uid=agent_uid,
-        team_id=team_id,
+        team_uid=team_uid,
         timeout=timeout,
     )
 
@@ -5234,7 +5234,7 @@ def agent_add_team_to_view_cmd(
 @agent.command("add_team_to_edit")
 def agent_add_team_to_edit_cmd(
     agent_uid: str = pydantic_argument(AGENT_MODEL_REF, "uid", ..., help="Agent UID."),
-    team_id: int = typer.Argument(..., help="Team ID to grant edit access."),
+    team_uid: uuid.UUID = typer.Argument(..., help="Team UID to grant edit access."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     _shareable_team_access_update_impl(
@@ -5242,7 +5242,7 @@ def agent_add_team_to_edit_cmd(
         object_label="Agent",
         action_label="add_team_to_edit",
         object_uid=agent_uid,
-        team_id=team_id,
+        team_uid=team_uid,
         timeout=timeout,
     )
 
@@ -5250,7 +5250,7 @@ def agent_add_team_to_edit_cmd(
 @agent.command("remove_team_from_view")
 def agent_remove_team_from_view_cmd(
     agent_uid: str = pydantic_argument(AGENT_MODEL_REF, "uid", ..., help="Agent UID."),
-    team_id: int = typer.Argument(..., help="Team ID to remove explicit view access from."),
+    team_uid: uuid.UUID = typer.Argument(..., help="Team UID to remove explicit view access from."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     _shareable_team_access_update_impl(
@@ -5258,7 +5258,7 @@ def agent_remove_team_from_view_cmd(
         object_label="Agent",
         action_label="remove_team_from_view",
         object_uid=agent_uid,
-        team_id=team_id,
+        team_uid=team_uid,
         timeout=timeout,
     )
 
@@ -5266,7 +5266,7 @@ def agent_remove_team_from_view_cmd(
 @agent.command("remove_team_from_edit")
 def agent_remove_team_from_edit_cmd(
     agent_uid: str = pydantic_argument(AGENT_MODEL_REF, "uid", ..., help="Agent UID."),
-    team_id: int = typer.Argument(..., help="Team ID to remove explicit edit access from."),
+    team_uid: uuid.UUID = typer.Argument(..., help="Team UID to remove explicit edit access from."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     _shareable_team_access_update_impl(
@@ -5274,7 +5274,7 @@ def agent_remove_team_from_edit_cmd(
         object_label="Agent",
         action_label="remove_team_from_edit",
         object_uid=agent_uid,
-        team_id=team_id,
+        team_uid=team_uid,
         timeout=timeout,
     )
 
@@ -5407,7 +5407,7 @@ def constants_can_edit_cmd(
 @constants.command("add_to_view")
 def constants_add_to_view_cmd(
     constant_uid: str = typer.Argument(..., help="Constant UID."),
-    user_id: int = typer.Argument(..., help="User ID to grant view access."),
+    user_uid: uuid.UUID = typer.Argument(..., help="User UID to grant view access."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
@@ -5416,7 +5416,7 @@ def constants_add_to_view_cmd(
     Examples
     --------
     ```bash
-    mainsequence constants add_to_view 498d499f-b74c-43f7-acf1-2e2955ad0e6b 7
+    mainsequence constants add_to_view 498d499f-b74c-43f7-acf1-2e2955ad0e6b <USER_UID>
     ```
     """
     _shareable_user_access_update_impl(
@@ -5424,7 +5424,7 @@ def constants_add_to_view_cmd(
         object_label="Constant",
         action_label="add_to_view",
         object_uid=constant_uid,
-        user_id=user_id,
+        user_uid=user_uid,
         timeout=timeout,
     )
 
@@ -5432,7 +5432,7 @@ def constants_add_to_view_cmd(
 @constants.command("add_to_edit")
 def constants_add_to_edit_cmd(
     constant_uid: str = typer.Argument(..., help="Constant UID."),
-    user_id: int = typer.Argument(..., help="User ID to grant edit access."),
+    user_uid: uuid.UUID = typer.Argument(..., help="User UID to grant edit access."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
@@ -5441,7 +5441,7 @@ def constants_add_to_edit_cmd(
     Examples
     --------
     ```bash
-    mainsequence constants add_to_edit 498d499f-b74c-43f7-acf1-2e2955ad0e6b 7
+    mainsequence constants add_to_edit 498d499f-b74c-43f7-acf1-2e2955ad0e6b <USER_UID>
     ```
     """
     _shareable_user_access_update_impl(
@@ -5449,7 +5449,7 @@ def constants_add_to_edit_cmd(
         object_label="Constant",
         action_label="add_to_edit",
         object_uid=constant_uid,
-        user_id=user_id,
+        user_uid=user_uid,
         timeout=timeout,
     )
 
@@ -5457,7 +5457,7 @@ def constants_add_to_edit_cmd(
 @constants.command("remove_from_view")
 def constants_remove_from_view_cmd(
     constant_uid: str = typer.Argument(..., help="Constant UID."),
-    user_id: int = typer.Argument(..., help="User ID to remove explicit view access from."),
+    user_uid: uuid.UUID = typer.Argument(..., help="User UID to remove explicit view access from."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
@@ -5466,7 +5466,7 @@ def constants_remove_from_view_cmd(
     Examples
     --------
     ```bash
-    mainsequence constants remove_from_view 498d499f-b74c-43f7-acf1-2e2955ad0e6b 7
+    mainsequence constants remove_from_view 498d499f-b74c-43f7-acf1-2e2955ad0e6b <USER_UID>
     ```
     """
     _shareable_user_access_update_impl(
@@ -5474,7 +5474,7 @@ def constants_remove_from_view_cmd(
         object_label="Constant",
         action_label="remove_from_view",
         object_uid=constant_uid,
-        user_id=user_id,
+        user_uid=user_uid,
         timeout=timeout,
     )
 
@@ -5482,7 +5482,7 @@ def constants_remove_from_view_cmd(
 @constants.command("remove_from_edit")
 def constants_remove_from_edit_cmd(
     constant_uid: str = typer.Argument(..., help="Constant UID."),
-    user_id: int = typer.Argument(..., help="User ID to remove explicit edit access from."),
+    user_uid: uuid.UUID = typer.Argument(..., help="User UID to remove explicit edit access from."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
@@ -5491,7 +5491,7 @@ def constants_remove_from_edit_cmd(
     Examples
     --------
     ```bash
-    mainsequence constants remove_from_edit 498d499f-b74c-43f7-acf1-2e2955ad0e6b 7
+    mainsequence constants remove_from_edit 498d499f-b74c-43f7-acf1-2e2955ad0e6b <USER_UID>
     ```
     """
     _shareable_user_access_update_impl(
@@ -5499,7 +5499,7 @@ def constants_remove_from_edit_cmd(
         object_label="Constant",
         action_label="remove_from_edit",
         object_uid=constant_uid,
-        user_id=user_id,
+        user_uid=user_uid,
         timeout=timeout,
     )
 
@@ -5507,7 +5507,7 @@ def constants_remove_from_edit_cmd(
 @constants.command("add_team_to_view")
 def constants_add_team_to_view_cmd(
     constant_uid: str = typer.Argument(..., help="Constant UID."),
-    team_id: int = typer.Argument(..., help="Team ID to grant view access."),
+    team_uid: uuid.UUID = typer.Argument(..., help="Team UID to grant view access."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     _shareable_team_access_update_impl(
@@ -5515,7 +5515,7 @@ def constants_add_team_to_view_cmd(
         object_label="Constant",
         action_label="add_team_to_view",
         object_uid=constant_uid,
-        team_id=team_id,
+        team_uid=team_uid,
         timeout=timeout,
     )
 
@@ -5523,7 +5523,7 @@ def constants_add_team_to_view_cmd(
 @constants.command("add_team_to_edit")
 def constants_add_team_to_edit_cmd(
     constant_uid: str = typer.Argument(..., help="Constant UID."),
-    team_id: int = typer.Argument(..., help="Team ID to grant edit access."),
+    team_uid: uuid.UUID = typer.Argument(..., help="Team UID to grant edit access."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     _shareable_team_access_update_impl(
@@ -5531,7 +5531,7 @@ def constants_add_team_to_edit_cmd(
         object_label="Constant",
         action_label="add_team_to_edit",
         object_uid=constant_uid,
-        team_id=team_id,
+        team_uid=team_uid,
         timeout=timeout,
     )
 
@@ -5539,7 +5539,7 @@ def constants_add_team_to_edit_cmd(
 @constants.command("remove_team_from_view")
 def constants_remove_team_from_view_cmd(
     constant_uid: str = typer.Argument(..., help="Constant UID."),
-    team_id: int = typer.Argument(..., help="Team ID to remove explicit view access from."),
+    team_uid: uuid.UUID = typer.Argument(..., help="Team UID to remove explicit view access from."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     _shareable_team_access_update_impl(
@@ -5547,7 +5547,7 @@ def constants_remove_team_from_view_cmd(
         object_label="Constant",
         action_label="remove_team_from_view",
         object_uid=constant_uid,
-        team_id=team_id,
+        team_uid=team_uid,
         timeout=timeout,
     )
 
@@ -5555,7 +5555,7 @@ def constants_remove_team_from_view_cmd(
 @constants.command("remove_team_from_edit")
 def constants_remove_team_from_edit_cmd(
     constant_uid: str = typer.Argument(..., help="Constant UID."),
-    team_id: int = typer.Argument(..., help="Team ID to remove explicit edit access from."),
+    team_uid: uuid.UUID = typer.Argument(..., help="Team UID to remove explicit edit access from."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     _shareable_team_access_update_impl(
@@ -5563,7 +5563,7 @@ def constants_remove_team_from_edit_cmd(
         object_label="Constant",
         action_label="remove_team_from_edit",
         object_uid=constant_uid,
-        team_id=team_id,
+        team_uid=team_uid,
         timeout=timeout,
     )
 
@@ -5688,7 +5688,7 @@ def secrets_can_edit_cmd(
 @secrets.command("add_to_view")
 def secrets_add_to_view_cmd(
     secret_uid: str = typer.Argument(..., help="Secret UID."),
-    user_id: int = typer.Argument(..., help="User ID to grant view access."),
+    user_uid: uuid.UUID = typer.Argument(..., help="User UID to grant view access."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
@@ -5697,7 +5697,7 @@ def secrets_add_to_view_cmd(
     Examples
     --------
     ```bash
-    mainsequence secrets add_to_view 498d499f-b74c-43f7-acf1-2e2955ad0e6b 7
+    mainsequence secrets add_to_view 498d499f-b74c-43f7-acf1-2e2955ad0e6b <USER_UID>
     ```
     """
     _shareable_user_access_update_impl(
@@ -5705,7 +5705,7 @@ def secrets_add_to_view_cmd(
         object_label="Secret",
         action_label="add_to_view",
         object_uid=secret_uid,
-        user_id=user_id,
+        user_uid=user_uid,
         timeout=timeout,
     )
 
@@ -5713,7 +5713,7 @@ def secrets_add_to_view_cmd(
 @secrets.command("add_to_edit")
 def secrets_add_to_edit_cmd(
     secret_uid: str = typer.Argument(..., help="Secret UID."),
-    user_id: int = typer.Argument(..., help="User ID to grant edit access."),
+    user_uid: uuid.UUID = typer.Argument(..., help="User UID to grant edit access."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
@@ -5722,7 +5722,7 @@ def secrets_add_to_edit_cmd(
     Examples
     --------
     ```bash
-    mainsequence secrets add_to_edit 498d499f-b74c-43f7-acf1-2e2955ad0e6b 7
+    mainsequence secrets add_to_edit 498d499f-b74c-43f7-acf1-2e2955ad0e6b <USER_UID>
     ```
     """
     _shareable_user_access_update_impl(
@@ -5730,7 +5730,7 @@ def secrets_add_to_edit_cmd(
         object_label="Secret",
         action_label="add_to_edit",
         object_uid=secret_uid,
-        user_id=user_id,
+        user_uid=user_uid,
         timeout=timeout,
     )
 
@@ -5738,7 +5738,7 @@ def secrets_add_to_edit_cmd(
 @secrets.command("remove_from_view")
 def secrets_remove_from_view_cmd(
     secret_uid: str = typer.Argument(..., help="Secret UID."),
-    user_id: int = typer.Argument(..., help="User ID to remove explicit view access from."),
+    user_uid: uuid.UUID = typer.Argument(..., help="User UID to remove explicit view access from."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
@@ -5747,7 +5747,7 @@ def secrets_remove_from_view_cmd(
     Examples
     --------
     ```bash
-    mainsequence secrets remove_from_view 498d499f-b74c-43f7-acf1-2e2955ad0e6b 7
+    mainsequence secrets remove_from_view 498d499f-b74c-43f7-acf1-2e2955ad0e6b <USER_UID>
     ```
     """
     _shareable_user_access_update_impl(
@@ -5755,7 +5755,7 @@ def secrets_remove_from_view_cmd(
         object_label="Secret",
         action_label="remove_from_view",
         object_uid=secret_uid,
-        user_id=user_id,
+        user_uid=user_uid,
         timeout=timeout,
     )
 
@@ -5763,7 +5763,7 @@ def secrets_remove_from_view_cmd(
 @secrets.command("remove_from_edit")
 def secrets_remove_from_edit_cmd(
     secret_uid: str = typer.Argument(..., help="Secret UID."),
-    user_id: int = typer.Argument(..., help="User ID to remove explicit edit access from."),
+    user_uid: uuid.UUID = typer.Argument(..., help="User UID to remove explicit edit access from."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
@@ -5772,7 +5772,7 @@ def secrets_remove_from_edit_cmd(
     Examples
     --------
     ```bash
-    mainsequence secrets remove_from_edit 498d499f-b74c-43f7-acf1-2e2955ad0e6b 7
+    mainsequence secrets remove_from_edit 498d499f-b74c-43f7-acf1-2e2955ad0e6b <USER_UID>
     ```
     """
     _shareable_user_access_update_impl(
@@ -5780,7 +5780,7 @@ def secrets_remove_from_edit_cmd(
         object_label="Secret",
         action_label="remove_from_edit",
         object_uid=secret_uid,
-        user_id=user_id,
+        user_uid=user_uid,
         timeout=timeout,
     )
 
@@ -5788,7 +5788,7 @@ def secrets_remove_from_edit_cmd(
 @secrets.command("add_team_to_view")
 def secrets_add_team_to_view_cmd(
     secret_uid: str = typer.Argument(..., help="Secret UID."),
-    team_id: int = typer.Argument(..., help="Team ID to grant view access."),
+    team_uid: uuid.UUID = typer.Argument(..., help="Team UID to grant view access."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     _shareable_team_access_update_impl(
@@ -5796,7 +5796,7 @@ def secrets_add_team_to_view_cmd(
         object_label="Secret",
         action_label="add_team_to_view",
         object_uid=secret_uid,
-        team_id=team_id,
+        team_uid=team_uid,
         timeout=timeout,
     )
 
@@ -5804,7 +5804,7 @@ def secrets_add_team_to_view_cmd(
 @secrets.command("add_team_to_edit")
 def secrets_add_team_to_edit_cmd(
     secret_uid: str = typer.Argument(..., help="Secret UID."),
-    team_id: int = typer.Argument(..., help="Team ID to grant edit access."),
+    team_uid: uuid.UUID = typer.Argument(..., help="Team UID to grant edit access."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     _shareable_team_access_update_impl(
@@ -5812,7 +5812,7 @@ def secrets_add_team_to_edit_cmd(
         object_label="Secret",
         action_label="add_team_to_edit",
         object_uid=secret_uid,
-        team_id=team_id,
+        team_uid=team_uid,
         timeout=timeout,
     )
 
@@ -5820,7 +5820,7 @@ def secrets_add_team_to_edit_cmd(
 @secrets.command("remove_team_from_view")
 def secrets_remove_team_from_view_cmd(
     secret_uid: str = typer.Argument(..., help="Secret UID."),
-    team_id: int = typer.Argument(..., help="Team ID to remove explicit view access from."),
+    team_uid: uuid.UUID = typer.Argument(..., help="Team UID to remove explicit view access from."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     _shareable_team_access_update_impl(
@@ -5828,7 +5828,7 @@ def secrets_remove_team_from_view_cmd(
         object_label="Secret",
         action_label="remove_team_from_view",
         object_uid=secret_uid,
-        team_id=team_id,
+        team_uid=team_uid,
         timeout=timeout,
     )
 
@@ -5836,7 +5836,7 @@ def secrets_remove_team_from_view_cmd(
 @secrets.command("remove_team_from_edit")
 def secrets_remove_team_from_edit_cmd(
     secret_uid: str = typer.Argument(..., help="Secret UID."),
-    team_id: int = typer.Argument(..., help="Team ID to remove explicit edit access from."),
+    team_uid: uuid.UUID = typer.Argument(..., help="Team UID to remove explicit edit access from."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     _shareable_team_access_update_impl(
@@ -5844,7 +5844,7 @@ def secrets_remove_team_from_edit_cmd(
         object_label="Secret",
         action_label="remove_team_from_edit",
         object_uid=secret_uid,
-        team_id=team_id,
+        team_uid=team_uid,
         timeout=timeout,
     )
 
@@ -6247,7 +6247,7 @@ def meta_table_remove_label_alias_cmd(
 @meta_table_group.command("add_to_view")
 def meta_table_add_to_view_cmd(
     meta_table_uid: str = typer.Argument(..., help="MetaTable UID."),
-    user_id: int = typer.Argument(..., help="User ID to grant view access."),
+    user_uid: uuid.UUID = typer.Argument(..., help="User UID to grant view access."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """Grant explicit view access to one user for one MetaTable."""
@@ -6256,7 +6256,7 @@ def meta_table_add_to_view_cmd(
         object_label="MetaTable",
         action_label="add_to_view",
         object_uid=meta_table_uid,
-        user_id=user_id,
+        user_uid=user_uid,
         timeout=timeout,
     )
 
@@ -6264,7 +6264,7 @@ def meta_table_add_to_view_cmd(
 @meta_table_group.command("add_to_edit")
 def meta_table_add_to_edit_cmd(
     meta_table_uid: str = typer.Argument(..., help="MetaTable UID."),
-    user_id: int = typer.Argument(..., help="User ID to grant edit access."),
+    user_uid: uuid.UUID = typer.Argument(..., help="User UID to grant edit access."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """Grant explicit edit access to one user for one MetaTable."""
@@ -6273,7 +6273,7 @@ def meta_table_add_to_edit_cmd(
         object_label="MetaTable",
         action_label="add_to_edit",
         object_uid=meta_table_uid,
-        user_id=user_id,
+        user_uid=user_uid,
         timeout=timeout,
     )
 
@@ -6281,7 +6281,7 @@ def meta_table_add_to_edit_cmd(
 @meta_table_group.command("remove_from_view")
 def meta_table_remove_from_view_cmd(
     meta_table_uid: str = typer.Argument(..., help="MetaTable UID."),
-    user_id: int = typer.Argument(..., help="User ID to remove explicit view access from."),
+    user_uid: uuid.UUID = typer.Argument(..., help="User UID to remove explicit view access from."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """Remove explicit view access from one user for one MetaTable."""
@@ -6290,7 +6290,7 @@ def meta_table_remove_from_view_cmd(
         object_label="MetaTable",
         action_label="remove_from_view",
         object_uid=meta_table_uid,
-        user_id=user_id,
+        user_uid=user_uid,
         timeout=timeout,
     )
 
@@ -6298,7 +6298,7 @@ def meta_table_remove_from_view_cmd(
 @meta_table_group.command("remove_from_edit")
 def meta_table_remove_from_edit_cmd(
     meta_table_uid: str = typer.Argument(..., help="MetaTable UID."),
-    user_id: int = typer.Argument(..., help="User ID to remove explicit edit access from."),
+    user_uid: uuid.UUID = typer.Argument(..., help="User UID to remove explicit edit access from."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """Remove explicit edit access from one user for one MetaTable."""
@@ -6307,7 +6307,7 @@ def meta_table_remove_from_edit_cmd(
         object_label="MetaTable",
         action_label="remove_from_edit",
         object_uid=meta_table_uid,
-        user_id=user_id,
+        user_uid=user_uid,
         timeout=timeout,
     )
 
@@ -6315,7 +6315,7 @@ def meta_table_remove_from_edit_cmd(
 @meta_table_group.command("add_team_to_view")
 def meta_table_add_team_to_view_cmd(
     meta_table_uid: str = typer.Argument(..., help="MetaTable UID."),
-    team_id: int = typer.Argument(..., help="Team ID to grant view access."),
+    team_uid: uuid.UUID = typer.Argument(..., help="Team UID to grant view access."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     _shareable_team_access_update_impl(
@@ -6323,7 +6323,7 @@ def meta_table_add_team_to_view_cmd(
         object_label="MetaTable",
         action_label="add_team_to_view",
         object_uid=meta_table_uid,
-        team_id=team_id,
+        team_uid=team_uid,
         timeout=timeout,
     )
 
@@ -6331,7 +6331,7 @@ def meta_table_add_team_to_view_cmd(
 @meta_table_group.command("add_team_to_edit")
 def meta_table_add_team_to_edit_cmd(
     meta_table_uid: str = typer.Argument(..., help="MetaTable UID."),
-    team_id: int = typer.Argument(..., help="Team ID to grant edit access."),
+    team_uid: uuid.UUID = typer.Argument(..., help="Team UID to grant edit access."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     _shareable_team_access_update_impl(
@@ -6339,7 +6339,7 @@ def meta_table_add_team_to_edit_cmd(
         object_label="MetaTable",
         action_label="add_team_to_edit",
         object_uid=meta_table_uid,
-        team_id=team_id,
+        team_uid=team_uid,
         timeout=timeout,
     )
 
@@ -6347,7 +6347,7 @@ def meta_table_add_team_to_edit_cmd(
 @meta_table_group.command("remove_team_from_view")
 def meta_table_remove_team_from_view_cmd(
     meta_table_uid: str = typer.Argument(..., help="MetaTable UID."),
-    team_id: int = typer.Argument(..., help="Team ID to remove explicit view access from."),
+    team_uid: uuid.UUID = typer.Argument(..., help="Team UID to remove explicit view access from."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     _shareable_team_access_update_impl(
@@ -6355,7 +6355,7 @@ def meta_table_remove_team_from_view_cmd(
         object_label="MetaTable",
         action_label="remove_team_from_view",
         object_uid=meta_table_uid,
-        team_id=team_id,
+        team_uid=team_uid,
         timeout=timeout,
     )
 
@@ -6363,7 +6363,7 @@ def meta_table_remove_team_from_view_cmd(
 @meta_table_group.command("remove_team_from_edit")
 def meta_table_remove_team_from_edit_cmd(
     meta_table_uid: str = typer.Argument(..., help="MetaTable UID."),
-    team_id: int = typer.Argument(..., help="Team ID to remove explicit edit access from."),
+    team_uid: uuid.UUID = typer.Argument(..., help="Team UID to remove explicit edit access from."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     _shareable_team_access_update_impl(
@@ -6371,7 +6371,7 @@ def meta_table_remove_team_from_edit_cmd(
         object_label="MetaTable",
         action_label="remove_team_from_edit",
         object_uid=meta_table_uid,
-        team_id=team_id,
+        team_uid=team_uid,
         timeout=timeout,
     )
 
@@ -6937,7 +6937,7 @@ def data_node_storage_remove_label_alias_cmd(
 @data_node_storage_group.command("add_to_view")
 def data_node_storage_add_to_view_cmd(
     storage_uid: str = typer.Argument(..., help="Data node storage UID."),
-    user_id: int = typer.Argument(..., help="User ID to grant view access."),
+    user_uid: uuid.UUID = typer.Argument(..., help="User UID to grant view access."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
@@ -6946,8 +6946,8 @@ def data_node_storage_add_to_view_cmd(
     Examples
     --------
     ```bash
-    mainsequence data-node add_to_view <DATA_NODE_STORAGE_UID> 7
-    mainsequence data_node add_to_view <DATA_NODE_STORAGE_UID> 7
+    mainsequence data-node add_to_view <DATA_NODE_STORAGE_UID> <USER_UID>
+    mainsequence data_node add_to_view <DATA_NODE_STORAGE_UID> <USER_UID>
     ```
     """
     _shareable_user_access_update_impl(
@@ -6955,7 +6955,7 @@ def data_node_storage_add_to_view_cmd(
         object_label="Data Node",
         action_label="add_to_view",
         object_uid=storage_uid,
-        user_id=user_id,
+        user_uid=user_uid,
         timeout=timeout,
     )
 
@@ -6963,7 +6963,7 @@ def data_node_storage_add_to_view_cmd(
 @data_node_storage_group.command("add_to_edit")
 def data_node_storage_add_to_edit_cmd(
     storage_uid: str = typer.Argument(..., help="Data node storage UID."),
-    user_id: int = typer.Argument(..., help="User ID to grant edit access."),
+    user_uid: uuid.UUID = typer.Argument(..., help="User UID to grant edit access."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
@@ -6972,8 +6972,8 @@ def data_node_storage_add_to_edit_cmd(
     Examples
     --------
     ```bash
-    mainsequence data-node add_to_edit <DATA_NODE_STORAGE_UID> 7
-    mainsequence data_node add_to_edit <DATA_NODE_STORAGE_UID> 7
+    mainsequence data-node add_to_edit <DATA_NODE_STORAGE_UID> <USER_UID>
+    mainsequence data_node add_to_edit <DATA_NODE_STORAGE_UID> <USER_UID>
     ```
     """
     _shareable_user_access_update_impl(
@@ -6981,7 +6981,7 @@ def data_node_storage_add_to_edit_cmd(
         object_label="Data Node",
         action_label="add_to_edit",
         object_uid=storage_uid,
-        user_id=user_id,
+        user_uid=user_uid,
         timeout=timeout,
     )
 
@@ -6989,7 +6989,7 @@ def data_node_storage_add_to_edit_cmd(
 @data_node_storage_group.command("remove_from_view")
 def data_node_storage_remove_from_view_cmd(
     storage_uid: str = typer.Argument(..., help="Data node storage UID."),
-    user_id: int = typer.Argument(..., help="User ID to remove explicit view access from."),
+    user_uid: uuid.UUID = typer.Argument(..., help="User UID to remove explicit view access from."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
@@ -6998,8 +6998,8 @@ def data_node_storage_remove_from_view_cmd(
     Examples
     --------
     ```bash
-    mainsequence data-node remove_from_view <DATA_NODE_STORAGE_UID> 7
-    mainsequence data_node remove_from_view <DATA_NODE_STORAGE_UID> 7
+    mainsequence data-node remove_from_view <DATA_NODE_STORAGE_UID> <USER_UID>
+    mainsequence data_node remove_from_view <DATA_NODE_STORAGE_UID> <USER_UID>
     ```
     """
     _shareable_user_access_update_impl(
@@ -7007,7 +7007,7 @@ def data_node_storage_remove_from_view_cmd(
         object_label="Data Node",
         action_label="remove_from_view",
         object_uid=storage_uid,
-        user_id=user_id,
+        user_uid=user_uid,
         timeout=timeout,
     )
 
@@ -7015,7 +7015,7 @@ def data_node_storage_remove_from_view_cmd(
 @data_node_storage_group.command("remove_from_edit")
 def data_node_storage_remove_from_edit_cmd(
     storage_uid: str = typer.Argument(..., help="Data node storage UID."),
-    user_id: int = typer.Argument(..., help="User ID to remove explicit edit access from."),
+    user_uid: uuid.UUID = typer.Argument(..., help="User UID to remove explicit edit access from."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
@@ -7024,8 +7024,8 @@ def data_node_storage_remove_from_edit_cmd(
     Examples
     --------
     ```bash
-    mainsequence data-node remove_from_edit <DATA_NODE_STORAGE_UID> 7
-    mainsequence data_node remove_from_edit <DATA_NODE_STORAGE_UID> 7
+    mainsequence data-node remove_from_edit <DATA_NODE_STORAGE_UID> <USER_UID>
+    mainsequence data_node remove_from_edit <DATA_NODE_STORAGE_UID> <USER_UID>
     ```
     """
     _shareable_user_access_update_impl(
@@ -7033,7 +7033,7 @@ def data_node_storage_remove_from_edit_cmd(
         object_label="Data Node",
         action_label="remove_from_edit",
         object_uid=storage_uid,
-        user_id=user_id,
+        user_uid=user_uid,
         timeout=timeout,
     )
 
@@ -7041,7 +7041,7 @@ def data_node_storage_remove_from_edit_cmd(
 @data_node_storage_group.command("add_team_to_view")
 def data_node_storage_add_team_to_view_cmd(
     storage_uid: str = typer.Argument(..., help="Data node storage UID."),
-    team_id: int = typer.Argument(..., help="Team ID to grant view access."),
+    team_uid: uuid.UUID = typer.Argument(..., help="Team UID to grant view access."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     _shareable_team_access_update_impl(
@@ -7049,7 +7049,7 @@ def data_node_storage_add_team_to_view_cmd(
         object_label="Data Node",
         action_label="add_team_to_view",
         object_uid=storage_uid,
-        team_id=team_id,
+        team_uid=team_uid,
         timeout=timeout,
     )
 
@@ -7057,7 +7057,7 @@ def data_node_storage_add_team_to_view_cmd(
 @data_node_storage_group.command("add_team_to_edit")
 def data_node_storage_add_team_to_edit_cmd(
     storage_uid: str = typer.Argument(..., help="Data node storage UID."),
-    team_id: int = typer.Argument(..., help="Team ID to grant edit access."),
+    team_uid: uuid.UUID = typer.Argument(..., help="Team UID to grant edit access."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     _shareable_team_access_update_impl(
@@ -7065,7 +7065,7 @@ def data_node_storage_add_team_to_edit_cmd(
         object_label="Data Node",
         action_label="add_team_to_edit",
         object_uid=storage_uid,
-        team_id=team_id,
+        team_uid=team_uid,
         timeout=timeout,
     )
 
@@ -7073,7 +7073,7 @@ def data_node_storage_add_team_to_edit_cmd(
 @data_node_storage_group.command("remove_team_from_view")
 def data_node_storage_remove_team_from_view_cmd(
     storage_uid: str = typer.Argument(..., help="Data node storage UID."),
-    team_id: int = typer.Argument(..., help="Team ID to remove explicit view access from."),
+    team_uid: uuid.UUID = typer.Argument(..., help="Team UID to remove explicit view access from."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     _shareable_team_access_update_impl(
@@ -7081,7 +7081,7 @@ def data_node_storage_remove_team_from_view_cmd(
         object_label="Data Node",
         action_label="remove_team_from_view",
         object_uid=storage_uid,
-        team_id=team_id,
+        team_uid=team_uid,
         timeout=timeout,
     )
 
@@ -7089,7 +7089,7 @@ def data_node_storage_remove_team_from_view_cmd(
 @data_node_storage_group.command("remove_team_from_edit")
 def data_node_storage_remove_team_from_edit_cmd(
     storage_uid: str = typer.Argument(..., help="Data node storage UID."),
-    team_id: int = typer.Argument(..., help="Team ID to remove explicit edit access from."),
+    team_uid: uuid.UUID = typer.Argument(..., help="Team UID to remove explicit edit access from."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     _shareable_team_access_update_impl(
@@ -7097,7 +7097,7 @@ def data_node_storage_remove_team_from_edit_cmd(
         object_label="Data Node",
         action_label="remove_team_from_edit",
         object_uid=storage_uid,
-        team_id=team_id,
+        team_uid=team_uid,
         timeout=timeout,
     )
 
@@ -7829,7 +7829,7 @@ def project_remove_label_alias_cmd(
 @project.command("add_to_view")
 def project_add_to_view_cmd(
     project_id: str = typer.Argument(..., help="Project UID."),
-    user_id: int = typer.Argument(..., help="User ID to grant view access."),
+    user_uid: uuid.UUID = typer.Argument(..., help="User UID to grant view access."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
@@ -7838,7 +7838,7 @@ def project_add_to_view_cmd(
     Examples
     --------
     ```bash
-    mainsequence project add_to_view 42 7
+    mainsequence project add_to_view <PROJECT_UID> <USER_UID>
     ```
     """
     _shareable_user_access_update_impl(
@@ -7846,7 +7846,7 @@ def project_add_to_view_cmd(
         object_label="Project",
         action_label="add_to_view",
         object_uid=project_id,
-        user_id=user_id,
+        user_uid=user_uid,
         timeout=timeout,
     )
 
@@ -7854,7 +7854,7 @@ def project_add_to_view_cmd(
 @project.command("add_to_edit")
 def project_add_to_edit_cmd(
     project_id: str = typer.Argument(..., help="Project UID."),
-    user_id: int = typer.Argument(..., help="User ID to grant edit access."),
+    user_uid: uuid.UUID = typer.Argument(..., help="User UID to grant edit access."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
@@ -7863,7 +7863,7 @@ def project_add_to_edit_cmd(
     Examples
     --------
     ```bash
-    mainsequence project add_to_edit 42 7
+    mainsequence project add_to_edit <PROJECT_UID> <USER_UID>
     ```
     """
     _shareable_user_access_update_impl(
@@ -7871,7 +7871,7 @@ def project_add_to_edit_cmd(
         object_label="Project",
         action_label="add_to_edit",
         object_uid=project_id,
-        user_id=user_id,
+        user_uid=user_uid,
         timeout=timeout,
     )
 
@@ -7879,7 +7879,7 @@ def project_add_to_edit_cmd(
 @project.command("remove_from_view")
 def project_remove_from_view_cmd(
     project_id: str = typer.Argument(..., help="Project UID."),
-    user_id: int = typer.Argument(..., help="User ID to remove explicit view access from."),
+    user_uid: uuid.UUID = typer.Argument(..., help="User UID to remove explicit view access from."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
@@ -7888,7 +7888,7 @@ def project_remove_from_view_cmd(
     Examples
     --------
     ```bash
-    mainsequence project remove_from_view 42 7
+    mainsequence project remove_from_view <PROJECT_UID> <USER_UID>
     ```
     """
     _shareable_user_access_update_impl(
@@ -7896,7 +7896,7 @@ def project_remove_from_view_cmd(
         object_label="Project",
         action_label="remove_from_view",
         object_uid=project_id,
-        user_id=user_id,
+        user_uid=user_uid,
         timeout=timeout,
     )
 
@@ -7904,7 +7904,7 @@ def project_remove_from_view_cmd(
 @project.command("remove_from_edit")
 def project_remove_from_edit_cmd(
     project_id: str = typer.Argument(..., help="Project UID."),
-    user_id: int = typer.Argument(..., help="User ID to remove explicit edit access from."),
+    user_uid: uuid.UUID = typer.Argument(..., help="User UID to remove explicit edit access from."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
@@ -7913,7 +7913,7 @@ def project_remove_from_edit_cmd(
     Examples
     --------
     ```bash
-    mainsequence project remove_from_edit 42 7
+    mainsequence project remove_from_edit <PROJECT_UID> <USER_UID>
     ```
     """
     _shareable_user_access_update_impl(
@@ -7921,7 +7921,7 @@ def project_remove_from_edit_cmd(
         object_label="Project",
         action_label="remove_from_edit",
         object_uid=project_id,
-        user_id=user_id,
+        user_uid=user_uid,
         timeout=timeout,
     )
 
@@ -7929,7 +7929,7 @@ def project_remove_from_edit_cmd(
 @project.command("add_team_to_view")
 def project_add_team_to_view_cmd(
     project_id: str = typer.Argument(..., help="Project UID."),
-    team_id: int = typer.Argument(..., help="Team ID to grant view access."),
+    team_uid: uuid.UUID = typer.Argument(..., help="Team UID to grant view access."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     _shareable_team_access_update_impl(
@@ -7937,7 +7937,7 @@ def project_add_team_to_view_cmd(
         object_label="Project",
         action_label="add_team_to_view",
         object_uid=project_id,
-        team_id=team_id,
+        team_uid=team_uid,
         timeout=timeout,
     )
 
@@ -7945,7 +7945,7 @@ def project_add_team_to_view_cmd(
 @project.command("add_team_to_edit")
 def project_add_team_to_edit_cmd(
     project_id: str = typer.Argument(..., help="Project UID."),
-    team_id: int = typer.Argument(..., help="Team ID to grant edit access."),
+    team_uid: uuid.UUID = typer.Argument(..., help="Team UID to grant edit access."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     _shareable_team_access_update_impl(
@@ -7953,7 +7953,7 @@ def project_add_team_to_edit_cmd(
         object_label="Project",
         action_label="add_team_to_edit",
         object_uid=project_id,
-        team_id=team_id,
+        team_uid=team_uid,
         timeout=timeout,
     )
 
@@ -7961,7 +7961,7 @@ def project_add_team_to_edit_cmd(
 @project.command("remove_team_from_view")
 def project_remove_team_from_view_cmd(
     project_id: str = typer.Argument(..., help="Project UID."),
-    team_id: int = typer.Argument(..., help="Team ID to remove explicit view access from."),
+    team_uid: uuid.UUID = typer.Argument(..., help="Team UID to remove explicit view access from."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     _shareable_team_access_update_impl(
@@ -7969,7 +7969,7 @@ def project_remove_team_from_view_cmd(
         object_label="Project",
         action_label="remove_team_from_view",
         object_uid=project_id,
-        team_id=team_id,
+        team_uid=team_uid,
         timeout=timeout,
     )
 
@@ -7977,7 +7977,7 @@ def project_remove_team_from_view_cmd(
 @project.command("remove_team_from_edit")
 def project_remove_team_from_edit_cmd(
     project_id: str = typer.Argument(..., help="Project UID."),
-    team_id: int = typer.Argument(..., help="Team ID to remove explicit edit access from."),
+    team_uid: uuid.UUID = typer.Argument(..., help="Team UID to remove explicit edit access from."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     _shareable_team_access_update_impl(
@@ -7985,7 +7985,7 @@ def project_remove_team_from_edit_cmd(
         object_label="Project",
         action_label="remove_team_from_edit",
         object_uid=project_id,
-        team_id=team_id,
+        team_uid=team_uid,
         timeout=timeout,
     )
 

@@ -179,7 +179,19 @@ Current CLI note:
   - `mainsequence constants list --filter name=MODEL__DEFAULT_WINDOW`
   - `mainsequence secrets list --filter name=POLYGON_API_KEY`
 
-### 7. Access assumptions must be verified
+### 7. Public principal identity is UID-only
+
+All SDK and CLI sharing mutations identify users and teams by public UUID:
+
+- `add_to_view(user_uid)` and `add_to_edit(user_uid)`
+- `remove_from_view(user_uid)` and `remove_from_edit(user_uid)`
+- the corresponding team methods use `team_uid`
+
+Never pass or request a numeric user or team database ID. CLI sharing commands
+take `<USER_UID>` or `<TEAM_UID>`, and access-state output is interpreted through
+public UID fields.
+
+### 8. Access assumptions must be verified
 
 If the task claims a resource is shareable, readable, or maintainable by another actor, verify that path explicitly with the relevant CLI or client workflow.
 

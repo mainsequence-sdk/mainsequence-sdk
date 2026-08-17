@@ -433,16 +433,16 @@ These commands show the resource-level sharing model directly:
 ```bash
 mainsequence constants can_view <CONSTANT_UID>
 mainsequence constants can_edit <CONSTANT_UID>
-mainsequence constants add_to_view <CONSTANT_UID> 7
-mainsequence constants add_to_edit <CONSTANT_UID> 7
-mainsequence constants remove_from_view <CONSTANT_UID> 7
-mainsequence constants remove_from_edit <CONSTANT_UID> 7
+mainsequence constants add_to_view <CONSTANT_UID> <USER_UID>
+mainsequence constants add_to_edit <CONSTANT_UID> <USER_UID>
+mainsequence constants remove_from_view <CONSTANT_UID> <USER_UID>
+mainsequence constants remove_from_edit <CONSTANT_UID> <USER_UID>
 ```
 
 Interpretation:
 
 - `<CONSTANT_UID>` is the constant public UID
-- `7` is the user id receiving or losing access
+- `<USER_UID>` is the public UUID of the user receiving or losing access
 
 This is the most concrete CLI example of Main Sequence RBAC at the resource level.
 

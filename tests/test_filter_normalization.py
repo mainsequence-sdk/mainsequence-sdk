@@ -1097,7 +1097,7 @@ def test_patch_by_uid_updates_aliased_field_on_existing_instance(monkeypatch):
     assert instance.schema_payload == {"name": "customers"}
 
 
-def test_shareable_action_posts_user_id(monkeypatch):
+def test_shareable_action_posts_user_uid(monkeypatch):
     captured = {}
 
     class FakeResponse:
@@ -1117,13 +1117,14 @@ def test_shareable_action_posts_user_id(monkeypatch):
 
     monkeypatch.setattr(base_mod, "make_request", _fake_make_request)
 
-    response = DemoShareableModel(11).add_to_edit(_IdRef(7), timeout=15)
+    user_uid = "8f5d6b54-2f5e-4a8b-bb10-0b17f3f4c123"
+    response = DemoShareableModel(11).add_to_edit(_UidRef(user_uid), timeout=15)
 
     assert response == {"detail": "ok"}
     assert captured == {
         "r_type": "POST",
         "url": "https://backend.test/demo-shareable/11/add-to-edit/",
-        "payload": {"json": {"user_id": 7}},
+        "payload": {"json": {"user_uid": user_uid}},
         "timeout": 15,
     }
 
@@ -1135,7 +1136,9 @@ def test_shareable_action_returns_empty_dict_on_no_content(monkeypatch):
 
     monkeypatch.setattr(base_mod, "make_request", lambda **kwargs: FakeResponse())
 
-    response = DemoShareableModel(9).remove_from_view(3)
+    response = DemoShareableModel(9).remove_from_view(
+        "8f5d6b54-2f5e-4a8b-bb10-0b17f3f4c123"
+    )
 
     assert response == {}
 
@@ -1172,7 +1175,7 @@ def test_id_only_resource_detail_action_does_not_route_by_integer_id(monkeypatch
         DemoIdOnlyResource(9).can_view()
 
 
-def test_shareable_team_action_posts_team_id(monkeypatch):
+def test_shareable_team_action_posts_team_uid(monkeypatch):
     captured = {}
 
     class FakeResponse:
@@ -1192,13 +1195,14 @@ def test_shareable_team_action_posts_team_id(monkeypatch):
 
     monkeypatch.setattr(base_mod, "make_request", _fake_make_request)
 
-    response = DemoShareableModel(11).add_team_to_view(_IdRef(5), timeout=21)
+    team_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
+    response = DemoShareableModel(11).add_team_to_view(_UidRef(team_uid), timeout=21)
 
     assert response == {"detail": "ok"}
     assert captured == {
         "r_type": "POST",
         "url": "https://backend.test/demo-shareable/11/add-team-to-view/",
-        "payload": {"json": {"team_id": 5}},
+        "payload": {"json": {"team_uid": team_uid}},
         "timeout": 21,
     }
 
@@ -1217,6 +1221,7 @@ def test_shareable_can_view_parses_permission_state(monkeypatch):
                 "users": [
                     {
                         "id": 7,
+                        "uid": "8f5d6b54-2f5e-4a8b-bb10-0b17f3f4c123",
                         "first_name": "Jose",
                         "last_name": "Ambrosino",
                         "username": "jose@main-sequence.io",
@@ -1234,7 +1239,8 @@ def test_shareable_can_view_parses_permission_state(monkeypatch):
     assert access_state.object_uid == "11111111-1111-4111-8111-111111111111"
     assert access_state.access_level == "view"
     assert len(access_state.users) == 1
-    assert access_state.users[0].id == 7
+    assert access_state.users[0].uid == "8f5d6b54-2f5e-4a8b-bb10-0b17f3f4c123"
+    assert not hasattr(access_state.users[0], "id")
     assert access_state.users[0].email == "jose@main-sequence.io"
     assert access_state.teams == []
 
@@ -1255,6 +1261,7 @@ def test_shareable_can_edit_parses_permission_state(monkeypatch):
                 "users": [
                     {
                         "id": 9,
+                        "uid": "9f5d6b54-2f5e-4a8b-bb10-0b17f3f4c123",
                         "first_name": "Ana",
                         "last_name": "Smith",
                         "username": "ana@example.com",
@@ -1265,6 +1272,7 @@ def test_shareable_can_edit_parses_permission_state(monkeypatch):
                 "teams": [
                     {
                         "id": 5,
+                        "uid": "3f1cc452-43ec-49cb-b2ba-87dbac164d29",
                         "name": "Research",
                         "description": "Research team",
                         "member_count": 4,
@@ -1286,7 +1294,8 @@ def test_shareable_can_edit_parses_permission_state(monkeypatch):
     assert access_state.object_uid == "22222222-2222-4222-8222-222222222222"
     assert access_state.access_level == "edit"
     assert len(access_state.users) == 1
-    assert access_state.users[0].id == 9
+    assert access_state.users[0].uid == "9f5d6b54-2f5e-4a8b-bb10-0b17f3f4c123"
+    assert access_state.teams[0].uid == "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
     assert access_state.teams[0].name == "Research"
     assert access_state.teams[0].member_count == 4
     assert captured == {
@@ -1432,8 +1441,8 @@ def test_team_list_members_uses_team_members_endpoint(monkeypatch):
     members = team.list_members(timeout=12)
 
     assert len(members) == 1
-    assert members[0].id == 21
     assert members[0].uid == user_uid
+    assert not hasattr(members[0], "id")
     assert members[0].phone_number is None
     assert captured == {
         "r_type": "GET",

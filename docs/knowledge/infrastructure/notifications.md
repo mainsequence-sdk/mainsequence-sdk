@@ -18,10 +18,10 @@ Creates organization-scoped notifications.
 
 Allowed recipients:
 
-- one `target_user`
-- one `target_team`
-- multiple `user_ids`
-- multiple `team_ids`
+- one `target_user_uid`
+- one `target_team_uid`
+- multiple `user_uids`
+- multiple `team_uids`
 
 The backend creates one notification per resolved recipient target.
 
@@ -125,7 +125,7 @@ Notification.send(
     type="IN",
     title="Dataset ready",
     description="The dataset finished loading.",
-    target_user=42,
+    target_user_uid="8f5d6b54-2f5e-4a8b-bb10-0b17f3f4c123",
 )
 ```
 
@@ -138,7 +138,7 @@ Notification.send(
     type="IN",
     title="Model review required",
     description="A new model version is ready for review.",
-    target_team=9,
+    target_team_uid="3f1cc452-43ec-49cb-b2ba-87dbac164d29",
 )
 ```
 
@@ -154,7 +154,7 @@ for team in teams:
         type="IN",
         title=f"Update for {team.name}",
         description=f"Hello {team.name}, there is a new platform update to review.",
-        target_team=team,
+        target_team_uid=team,
     )
 ```
 
@@ -170,9 +170,9 @@ for team in teams:
         type="IN",
         title=f"{team.name}: workflow update",
         description=f"The {team.name} workflow has been updated.",
-        target_team=team.id,
+        target_team_uid=team.uid,
         meta_data={
-            "team_id": team.id,
+            "team_uid": team.uid,
             "team_name": team.name,
         },
     )
@@ -184,13 +184,13 @@ Send the same notification to several teams in one call:
 from mainsequence.client.models_user import Notification, Team
 
 teams = Team.filter(is_active=True)
-team_ids = [team.id for team in teams[:3] if team.id is not None]
+team_uids = [team.uid for team in teams[:3]]
 
 Notification.send(
     type="IN",
     title="Quarterly review window",
     description="The quarterly review window is now open.",
-    team_ids=team_ids,
+    team_uids=team_uids,
 )
 ```
 
@@ -201,13 +201,13 @@ from mainsequence.client.models_user import Notification, Team
 
 research = Team.filter(search="Research", is_active=True)[0]
 members = research.list_members()
-user_ids = [member.id for member in members]
+user_uids = [member.uid for member in members]
 
 Notification.send(
     type="IN",
     title="Research sync",
     description="The research sync starts in 15 minutes.",
-    user_ids=user_ids,
+    user_uids=user_uids,
 )
 ```
 

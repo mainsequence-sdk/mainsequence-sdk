@@ -1532,7 +1532,7 @@ def list_agent_users_can_edit(
 
 def add_agent_user_to_view(
     agent_uid: str,
-    user_id: int | str,
+    user_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -1542,14 +1542,14 @@ def add_agent_user_to_view(
         object_uid=agent_uid,
         action_name="add_to_view",
         object_lookup_field="uid",
-        user_id=user_id,
+        user_uid=user_uid,
         timeout=timeout,
     )
 
 
 def add_agent_user_to_edit(
     agent_uid: str,
-    user_id: int | str,
+    user_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -1559,14 +1559,14 @@ def add_agent_user_to_edit(
         object_uid=agent_uid,
         action_name="add_to_edit",
         object_lookup_field="uid",
-        user_id=user_id,
+        user_uid=user_uid,
         timeout=timeout,
     )
 
 
 def remove_agent_user_from_view(
     agent_uid: str,
-    user_id: int | str,
+    user_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -1576,14 +1576,14 @@ def remove_agent_user_from_view(
         object_uid=agent_uid,
         action_name="remove_from_view",
         object_lookup_field="uid",
-        user_id=user_id,
+        user_uid=user_uid,
         timeout=timeout,
     )
 
 
 def remove_agent_user_from_edit(
     agent_uid: str,
-    user_id: int | str,
+    user_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -1593,14 +1593,14 @@ def remove_agent_user_from_edit(
         object_uid=agent_uid,
         action_name="remove_from_edit",
         object_lookup_field="uid",
-        user_id=user_id,
+        user_uid=user_uid,
         timeout=timeout,
     )
 
 
 def add_agent_team_to_view(
     agent_uid: str,
-    team_id: int | str,
+    team_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -1610,14 +1610,14 @@ def add_agent_team_to_view(
         object_uid=agent_uid,
         action_name="add_team_to_view",
         object_lookup_field="uid",
-        team_id=team_id,
+        team_uid=team_uid,
         timeout=timeout,
     )
 
 
 def add_agent_team_to_edit(
     agent_uid: str,
-    team_id: int | str,
+    team_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -1627,14 +1627,14 @@ def add_agent_team_to_edit(
         object_uid=agent_uid,
         action_name="add_team_to_edit",
         object_lookup_field="uid",
-        team_id=team_id,
+        team_uid=team_uid,
         timeout=timeout,
     )
 
 
 def remove_agent_team_from_view(
     agent_uid: str,
-    team_id: int | str,
+    team_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -1644,14 +1644,14 @@ def remove_agent_team_from_view(
         object_uid=agent_uid,
         action_name="remove_team_from_view",
         object_lookup_field="uid",
-        team_id=team_id,
+        team_uid=team_uid,
         timeout=timeout,
     )
 
 
 def remove_agent_team_from_edit(
     agent_uid: str,
-    team_id: int | str,
+    team_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -1661,7 +1661,7 @@ def remove_agent_team_from_edit(
         object_uid=agent_uid,
         action_name="remove_team_from_edit",
         object_lookup_field="uid",
-        team_id=team_id,
+        team_uid=team_uid,
         timeout=timeout,
     )
 
@@ -1730,7 +1730,7 @@ def list_project_users_can_edit(
 
 def add_project_user_to_view(
     project_id: int | str,
-    user_id: int | str,
+    user_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -1742,14 +1742,14 @@ def add_project_user_to_view(
         class_name="Project",
         object_uid=project_id,
         action_name="add_to_view",
-        user_id=user_id,
+        user_uid=user_uid,
         timeout=timeout,
     )
 
 
 def add_project_user_to_edit(
     project_id: int | str,
-    user_id: int | str,
+    user_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -1761,14 +1761,14 @@ def add_project_user_to_edit(
         class_name="Project",
         object_uid=project_id,
         action_name="add_to_edit",
-        user_id=user_id,
+        user_uid=user_uid,
         timeout=timeout,
     )
 
 
 def remove_project_user_from_view(
     project_id: int | str,
-    user_id: int | str,
+    user_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -1780,14 +1780,14 @@ def remove_project_user_from_view(
         class_name="Project",
         object_uid=project_id,
         action_name="remove_from_view",
-        user_id=user_id,
+        user_uid=user_uid,
         timeout=timeout,
     )
 
 
 def remove_project_user_from_edit(
     project_id: int | str,
-    user_id: int | str,
+    user_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -1799,13 +1799,13 @@ def remove_project_user_from_edit(
         class_name="Project",
         object_uid=project_id,
         action_name="remove_from_edit",
-        user_id=user_id,
+        user_uid=user_uid,
         timeout=timeout,
     )
 
 
 def list_team_users_can_view(
-    team_id: int | str,
+    team_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -1815,14 +1815,14 @@ def list_team_users_can_view(
     return _get_shareable_object_access_state(
         module_name="mainsequence.client.models_user",
         class_name="Team",
-        object_uid=team_id,
+        object_uid=team_uid,
         accessor_name="can_view",
         timeout=timeout,
     )
 
 
 def list_team_users_can_edit(
-    team_id: int | str,
+    team_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -1832,79 +1832,79 @@ def list_team_users_can_edit(
     return _get_shareable_object_access_state(
         module_name="mainsequence.client.models_user",
         class_name="Team",
-        object_uid=team_id,
+        object_uid=team_uid,
         accessor_name="can_edit",
         timeout=timeout,
     )
 
 
 def add_team_user_to_view(
-    team_id: int | str,
-    user_id: int | str,
+    team_uid: str,
+    user_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
     return _mutate_shareable_object_access(
         module_name="mainsequence.client.models_user",
         class_name="Team",
-        object_uid=team_id,
+        object_uid=team_uid,
         action_name="add_to_view",
-        user_id=user_id,
+        user_uid=user_uid,
         timeout=timeout,
     )
 
 
 def add_team_user_to_edit(
-    team_id: int | str,
-    user_id: int | str,
+    team_uid: str,
+    user_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
     return _mutate_shareable_object_access(
         module_name="mainsequence.client.models_user",
         class_name="Team",
-        object_uid=team_id,
+        object_uid=team_uid,
         action_name="add_to_edit",
-        user_id=user_id,
+        user_uid=user_uid,
         timeout=timeout,
     )
 
 
 def remove_team_user_from_view(
-    team_id: int | str,
-    user_id: int | str,
+    team_uid: str,
+    user_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
     return _mutate_shareable_object_access(
         module_name="mainsequence.client.models_user",
         class_name="Team",
-        object_uid=team_id,
+        object_uid=team_uid,
         action_name="remove_from_view",
-        user_id=user_id,
+        user_uid=user_uid,
         timeout=timeout,
     )
 
 
 def remove_team_user_from_edit(
-    team_id: int | str,
-    user_id: int | str,
+    team_uid: str,
+    user_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
     return _mutate_shareable_object_access(
         module_name="mainsequence.client.models_user",
         class_name="Team",
-        object_uid=team_id,
+        object_uid=team_uid,
         action_name="remove_from_edit",
-        user_id=user_id,
+        user_uid=user_uid,
         timeout=timeout,
     )
 
 
 def add_project_team_to_view(
     project_id: int | str,
-    team_id: int | str,
+    team_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -1913,14 +1913,14 @@ def add_project_team_to_view(
         class_name="Project",
         object_uid=project_id,
         action_name="add_team_to_view",
-        team_id=team_id,
+        team_uid=team_uid,
         timeout=timeout,
     )
 
 
 def add_project_team_to_edit(
     project_id: int | str,
-    team_id: int | str,
+    team_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -1929,14 +1929,14 @@ def add_project_team_to_edit(
         class_name="Project",
         object_uid=project_id,
         action_name="add_team_to_edit",
-        team_id=team_id,
+        team_uid=team_uid,
         timeout=timeout,
     )
 
 
 def remove_project_team_from_view(
     project_id: int | str,
-    team_id: int | str,
+    team_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -1945,14 +1945,14 @@ def remove_project_team_from_view(
         class_name="Project",
         object_uid=project_id,
         action_name="remove_team_from_view",
-        team_id=team_id,
+        team_uid=team_uid,
         timeout=timeout,
     )
 
 
 def remove_project_team_from_edit(
     project_id: int | str,
-    team_id: int | str,
+    team_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -1961,7 +1961,7 @@ def remove_project_team_from_edit(
         class_name="Project",
         object_uid=project_id,
         action_name="remove_team_from_edit",
-        team_id=team_id,
+        team_uid=team_uid,
         timeout=timeout,
     )
 
@@ -3131,7 +3131,7 @@ def list_secret_users_can_edit(
 
 def add_secret_user_to_view(
     secret_uid: int | str,
-    user_id: int | str,
+    user_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -3143,14 +3143,14 @@ def add_secret_user_to_view(
         class_name="Secret",
         object_uid=secret_uid,
         action_name="add_to_view",
-        user_id=user_id,
+        user_uid=user_uid,
         timeout=timeout,
     )
 
 
 def add_secret_user_to_edit(
     secret_uid: int | str,
-    user_id: int | str,
+    user_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -3162,14 +3162,14 @@ def add_secret_user_to_edit(
         class_name="Secret",
         object_uid=secret_uid,
         action_name="add_to_edit",
-        user_id=user_id,
+        user_uid=user_uid,
         timeout=timeout,
     )
 
 
 def remove_secret_user_from_view(
     secret_uid: int | str,
-    user_id: int | str,
+    user_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -3181,14 +3181,14 @@ def remove_secret_user_from_view(
         class_name="Secret",
         object_uid=secret_uid,
         action_name="remove_from_view",
-        user_id=user_id,
+        user_uid=user_uid,
         timeout=timeout,
     )
 
 
 def remove_secret_user_from_edit(
     secret_uid: int | str,
-    user_id: int | str,
+    user_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -3200,14 +3200,14 @@ def remove_secret_user_from_edit(
         class_name="Secret",
         object_uid=secret_uid,
         action_name="remove_from_edit",
-        user_id=user_id,
+        user_uid=user_uid,
         timeout=timeout,
     )
 
 
 def add_secret_team_to_view(
     secret_uid: int | str,
-    team_id: int | str,
+    team_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -3216,14 +3216,14 @@ def add_secret_team_to_view(
         class_name="Secret",
         object_uid=secret_uid,
         action_name="add_team_to_view",
-        team_id=team_id,
+        team_uid=team_uid,
         timeout=timeout,
     )
 
 
 def add_secret_team_to_edit(
     secret_uid: int | str,
-    team_id: int | str,
+    team_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -3232,14 +3232,14 @@ def add_secret_team_to_edit(
         class_name="Secret",
         object_uid=secret_uid,
         action_name="add_team_to_edit",
-        team_id=team_id,
+        team_uid=team_uid,
         timeout=timeout,
     )
 
 
 def remove_secret_team_from_view(
     secret_uid: int | str,
-    team_id: int | str,
+    team_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -3248,14 +3248,14 @@ def remove_secret_team_from_view(
         class_name="Secret",
         object_uid=secret_uid,
         action_name="remove_team_from_view",
-        team_id=team_id,
+        team_uid=team_uid,
         timeout=timeout,
     )
 
 
 def remove_secret_team_from_edit(
     secret_uid: int | str,
-    team_id: int | str,
+    team_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -3264,7 +3264,7 @@ def remove_secret_team_from_edit(
         class_name="Secret",
         object_uid=secret_uid,
         action_name="remove_team_from_edit",
-        team_id=team_id,
+        team_uid=team_uid,
         timeout=timeout,
     )
 
@@ -3412,7 +3412,7 @@ def _mutate_shareable_object_access(
     class_name: str,
     object_uid: int | str,
     action_name: str,
-    user_id: int | str,
+    user_uid: str,
     object_lookup_field: str = "uid",
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -3428,7 +3428,7 @@ def _mutate_shareable_object_access(
                     timeout=timeout,
                 ),
                 action_name,
-            )(int(user_id), timeout=timeout),
+            )(user_uid, timeout=timeout),
         )
         return _sdk_object_to_dict(payload)
     except Exception as e:
@@ -3446,7 +3446,7 @@ def _mutate_shareable_object_team_access(
     class_name: str,
     object_uid: int | str,
     action_name: str,
-    team_id: int | str,
+    team_uid: str,
     object_lookup_field: str = "uid",
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -3462,7 +3462,7 @@ def _mutate_shareable_object_team_access(
                     timeout=timeout,
                 ),
                 action_name,
-            )(int(team_id), timeout=timeout),
+            )(team_uid, timeout=timeout),
         )
         return _sdk_object_to_dict(payload)
     except Exception as e:
@@ -3544,7 +3544,7 @@ def list_constant_users_can_edit(
 
 def add_constant_user_to_view(
     constant_uid: int | str,
-    user_id: int | str,
+    user_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -3556,14 +3556,14 @@ def add_constant_user_to_view(
         class_name="Constant",
         object_uid=constant_uid,
         action_name="add_to_view",
-        user_id=user_id,
+        user_uid=user_uid,
         timeout=timeout,
     )
 
 
 def add_constant_user_to_edit(
     constant_uid: int | str,
-    user_id: int | str,
+    user_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -3575,14 +3575,14 @@ def add_constant_user_to_edit(
         class_name="Constant",
         object_uid=constant_uid,
         action_name="add_to_edit",
-        user_id=user_id,
+        user_uid=user_uid,
         timeout=timeout,
     )
 
 
 def remove_constant_user_from_view(
     constant_uid: int | str,
-    user_id: int | str,
+    user_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -3594,14 +3594,14 @@ def remove_constant_user_from_view(
         class_name="Constant",
         object_uid=constant_uid,
         action_name="remove_from_view",
-        user_id=user_id,
+        user_uid=user_uid,
         timeout=timeout,
     )
 
 
 def remove_constant_user_from_edit(
     constant_uid: int | str,
-    user_id: int | str,
+    user_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -3613,14 +3613,14 @@ def remove_constant_user_from_edit(
         class_name="Constant",
         object_uid=constant_uid,
         action_name="remove_from_edit",
-        user_id=user_id,
+        user_uid=user_uid,
         timeout=timeout,
     )
 
 
 def add_constant_team_to_view(
     constant_uid: int | str,
-    team_id: int | str,
+    team_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -3629,14 +3629,14 @@ def add_constant_team_to_view(
         class_name="Constant",
         object_uid=constant_uid,
         action_name="add_team_to_view",
-        team_id=team_id,
+        team_uid=team_uid,
         timeout=timeout,
     )
 
 
 def add_constant_team_to_edit(
     constant_uid: int | str,
-    team_id: int | str,
+    team_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -3645,14 +3645,14 @@ def add_constant_team_to_edit(
         class_name="Constant",
         object_uid=constant_uid,
         action_name="add_team_to_edit",
-        team_id=team_id,
+        team_uid=team_uid,
         timeout=timeout,
     )
 
 
 def remove_constant_team_from_view(
     constant_uid: int | str,
-    team_id: int | str,
+    team_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -3661,14 +3661,14 @@ def remove_constant_team_from_view(
         class_name="Constant",
         object_uid=constant_uid,
         action_name="remove_team_from_view",
-        team_id=team_id,
+        team_uid=team_uid,
         timeout=timeout,
     )
 
 
 def remove_constant_team_from_edit(
     constant_uid: int | str,
-    team_id: int | str,
+    team_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -3677,7 +3677,7 @@ def remove_constant_team_from_edit(
         class_name="Constant",
         object_uid=constant_uid,
         action_name="remove_team_from_edit",
-        team_id=team_id,
+        team_uid=team_uid,
         timeout=timeout,
     )
 
@@ -3988,7 +3988,7 @@ def list_meta_table_users_can_edit(
 
 def add_data_node_storage_user_to_view(
     storage_uid: str,
-    user_id: int | str,
+    user_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -4001,14 +4001,14 @@ def add_data_node_storage_user_to_view(
         object_uid=storage_uid,
         object_lookup_field="uid",
         action_name="add_to_view",
-        user_id=user_id,
+        user_uid=user_uid,
         timeout=timeout,
     )
 
 
 def add_meta_table_user_to_view(
     meta_table_uid: str,
-    user_id: int | str,
+    user_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -4021,14 +4021,14 @@ def add_meta_table_user_to_view(
         object_uid=meta_table_uid,
         object_lookup_field="uid",
         action_name="add_to_view",
-        user_id=user_id,
+        user_uid=user_uid,
         timeout=timeout,
     )
 
 
 def add_data_node_storage_user_to_edit(
     storage_uid: str,
-    user_id: int | str,
+    user_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -4041,14 +4041,14 @@ def add_data_node_storage_user_to_edit(
         object_uid=storage_uid,
         object_lookup_field="uid",
         action_name="add_to_edit",
-        user_id=user_id,
+        user_uid=user_uid,
         timeout=timeout,
     )
 
 
 def add_meta_table_user_to_edit(
     meta_table_uid: str,
-    user_id: int | str,
+    user_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -4061,14 +4061,14 @@ def add_meta_table_user_to_edit(
         object_uid=meta_table_uid,
         object_lookup_field="uid",
         action_name="add_to_edit",
-        user_id=user_id,
+        user_uid=user_uid,
         timeout=timeout,
     )
 
 
 def remove_data_node_storage_user_from_view(
     storage_uid: str,
-    user_id: int | str,
+    user_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -4081,14 +4081,14 @@ def remove_data_node_storage_user_from_view(
         object_uid=storage_uid,
         object_lookup_field="uid",
         action_name="remove_from_view",
-        user_id=user_id,
+        user_uid=user_uid,
         timeout=timeout,
     )
 
 
 def remove_meta_table_user_from_view(
     meta_table_uid: str,
-    user_id: int | str,
+    user_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -4101,14 +4101,14 @@ def remove_meta_table_user_from_view(
         object_uid=meta_table_uid,
         object_lookup_field="uid",
         action_name="remove_from_view",
-        user_id=user_id,
+        user_uid=user_uid,
         timeout=timeout,
     )
 
 
 def remove_data_node_storage_user_from_edit(
     storage_uid: str,
-    user_id: int | str,
+    user_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -4121,14 +4121,14 @@ def remove_data_node_storage_user_from_edit(
         object_uid=storage_uid,
         object_lookup_field="uid",
         action_name="remove_from_edit",
-        user_id=user_id,
+        user_uid=user_uid,
         timeout=timeout,
     )
 
 
 def remove_meta_table_user_from_edit(
     meta_table_uid: str,
-    user_id: int | str,
+    user_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -4141,14 +4141,14 @@ def remove_meta_table_user_from_edit(
         object_uid=meta_table_uid,
         object_lookup_field="uid",
         action_name="remove_from_edit",
-        user_id=user_id,
+        user_uid=user_uid,
         timeout=timeout,
     )
 
 
 def add_data_node_storage_team_to_view(
     storage_uid: str,
-    team_id: int | str,
+    team_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -4158,14 +4158,14 @@ def add_data_node_storage_team_to_view(
         object_uid=storage_uid,
         object_lookup_field="uid",
         action_name="add_team_to_view",
-        team_id=team_id,
+        team_uid=team_uid,
         timeout=timeout,
     )
 
 
 def add_meta_table_team_to_view(
     meta_table_uid: str,
-    team_id: int | str,
+    team_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -4175,14 +4175,14 @@ def add_meta_table_team_to_view(
         object_uid=meta_table_uid,
         object_lookup_field="uid",
         action_name="add_team_to_view",
-        team_id=team_id,
+        team_uid=team_uid,
         timeout=timeout,
     )
 
 
 def add_data_node_storage_team_to_edit(
     storage_uid: str,
-    team_id: int | str,
+    team_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -4192,14 +4192,14 @@ def add_data_node_storage_team_to_edit(
         object_uid=storage_uid,
         object_lookup_field="uid",
         action_name="add_team_to_edit",
-        team_id=team_id,
+        team_uid=team_uid,
         timeout=timeout,
     )
 
 
 def add_meta_table_team_to_edit(
     meta_table_uid: str,
-    team_id: int | str,
+    team_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -4209,14 +4209,14 @@ def add_meta_table_team_to_edit(
         object_uid=meta_table_uid,
         object_lookup_field="uid",
         action_name="add_team_to_edit",
-        team_id=team_id,
+        team_uid=team_uid,
         timeout=timeout,
     )
 
 
 def remove_data_node_storage_team_from_view(
     storage_uid: str,
-    team_id: int | str,
+    team_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -4226,14 +4226,14 @@ def remove_data_node_storage_team_from_view(
         object_uid=storage_uid,
         object_lookup_field="uid",
         action_name="remove_team_from_view",
-        team_id=team_id,
+        team_uid=team_uid,
         timeout=timeout,
     )
 
 
 def remove_meta_table_team_from_view(
     meta_table_uid: str,
-    team_id: int | str,
+    team_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -4243,14 +4243,14 @@ def remove_meta_table_team_from_view(
         object_uid=meta_table_uid,
         object_lookup_field="uid",
         action_name="remove_team_from_view",
-        team_id=team_id,
+        team_uid=team_uid,
         timeout=timeout,
     )
 
 
 def remove_data_node_storage_team_from_edit(
     storage_uid: str,
-    team_id: int | str,
+    team_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -4260,14 +4260,14 @@ def remove_data_node_storage_team_from_edit(
         object_uid=storage_uid,
         object_lookup_field="uid",
         action_name="remove_team_from_edit",
-        team_id=team_id,
+        team_uid=team_uid,
         timeout=timeout,
     )
 
 
 def remove_meta_table_team_from_edit(
     meta_table_uid: str,
-    team_id: int | str,
+    team_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -4277,7 +4277,7 @@ def remove_meta_table_team_from_edit(
         object_uid=meta_table_uid,
         object_lookup_field="uid",
         action_name="remove_team_from_edit",
-        team_id=team_id,
+        team_uid=team_uid,
         timeout=timeout,
     )
 

@@ -117,14 +117,14 @@ mainsequence agent session a2a send 3f1cc452-43ec-49cb-b2ba-87dbac164d29 --messa
 mainsequence agent session detail 3f1cc452-43ec-49cb-b2ba-87dbac164d29
 mainsequence agent can_view e0e75693-4110-464c-93e0-82c7fd9c9a23
 mainsequence agent can_edit e0e75693-4110-464c-93e0-82c7fd9c9a23
-mainsequence agent add_to_view e0e75693-4110-464c-93e0-82c7fd9c9a23 7
-mainsequence agent add_to_edit e0e75693-4110-464c-93e0-82c7fd9c9a23 7
-mainsequence agent add_team_to_view e0e75693-4110-464c-93e0-82c7fd9c9a23 9
-mainsequence agent add_team_to_edit e0e75693-4110-464c-93e0-82c7fd9c9a23 9
-mainsequence agent remove_from_view e0e75693-4110-464c-93e0-82c7fd9c9a23 7
-mainsequence agent remove_from_edit e0e75693-4110-464c-93e0-82c7fd9c9a23 7
-mainsequence agent remove_team_from_view e0e75693-4110-464c-93e0-82c7fd9c9a23 9
-mainsequence agent remove_team_from_edit e0e75693-4110-464c-93e0-82c7fd9c9a23 9
+mainsequence agent add_to_view e0e75693-4110-464c-93e0-82c7fd9c9a23 <USER_UID>
+mainsequence agent add_to_edit e0e75693-4110-464c-93e0-82c7fd9c9a23 <USER_UID>
+mainsequence agent add_team_to_view e0e75693-4110-464c-93e0-82c7fd9c9a23 <TEAM_UID>
+mainsequence agent add_team_to_edit e0e75693-4110-464c-93e0-82c7fd9c9a23 <TEAM_UID>
+mainsequence agent remove_from_view e0e75693-4110-464c-93e0-82c7fd9c9a23 <USER_UID>
+mainsequence agent remove_from_edit e0e75693-4110-464c-93e0-82c7fd9c9a23 <USER_UID>
+mainsequence agent remove_team_from_view e0e75693-4110-464c-93e0-82c7fd9c9a23 <TEAM_UID>
+mainsequence agent remove_team_from_edit e0e75693-4110-464c-93e0-82c7fd9c9a23 <TEAM_UID>
 mainsequence agent delete e0e75693-4110-464c-93e0-82c7fd9c9a23
 mainsequence constants list
 mainsequence constants list --show-filters
@@ -132,28 +132,28 @@ mainsequence constants create APP__MODE production
 mainsequence constants create ASSETS__MASTER '{"dataset":"bloomberg"}'
 mainsequence constants can_view <CONSTANT_UID>
 mainsequence constants can_edit <CONSTANT_UID>
-mainsequence constants add_to_view <CONSTANT_UID> 7
-mainsequence constants add_to_edit <CONSTANT_UID> 7
-mainsequence constants add_team_to_view <CONSTANT_UID> 9
-mainsequence constants add_team_to_edit <CONSTANT_UID> 9
-mainsequence constants remove_from_view <CONSTANT_UID> 7
-mainsequence constants remove_from_edit <CONSTANT_UID> 7
-mainsequence constants remove_team_from_view <CONSTANT_UID> 9
-mainsequence constants remove_team_from_edit <CONSTANT_UID> 9
+mainsequence constants add_to_view <CONSTANT_UID> <USER_UID>
+mainsequence constants add_to_edit <CONSTANT_UID> <USER_UID>
+mainsequence constants add_team_to_view <CONSTANT_UID> <TEAM_UID>
+mainsequence constants add_team_to_edit <CONSTANT_UID> <TEAM_UID>
+mainsequence constants remove_from_view <CONSTANT_UID> <USER_UID>
+mainsequence constants remove_from_edit <CONSTANT_UID> <USER_UID>
+mainsequence constants remove_team_from_view <CONSTANT_UID> <TEAM_UID>
+mainsequence constants remove_team_from_edit <CONSTANT_UID> <TEAM_UID>
 mainsequence constants delete <CONSTANT_UID>
 mainsequence secrets list
 mainsequence secrets list --show-filters
 mainsequence secrets create API_KEY super-secret-value
 mainsequence secrets can_view <SECRET_UID>
 mainsequence secrets can_edit <SECRET_UID>
-mainsequence secrets add_to_view <SECRET_UID> 7
-mainsequence secrets add_to_edit <SECRET_UID> 7
-mainsequence secrets add_team_to_view <SECRET_UID> 9
-mainsequence secrets add_team_to_edit <SECRET_UID> 9
-mainsequence secrets remove_from_view <SECRET_UID> 7
-mainsequence secrets remove_from_edit <SECRET_UID> 7
-mainsequence secrets remove_team_from_view <SECRET_UID> 9
-mainsequence secrets remove_team_from_edit <SECRET_UID> 9
+mainsequence secrets add_to_view <SECRET_UID> <USER_UID>
+mainsequence secrets add_to_edit <SECRET_UID> <USER_UID>
+mainsequence secrets add_team_to_view <SECRET_UID> <TEAM_UID>
+mainsequence secrets add_team_to_edit <SECRET_UID> <TEAM_UID>
+mainsequence secrets remove_from_view <SECRET_UID> <USER_UID>
+mainsequence secrets remove_from_edit <SECRET_UID> <USER_UID>
+mainsequence secrets remove_team_from_view <SECRET_UID> <TEAM_UID>
+mainsequence secrets remove_team_from_edit <SECRET_UID> <TEAM_UID>
 mainsequence secrets delete <SECRET_UID>
 mainsequence project search tutorial
 mainsequence organization github-organizations
@@ -163,10 +163,10 @@ mainsequence organization teams create Research --description "Model validation"
 mainsequence organization teams edit <TEAM_UID> --name "Research Core" --inactive
 mainsequence organization teams can_view <TEAM_UID>
 mainsequence organization teams can_edit <TEAM_UID>
-mainsequence organization teams add_to_view <TEAM_UID> 7
-mainsequence organization teams add_to_edit <TEAM_UID> 7
-mainsequence organization teams remove_from_view <TEAM_UID> 7
-mainsequence organization teams remove_from_edit <TEAM_UID> 7
+mainsequence organization teams add_to_view <TEAM_UID> <USER_UID>
+mainsequence organization teams add_to_edit <TEAM_UID> <USER_UID>
+mainsequence organization teams remove_from_view <TEAM_UID> <USER_UID>
+mainsequence organization teams remove_from_edit <TEAM_UID> <USER_UID>
 mainsequence organization teams delete <TEAM_UID>
 mainsequence meta-table run_query <META_TABLE_UID> "SELECT 1 AS ok"
 mainsequence data-node list
@@ -184,14 +184,14 @@ mainsequence data-node add-label <DATA_NODE_STORAGE_UID> --label curated
 mainsequence data-node remove-label <DATA_NODE_STORAGE_UID> --label legacy
 mainsequence data-node can_view <DATA_NODE_STORAGE_UID>
 mainsequence data-node can_edit <DATA_NODE_STORAGE_UID>
-mainsequence data-node add_to_view <DATA_NODE_STORAGE_UID> 7
-mainsequence data-node add_to_edit <DATA_NODE_STORAGE_UID> 7
-mainsequence data-node add_team_to_view <DATA_NODE_STORAGE_UID> 9
-mainsequence data-node add_team_to_edit <DATA_NODE_STORAGE_UID> 9
-mainsequence data-node remove_from_view <DATA_NODE_STORAGE_UID> 7
-mainsequence data-node remove_from_edit <DATA_NODE_STORAGE_UID> 7
-mainsequence data-node remove_team_from_view <DATA_NODE_STORAGE_UID> 9
-mainsequence data-node remove_team_from_edit <DATA_NODE_STORAGE_UID> 9
+mainsequence data-node add_to_view <DATA_NODE_STORAGE_UID> <USER_UID>
+mainsequence data-node add_to_edit <DATA_NODE_STORAGE_UID> <USER_UID>
+mainsequence data-node add_team_to_view <DATA_NODE_STORAGE_UID> <TEAM_UID>
+mainsequence data-node add_team_to_edit <DATA_NODE_STORAGE_UID> <TEAM_UID>
+mainsequence data-node remove_from_view <DATA_NODE_STORAGE_UID> <USER_UID>
+mainsequence data-node remove_from_edit <DATA_NODE_STORAGE_UID> <USER_UID>
+mainsequence data-node remove_team_from_view <DATA_NODE_STORAGE_UID> <TEAM_UID>
+mainsequence data-node remove_team_from_edit <DATA_NODE_STORAGE_UID> <TEAM_UID>
 mainsequence data-node delete <DATA_NODE_STORAGE_UID>
 mainsequence data-node delete <DATA_NODE_STORAGE_UID> --full-delete-selected
 mainsequence data-node delete <DATA_NODE_STORAGE_UID> --full-delete-selected --override-protection
@@ -202,14 +202,14 @@ mainsequence project add-label <PROJECT_UID> --label rates --label research
 mainsequence project remove-label <PROJECT_UID> --label legacy
 mainsequence project can_view <PROJECT_UID>
 mainsequence project can_edit <PROJECT_UID>
-mainsequence project add_to_view <PROJECT_UID> 7
-mainsequence project add_to_edit <PROJECT_UID> 7
-mainsequence project add_team_to_view <PROJECT_UID> 9
-mainsequence project add_team_to_edit <PROJECT_UID> 9
-mainsequence project remove_from_view <PROJECT_UID> 7
-mainsequence project remove_from_edit <PROJECT_UID> 7
-mainsequence project remove_team_from_view <PROJECT_UID> 9
-mainsequence project remove_team_from_edit <PROJECT_UID> 9
+mainsequence project add_to_view <PROJECT_UID> <USER_UID>
+mainsequence project add_to_edit <PROJECT_UID> <USER_UID>
+mainsequence project add_team_to_view <PROJECT_UID> <TEAM_UID>
+mainsequence project add_team_to_edit <PROJECT_UID> <TEAM_UID>
+mainsequence project remove_from_view <PROJECT_UID> <USER_UID>
+mainsequence project remove_from_edit <PROJECT_UID> <USER_UID>
+mainsequence project remove_team_from_view <PROJECT_UID> <TEAM_UID>
+mainsequence project remove_team_from_edit <PROJECT_UID> <TEAM_UID>
 mainsequence project images list
 mainsequence project images list <PROJECT_UID>
 mainsequence project images list --show-filters
@@ -455,7 +455,7 @@ ontology and each installed platform skill.
 - `mainsequence skills list` lists installed scaffold skills from the current CLI installation by recursively discovering `SKILL.md` files under the installed `agent_scaffold` bundle.
 - `mainsequence skills path` with no argument prints the installed `agent_scaffold/skills` directory for the current CLI installation.
 - `mainsequence skills path <skill_name>` prints the installed `SKILL.md` path for one scaffold skill from the current CLI installation. It accepts full relative skill names such as `data_publishing/meta_tables` and unique leaf names such as `meta_tables`.
-- `mainsequence user` shows the authenticated MainSequence user through the SDK client `User.get_logged_user()` path.
+- `mainsequence user` shows the authenticated MainSequence account through `User.get_authenticated_user_details()`.
 - in standalone authenticated CLI or script code that is not request-bound, prefer `User.get_authenticated_user_details()` over `User.get_logged_user()`. `User.get_logged_user()` is for request-bound identity contexts such as FastAPI middleware, Streamlit, or code that explicitly binds `_CURRENT_AUTH_HEADERS`.
 - `mainsequence project search "<QUERY>"` searches visible projects through the SDK client `Project.quick_search()` path and returns `uid` and `project_name` for matching rows.
 - `mainsequence project search` requires at least 3 query characters. The backend matches `project_name` by substring and also matches an exact public project UID.

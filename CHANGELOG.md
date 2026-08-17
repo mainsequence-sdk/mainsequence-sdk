@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [6.0.28] - 2026-08-17
+
+### Changed
+
+- Made runtime request identity UID-only. `User.get_logged_user()` now returns
+  `RequestUserIdentity`; FastAPI middleware exposes `request.state.user` and
+  `request.state.user_uid`, rejects removed numeric identity headers, and
+  isolates identity context for every request.
+- Changed permission-sharing and notification recipient APIs to public user and
+  team UIDs, including CLI arguments, payload keys, response relationships, and
+  rendered access state.
+
+### Fixed
+
+- Limited direct-development bearer validation to forwarding only the request
+  Authorization header to `/api/v1/users/me/`, and reject bearer/header UID
+  mismatches before application route execution.
+
 ## [6.0.27] - 2026-08-12
 
 ### Fixed

@@ -275,4 +275,21 @@ Use `User.get_logged_user()` when code is running with request-bound identity co
 
 Use `User.get_authenticated_user_details()` in standalone CLI or script code that is authenticated but not request-bound.
 
-The distinction matters because request-bound code should resolve the user from the active request identity, while standalone code should resolve the user from the process authentication context.
+`User.get_logged_user()` returns a UID-only `RequestUserIdentity` for the human
+making the current request. It does not return a full `User` account and it does
+not identify the release owner or runtime workload principal.
+
+In deployed gateway mode, the SDK consumes trusted `X-User-UID` and optional
+`X-Username` headers without a backend lookup. In direct local development, it
+validates the request's bearer token through `/api/v1/users/me/` and forwards
+only that Authorization header. If both sources are present, their UIDs must
+match. Numeric `X-User-ID` request identity is not supported.
+
+Use `LoggedUserContextMiddleware` for FastAPI request state and lifecycle
+isolation. It provides `request.state.user` and `request.state.user_uid`, returns
+401 before route execution for invalid identity, and leaves route-level
+authorization to the application.
+
+The distinction matters because request-bound code resolves the human caller
+from the active request identity, while standalone code resolves the account
+associated with the process authentication session.

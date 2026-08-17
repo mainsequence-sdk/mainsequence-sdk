@@ -5,11 +5,11 @@ import datetime
 from collections.abc import Mapping
 from contextvars import ContextVar
 from typing import Any, ClassVar, Literal
+from uuid import UUID
 
-from pydantic import ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from mainsequence.defaults import STANDARD_BACKEND_URL
-from mainsequence.logconf import logger
 
 from .base import (
     BaseObjectOrm,
@@ -34,6 +34,43 @@ _CURRENT_USER: ContextVar[Any | None] = ContextVar(
 )
 
 
+class RequestIdentityError(RuntimeError):
+    """Raised when a request does not carry a valid public user identity."""
+
+
+class RequestUserIdentity(BaseModel):
+    """Minimal identity of the human making the current runtime request."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    uid: str = Field(
+        ...,
+        title="User UID",
+        description="Canonical public UUID of the human making the current request.",
+    )
+    username: str | None = Field(
+        None,
+        title="Username",
+        description="Optional display name authenticated by the runtime gateway.",
+    )
+
+    @field_validator("uid", mode="before")
+    @classmethod
+    def _canonicalize_uid(cls, value: Any) -> str:
+        try:
+            return str(UUID(str(value).strip()))
+        except (AttributeError, TypeError, ValueError) as exc:
+            raise ValueError("Request user UID must be a valid UUID.") from exc
+
+    @field_validator("username", mode="before")
+    @classmethod
+    def _normalize_username(cls, value: Any) -> str | None:
+        if value in (None, ""):
+            return None
+        normalized = str(value).strip()
+        return normalized or None
+
+
 class UserApiBaseObjectOrm(BaseObjectOrm):
     ENDPOINT: ClassVar[str]
 
@@ -51,73 +88,12 @@ class UserApiBaseObjectOrm(BaseObjectOrm):
         return f"{cls._user_api_root().rstrip('/')}/{endpoint.strip('/')}"
 
 
-def _logged_user_header_context(
-    headers: Mapping[str, Any] | None,
-    *,
-    header_source: str,
-) -> dict[str, Any]:
-    if not headers:
-        return {
-            "header_source": header_source,
-            "header_keys": [],
-            "x_user_uid": None,
-            "x_user_id": None,
-            "authorization_present": False,
-            "authorization_scheme": None,
-        }
-
-    normalized_headers: dict[str, Any] = {}
+def _normalize_request_headers(headers: Mapping[str, Any]) -> dict[str, Any]:
+    normalized: dict[str, Any] = {}
     for key, value in headers.items():
-        key_str = str(key)
-        normalized_headers[key_str] = value
-        normalized_headers[key_str.lower()] = value
+        normalized[str(key).lower()] = value
+    return normalized
 
-    authorization = normalized_headers.get("authorization")
-    authorization_scheme = None
-    if authorization:
-        authorization_scheme = str(authorization).split(" ", 1)[0]
-
-    return {
-        "header_source": header_source,
-        "header_keys": sorted(str(key) for key in headers.keys()),
-        "x_user_uid": (
-            normalized_headers.get("X-User-UID")
-            or normalized_headers.get("x-user-uid")
-            or normalized_headers.get("HTTP_X_USER_UID")
-            or normalized_headers.get("http_x_user_uid")
-        ),
-        "x_user_id": (
-            normalized_headers.get("X-User-ID")
-            or normalized_headers.get("x-user-id")
-            or normalized_headers.get("HTTP_X_USER_ID")
-            or normalized_headers.get("http_x_user_id")
-        ),
-        "authorization_present": bool(authorization),
-        "authorization_scheme": authorization_scheme,
-    }
-
-
-def _build_request_bound_outbound_headers(headers: Mapping[str, Any]) -> dict[str, str]:
-    excluded = {
-        "connection",
-        "content-length",
-        "host",
-        "keep-alive",
-        "proxy-authenticate",
-        "proxy-authorization",
-        "te",
-        "trailer",
-        "trailers",
-        "transfer-encoding",
-        "upgrade",
-    }
-    outbound: dict[str, str] = {}
-    for key, value in headers.items():
-        key_str = str(key)
-        if key_str.lower() in excluded:
-            continue
-        outbound[key_str] = str(value)
-    return outbound
 
 class Organization(UserApiBaseObjectOrm, BasePydanticModel):
     ENDPOINT: ClassVar[str] = "organizations"
@@ -195,13 +171,6 @@ class Group(BasePydanticModel):
 
 
 class UserSummary(BasePydanticModel):
-    id: int | None = Field(
-        None,
-        exclude=True,
-        title="User ID",
-        description="Internal backend row id accepted only for legacy payloads; not a public lookup key.",
-        examples=[42],
-    )
     uid: str | None = Field(
         None,
         title="User UID",
@@ -239,15 +208,15 @@ class UserSummary(BasePydanticModel):
         examples=["+43123456789"],
     )
 
+    @model_validator(mode="before")
+    @classmethod
+    def _drop_internal_id(cls, value: Any) -> Any:
+        if isinstance(value, dict):
+            value = {key: item for key, item in value.items() if key != "id"}
+        return value
+
 
 class ShareableTeamSummary(BasePydanticModel):
-    id: int | None = Field(
-        None,
-        exclude=True,
-        title="Team ID",
-        description="Internal backend row id accepted only for legacy payloads; not a public lookup key.",
-        examples=[9],
-    )
     uid: str | None = Field(
         None,
         title="Team UID",
@@ -272,6 +241,13 @@ class ShareableTeamSummary(BasePydanticModel):
         description="Number of members currently in the team.",
         examples=[5],
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _drop_internal_id(cls, value: Any) -> Any:
+        if isinstance(value, dict):
+            value = {key: item for key, item in value.items() if key != "id"}
+        return value
 
 
 class UserTeamSummary(BasePydanticModel):
@@ -544,11 +520,10 @@ class NotificationBulkActionResult(BasePydanticModel):
 class Notification(DetailActionObjectMixin, BasePydanticModel, UserApiBaseObjectOrm):
     ENDPOINT: ClassVar[str] = "notifications"
 
-    id: int | None = Field(
-        None,
-        title="Notification ID",
-        description="Unique identifier of the notification.",
-        examples=[101],
+    uid: str = Field(
+        ...,
+        title="Notification UID",
+        description="Stable public unique identifier of the notification.",
     )
     source: Literal["system", "organization"] | None = Field(
         None,
@@ -556,15 +531,15 @@ class Notification(DetailActionObjectMixin, BasePydanticModel, UserApiBaseObject
         description="Source scope of the notification.",
         examples=["organization"],
     )
-    created_by_user: int | dict[str, Any] | UserSummary | None = Field(
+    created_by_user_uid: str | None = Field(
         None,
-        title="Created By User",
-        description="User that created the notification when available.",
+        title="Created By User UID",
+        description="Public UID of the user that created the notification.",
     )
-    source_organization: int | dict[str, Any] | Organization | None = Field(
+    source_organization_uid: str | None = Field(
         None,
-        title="Source Organization",
-        description="Organization that owns the notification when the source is organization-scoped.",
+        title="Source Organization UID",
+        description="Public UID of the organization that owns the notification.",
     )
     type: Literal["UR", "IM", "IN"] = Field(
         "IN",
@@ -601,15 +576,15 @@ class Notification(DetailActionObjectMixin, BasePydanticModel, UserApiBaseObject
         description="Whether the notification is broadcast within its source scope.",
         examples=[False],
     )
-    target_user: int | dict[str, Any] | UserSummary | None = Field(
+    target_user_uid: str | None = Field(
         None,
-        title="Target User",
-        description="Direct target user when the notification is user-targeted.",
+        title="Target User UID",
+        description="Public UID of the direct target user.",
     )
-    target_team: int | dict[str, Any] | ShareableTeamSummary | Team | None = Field(
+    target_team_uid: str | None = Field(
         None,
-        title="Target Team",
-        description="Target organization team when the notification is team-targeted.",
+        title="Target Team UID",
+        description="Public UID of the target organization team.",
     )
     include_email: bool = Field(
         False,
@@ -624,6 +599,30 @@ class Notification(DetailActionObjectMixin, BasePydanticModel, UserApiBaseObject
         examples=[False],
     )
 
+    @model_validator(mode="before")
+    @classmethod
+    def _drop_internal_relationship_ids(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        public_payload = dict(value)
+        for internal_field in (
+            "id",
+            "created_by_user",
+            "source_organization",
+            "target_user",
+            "target_team",
+        ):
+            public_payload.pop(internal_field, None)
+        return public_payload
+
+    @classmethod
+    def _coerce_recipient_uid(cls, value: Any, *, field_name: str) -> str:
+        normalized = cls._coerce_filter_uid(value, field_name=field_name)
+        try:
+            return str(UUID(normalized))
+        except ValueError as exc:
+            raise ValueError(f"{field_name} must be a valid UUID.") from exc
+
     @classmethod
     def _normalize_notification_payload(
         cls,
@@ -633,10 +632,10 @@ class Notification(DetailActionObjectMixin, BasePydanticModel, UserApiBaseObject
         description: str,
         meta_data: dict[str, Any] | None = None,
         include_email: bool = False,
-        target_user: Any = None,
-        target_team: Any = None,
-        user_ids: list[Any] | None = None,
-        team_ids: list[Any] | None = None,
+        target_user_uid: Any = None,
+        target_team_uid: Any = None,
+        user_uids: list[Any] | None = None,
+        team_uids: list[Any] | None = None,
         is_global: bool | None = None,
     ) -> dict[str, Any]:
         payload: dict[str, Any] = {
@@ -647,19 +646,25 @@ class Notification(DetailActionObjectMixin, BasePydanticModel, UserApiBaseObject
             "include_email": include_email,
         }
 
-        if target_user is not None:
-            payload["target_user"] = cls._coerce_filter_id(target_user, field_name="target_user")
-        if target_team is not None:
-            payload["target_team"] = cls._coerce_filter_id(target_team, field_name="target_team")
-        if user_ids is not None:
-            payload["user_ids"] = [
-                cls._coerce_filter_id(user_id, field_name="user_ids")
-                for user_id in list(user_ids)
+        if target_user_uid is not None:
+            payload["target_user_uid"] = cls._coerce_recipient_uid(
+                target_user_uid,
+                field_name="target_user_uid",
+            )
+        if target_team_uid is not None:
+            payload["target_team_uid"] = cls._coerce_recipient_uid(
+                target_team_uid,
+                field_name="target_team_uid",
+            )
+        if user_uids is not None:
+            payload["user_uids"] = [
+                cls._coerce_recipient_uid(user_uid, field_name="user_uids")
+                for user_uid in list(user_uids)
             ]
-        if team_ids is not None:
-            payload["team_ids"] = [
-                cls._coerce_filter_id(team_id, field_name="team_ids")
-                for team_id in list(team_ids)
+        if team_uids is not None:
+            payload["team_uids"] = [
+                cls._coerce_recipient_uid(team_uid, field_name="team_uids")
+                for team_uid in list(team_uids)
             ]
         if is_global is not None:
             payload["is_global"] = bool(is_global)
@@ -693,10 +698,10 @@ class Notification(DetailActionObjectMixin, BasePydanticModel, UserApiBaseObject
         description: str,
         meta_data: dict[str, Any] | None = None,
         include_email: bool = False,
-        target_user: Any = None,
-        target_team: Any = None,
-        user_ids: list[Any] | None = None,
-        team_ids: list[Any] | None = None,
+        target_user_uid: Any = None,
+        target_team_uid: Any = None,
+        user_uids: list[Any] | None = None,
+        team_uids: list[Any] | None = None,
         timeout: int | float | tuple[float, float] | None = None,
     ) -> Notification | list[Notification]:
         """
@@ -710,10 +715,10 @@ class Notification(DetailActionObjectMixin, BasePydanticModel, UserApiBaseObject
                 description=description,
                 meta_data=meta_data,
                 include_email=include_email,
-                target_user=target_user,
-                target_team=target_team,
-                user_ids=user_ids,
-                team_ids=team_ids,
+                target_user_uid=target_user_uid,
+                target_team_uid=target_team_uid,
+                user_uids=user_uids,
+                team_uids=team_uids,
             )
         }
         response = make_request(
@@ -774,8 +779,8 @@ class Notification(DetailActionObjectMixin, BasePydanticModel, UserApiBaseObject
         meta_data: dict[str, Any] | None = None,
         include_email: bool = False,
         is_global: bool = False,
-        target_user: Any = None,
-        target_team: Any = None,
+        target_user_uid: Any = None,
+        target_team_uid: Any = None,
         timeout: int | float | tuple[float, float] | None = None,
     ) -> Notification:
         """
@@ -790,8 +795,8 @@ class Notification(DetailActionObjectMixin, BasePydanticModel, UserApiBaseObject
                 meta_data=meta_data,
                 include_email=include_email,
                 is_global=is_global,
-                target_user=target_user,
-                target_team=target_team,
+                target_user_uid=target_user_uid,
+                target_team_uid=target_team_uid,
             )
         }
         response = make_request(
@@ -921,7 +926,14 @@ class ShareableAccessState(BasePydanticModel):
         default_factory=list,
         title="Teams",
         description="Teams with this access level on the object.",
-        examples=[[{"id": 9, "name": "Research", "description": "Research team", "member_count": 5}]],
+        examples=[[
+            {
+                "uid": "3f1cc452-43ec-49cb-b2ba-87dbac164d29",
+                "name": "Research",
+                "description": "Research team",
+                "member_count": 5,
+            }
+        ]],
     )
 
 
@@ -1110,56 +1122,6 @@ class User(UserApiBaseObjectOrm, BasePydanticModel):
         return normalized
 
     @classmethod
-    def _build_request_bound_identity_user(
-        cls,
-        *,
-        normalized_headers: Mapping[str, Any],
-        user_uid: str | None = None,
-        user_id: int | None = None,
-    ):
-        identity = user_uid or user_id
-        username = str(
-            normalized_headers.get("X-Username")
-            or normalized_headers.get("x-username")
-            or normalized_headers.get("X-User-Email")
-            or normalized_headers.get("x-user-email")
-            or f"user-{identity}"
-        ).strip() or f"user-{identity}"
-        email = str(
-            normalized_headers.get("X-User-Email")
-            or normalized_headers.get("x-user-email")
-            or username
-        ).strip() or username
-
-        payload = {
-            "id": user_id,
-            "uid": user_uid,
-            "username": username,
-            "email": email,
-            "date_joined": None,
-            "is_active": True,
-            "last_login": None,
-            "api_request_limit": None,
-            "mfa_enabled": False,
-            "organization": None,
-            "phone_number": None,
-            "plan": None,
-            "active_plan_type": None,
-            "groups": [],
-            "user_permissions": [],
-            "organization_teams": [],
-            "is_verified": None,
-            "blocked_access": None,
-            "requires_password_change": None,
-            "identity_platform_uid": None,
-        }
-
-        model_construct = getattr(cls, "model_construct", None)
-        if callable(model_construct):
-            return model_construct(**payload)
-        return cls.construct(**payload)
-
-    @classmethod
     def get_authenticated_user_details(cls):
         """
         Resolve the authenticated user from the active SDK auth session.
@@ -1191,18 +1153,13 @@ class User(UserApiBaseObjectOrm, BasePydanticModel):
     def _get_request_bound_user(
         cls,
         *,
-        headers: Mapping[str, Any],
-        user_uid: str | None = None,
-        user_id: int | None = None,
+        authorization: str,
     ) -> User:
-        outbound_headers = _build_request_bound_outbound_headers(headers)
         url = f"{cls.get_object_url()}/me/"
-        params = None
-
         response = cls.build_session().get(
             url,
-            headers=outbound_headers,
-            params=params,
+            headers={"Authorization": authorization},
+            params=None,
             timeout=DEFAULT_TIMEOUT,
         )
         raise_for_response(response)
@@ -1214,193 +1171,86 @@ class User(UserApiBaseObjectOrm, BasePydanticModel):
         return cls.parse_obj(data)
 
     @classmethod
-    def get_logged_user(cls) -> User:
+    def get_logged_user(cls) -> RequestUserIdentity:
         """
-        Resolve the current user from request-bound identity context.
+        Resolve the human making the current request as a UID-only identity.
 
-        Use this when code is running with request-scoped identity context, such
-        as FastAPI middleware, Streamlit, or code that explicitly binds
-        `_CURRENT_AUTH_HEADERS`. This method first uses the bound request/user
-        context and only falls back to the current-user details endpoint when
-        request headers are present with Bearer auth but no request-bound user
-        identity header. `X-User-UID` is the public identity header; `X-User-ID`
-        is kept only for legacy request-bound callers.
+        A deployed gateway provides trusted `X-User-UID` and optional
+        `X-Username` headers. Direct local development provides a Bearer token,
+        which is validated through `/api/v1/users/me/`. When both are present,
+        their UIDs must match. The removed `X-User-ID` contract is rejected.
 
-        For standalone authenticated CLI or script code that is not request-bound,
-        prefer `get_authenticated_user_details()`.
+        Use `get_authenticated_user_details()` for a full account profile in a
+        standalone authenticated CLI or script.
         """
         cached_user = _CURRENT_USER.get()
         if cached_user is not None:
+            if not isinstance(cached_user, RequestUserIdentity):
+                raise RequestIdentityError("Invalid request user context value.")
             return cached_user
 
         headers = _CURRENT_AUTH_HEADERS.get()
-        header_source = "_CURRENT_AUTH_HEADERS"
 
         if not headers:
             try:
                 import streamlit as st
 
                 headers = st.context.headers
-                header_source = "streamlit"
             except Exception:
                 headers = None
 
         if not headers:
-            logger.error(
-                "User.get_logged_user failed: no auth headers are available; "
-                "header_source=%s header_keys=%s",
-                header_source,
-                [],
-            )
-            raise RuntimeError(
-                "No auth headers are available. "
-                "In Streamlit, this requires st.context.headers to be available. "
-                "In Agents, you must bind request headers into _CURRENT_AUTH_HEADERS at request entry."
+            raise RequestIdentityError(
+                "No request identity is available. Bind request headers with "
+                "LoggedUserContextMiddleware or provide Streamlit request headers."
             )
 
-        normalized_headers: dict[str, Any] = {}
-        for key, value in headers.items():
-            key_str = str(key)
-            normalized_headers[key_str] = value
-            normalized_headers[key_str.lower()] = value
+        normalized_headers = _normalize_request_headers(headers)
+        removed_user_id = normalized_headers.get("x-user-id") or normalized_headers.get(
+            "http_x_user_id"
+        )
+        if removed_user_id not in (None, ""):
+            raise RequestIdentityError("X-User-ID is not a supported request identity header.")
 
-        authorization_value = (
-            normalized_headers.get("Authorization")
-            or normalized_headers.get("authorization")
-        )
-        has_bearer_authorization = bool(
-            authorization_value
-            and str(authorization_value).split(" ", 1)[0].lower() == "bearer"
-        )
+        authorization_raw = normalized_headers.get("authorization")
+        authorization: str | None = None
+        if authorization_raw not in (None, ""):
+            authorization = str(authorization_raw).strip()
+            scheme, separator, credential = authorization.partition(" ")
+            if scheme.lower() != "bearer" or not separator or not credential.strip():
+                raise RequestIdentityError("Request authorization must use a Bearer token.")
 
-        user_uid_raw = (
-            normalized_headers.get("X-User-UID")
-            or normalized_headers.get("x-user-uid")
-            or normalized_headers.get("HTTP_X_USER_UID")
-            or normalized_headers.get("http_x_user_uid")
+        header_identity: RequestUserIdentity | None = None
+        user_uid_raw = normalized_headers.get("x-user-uid") or normalized_headers.get(
+            "http_x_user_uid"
         )
-        user_id_raw = (
-            normalized_headers.get("X-User-ID")
-            or normalized_headers.get("x-user-id")
-            or normalized_headers.get("HTTP_X_USER_ID")
-            or normalized_headers.get("http_x_user_id")
-        )
-
         if user_uid_raw not in (None, ""):
-            user_uid = str(user_uid_raw).strip()
-            if not has_bearer_authorization:
-                user = cls._build_request_bound_identity_user(
-                    normalized_headers=normalized_headers,
-                    user_uid=user_uid,
+            try:
+                header_identity = RequestUserIdentity(
+                    uid=user_uid_raw,
+                    username=normalized_headers.get("x-username")
+                    or normalized_headers.get("http_x_username"),
                 )
-                _CURRENT_USER.set(user)
-                logger.info(
-                    "User.get_logged_user resolved user_uid=%s via request identity headers without backend auth",
-                    user.uid,
-                )
-                return user
+            except ValueError as exc:
+                raise RequestIdentityError("X-User-UID must contain a valid UUID.") from exc
 
-            user = cls._get_request_bound_user(headers=headers, user_uid=user_uid)
-            _CURRENT_USER.set(user)
-            logger.info(
-                "User.get_logged_user resolved user_uid=%s via X-User-UID header",
-                user.uid,
-            )
-            return user
+        if authorization is None:
+            if header_identity is None:
+                raise RequestIdentityError("Missing X-User-UID or Bearer authorization.")
+            return header_identity
 
-        if user_id_raw in (None, ""):
-            if has_bearer_authorization:
-                outgoing_authorization = None
-                outgoing_authorization_scheme = None
-                try:
-                    outgoing_headers = _build_request_bound_outbound_headers(headers)
-                    outgoing_authorization = outgoing_headers.get("Authorization") or outgoing_headers.get(
-                        "authorization"
-                    )
-                    if outgoing_authorization:
-                        outgoing_authorization_scheme = str(outgoing_authorization).split(" ", 1)[0]
-                except Exception as auth_exc:
-                    logger.exception(
-                        "User.get_logged_user could not inspect request-bound outgoing auth headers "
-                        "for /api/v1/users/me/: %s",
-                        auth_exc,
-                    )
-                logger.info(
-                    "User.get_logged_user bearer fallback to /api/v1/users/me/ "
-                    "outgoing_authorization_present=%s outgoing_authorization_scheme=%r",
-                    bool(outgoing_authorization),
-                    outgoing_authorization_scheme,
-                )
-                try:
-                    user = cls._get_request_bound_user(headers=headers)
-                except Exception:
-                    context = _logged_user_header_context(headers, header_source=header_source)
-                    logger.exception(
-                        "User.get_logged_user failed during bearer fallback; "
-                        "header_source=%s header_keys=%s X-User-UID=%r X-User-ID=%r "
-                        "authorization_present=%s authorization_scheme=%r",
-                        context["header_source"],
-                        context["header_keys"],
-                        context["x_user_uid"],
-                        context["x_user_id"],
-                        context["authorization_present"],
-                        context["authorization_scheme"],
-                    )
-                    raise
-                _CURRENT_USER.set(user)
-                logger.info(
-                    "User.get_logged_user resolved user_id=%s via bearer fallback",
-                    user.id,
-                )
-                return user
-
-            context = _logged_user_header_context(headers, header_source=header_source)
-            logger.error(
-                "User.get_logged_user failed: missing X-User-UID or X-User-ID in request headers; "
-                "header_source=%s header_keys=%s X-User-UID=%r X-User-ID=%r "
-                "authorization_present=%s authorization_scheme=%r",
-                context["header_source"],
-                context["header_keys"],
-                context["x_user_uid"],
-                context["x_user_id"],
-                context["authorization_present"],
-                context["authorization_scheme"],
-            )
-            raise RuntimeError("Missing X-User-UID or X-User-ID in request headers.")
-
+        user = cls._get_request_bound_user(authorization=authorization)
+        if user.uid in (None, ""):
+            raise RequestIdentityError("Authenticated user response is missing uid.")
         try:
-            user_id = int(str(user_id_raw).strip())
-        except (TypeError, ValueError) as exc:
-            context = _logged_user_header_context(headers, header_source=header_source)
-            logger.exception(
-                "User.get_logged_user failed: invalid X-User-ID value; "
-                "header_source=%s header_keys=%s X-User-UID=%r X-User-ID=%r "
-                "authorization_present=%s authorization_scheme=%r",
-                context["header_source"],
-                context["header_keys"],
-                context["x_user_uid"],
-                context["x_user_id"],
-                context["authorization_present"],
-                context["authorization_scheme"],
-            )
-            raise RuntimeError(f"Invalid X-User-ID value: {user_id_raw!r}") from exc
+            bearer_identity = RequestUserIdentity(uid=user.uid, username=user.username)
+        except ValueError as exc:
+            raise RequestIdentityError(
+                "Authenticated user response contains an invalid uid."
+            ) from exc
 
-        if not has_bearer_authorization:
-            user = cls._build_request_bound_identity_user(
-                normalized_headers=normalized_headers,
-                user_id=user_id,
+        if header_identity is not None and header_identity.uid != bearer_identity.uid:
+            raise RequestIdentityError(
+                "Bearer user does not match the trusted request user UID."
             )
-            _CURRENT_USER.set(user)
-            logger.info(
-                "User.get_logged_user resolved user_id=%s via request identity headers without backend auth",
-                user.id,
-            )
-            return user
-
-        user = cls._get_request_bound_user(headers=headers, user_id=user_id)
-        _CURRENT_USER.set(user)
-        logger.info(
-            "User.get_logged_user resolved user_id=%s via X-User-ID header",
-            user.id,
-        )
-        return user
+        return bearer_identity
