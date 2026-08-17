@@ -5,6 +5,19 @@ request must install `LoggedUserContextMiddleware` at application startup.
 Middleware installation remains application-owned; the deployment orchestrator
 does not add it automatically.
 
+After that one-time installation, route code does not detect whether it is
+running locally or deployed, parse authentication headers, or resolve the user
+itself. The SDK handles both request paths automatically:
+
+- **Local development:** the SDK validates the request's bearer token through
+  `/api/v1/users/me/`.
+- **Deployed runtime:** the SDK reads the trusted `X-User-UID` supplied by the
+  authenticated platform gateway.
+
+In both cases, the result identifies the human making the current request. It
+does not identify the deployment owner, release creator, or runtime workload
+credential.
+
 Install the FastAPI extra when the application does not already depend on
 FastAPI:
 
@@ -38,6 +51,9 @@ After successful resolution, the middleware exposes:
 - `request.state.user`: a `RequestUserIdentity` containing `uid` and optional
   `username`
 - `request.state.user_uid`: the same canonical user UUID as a string
+
+Protected routes use these values identically in local and deployed execution.
+They must not inspect `Authorization` or `X-User-UID` to select a mode.
 
 There is no `request.state.user_id`. Request identity never uses a numeric
 database ID.
@@ -77,16 +93,17 @@ removed before the request reaches application code. The SDK validates the UID
 locally and does not make a redundant user lookup.
 
 In direct local development, the request carries
-`Authorization: Bearer <token>` and no gateway user header. The SDK validates
-that token through `/api/v1/users/me/` and forwards only the Authorization
-header. Cookies, host headers, and caller-provided identity headers are not sent
-to the backend lookup. This mode supports testing a local API through a
-Cloudflare tunnel before deploying it.
+`Authorization: Bearer <token>`. The SDK validates that token through
+`/api/v1/users/me/` and forwards only the Authorization header. Cookies, host
+headers, and caller-provided identity headers are not sent to the backend
+lookup. This mode supports testing a local API through a Cloudflare tunnel
+before deploying it.
 
-When both a bearer token and `X-User-UID` are present, the SDK validates the
-token and requires both UIDs to match. The removed `X-User-ID` header is rejected
-in every mode. `X-User-Email` is ignored because it is not authenticated request
-identity metadata.
+When a transport supplies both a bearer token and `X-User-UID`, the SDK still
+validates the bearer token and requires both UIDs to match. Application and
+frontend code must not manufacture a user UID as authentication evidence. The
+removed `X-User-ID` header is rejected in every mode. `X-User-Email` is ignored
+because it is not authenticated request identity metadata.
 
 Missing, malformed, mismatched, or backend-rejected identity returns HTTP 401
 before the route handler runs. Unauthenticated `OPTIONS` requests pass through

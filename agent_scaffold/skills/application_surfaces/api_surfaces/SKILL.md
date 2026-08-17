@@ -93,10 +93,23 @@ Record:
   development transport
 
 Use `LoggedUserContextMiddleware` when the platform-authenticated request user
-must be available through `request.state`. This middleware binds request headers
-to the SDK request context; it is not an authorization policy by itself. The
-application must install it explicitly with
-`app.add_middleware(LoggedUserContextMiddleware)`.
+must be available through `request.state`. Install it once when constructing the
+FastAPI application:
+
+```python
+from mainsequence.client.fastapi import LoggedUserContextMiddleware
+
+app.add_middleware(LoggedUserContextMiddleware)
+```
+
+After installation, route code must not detect local versus deployed execution,
+parse authentication headers, or resolve the request user itself. The SDK
+automatically handles both sources:
+
+- in local development, it validates the request bearer token through
+  `/api/v1/users/me/`;
+- in a deployed runtime, it reads the trusted `X-User-UID` supplied by the
+  authenticated platform gateway.
 
 The middleware exposes only the human caller's UID-based request identity:
 
@@ -104,13 +117,13 @@ The middleware exposes only the human caller's UID-based request identity:
 - `request.state.user_uid` is the canonical public user UUID
 - `request.state.user_id` does not exist
 
-In deployed runtimes, identity comes from the trusted gateway's `X-User-UID`.
-For direct local API development, a bearer-authenticated request is validated
-through `/api/v1/users/me/`; this supports testing a local service through a
-Cloudflare tunnel before deploying it. Never inject `X-User-UID` from frontend code, and
-never confuse the requesting human with the release owner, workload principal,
-or runtime target. Use the UID for application authorization after identity has
-been resolved.
+This identity is the human making the current HTTP request. It is not the
+release creator, deployment owner, runtime workload principal, or runtime
+target. If a transport supplies both a bearer token and `X-User-UID`, the SDK
+validates the token and requires the UIDs to match. Application code must never
+manufacture `X-User-UID` as authentication evidence. The middleware establishes
+identity, not resource authorization; use `request.state.user_uid` when applying
+the endpoint's authorization policy.
 
 ### 2. Implement the provider
 

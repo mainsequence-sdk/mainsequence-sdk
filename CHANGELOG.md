@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [6.0.29] - 2026-08-17
+
+### Changed
+
+- Documented the one-time FastAPI request-user middleware setup and clarified
+  that the SDK automatically resolves the requesting human from local bearer
+  authentication or the deployed gateway's trusted UID header.
+- Updated the Command Center FastAPI skill to keep local/deployed identity
+  handling out of route code and separate request identity from deployment and
+  workload identities.
+
 ## [6.0.28] - 2026-08-17
 
 ### Changed
