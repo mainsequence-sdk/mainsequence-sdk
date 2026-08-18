@@ -456,7 +456,7 @@ ontology and each installed platform skill.
 - `mainsequence skills path` with no argument prints the installed `agent_scaffold/skills` directory for the current CLI installation.
 - `mainsequence skills path <skill_name>` prints the installed `SKILL.md` path for one scaffold skill from the current CLI installation. It accepts full relative skill names such as `data_publishing/meta_tables` and unique leaf names such as `meta_tables`.
 - `mainsequence user` shows the authenticated MainSequence account through `User.get_authenticated_user_details()`.
-- in standalone authenticated CLI or script code that is not request-bound, prefer `User.get_authenticated_user_details()` over `User.get_logged_user()`. `User.get_logged_user()` is for request-bound identity contexts such as FastAPI middleware, Streamlit, or code that explicitly binds `_CURRENT_AUTH_HEADERS`.
+- in standalone authenticated CLI or script code that is not request-bound, prefer `User.get_authenticated_user_details()` over `User.get_logged_user()`. `User.get_logged_user()` is for SDK-bound identity contexts such as Streamlit or code that explicitly binds `_CURRENT_AUTH_HEADERS`; FastAPI handlers use the platform-populated `request.state.user` instead.
 - `mainsequence project search "<QUERY>"` searches visible projects through the SDK client `Project.quick_search()` path and returns `uid` and `project_name` for matching rows.
 - `mainsequence project search` requires at least 3 query characters. The backend matches `project_name` by substring and also matches an exact public project UID.
 - `mainsequence organization teams list` lists teams through the SDK client `Team.filter()` path.

@@ -92,38 +92,39 @@ Record:
 - whether the API uses backend transport or a contract-defined direct
   development transport
 
-Use `LoggedUserContextMiddleware` when the platform-authenticated request user
-must be available through `request.state`. Install it once when constructing the
-FastAPI application:
+FastAPI releases receive the authenticated human from the Main Sequence
+platform through injected request state. No SDK authentication setup is
+required in project code:
 
 ```python
-from mainsequence.client.fastapi import LoggedUserContextMiddleware
+from fastapi import FastAPI, Request
 
-app.add_middleware(LoggedUserContextMiddleware)
+
+app = FastAPI()
+
+
+@app.get("/me")
+def get_me(request: Request) -> dict[str, str | None]:
+    return {
+        "uid": request.state.user_uid,
+        "username": request.state.user.username,
+    }
 ```
 
-After installation, route code must not detect local versus deployed execution,
-parse authentication headers, or resolve the request user itself. The SDK
-automatically handles both sources:
+Route code must not detect local versus deployed execution, parse
+authentication headers, or resolve the request user itself. Consume only the
+platform-injected human caller identity:
 
-- in local development, it validates the request bearer token through
-  `/api/v1/users/me/`;
-- in a deployed runtime, it reads the trusted `X-User-UID` supplied by the
-  authenticated platform gateway.
-
-The middleware exposes only the human caller's UID-based request identity:
-
-- `request.state.user` is `RequestUserIdentity`
+- `request.state.user` contains canonical `uid` and optional `username`
 - `request.state.user_uid` is the canonical public user UUID
 - `request.state.user_id` does not exist
 
 This identity is the human making the current HTTP request. It is not the
 release creator, deployment owner, runtime workload principal, or runtime
-target. If a transport supplies both a bearer token and `X-User-UID`, the SDK
-validates the token and requires the UIDs to match. Application code must never
-manufacture `X-User-UID` as authentication evidence. The middleware establishes
-identity, not resource authorization; use `request.state.user_uid` when applying
-the endpoint's authorization policy.
+target. Pass request state explicitly to shared services; do not use
+`User.get_logged_user()` as a FastAPI entry point. Platform-injected identity is
+not resource authorization; use `request.state.user_uid` when applying the
+endpoint's authorization policy.
 
 ### 2. Implement the provider
 

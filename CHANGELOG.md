@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [6.0.30] - 2026-08-18
+
+### Changed
+
+- FastAPI handlers now consume the authenticated human injected by the Main
+  Sequence platform through `request.state.user` and
+  `request.state.user_uid`, without SDK authentication setup.
+
+### Removed
+
+- Removed `mainsequence.client.fastapi.LoggedUserContextMiddleware` and the
+  middleware-only FastAPI extra and Starlette dependency. Project applications
+  must not install request identity middleware themselves.
+
 ## [6.0.29] - 2026-08-17
 
 ### Changed

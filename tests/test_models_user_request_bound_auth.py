@@ -170,7 +170,7 @@ def test_get_logged_user_rejects_mismatched_bearer_and_gateway_uid(monkeypatch):
         )
 
 
-def test_get_logged_user_uses_identity_bound_by_middleware():
+def test_get_logged_user_uses_explicitly_bound_identity_context():
     expected = models_user_mod.RequestUserIdentity(uid=USER_UID, username="jose")
     token = models_user_mod._CURRENT_USER.set(expected)
     try:

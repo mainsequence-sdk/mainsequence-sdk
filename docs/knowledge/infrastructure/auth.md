@@ -267,9 +267,8 @@ Use this for:
 
 Authentication and current-user resolution are related, but they are not the same thing.
 
-Use `User.get_logged_user()` when code is running with request-bound identity context:
+Use `User.get_logged_user()` when SDK code is running with an SDK-bound identity context:
 
-- FastAPI middleware
 - Streamlit
 - code that explicitly binds request headers into the SDK auth context
 
@@ -279,16 +278,11 @@ Use `User.get_authenticated_user_details()` in standalone CLI or script code tha
 making the current request. It does not return a full `User` account and it does
 not identify the release owner or runtime workload principal.
 
-In deployed gateway mode, the SDK consumes trusted `X-User-UID` and optional
-`X-Username` headers without a backend lookup. In direct local development, it
-validates the request's bearer token through `/api/v1/users/me/` and forwards
-only that Authorization header. If both sources are present, their UIDs must
-match. Numeric `X-User-ID` request identity is not supported.
-
-Use `LoggedUserContextMiddleware` for FastAPI request state and lifecycle
-isolation. It provides `request.state.user` and `request.state.user_uid`, returns
-401 before route execution for invalid identity, and leaves route-level
-authorization to the application.
+For FastAPI releases, the Main Sequence platform injects the authenticated
+human into `request.state.user` and `request.state.user_uid`. Handlers read that
+state and pass the identity explicitly to shared code. Do not use
+`User.get_logged_user()` as the FastAPI handler entry point; route-level
+authorization remains application-owned.
 
 The distinction matters because request-bound code resolves the human caller
 from the active request identity, while standalone code resolves the account

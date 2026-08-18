@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mainsequence"
-version = "6.0.29"
+version = "6.0.30"
 description = "Main Sequence SDK "
 readme = "README.md"
 requires-python = ">=3.13"
@@ -40,7 +40,6 @@ dependencies = [
   "pyyaml",
   "requests>=2.33.0",
   "sqlalchemy>=2,<3",
-  "starlette",
   "structlog",
   "tqdm",
   "typer",
@@ -48,9 +47,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-"fastapi" = [
-  "fastapi>=0.115,<1",
-]
 "local-data" = [
   "duckdb>=1.4.2",
   "pyarrow>=23.0.1",

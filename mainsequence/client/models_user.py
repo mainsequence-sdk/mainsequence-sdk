@@ -1201,8 +1201,9 @@ class User(UserApiBaseObjectOrm, BasePydanticModel):
 
         if not headers:
             raise RequestIdentityError(
-                "No request identity is available. Bind request headers with "
-                "LoggedUserContextMiddleware or provide Streamlit request headers."
+                "No request identity is available. Provide an explicitly bound "
+                "request-header context or Streamlit request headers. FastAPI "
+                "handlers should use request.state.user instead."
             )
 
         normalized_headers = _normalize_request_headers(headers)

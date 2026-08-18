@@ -107,13 +107,14 @@ Working rules for this role:
 User-resolution rule for agents:
 
 - use `User.get_logged_user()` only when code is running with request-bound identity context:
-  - FastAPI with `LoggedUserContextMiddleware` installed by the application
   - Streamlit
   - code that explicitly binds `_CURRENT_AUTH_HEADERS`
 - treat its result as `RequestUserIdentity`: the human caller's canonical `uid` and optional
   `username`, never a numeric id or a full account profile
-- in FastAPI handlers, prefer `request.state.user` or `request.state.user_uid`; never use
-  `request.state.user_id`
+- in FastAPI handlers, use the Main Sequence platform-injected
+  `request.state.user` or `request.state.user_uid`; do not use
+  `User.get_logged_user()` as the handler entry point
+- never use `request.state.user_id`
 - use `User.get_authenticated_user_details()` in standalone authenticated CLI or script code that
   is not request-bound
 - keep authentication context separate from route-level authorization, deployment ownership,
