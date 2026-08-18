@@ -258,8 +258,9 @@ result = MetaTable.execute_operation(operation)
 
 The SDK accepts `metaTableUid` and `meta_table_uid` when building scope objects.
 The serialized backend payload uses `meta_table_uid`. If
-`scope.data_source_uid` is omitted, the SDK resolves the configured
-project/session default data source before sending the request.
+`scope.data_source_uid` is omitted, the SDK leaves it out and the backend derives
+the execution connection from the scoped MetaTables. An explicit UID remains
+available when a caller intentionally selects an accessible execution context.
 
 Backend checks include:
 

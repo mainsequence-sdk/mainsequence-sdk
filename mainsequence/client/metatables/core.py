@@ -533,39 +533,15 @@ class MetaTableOperationScope(BasePydanticModel):
         min_length=1,
         validation_alias=AliasChoices("data_source_uid", "dataSourceUid"),
         description=(
-            "Public UID of the DataSource that owns the compiled "
-            "SQL execution connection. If omitted, the SDK resolves the "
-            "configured project/session default data source. Scoped MetaTables "
-            "are the permission contract, not the source of execution routing."
+            "Optional public UID of the DataSource that owns the compiled "
+            "SQL execution connection. If omitted, the backend derives the "
+            "connection from the declared MetaTable scope and rejects mixed "
+            "data sources."
         ),
     )
     tables: list[MetaTableOperationScopeTable] = Field(..., min_length=1)
 
     model_config = ConfigDict(populate_by_name=True)
-
-    @model_validator(mode="after")
-    def resolve_default_data_source_uid(self):
-        if self.data_source_uid not in (None, ""):
-            self.data_source_uid = str(self.data_source_uid)
-            return self
-
-        try:
-            data_source = get_session_data_source()
-        except Exception as exc:
-            raise ValueError(
-                "MetaTable compiled SQL scope requires data_source_uid or a "
-                "configured project/session default data source. "
-                f"Default data source resolution failed: {exc}"
-            ) from exc
-
-        uid = getattr(data_source, "uid", None) or getattr(data_source, "data_source_uid", None)
-        if uid in (None, ""):
-            raise ValueError(
-                "Configured project/session default data source does not expose a uid."
-            )
-        self.data_source_uid = str(uid)
-        return self
-
 
 class MetaTableProjectContextRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)

@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [6.0.31] - 2026-08-18
+
+### Fixed
+
+- Compiled SQL operations no longer perform a logical Project lookup when
+  `scope.data_source_uid` is omitted. The SDK now preserves the backend's
+  optional field contract so branch-owned runtimes can derive execution from
+  their declared MetaTable scope without using a runtime credential on a
+  forbidden Project endpoint.
+
 ## [6.0.30] - 2026-08-18
 
 ### Changed

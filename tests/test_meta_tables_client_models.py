@@ -1388,11 +1388,11 @@ def test_compiled_sql_v1_operation_uses_backend_limit_defaults():
     }
 
 
-def test_compiled_sql_v1_scope_resolves_session_data_source(monkeypatch):
+def test_compiled_sql_v1_scope_omits_data_source_without_sdk_lookup(monkeypatch):
     monkeypatch.setattr(
         meta_table_models,
         "get_session_data_source",
-        lambda: SimpleNamespace(uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd"),
+        lambda: pytest.fail("Compiled SQL construction must not perform an SDK lookup."),
     )
 
     operation = build_operation(
@@ -1408,39 +1408,8 @@ def test_compiled_sql_v1_scope_resolves_session_data_source(monkeypatch):
         },
     )
 
-    assert operation.scope.data_source_uid == "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
-    assert (
-        operation.model_dump(mode="json", by_alias=True)["scope"]["data_source_uid"]
-        == "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
-    )
-
-
-def test_compiled_sql_v1_scope_preserves_session_data_source_auth_failure(monkeypatch):
-    def _raise_auth_failure():
-        raise RuntimeError(
-            "Could not resolve the local project default data source because SDK "
-            "authentication/authorization failed."
-        )
-
-    monkeypatch.setattr(meta_table_models, "get_session_data_source", _raise_auth_failure)
-
-    with pytest.raises(ValidationError) as exc_info:
-        build_operation(
-            operation="select",
-            sql="SELECT asset.symbol FROM public.asset AS asset",
-            scope={
-                "tables": [
-                    {
-                        "metaTableUid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-                        "alias": "asset",
-                    }
-                ]
-            },
-        )
-
-    message = str(exc_info.value)
-    assert "Default data source resolution failed" in message
-    assert "SDK authentication/authorization failed" in message
+    assert operation.scope.data_source_uid is None
+    assert "data_source_uid" not in meta_table_models._payload_json(operation)["scope"]
 
 
 def test_compiled_sql_v1_serializes_typed_temporal_parameters():

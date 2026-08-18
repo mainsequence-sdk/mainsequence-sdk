@@ -87,9 +87,11 @@ operation = build_operation(
 ```
 
 The return value is a `MetaTableCompiledSQLOperation` Pydantic object.
-If `scope.data_source_uid` is omitted or `None`, the SDK resolves the configured
-project/session default data source and serializes that concrete UID into the
-request payload.
+If `scope.data_source_uid` is omitted or `None`, the SDK leaves it out of the
+request. The backend derives the execution connection from the declared
+MetaTables and rejects a scope that spans multiple data sources. This keeps
+deployed runtime code on the backend-derived ProjectBranch/environment path and
+avoids a separate Project lookup.
 
 The SDK validates:
 
@@ -97,7 +99,7 @@ The SDK validates:
 - `dialect == "postgresql"`
 - `paramstyle == "pyformat"`
 - non-empty SQL
-- concrete execution data source after default resolution
+- optional explicit execution data source UID
 - non-empty declared table scope
 - positive limits when supplied
 - operation kind: `select`, `insert`, `update`, `delete`, or `upsert`
