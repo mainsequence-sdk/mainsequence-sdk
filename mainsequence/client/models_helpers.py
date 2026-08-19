@@ -97,6 +97,24 @@ class PeriodicTask(BasePydanticModel):
     )
 
 
+class AutomaticRedeploymentPolicy(BaseModel):
+    tag_regex: str | None = Field(
+        ...,
+        title="Tag Regex",
+        description=(
+            "Regular expression matched against immutable repository tags. "
+            "Null enables promotion for every qualifying exact commit."
+        ),
+        examples=[None, r"^v(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)$"],
+    )
+    policy_revision: PositiveInt | None = Field(
+        default=None,
+        title="Policy Revision",
+        description=("Backend-owned immutable revision. Omit it from create and update requests."),
+        examples=[1, 3],
+    )
+
+
 class Job(BaseObjectOrm, BasePydanticModel):
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
         "uid": ["in", "exact"],
@@ -147,7 +165,8 @@ class Job(BaseObjectOrm, BasePydanticModel):
     project_repo_hash: str | None = Field(
         default=None,
         description=(
-            "Git commit hash used by the job. This may be auto-filled from the selected related image."
+            "Exact full Git commit represented by the selected project image. "
+            "The backend derives this field; null is reserved for platform-maintenance Jobs."
         ),
         examples=["4f3c2b1a9d8e7f6c5b4a39281716151413121110"],
     )
@@ -230,10 +249,26 @@ class Job(BaseObjectOrm, BasePydanticModel):
         examples=[3600, 14400],
     )
 
-    related_image_uid: str | None = Field(
-        default=None,
-        description="Public UID of the execution image.",
+    related_image_uid: str = Field(
+        ...,
+        description="Public UID of the exact persisted execution image.",
         examples=["f3cb8477-df47-49cb-a151-80b746fb1243"],
+    )
+    image_status: str = Field(
+        ...,
+        description="Canonical backend readiness state for the exact Job image.",
+        examples=["ready", "building", "error"],
+    )
+    automatic_deployment: bool = Field(
+        default=False,
+        description=(
+            "Whether future qualifying immutable repository events may promote "
+            "this Job to another exact image. It never selects an initial image."
+        ),
+    )
+    automatic_redeployment_policy: AutomaticRedeploymentPolicy | None = Field(
+        default=None,
+        description=("Standalone Job promotion policy. Target-owned backing Jobs return null."),
     )
 
     @staticmethod
@@ -476,7 +511,6 @@ class Job(BaseObjectOrm, BasePydanticModel):
         *,
         name: str,
         project_branch_uid: str | ProjectBranch | dict[str, Any] | None = None,
-        project_repo_hash: str | None = None,
         execution_path: str | None = None,
         app_name: str | None = None,
         task_schedule: PeriodicTask | Schedule | dict[str, Any] | str | None = None,
@@ -488,6 +522,8 @@ class Job(BaseObjectOrm, BasePydanticModel):
         spot: bool | None = None,
         max_runtime_seconds: int | None = None,
         related_image_uid: str | ProjectImage | dict[str, Any] | None = None,
+        automatic_deployment: bool = False,
+        automatic_redeployment_policy: AutomaticRedeploymentPolicy | dict[str, Any] | None = None,
         allowed_execution_extensions: Collection[str] | str | None = None,
     ) -> dict[str, Any]:
         normalized_name = cls._normalize_str(name)
@@ -500,10 +536,6 @@ class Job(BaseObjectOrm, BasePydanticModel):
                 project_branch_uid=project_branch_uid
             ),
         }
-
-        normalized_project_repo_hash = cls._normalize_str(project_repo_hash)
-        if normalized_project_repo_hash is not None:
-            payload["project_repo_hash"] = normalized_project_repo_hash
 
         payload.update(
             cls._build_target_payload(
@@ -545,10 +577,32 @@ class Job(BaseObjectOrm, BasePydanticModel):
                 raise ValueError("max_runtime_seconds must be a positive integer.")
             payload["max_runtime_seconds"] = max_runtime_seconds
 
+        payload["automatic_deployment"] = bool(automatic_deployment)
         image_uid = cls._coerce_uid(related_image_uid, field_name="related_image_uid")
-        if image_uid is None:
-            raise ValueError("related_image_uid is required.")
-        payload["related_image_uid"] = image_uid
+        if automatic_deployment:
+            if image_uid is not None:
+                raise ValueError(
+                    "related_image_uid must be omitted when automatic_deployment is enabled; "
+                    "the backend derives the initial exact image."
+                )
+        else:
+            if image_uid is None:
+                raise ValueError(
+                    "related_image_uid is required when automatic_deployment is disabled."
+                )
+            payload["related_image_uid"] = image_uid
+        if automatic_redeployment_policy is not None:
+            policy_payload = (
+                automatic_redeployment_policy.model_dump(exclude_none=False)
+                if isinstance(automatic_redeployment_policy, BaseModel)
+                else dict(automatic_redeployment_policy)
+            )
+            policy_payload.pop("policy_revision", None)
+            if "tag_regex" not in policy_payload:
+                raise ValueError(
+                    "automatic_redeployment_policy.tag_regex is required; use None for every qualifying exact event."
+                )
+            payload["automatic_redeployment_policy"] = policy_payload
 
         return payload
 
@@ -558,7 +612,6 @@ class Job(BaseObjectOrm, BasePydanticModel):
         *,
         name: str,
         project_branch_uid: str | ProjectBranch | dict[str, Any] | None = None,
-        project_repo_hash: str | None = None,
         execution_path: str | None = None,
         app_name: str | None = None,
         task_schedule: PeriodicTask | Schedule | dict[str, Any] | str | None = None,
@@ -570,13 +623,14 @@ class Job(BaseObjectOrm, BasePydanticModel):
         spot: bool | None = None,
         max_runtime_seconds: int | None = None,
         related_image_uid: str | ProjectImage | dict[str, Any] | None = None,
+        automatic_deployment: bool = False,
+        automatic_redeployment_policy: AutomaticRedeploymentPolicy | dict[str, Any] | None = None,
         allowed_execution_extensions: Collection[str] | str | None = None,
         timeout: int | None = None,
     ) -> Job:
         payload = cls._build_create_payload(
             name=name,
             project_branch_uid=project_branch_uid,
-            project_repo_hash=project_repo_hash,
             execution_path=execution_path,
             app_name=app_name,
             task_schedule=task_schedule,
@@ -588,6 +642,8 @@ class Job(BaseObjectOrm, BasePydanticModel):
             spot=spot,
             max_runtime_seconds=max_runtime_seconds,
             related_image_uid=related_image_uid,
+            automatic_deployment=automatic_deployment,
+            automatic_redeployment_policy=automatic_redeployment_policy,
             allowed_execution_extensions=allowed_execution_extensions,
         )
 
@@ -763,6 +819,15 @@ class JobRun(BaseObjectOrm, BasePydanticModel):
         default=None,
         description="The commit hash associated with the code version used for this run.",
         examples=["a1b2c3d4e5f6g7h8i9j0"],
+    )
+    runtime_image_uid: str = Field(
+        ...,
+        description="Public UID of the immutable image snapshot executed by this run.",
+    )
+    runtime_image_digest: str = Field(
+        ...,
+        description="Immutable digest of the image snapshot executed by this run.",
+        examples=["sha256:" + "a" * 64],
     )
 
     command_args: list[str] = Field(
@@ -961,24 +1026,6 @@ class ResourceReleaseKind(str, Enum):
     AGENT = "agent"
     FAST_API = "fastapi"
     STATIC_SITE = "static_site"
-
-
-class AutomaticRedeploymentPolicy(BaseModel):
-    tag_regex: str | None = Field(
-        ...,
-        title="Tag Regex",
-        description=(
-            "Regular expression matched against immutable repository tags. "
-            "Null enables redeployment for every commit."
-        ),
-        examples=[None, r"^v(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)$"],
-    )
-    policy_revision: PositiveInt = Field(
-        ...,
-        title="Policy Revision",
-        description="Immutable revision of the current automatic redeployment policy.",
-        examples=[1, 3],
-    )
 
 
 class ResourceRelease(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):

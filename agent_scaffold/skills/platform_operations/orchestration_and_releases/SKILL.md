@@ -27,7 +27,8 @@ This skill is for:
 - author backend-managed declarations under `.mainsequence/workflows/`
 - validate workflow files through the ProjectBranch workflow endpoints
 - create or select project images
-- freeze jobs to a project image
+- bind every job to one exact project image
+- configure standalone Job automatic deployment as future exact-image promotion
 - inspect job runs and logs
 - reason about project resources and resource releases
 - decide whether a `ResourceRelease` should opt into `automatic_deployment`
@@ -91,7 +92,9 @@ Before changing orchestration or release behavior, collect or infer:
   - Streamlit dashboard release creation
 - whether a `ResourceRelease` should be manually pinned or opted into repository-sync automatic deployment
 - whether Artifact inputs or outputs are part of the run
-- whether the job should be reproducible against a pinned image
+- who owns the exact initial image: the caller for manual pinning or the
+  backend for automatic deployment
+- whether future qualifying immutable repository events may promote a standalone Job
 - for Streamlit dashboard deployment, the `README.md` resource next to `app.py`
 
 If the execution target or image strategy is unclear, stop before scheduling anything.
@@ -102,7 +105,8 @@ For every non-trivial orchestration task, decide:
 
 1. Is this a one-off/manual workflow or a repository-managed recurring workflow?
 2. Should the jobs live in a `.mainsequence/workflows/*.yaml` declaration?
-3. Which pinned project image should the job use?
+3. Is the Job manually pinned to a caller-selected exact ready image, or does
+   automatic deployment make the backend derive it from the synchronized commit?
 4. Does the workflow depend on Artifacts?
 5. Is the task actually a release/resource problem instead of only a job problem?
 6. For Streamlit dashboard deployment, do the selected app resource, README resource, and project image all refer to the intended pushed commit?
@@ -131,15 +135,37 @@ an existing backend resource.
 
 Do not hide important recurring schedules in ad hoc shell history or one-off manual commands.
 
-### 2. Jobs should run against pinned images
+### 2. Every Job requires one exact image
 
-Jobs should be pinned to a project image.
+Every persisted direct Job has one exact project image, but the creation mode
+determines who supplies it.
 
 Remember:
 
 - images are built from pushed commits
 - if a commit is not on the remote, it cannot be used for an image
-- unpinned jobs are not an acceptable default in a managed Main Sequence project
+- there is no dynamic, blank-image, branch-tip, or `latest` Job mode
+- a manual Job requires the caller to select `related_image_uid`
+- an automatic Job forbids caller image selection; the backend derives the
+  exact initial image from the ProjectBranch's persisted synchronized commit
+
+When standalone Job automatic deployment is enabled during creation, the
+backend prepares the exact initial image and later qualifying immutable
+repository events may atomically promote another exact image. On an existing
+Job, enabling or disabling it retains the current exact image. The backend owns
+repository-event truth, policy evaluation, image preparation, and promotion;
+project code and the SDK must not inspect Git or choose a runtime branch.
+
+For direct creation use:
+
+- `--automatic-deployment` to permit future exact-image promotion
+- `--no-automatic-deployment` to keep future repository events from changing
+  the Job image
+- `--automatic-redeployment-tag-regex` to require a full matching immutable
+  tag; omit the regex for every otherwise-eligible exact event
+
+Use `--related-image-uid` only for manual pinning. Omit it with
+`--automatic-deployment`; passing both is invalid.
 
 ### 3. Jobs must be verifiable after creation
 
@@ -263,6 +289,9 @@ When reviewing an orchestration task, look for:
 - direct job creation where a batch file should exist
 - missing or wrong `related_image_uid`
 - jobs tied to moving repository state instead of a pinned image
+- manual Job creation that omits an exact ready image
+- automatic Job creation that supplies a caller-selected image
+- client code that interprets automatic deployment as a branch-tip or `latest` selector
 - no run/log verification after creation
 - unsafe use of `--strict`
 - workflows depending on laptop-specific file paths instead of Artifacts
@@ -282,7 +311,8 @@ Do not claim success until you have checked:
   - interval
   - crontab
   - one-off
-- the pinned image choice is intentional
+- manual image selection or backend-owned automatic image preparation is intentional
+- standalone Job automatic deployment and tag policy are intentionally enabled or disabled
 - the job exists after direct creation or repository workflow application
 - runs and logs were inspected when execution success matters
 - resources and releases were verified when deployment success matters
@@ -308,6 +338,8 @@ If the workflow uses Artifacts, also check:
 - the execution target is unclear
 - the image strategy is unclear but reproducibility matters
 - the backend rejects the workflow version, resource kind, or requested field
+- a manually pinned Job has no exact ready initial image
+- an automatically deployed Job has no persisted synchronized ProjectBranch commit
 - the workflow depends on local file paths that should be platform Artifacts
 - automatic deployment is requested but the deployment source branch/current synced project version is unclear
 - automatic deployment is requested but the resource path or required README is not stable

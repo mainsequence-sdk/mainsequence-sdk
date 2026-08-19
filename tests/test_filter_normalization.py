@@ -1136,9 +1136,7 @@ def test_shareable_action_returns_empty_dict_on_no_content(monkeypatch):
 
     monkeypatch.setattr(base_mod, "make_request", lambda **kwargs: FakeResponse())
 
-    response = DemoShareableModel(9).remove_from_view(
-        "8f5d6b54-2f5e-4a8b-bb10-0b17f3f4c123"
-    )
+    response = DemoShareableModel(9).remove_from_view("8f5d6b54-2f5e-4a8b-bb10-0b17f3f4c123")
 
     assert response == {}
 
@@ -2053,6 +2051,130 @@ def test_resource_release_model_accepts_collection_payload_without_runtime_child
     assert "subdomain" not in models_helpers_mod.ResourceRelease.model_fields
 
 
+def test_job_requires_exact_image_and_exposes_automatic_redeployment_state():
+    with pytest.raises(ValueError, match="related_image_uid"):
+        models_helpers_mod.Job.model_validate(
+            {
+                "name": "Daily prices",
+                "image_status": "ready",
+            }
+        )
+
+    job = models_helpers_mod.Job.model_validate(
+        {
+            "uid": "7d0ab07c-d1c0-4b7f-9c69-3c1a41c0a4da",
+            "name": "Daily prices",
+            "project_branch_uid": "5a28020a-0f1b-47ee-aab8-334286234bea",
+            "related_image_uid": "6cfdb152-923e-45b9-a150-c4541c68b0d1",
+            "project_repo_hash": "a" * 40,
+            "image_status": "ready",
+            "automatic_deployment": True,
+            "automatic_redeployment_policy": {
+                "tag_regex": "^v[0-9]+$",
+                "policy_revision": 4,
+            },
+        }
+    )
+
+    assert job.related_image_uid == "6cfdb152-923e-45b9-a150-c4541c68b0d1"
+    assert job.project_repo_hash == "a" * 40
+    assert job.image_status == "ready"
+    assert job.automatic_deployment is True
+    assert job.automatic_redeployment_policy is not None
+    assert job.automatic_redeployment_policy.policy_revision == 4
+
+
+def test_job_create_requires_exact_image_and_does_not_send_commit(monkeypatch):
+    captured = {}
+
+    class FakeResponse:
+        status_code = 201
+
+        @staticmethod
+        def json():
+            return {
+                "uid": "7d0ab07c-d1c0-4b7f-9c69-3c1a41c0a4da",
+                "name": "Daily prices",
+                "project_branch_uid": "5a28020a-0f1b-47ee-aab8-334286234bea",
+                "related_image_uid": "6cfdb152-923e-45b9-a150-c4541c68b0d1",
+                "project_repo_hash": "a" * 40,
+                "image_status": "ready",
+                "automatic_deployment": True,
+                "automatic_redeployment_policy": {
+                    "tag_regex": None,
+                    "policy_revision": 1,
+                },
+            }
+
+    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
+        captured.update({"r_type": r_type, "payload": payload})
+        return FakeResponse()
+
+    monkeypatch.setattr(models_helpers_mod, "make_request", _fake_make_request)
+
+    with pytest.raises(ValueError, match="related_image_uid is required"):
+        models_helpers_mod.Job.create(
+            name="Daily prices",
+            project_branch_uid="5a28020a-0f1b-47ee-aab8-334286234bea",
+            execution_path="jobs/daily_prices.py",
+            cpu_request="1",
+            memory_request="2",
+        )
+
+    job = models_helpers_mod.Job.create(
+        name="Daily prices",
+        project_branch_uid="5a28020a-0f1b-47ee-aab8-334286234bea",
+        execution_path="jobs/daily_prices.py",
+        cpu_request="1",
+        memory_request="2",
+        automatic_deployment=True,
+        automatic_redeployment_policy={"tag_regex": None},
+    )
+
+    assert job.automatic_deployment is True
+    assert captured["r_type"] == "POST"
+    assert captured["payload"]["json"]["automatic_deployment"] is True
+    assert captured["payload"]["json"]["automatic_redeployment_policy"] == {"tag_regex": None}
+    assert "project_repo_hash" not in captured["payload"]["json"]
+    assert "related_image_uid" not in captured["payload"]["json"]
+
+    with pytest.raises(ValueError, match="must be omitted"):
+        models_helpers_mod.Job.create(
+            name="Invalid auto job",
+            project_branch_uid="5a28020a-0f1b-47ee-aab8-334286234bea",
+            execution_path="jobs/daily_prices.py",
+            related_image_uid="6cfdb152-923e-45b9-a150-c4541c68b0d1",
+            cpu_request="1",
+            memory_request="2",
+            automatic_deployment=True,
+        )
+
+
+def test_job_run_requires_immutable_runtime_image_snapshot():
+    payload = {
+        "uid": "4c1d77c8-8a42-42b8-a9c1-06be9a336e5d",
+        "name": "daily-prices-run",
+        "unique_identifier": "jobrun_2026_08_19_abc123",
+        "commit_hash": "a" * 40,
+        "runtime_image_uid": "6cfdb152-923e-45b9-a150-c4541c68b0d1",
+        "runtime_image_digest": "sha256:" + "b" * 64,
+    }
+    run = models_helpers_mod.JobRun.model_validate(payload)
+
+    assert run.runtime_image_uid == payload["runtime_image_uid"]
+    assert run.runtime_image_digest == payload["runtime_image_digest"]
+    assert run.commit_hash == payload["commit_hash"]
+
+    with pytest.raises(ValueError, match="runtime_image_uid"):
+        models_helpers_mod.JobRun.model_validate(
+            {
+                "name": "bad-run",
+                "unique_identifier": "jobrun_bad",
+                "runtime_image_digest": "sha256:" + "b" * 64,
+            }
+        )
+
+
 def test_resource_release_model_supports_automatic_deployment_payloads():
     release_uid = "2f4c4c3d-5669-4da5-9d86-b84633c1e6ed"
     resource_uid = "857bec7b-dd77-4272-aecd-13fc2138eacc"
@@ -2430,9 +2552,7 @@ def test_unified_deployment_run_models_and_filters(monkeypatch):
             "configuration_revision": None,
             "state": "running",
             "outcome": "",
-            "pipeline": _resource_release_pipeline_payload(
-                running_step="build_project_image"
-            ),
+            "pipeline": _resource_release_pipeline_payload(running_step="build_project_image"),
             "created_at": "2026-07-19T12:00:00Z",
             "started_at": "2026-07-19T12:00:01Z",
             "finished_at": None,
@@ -2779,10 +2899,7 @@ def test_agent_session_send_a2a_message_reports_unavailable_runtime_without_post
 
     with pytest.raises(
         agent_models_mod.ApiError,
-        match=(
-            "Coding-agent runtime access is unavailable. "
-            "Runtime reconciliation is queued."
-        ),
+        match=("Coding-agent runtime access is unavailable. Runtime reconciliation is queued."),
     ):
         agent_models_mod.AgentSession.send_a2a_message(
             session_uid,
@@ -3010,8 +3127,7 @@ def test_agent_get_or_create_session_posts_new_contract(monkeypatch):
     assert captured == {
         "r_type": "POST",
         "url": (
-            f"{agent_models_mod.Agent.get_object_url()}/{agent_uid}/"
-            "sessions/get-or-create-session/"
+            f"{agent_models_mod.Agent.get_object_url()}/{agent_uid}/sessions/get-or-create-session/"
         ),
         "payload": {
             "json": {
@@ -3076,8 +3192,7 @@ def test_agent_get_or_create_session_by_uid_sends_only_session_uid(monkeypatch):
     assert captured == {
         "r_type": "POST",
         "url": (
-            f"{agent_models_mod.Agent.get_object_url()}/{agent_uid}/"
-            "sessions/get-or-create-session/"
+            f"{agent_models_mod.Agent.get_object_url()}/{agent_uid}/sessions/get-or-create-session/"
         ),
         "payload": {"json": {"session_uid": session_uid}},
         "timeout": 9,
@@ -3119,9 +3234,9 @@ def test_shareable_models_keep_shareable_object_mixin():
 
     for class_name, source_bases in expected.items():
         assert class_name in source_bases, f"{class_name} class not found"
-        assert (
-            "ShareableObjectMixin" in source_bases[class_name]
-        ), f"{class_name} must inherit ShareableObjectMixin"
+        assert "ShareableObjectMixin" in source_bases[class_name], (
+            f"{class_name} must inherit ShareableObjectMixin"
+        )
 
 
 def test_secret_constant_bucket_artifact_accept_uid_identity_payloads():
@@ -3157,9 +3272,9 @@ def test_team_uses_permission_managed_object_mixin():
     )
 
     assert "Team" in models_user_bases, "Team class not found"
-    assert (
-        "PermissionManagedObjectMixin" in models_user_bases["Team"]
-    ), "Team must inherit PermissionManagedObjectMixin"
-    assert (
-        "ShareableObjectMixin" not in models_user_bases["Team"]
-    ), "Team should not inherit ShareableObjectMixin directly"
+    assert "PermissionManagedObjectMixin" in models_user_bases["Team"], (
+        "Team must inherit PermissionManagedObjectMixin"
+    )
+    assert "ShareableObjectMixin" not in models_user_bases["Team"], (
+        "Team should not inherit ShareableObjectMixin directly"
+    )

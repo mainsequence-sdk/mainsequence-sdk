@@ -163,13 +163,7 @@ def test_skills_list(cli_mod, runner, monkeypatch, tmp_path):
 def test_skills_path(cli_mod, runner, monkeypatch, tmp_path):
     bundle_dir = tmp_path / "agent_scaffold"
     (bundle_dir / "skills" / "data_publishing" / "meta_tables").mkdir(parents=True)
-    expected = (
-        bundle_dir
-        / "skills"
-        / "data_publishing"
-        / "meta_tables"
-        / "SKILL.md"
-    )
+    expected = bundle_dir / "skills" / "data_publishing" / "meta_tables" / "SKILL.md"
     expected.write_text("MetaTable publishing", encoding="utf-8")
 
     monkeypatch.setattr(cli_mod, "_installed_agent_scaffold_bundle_dir", lambda: bundle_dir)
@@ -193,13 +187,7 @@ def test_skills_path_bundle_root(cli_mod, runner, monkeypatch, tmp_path):
 def test_skills_path_unique_leaf_name(cli_mod, runner, monkeypatch, tmp_path):
     bundle_dir = tmp_path / "agent_scaffold"
     (bundle_dir / "skills" / "data_publishing" / "meta_tables").mkdir(parents=True)
-    expected = (
-        bundle_dir
-        / "skills"
-        / "data_publishing"
-        / "meta_tables"
-        / "SKILL.md"
-    )
+    expected = bundle_dir / "skills" / "data_publishing" / "meta_tables" / "SKILL.md"
     expected.write_text("MetaTable publishing", encoding="utf-8")
 
     monkeypatch.setattr(cli_mod, "_installed_agent_scaffold_bundle_dir", lambda: bundle_dir)
@@ -514,10 +502,7 @@ def test_list_organization_teams_uses_client_model(cli_mod, monkeypatch):
         "timeout": 9,
         "filters": {"name__contains": "Res"},
     }
-    assert out == [
-        {"uid": "3f1cc452-43ec-49cb-b2ba-87dbac164d29", "name": "Research"}
-    ]
-
+    assert out == [{"uid": "3f1cc452-43ec-49cb-b2ba-87dbac164d29", "name": "Research"}]
 
 
 def test_list_agents_uses_client_model(cli_mod, monkeypatch):
@@ -1402,17 +1387,12 @@ def test_login_via_mcp_handoff_persists_without_browser(
     monkeypatch.setattr(
         cli_mod,
         "login_via_browser",
-        lambda **_kwargs: (_ for _ in ()).throw(
-            AssertionError("browser login must not run")
-        ),
+        lambda **_kwargs: (_ for _ in ()).throw(AssertionError("browser login must not run")),
     )
     monkeypatch.setattr(
         cli_mod.cfg,
         "save_tokens",
-        lambda username, access, refresh: saved.append(
-            (username, access, refresh)
-        )
-        or True,
+        lambda username, access, refresh: saved.append((username, access, refresh)) or True,
     )
     monkeypatch.setattr(
         cli_mod.cfg,
@@ -1455,9 +1435,7 @@ def test_login_via_mcp_handoff_rejects_export(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(
         cli_mod,
         "login_via_mcp_handoff",
-        lambda **_kwargs: (_ for _ in ()).throw(
-            AssertionError("handoff must not start")
-        ),
+        lambda **_kwargs: (_ for _ in ()).throw(AssertionError("handoff must not start")),
     )
 
     result = runner.invoke(cli_mod.app, ["login", "--mcp", "--export"])
@@ -1466,16 +1444,12 @@ def test_login_via_mcp_handoff_rejects_export(cli_mod, runner, monkeypatch):
     assert "cannot be combined with --export" in result.output
 
 
-def test_login_via_mcp_handoff_rejects_runtime_credential_mode(
-    cli_mod, runner, monkeypatch
-):
+def test_login_via_mcp_handoff_rejects_runtime_credential_mode(cli_mod, runner, monkeypatch):
     monkeypatch.setenv("MAINSEQUENCE_AUTH_MODE", "runtime_credential")
     monkeypatch.setattr(
         cli_mod,
         "login_via_mcp_handoff",
-        lambda **_kwargs: (_ for _ in ()).throw(
-            AssertionError("handoff must not start")
-        ),
+        lambda **_kwargs: (_ for _ in ()).throw(AssertionError("handoff must not start")),
     )
 
     result = runner.invoke(cli_mod.app, ["login", "--mcp"])
@@ -1489,9 +1463,7 @@ def test_login_via_mcp_handoff_reports_mcp_failure(cli_mod, runner, monkeypatch)
     monkeypatch.setattr(
         cli_mod,
         "login_via_mcp_handoff",
-        lambda **_kwargs: (_ for _ in ()).throw(
-            cli_mod.BrowserAuthError("handoff expired")
-        ),
+        lambda **_kwargs: (_ for _ in ()).throw(cli_mod.BrowserAuthError("handoff expired")),
     )
 
     result = runner.invoke(cli_mod.app, ["login", "--mcp"])
@@ -2614,10 +2586,7 @@ def test_render_project_branch_default_redeployment_tag_uses_backend_contract(
     assert tag_name == "v1.2.3-dev.1"
     assert captured == {
         "method": "POST",
-        "path": (
-            "/api/v1/project-branches/project-branch-uid-123/"
-            "default-redeployment-tag/"
-        ),
+        "path": ("/api/v1/project-branches/project-branch-uid-123/default-redeployment-tag/"),
         "body": {"version": "1.2.3"},
     }
 
@@ -3826,7 +3795,12 @@ def test_create_project_image_uses_client_model(cli_mod, monkeypatch):
 
         @classmethod
         def create(
-            cls, *, project_repo_hash, related_project_branch_uid=None, base_image_uid=None, timeout=None
+            cls,
+            *,
+            project_repo_hash,
+            related_project_branch_uid=None,
+            base_image_uid=None,
+            timeout=None,
         ):
             captured["project_repo_hash"] = project_repo_hash
             captured["related_project_branch_uid"] = related_project_branch_uid
@@ -4285,8 +4259,7 @@ def test_create_project_resource_release_uses_client_model(cli_mod, monkeypatch)
         "filters": {},
     }
     assert (
-        captured["create_dashboard"]["related_image_uid"]
-        == "8b62d1dd-e146-44af-957c-38c5f5b1d8d5"
+        captured["create_dashboard"]["related_image_uid"] == "8b62d1dd-e146-44af-957c-38c5f5b1d8d5"
     )
     assert captured["create_dashboard"]["spot"] is True
     assert captured["create_dashboard"]["cpu_request"] == "0.5"
@@ -4372,10 +4345,7 @@ def test_create_project_resource_release_uses_client_model_for_fastapi(cli_mod, 
         "timeout": None,
         "filters": {},
     }
-    assert (
-        captured["create_fastapi"]["related_image_uid"]
-        == "8b62d1dd-e146-44af-957c-38c5f5b1d8d5"
-    )
+    assert captured["create_fastapi"]["related_image_uid"] == "8b62d1dd-e146-44af-957c-38c5f5b1d8d5"
     assert captured["create_fastapi"]["spot"] is False
     assert captured["create_fastapi"]["cpu_request"] == "0.5"
     assert captured["create_fastapi"]["memory_request"] == "1"
@@ -5255,9 +5225,7 @@ def test_get_logged_user_details_uses_canonical_authenticated_user_method(cli_mo
                         "id": 2,
                         "uid": "org-uid-2",
                         "name": "Main Sequence",
-                        "production_environment_uid": (
-                            "00000000-0000-4000-8000-000000000002"
-                        ),
+                        "production_environment_uid": ("00000000-0000-4000-8000-000000000002"),
                     },
                 }
             )
@@ -5283,8 +5251,7 @@ def test_get_logged_user_details_uses_canonical_authenticated_user_method(cli_mo
     assert out["uid"] == "user-uid-7"
     assert out["username"] == "jose"
     assert (
-        out["organization"]["production_environment_uid"]
-        == "00000000-0000-4000-8000-000000000002"
+        out["organization"]["production_environment_uid"] == "00000000-0000-4000-8000-000000000002"
     )
 
 
@@ -5421,6 +5388,8 @@ def test_create_project_job_uses_client_model_task_schedule(cli_mod, monkeypatch
             spot=None,
             max_runtime_seconds=None,
             related_image_uid=None,
+            automatic_deployment=False,
+            automatic_redeployment_policy=None,
             timeout=None,
         ):
             captured["payload"] = {
@@ -5436,6 +5405,8 @@ def test_create_project_job_uses_client_model_task_schedule(cli_mod, monkeypatch
                 "spot": spot,
                 "max_runtime_seconds": max_runtime_seconds,
                 "related_image_uid": related_image_uid,
+                "automatic_deployment": automatic_deployment,
+                "automatic_redeployment_policy": automatic_redeployment_policy,
                 "timeout": timeout,
             }
             captured["env_project_uid"] = os.environ.get("MAIN_SEQUENCE_PROJECT_UID")
@@ -5469,6 +5440,8 @@ def test_create_project_job_uses_client_model_task_schedule(cli_mod, monkeypatch
     )
     assert captured["payload"]["task_schedule"] == schedule
     assert captured["payload"]["related_image_uid"] == "6a28020a-0f1b-47ee-aab8-334286234bea"
+    assert captured["payload"]["automatic_deployment"] is False
+    assert captured["payload"]["automatic_redeployment_policy"] == {"tag_regex": None}
     assert captured["env_project_uid"] is None
     assert captured["jwt"] == ("acc", "ref")
     assert out == {
@@ -5723,9 +5696,7 @@ def test_project_get_data_node_updates_defaults_to_env_project_uid(
 ):
     target = tmp_path / "demo-123"
     target.mkdir(parents=True, exist_ok=True)
-    (target / ".env").write_text(
-        "MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8"
-    )
+    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8")
 
     captured = {}
 
@@ -5763,9 +5734,7 @@ def test_project_get_data_node_updates_defaults_to_env_project_uid(
 def test_project_images_defaults_to_env_project_id(cli_mod, runner, monkeypatch, tmp_path):
     target = tmp_path / "demo-123"
     target.mkdir(parents=True, exist_ok=True)
-    (target / ".env").write_text(
-        "MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8"
-    )
+    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8")
 
     monkeypatch.chdir(target)
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
@@ -5797,9 +5766,7 @@ def test_project_images_defaults_to_env_project_id(cli_mod, runner, monkeypatch,
 def test_project_images_list_json(cli_mod, runner, monkeypatch, tmp_path):
     target = tmp_path / "demo-123"
     target.mkdir(parents=True, exist_ok=True)
-    (target / ".env").write_text(
-        "MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8"
-    )
+    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8")
 
     monkeypatch.chdir(target)
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
@@ -5877,9 +5844,7 @@ def test_project_images_delete_requires_confirmation(cli_mod, runner, monkeypatc
 
     monkeypatch.setattr(cli_mod, "delete_project_image", _delete_project_image)
 
-    result = runner.invoke(
-        cli_mod.app, ["project", "images", "delete", image_uid], input="y\n"
-    )
+    result = runner.invoke(cli_mod.app, ["project", "images", "delete", image_uid], input="y\n")
     assert result.exit_code == 0
     assert captured["image_uid"] == image_uid
     assert "Project Image Delete Preview" in result.output
@@ -5890,9 +5855,7 @@ def test_project_images_delete_requires_confirmation(cli_mod, runner, monkeypatc
 def test_project_jobs_list_defaults_to_env_project_id(cli_mod, runner, monkeypatch, tmp_path):
     target = tmp_path / "demo-123"
     target.mkdir(parents=True, exist_ok=True)
-    (target / ".env").write_text(
-        "MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8"
-    )
+    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8")
 
     monkeypatch.chdir(target)
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
@@ -5948,9 +5911,7 @@ def test_project_project_resource_list_defaults_to_remote_branch_head(
 ):
     target = tmp_path / "demo-123"
     target.mkdir(parents=True, exist_ok=True)
-    (target / ".env").write_text(
-        "MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8"
-    )
+    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8")
     captured = {}
 
     monkeypatch.chdir(target)
@@ -5999,9 +5960,7 @@ def test_project_project_resource_list_defaults_to_remote_branch_head(
 def test_project_project_resource_list_passes_extra_filters(cli_mod, runner, monkeypatch, tmp_path):
     target = tmp_path / "demo-123"
     target.mkdir(parents=True, exist_ok=True)
-    (target / ".env").write_text(
-        "MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8"
-    )
+    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8")
     captured = {}
 
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
@@ -6049,9 +6008,7 @@ def test_project_project_resource_create_dashboard_filters_resources_by_selected
 ):
     target = tmp_path / "demo-123"
     target.mkdir(parents=True, exist_ok=True)
-    (target / ".env").write_text(
-        "MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8"
-    )
+    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8")
     captured = {}
 
     monkeypatch.chdir(target)
@@ -6108,24 +6065,15 @@ def test_project_project_resource_create_dashboard_filters_resources_by_selected
     result = runner.invoke(
         cli_mod.app,
         ["project", "project_resource", "create_dashboard", "--automatic-deployment"],
-        input=(
-            "8b62d1dd-e146-44af-957c-38c5f5b1d8d5\n"
-            "857bec7b-dd77-4272-aecd-13fc2138eacc\n"
-        ),
+        input=("8b62d1dd-e146-44af-957c-38c5f5b1d8d5\n857bec7b-dd77-4272-aecd-13fc2138eacc\n"),
     )
     assert result.exit_code == 0
     assert captured["project_branch_uid"] == "project-branch-uid-123"
     assert captured["repo_commit_sha"] == "sha-94"
     assert captured["resource_type"] == "dashboard"
     assert captured["create_release"]["release_kind"] == "streamlit_dashboard"
-    assert (
-        captured["create_release"]["related_image_uid"]
-        == "8b62d1dd-e146-44af-957c-38c5f5b1d8d5"
-    )
-    assert (
-        captured["create_release"]["resource_uid"]
-        == "857bec7b-dd77-4272-aecd-13fc2138eacc"
-    )
+    assert captured["create_release"]["related_image_uid"] == "8b62d1dd-e146-44af-957c-38c5f5b1d8d5"
+    assert captured["create_release"]["resource_uid"] == "857bec7b-dd77-4272-aecd-13fc2138eacc"
     assert captured["create_release"]["cpu_request"] == "0.25"
     assert captured["create_release"]["memory_request"] == "0.5"
     assert captured["create_release"]["spot"] is False
@@ -6139,9 +6087,7 @@ def test_project_project_resource_create_fastapi_filters_resources_by_selected_i
 ):
     target = tmp_path / "demo-123"
     target.mkdir(parents=True, exist_ok=True)
-    (target / ".env").write_text(
-        "MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8"
-    )
+    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8")
     captured = {}
 
     monkeypatch.chdir(target)
@@ -6198,24 +6144,15 @@ def test_project_project_resource_create_fastapi_filters_resources_by_selected_i
     result = runner.invoke(
         cli_mod.app,
         ["project", "project_resource", "create_fastapi"],
-        input=(
-            "8b62d1dd-e146-44af-957c-38c5f5b1d8d5\n"
-            "957bec7b-dd77-4272-aecd-13fc2138eacc\n"
-        ),
+        input=("8b62d1dd-e146-44af-957c-38c5f5b1d8d5\n957bec7b-dd77-4272-aecd-13fc2138eacc\n"),
     )
     assert result.exit_code == 0
     assert captured["project_branch_uid"] == "project-branch-uid-123"
     assert captured["repo_commit_sha"] == "sha-94"
     assert captured["resource_type"] == "fastapi"
     assert captured["create_release"]["release_kind"] == "fastapi"
-    assert (
-        captured["create_release"]["related_image_uid"]
-        == "8b62d1dd-e146-44af-957c-38c5f5b1d8d5"
-    )
-    assert (
-        captured["create_release"]["resource_uid"]
-        == "957bec7b-dd77-4272-aecd-13fc2138eacc"
-    )
+    assert captured["create_release"]["related_image_uid"] == "8b62d1dd-e146-44af-957c-38c5f5b1d8d5"
+    assert captured["create_release"]["resource_uid"] == "957bec7b-dd77-4272-aecd-13fc2138eacc"
     assert captured["create_release"]["cpu_request"] == "0.25"
     assert captured["create_release"]["memory_request"] == "0.5"
     assert captured["create_release"]["spot"] is False
@@ -7594,8 +7531,7 @@ def test_data_node_storage_search_rejects_conflicting_data_source_filters(
     )
     assert result.exit_code == 1
     assert (
-        "Do not pass both `--data-source-uid` and `--filter data_source__uid=...`."
-        in result.output
+        "Do not pass both `--data-source-uid` and `--filter data_source__uid=...`." in result.output
     )
 
 
@@ -7803,9 +7739,7 @@ def test_data_node_storage_search_defaults_to_description(cli_mod, runner, monke
     assert captured["entries"] == []
     assert captured["description"]["q"] == "close price"
     assert captured["description"]["q_embedding"] == [0.1, 0.2]
-    assert captured["description"]["filters"] == {
-        "data_source__uid": "data-source-uid-2"
-    }
+    assert captured["description"]["filters"] == {"data_source__uid": "data-source-uid-2"}
     assert "Description Matches" in result.output
     assert "Column Matches" not in result.output
     assert 'Total search matches for "close price": 1' in result.output
@@ -8630,9 +8564,7 @@ def test_project_job_runs_logs_stops_after_max_wait(cli_mod, runner, monkeypatch
 def test_project_jobs_create_interactive_defaults(cli_mod, runner, monkeypatch, tmp_path):
     target = tmp_path / "demo-123"
     target.mkdir(parents=True, exist_ok=True)
-    (target / ".env").write_text(
-        "MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8"
-    )
+    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8")
 
     monkeypatch.chdir(target)
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
@@ -8685,6 +8617,8 @@ def test_project_jobs_create_interactive_defaults(cli_mod, runner, monkeypatch, 
     assert captured["memory_request"] == "0.5"
     assert captured["spot"] is False
     assert captured["max_runtime_seconds"] == 86400
+    assert captured["automatic_deployment"] is False
+    assert captured["automatic_redeployment_tag_regex"] is None
     assert (
         "Using defaults: cpu_request=0.25, memory_request=0.5, spot=false, max_runtime_seconds=86400."
         in result.output
@@ -8692,12 +8626,110 @@ def test_project_jobs_create_interactive_defaults(cli_mod, runner, monkeypatch, 
     assert "7d0ab07c-d1c0-4b7f-9c69-3c1a41c0a4da" in result.output
 
 
+def test_project_jobs_create_delegates_initial_image_with_automatic_deployment(
+    cli_mod, runner, monkeypatch, tmp_path
+):
+    target = tmp_path / "demo-123"
+    target.mkdir(parents=True, exist_ok=True)
+    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8")
+
+    monkeypatch.chdir(target)
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "_resolve_project_branch_uid_for_command",
+        lambda *args, **kwargs: "project-branch-uid-123",
+    )
+    monkeypatch.setattr(
+        cli_mod,
+        "list_project_images",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("Automatic Job creation must not list caller-selectable images")
+        ),
+    )
+    captured = {}
+
+    def _create_project_job(**kwargs):
+        captured.update(kwargs)
+        return {
+            "uid": "7d0ab07c-d1c0-4b7f-9c69-3c1a41c0a4da",
+            "name": kwargs["name"],
+            "execution_path": kwargs["execution_path"],
+            "related_image_uid": "backend-derived-image-uid",
+            "project_repo_hash": "a" * 40,
+            "image_status": "ready",
+            "automatic_deployment": kwargs["automatic_deployment"],
+            "automatic_redeployment_policy": {
+                "tag_regex": kwargs["automatic_redeployment_tag_regex"],
+                "policy_revision": 1,
+            },
+        }
+
+    monkeypatch.setattr(cli_mod, "create_project_job", _create_project_job)
+
+    result = runner.invoke(
+        cli_mod.app,
+        [
+            "project",
+            "jobs",
+            "create",
+            "--name",
+            "demo-job",
+            "--execution-path",
+            "scripts/test.py",
+            "--automatic-deployment",
+            "--automatic-redeployment-tag-regex",
+            "^v[0-9]+$",
+        ],
+        input="\n",
+    )
+
+    assert result.exit_code == 0
+    assert captured["related_image_uid"] is None
+    assert captured["automatic_deployment"] is True
+    assert captured["automatic_redeployment_tag_regex"] == "^v[0-9]+$"
+    assert "ready" in result.output
+    assert "aaaaaaaa" in result.output
+
+
+def test_project_jobs_create_rejects_image_with_automatic_deployment(
+    cli_mod, runner, monkeypatch, tmp_path
+):
+    target = tmp_path / "demo-123"
+    target.mkdir(parents=True, exist_ok=True)
+    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8")
+    monkeypatch.chdir(target)
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "_resolve_project_branch_uid_for_command",
+        lambda *args, **kwargs: "project-branch-uid-123",
+    )
+
+    result = runner.invoke(
+        cli_mod.app,
+        [
+            "project",
+            "jobs",
+            "create",
+            "--name",
+            "invalid-auto-job",
+            "--execution-path",
+            "scripts/test.py",
+            "--automatic-deployment",
+            "--related-image-uid",
+            "project-image-uid-77",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "Do not provide --related-image-uid" in result.output
+
+
 def test_project_jobs_create_derives_memory_from_cpu(cli_mod, runner, monkeypatch, tmp_path):
     target = tmp_path / "demo-123"
     target.mkdir(parents=True, exist_ok=True)
-    (target / ".env").write_text(
-        "MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8"
-    )
+    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8")
 
     monkeypatch.chdir(target)
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
@@ -8762,9 +8794,7 @@ def test_project_jobs_create_derives_memory_from_cpu(cli_mod, runner, monkeypatc
 def test_project_jobs_create_interactive_interval_schedule(cli_mod, runner, monkeypatch, tmp_path):
     target = tmp_path / "demo-123"
     target.mkdir(parents=True, exist_ok=True)
-    (target / ".env").write_text(
-        "MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8"
-    )
+    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8")
 
     monkeypatch.chdir(target)
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
@@ -8815,9 +8845,7 @@ def test_project_jobs_create_interactive_interval_schedule(cli_mod, runner, monk
 def test_project_create_image_interactive_defaults(cli_mod, runner, monkeypatch, tmp_path):
     target = tmp_path / "demo-123"
     target.mkdir(parents=True, exist_ok=True)
-    (target / ".env").write_text(
-        "MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8"
-    )
+    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8")
 
     monkeypatch.chdir(target)
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
@@ -8908,9 +8936,7 @@ def test_project_create_image_interactive_defaults(cli_mod, runner, monkeypatch,
 def test_project_create_image_rejects_unpushed_hash(cli_mod, runner, monkeypatch, tmp_path):
     target = tmp_path / "demo-123"
     target.mkdir(parents=True, exist_ok=True)
-    (target / ".env").write_text(
-        "MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8"
-    )
+    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8")
 
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(
@@ -8918,7 +8944,9 @@ def test_project_create_image_rejects_unpushed_hash(cli_mod, runner, monkeypatch
         "_resolve_project_branch_uid_for_command",
         lambda *args, **kwargs: "project-branch-uid-123",
     )
-    monkeypatch.setattr(cli_mod, "list_project_images", lambda related_project_branch_uid, timeout=None: [])
+    monkeypatch.setattr(
+        cli_mod, "list_project_images", lambda related_project_branch_uid, timeout=None: []
+    )
 
     def _git_run(cmd, capture_output=None, text=None, **kwargs):
         args = cmd[3:]
@@ -9048,7 +9076,9 @@ def test_project_create_image_normalizes_short_hash_to_full_sha(
         lambda *args, **kwargs: "project-branch-uid-123",
     )
     monkeypatch.setattr(cli_mod, "_list_unpushed_commits", lambda *_: [])
-    monkeypatch.setattr(cli_mod, "list_project_images", lambda related_project_branch_uid, timeout=None: [])
+    monkeypatch.setattr(
+        cli_mod, "list_project_images", lambda related_project_branch_uid, timeout=None: []
+    )
 
     def _git_run(cmd, capture_output=None, text=None, **kwargs):
         args = cmd[3:]
@@ -9111,7 +9141,9 @@ def test_project_create_image_rejects_unresolvable_short_hash(
         lambda *args, **kwargs: "project-branch-uid-123",
     )
     monkeypatch.setattr(cli_mod, "_list_unpushed_commits", lambda *_: [])
-    monkeypatch.setattr(cli_mod, "list_project_images", lambda related_project_branch_uid, timeout=None: [])
+    monkeypatch.setattr(
+        cli_mod, "list_project_images", lambda related_project_branch_uid, timeout=None: []
+    )
 
     def _git_run(cmd, capture_output=None, text=None, **kwargs):
         args = cmd[3:]
@@ -9225,10 +9257,7 @@ def test_project_create_interactive_defaults(cli_mod, runner, monkeypatch):
     assert result.exit_code == 0
     assert captured["project_name"] == "demo-project"
     assert captured["project_type"] == "python"
-    assert (
-        captured["default_metatables_data_source_uid"]
-        == "11111111-1111-4111-8111-111111111111"
-    )
+    assert captured["default_metatables_data_source_uid"] == "11111111-1111-4111-8111-111111111111"
     assert captured["default_base_image_uid"] == "22222222-2222-4222-8222-222222222222"
     assert captured["github_org_uid"] == "33333333-3333-4333-8333-333333333333"
     assert captured["env_vars"] == {"FOO": "bar", "BAZ": "qux"}
@@ -9284,10 +9313,7 @@ def test_project_create_with_explicit_options_returns_logical_project(
     )
 
     assert result.exit_code == 0
-    assert (
-        captured["default_metatables_data_source_uid"]
-        == "11111111-1111-4111-8111-111111111111"
-    )
+    assert captured["default_metatables_data_source_uid"] == "11111111-1111-4111-8111-111111111111"
     assert "Project created: demo-project" in result.output
 
 
@@ -9361,9 +9387,7 @@ def test_resolve_project_repository_ssh_url_uses_canonical_repository(
 
     monkeypatch.setattr(cli_mod, "get_project_repository", _get_project_repository)
 
-    result = cli_mod._resolve_project_repository_ssh_url(
-        {"git_repository_uid": repository_uid}
-    )
+    result = cli_mod._resolve_project_repository_ssh_url({"git_repository_uid": repository_uid})
 
     assert captured["uid"] == repository_uid
     assert result == "git@github.com:mainsequence-projects/tutorial.git"
@@ -9392,9 +9416,7 @@ def test_resolve_project_repository_ssh_url_requires_ssh_url(cli_mod, monkeypatc
     )
 
     with pytest.raises(cli_mod.ApiError, match="has no SSH clone URL"):
-        cli_mod._resolve_project_repository_ssh_url(
-            {"git_repository_uid": repository_uid}
-        )
+        cli_mod._resolve_project_repository_ssh_url({"git_repository_uid": repository_uid})
 
 
 def test_project_set_up_locally(cli_mod, runner, monkeypatch, tmp_path):
@@ -10050,9 +10072,7 @@ def test_project_sync(
 ):
     target = tmp_path / "project"
     target.mkdir(parents=True, exist_ok=True)
-    (target / ".env").write_text(
-        "MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8"
-    )
+    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8")
     key = tmp_path / "id_ed25519"
     uv_path = target / ".venv" / "bin" / "uv"
     uv_calls = []
@@ -10111,9 +10131,7 @@ def test_project_sync_defaults_to_cwd_with_positional_message(
 ):
     target = tmp_path / "project"
     target.mkdir(parents=True, exist_ok=True)
-    (target / ".env").write_text(
-        "MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8"
-    )
+    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8")
     key = tmp_path / "id_ed25519"
     uv_path = target / ".venv" / "bin" / "uv"
     git_calls = []
@@ -10169,9 +10187,7 @@ def test_project_sync_rejects_invalid_branch_before_local_mutation(
 ):
     target = tmp_path / "project"
     target.mkdir(parents=True, exist_ok=True)
-    (target / ".env").write_text(
-        "MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8"
-    )
+    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8")
 
     def fail_preflight(*args, **kwargs):
         raise cli_mod.ApiError(preflight_error)
@@ -10272,9 +10288,7 @@ def test_project_sync_project_defaults_to_current_project_dir(
 ):
     target = tmp_path / "project"
     target.mkdir(parents=True, exist_ok=True)
-    (target / ".env").write_text(
-        "MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8"
-    )
+    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8")
     key = tmp_path / "id_ed25519"
     uv_path = target / ".venv" / "bin" / "uv"
     seen = {"cwd": []}
@@ -10847,20 +10861,10 @@ def test_project_update_agent_skills_overwrites_matching_folders(
         target / ".agents" / "skills" / "mainsequence" / "project_design" / "SKILL.md"
     ).is_file()
     assert (
-        target
-        / ".agents"
-        / "skills"
-        / "mainsequence"
-        / "a2a_communication"
-        / "SKILL.md"
+        target / ".agents" / "skills" / "mainsequence" / "a2a_communication" / "SKILL.md"
     ).is_file()
     assert (
-        target
-        / ".agents"
-        / "skills"
-        / "mainsequence"
-        / "project_to_agent"
-        / "SKILL.md"
+        target / ".agents" / "skills" / "mainsequence" / "project_to_agent" / "SKILL.md"
     ).is_file()
 
 

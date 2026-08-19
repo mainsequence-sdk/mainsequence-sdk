@@ -60,6 +60,7 @@ MCP_MAX_RESOURCE_PAGES = 100
 S = requests.Session()
 S.headers.update({"Content-Type": "application/json"})
 
+
 class ApiError(RuntimeError):
     """Base error for API failures."""
 
@@ -942,9 +943,7 @@ def render_project_branch_default_redeployment_tag(
         {"version": normalized_version},
     )
     if not r.ok:
-        raise ApiError(
-            f"Default redeployment tag rendering failed ({r.status_code})."
-        )
+        raise ApiError(f"Default redeployment tag rendering failed ({r.status_code}).")
     payload = r.json()
     if not isinstance(payload, dict):
         raise ApiError("Default redeployment tag rendering returned an unexpected payload.")
@@ -1123,9 +1122,7 @@ def update_organization_team(
             class_name="Team",
             operation=lambda ClientTeam: ClientTeam.get_by_uid(
                 str(team_uid), timeout=timeout
-            ).patch(
-                **updates
-            ),
+            ).patch(**updates),
         )
         return _sdk_object_to_dict(team)
     except Exception as e:
@@ -2866,7 +2863,6 @@ def list_meta_tables(
         raise ApiError(f"MetaTables fetch failed: {e}") from e
 
 
-
 def _serialize_sdk_search_response(payload: Any) -> dict[str, Any] | list[dict[str, Any]]:
     if isinstance(payload, list):
         return [_sdk_object_to_dict(item) for item in payload]
@@ -4372,6 +4368,8 @@ def create_project_job(
     spot: bool | None = None,
     max_runtime_seconds: int | None = None,
     related_image_uid: str | None = None,
+    automatic_deployment: bool = False,
+    automatic_redeployment_tag_regex: str | None = None,
     timeout: int | None = None,
 ) -> dict[str, Any]:
     """
@@ -4440,6 +4438,10 @@ def create_project_job(
             spot=spot,
             max_runtime_seconds=max_runtime_seconds,
             related_image_uid=related_image_uid,
+            automatic_deployment=automatic_deployment,
+            automatic_redeployment_policy={
+                "tag_regex": automatic_redeployment_tag_regex,
+            },
             timeout=timeout,
         )
         if isinstance(created, dict):
@@ -5031,9 +5033,7 @@ def create_project(
 
     if default_metatables_data_source_uid in (None, ""):
         raise ValueError("default_metatables_data_source_uid is required")
-    payload["default_metatables_data_source_uid"] = str(
-        default_metatables_data_source_uid
-    )
+    payload["default_metatables_data_source_uid"] = str(default_metatables_data_source_uid)
     if default_base_image_uid not in (None, ""):
         payload["default_base_image_uid"] = str(default_base_image_uid)
     if github_org_uid not in (None, ""):

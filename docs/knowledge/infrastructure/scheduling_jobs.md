@@ -138,6 +138,27 @@ mainsequence project jobs create \
   --related-image-uid <IMAGE_UID>
 ```
 
+Every persisted job is exact-image backed, but creation has one image owner.
+For a manually pinned job, you select the exact ready image. For an
+automatically deployed job, you omit the image and the backend derives the
+initial exact image from the ProjectBranch's persisted synchronized commit.
+
+To opt a standalone job into future exact-image promotion:
+
+```bash
+mainsequence project jobs create \
+  --name "Simulated Prices - Promoted" \
+  --execution-path scripts/simulated_prices_launcher.py \
+  --automatic-deployment \
+  --automatic-redeployment-tag-regex '^v[0-9]+$'
+```
+
+Omit `--automatic-redeployment-tag-regex` to accept every otherwise-eligible
+exact repository event. Do not pass `--related-image-uid` with
+`--automatic-deployment`; the backend owns initial preparation. It reads its
+persisted synchronized commit and never asks the client to inspect Git or
+select a branch tip.
+
 Then run it:
 
 ```bash
@@ -201,9 +222,11 @@ mainsequence project jobs runs logs <JOB_RUN_UID> --max-wait-seconds 900
 
 The logs command polls while the run is still `PENDING` or `RUNNING`, so it works well as a simple live tail for operational checks.
 
-### Freeze a job to a project image
+### Bind a job to an exact project image
 
-If you need reproducibility, pin the job to an image instead of letting it follow the moving repository tip.
+Every job requires this binding. The image represents one pushed, exact commit
+and remains the job's current image until an explicit image change or a
+qualifying backend-owned promotion succeeds.
 
 List existing images:
 
@@ -226,7 +249,8 @@ mainsequence project jobs create \
   --related-image-uid <IMAGE_UID>
 ```
 
-This is the right pattern when you need confidence that the job will keep running with the same code and base image even after the repository evolves.
+This is the only supported creation pattern. There is no dynamic, blank-image,
+branch-tip, or `latest` job mode.
 
 !!! note "Important"
     Project images are built from pushed commits. If a commit does not exist on the remote, it cannot be turned into a project image.
@@ -253,6 +277,21 @@ manual_job = Job.create(
     related_image_uid="<PROJECT_IMAGE_UID>",
     cpu_request="0.25",
     memory_request="0.5",
+)
+```
+
+Automatic deployment remains backend-owned and still requires the exact
+initial image:
+
+```python
+promoted_job = Job.create(
+    name="Simulated Prices - Promoted",
+    project_branch_uid="<PROJECT_BRANCH_UID>",
+    execution_path="scripts/simulated_prices_launcher.py",
+    cpu_request="0.25",
+    memory_request="0.5",
+    automatic_deployment=True,
+    automatic_redeployment_policy={"tag_regex": r"^v[0-9]+$"},
 )
 ```
 
@@ -313,8 +352,12 @@ In practice, the client gives you the same lifecycle as the CLI:
 - inspect the resulting job runs
 - read logs for the run you care about
 
+Each `JobRun` response freezes the exact `runtime_image_uid`, image digest, and
+commit selected at run creation. Launch uses that snapshot even if the job is
+promoted later.
+
 !!! note "One practical difference"
-    The CLI applies safe defaults for `cpu_request`, `memory_request`, `spot`, and `max_runtime_seconds` when you omit them. The Python client expects you to pass the compute values yourself, and jobs still require `related_image_uid`.
+    The CLI applies safe defaults for `cpu_request`, `memory_request`, `spot`, and `max_runtime_seconds` when you omit them. The Python client expects you to pass the compute values yourself. A manual Job requires `related_image_uid`; an automatic Job rejects it and delegates exact initial-image preparation to the backend.
 
 ## What the schedule fields mean
 
@@ -429,7 +472,11 @@ Usually this means one of three things:
 
 ### "The client example fails, but the CLI worked"
 
-The most common reasons are missing compute values or a missing `related_image_uid`. The CLI supplies compute defaults. `Job.create()` does not.
+The most common reasons are missing compute values or a missing exact
+`related_image_uid` on a manually pinned Job, or a ProjectBranch without a
+synchronized commit for an automatically deployed Job. The CLI supplies
+compute defaults and can interactively select a manual image. `Job.create()`
+does neither. Automatic creation must omit the image UID.
 
 ### "The cron expression looks valid, but the API rejects it"
 

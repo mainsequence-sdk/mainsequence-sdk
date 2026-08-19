@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [6.0.32] - 2026-08-19
+
+### Changed
+
+- Jobs now use the platform's exact-image contract. Manually managed Jobs
+  require an explicit ready image, while automatically deployed Jobs omit
+  image selection so the backend derives and binds the exact image from the
+  ProjectBranch's synchronized commit.
+- Job and JobRun models and CLI output now expose exact image, commit,
+  readiness, automatic-deployment policy, and immutable runtime image state.
+
+### Removed
+
+- Removed SDK and CLI support for dynamic, nullable, or `latest` Job image
+  selection.
+
 ## [6.0.31] - 2026-08-18
 
 ### Fixed

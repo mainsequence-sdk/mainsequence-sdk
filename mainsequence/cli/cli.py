@@ -746,11 +746,14 @@ def _render_projects_table(items: list[dict], base_dir: str, org_slug: str) -> s
     for p in items:
         public_id = _project_identity_value(p)
         name = p.get("project_name") or "(unnamed)"
-        branches = ", ".join(
-            str(branch.get("repository_branch") or "-")
-            for branch in list(p.get("branches") or [])
-            if isinstance(branch, dict)
-        ) or "-"
+        branches = (
+            ", ".join(
+                str(branch.get("repository_branch") or "-")
+                for branch in list(p.get("branches") or [])
+                if isinstance(branch, dict)
+            )
+            or "-"
+        )
 
         local_path = _find_local_project_dir(base_dir, org_slug, public_id, name)
         local = "Local" if local_path else "-"
@@ -2454,9 +2457,7 @@ def login(
                     "tool": handoff["mcp_tool"],
                     "arguments": handoff["mcp_arguments"],
                 }
-                info(
-                    "Authorize this CLI from the connected Main Sequence MCP session:"
-                )
+                info("Authorize this CLI from the connected Main Sequence MCP session:")
                 typer.echo(json.dumps(tool_call, separators=(",", ":")))
 
             flow = login_via_mcp_handoff(
@@ -2466,9 +2467,7 @@ def login(
             access = (flow.get("access") or "").strip()
             refresh = (flow.get("refresh") or "").strip()
             if not access or not refresh:
-                raise ApiError(
-                    "MCP handoff login did not return access and refresh tokens."
-                )
+                raise ApiError("MCP handoff login did not return access and refresh tokens.")
 
             persisted = cfg.save_tokens("", access, refresh)
             user_payload = flow.get("user")
@@ -2480,9 +2479,7 @@ def login(
                 if isinstance(profile, dict):
                     username = (profile.get("username") or "").strip()
             if username:
-                persisted = bool(
-                    cfg.save_tokens(username, access, refresh) and persisted
-                )
+                persisted = bool(cfg.save_tokens(username, access, refresh) and persisted)
 
             res = {
                 "username": username,
@@ -2801,9 +2798,7 @@ def _organization_teams_list_impl(
         )
 
     if rows:
-        print_table(
-            "Organization Teams", ["UID", "Name", "Description", "Members", "Active"], rows
-        )
+        print_table("Organization Teams", ["UID", "Name", "Description", "Members", "Active"], rows)
     else:
         info("No organization teams.")
     info(f"Total organization teams: {len(teams_payload)}")
@@ -4013,9 +4008,7 @@ def _agent_session_list_impl(
         command_label="Agent Sessions",
     )
     if agent_uid and any(key in filters for key in ("agent_uid", "agent_uid__in")):
-        error(
-            "Do not pass `--filter agent_uid=...` with `--agent-uid`. " "Use only one agent scope."
-        )
+        error("Do not pass `--filter agent_uid=...` with `--agent-uid`. Use only one agent scope.")
         raise typer.Exit(1)
 
     _require_login()
@@ -4511,7 +4504,6 @@ def _parse_cli_csv_list(values: list[str] | None) -> list[str]:
     return items
 
 
-
 def _data_node_storage_list_impl(
     timeout: int | None,
     filter_entries: list[str] | None,
@@ -4770,7 +4762,6 @@ def _print_data_node_storage_search_section(
         info(f'{title}: {len(storages)} match(es) for "{q}"')
 
     return len(storages)
-
 
 
 @agent.command("list")
@@ -7515,11 +7506,7 @@ def project_create_cmd(
             ds_rows: list[list[str]] = []
             for item in ds_items:
                 uid = _require_item_uid(item, prompt_label="data source uid")
-                ds_name = (
-                    item.get("display_name")
-                    or item.get("class_type")
-                    or f"data-source-{uid}"
-                )
+                ds_name = item.get("display_name") or item.get("class_type") or f"data-source-{uid}"
                 ds_details = (
                     f"class={item.get('class_type') or '-'}, status={item.get('status') or '-'}"
                 )
@@ -8843,7 +8830,9 @@ def project_images_create_cmd(
     path: str | None = typer.Option(
         None, "--path", help="Project repository path (default: current project)"
     ),
-    base_image_uid: str | None = typer.Option(None, "--base-image-uid", help="Project base image UID"),
+    base_image_uid: str | None = typer.Option(
+        None, "--base-image-uid", help="Project base image UID"
+    ),
     timeout: int = typer.Option(
         300, "--timeout", help="Maximum wait time in seconds for the image to become ready."
     ),
@@ -8905,7 +8894,9 @@ def project_create_image_cmd(
     path: str | None = typer.Option(
         None, "--path", help="Project repository path (default: current project)"
     ),
-    base_image_uid: str | None = typer.Option(None, "--base-image-uid", help="Project base image UID"),
+    base_image_uid: str | None = typer.Option(
+        None, "--base-image-uid", help="Project base image UID"
+    ),
     timeout: int = typer.Option(
         300, "--timeout", help="Maximum wait time in seconds for the image to become ready."
     ),
@@ -8990,6 +8981,33 @@ def _project_jobs_list_impl(
             ],
             rows,
         )
+
+        deployment_rows = [
+            [
+                str(job.get("uid") or "-"),
+                str(job.get("project_repo_hash") or "-"),
+                str(job.get("related_image_uid") or job.get("related_image") or "-"),
+                str(job.get("image_status") or "-"),
+                str(bool(job.get("automatic_deployment"))).lower(),
+                str(
+                    (job.get("automatic_redeployment_policy") or {}).get("tag_regex")
+                    or "every qualifying exact event"
+                ),
+            ]
+            for job in jobs
+        ]
+        print_table(
+            "Project Job Image And Promotion State",
+            [
+                "Job UID",
+                "Exact Commit",
+                "Image UID",
+                "Image Status",
+                "Automatic Deployment",
+                "Promotion Tag Regex",
+            ],
+            deployment_rows,
+        )
     else:
         info("No project jobs.")
     info(f"Total jobs: {len(jobs)}")
@@ -9047,6 +9065,21 @@ def _project_job_runs_list_impl(
                 "Commit Hash",
             ],
             rows,
+        )
+
+        snapshot_rows = [
+            [
+                str(run.get("uid") or "-"),
+                str(run.get("runtime_image_uid") or "-"),
+                str(run.get("runtime_image_digest") or "-"),
+                str(run.get("commit_hash") or "-"),
+            ]
+            for run in runs
+        ]
+        print_table(
+            "Immutable Job Run Image Snapshots",
+            ["Job Run UID", "Runtime Image UID", "Runtime Image Digest", "Commit Hash"],
+            snapshot_rows,
         )
     else:
         info("No job runs.")
@@ -9358,6 +9391,8 @@ def _project_jobs_create_impl(
     gpu_type: str | None,
     spot: bool | None,
     max_runtime_seconds: int | None,
+    automatic_deployment: bool,
+    automatic_redeployment_tag_regex: str | None,
     timeout: int | None,
 ) -> None:
     _require_login()
@@ -9384,34 +9419,46 @@ def _project_jobs_create_impl(
         error("Job name is required.")
         raise typer.Exit(1)
 
-    try:
-        project_images = list_project_images(
-            related_project_branch_uid=project_branch_uid,
-            timeout=timeout,
+    if automatic_deployment:
+        if related_image_uid is not None:
+            error(
+                "Do not provide --related-image-uid with --automatic-deployment. "
+                "The backend derives and prepares the initial exact image."
+            )
+            raise typer.Exit(1)
+        info(
+            "Automatic deployment: the backend will derive the initial exact image "
+            "from the ProjectBranch synchronized commit."
         )
-    except ApiError as e:
-        error(f"Project images fetch failed: {e}")
-        raise typer.Exit(1) from e
+    else:
+        try:
+            project_images = list_project_images(
+                related_project_branch_uid=project_branch_uid,
+                timeout=timeout,
+            )
+        except ApiError as e:
+            error(f"Project images fetch failed: {e}")
+            raise typer.Exit(1) from e
 
-    if related_image_uid is None and project_images:
-        image_rows = [
-            [
-                str(img.get("uid") or "-"),
-                str(img.get("project_repo_hash") or "-"),
-                _format_base_image_label(img.get("base_image")),
+        if related_image_uid is None and project_images:
+            image_rows = [
+                [
+                    str(img.get("uid") or "-"),
+                    str(img.get("project_repo_hash") or "-"),
+                    _format_base_image_label(img.get("base_image")),
+                ]
+                for img in project_images
             ]
-            for img in project_images
-        ]
-        related_image_uid = _prompt_select_uid(
-            title="Available Project Images",
-            prompt_label="Related image UID",
-            items=project_images,
-            rows=image_rows,
-        )
+            related_image_uid = _prompt_select_uid(
+                title="Available Project Images",
+                prompt_label="Related image UID",
+                items=project_images,
+                rows=image_rows,
+            )
 
-    if related_image_uid is None:
-        error("related_image_uid is required for jobs.")
-        raise typer.Exit(1)
+        if related_image_uid is None:
+            error("related_image_uid is required when automatic deployment is disabled.")
+            raise typer.Exit(1)
 
     if execution_path is None and app_name is None:
         execution_path = (
@@ -9487,6 +9534,8 @@ def _project_jobs_create_impl(
             spot=spot,
             max_runtime_seconds=max_runtime_seconds,
             related_image_uid=related_image_uid,
+            automatic_deployment=automatic_deployment,
+            automatic_redeployment_tag_regex=automatic_redeployment_tag_regex,
             timeout=timeout,
         )
     except ApiError as e:
@@ -9523,6 +9572,19 @@ def _project_jobs_create_impl(
                 "Max Runtime Seconds",
                 str(created.get("max_runtime_seconds") or max_runtime_seconds),
             ),
+            ("Image Status", str(created.get("image_status") or "-")),
+            ("Exact Commit", str(created.get("project_repo_hash") or "-")),
+            (
+                "Automatic Deployment",
+                str(created.get("automatic_deployment", automatic_deployment)).lower(),
+            ),
+            (
+                "Promotion Tag Regex",
+                str(
+                    (created.get("automatic_redeployment_policy") or {}).get("tag_regex")
+                    or "every qualifying exact event"
+                ),
+            ),
         ],
     )
 
@@ -9548,7 +9610,10 @@ def project_jobs_create_cmd(
         "related_image_uid",
         None,
         "--related-image-uid",
-        extra_help="Use the public project image UID.",
+        extra_help=(
+            "Required for manually pinned Jobs. Omit it with "
+            "--automatic-deployment so the backend owns initial image preparation."
+        ),
     ),
     schedule_type: str | None = pydantic_option(
         INTERVAL_SCHEDULE_MODEL_REF,
@@ -9620,12 +9685,30 @@ def project_jobs_create_cmd(
         "--max-runtime-seconds",
         extra_help="Defaults to 86400 when omitted.",
     ),
+    automatic_deployment: bool = typer.Option(
+        False,
+        "--automatic-deployment/--no-automatic-deployment",
+        help=(
+            "Let the backend derive and prepare the initial exact image from the "
+            "synchronized ProjectBranch commit, then promote future qualifying exact events."
+        ),
+    ),
+    automatic_redeployment_tag_regex: str | None = typer.Option(
+        None,
+        "--automatic-redeployment-tag-regex",
+        help=(
+            "Full-match regex for qualifying immutable Git tags. Omit it to "
+            "allow every qualifying exact event while automatic deployment is enabled."
+        ),
+    ),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
     Create a job for a project.
 
-    Uses SDK client `Job.create()` as the single source of truth.
+    Uses SDK client `Job.create()` as the single source of truth. Manual Jobs
+    require `--related-image-uid`; automatically deployed Jobs forbid it and
+    delegate initial exact-image preparation to the backend.
     When compute settings are omitted, the CLI applies safe defaults:
     `cpu_request=0.25`, `memory_request=0.5`, `spot=false`, `max_runtime_seconds=86400`.
     If schedule arguments are omitted, the CLI asks whether to build an interval or crontab schedule.
@@ -9657,6 +9740,8 @@ def project_jobs_create_cmd(
         gpu_type=gpu_type,
         spot=spot,
         max_runtime_seconds=max_runtime_seconds,
+        automatic_deployment=automatic_deployment,
+        automatic_redeployment_tag_regex=automatic_redeployment_tag_regex,
         timeout=timeout,
     )
 

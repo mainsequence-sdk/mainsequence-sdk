@@ -227,7 +227,8 @@ mainsequence project jobs runs logs <JOB_RUN_UID> --max-wait-seconds 900
 mainsequence project jobs run <JOB_UID>
 mainsequence project jobs run <JOB_UID> --arg demo-from-cli
 mainsequence project jobs run <JOB_UID> -- --name demo-from-cli
-mainsequence project jobs create --name daily-run --execution-path scripts/test.py
+mainsequence project jobs create --name daily-run --execution-path scripts/test.py --related-image-uid <IMAGE_UID>
+mainsequence project jobs create --name promoted-run --execution-path scripts/test.py --automatic-deployment
 mainsequence project data-node-updates list
 mainsequence project data-node-updates list <PROJECT_UID>
 mainsequence project project_resource list
@@ -535,7 +536,9 @@ ontology and each installed platform skill.
 - `mainsequence project jobs run` triggers a manual run through the SDK client `Job.run_job()` path.
 - `mainsequence project jobs run --arg ...` appends per-run args to the saved job entrypoint; it does not replace the saved `execution_path` or `app_name`.
 - `mainsequence project jobs run -- --name demo-from-cli` is the preferred form when an appended arg itself starts with `-`.
-- `mainsequence project jobs create` creates jobs through the SDK client `Job.create()` path, requires a project image, expects `execution_path` relative to the content root, for example `scripts/test.py`, builds interval or crontab schedules interactively when requested, and defaults compute settings to `cpu_request=0.25`, `memory_request=0.5`, `spot=false`, `max_runtime_seconds=86400` when omitted.
+- `mainsequence project jobs create` creates jobs through the SDK client `Job.create()` path. A manually pinned Job requires one exact ready `--related-image-uid`. An automatically deployed Job uses `--automatic-deployment` and must omit the image UID; the backend derives and prepares the exact initial image from the ProjectBranch's persisted synchronized commit. Use `--automatic-redeployment-tag-regex` to restrict later qualifying tags. The command expects `execution_path` relative to the content root, for example `scripts/test.py`, builds interval or crontab schedules interactively when requested, and defaults compute settings to `cpu_request=0.25`, `memory_request=0.5`, `spot=false`, `max_runtime_seconds=86400` when omitted.
+- `mainsequence project jobs list` reports each job's exact image, commit, readiness, automatic-deployment state, and effective tag policy.
+- `mainsequence project jobs runs list` reports the immutable runtime image UID, digest, and commit snapshot used by each run.
 - Repository-managed Jobs and ResourceReleases use backend-owned declarations
   under `.mainsequence/workflows/`. The removed `schedule_batch_jobs` command
   and `scheduled_jobs.yaml` format are not compatibility surfaces. Retrieve the
