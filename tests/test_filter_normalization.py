@@ -137,6 +137,12 @@ def test_job_run_status_uses_status_detail_endpoint(monkeypatch):
         uid="4c1d77c8-8a42-42b8-a9c1-06be9a336e5d",
         name="demo-run",
         unique_identifier="jobrun_501",
+        project_uid=None,
+        project_name=None,
+        project_branch_uid=None,
+        project_branch_name=None,
+        runtime_image_uid="6cfdb152-923e-45b9-a150-c4541c68b0d1",
+        runtime_image_digest="sha256:" + "b" * 64,
     )
 
     captured: dict[str, object] = {}
@@ -222,6 +228,10 @@ def test_job_run_deserializes_uid_payload_without_id():
         unique_identifier="jobrun_501",
         job_uid="ab6a5d50-8a3e-4f0d-a9bb-7e84180bd50e",
         job_name="daily-training-job",
+        project_uid="1d0530c0-65d1-4db0-856b-dc29d8260a09",
+        project_name="market-data-service",
+        project_branch_uid="5a28020a-0f1b-47ee-aab8-334286234bea",
+        project_branch_name="main",
         status="RUNNING",
         cpu_request="1",
         cpu_limit="2",
@@ -229,6 +239,8 @@ def test_job_run_deserializes_uid_payload_without_id():
         memory_limit="8Gi",
         gpu_request="1",
         gpu_type="nvidia-l4",
+        runtime_image_uid="6cfdb152-923e-45b9-a150-c4541c68b0d1",
+        runtime_image_digest="sha256:" + "b" * 64,
         command_args=["sync"],
     )
 
@@ -2322,6 +2334,10 @@ def test_job_run_requires_immutable_runtime_image_snapshot():
         "uid": "4c1d77c8-8a42-42b8-a9c1-06be9a336e5d",
         "name": "daily-prices-run",
         "unique_identifier": "jobrun_2026_08_19_abc123",
+        "project_uid": "1d0530c0-65d1-4db0-856b-dc29d8260a09",
+        "project_name": "market-data-service",
+        "project_branch_uid": "5a28020a-0f1b-47ee-aab8-334286234bea",
+        "project_branch_name": "main",
         "commit_hash": "a" * 40,
         "runtime_image_uid": "6cfdb152-923e-45b9-a150-c4541c68b0d1",
         "runtime_image_digest": "sha256:" + "b" * 64,
@@ -2331,12 +2347,25 @@ def test_job_run_requires_immutable_runtime_image_snapshot():
     assert run.runtime_image_uid == payload["runtime_image_uid"]
     assert run.runtime_image_digest == payload["runtime_image_digest"]
     assert run.commit_hash == payload["commit_hash"]
+    assert run.project_uid == payload["project_uid"]
+    assert run.project_name == payload["project_name"]
+    assert run.project_branch_uid == payload["project_branch_uid"]
+    assert run.project_branch_name == payload["project_branch_name"]
+
+    missing_project_context = dict(payload)
+    missing_project_context.pop("project_uid")
+    with pytest.raises(ValueError, match="project_uid"):
+        models_helpers_mod.JobRun.model_validate(missing_project_context)
 
     with pytest.raises(ValueError, match="runtime_image_uid"):
         models_helpers_mod.JobRun.model_validate(
             {
                 "name": "bad-run",
                 "unique_identifier": "jobrun_bad",
+                "project_uid": None,
+                "project_name": None,
+                "project_branch_uid": None,
+                "project_branch_name": None,
                 "runtime_image_digest": "sha256:" + "b" * 64,
             }
         )

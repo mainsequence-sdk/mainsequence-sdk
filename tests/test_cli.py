@@ -5654,6 +5654,9 @@ def test_list_project_job_runs_uses_client_model(cli_mod, monkeypatch):
 
 def test_get_project_job_run_logs_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
+    real_job_run = importlib.import_module(
+        "mainsequence.client.models_helpers"
+    ).JobRun
     captured = {}
 
     monkeypatch.setattr(
@@ -5679,22 +5682,38 @@ def test_get_project_job_run_logs_uses_client_model(cli_mod, monkeypatch):
     class FakeBaseObjectOrm:
         ROOT_URL = "https://old.test/api/v1"
 
-    class FakeJobRun:
-        ROOT_URL = "https://old.test/api/v1/job-runs"
+    class CanonicalJobRun(real_job_run):
 
         @classmethod
         def get(cls, pk, timeout=None):
             captured["job_run_uid_arg"] = pk
-            return types.SimpleNamespace(
-                get_logs=lambda timeout=None: {
-                    "job_run_uid": pk,
+            return cls.model_validate(
+                {
+                    "uid": pk,
+                    "name": "daily-run-1",
+                    "unique_identifier": "jobrun_abc123",
+                    "job_uid": "7d0ab07c-d1c0-4b7f-9c69-3c1a41c0a4da",
+                    "job_name": "daily-prices",
+                    "project_uid": "1d0530c0-65d1-4db0-856b-dc29d8260a09",
+                    "project_name": "market-data-service",
+                    "project_branch_uid": "5a28020a-0f1b-47ee-aab8-334286234bea",
+                    "project_branch_name": "main",
                     "status": "RUNNING",
-                    "rows": ["first line"],
+                    "runtime_image_uid": "6cfdb152-923e-45b9-a150-c4541c68b0d1",
+                    "runtime_image_digest": "sha256:" + "b" * 64,
                 }
             )
 
+        def get_logs(self, *, timeout=None):
+            captured["get_logs_timeout"] = timeout
+            return {
+                "job_run_uid": self.uid,
+                "status": self.status,
+                "rows": ["first line"],
+            }
+
     fake_base.BaseObjectOrm = FakeBaseObjectOrm
-    fake_helpers.JobRun = FakeJobRun
+    fake_helpers.JobRun = CanonicalJobRun
     fake_client_pkg.utils = fake_utils
 
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
@@ -5704,6 +5723,7 @@ def test_get_project_job_run_logs_uses_client_model(cli_mod, monkeypatch):
 
     out = api_mod.get_project_job_run_logs("4c1d77c8-8a42-42b8-a9c1-06be9a336e5d")
     assert captured["job_run_uid_arg"] == "4c1d77c8-8a42-42b8-a9c1-06be9a336e5d"
+    assert captured["get_logs_timeout"] is None
     assert captured["jwt"] == ("acc", "ref")
     assert out == {
         "job_run_uid": "4c1d77c8-8a42-42b8-a9c1-06be9a336e5d",

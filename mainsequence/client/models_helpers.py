@@ -734,6 +734,26 @@ class JobRun(BaseObjectOrm, BasePydanticModel):
         description="Read-only helper field containing the associated job name.",
         examples=["daily-training-job"],
     )
+    project_uid: str | None = Field(
+        ...,
+        description="Read-only public UID of the associated project, or null for a run outside project scope.",
+        examples=["1d0530c0-65d1-4db0-856b-dc29d8260a09"],
+    )
+    project_name: str | None = Field(
+        ...,
+        description="Read-only name of the associated project, or null for a run outside project scope.",
+        examples=["market-data-service"],
+    )
+    project_branch_uid: str | None = Field(
+        ...,
+        description="Read-only public UID of the associated project branch, or null for an unscoped run.",
+        examples=["5a28020a-0f1b-47ee-aab8-334286234bea"],
+    )
+    project_branch_name: str | None = Field(
+        ...,
+        description="Read-only repository branch name associated with the run, or null for an unscoped run.",
+        examples=["main"],
+    )
 
     execution_start: datetime.datetime | None = Field(
         default=None,

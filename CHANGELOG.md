@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [6.0.34] - 2026-08-20
+
+### Fixed
+
+- Aligned strict JobRun list and detail parsing with the backend's canonical
+  read-only Project and ProjectBranch projections so CLI log retrieval accepts
+  current project-scoped responses.
+
 ## [6.0.33] - 2026-08-20
 
 ### Fixed
