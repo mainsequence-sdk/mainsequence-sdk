@@ -2409,9 +2409,6 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
     time_serie_source_code: str | None = None
     update_details: DataNodeUpdateDetails | None = None
     run_configuration: RunConfiguration | None = None
-    open_for_everyone: bool = Field(
-        default=False, description="Whether the ts is open for everyone"
-    )
 
     @property
     def data_source_uid(self):
@@ -3153,9 +3150,6 @@ class TimeIndexMetaTable(MetaTable):
     build_configuration_json_schema: dict[str, Any] | None = Field(
         None,
         description="JSON schema describing the DataNode update build configuration.",
-    )
-    data_source_open_for_everyone: bool = Field(
-        default=False, description="Whether the data source is open for everyone"
     )
     source_class_name: str | None = None
     cadence: str | None = Field(

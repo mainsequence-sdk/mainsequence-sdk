@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [6.0.35] - 2026-08-20
+
+### Removed
+
+- Removed deprecated generic global-visibility fields from DataNodeUpdate and
+  TimeIndexMetaTable client contracts and removed the corresponding persist-manager
+  mutator. Access remains governed by organization ownership and explicit grants.
+
 ## [6.0.34] - 2026-08-20
 
 ### Fixed

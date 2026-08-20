@@ -711,13 +711,6 @@ class BasePersistManager:
     def protect_from_deletion(self, protect_from_deletion: bool = True) -> None:
         self.storage_metadata.patch(protect_from_deletion=protect_from_deletion)
 
-    def open_for_everyone(self, open_for_everyone: bool = True) -> None:
-        if not self.data_node_update.open_for_everyone:
-            self.data_node_update.patch(open_for_everyone=open_for_everyone)
-
-        if not self.storage_metadata.open_for_everyone:
-            self.storage_metadata.patch(open_for_everyone=open_for_everyone)
-
     def get_df_between_dates(self, *args, **kwargs) -> pd.DataFrame:
         return self.data_source.get_data_by_time_index(
             *args,

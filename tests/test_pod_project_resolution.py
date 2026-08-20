@@ -282,7 +282,6 @@ def test_data_node_update_get_or_create_uses_current_project_branch_uid(monkeypa
                 "description": None,
                 "update_details": None,
                 "run_configuration": None,
-                "open_for_everyone": False,
             }
 
     def _make_request(**kwargs):
@@ -351,7 +350,6 @@ def test_deployed_data_node_update_omits_project_branch_input(monkeypatch):
                 "description": None,
                 "update_details": None,
                 "run_configuration": None,
-                "open_for_everyone": False,
             }
 
     def _make_request(**kwargs):
