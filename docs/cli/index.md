@@ -67,7 +67,7 @@ The flag is global and can be placed after the command you are running, for exam
 
 ```bash
 mainsequence user --json
-mainsequence agent list --json
+mainsequence agent list --environment-uid <ORGANIZATION_ENVIRONMENT_UID> --json
 mainsequence project images list --json
 mainsequence sdk latest --json
 mainsequence project current --json
@@ -107,7 +107,8 @@ Most frequently used flows:
 
 ```bash
 # Agents
-mainsequence agent list
+mainsequence agent list --environment-uid <ORGANIZATION_ENVIRONMENT_UID>
+mainsequence agent search "data research copilot" --environment-uid <ORGANIZATION_ENVIRONMENT_UID>
 mainsequence agent detail e0e75693-4110-464c-93e0-82c7fd9c9a23
 mainsequence agent create "Research Copilot" --description "Desk agent"
 mainsequence agent session list --agent-uid e0e75693-4110-464c-93e0-82c7fd9c9a23
@@ -464,6 +465,7 @@ ontology and each installed platform skill.
 - `mainsequence organization teams create`, `edit`, and `delete` use the SDK client `Team.create()`, `Team.patch()`, and `Team.delete()` paths.
 - `mainsequence organization teams can_view` and `can_edit` inspect team access through the SDK `Team.can_view()` and `Team.can_edit()` paths.
 - `mainsequence organization teams add_to_view`, `add_to_edit`, `remove_from_view`, and `remove_from_edit` mutate explicit user access on teams through the SDK `Team` permission-action paths.
+- `mainsequence agent list` and `search` require `--environment-uid` to scope discovery to one Organization Environment. This is read context and does not assign an environment to an Agent.
 - `mainsequence agent list`, `detail`, `create`, and `delete` use the SDK client `mainsequence.client.agent_runtime_models.Agent` paths.
 - `mainsequence agent session list` and `detail` use the SDK client `mainsequence.client.agent_runtime_models.AgentSession` path.
 - `mainsequence agent session list --agent-uid <AGENT_UID>` lists sessions for one agent directly.

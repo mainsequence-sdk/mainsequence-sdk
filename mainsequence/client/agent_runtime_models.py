@@ -56,6 +56,22 @@ class AgentSemanticSearchResult(BasePydanticModel):
         "",
         description="Short description returned by semantic search for the matched agent.",
     )
+    project_branch_uid: str = Field(
+        ...,
+        description="Public UID of the ProjectBranch that owns the matched Project Coding Agent.",
+    )
+    repository_branch: str = Field(
+        ...,
+        description="Repository branch of the matched Project Coding Agent.",
+    )
+    organization_project_environment_uid: str = Field(
+        ...,
+        description="Public UID of the Organization Environment that scoped the search result.",
+    )
+    organization_project_environment_name: str = Field(
+        ...,
+        description="Name of the Organization Environment that scoped the search result.",
+    )
     semantic_score: float = Field(
         ...,
         description="Vector similarity component of the semantic-search ranking.",
@@ -243,6 +259,15 @@ class Agent(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
         "agent_type": "str",
         "search": "str",
     }
+    READ_QUERY_PARAMS: ClassVar[dict[str, str]] = {
+        "organization_project_environment_uid": "uid",
+    }
+    READ_QUERY_PARAM_DESCRIPTIONS: ClassVar[dict[str, str]] = {
+        "organization_project_environment_uid": (
+            "Required Organization Environment boundary for Agent discovery. "
+            "This scopes reads and does not assign an environment to an Agent."
+        ),
+    }
 
     uid: str | None = Field(None, description="Public UID of the agent resource.")
     name: str = Field(
@@ -307,12 +332,34 @@ class Agent(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
             "ProjectBranch-scoped."
         ),
     )
+    repository_branch: str | None = Field(
+        ...,
+        description=(
+            "Read-only repository branch projected from the canonical ProjectBranch, "
+            "or null when the Agent is not ProjectBranch-scoped."
+        ),
+    )
+    organization_project_environment_uid: str | None = Field(
+        ...,
+        description=(
+            "Read-only public UID of the Organization Environment derived from the "
+            "canonical ProjectBranch, or null when the Agent is not environment-scoped."
+        ),
+    )
+    organization_project_environment_name: str | None = Field(
+        ...,
+        description=(
+            "Read-only name of the Organization Environment derived from the canonical "
+            "ProjectBranch, or null when the Agent is not environment-scoped."
+        ),
+    )
 
     @classmethod
     def semantic_search(
         cls,
         q: str,
         *,
+        organization_project_environment_uid: str,
         limit: int = 20,
         timeout=None,
     ) -> list[AgentSemanticSearchResult]:
@@ -321,7 +368,7 @@ class Agent(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
             POST <object_url>/semantic-search/
 
         Server behavior:
-        - results stay scoped to the caller organization
+        - results stay scoped to the requested Organization Environment
         - returns ranked lightweight agent search rows, not full Agent records
         """
         q = (q or "").strip()
@@ -333,6 +380,10 @@ class Agent(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
             raise ValueError("limit must be between 1 and 100")
 
         body: dict[str, Any] = {
+            "organization_project_environment_uid": cls._coerce_filter_uid(
+                organization_project_environment_uid,
+                field_name="organization_project_environment_uid",
+            ),
             "q": q,
             "limit": limit,
         }

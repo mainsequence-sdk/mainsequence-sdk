@@ -39,8 +39,15 @@ internally and sends a standard A2A message.
 3. Run:
 
 ```bash
-mainsequence agent search "<discoveryPrompt>" --limit 10 --json
+mainsequence agent search "<discoveryPrompt>" \
+  --environment-uid "<organizationEnvironmentUid>" \
+  --limit 10 \
+  --json
 ```
+
+Use the canonical Organization Environment UID associated with the target
+ProjectBranch. It scopes discovery only; it does not create, assign, or override an
+Agent's environment.
 
 4. Treat the CLI output as authoritative.
 5. Prefer the highest `combined_score` when present.
@@ -270,7 +277,7 @@ handle for a different task or conversation.
 ## Deterministic Execution Path
 
 1. Build the discovery prompt.
-2. Run `mainsequence agent search "<discoveryPrompt>" --limit <n> --json`.
+2. Run `mainsequence agent search "<discoveryPrompt>" --environment-uid "<organizationEnvironmentUid>" --limit <n> --json`.
 3. Select the target agent.
 4. Create or resolve the target session with `mainsequence agent session get_or_create`.
 5. Use the returned session `uid`.

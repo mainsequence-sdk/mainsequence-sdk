@@ -508,6 +508,7 @@ def test_list_organization_teams_uses_client_model(cli_mod, monkeypatch):
 def test_list_agents_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
+    environment_uid = "22222222-2222-4222-8222-222222222222"
 
     class FakeAgent:
         def __init__(self, uid, name):
@@ -532,12 +533,19 @@ def test_list_agents_uses_client_model(cli_mod, monkeypatch):
 
     monkeypatch.setattr(api_mod, "_run_sdk_model_operation", _run_sdk_model_operation)
 
-    out = api_mod.list_agents(timeout=9, filters={"agent_type": "custom"})
+    out = api_mod.list_agents(
+        organization_project_environment_uid=environment_uid,
+        timeout=9,
+        filters={"agent_type": "custom"},
+    )
     assert captured == {
         "module_name": "mainsequence.client.agent_runtime_models",
         "class_name": "Agent",
         "timeout": 9,
-        "filters": {"agent_type": "custom"},
+        "filters": {
+            "agent_type": "custom",
+            "organization_project_environment_uid": environment_uid,
+        },
     }
     assert out == [
         {
@@ -590,6 +598,7 @@ def test_get_project_repository_uses_public_client_model(cli_mod, monkeypatch):
 def test_semantic_search_agents_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
+    environment_uid = "22222222-2222-4222-8222-222222222222"
 
     class FakeSearchResult:
         def __init__(self):
@@ -616,8 +625,18 @@ def test_semantic_search_agents_uses_client_model(cli_mod, monkeypatch):
 
         class _ClientAgent:
             @classmethod
-            def semantic_search(cls, q, *, limit=20, timeout=None):
+            def semantic_search(
+                cls,
+                q,
+                *,
+                organization_project_environment_uid,
+                limit=20,
+                timeout=None,
+            ):
                 captured["q"] = q
+                captured["organization_project_environment_uid"] = (
+                    organization_project_environment_uid
+                )
                 captured["limit"] = limit
                 captured["timeout"] = timeout
                 return [FakeSearchResult()]
@@ -628,6 +647,7 @@ def test_semantic_search_agents_uses_client_model(cli_mod, monkeypatch):
 
     out = api_mod.semantic_search_agents(
         "data research",
+        organization_project_environment_uid=environment_uid,
         limit=10,
         timeout=17,
     )
@@ -635,6 +655,7 @@ def test_semantic_search_agents_uses_client_model(cli_mod, monkeypatch):
         "module_name": "mainsequence.client.agent_runtime_models",
         "class_name": "Agent",
         "q": "data research",
+        "organization_project_environment_uid": environment_uid,
         "limit": 10,
         "timeout": 17,
     }
@@ -6249,11 +6270,12 @@ def test_project_project_resource_delete_fastapi_requires_confirmation(
 
 
 def test_agent_list(cli_mod, runner, monkeypatch):
+    environment_uid = "22222222-2222-4222-8222-222222222222"
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(
         cli_mod,
         "list_agents",
-        lambda timeout=None, filters=None: [
+        lambda organization_project_environment_uid, timeout=None, filters=None: [
             {
                 "uid": "e0e75693-4110-464c-93e0-82c7fd9c9a23",
                 "name": "Research Copilot",
@@ -6267,7 +6289,10 @@ def test_agent_list(cli_mod, runner, monkeypatch):
         ],
     )
 
-    result = runner.invoke(cli_mod.app, ["agent", "list"])
+    result = runner.invoke(
+        cli_mod.app,
+        ["agent", "list", "--environment-uid", environment_uid],
+    )
     assert result.exit_code == 0
     assert "Agents" in result.output
     assert "UID" in result.output
@@ -6278,11 +6303,12 @@ def test_agent_list(cli_mod, runner, monkeypatch):
 
 
 def test_agent_list_json(cli_mod, runner, monkeypatch):
+    environment_uid = "22222222-2222-4222-8222-222222222222"
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(
         cli_mod,
         "list_agents",
-        lambda timeout=None, filters=None: [
+        lambda organization_project_environment_uid, timeout=None, filters=None: [
             {
                 "uid": "e0e75693-4110-464c-93e0-82c7fd9c9a23",
                 "name": "Research Copilot",
@@ -6296,7 +6322,10 @@ def test_agent_list_json(cli_mod, runner, monkeypatch):
         ],
     )
 
-    result = runner.invoke(cli_mod.app, ["agent", "list", "--json"])
+    result = runner.invoke(
+        cli_mod.app,
+        ["agent", "list", "--environment-uid", environment_uid, "--json"],
+    )
     assert result.exit_code == 0
     payload = json.loads(result.output)
     assert payload[0]["uid"] == "e0e75693-4110-464c-93e0-82c7fd9c9a23"
@@ -6305,12 +6334,14 @@ def test_agent_list_json(cli_mod, runner, monkeypatch):
 
 def test_agent_search(cli_mod, runner, monkeypatch):
     captured = {}
+    environment_uid = "22222222-2222-4222-8222-222222222222"
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
 
-    def _search(q, *, limit=20, timeout=None):
+    def _search(q, *, organization_project_environment_uid, limit=20, timeout=None):
         captured.update(
             {
                 "q": q,
+                "organization_project_environment_uid": organization_project_environment_uid,
                 "limit": limit,
                 "timeout": timeout,
             }
@@ -6334,6 +6365,8 @@ def test_agent_search(cli_mod, runner, monkeypatch):
             "agent",
             "search",
             "data research",
+            "--environment-uid",
+            environment_uid,
             "--limit",
             "10",
             "--timeout",
@@ -6343,6 +6376,7 @@ def test_agent_search(cli_mod, runner, monkeypatch):
     assert result.exit_code == 0
     assert captured == {
         "q": "data research",
+        "organization_project_environment_uid": environment_uid,
         "limit": 10,
         "timeout": 17,
     }
@@ -6356,6 +6390,7 @@ def test_agent_search(cli_mod, runner, monkeypatch):
 
 
 def test_agent_search_json(cli_mod, runner, monkeypatch):
+    environment_uid = "22222222-2222-4222-8222-222222222222"
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(
         cli_mod,
@@ -6372,7 +6407,17 @@ def test_agent_search_json(cli_mod, runner, monkeypatch):
         ],
     )
 
-    result = runner.invoke(cli_mod.app, ["agent", "search", "data research", "--json"])
+    result = runner.invoke(
+        cli_mod.app,
+        [
+            "agent",
+            "search",
+            "data research",
+            "--environment-uid",
+            environment_uid,
+            "--json",
+        ],
+    )
     assert result.exit_code == 0
     payload = json.loads(result.output)
     assert payload[0]["uid"] == "e0e75693-4110-464c-93e0-82c7fd9c9a23"

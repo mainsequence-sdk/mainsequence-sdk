@@ -3548,6 +3548,7 @@ def _format_agent_session_details(
 
 
 def _agent_list_impl(
+    organization_project_environment_uid: str,
     timeout: int | None,
     filter_entries: list[str] | None,
     show_filters: bool,
@@ -3561,7 +3562,11 @@ def _agent_list_impl(
     _require_login()
 
     try:
-        agents = list_agents(timeout=timeout, filters=filters)
+        agents = list_agents(
+            organization_project_environment_uid=organization_project_environment_uid,
+            timeout=timeout,
+            filters=filters,
+        )
     except ApiError as e:
         error(f"Agents fetch failed: {e}")
         raise typer.Exit(1) from e
@@ -3632,6 +3637,7 @@ def _agent_detail_impl(
 def _agent_search_impl(
     *,
     q: str,
+    organization_project_environment_uid: str,
     limit: int,
     timeout: int | None,
 ) -> None:
@@ -3640,6 +3646,7 @@ def _agent_search_impl(
     try:
         results = semantic_search_agents(
             q,
+            organization_project_environment_uid=organization_project_environment_uid,
             limit=limit,
             timeout=timeout,
         )
@@ -4766,6 +4773,11 @@ def _print_data_node_storage_search_section(
 
 @agent.command("list")
 def agent_list_cmd(
+    organization_project_environment_uid: uuid.UUID = typer.Option(
+        ...,
+        "--environment-uid",
+        help="Organization Environment UID that scopes Agent discovery.",
+    ),
     filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
     show_filters: bool = typer.Option(
         False, "--show-filters", help="Show the filters supported by this list command and exit."
@@ -4776,6 +4788,7 @@ def agent_list_cmd(
     List agents visible to the authenticated user.
     """
     _agent_list_impl(
+        organization_project_environment_uid=str(organization_project_environment_uid),
         timeout=timeout,
         filter_entries=filter_entries,
         show_filters=show_filters,
@@ -4801,6 +4814,11 @@ def agent_detail_cmd(
 @agent.command("search")
 def agent_search_cmd(
     q: str = typer.Argument(..., help="Natural-language query to match against agents."),
+    organization_project_environment_uid: uuid.UUID = typer.Option(
+        ...,
+        "--environment-uid",
+        help="Organization Environment UID that scopes Agent discovery.",
+    ),
     limit: int = typer.Option(
         20, "--limit", min=1, max=100, help="Maximum number of ranked agent matches to return."
     ),
@@ -4820,6 +4838,7 @@ def agent_search_cmd(
     """
     _agent_search_impl(
         q=q,
+        organization_project_environment_uid=str(organization_project_environment_uid),
         limit=limit,
         timeout=timeout,
     )

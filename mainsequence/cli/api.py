@@ -1166,17 +1166,20 @@ def delete_organization_team(
 
 def list_agents(
     *,
+    organization_project_environment_uid: str,
     timeout: int | None = None,
     filters: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """
-    List agents via SDK client model.
+    List agents in one Organization Environment via the SDK client model.
     """
     try:
+        read_params = dict(filters or {})
+        read_params["organization_project_environment_uid"] = organization_project_environment_uid
         payload = _run_sdk_model_operation(
             module_name="mainsequence.client.agent_runtime_models",
             class_name="Agent",
-            operation=lambda ClientAgent: ClientAgent.filter(timeout=timeout, **(filters or {})),
+            operation=lambda ClientAgent: ClientAgent.filter(timeout=timeout, **read_params),
         )
         return [_sdk_object_to_dict(item) for item in list(payload or [])]
     except Exception as e:
@@ -1212,11 +1215,12 @@ def get_agent(
 def semantic_search_agents(
     q: str,
     *,
+    organization_project_environment_uid: str,
     limit: int = 20,
     timeout: int | None = None,
 ) -> list[dict[str, Any]]:
     """
-    Search agents via SDK client `Agent.semantic_search()`.
+    Search agents in one Organization Environment via `Agent.semantic_search()`.
     """
     try:
         payload = _run_sdk_model_operation(
@@ -1224,6 +1228,7 @@ def semantic_search_agents(
             class_name="Agent",
             operation=lambda ClientAgent: ClientAgent.semantic_search(
                 q,
+                organization_project_environment_uid=organization_project_environment_uid,
                 limit=limit,
                 timeout=timeout,
             ),

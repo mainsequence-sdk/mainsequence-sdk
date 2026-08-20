@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [6.0.33] - 2026-08-20
+
+### Fixed
+
+- Aligned Agent list and detail parsing with the backend's canonical read-only
+  ProjectBranch and Organization Environment projections, preserving required
+  response keys whose values may be null for unscoped Agents.
+- Added the required Organization Environment discovery scope to Agent listing
+  and semantic search, including canonical semantic-search result projections
+  and corresponding CLI and skill guidance.
+
 ## [6.0.32] - 2026-08-19
 
 ### Changed

@@ -1655,6 +1655,7 @@ def test_agent_runtime_models_deserialize_backend_uid_payloads():
     user_uid = "fdf409f7-d16f-4f71-986b-9057db6c7eca"
     service_uid = "ac9e221d-1cd6-464c-a253-e302754872c1"
     project_branch_uid = "9d81d63f-b8c9-404d-9f1a-5f2ad29dbf16"
+    environment_uid = "22222222-2222-4222-8222-222222222222"
 
     agent = agent_models_mod.Agent.model_validate(
         {
@@ -1673,6 +1674,9 @@ def test_agent_runtime_models_deserialize_backend_uid_payloads():
             "agent_service_uid": service_uid,
             "agent_service_automatic_deployment": True,
             "project_branch_uid": project_branch_uid,
+            "repository_branch": "main",
+            "organization_project_environment_uid": environment_uid,
+            "organization_project_environment_name": "production",
         }
     )
     assert agent.uid == agent_uid
@@ -1680,6 +1684,9 @@ def test_agent_runtime_models_deserialize_backend_uid_payloads():
     assert agent.agent_service_uid == service_uid
     assert agent.agent_service_automatic_deployment is True
     assert agent.project_branch_uid == project_branch_uid
+    assert agent.repository_branch == "main"
+    assert agent.organization_project_environment_uid == environment_uid
+    assert agent.organization_project_environment_name == "production"
 
     search_result = agent_models_mod.AgentSemanticSearchResult.model_validate(
         {
@@ -1687,12 +1694,20 @@ def test_agent_runtime_models_deserialize_backend_uid_payloads():
             "name": "Research Copilot",
             "agent_type": "custom",
             "description": "Research assistant.",
+            "project_branch_uid": project_branch_uid,
+            "repository_branch": "main",
+            "organization_project_environment_uid": environment_uid,
+            "organization_project_environment_name": "production",
             "semantic_score": 0.91,
             "text_score": 0.74,
             "combined_score": 0.85,
         }
     )
     assert search_result.uid == agent_uid
+    assert search_result.project_branch_uid == project_branch_uid
+    assert search_result.repository_branch == "main"
+    assert search_result.organization_project_environment_uid == environment_uid
+    assert search_result.organization_project_environment_name == "production"
 
     session = agent_models_mod.AgentSession.model_validate(
         {
@@ -1762,6 +1777,158 @@ def test_agent_runtime_models_deserialize_backend_uid_payloads():
     assert service.agent_type == "project-executor"
     assert service.scope["project_branch_uid"] == "project-branch-uid"
     assert service.service_runtime_uid == "runtime-uid"
+
+
+def test_agent_scope_projection_is_required_but_nullable():
+    payload = {
+        "name": "Astro Orchestrator",
+        "llm_thinking": "medium",
+        "repository_branch": None,
+        "organization_project_environment_uid": None,
+        "organization_project_environment_name": None,
+    }
+
+    agent = agent_models_mod.Agent.model_validate(payload)
+
+    assert agent.repository_branch is None
+    assert agent.organization_project_environment_uid is None
+    assert agent.organization_project_environment_name is None
+
+    missing_projection = dict(payload)
+    missing_projection.pop("repository_branch")
+    with pytest.raises(ValidationError, match="repository_branch"):
+        agent_models_mod.Agent.model_validate(missing_projection)
+
+
+def test_agent_filter_sends_environment_read_scope_and_parses_projection(monkeypatch):
+    captured = {}
+    environment_uid = uuid.UUID("22222222-2222-4222-8222-222222222222")
+
+    class FakeResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {
+                "results": [
+                    {
+                        "uid": "e0e75693-4110-464c-93e0-82c7fd9c9a23",
+                        "name": "Project Executor",
+                        "llm_thinking": "medium",
+                        "project_branch_uid": "9d81d63f-b8c9-404d-9f1a-5f2ad29dbf16",
+                        "repository_branch": "main",
+                        "organization_project_environment_uid": str(environment_uid),
+                        "organization_project_environment_name": "production",
+                    }
+                ],
+                "next": None,
+            }
+
+    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
+        captured.update(
+            {
+                "r_type": r_type,
+                "url": url,
+                "payload": payload,
+                "timeout": time_out,
+            }
+        )
+        return FakeResponse()
+
+    monkeypatch.setattr(base_mod, "make_request", _fake_make_request)
+    monkeypatch.setattr(
+        agent_models_mod.Agent,
+        "build_session",
+        classmethod(lambda cls: object()),
+    )
+
+    agents = agent_models_mod.Agent.filter(
+        organization_project_environment_uid=environment_uid,
+        agent_type="project-executor",
+        timeout=11,
+    )
+
+    assert captured == {
+        "r_type": "GET",
+        "url": f"{agent_models_mod.Agent.get_object_url()}/",
+        "payload": {
+            "params": {
+                "agent_type": "project-executor",
+                "organization_project_environment_uid": str(environment_uid),
+            }
+        },
+        "timeout": 11,
+    }
+    assert len(agents) == 1
+    assert agents[0].repository_branch == "main"
+    assert agents[0].organization_project_environment_uid == str(environment_uid)
+
+
+def test_agent_semantic_search_sends_environment_scope_and_parses_projection(monkeypatch):
+    captured = {}
+    environment_uid = uuid.UUID("22222222-2222-4222-8222-222222222222")
+
+    class FakeResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return [
+                {
+                    "uid": "e0e75693-4110-464c-93e0-82c7fd9c9a23",
+                    "name": "Project Executor",
+                    "agent_type": "project-executor",
+                    "description": "Project coding agent.",
+                    "project_branch_uid": "9d81d63f-b8c9-404d-9f1a-5f2ad29dbf16",
+                    "repository_branch": "main",
+                    "organization_project_environment_uid": str(environment_uid),
+                    "organization_project_environment_name": "production",
+                    "semantic_score": 0.91,
+                    "text_score": 0.74,
+                    "combined_score": 0.85,
+                }
+            ]
+
+    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
+        captured.update(
+            {
+                "r_type": r_type,
+                "url": url,
+                "payload": payload,
+                "timeout": time_out,
+            }
+        )
+        return FakeResponse()
+
+    monkeypatch.setattr(agent_models_mod, "make_request", _fake_make_request)
+    monkeypatch.setattr(
+        agent_models_mod.Agent,
+        "build_session",
+        classmethod(lambda cls: object()),
+    )
+
+    results = agent_models_mod.Agent.semantic_search(
+        "project coding",
+        organization_project_environment_uid=environment_uid,
+        limit=7,
+        timeout=13,
+    )
+
+    assert captured == {
+        "r_type": "POST",
+        "url": f"{agent_models_mod.Agent.get_object_url()}/semantic-search/",
+        "payload": {
+            "json": {
+                "organization_project_environment_uid": str(environment_uid),
+                "q": "project coding",
+                "limit": 7,
+            }
+        },
+        "timeout": 13,
+    }
+    assert len(results) == 1
+    assert results[0].project_branch_uid == "9d81d63f-b8c9-404d-9f1a-5f2ad29dbf16"
+    assert results[0].organization_project_environment_name == "production"
 
 
 def test_agent_session_filter_supports_archive_history_query(monkeypatch):
@@ -3065,6 +3232,9 @@ def test_agent_get_or_create_session_posts_new_contract(monkeypatch):
         llm_provider="openai",
         llm_model="gpt-5.4",
         llm_thinking="medium",
+        repository_branch=None,
+        organization_project_environment_uid=None,
+        organization_project_environment_name=None,
     )
 
     class FakeResponse:
@@ -3156,6 +3326,9 @@ def test_agent_get_or_create_session_by_uid_sends_only_session_uid(monkeypatch):
         llm_provider="openai",
         llm_model="gpt-5.4",
         llm_thinking="medium",
+        repository_branch=None,
+        organization_project_environment_uid=None,
+        organization_project_environment_name=None,
     )
 
     class FakeResponse:
