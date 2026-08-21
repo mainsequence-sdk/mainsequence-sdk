@@ -431,6 +431,10 @@ class Agent(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
         - Send exactly one lookup key: `session_uid` or `handle_unique_id`.
         - `session_uid` resolves an existing AgentSession for this Agent.
         - `handle_unique_id` gets or creates a reusable session handle.
+        - For ordinary User requests, the backend owns a root session with that User.
+        - For runtime A2A requests, `parent_session_uid` proves the calling Agent;
+          the backend inherits the parent session User into the child and handle.
+        - The SDK never supplies a credential owner or forwards provider credentials.
         - Creation options are valid only with `handle_unique_id`.
         - Response is the canonical AgentSessionSerializer payload.
         """
@@ -1261,7 +1265,12 @@ class AgentSession(BaseObjectOrm, BasePydanticModel):
         None, description="Public UID of the agent definition used for this session."
     )
     created_by_user_uid: str | None = Field(
-        None, description="Public UID of the actor who created the session."
+        None,
+        description=(
+            "Public UID of the session invocation and model-provider credential "
+            "owner. For delegated sessions this is inherited from the immediate "
+            "parent and may differ from the runtime responsible User."
+        ),
     )
     parent_session_uid: str | None = Field(
         None, description="Public UID of the parent session, if any."
@@ -1273,7 +1282,7 @@ class AgentSession(BaseObjectOrm, BasePydanticModel):
     created_by_user: int | None = Field(
         None,
         exclude=True,
-        description="Legacy internal user id of the actor who created the session record.",
+        description="Legacy internal user id for the session owner.",
     )
     agent: int | Agent | None = Field(
         None,

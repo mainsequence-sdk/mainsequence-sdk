@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [6.0.36] - 2026-08-21
+
+### Changed
+
+- Documented backend-owned AgentSession user inheritance for direct and A2A
+  execution. SDK callers provide parent-session provenance but never select a
+  model-provider credential owner or forward provider credentials.
+
 ## [6.0.35] - 2026-08-20
 
 ### Removed
