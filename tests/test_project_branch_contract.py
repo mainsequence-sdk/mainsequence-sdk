@@ -17,6 +17,9 @@ def logical_project_payload() -> dict:
     return {
         "uid": PROJECT_UID,
         "project_name": "Analytics",
+        "project_type": "python",
+        "primary_language": "python",
+        "framework": "mainsequence",
         "default_metatables_data_source": None,
         "default_metatables_data_source_uid": None,
         "git_repository_uid": REPOSITORY_UID,
@@ -35,9 +38,6 @@ def project_branch_payload() -> dict:
         "project_uid": PROJECT_UID,
         "project_name": "Analytics",
         "repository_branch": "main",
-        "project_type": "python",
-        "primary_language": "python",
-        "framework": "",
         "metatables_data_source": None,
         "metatables_data_source_uid": None,
         "default_base_image": {
@@ -68,6 +68,9 @@ def test_project_is_only_the_logical_aggregate_contract():
     project = models_foundry.Project(**logical_project_payload())
 
     assert project.uid == PROJECT_UID
+    assert project.project_type == "python"
+    assert project.primary_language == "python"
+    assert project.framework == "mainsequence"
     assert project.branches[0].uid == PROJECT_BRANCH_UID
     assert not hasattr(project, "repository_branch")
 
@@ -75,6 +78,30 @@ def test_project_is_only_the_logical_aggregate_contract():
         models_foundry.Project(
             **logical_project_payload(),
             repository_branch="main",
+        )
+
+
+def test_project_requires_canonical_type_and_derived_technology():
+    for missing_field in ("project_type", "primary_language", "framework"):
+        payload = logical_project_payload()
+        payload.pop(missing_field)
+
+        with pytest.raises(ValidationError):
+            models_foundry.Project(**payload)
+
+
+def test_project_quick_search_requires_project_type():
+    result = models_foundry.ProjectQuickSearchResult(
+        uid=PROJECT_UID,
+        project_name="Analytics",
+        project_type="python",
+    )
+
+    assert result.project_type == "python"
+    with pytest.raises(ValidationError):
+        models_foundry.ProjectQuickSearchResult(
+            uid=PROJECT_UID,
+            project_name="Analytics",
         )
 
 
@@ -86,6 +113,9 @@ def test_project_branch_owns_branch_configuration():
     assert branch.default_base_image.uid == "61111111-1111-4111-8111-111111111111"
     assert branch.organization_project_environment_uid is None
     assert branch.organization_project_environment_name is None
+    assert not hasattr(branch, "project_type")
+    assert not hasattr(branch, "primary_language")
+    assert not hasattr(branch, "framework")
     assert not hasattr(branch, "git_ssh_url")
     assert not hasattr(branch, "labels")
 

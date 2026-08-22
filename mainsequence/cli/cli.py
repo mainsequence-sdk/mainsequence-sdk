@@ -7461,7 +7461,7 @@ def project_create_cmd(
     project_name:
         Project name. If omitted, prompt is shown.
     project_type:
-        Project type used for the initial ProjectBranch.
+        Immutable type of the logical Project, shared by every ProjectBranch.
     default_metatables_data_source_uid:
         Required logical Project default MetaTables data source UID. It is
         assigned automatically to the initial main ProjectBranch.

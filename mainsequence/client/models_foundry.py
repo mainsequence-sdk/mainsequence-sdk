@@ -126,6 +126,12 @@ class ProjectQuickSearchResult(BasePydanticModel):
         description="Display name of the matching project.",
         json_schema_extra={"label": "Project Name"},
     )
+    project_type: str = Field(
+        ...,
+        title="Project Type",
+        description="Immutable type of the matching logical Project.",
+        json_schema_extra={"label": "Project Type"},
+    )
 
 
 class ProjectBranchLight(BasePydanticModel):
@@ -153,6 +159,7 @@ class ProjectBulkDeleteResponse(BasePydanticModel):
 class Project(LabelableObjectMixin, ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
         "project_name": ["in", "exact", "contains"],
+        "project_type": ["exact"],
         "uid": ["in", "exact"],
         "archived": ["exact"],
         "labels": ["exact", "in", "contains"],
@@ -161,6 +168,7 @@ class Project(LabelableObjectMixin, ShareableObjectMixin, BasePydanticModel, Bas
         "uid": "str",
         "uid__in": "str",
         "project_name": "str",
+        "project_type": "str",
         "archived": "bool",
         "labels": "str",
         "labels__in": "str",
@@ -179,6 +187,24 @@ class Project(LabelableObjectMixin, ShareableObjectMixin, BasePydanticModel, Bas
         description="Human-readable name of the project.",
         examples=["Data Research Pipeline"],
         json_schema_extra={"label": "Project Name"},
+    )
+    project_type: str = Field(
+        ...,
+        title="Project Type",
+        description="Immutable type shared by every branch of this logical Project.",
+        json_schema_extra={"label": "Project Type"},
+    )
+    primary_language: str = Field(
+        ...,
+        title="Primary Language",
+        description="Read-only language projection derived from project_type.",
+        json_schema_extra={"label": "Primary Language"},
+    )
+    framework: str = Field(
+        ...,
+        title="Framework",
+        description="Read-only framework projection derived from project_type.",
+        json_schema_extra={"label": "Framework"},
     )
     default_metatables_data_source: _DataSource | None = None
     default_metatables_data_source_uid: str | None = None
@@ -484,9 +510,6 @@ class ProjectBranch(BasePydanticModel, BaseObjectOrm):
     project_uid: str
     project_name: str
     repository_branch: str
-    project_type: str
-    primary_language: str
-    framework: str
     metatables_data_source: _DataSource | None = None
     metatables_data_source_uid: str | None = None
     organization_project_environment_uid: str | None = None

@@ -42,6 +42,9 @@ def _project_payload_public() -> dict:
     return {
         "uid": PROJECT_UID,
         "project_name": "Markets Repository",
+        "project_type": "python",
+        "primary_language": "python",
+        "framework": "mainsequence",
         "default_metatables_data_source": {
             "uid": DATA_SOURCE_UID,
             "data_source_uid": DATA_SOURCE_UID,
@@ -68,9 +71,6 @@ def _project_branch_payload_public() -> dict:
         "project_uid": PROJECT_UID,
         "project_name": "Markets Repository",
         "repository_branch": "main",
-        "project_type": "python",
-        "primary_language": "python",
-        "framework": "",
         "metatables_data_source": {
             "uid": DATA_SOURCE_UID,
             "data_source_uid": DATA_SOURCE_UID,

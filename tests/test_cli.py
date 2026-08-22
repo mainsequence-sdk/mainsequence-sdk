@@ -5341,7 +5341,7 @@ def test_search_projects_uses_client_model(cli_mod, monkeypatch):
                     model_dump=lambda mode="json": {
                         "uid": "project-uid-11",
                         "project_name": "alpha-research",
-                        "repository_branch": "main",
+                        "project_type": "python",
                         "cluster_id": 7,
                     }
                 ),
@@ -5349,7 +5349,7 @@ def test_search_projects_uses_client_model(cli_mod, monkeypatch):
                     model_dump=lambda mode="json": {
                         "uid": "project-uid-12",
                         "project_name": "data-live",
-                        "repository_branch": "release",
+                        "project_type": "vite_react",
                         "cluster_id": 9,
                     }
                 ),
@@ -5374,13 +5374,13 @@ def test_search_projects_uses_client_model(cli_mod, monkeypatch):
         {
             "uid": "project-uid-11",
             "project_name": "alpha-research",
-            "repository_branch": "main",
+            "project_type": "python",
             "cluster_id": 7,
         },
         {
             "uid": "project-uid-12",
             "project_name": "data-live",
-            "repository_branch": "release",
+            "project_type": "vite_react",
             "cluster_id": 9,
         },
     ]
