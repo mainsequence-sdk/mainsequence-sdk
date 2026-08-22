@@ -13,7 +13,13 @@ from pydantic import Field, SecretStr
 
 from mainsequence.logconf import logger
 
-from .base import BaseObjectOrm, BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin
+from .base import (
+    BaseObjectOrm,
+    BasePydanticModel,
+    CurrentProjectBranchCollectionMixin,
+    LabelableObjectMixin,
+    ShareableObjectMixin,
+)
 from .dtype_codec import (
     TIMESTAMP_TZ,
     token_to_pandas_series,
@@ -206,8 +212,6 @@ class Project(LabelableObjectMixin, ShareableObjectMixin, BasePydanticModel, Bas
         description="Read-only framework projection derived from project_type.",
         json_schema_extra={"label": "Framework"},
     )
-    default_metatables_data_source: _DataSource | None = None
-    default_metatables_data_source_uid: str | None = None
     git_repository_uid: str | None = None
     archived: bool = False
     created_by: str | int | dict[str, Any] | None = Field(
@@ -275,7 +279,6 @@ class Project(LabelableObjectMixin, ShareableObjectMixin, BasePydanticModel, Bas
         cls,
         *,
         project_name: str,
-        default_metatables_data_source_uid: str | _DataSource | dict[str, Any],
         project_type: str = "python",
         default_base_image_uid: str | ProjectBaseImage | dict[str, Any] | None = None,
         github_org_uid: str | GithubOrganization | dict[str, Any] | None = None,
@@ -289,7 +292,6 @@ class Project(LabelableObjectMixin, ShareableObjectMixin, BasePydanticModel, Bas
         Sends:
           - project_name
           - project_type
-          - default_metatables_data_source_uid (required)
           - default_base_image_uid (optional)
           - github_org_uid (optional)
           - env_vars (optional list of {name,value})
@@ -297,14 +299,6 @@ class Project(LabelableObjectMixin, ShareableObjectMixin, BasePydanticModel, Bas
         url = cls.get_object_url() + "/"
 
         payload: dict[str, Any] = {"project_name": project_name, "project_type": project_type}
-
-        ds_uid = cls._coerce_uid(
-            default_metatables_data_source_uid,
-            field_name="default_metatables_data_source_uid",
-        )
-        if ds_uid is None:
-            raise ValueError("default_metatables_data_source_uid is required")
-        payload["default_metatables_data_source_uid"] = ds_uid
 
         img_uid = cls._coerce_uid(default_base_image_uid, field_name="default_base_image_uid")
         if img_uid is not None:
@@ -475,8 +469,7 @@ class Project(LabelableObjectMixin, ShareableObjectMixin, BasePydanticModel, Bas
             loaders=type(self).LOADERS,
             r_type="POST",
             url=(
-                f"{type(self).get_object_url()}/{self._public_detail_reference()}"
-                "/add-deploy-key/"
+                f"{type(self).get_object_url()}/{self._public_detail_reference()}/add-deploy-key/"
             ),
             payload={"json": {"key_title": key_title, "public_key": public_key}},
             time_out=timeout,
@@ -521,8 +514,37 @@ class ProjectBranch(BasePydanticModel, BaseObjectOrm):
     is_initialized: bool
     created_by: str | int | dict[str, Any] | None = None
 
+    @classmethod
+    def resolve_git_context(
+        cls,
+        *,
+        repository_identity: str,
+        repository_branch: str,
+        commit_sha: str,
+        timeout=None,
+    ) -> ProjectBranchGitContextResolution:
+        """Resolve the authenticated caller's exact Git source context."""
+
+        payload = {
+            "repository_identity": repository_identity,
+            "repository_branch": repository_branch,
+            "commit_sha": commit_sha,
+        }
+        response = make_request(
+            s=cls.build_session(),
+            loaders=cls.LOADERS,
+            r_type="POST",
+            url=f"{cls.get_object_url()}/resolve-git-context/",
+            payload={"json": payload},
+            time_out=timeout,
+        )
+        raise_for_response(response, payload=payload)
+        return ProjectBranchGitContextResolution.model_validate(response.json())
+
     def _action_url(self, action: str) -> str:
-        return f"{type(self).get_object_url()}/{self._public_detail_reference()}/{action.strip('/')}/"
+        return (
+            f"{type(self).get_object_url()}/{self._public_detail_reference()}/{action.strip('/')}/"
+        )
 
     def _get_action(self, action: str, *, params=None, timeout=None) -> Any:
         r = make_request(
@@ -577,6 +599,14 @@ class ProjectBranch(BasePydanticModel, BaseObjectOrm):
 
     def __str__(self):
         return yaml.safe_dump(self.model_dump(), sort_keys=False, default_flow_style=False)
+
+
+class ProjectBranchGitContextResolution(BasePydanticModel):
+    canonical_repository_identity: str
+    repository_branch: str
+    repository_ref: str
+    commit_sha: str
+    project_branch: ProjectBranch
 
 
 class GitRepositoryBranch(BasePydanticModel):
@@ -662,7 +692,7 @@ class ProjectImageSourceProvenance(BasePydanticModel):
     output_image_digest: str | None = None
 
 
-class ProjectImage(BasePydanticModel, BaseObjectOrm):
+class ProjectImage(CurrentProjectBranchCollectionMixin, BasePydanticModel, BaseObjectOrm):
     """
     Image build from a a project
     """
@@ -676,6 +706,7 @@ class ProjectImage(BasePydanticModel, BaseObjectOrm):
         "related_project_branch_uid": "uid",
         "related_project_branch_uid__in": "uid",
     }
+    PROJECT_BRANCH_FILTER_FIELD: ClassVar[str] = "related_project_branch_uid"
 
     uid: str = Field(..., description="Public UID of the project image")
     title: str | None = Field(None, description="Human-readable image title")
@@ -736,12 +767,16 @@ class ProjectImage(BasePydanticModel, BaseObjectOrm):
         """
         payload: dict[str, Any] = {"project_repo_hash": project_repo_hash}
 
-        project_branch_uid = cls._coerce_uid(
+        supplied_project_branch_uid = cls._coerce_uid(
             related_project_branch_uid,
             field_name="related_project_branch_uid",
         )
-        if project_branch_uid is not None:
-            payload["related_project_branch_uid"] = project_branch_uid
+        from mainsequence.project_context import resolve_project_branch_uid
+
+        payload["related_project_branch_uid"] = resolve_project_branch_uid(
+            "ProjectImage.create",
+            supplied_uid=supplied_project_branch_uid,
+        )
 
         image_uid = cls._coerce_uid(base_image_uid, field_name="base_image_uid")
         if image_uid is not None:

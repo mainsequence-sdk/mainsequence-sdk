@@ -25,6 +25,7 @@ from mainsequence.meta_tables.migrations import (
     load_alembic_metatable_migration_provider,
     scaffold_migration_package,
 )
+from mainsequence.project_context import require_project_branch_context
 
 migrations = typer.Typer(help="Alembic-owned MetaTable migration commands")
 METATABLE_COLLECTION_ENDPOINT = "/api/v1/meta-tables/"
@@ -769,10 +770,7 @@ def scaffold(
     _emit(
         {
             "root": str(result.root),
-            "files": [
-                {"path": str(file.path), "action": file.action}
-                for file in result.files
-            ],
+            "files": [{"path": str(file.path), "action": file.action} for file in result.files],
         },
         json_output=json_output,
     )
@@ -791,6 +789,7 @@ def current(
 ) -> None:
     """Read current Alembic revision through a scoped migration credential."""
 
+    require_project_branch_context("mainsequence migrations current")
     command = _load_alembic_command("current")
     migration = _load_migration(provider)
     alembic_output = _AlembicOutput()
@@ -854,6 +853,7 @@ def revision(
 ) -> None:
     """Create a normal Alembic revision for the selected provider."""
 
+    require_project_branch_context("mainsequence migrations revision")
     command = _load_alembic_command("revision")
     migration = _load_migration(provider)
     resolved_message = (message or "").strip() or "migration"
@@ -909,6 +909,7 @@ def upgrade(
 ) -> None:
     """Run Alembic upgrade directly and finalize reserved MetaTables."""
 
+    require_project_branch_context("mainsequence migrations upgrade")
     command = _load_alembic_command("upgrade")
     migration = _load_migration(provider)
     alembic_output = _AlembicOutput()
@@ -961,6 +962,7 @@ def downgrade(
 ) -> None:
     """Run Alembic downgrade directly and finalize reserved MetaTables."""
 
+    require_project_branch_context("mainsequence migrations downgrade")
     command = _load_alembic_command("downgrade")
     migration = _load_migration(provider)
     alembic_output = _AlembicOutput()

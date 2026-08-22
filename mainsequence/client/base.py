@@ -68,6 +68,35 @@ class BasePydanticModel(BaseModel):
         cls.orm_class = cls.__name__
 
 
+class CurrentProjectBranchCollectionMixin:
+    """Scope ordinary collection reads to the process ProjectBranch context."""
+
+    PROJECT_BRANCH_FILTER_FIELD: ClassVar[str] = "project_branch_uid"
+
+    @classmethod
+    def iter_filter(cls, timeout=None, **kwargs):
+        from mainsequence.project_context import scope_current_project_branch_filters
+
+        scoped_filters = scope_current_project_branch_filters(
+            f"{cls.__name__}.filter",
+            kwargs,
+            field_name=cls.PROJECT_BRANCH_FILTER_FIELD,
+        )
+        return super().iter_filter(timeout=timeout, **scoped_filters)
+
+    @classmethod
+    def iter_filter_admin(cls, timeout=None, **kwargs):
+        """Intentionally enumerate with explicit administrative filter scope."""
+
+        return super().iter_filter(timeout=timeout, **kwargs)
+
+    @classmethod
+    def filter_admin(cls, timeout=None, **kwargs):
+        """List objects without current-run inference for an explicit admin flow."""
+
+        return list(cls.iter_filter_admin(timeout=timeout, **kwargs))
+
+
 class BaseObjectOrm:
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]] | None] = None
     FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str | Callable[..., Any]]] = {}

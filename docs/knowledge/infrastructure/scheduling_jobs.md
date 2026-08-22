@@ -259,6 +259,11 @@ branch-tip, or `latest` job mode.
 
 The Python client is useful when job creation itself is part of your automation. It is the right tool when you want to provision jobs from code rather than from a shell session.
 
+Run this code from the intended Project checkout. The SDK resolves the canonical
+Git repository, attached branch, and exact HEAD commit once for the process,
+maps them to ProjectBranch, and uses that immutable context for every Job
+operation. Application code does not select a ProjectBranch UID.
+
 Examples below use the public client imports:
 
 ```python
@@ -272,7 +277,6 @@ from mainsequence.client import CrontabSchedule, IntervalSchedule, Job, JobRun
 ```python
 manual_job = Job.create(
     name="Simulated Prices - Manual",
-    project_branch_uid="<PROJECT_BRANCH_UID>",
     execution_path="scripts/simulated_prices_launcher.py",
     related_image_uid="<PROJECT_IMAGE_UID>",
     cpu_request="0.25",
@@ -286,7 +290,6 @@ initial image:
 ```python
 promoted_job = Job.create(
     name="Simulated Prices - Promoted",
-    project_branch_uid="<PROJECT_BRANCH_UID>",
     execution_path="scripts/simulated_prices_launcher.py",
     cpu_request="0.25",
     memory_request="0.5",
@@ -300,7 +303,6 @@ promoted_job = Job.create(
 ```python
 hourly_job = Job.create(
     name="Simulated Prices - Hourly",
-    project_branch_uid="<PROJECT_BRANCH_UID>",
     execution_path="scripts/simulated_prices_launcher.py",
     related_image_uid="<PROJECT_IMAGE_UID>",
     task_schedule=IntervalSchedule(
@@ -318,7 +320,6 @@ hourly_job = Job.create(
 ```python
 nightly_job = Job.create(
     name="Simulated Prices - Nightly",
-    project_branch_uid="<PROJECT_BRANCH_UID>",
     execution_path="scripts/simulated_prices_launcher.py",
     related_image_uid="<PROJECT_IMAGE_UID>",
     task_schedule={
@@ -336,7 +337,7 @@ nightly_job = Job.create(
 ### List jobs, trigger a run, and fetch logs
 
 ```python
-jobs = Job.filter(project__uid="<PROJECT_BRANCH_UID>")
+jobs = Job.filter()
 
 run_payload = nightly_job.run_job()
 job_runs = JobRun.filter(job__uid=nightly_job.uid)

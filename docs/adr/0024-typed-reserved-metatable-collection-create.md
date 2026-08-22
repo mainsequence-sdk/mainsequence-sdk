@@ -86,10 +86,11 @@ The SDK must not rely on the endpoint alone to imply Alembic management and must
 
 ## Request Shape
 
-These are local-checkout backend wire shapes. The SDK derives and inserts
-`project_context` internally; application callers cannot provide or override
-it. Authenticated deployed branch-owned requests omit it because the backend
-derives ProjectBranch and Organization Environment from the runtime target.
+These are branch-owned backend wire shapes. Under ADR 0031, the SDK derives and
+inserts `project_context` from the frozen Git-native context in both local and
+deployed project-code runs; application callers cannot provide or override it.
+The backend additionally verifies deployed equality against the authenticated
+runtime target.
 
 The relational MetaTable reservation payload must include:
 
@@ -203,9 +204,9 @@ HTTP contract is normal collection `POST` with a list body.
    `alembic_version_meta_table_uid`, and `alembic_revision`;
 8. include authored `physical_table_name` before Alembic runs so Alembic renders
    against the correct SQLAlchemy table name;
-9. for a genuine local checkout, internally include the SDK-resolved exact
-   ProjectBranch UID in `project_context` on every managed wire row; for a
-   deployed branch-owned runtime, omit the field for backend derivation;
+9. internally include the Git-resolved exact ProjectBranch UID in
+   `project_context` on every managed wire row, including deployed project-code
+   runtimes;
 10. include `time_index_name` and `partition_strategy` only for the
    time-indexed endpoint;
 11. bind returned `MetaTable` and `TimeIndexMetaTable` rows back to the

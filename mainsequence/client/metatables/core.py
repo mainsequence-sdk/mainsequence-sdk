@@ -8,13 +8,10 @@ import gzip
 import json
 import math
 import os
-import pathlib
 import re
-import subprocess
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
-from threading import RLock
 from typing import Any, ClassVar, Literal, TypedDict
 from uuid import UUID
 
@@ -31,7 +28,12 @@ from pydantic import (
 )
 
 from mainsequence.logconf import logger
-from mainsequence.runtime_context import _get_backend_runtime_project_context_state
+from mainsequence.project_context import (
+    ProjectRuntimeContext,
+    get_project_runtime_context,
+    require_project_branch_context,
+    require_project_metatables_data_source,
+)
 
 from ..base import BaseObjectOrm, BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin
 from ..data_sources_interfaces import get_duckdb_interface_class, get_sqlite_interface_class
@@ -46,15 +48,13 @@ from ..dtype_codec import (
     serialize_remote_parameters,
     token_to_pandas_series,
 )
-from ..exceptions import AuthenticationError, PermissionDeniedError, raise_for_response
+from ..exceptions import raise_for_response
 from ..utils import (
     TDAG_CONSTANTS,
     DateInfo,
-    DoesNotExist,
     bios_uuid,
     get_network_ip,
     is_process_running,
-    loaders,
     make_request,
     serialize_to_json,
 )
@@ -76,8 +76,7 @@ def _normalize_time_indexed_cadence(value: Any) -> str | None:
         return None
     if not _TIME_INDEXED_CADENCE_RE.fullmatch(normalized):
         raise ValueError(
-            "cadence must be an interval token such as 1m, 5m, 1h, 1d, 1w, "
-            "1mo, 1q, or 1y."
+            "cadence must be an interval token such as 1m, 5m, 1h, 1d, 1w, 1mo, 1q, or 1y."
         )
     return normalized
 
@@ -241,11 +240,7 @@ def _contract_physical_mapping(contract: Any) -> Any:
 def _contract_physical_schema(contract: Any) -> str | None:
     physical = _contract_physical_mapping(contract)
     if isinstance(physical, Mapping):
-        value = (
-            physical.get("schema")
-            or physical.get("schema_")
-            or physical.get("physical_schema")
-        )
+        value = physical.get("schema") or physical.get("schema_") or physical.get("physical_schema")
     else:
         value = getattr(physical, "schema_", None) or getattr(
             physical,
@@ -543,6 +538,7 @@ class MetaTableOperationScope(BasePydanticModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
+
 class MetaTableProjectContextRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -617,9 +613,7 @@ class MetaTableRequestFields(BasePydanticModel):
         contract_schema = _contract_physical_schema(self.table_contract)
         if self.physical_schema not in (None, "") and contract_schema not in (None, ""):
             if str(self.physical_schema) != str(contract_schema):
-                raise ValueError(
-                    "physical_schema must match table_contract.physical.schema."
-                )
+                raise ValueError("physical_schema must match table_contract.physical.schema.")
         if self.physical_schema in (None, "") and contract_schema not in (None, ""):
             self.physical_schema = str(contract_schema)
         elif self.physical_schema not in (None, "") and contract_schema in (None, ""):
@@ -742,16 +736,14 @@ class SchemaManagementRequest(BasePydanticModel):
         if self.mode == "alembic_managed":
             if self.alembic is None:
                 raise ValueError(
-                    "schema_management.alembic is required when mode is "
-                    "'alembic_managed'."
+                    "schema_management.alembic is required when mode is 'alembic_managed'."
                 )
             if isinstance(self.alembic, Mapping):
                 self.alembic = AlembicManagementRequest.model_validate(self.alembic)
             return self
         if self.alembic is not None:
             raise ValueError(
-                "schema_management.alembic is only valid when mode is "
-                "'alembic_managed'."
+                "schema_management.alembic is only valid when mode is 'alembic_managed'."
             )
         return self
 
@@ -771,9 +763,7 @@ def _normalize_provisioning(
             f"{owner}-managed schema ownership requires "
             f"provisioning.create_table={str(create_table).lower()}."
         )
-    if "if_not_exists" in normalized and not isinstance(
-        normalized["if_not_exists"], bool
-    ):
+    if "if_not_exists" in normalized and not isinstance(normalized["if_not_exists"], bool):
         raise ValueError("provisioning.if_not_exists must be a boolean.")
     normalized["create_table"] = create_table
     normalized.setdefault("if_not_exists", True)
@@ -788,15 +778,11 @@ def _normalize_registration_lifecycle(
 ) -> tuple[SchemaManagementRequest, dict[str, Any] | None]:
     if schema_management is None:
         default_mode: MetaTableSchemaManagementMode = (
-            "external_registered"
-            if management_mode == "external_registered"
-            else "backend_managed"
+            "external_registered" if management_mode == "external_registered" else "backend_managed"
         )
         normalized_schema_management = SchemaManagementRequest(mode=default_mode)
     else:
-        normalized_schema_management = SchemaManagementRequest.model_validate(
-            schema_management
-        )
+        normalized_schema_management = SchemaManagementRequest.model_validate(schema_management)
 
     schema_mode = normalized_schema_management.mode
     if management_mode == "external_registered":
@@ -872,23 +858,17 @@ class ManagedMetaTableCollectionCreateRow(BasePydanticModel):
         normalized_physical = dict(physical)
         contract_schema = _contract_physical_schema(self.table_contract)
         if contract_schema not in (None, self.physical_schema):
-            raise ValueError(
-                "physical_schema must match table_contract.physical.schema."
-            )
+            raise ValueError("physical_schema must match table_contract.physical.schema.")
         contract_table_name = normalized_physical.get("table_name")
         if contract_table_name != self.physical_table_name:
-            raise ValueError(
-                "physical_table_name must match table_contract.physical.table_name."
-            )
+            raise ValueError("physical_table_name must match table_contract.physical.table_name.")
         normalized_physical["schema"] = self.physical_schema
         normalized_physical.pop("schema_", None)
         self.table_contract["physical"] = normalized_physical
         return self
 
 
-class ManagedTimeIndexMetaTableCollectionCreateRow(
-    ManagedMetaTableCollectionCreateRow
-):
+class ManagedTimeIndexMetaTableCollectionCreateRow(ManagedMetaTableCollectionCreateRow):
     """Alembic reservation intent for the time-indexed MetaTable collection."""
 
     time_index_name: str = Field(..., min_length=1)
@@ -1259,9 +1239,9 @@ class DataSource(BasePydanticModel, BaseObjectOrm):
 
 class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, BaseObjectOrm):
     ENDPOINT: ClassVar[str] = "meta-tables"
-    COLLECTION_CREATE_ROW_MODEL: ClassVar[
-        type[ManagedMetaTableCollectionCreateRow]
-    ] = ManagedMetaTableCollectionCreateRow
+    COLLECTION_CREATE_ROW_MODEL: ClassVar[type[ManagedMetaTableCollectionCreateRow]] = (
+        ManagedMetaTableCollectionCreateRow
+    )
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
         "identifier": ["in", "exact", "contains"],
         "uid": ["in", "exact"],
@@ -1376,9 +1356,7 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
     ) -> MetaTableMigrationConnection:
         if request is not None and kwargs:
             raise ValueError("Pass either request or keyword fields, not both.")
-        payload = (
-            request if request is not None else MetaTableMigrationConnectionRequest(**kwargs)
-        )
+        payload = request if request is not None else MetaTableMigrationConnectionRequest(**kwargs)
         if isinstance(payload, Mapping):
             payload = MetaTableMigrationConnectionRequest(**payload)
         payload = _with_current_metatable_project_context(payload)
@@ -1596,9 +1574,7 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
         if on_status is not None:
             on_status(f"Serializing POST {url} payload...")
         payload_json = _payload_json_sequence(rows)
-        _ = [
-            cls.COLLECTION_CREATE_ROW_MODEL.model_validate(row) for row in payload_json
-        ]
+        _ = [cls.COLLECTION_CREATE_ROW_MODEL.model_validate(row) for row in payload_json]
         payload_json = _with_current_metatable_project_context_collection(payload_json)
         if on_status is not None:
             payload_size = len(json.dumps(payload_json, default=str))
@@ -1975,13 +1951,6 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
 # Global executor (or you could define one on your class)
 _executor = concurrent.futures.ThreadPoolExecutor(max_workers=5)
 
-_POD_PROJECT_RESOLUTION_LOCK = RLock()
-_POD_PROJECT_RESOLUTION_CACHE = None
-_POD_PROJECT_RESOLUTION_CACHE_KEY: tuple[str, str, str] | None = None
-_POD_PROJECT_LOGGED_STATES: set[tuple[str, str]] = set()
-POD_PROJECT = None
-POD_PROJECT_BRANCH = None
-
 
 def _local_data_interface(class_type: str):
     if class_type == DUCK_DB:
@@ -2098,8 +2067,7 @@ class TimeIndexMetaTableRegistrationRequest(BasePydanticModel):
         None,
         max_length=32,
         description=(
-            "Optional time-indexed cadence token such as 1m, 5m, 1h, 1d, "
-            "1w, 1mo, 1q, or 1y."
+            "Optional time-indexed cadence token such as 1m, 5m, 1h, 1d, 1w, 1mo, 1q, or 1y."
         ),
     )
     partition_strategy: str = Field(
@@ -2158,9 +2126,7 @@ class TimeIndexMetaTableRegistrationRequest(BasePydanticModel):
         contract_schema = _contract_physical_schema(self.table_contract)
         if self.physical_schema not in (None, "") and contract_schema not in (None, ""):
             if str(self.physical_schema) != str(contract_schema):
-                raise ValueError(
-                    "physical_schema must match table_contract.physical.schema."
-                )
+                raise ValueError("physical_schema must match table_contract.physical.schema.")
         if self.physical_schema in (None, "") and contract_schema not in (None, ""):
             self.physical_schema = str(contract_schema)
         elif self.physical_schema not in (None, "") and contract_schema in (None, ""):
@@ -2336,6 +2302,7 @@ class TimeIndexedProfile(TimeIndexedProfileBase, BasePydanticModel):
     @classmethod
     def _normalize_cadence(cls, value: str | None) -> str | None:
         return _normalize_time_indexed_cadence(value)
+
     multi_index_stats: dict[str, Any] | None = Field(
         None, description="Canonical multi-index progress statistics"
     )
@@ -2426,24 +2393,11 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
         url = cls.get_object_url() + "/get-or-create/"
         if "current_project_branch_uid" in kwargs:
             raise ValueError(
-                "current_project_branch_uid is SDK-controlled and cannot be supplied "
-                "by the caller."
+                "current_project_branch_uid is SDK-controlled and cannot be supplied by the caller."
             )
         kwargs = serialize_to_json(kwargs)
-        resolution = _resolve_local_pod_project()
-        project_branch = resolution.project_branch
-        if project_branch is None:
-            project_branch = _require_local_pod_project_branch(
-                "DataNodeUpdate.get_or_create"
-            )
-        project_branch_uid = str(getattr(project_branch, "uid", "") or "").strip()
-        if not project_branch_uid:
-            raise RuntimeError(
-                "DataNodeUpdate.get_or_create requires a ProjectBranch uid, "
-                "but the active branch does not expose one."
-            )
-        if not resolution.backend_runtime_context:
-            kwargs["current_project_branch_uid"] = project_branch_uid
+        context = require_project_branch_context("DataNodeUpdate.get_or_create")
+        kwargs["current_project_branch_uid"] = context.project_branch_uid
         payload = {"json": kwargs}
         s = cls.build_session()
         r = make_request(s=s, loaders=cls.LOADERS, r_type="POST", url=url, payload=payload)
@@ -3120,9 +3074,9 @@ class TableMetaData(BaseModel):
 
 class TimeIndexMetaTable(MetaTable):
     ENDPOINT: ClassVar[str] = "time-index-meta-tables"
-    COLLECTION_CREATE_ROW_MODEL: ClassVar[
-        type[ManagedTimeIndexMetaTableCollectionCreateRow]
-    ] = ManagedTimeIndexMetaTableCollectionCreateRow
+    COLLECTION_CREATE_ROW_MODEL: ClassVar[type[ManagedTimeIndexMetaTableCollectionCreateRow]] = (
+        ManagedTimeIndexMetaTableCollectionCreateRow
+    )
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
         "identifier": ["in", "exact", "contains"],
         "uid": ["in", "exact"],
@@ -3182,8 +3136,7 @@ class TimeIndexMetaTable(MetaTable):
             and str(profile.time_index_meta_table_uid) != str(self.uid)
         ):
             raise ValueError(
-                "time_indexed_profile.time_index_meta_table_uid must match "
-                "TimeIndexMetaTable.uid."
+                "time_indexed_profile.time_index_meta_table_uid must match TimeIndexMetaTable.uid."
             )
         return self
 
@@ -3318,15 +3271,11 @@ class TimeIndexMetaTable(MetaTable):
         for position, descriptor in enumerate(dimension_range_map):
             coordinate = descriptor.get("coordinate") if isinstance(descriptor, Mapping) else None
             provided_dimensions = (
-                [str(name) for name in coordinate.keys()]
-                if isinstance(coordinate, Mapping)
-                else []
+                [str(name) for name in coordinate.keys()] if isinstance(coordinate, Mapping) else []
             )
             provided_set = set(provided_dimensions)
             missing_dimensions = [
-                dimension
-                for dimension in expected_dimensions
-                if dimension not in provided_set
+                dimension for dimension in expected_dimensions if dimension not in provided_set
             ]
             if missing_dimensions:
                 raise ValueError(
@@ -3384,9 +3333,7 @@ class TimeIndexMetaTable(MetaTable):
             raise ValueError(
                 "project_context is SDK-controlled and cannot be supplied by the caller."
             )
-        payload = TimeIndexMetaTableRegistrationRequest.model_validate(
-            unvalidated_payload
-        )
+        payload = TimeIndexMetaTableRegistrationRequest.model_validate(unvalidated_payload)
         payload_json = _with_current_metatable_project_context(payload)
         request_payload = {"json": serialize_to_json(payload_json)}
         response = make_request(
@@ -3459,7 +3406,9 @@ class TimeIndexMetaTable(MetaTable):
         detail after the delete.
         """
         if self.uid is None:
-            raise ValueError("TimeIndexMetaTable must have a uid before deleting rows after a date.")
+            raise ValueError(
+                "TimeIndexMetaTable must have a uid before deleting rows after a date."
+            )
 
         payload_body: dict[str, Any] = {
             "after_date": after_date.isoformat()
@@ -4745,350 +4694,21 @@ class UpdateBatchResponse[UpdateT, UpdateDetailsT, TimeIndexedProfileT](BaseMode
     data_node_updates: list[UpdateT]
 
 
-@dataclass(frozen=True)
-class _PodProjectResolution:
-    running_project_uid: str
-    running_project_branch_uid: str
-    project: Any | None
-    project_branch: Any | None
-    repository_branch: str | None
-    status: str
-    detail: str = ""
-    backend_runtime_context: bool = False
-
-    @property
-    def remote_cache_key(self) -> tuple[str, str, str]:
-        return (
-            self.running_project_uid,
-            self.running_project_branch_uid,
-            self.repository_branch or "",
-        )
-
-
-def _reset_local_pod_project_resolution_cache() -> None:
-    global _POD_PROJECT_RESOLUTION_CACHE, _POD_PROJECT_RESOLUTION_CACHE_KEY
-    with _POD_PROJECT_RESOLUTION_LOCK:
-        _POD_PROJECT_RESOLUTION_CACHE = None
-        _POD_PROJECT_RESOLUTION_CACHE_KEY = None
-        _POD_PROJECT_LOGGED_STATES.clear()
-
-        session_data_source = globals().get("SessionDataSource")
-        if (
-            session_data_source is not None
-            and getattr(session_data_source, "_remote_resolution_key", None) is not None
-        ):
-            session_data_source.data_source = None
-            session_data_source._remote_resolution_key = None
-
-
-def _current_repository_branch() -> str | None:
-    runtime_auth_mode = (os.environ.get("MAINSEQUENCE_AUTH_MODE") or "").strip()
-    runtime_state = _get_backend_runtime_project_context_state()
-    if runtime_state.verified and runtime_state.context is not None:
-        return runtime_state.context.repository_branch
-    if runtime_auth_mode in {"session_jwt", "runtime_credential"}:
-        return None
-    try:
-        result = subprocess.run(
-            ["git", "branch", "--show-current"],
-            cwd=pathlib.Path.cwd(),
-            capture_output=True,
-            text=True,
-            timeout=2,
-            check=False,
-        )
-        branch = result.stdout.strip() if result.returncode == 0 else ""
-        if branch:
-            return branch
-    except (OSError, subprocess.SubprocessError):
-        pass
-    return None
-
-
-def _build_local_pod_project_resolution(
-    *,
-    running_project_uid: str,
-    running_project_branch_uid: str = "",
-    repository_branch: str | None,
-    backend_runtime_context: bool = False,
-) -> _PodProjectResolution:
-    from ..models_foundry import Project, ProjectBranch
-
-    if backend_runtime_context and (
-        not running_project_uid or not running_project_branch_uid
-    ):
-        return _PodProjectResolution(
-            running_project_uid=running_project_uid,
-            running_project_branch_uid=running_project_branch_uid,
-            project=None,
-            project_branch=None,
-            repository_branch=repository_branch,
-            status="runtime_project_context_missing",
-            detail=(
-                "Deployed runtime authentication did not provide a complete "
-                "backend-issued ProjectBranch context."
-            ),
-            backend_runtime_context=True,
-        )
-
-    if not running_project_uid:
-        return _PodProjectResolution(
-            running_project_uid=running_project_uid,
-            running_project_branch_uid=running_project_branch_uid,
-            project=None,
-            project_branch=None,
-            repository_branch=repository_branch,
-            status="missing",
-            detail="MAIN_SEQUENCE_PROJECT_UID is not configured.",
-        )
-    try:
-        project = Project.get(pk=running_project_uid)
-    except (AuthenticationError, PermissionDeniedError) as exc:
-        raise RuntimeError(
-            "Could not resolve the local project default data source because SDK "
-            "authentication/authorization failed while loading project "
-            f"{running_project_uid!r}. "
-            "Run `mainsequence login` or export MAINSEQUENCE_ACCESS_TOKEN / "
-            f"MAINSEQUENCE_REFRESH_TOKEN. Backend response: {exc}"
-        ) from exc
-    except DoesNotExist:
-        return _PodProjectResolution(
-            running_project_uid=running_project_uid,
-            running_project_branch_uid=running_project_branch_uid,
-            project=None,
-            project_branch=None,
-            repository_branch=repository_branch,
-            status="not_found",
-            detail=f"Project reference {running_project_uid!r} from local runtime env was not found.",
-        )
-    except Exception as exc:
-        return _PodProjectResolution(
-            running_project_uid=running_project_uid,
-            running_project_branch_uid=running_project_branch_uid,
-            project=None,
-            project_branch=None,
-            repository_branch=repository_branch,
-            status="lookup_failed",
-            detail=(
-                "Could not resolve project reference "
-                f"{running_project_uid!r} from local runtime env: {exc}"
-            ),
-        )
-
-    if not repository_branch and not running_project_branch_uid:
-        return _PodProjectResolution(
-            running_project_uid=running_project_uid,
-            running_project_branch_uid=running_project_branch_uid,
-            project=project,
-            project_branch=None,
-            repository_branch=None,
-            status="branch_missing",
-            detail="Could not determine the active repository branch from Git.",
-        )
-
-    if running_project_branch_uid:
-        branch_ref = next(
-            (
-                branch
-                for branch in project.branches
-                if str(branch.uid) == running_project_branch_uid
-            ),
-            None,
-        )
-    else:
-        branch_ref = next(
-            (
-                branch
-                for branch in project.branches
-                if branch.repository_branch == repository_branch
-            ),
-            None,
-        )
-    if branch_ref is None:
-        return _PodProjectResolution(
-            running_project_uid=running_project_uid,
-            running_project_branch_uid=running_project_branch_uid,
-            project=project,
-            project_branch=None,
-            repository_branch=repository_branch,
-            status="branch_not_registered",
-            detail=(
-                f"ProjectBranch {running_project_branch_uid or repository_branch!r} is not registered as a "
-                f"ProjectBranch of Project {running_project_uid!r}"
-            ),
-        )
-
-    try:
-        project_branch = ProjectBranch.get(pk=branch_ref.uid)
-    except (AuthenticationError, PermissionDeniedError) as exc:
-        raise RuntimeError(
-            "Could not resolve the active ProjectBranch because SDK "
-            f"authentication/authorization failed. Backend response: {exc}"
-        ) from exc
-    except DoesNotExist:
-        return _PodProjectResolution(
-            running_project_uid=running_project_uid,
-            running_project_branch_uid=running_project_branch_uid,
-            project=project,
-            project_branch=None,
-            repository_branch=repository_branch,
-            status="branch_not_found",
-            detail=f"ProjectBranch {branch_ref.uid!r} was not found",
-        )
-    except Exception as exc:
-        return _PodProjectResolution(
-            running_project_uid=running_project_uid,
-            running_project_branch_uid=running_project_branch_uid,
-            project=project,
-            project_branch=None,
-            repository_branch=repository_branch or branch_ref.repository_branch,
-            status="branch_lookup_failed",
-            detail=f"Could not load ProjectBranch {branch_ref.uid!r}: {exc}",
-        )
-
-    resolved_repository_branch = str(branch_ref.repository_branch or "").strip()
-    if repository_branch and repository_branch != resolved_repository_branch:
-        return _PodProjectResolution(
-            running_project_uid=running_project_uid,
-            running_project_branch_uid=running_project_branch_uid,
-            project=project,
-            project_branch=None,
-            repository_branch=repository_branch,
-            status="runtime_branch_mismatch",
-            detail=(
-                "Runtime repository branch does not match the authoritative "
-                "ProjectBranch response."
-            ),
-        )
-
-    return _PodProjectResolution(
-        running_project_uid=running_project_uid,
-        running_project_branch_uid=running_project_branch_uid,
-        project=project,
-        project_branch=project_branch,
-        repository_branch=resolved_repository_branch,
-        status="resolved",
-        backend_runtime_context=backend_runtime_context,
-    )
-
-
-def _resolve_local_pod_project(*, refresh: bool = False) -> _PodProjectResolution:
-    global _POD_PROJECT_RESOLUTION_CACHE, _POD_PROJECT_RESOLUTION_CACHE_KEY
-    global POD_PROJECT, POD_PROJECT_BRANCH
-
-    runtime_auth_mode = (os.environ.get("MAINSEQUENCE_AUTH_MODE") or "").strip()
-    runtime_state = _get_backend_runtime_project_context_state()
-    if runtime_auth_mode == "runtime_credential" and not runtime_state.verified:
-        loaders.refresh_headers()
-        runtime_state = _get_backend_runtime_project_context_state()
-
-    backend_runtime_context = runtime_auth_mode in {
-        "session_jwt",
-        "runtime_credential",
-    }
-    runtime_context = runtime_state.context if runtime_state.verified else None
-    if backend_runtime_context and runtime_context is not None:
-        running_project_uid = runtime_context.project_uid
-        running_project_branch_uid = runtime_context.project_branch_uid
-        repository_branch = runtime_context.repository_branch
-    elif backend_runtime_context:
-        running_project_uid = ""
-        running_project_branch_uid = ""
-        repository_branch = None
-    else:
-        running_project_uid = (os.environ.get("MAIN_SEQUENCE_PROJECT_UID") or "").strip()
-        running_project_branch_uid = ""
-        repository_branch = _current_repository_branch()
-    cache_key = (
-        running_project_uid,
-        running_project_branch_uid,
-        repository_branch or "",
-    )
-
-    with _POD_PROJECT_RESOLUTION_LOCK:
-        if (
-            _POD_PROJECT_RESOLUTION_CACHE is None
-            or _POD_PROJECT_RESOLUTION_CACHE_KEY != cache_key
-            or refresh
-        ):
-            _POD_PROJECT_RESOLUTION_CACHE = _build_local_pod_project_resolution(
-                running_project_uid=running_project_uid,
-                running_project_branch_uid=running_project_branch_uid,
-                repository_branch=repository_branch,
-                backend_runtime_context=backend_runtime_context,
-            )
-            _POD_PROJECT_RESOLUTION_CACHE_KEY = cache_key
-            POD_PROJECT = _POD_PROJECT_RESOLUTION_CACHE.project
-            POD_PROJECT_BRANCH = _POD_PROJECT_RESOLUTION_CACHE.project_branch
-        return _POD_PROJECT_RESOLUTION_CACHE
-
-
-def _log_local_pod_project_resolution(resolution: _PodProjectResolution) -> None:
-    if resolution.status == "resolved":
-        return
-
-    cache_key = (resolution.status, resolution.detail)
-    with _POD_PROJECT_RESOLUTION_LOCK:
-        if cache_key in _POD_PROJECT_LOGGED_STATES:
-            return
-        _POD_PROJECT_LOGGED_STATES.add(cache_key)
-
-    continuation = " Continuing without local pod project attachment."
-    message = (resolution.detail or "No local pod project attached.").strip()
-    if not message.endswith("."):
-        message += "."
-    message += continuation
-
-    if resolution.status == "missing":
-        logger.debug(message)
-    else:
-        logger.warning(message)
-
-
-def _require_local_pod_project(operation: str) -> Any:
-    resolution = _resolve_local_pod_project()
-    if resolution.project is not None:
-        return resolution.project
-
-    _log_local_pod_project_resolution(resolution)
-
-    detail = (resolution.detail or "No local pod project attached.").strip()
-    raise RuntimeError(f"{operation} requires a local pod project. {detail}")
-
-
-def _require_local_pod_project_branch(operation: str) -> Any:
-    resolution = _resolve_local_pod_project()
-    if resolution.project_branch is not None:
-        return resolution.project_branch
-
-    _log_local_pod_project_resolution(resolution)
-    detail = (resolution.detail or "No local ProjectBranch attached.").strip()
-    raise RuntimeError(f"{operation} requires a registered active ProjectBranch. {detail}")
-
-
 def _metatable_project_context_from_resolution(
-    resolution: _PodProjectResolution,
+    resolution: ProjectRuntimeContext,
 ) -> MetaTableProjectContextRequest:
-    project_branch_uid = getattr(resolution.project_branch, "uid", None)
-    if project_branch_uid in (None, ""):
-        detail = (resolution.detail or "No exact ProjectBranch is configured.").strip()
-        raise RuntimeError(
-            "Platform-managed MetaTable operations require an exact ProjectBranch UID. "
-            + detail
-        )
-    return MetaTableProjectContextRequest(project_branch_uid=str(project_branch_uid))
+    context = require_project_branch_context(
+        "Platform-managed MetaTable operations",
+        context=resolution,
+    )
+    return MetaTableProjectContextRequest(project_branch_uid=str(context.project_branch_uid))
 
 
 def _current_metatable_project_context() -> MetaTableProjectContextRequest:
-    return _metatable_project_context_from_resolution(_resolve_local_pod_project())
+    return _metatable_project_context_from_resolution(get_project_runtime_context())
 
 
 def _metatable_project_context_for_request() -> MetaTableProjectContextRequest | None:
-    resolution = _resolve_local_pod_project()
-    if resolution.backend_runtime_context:
-        if resolution.project_branch is None:
-            _metatable_project_context_from_resolution(resolution)
-        return None
     return _current_metatable_project_context()
 
 
@@ -5097,9 +4717,7 @@ def _with_current_metatable_project_context(
 ) -> dict[str, Any]:
     payload_json = _payload_json(payload)
     if "project_context" in payload_json:
-        raise ValueError(
-            "project_context is SDK-controlled and cannot be supplied by the caller."
-        )
+        raise ValueError("project_context is SDK-controlled and cannot be supplied by the caller.")
     if payload_json.get("management_mode") == "external_registered":
         return payload_json
     project_context = _metatable_project_context_for_request()
@@ -5113,9 +4731,7 @@ def _with_current_metatable_project_context_collection(
 ) -> list[dict[str, Any]]:
     payload_rows = [dict(payload) for payload in payloads]
     if any("project_context" in row for row in payload_rows):
-        raise ValueError(
-            "project_context is SDK-controlled and cannot be supplied by the caller."
-        )
+        raise ValueError("project_context is SDK-controlled and cannot be supplied by the caller.")
     managed_rows = [
         row for row in payload_rows if row.get("management_mode") != "external_registered"
     ]
@@ -5133,43 +4749,21 @@ def _with_current_metatable_project_context_collection(
 @dataclass
 class PodDataSource:
     data_source: DataSource | None = None
-    _remote_resolution_key: tuple[str, str] | None = field(
+    _project_context_process_id: int | None = field(
         default=None,
         init=False,
         repr=False,
     )
 
-    def set_remote_db(self, *, resolution: _PodProjectResolution | None = None):
-        resolution = resolution or _resolve_local_pod_project()
-        self.data_source = None
-        self._remote_resolution_key = resolution.remote_cache_key
-        if resolution.project is None:
-            _log_local_pod_project_resolution(resolution)
-            return None
-
-        branch_data_source = (
-            getattr(resolution.project_branch, "metatables_data_source", None)
-            if resolution.project_branch is not None
-            else None
+    def set_remote_db(self, *, resolution: ProjectRuntimeContext | None = None):
+        context = resolution or get_project_runtime_context()
+        data_source = require_project_metatables_data_source(
+            "Project-derived session data access",
+            context=context,
         )
-        data_source = branch_data_source or getattr(
-            resolution.project,
-            "default_metatables_data_source",
-            None,
-        )
-        if data_source is None:
-            logger.debug("The active Project has no MetaTable default DataSource.")
-            return None
-        if branch_data_source is None:
-            logger.debug(
-                "Using the logical Project default DataSource for Git branch "
-                f"{resolution.repository_branch!r}."
-            )
         logger.debug(f"Set remote data source to {data_source}")
-
-        if data_source.status != DataSource.STATUS_AVAILABLE:
-            raise Exception(f"Project Database {data_source} is not available")
         self.data_source = data_source
+        self._project_context_process_id = context.process_id
         return data_source
 
     @property
@@ -5229,7 +4823,7 @@ class PodDataSource:
                 remote_table.delete()
 
         self.data_source = data_source
-        self._remote_resolution_key = None
+        self._project_context_process_id = None
 
         physical_ds = self.data_source
         if class_type == DUCK_DB:
@@ -5259,25 +4853,18 @@ SessionDataSource = PodDataSource()
 
 def get_session_data_source() -> DataSource:
     data_source = getattr(SessionDataSource, "data_source", None)
-    remote_resolution_key = getattr(SessionDataSource, "_remote_resolution_key", None)
-
-    # A populated source without remote provenance is an explicit local/session
-    # override. Remotely inferred sources must follow the current Git branch.
-    if data_source is None or remote_resolution_key is not None:
-        resolution = _resolve_local_pod_project()
-        if data_source is None or remote_resolution_key != resolution.remote_cache_key:
-            SessionDataSource.set_remote_db(resolution=resolution)
+    context_process_id = getattr(
+        SessionDataSource,
+        "_project_context_process_id",
+        None,
+    )
+    if data_source is None or (
+        context_process_id is not None and context_process_id != os.getpid()
+    ):
+        SessionDataSource.set_remote_db()
         data_source = getattr(SessionDataSource, "data_source", None)
     if data_source is None:
-        resolution = _resolve_local_pod_project()
-        detail = (resolution.detail or "No local pod project attached.").strip()
-        if detail and not detail.endswith("."):
-            detail += "."
-        raise RuntimeError(
-            "Could not resolve a session default data source. "
-            f"{detail} Run inside a configured Main Sequence project/session, "
-            "or pass data_source_uid explicitly."
-        )
+        raise RuntimeError("Could not resolve a session DataSource.")
     return data_source
 
 

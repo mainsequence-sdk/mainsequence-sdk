@@ -606,7 +606,6 @@ def _run_sdk_model_operation(
     module_name: str,
     class_name: str,
     operation,
-    project_uid_env: str | None = None,
 ):
     tokens = get_tokens()
     access = (tokens.get("access") or "").strip()
@@ -622,7 +621,6 @@ def _run_sdk_model_operation(
         "MAINSEQUENCE_ACCESS_TOKEN": os.environ.get("MAINSEQUENCE_ACCESS_TOKEN"),
         "MAINSEQUENCE_REFRESH_TOKEN": os.environ.get("MAINSEQUENCE_REFRESH_TOKEN"),
         "MAINSEQUENCE_ENDPOINT": os.environ.get("MAINSEQUENCE_ENDPOINT"),
-        "MAIN_SEQUENCE_PROJECT_UID": os.environ.get("MAIN_SEQUENCE_PROJECT_UID"),
     }
 
     client_utils = None
@@ -639,11 +637,6 @@ def _run_sdk_model_operation(
         else:
             os.environ.pop("MAINSEQUENCE_REFRESH_TOKEN", None)
         os.environ["MAINSEQUENCE_ENDPOINT"] = endpoint
-        if project_uid_env is not None:
-            os.environ["MAIN_SEQUENCE_PROJECT_UID"] = str(project_uid_env)
-        else:
-            os.environ.pop("MAIN_SEQUENCE_PROJECT_UID", None)
-
         from mainsequence.client import utils as _client_utils
         from mainsequence.client.base import BaseObjectOrm
 
@@ -2028,7 +2021,6 @@ def get_project_data_node_updates(
         "MAINSEQUENCE_ACCESS_TOKEN": os.environ.get("MAINSEQUENCE_ACCESS_TOKEN"),
         "MAINSEQUENCE_REFRESH_TOKEN": os.environ.get("MAINSEQUENCE_REFRESH_TOKEN"),
         "MAINSEQUENCE_ENDPOINT": os.environ.get("MAINSEQUENCE_ENDPOINT"),
-        "MAIN_SEQUENCE_PROJECT_UID": os.environ.get("MAIN_SEQUENCE_PROJECT_UID"),
     }
 
     client_utils = None
@@ -2139,7 +2131,6 @@ def create_project_image(
         "MAINSEQUENCE_ACCESS_TOKEN": os.environ.get("MAINSEQUENCE_ACCESS_TOKEN"),
         "MAINSEQUENCE_REFRESH_TOKEN": os.environ.get("MAINSEQUENCE_REFRESH_TOKEN"),
         "MAINSEQUENCE_ENDPOINT": os.environ.get("MAINSEQUENCE_ENDPOINT"),
-        "MAIN_SEQUENCE_PROJECT_UID": os.environ.get("MAIN_SEQUENCE_PROJECT_UID"),
     }
 
     client_utils = None
@@ -2246,7 +2237,6 @@ def list_project_images(
         "MAINSEQUENCE_ACCESS_TOKEN": os.environ.get("MAINSEQUENCE_ACCESS_TOKEN"),
         "MAINSEQUENCE_REFRESH_TOKEN": os.environ.get("MAINSEQUENCE_REFRESH_TOKEN"),
         "MAINSEQUENCE_ENDPOINT": os.environ.get("MAINSEQUENCE_ENDPOINT"),
-        "MAIN_SEQUENCE_PROJECT_UID": os.environ.get("MAIN_SEQUENCE_PROJECT_UID"),
     }
 
     client_utils = None
@@ -2473,7 +2463,6 @@ def list_project_jobs(
         "MAINSEQUENCE_ACCESS_TOKEN": os.environ.get("MAINSEQUENCE_ACCESS_TOKEN"),
         "MAINSEQUENCE_REFRESH_TOKEN": os.environ.get("MAINSEQUENCE_REFRESH_TOKEN"),
         "MAINSEQUENCE_ENDPOINT": os.environ.get("MAINSEQUENCE_ENDPOINT"),
-        "MAIN_SEQUENCE_PROJECT_UID": os.environ.get("MAIN_SEQUENCE_PROJECT_UID"),
     }
 
     client_utils = None
@@ -2509,7 +2498,7 @@ def list_project_jobs(
         extra_filters = dict(filters or {})
         jobs = ClientJob.filter(
             timeout=timeout,
-            **{**extra_filters, "project__uid": resolved_branch_uid},
+            **{**extra_filters, "project_branch_uid": resolved_branch_uid},
         )
 
         out: list[dict[str, Any]] = []
@@ -2585,7 +2574,6 @@ def list_project_resources(
         "MAINSEQUENCE_ACCESS_TOKEN": os.environ.get("MAINSEQUENCE_ACCESS_TOKEN"),
         "MAINSEQUENCE_REFRESH_TOKEN": os.environ.get("MAINSEQUENCE_REFRESH_TOKEN"),
         "MAINSEQUENCE_ENDPOINT": os.environ.get("MAINSEQUENCE_ENDPOINT"),
-        "MAIN_SEQUENCE_PROJECT_UID": os.environ.get("MAIN_SEQUENCE_PROJECT_UID"),
     }
 
     client_utils = None
@@ -4397,7 +4385,6 @@ def create_project_job(
         "MAINSEQUENCE_ACCESS_TOKEN": os.environ.get("MAINSEQUENCE_ACCESS_TOKEN"),
         "MAINSEQUENCE_REFRESH_TOKEN": os.environ.get("MAINSEQUENCE_REFRESH_TOKEN"),
         "MAINSEQUENCE_ENDPOINT": os.environ.get("MAINSEQUENCE_ENDPOINT"),
-        "MAIN_SEQUENCE_PROJECT_UID": os.environ.get("MAIN_SEQUENCE_PROJECT_UID"),
     }
 
     client_utils = None
@@ -5021,7 +5008,6 @@ def list_github_organizations() -> list[dict]:
 def create_project(
     *,
     project_name: str,
-    default_metatables_data_source_uid: str,
     project_type: str = "python",
     default_base_image_uid: str | None = None,
     github_org_uid: str | None = None,
@@ -5036,9 +5022,6 @@ def create_project(
         "project_type": project_type,
     }
 
-    if default_metatables_data_source_uid in (None, ""):
-        raise ValueError("default_metatables_data_source_uid is required")
-    payload["default_metatables_data_source_uid"] = str(default_metatables_data_source_uid)
     if default_base_image_uid not in (None, ""):
         payload["default_base_image_uid"] = str(default_base_image_uid)
     if github_org_uid not in (None, ""):

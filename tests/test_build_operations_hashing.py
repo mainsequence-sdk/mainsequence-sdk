@@ -29,8 +29,6 @@ class UUIDNodeConfig(BaseModel):
 
 
 def test_create_config_crops_hash_prefix_to_postgres_identifier_limit(monkeypatch):
-    monkeypatch.setattr(build_operations, "POD_PROJECT", None, raising=False)
-
     class_name = "VeryLongDataNodeClassNameThatWouldOverflowPostgresIdentifierLimit"
 
     config = build_operations.create_config(
@@ -48,8 +46,6 @@ def test_create_config_crops_hash_prefix_to_postgres_identifier_limit(monkeypatc
 
 
 def test_nested_pydantic_hash_excluded_fields_inside_lists_do_not_affect_hashes(monkeypatch):
-    monkeypatch.setattr(build_operations, "POD_PROJECT", None, raising=False)
-
     class ColumnContract(BaseModel):
         column_name: str
         dtype: str
@@ -88,8 +84,6 @@ def test_nested_pydantic_hash_excluded_fields_inside_lists_do_not_affect_hashes(
 
 
 def test_normal_config_value_changes_update_hash(monkeypatch):
-    monkeypatch.setattr(build_operations, "POD_PROJECT", None, raising=False)
-
     class NodeConfig(BaseModel):
         shard_id: str
         identifier: str
@@ -102,8 +96,6 @@ def test_normal_config_value_changes_update_hash(monkeypatch):
 
 
 def test_hash_excluded_metadata_does_not_affect_hashes(monkeypatch):
-    monkeypatch.setattr(build_operations, "POD_PROJECT", None, raising=False)
-
     class NodeConfig(BaseModel):
         identifier: str
         label: str = Field(..., json_schema_extra={"hash_excluded": True})
@@ -115,8 +107,6 @@ def test_hash_excluded_metadata_does_not_affect_hashes(monkeypatch):
 
 
 def test_hash_excluded_nested_metadata_does_not_affect_hashes(monkeypatch):
-    monkeypatch.setattr(build_operations, "POD_PROJECT", None, raising=False)
-
     class PublishedMetadata(BaseModel):
         identifier: str | None = Field(default=None, json_schema_extra={"hash_excluded": True})
         description: str | None = Field(default=None, json_schema_extra={"hash_excluded": True})
@@ -148,8 +138,6 @@ def test_hash_excluded_nested_metadata_does_not_affect_hashes(monkeypatch):
 
 
 def test_offset_start_changes_update_hash(monkeypatch):
-    monkeypatch.setattr(build_operations, "POD_PROJECT", None, raising=False)
-
     update_hash_a, storage_hash_a = _hashes(
         DataNodeConfiguration(offset_start=datetime.datetime(2024, 1, 1, tzinfo=datetime.UTC))
     )
@@ -162,8 +150,6 @@ def test_offset_start_changes_update_hash(monkeypatch):
 
 
 def test_platform_time_index_meta_table_config_hashes_by_bound_metatable_uid(monkeypatch):
-    monkeypatch.setattr(build_operations, "POD_PROJECT", None, raising=False)
-
     class StorageA(PlatformTimeIndexMetaTable):
         pass
 
@@ -206,8 +192,6 @@ def test_platform_time_index_meta_table_config_hashes_by_bound_metatable_uid(mon
 
 
 def test_platform_time_index_meta_table_config_requires_registered_before_hashing(monkeypatch):
-    monkeypatch.setattr(build_operations, "POD_PROJECT", None, raising=False)
-
     class AutoStorage(PlatformTimeIndexMetaTable):
         pass
 
@@ -222,8 +206,6 @@ def test_platform_time_index_meta_table_config_requires_registered_before_hashin
 
 
 def test_uuid_config_values_serialize_hash_and_rebuild(monkeypatch):
-    monkeypatch.setattr(build_operations, "POD_PROJECT", None, raising=False)
-
     account_uid = uuid.UUID("00000000-0000-4000-8000-000000000001")
     other_account_uid = uuid.UUID("00000000-0000-4000-8000-000000000002")
 
@@ -251,8 +233,6 @@ def test_uuid_config_values_serialize_hash_and_rebuild(monkeypatch):
 
 
 def test_plain_dict_with_pydantic_model_import_path_key_is_not_treated_as_wrapper(monkeypatch):
-    monkeypatch.setattr(build_operations, "POD_PROJECT", None, raising=False)
-
     payload_a = {
         "config": {
             "pydantic_model_import_path": {"module": "alpha", "qualname": "Beta"},

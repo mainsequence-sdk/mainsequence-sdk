@@ -6,6 +6,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [6.0.39] - 2026-08-23
+
+### Changed
+
+- Adopted the Git-native project source-context contract for local and deployed project code.
+  The SDK freezes the containing repository identity, attached branch, and exact HEAD commit once
+  per process, then resolves the authoritative ProjectBranch through the backend's canonical
+  Git-context action.
+- Scoped branch-owned Jobs, images, resources, releases, deployment runs, migrations, MetaTables,
+  DataNodes, and project-executor operations to the resolved ProjectBranch. Unregistered local
+  branches remain usable for ordinary development and fail only when a branch-owned operation is
+  requested.
+
+### Removed
+
+- Removed the SDK runtime project-context environment projection and the local `.env` Project UID
+  association. Project, ProjectBranch, repository branch, commit, and Organization Environment are
+  no longer selected from process environment.
+- Removed the retired Project-level default MetaTables DataSource fallback. Project-derived data
+  access now requires the DataSource configured on the exact resolved ProjectBranch.
+
+## [6.0.38] - 2026-08-22
+
 ### Fixed
 
 - Preflight the exact backend-owned project-sync tag before mutation: preview the `uv` patch
@@ -15,11 +38,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   canonical Git origin identity instead of the repository basename. Local setup, signed terminals,
   and project sync now register keys when needed and verify the forced identity before mutation;
   legacy basename-only key files remain untouched and are not reused as a fallback.
-
-## [6.0.38] - 2026-08-22
-
-### Fixed
-
 - Made `mainsequence project sync --dry-run` non-mutating after its read-only
   project and Git preflight. It now returns before SSH key generation,
   dependency operations, backend tag requests, and Git changes.

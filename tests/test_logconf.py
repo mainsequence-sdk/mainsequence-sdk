@@ -19,11 +19,20 @@ _RUNTIME_CONTEXT_ENV_NAMES = (
 
 @pytest.fixture(autouse=True)
 def _clear_runtime_context_environment():
+    original_modules = {
+        name: module
+        for name, module in sys.modules.items()
+        if name == "mainsequence" or name.startswith("mainsequence.")
+    }
     for name in _RUNTIME_CONTEXT_ENV_NAMES:
         os.environ.pop(name, None)
     yield
     for name in _RUNTIME_CONTEXT_ENV_NAMES:
         os.environ.pop(name, None)
+    for name in tuple(sys.modules):
+        if name == "mainsequence" or name.startswith("mainsequence."):
+            sys.modules.pop(name, None)
+    sys.modules.update(original_modules)
 
 
 def _load_mainsequence_submodule(module_name: str):
@@ -84,6 +93,26 @@ def test_logconf_binds_sdk_version(monkeypatch):
     assert bound_context["sdk_version"] == logconf._get_sdk_version()
 
 
+def test_startup_additional_environment_cannot_inject_project_source_identity(monkeypatch):
+    logconf = _load_mainsequence_submodule("mainsequence.logconf")
+
+    logconf._apply_additional_environment(
+        {
+            "additional_environment": {
+                "UNRELATED_SETTING": "kept",
+                "MAIN_SEQUENCE_PROJECT_UID": "ignored-project",
+                "MAIN_SEQUENCE_PROJECT_BRANCH_UID": "ignored-branch",
+                "MAINSEQUENCE_REPOSITORY_BRANCH": "ignored-name",
+                "MAIN_SEQUENCE_ORGANIZATION_PROJECT_ENVIRONMENT_UID": ("ignored-environment"),
+            }
+        }
+    )
+
+    assert os.environ["UNRELATED_SETTING"] == "kept"
+    assert not any(name in os.environ for name in _RUNTIME_CONTEXT_ENV_NAMES)
+    monkeypatch.delenv("UNRELATED_SETTING", raising=False)
+
+
 def test_logconf_import_skips_job_startup_state_request_without_job_run_uid(monkeypatch):
     monkeypatch.delenv("MAINSEQUENCE_ACCESS_TOKEN", raising=False)
     monkeypatch.delenv("MAINSEQUENCE_REFRESH_TOKEN", raising=False)
@@ -120,14 +149,6 @@ def test_logconf_import_requests_job_run_detail_startup_state(monkeypatch):
             return {
                 "job_run_uid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
                 "command_id": 12,
-                "runtime_project_context": {
-                    "project_uid": "11111111-1111-4111-8111-111111111111",
-                    "project_branch_uid": "22222222-2222-4222-8222-222222222222",
-                    "repository_branch": "main",
-                    "organization_project_environment_uid": (
-                        "33333333-3333-4333-8333-333333333333"
-                    ),
-                },
             }
 
     def _fake_get(url, *, headers, params, timeout):
@@ -153,7 +174,6 @@ def test_logconf_import_requests_job_run_detail_startup_state(monkeypatch):
     assert captured[0]["params"] == {}
     assert captured[0]["headers"]["Authorization"] == "Bearer access-token"
     bindings = logconf._build_backend_bindings(_FakeResponse().json())
-    assert bindings["project_uid"] == "11111111-1111-4111-8111-111111111111"
-    assert bindings["project_branch_uid"] == "22222222-2222-4222-8222-222222222222"
+    assert bindings["job_run_uid"] == "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
     assert "project_id" not in bindings
     assert "data_source_id" not in bindings

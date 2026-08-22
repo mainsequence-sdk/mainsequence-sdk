@@ -14,7 +14,45 @@ import mainsequence.client.metatables as models_metatables_mod
 import mainsequence.client.models_foundry as models_foundry_mod
 import mainsequence.client.models_helpers as models_helpers_mod
 import mainsequence.client.models_user as models_user_mod
+import mainsequence.project_context as project_context
 from mainsequence.client.base import BaseObjectOrm, BasePydanticModel, ShareableObjectMixin
+
+PROJECT_UID = "1d0530c0-65d1-4db0-856b-dc29d8260a09"
+PROJECT_BRANCH_UID = "5a28020a-0f1b-47ee-aab8-334286234bea"
+
+
+@pytest.fixture(autouse=True)
+def _resolved_project_context(monkeypatch):
+    project_context._reset_project_runtime_context()
+    source = project_context.GitProjectSourceContext(
+        repository_root=pathlib.Path.cwd().resolve(),
+        canonical_repository_identity="github.com/mainsequence-sdk/filters",
+        repository_branch="main",
+        repository_ref="refs/heads/main",
+        commit_sha="a" * 40,
+    )
+    monkeypatch.setattr(
+        project_context,
+        "_resolve_git_source_context",
+        lambda project_dir: source,
+    )
+    project_context.get_project_runtime_context(
+        _project_branch_context_loader=lambda resolved_source: SimpleNamespace(
+            canonical_repository_identity=(resolved_source.canonical_repository_identity),
+            repository_branch=resolved_source.repository_branch,
+            repository_ref=resolved_source.repository_ref,
+            commit_sha=resolved_source.commit_sha,
+            project_branch=SimpleNamespace(
+                uid=PROJECT_BRANCH_UID,
+                project_uid=PROJECT_UID,
+                repository_branch=resolved_source.repository_branch,
+                organization_project_environment_uid=None,
+                metatables_data_source=None,
+            ),
+        ),
+    )
+    yield
+    project_context._reset_project_runtime_context()
 
 
 class _IdRef:
@@ -2646,7 +2684,7 @@ def test_deployment_run_collection_and_detail_use_unified_resource_release_contr
         "uid": run_uid,
         "target_type": "resource_release",
         "target": {"uid": release_uid, "name": "analytics-123", "kind": "fastapi"},
-        "project_branch_uid": "33333333-3333-4333-8333-333333333333",
+        "project_branch_uid": PROJECT_BRANCH_UID,
         "operation": "build_and_deploy",
         "source": "repository_event",
         "commit_sha": "a" * 40,
@@ -2726,7 +2764,11 @@ def test_deployment_run_collection_and_detail_use_unified_resource_release_contr
     assert detail.logs.state == "available"
     assert detail.error is None
     assert captured[0]["payload"] == {
-        "params": {"target_type": "resource_release", "target_uid": release_uid}
+        "params": {
+            "project_branch_uid": PROJECT_BRANCH_UID,
+            "target_type": "resource_release",
+            "target_uid": release_uid,
+        }
     }
     assert captured[1]["url"].endswith(f"/deployment-runs/{run_uid}/")
 

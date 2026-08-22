@@ -198,25 +198,20 @@ MAINSEQUENCE_ACCESS_TOKEN=<exchanged short-lived access token>
 MAINSEQUENCE_RUNTIME_CREDENTIAL_ID=<credential id>
 MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET=<credential secret>
 MAINSEQUENCE_ENDPOINT=<platform API origin>
-MAIN_SEQUENCE_PROJECT_UID=<project UID>
 ```
 
 They do not require or write `MAINSEQUENCE_REFRESH_TOKEN` in runtime credential mode.
 Both local-project commands preserve unrelated `.env` entries while rendering
-the current supported authentication shape. They do not carry forward obsolete
-`MAINSEQUENCE_TOKEN` or `MAIN_SEQUENCE_PROJECT_ID` entries.
+the current supported authentication shape. They remove obsolete token aliases
+and retired Project, ProjectBranch, repository-branch, and Environment identity
+entries.
 
-`MAIN_SEQUENCE_PROJECT_UID` identifies the logical Project, not one branch.
-In a local checkout, the SDK matches the current Git branch to the corresponding
-`ProjectBranch`; switching branches does not rewrite local credentials. In a
-deployed Job, Resource Release, or Project Executor image there may be no `.git`
-directory. Those runtimes receive reserved diagnostic environment values for
-the exact ProjectBranch and Organization Environment. The values are written
-by the backend and are never user configuration. The SDK activates deployed
-runtime context only after an authenticated JobRun startup or
-runtime-credential exchange returns `runtime_project_context`; environment
-values alone are not authority and cannot activate or select a runtime
-context.
+Project source identity is separate from authentication. In local and deployed
+project images, the SDK reads the containing sanitized Git checkout, attached
+branch, and exact HEAD commit, then maps that source to Project and
+ProjectBranch through the platform API. Switching branches does not rewrite
+credentials and takes effect in the next process. Runtime credentials authorize
+the deployed target but do not select repository or branch identity.
 
 Functionally:
 
@@ -224,9 +219,6 @@ Functionally:
 - the SDK exchanges that credential for a short-lived JWT access token
 - the returned access token is used as `Authorization: Bearer <token>`
 - the returned access token is stored in `MAINSEQUENCE_ACCESS_TOKEN` for the current process environment
-- a branch-owned exchange installs its returned `runtime_project_context` as
-  verified in-process state and mirrors it to the reserved process environment
-  for child-process transport and diagnostics
 - child processes launched after the exchange can inherit `MAINSEQUENCE_ACCESS_TOKEN`
 - when the access token is missing, near expiry, expired, or rejected with `401`, the SDK exchanges the runtime credential again
 
@@ -238,11 +230,10 @@ Important constraints:
 - runtime credential mode wins when `MAINSEQUENCE_AUTH_MODE=runtime_credential`
 - the exchanged access token should be treated as short-lived runtime material
 - project `.env` files may contain runtime credential material; keep `.env` out of version control
-- users and application code never set runtime mode, ProjectBranch UID,
-  repository branch, or Organization Environment UID to choose deployed
-  execution context
-- deployed SDK requests omit branch/environment selection; the backend derives
-  and authorizes it from the authenticated JobRun, Project Executor, or
+- users and application code never set Project, ProjectBranch, repository
+  branch, or Organization Environment values to choose context
+- deployed branch-owned SDK requests carry the Git-resolved ProjectBranch; the
+  backend requires equality with the authenticated JobRun, Project Executor, or
   ResourceRelease target
 - a genuine local checkout may select a Git branch, but the SDK resolves its
   persisted ProjectBranch internally and never treats that local choice as a

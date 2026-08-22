@@ -32,12 +32,11 @@ Route architecture changes to `project_design`, implementation routing to
 `maintenance/bug_auditor` when diagnosis extends beyond the maintenance
 workflow itself.
 
-The local identity contract has one persisted platform identifier:
-`MAIN_SEQUENCE_PROJECT_UID`, the logical Project UID. The checked-out Git
-branch selects the active ProjectBranch. Never ask the user for a
-ProjectBranch UID, persist `MAIN_SEQUENCE_PROJECT_BRANCH_UID`, or treat a
-ProjectBranch UID as local project configuration. The CLI may resolve that UID
-internally when a branch-owned platform API requires it.
+The local identity contract is Git-native. The containing repository remote,
+attached branch, and exact HEAD commit select the platform Project and
+ProjectBranch. Never ask the user for a ProjectBranch UID, persist Project or
+branch identity in `.env`, or use an environment variable as a branch selector.
+The CLI resolves platform UIDs internally when a branch-owned API requires them.
 
 ## Inspect Before Changing State
 
@@ -53,8 +52,8 @@ internally when a branch-owned platform API requires it.
 
    The `project current` result must report the logical `project_uid`, current
    `git_branch`, `project_branch_uid`, and `project_branch_status=resolved`.
-   Treat a detached checkout, missing logical Project UID, or unresolved/
-   unregistered Git branch as a maintenance preflight failure before any
+   Treat a detached checkout, unresolved repository, or unresolved/unregistered
+   Git branch as a maintenance preflight failure before any
    mutating workflow.
 
 4. Separate existing user changes from changes created by the maintenance
@@ -125,11 +124,10 @@ authorizes a new PKCE grant and the backend returns credentials directly to
 the waiting CLI process.
 
 The command preserves unrelated project configuration and renders only the
-current supported authentication shape. Existing `MAINSEQUENCE_TOKEN` and
-`MAIN_SEQUENCE_PROJECT_ID` entries are not carried into the rewritten file;
-this is not a separate cleanup routine. It preserves the logical
-`MAIN_SEQUENCE_PROJECT_UID` and never writes a ProjectBranch UID; switching Git
-branches changes local branch context without rewriting `.env`.
+current supported authentication shape. It removes legacy token aliases and
+all retired Project, ProjectBranch, repository-branch, and Environment identity
+entries. The Git checkout supplies source identity; switching branches changes
+context on the next process run without rewriting `.env`.
 
 ## Update The Project SDK
 

@@ -5,6 +5,7 @@ import importlib
 import json
 import os
 import pathlib
+import subprocess
 import sys
 import types
 
@@ -13,6 +14,7 @@ from typer.testing import CliRunner
 
 USER_UID = "8f5d6b54-2f5e-4a8b-bb10-0b17f3f4c123"
 TEAM_UID = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
+_REAL_SUBPROCESS_RUN = subprocess.run
 
 
 def _load_cli_module():
@@ -43,8 +45,23 @@ def _load_cli_module():
 
 
 @pytest.fixture()
-def cli_mod():
-    return _load_cli_module()
+def cli_mod(monkeypatch):
+    module = _load_cli_module()
+    monkeypatch.setattr(
+        module,
+        "get_project_runtime_context",
+        lambda *args, **kwargs: types.SimpleNamespace(
+            project_uid="project-uid-123",
+            repository_branch="main",
+            canonical_repository_identity=("github.com/mainsequence-sdk/cli-test-project"),
+            commit_sha="a" * 40,
+            project_branch_uid="project-branch-uid-123",
+            organization_project_environment_uid="environment-uid-123",
+            status="resolved",
+            detail="",
+        ),
+    )
+    return module
 
 
 @pytest.fixture()
@@ -67,7 +84,53 @@ def _print_cli_terminal(monkeypatch):
     """
     original_invoke = CliRunner.invoke
 
+    def _ensure_test_git_checkout(args) -> None:
+        values = [str(value) for value in (args or [])]
+        if not values or values[0] != "project":
+            return
+        if len(values) > 1 and values[1] in {"list", "create", "set-up-locally"}:
+            return
+        candidate = pathlib.Path.cwd()
+        if "--path" in values:
+            index = values.index("--path")
+            if index + 1 < len(values):
+                candidate = pathlib.Path(values[index + 1])
+        if not candidate.is_dir() or (candidate / ".git").exists():
+            return
+        _REAL_SUBPROCESS_RUN(
+            ["git", "init", "-q", "-b", "main"],
+            cwd=candidate,
+            check=True,
+        )
+        _REAL_SUBPROCESS_RUN(
+            ["git", "config", "user.email", "cli-tests@example.test"],
+            cwd=candidate,
+            check=True,
+        )
+        _REAL_SUBPROCESS_RUN(
+            ["git", "config", "user.name", "CLI Tests"],
+            cwd=candidate,
+            check=True,
+        )
+        _REAL_SUBPROCESS_RUN(
+            ["git", "commit", "-q", "--allow-empty", "-m", "Test checkout"],
+            cwd=candidate,
+            check=True,
+        )
+        _REAL_SUBPROCESS_RUN(
+            [
+                "git",
+                "remote",
+                "add",
+                "origin",
+                "git@github.com:mainsequence-sdk/cli-test-project.git",
+            ],
+            cwd=candidate,
+            check=True,
+        )
+
     def _invoke(self, app, args=None, **kwargs):
+        _ensure_test_git_checkout(args)
         cmd = " ".join(str(x) for x in (args or []))
         print(f"\n$ mainsequence {cmd}".rstrip())
         result = original_invoke(self, app, args=args, **kwargs)
@@ -2378,7 +2441,9 @@ def test_config_get_tokens_prefers_env_over_local_store(cli_mod, monkeypatch, tm
     assert out["refresh"] == "env-ref"
 
 
-def test_prime_runtime_env_prefers_local_project_env(cli_mod, monkeypatch, tmp_path):
+def test_prime_runtime_env_reads_endpoint_but_ignores_retired_project_identity(
+    cli_mod, monkeypatch, tmp_path
+):
     bootstrap = importlib.import_module("mainsequence.bootstrap")
     project_dir = tmp_path / "project"
     project_dir.mkdir(parents=True, exist_ok=True)
@@ -2407,7 +2472,7 @@ def test_prime_runtime_env_prefers_local_project_env(cli_mod, monkeypatch, tmp_p
     bootstrap.prime_runtime_env()
 
     assert os.environ["MAINSEQUENCE_ENDPOINT"] == "https://project-backend.test"
-    assert os.environ["MAIN_SEQUENCE_PROJECT_UID"] == "project-uid-123"
+    assert "MAIN_SEQUENCE_PROJECT_UID" not in os.environ
     assert "MAIN_SEQUENCE_PROJECT_ID" not in os.environ
     assert os.environ["MAINSEQUENCE_ACCESS_TOKEN"] == "acc-123"
     assert os.environ["MAINSEQUENCE_REFRESH_TOKEN"] == "ref-456"
@@ -2712,7 +2777,7 @@ def test_project_list(cli_mod, runner, monkeypatch):
     assert "UID" in result.output
     assert "project-uid-1" in result.output
     assert "Branches" in result.output
-    assert "Local" in result.output
+    assert "Local" not in result.output
     assert "Demo" in result.output
     assert "Data Source" not in result.output
     assert "Class" not in result.output
@@ -4076,7 +4141,7 @@ def test_list_project_jobs_uses_client_model(cli_mod, monkeypatch):
         def filter(cls, timeout=None, **kwargs):
             captured["filters"].append(kwargs)
             captured["env_project_uid"] = os.environ.get("MAIN_SEQUENCE_PROJECT_UID")
-            if "project__uid" in kwargs:
+            if "project_branch_uid" in kwargs:
                 return [
                     types.SimpleNamespace(
                         model_dump=lambda: {
@@ -4113,7 +4178,7 @@ def test_list_project_jobs_uses_client_model(cli_mod, monkeypatch):
     )
     assert captured["filters"][0] == {
         "name__contains": "daily",
-        "project__uid": project_branch_uid,
+        "project_branch_uid": project_branch_uid,
     }
     assert captured["env_project_uid"] is None
     assert captured["jwt"] == ("acc", "ref")
@@ -5519,7 +5584,6 @@ def test_create_project_does_not_send_project_visible(cli_mod, monkeypatch):
 
     out = api_mod.create_project(
         project_name="demo-project",
-        default_metatables_data_source_uid="11111111-1111-4111-8111-111111111111",
         default_base_image_uid="22222222-2222-4222-8222-222222222222",
         github_org_uid="33333333-3333-4333-8333-333333333333",
         env_vars={"FOO": "bar"},
@@ -5530,7 +5594,6 @@ def test_create_project_does_not_send_project_visible(cli_mod, monkeypatch):
     assert captured["body"] == {
         "project_name": "demo-project",
         "project_type": "python",
-        "default_metatables_data_source_uid": "11111111-1111-4111-8111-111111111111",
         "default_base_image_uid": "22222222-2222-4222-8222-222222222222",
         "github_org_uid": "33333333-3333-4333-8333-333333333333",
         "env_vars": [{"name": "FOO", "value": "bar"}],
@@ -5679,9 +5742,7 @@ def test_list_project_job_runs_uses_client_model(cli_mod, monkeypatch):
 
 def test_get_project_job_run_logs_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
-    real_job_run = importlib.import_module(
-        "mainsequence.client.models_helpers"
-    ).JobRun
+    real_job_run = importlib.import_module("mainsequence.client.models_helpers").JobRun
     captured = {}
 
     monkeypatch.setattr(
@@ -5708,7 +5769,6 @@ def test_get_project_job_run_logs_uses_client_model(cli_mod, monkeypatch):
         ROOT_URL = "https://old.test/api/v1"
 
     class CanonicalJobRun(real_job_run):
-
         @classmethod
         def get(cls, pk, timeout=None):
             captured["job_run_uid_arg"] = pk
@@ -5762,7 +5822,7 @@ def test_project_get_data_node_updates_defaults_to_env_project_uid(
 ):
     target = tmp_path / "demo-123"
     target.mkdir(parents=True, exist_ok=True)
-    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8")
+    (target / ".env").write_text("", encoding="utf-8")
 
     captured = {}
 
@@ -5800,7 +5860,7 @@ def test_project_get_data_node_updates_defaults_to_env_project_uid(
 def test_project_images_defaults_to_env_project_id(cli_mod, runner, monkeypatch, tmp_path):
     target = tmp_path / "demo-123"
     target.mkdir(parents=True, exist_ok=True)
-    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8")
+    (target / ".env").write_text("", encoding="utf-8")
 
     monkeypatch.chdir(target)
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
@@ -5832,7 +5892,7 @@ def test_project_images_defaults_to_env_project_id(cli_mod, runner, monkeypatch,
 def test_project_images_list_json(cli_mod, runner, monkeypatch, tmp_path):
     target = tmp_path / "demo-123"
     target.mkdir(parents=True, exist_ok=True)
-    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8")
+    (target / ".env").write_text("", encoding="utf-8")
 
     monkeypatch.chdir(target)
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
@@ -5921,7 +5981,7 @@ def test_project_images_delete_requires_confirmation(cli_mod, runner, monkeypatc
 def test_project_jobs_list_defaults_to_env_project_id(cli_mod, runner, monkeypatch, tmp_path):
     target = tmp_path / "demo-123"
     target.mkdir(parents=True, exist_ok=True)
-    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8")
+    (target / ".env").write_text("", encoding="utf-8")
 
     monkeypatch.chdir(target)
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
@@ -5977,7 +6037,7 @@ def test_project_project_resource_list_defaults_to_remote_branch_head(
 ):
     target = tmp_path / "demo-123"
     target.mkdir(parents=True, exist_ok=True)
-    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8")
+    (target / ".env").write_text("", encoding="utf-8")
     captured = {}
 
     monkeypatch.chdir(target)
@@ -6026,7 +6086,7 @@ def test_project_project_resource_list_defaults_to_remote_branch_head(
 def test_project_project_resource_list_passes_extra_filters(cli_mod, runner, monkeypatch, tmp_path):
     target = tmp_path / "demo-123"
     target.mkdir(parents=True, exist_ok=True)
-    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8")
+    (target / ".env").write_text("", encoding="utf-8")
     captured = {}
 
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
@@ -6074,7 +6134,7 @@ def test_project_project_resource_create_dashboard_filters_resources_by_selected
 ):
     target = tmp_path / "demo-123"
     target.mkdir(parents=True, exist_ok=True)
-    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8")
+    (target / ".env").write_text("", encoding="utf-8")
     captured = {}
 
     monkeypatch.chdir(target)
@@ -6153,7 +6213,7 @@ def test_project_project_resource_create_fastapi_filters_resources_by_selected_i
 ):
     target = tmp_path / "demo-123"
     target.mkdir(parents=True, exist_ok=True)
-    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8")
+    (target / ".env").write_text("", encoding="utf-8")
     captured = {}
 
     monkeypatch.chdir(target)
@@ -8654,7 +8714,7 @@ def test_project_job_runs_logs_stops_after_max_wait(cli_mod, runner, monkeypatch
 def test_project_jobs_create_interactive_defaults(cli_mod, runner, monkeypatch, tmp_path):
     target = tmp_path / "demo-123"
     target.mkdir(parents=True, exist_ok=True)
-    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8")
+    (target / ".env").write_text("", encoding="utf-8")
 
     monkeypatch.chdir(target)
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
@@ -8721,7 +8781,7 @@ def test_project_jobs_create_delegates_initial_image_with_automatic_deployment(
 ):
     target = tmp_path / "demo-123"
     target.mkdir(parents=True, exist_ok=True)
-    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8")
+    (target / ".env").write_text("", encoding="utf-8")
 
     monkeypatch.chdir(target)
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
@@ -8787,7 +8847,7 @@ def test_project_jobs_create_rejects_image_with_automatic_deployment(
 ):
     target = tmp_path / "demo-123"
     target.mkdir(parents=True, exist_ok=True)
-    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8")
+    (target / ".env").write_text("", encoding="utf-8")
     monkeypatch.chdir(target)
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(
@@ -8819,7 +8879,7 @@ def test_project_jobs_create_rejects_image_with_automatic_deployment(
 def test_project_jobs_create_derives_memory_from_cpu(cli_mod, runner, monkeypatch, tmp_path):
     target = tmp_path / "demo-123"
     target.mkdir(parents=True, exist_ok=True)
-    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8")
+    (target / ".env").write_text("", encoding="utf-8")
 
     monkeypatch.chdir(target)
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
@@ -8884,7 +8944,7 @@ def test_project_jobs_create_derives_memory_from_cpu(cli_mod, runner, monkeypatc
 def test_project_jobs_create_interactive_interval_schedule(cli_mod, runner, monkeypatch, tmp_path):
     target = tmp_path / "demo-123"
     target.mkdir(parents=True, exist_ok=True)
-    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8")
+    (target / ".env").write_text("", encoding="utf-8")
 
     monkeypatch.chdir(target)
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
@@ -8935,7 +8995,7 @@ def test_project_jobs_create_interactive_interval_schedule(cli_mod, runner, monk
 def test_project_create_image_interactive_defaults(cli_mod, runner, monkeypatch, tmp_path):
     target = tmp_path / "demo-123"
     target.mkdir(parents=True, exist_ok=True)
-    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8")
+    (target / ".env").write_text("", encoding="utf-8")
 
     monkeypatch.chdir(target)
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
@@ -9026,7 +9086,7 @@ def test_project_create_image_interactive_defaults(cli_mod, runner, monkeypatch,
 def test_project_create_image_rejects_unpushed_hash(cli_mod, runner, monkeypatch, tmp_path):
     target = tmp_path / "demo-123"
     target.mkdir(parents=True, exist_ok=True)
-    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8")
+    (target / ".env").write_text("", encoding="utf-8")
 
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(
@@ -9291,18 +9351,6 @@ def test_project_create_interactive_defaults(cli_mod, runner, monkeypatch):
     )
     monkeypatch.setattr(
         cli_mod,
-        "list_data_sources",
-        lambda status="AVAILABLE": [
-            {
-                "uid": "11111111-1111-4111-8111-111111111111",
-                "display_name": "Default DS",
-                "class_type": "timescale_db",
-                "status": "AVAILABLE",
-            }
-        ],
-    )
-    monkeypatch.setattr(
-        cli_mod,
         "list_project_base_images",
         lambda: [
             {
@@ -9337,17 +9385,15 @@ def test_project_create_interactive_defaults(cli_mod, runner, monkeypatch):
 
     # Prompts:
     # 1) Project name
-    # 2) Data source uid
-    # 3) Default base image uid
-    # 4) GitHub organization uid
-    # 5) Environment variables line
-    user_input = "demo-project\n\n\n\nFOO=bar, BAZ=qux\n"
+    # 2) Default base image uid
+    # 3) GitHub organization uid
+    # 4) Environment variables line
+    user_input = "demo-project\n\n\nFOO=bar, BAZ=qux\n"
     result = runner.invoke(cli_mod.app, ["project", "create"], input=user_input)
 
     assert result.exit_code == 0
     assert captured["project_name"] == "demo-project"
     assert captured["project_type"] == "python"
-    assert captured["default_metatables_data_source_uid"] == "11111111-1111-4111-8111-111111111111"
     assert captured["default_base_image_uid"] == "22222222-2222-4222-8222-222222222222"
     assert captured["github_org_uid"] == "33333333-3333-4333-8333-333333333333"
     assert captured["env_vars"] == {"FOO": "bar", "BAZ": "qux"}
@@ -9391,8 +9437,6 @@ def test_project_create_with_explicit_options_returns_logical_project(
             "project",
             "create",
             "demo-project",
-            "--default-metatables-data-source-uid",
-            "11111111-1111-4111-8111-111111111111",
             "--default-base-image-uid",
             "22222222-2222-4222-8222-222222222222",
             "--github-org-uid",
@@ -9403,7 +9447,7 @@ def test_project_create_with_explicit_options_returns_logical_project(
     )
 
     assert result.exit_code == 0
-    assert captured["default_metatables_data_source_uid"] == "11111111-1111-4111-8111-111111111111"
+    assert "default_metatables_data_source_uid" not in captured
     assert "Project created: demo-project" in result.output
 
 
@@ -9676,7 +9720,7 @@ def test_project_set_up_locally(cli_mod, runner, monkeypatch, tmp_path):
     assert "MAINSEQUENCE_ACCESS_TOKEN=access-123" in env_text
     assert "MAINSEQUENCE_REFRESH_TOKEN=refresh-456" in env_text
     assert "MAINSEQUENCE_ENDPOINT=https://backend.test" in env_text
-    assert "MAIN_SEQUENCE_PROJECT_UID=project-uid-123" in env_text
+    assert "MAIN_SEQUENCE_PROJECT_UID" not in env_text
     assert "MAIN_SEQUENCE_PROJECT_ID" not in env_text
     assert "DEFAULT_BASE_IMAGE" not in env_text
     assert "FOO=bar" not in env_text
@@ -9784,7 +9828,7 @@ def test_project_set_up_locally_runtime_credential(cli_mod, runner, monkeypatch,
     assert "MAINSEQUENCE_RUNTIME_CREDENTIAL_ID=cred-id" in env_text
     assert "MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET=cred-secret" in env_text
     assert "MAINSEQUENCE_ENDPOINT=https://backend.test" in env_text
-    assert "MAIN_SEQUENCE_PROJECT_UID=project-uid-123" in env_text
+    assert "MAIN_SEQUENCE_PROJECT_UID" not in env_text
     assert "MAIN_SEQUENCE_PROJECT_ID" not in env_text
     assert "MAINSEQUENCE_REFRESH_TOKEN" not in env_text
     assert "DEFAULT_BASE_IMAGE" not in env_text
@@ -9891,7 +9935,7 @@ def test_project_refresh_token(cli_mod, runner, monkeypatch, tmp_path):
     assert "MAINSEQUENCE_ACCESS_TOKEN=new-access" in env_text
     assert "MAINSEQUENCE_REFRESH_TOKEN=new-refresh" in env_text
     assert "MAINSEQUENCE_ENDPOINT=https://backend.test" in env_text
-    assert "MAIN_SEQUENCE_PROJECT_UID=project-uid-123" in env_text
+    assert "MAIN_SEQUENCE_PROJECT_UID" not in env_text
     assert "MAIN_SEQUENCE_PROJECT_ID" not in env_text
     assert "MAINSEQUENCE_TOKEN" not in env_text
     assert "old-access" not in env_text
@@ -9939,7 +9983,7 @@ def test_project_refresh_token_runtime_credential(cli_mod, runner, monkeypatch, 
     assert "MAINSEQUENCE_RUNTIME_CREDENTIAL_ID=cred-id" in env_text
     assert "MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET=cred-secret" in env_text
     assert "MAINSEQUENCE_ENDPOINT=https://backend.test" in env_text
-    assert "MAIN_SEQUENCE_PROJECT_UID=project-uid-123" in env_text
+    assert "MAIN_SEQUENCE_PROJECT_UID" not in env_text
     assert "MAIN_SEQUENCE_PROJECT_ID" not in env_text
     assert "MAINSEQUENCE_TOKEN" not in env_text
     assert "MAINSEQUENCE_REFRESH_TOKEN" not in env_text
@@ -9975,7 +10019,7 @@ def test_project_refresh_token_defaults_to_cwd(cli_mod, runner, monkeypatch, tmp
     assert "MAINSEQUENCE_ACCESS_TOKEN=new-access" in env_text
     assert "MAINSEQUENCE_REFRESH_TOKEN=new-refresh" in env_text
     assert "MAINSEQUENCE_ENDPOINT=https://backend.test" in env_text
-    assert "MAIN_SEQUENCE_PROJECT_UID=project-uid-123" in env_text
+    assert "MAIN_SEQUENCE_PROJECT_UID" not in env_text
 
 
 def test_project_delete_local(cli_mod, runner, monkeypatch, tmp_path):
@@ -10062,7 +10106,7 @@ def test_project_build_local_venv_defaults_to_cwd_with_env_project_id(
 ):
     target = tmp_path / "demo-project-uid-123"
     target.mkdir(parents=True, exist_ok=True)
-    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8")
+    (target / ".env").write_text("", encoding="utf-8")
     (target / "pyproject.toml").write_text(
         '[project]\nname = "demo"\nrequires-python = ">=3.13,<3.14"\n',
         encoding="utf-8",
@@ -10261,7 +10305,7 @@ def test_project_sync(
 ):
     target = tmp_path / "project"
     target.mkdir(parents=True, exist_ok=True)
-    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8")
+    (target / ".env").write_text("", encoding="utf-8")
     key = tmp_path / "id_ed25519"
     uv_path = target / ".venv" / "bin" / "uv"
     uv_calls = []
@@ -10333,7 +10377,7 @@ def test_project_sync_defaults_to_cwd_with_positional_message(
 ):
     target = tmp_path / "project"
     target.mkdir(parents=True, exist_ok=True)
-    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8")
+    (target / ".env").write_text("", encoding="utf-8")
     key = tmp_path / "id_ed25519"
     uv_path = target / ".venv" / "bin" / "uv"
     git_calls = []
@@ -10394,7 +10438,7 @@ def test_project_sync_rejects_invalid_branch_before_local_mutation(
 ):
     target = tmp_path / "project"
     target.mkdir(parents=True, exist_ok=True)
-    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8")
+    (target / ".env").write_text("", encoding="utf-8")
 
     def fail_preflight(*args, **kwargs):
         raise cli_mod.ApiError(preflight_error)
@@ -10427,7 +10471,7 @@ def test_project_sync_dry_run_does_not_mutate(cli_mod, runner, monkeypatch, tmp_
     target = tmp_path / "project"
     target.mkdir(parents=True, exist_ok=True)
     (target / ".env").write_text(
-        "MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n",
+        "",
         encoding="utf-8",
     )
 
@@ -10487,7 +10531,7 @@ def test_project_sync_remote_tag_collision_stops_before_mutation(
     target = tmp_path / "project"
     target.mkdir(parents=True, exist_ok=True)
     (target / ".env").write_text(
-        "MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n",
+        "",
         encoding="utf-8",
     )
     uv_path = target / ".venv" / "bin" / "uv"
@@ -10547,7 +10591,7 @@ def test_project_sync_version_mismatch_stops_before_lock_or_git_mutation(
     target = tmp_path / "project"
     target.mkdir(parents=True, exist_ok=True)
     (target / ".env").write_text(
-        "MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n",
+        "",
         encoding="utf-8",
     )
     uv_path = target / ".venv" / "bin" / "uv"
@@ -10607,7 +10651,7 @@ def test_project_schedule_batch_jobs_is_removed(cli_mod, runner):
 def test_project_sync_project(cli_mod, runner, monkeypatch, tmp_path):
     target = tmp_path / "project"
     target.mkdir(parents=True, exist_ok=True)
-    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8")
+    (target / ".env").write_text("", encoding="utf-8")
     key = tmp_path / "id_ed25519"
     uv_path = target / ".venv" / "bin" / "uv"
     uv_calls = []
@@ -10682,7 +10726,7 @@ def test_project_sync_project_defaults_to_current_project_dir(
 ):
     target = tmp_path / "project"
     target.mkdir(parents=True, exist_ok=True)
-    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8")
+    (target / ".env").write_text("", encoding="utf-8")
     key = tmp_path / "id_ed25519"
     uv_path = target / ".venv" / "bin" / "uv"
     seen = {"cwd": []}
@@ -10779,11 +10823,18 @@ def test_project_current(cli_mod, runner, monkeypatch, tmp_path):
     )
     monkeypatch.setattr(cli_mod, "read_local_sdk_version", lambda req: "1.2.3")
     monkeypatch.setattr(cli_mod, "fetch_latest_sdk_version", lambda: "1.2.3")
-    monkeypatch.setattr(cli_mod, "_current_git_branch", lambda *_: "main")
     monkeypatch.setattr(
         cli_mod,
-        "_resolve_git_project_branch_context",
-        lambda *args, **kwargs: ("main", "project-branch-uid-123"),
+        "get_project_runtime_context",
+        lambda *args, **kwargs: types.SimpleNamespace(
+            project_uid="project-uid-123",
+            repository_branch="main",
+            canonical_repository_identity="github.com/org/demo",
+            commit_sha="a" * 40,
+            project_branch_uid="project-branch-uid-123",
+            status="resolved",
+            detail="",
+        ),
     )
 
     result = runner.invoke(cli_mod.app, ["project", "current"])
@@ -10817,11 +10868,18 @@ def test_project_current_json(cli_mod, runner, monkeypatch, tmp_path):
     )
     monkeypatch.setattr(cli_mod, "read_local_sdk_version", lambda req: "1.2.3")
     monkeypatch.setattr(cli_mod, "fetch_latest_sdk_version", lambda: "1.2.3")
-    monkeypatch.setattr(cli_mod, "_current_git_branch", lambda *_: "main")
     monkeypatch.setattr(
         cli_mod,
-        "_resolve_git_project_branch_context",
-        lambda *args, **kwargs: ("main", "project-branch-uid-123"),
+        "get_project_runtime_context",
+        lambda *args, **kwargs: types.SimpleNamespace(
+            project_uid="project-uid-123",
+            repository_branch="main",
+            canonical_repository_identity="github.com/org/demo",
+            commit_sha="a" * 40,
+            project_branch_uid="project-branch-uid-123",
+            status="resolved",
+            detail="",
+        ),
     )
 
     result = runner.invoke(cli_mod.app, ["project", "current", "--json"])

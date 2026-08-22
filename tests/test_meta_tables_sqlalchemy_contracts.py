@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime
+import pathlib
 import uuid
 from types import SimpleNamespace
 
@@ -8,6 +9,7 @@ import pytest
 from sqlalchemy.orm import Mapped
 
 import mainsequence.meta_tables.sqlalchemy_contracts as sqlalchemy_contracts
+import mainsequence.project_context as project_context
 from mainsequence.client.metatables import (
     DataSource,
     MetaTable,
@@ -31,6 +33,36 @@ from mainsequence.meta_tables.data_nodes.persist_managers import ensure_register
 
 @pytest.fixture(autouse=True)
 def _clear_metatable_registration_registry(monkeypatch):
+    project_uid = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    project_branch_uid = "22222222-2222-4222-8222-222222222222"
+    project_context._reset_project_runtime_context()
+    source = project_context.GitProjectSourceContext(
+        repository_root=pathlib.Path.cwd().resolve(),
+        canonical_repository_identity="github.com/mainsequence-sdk/sqlalchemy-contracts",
+        repository_branch="main",
+        repository_ref="refs/heads/main",
+        commit_sha="a" * 40,
+    )
+    monkeypatch.setattr(
+        project_context,
+        "_resolve_git_source_context",
+        lambda project_dir: source,
+    )
+    project_context.get_project_runtime_context(
+        _project_branch_context_loader=lambda resolved_source: SimpleNamespace(
+            canonical_repository_identity=(resolved_source.canonical_repository_identity),
+            repository_branch=resolved_source.repository_branch,
+            repository_ref=resolved_source.repository_ref,
+            commit_sha=resolved_source.commit_sha,
+            project_branch=SimpleNamespace(
+                uid=project_branch_uid,
+                project_uid=project_uid,
+                repository_branch=resolved_source.repository_branch,
+                organization_project_environment_uid=None,
+                metatables_data_source=None,
+            ),
+        ),
+    )
     monkeypatch.setattr(
         "mainsequence.client.metatables.SessionDataSource.data_source",
         DataSource.model_construct(
@@ -42,6 +74,7 @@ def _clear_metatable_registration_registry(monkeypatch):
     sqlalchemy_contracts._METATABLE_REGISTRATION_REGISTRY.clear()
     yield
     sqlalchemy_contracts._METATABLE_REGISTRATION_REGISTRY.clear()
+    project_context._reset_project_runtime_context()
 
 
 class Uuid:
@@ -1622,10 +1655,7 @@ def test_ensure_registered_storage_table_uses_session_data_source_for_unbound_mo
         classmethod(fake_filter_by_body),
     )
 
-    assert (
-        ensure_registered_storage_table(AssetSnapshots, context="DataNode")
-        is AssetSnapshots
-    )
+    assert ensure_registered_storage_table(AssetSnapshots, context="DataNode") is AssetSnapshots
     assert AssetSnapshots.get_time_index_meta_table() is backend_metadata
     assert captured["data_source__uid"] == "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
     assert captured["physical_schema__in"] == ["public"]
@@ -1664,10 +1694,7 @@ def test_ensure_registered_storage_table_binds_existing_time_index_meta_table(mo
         classmethod(fake_filter_by_body),
     )
 
-    assert (
-        ensure_registered_storage_table(AssetSnapshots, context="DataNode")
-        is AssetSnapshots
-    )
+    assert ensure_registered_storage_table(AssetSnapshots, context="DataNode") is AssetSnapshots
     assert AssetSnapshots.get_time_index_meta_table() is backend_metadata
     assert AssetSnapshots.get_meta_table_uid() == "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
     assert captured == {
@@ -1780,15 +1807,12 @@ def test_contract_hash_extra_components_are_explicit_utility_inputs():
     random_number_storage_hash = _configured_storage_hash(RandomNumber)
     random_addition_storage_hash = _configured_storage_hash(RandomAddition)
     assert random_number_storage_hash != random_addition_storage_hash
-    assert (
-        sqlalchemy_contracts.compute_metatable_contract_hash(
-            RandomNumber,
-            extra_components={"storage_name": "daily_random_number"},
-        )
-        != sqlalchemy_contracts.compute_metatable_contract_hash(
-            RandomNumber,
-            extra_components={"storage_name": "daily_random_addition"},
-        )
+    assert sqlalchemy_contracts.compute_metatable_contract_hash(
+        RandomNumber,
+        extra_components={"storage_name": "daily_random_number"},
+    ) != sqlalchemy_contracts.compute_metatable_contract_hash(
+        RandomNumber,
+        extra_components={"storage_name": "daily_random_addition"},
     )
 
     request = time_indexed_registration_request_from_sqlalchemy_model(

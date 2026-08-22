@@ -2,13 +2,7 @@
 mainsequence.cli.project_status
 ===============================
 
-Current project detection aligned with CLI local project conventions:
-
-- Detect a project by path structure containing ".../projects/<folder>"
-- Prefer `MAIN_SEQUENCE_PROJECT_UID` from local `.env`
-- If outside configured base, allow detection via .env markers:
-    MAINSEQUENCE_ACCESS_TOKEN, MAINSEQUENCE_REFRESH_TOKEN, MAINSEQUENCE_ENDPOINT
-- Detect .venv and infer Python version
+Current project detection from the containing Git worktree.
 """
 
 from __future__ import annotations
@@ -25,7 +19,6 @@ from dataclasses import dataclass
 class CurrentProjectInfo:
     path: str
     folder: str
-    project_uid: str | None = None
     venv_path: str | None = None
     python_version: str | None = None
 
@@ -41,11 +34,7 @@ class WorkspaceCheckDebug:
     within_base: bool | None = None
     projects_segment_index: int | None = None
     projects_folder: str | None = None
-    project_uid: str | None = None
-    env_path: str | None = None
-    env_exists: bool | None = None
-    env_markers: list[str] | None = None
-    env_has_markers: bool | None = None
+    git_root: str | None = None
     reason: str | None = None
 
 
@@ -80,7 +69,9 @@ def is_path_within(base: pathlib.Path, target: pathlib.Path) -> bool:
     if not target_norm.startswith(base_norm):
         return False
     sep = "\\" if os.name == "nt" else "/"
-    return base_norm.endswith(sep) or (len(target_norm) > len(base_norm) and target_norm[len(base_norm)] == sep)
+    return base_norm.endswith(sep) or (
+        len(target_norm) > len(base_norm) and target_norm[len(base_norm)] == sep
+    )
 
 
 def detect_current_project(
@@ -116,7 +107,9 @@ def detect_current_project(
     return None, debug
 
 
-def _analyze_workspace(workspace_dir: str, base_dir: str) -> tuple[CurrentProjectInfo | None, WorkspaceCheckDebug]:
+def _analyze_workspace(
+    workspace_dir: str, base_dir: str
+) -> tuple[CurrentProjectInfo | None, WorkspaceCheckDebug]:
     check = WorkspaceCheckDebug(workspace_dir=workspace_dir, base_dir=base_dir)
 
     try:
@@ -130,86 +123,35 @@ def _analyze_workspace(workspace_dir: str, base_dir: str) -> tuple[CurrentProjec
             check.base_exists = resolved_base.exists()
             check.within_base = is_path_within(resolved_base, resolved_workspace)
 
-        parts = list(resolved_workspace.parts)
-        parts_cmp = [p.lower() for p in parts] if os.name == "nt" else parts
-        idx = len(parts_cmp) - 1 - list(reversed(parts_cmp)).index("projects") if "projects" in parts_cmp else -1
-        check.projects_segment_index = idx
-
-        if idx == -1 or idx >= len(parts) - 1:
-            check.reason = "missing-projects-segment"
+        git_root_result = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            cwd=str(resolved_workspace),
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        git_root_text = git_root_result.stdout.strip() if git_root_result.returncode == 0 else ""
+        if not git_root_text:
+            check.reason = "not-in-git-worktree"
             return None, check
-
-        folder = parts[idx + 1]
+        git_root = pathlib.Path(git_root_text).resolve()
+        check.git_root = str(git_root)
+        folder = git_root.name
         check.projects_folder = folder
-
-        project_uid = _read_project_identity_from_env(resolved_workspace)
-        check.project_uid = project_uid
-
-        venv_path, pyver = _detect_venv_info(resolved_workspace)
+        venv_path, pyver = _detect_venv_info(git_root)
         project = CurrentProjectInfo(
-            path=str(resolved_workspace),
+            path=str(git_root),
             folder=folder,
-            project_uid=project_uid,
             venv_path=venv_path,
             python_version=pyver,
         )
-
-        if check.within_base:
-            check.reason = "detected-in-base"
-            return project, check
-
-        env_path, env_exists, markers, has_markers = _read_env_markers(resolved_workspace)
-        check.env_path = env_path
-        check.env_exists = env_exists
-        check.env_markers = markers
-        check.env_has_markers = has_markers
-
-        if has_markers:
-            check.reason = "detected-via-env"
-            return project, check
-
-        check.reason = "outside-base-and-no-env" if base_dir else "no-base-and-no-env"
-        return None, check
+        check.reason = "detected-git-worktree"
+        return project, check
 
     except Exception as e:
         check.reason = f"error:{e}"
         return None, check
-
-
-def _read_env_markers(workspace: pathlib.Path) -> tuple[str, bool, list[str], bool]:
-    env_path = str(workspace / ".env")
-    markers = [
-        "MAINSEQUENCE_ACCESS_TOKEN",
-        "MAINSEQUENCE_REFRESH_TOKEN",
-        "MAINSEQUENCE_ENDPOINT",
-    ]
-    try:
-        p = workspace / ".env"
-        if not p.exists():
-            return env_path, False, [], False
-        content = p.read_text(encoding="utf-8", errors="replace")
-        found = [m for m in markers if re.search(rf"^{re.escape(m)}=", content, flags=re.M)]
-        has_auth_marker = bool(
-            {"MAINSEQUENCE_ACCESS_TOKEN", "MAINSEQUENCE_REFRESH_TOKEN"}.intersection(found)
-        )
-        return env_path, True, found, has_auth_marker
-    except Exception:
-        return env_path, False, [], False
-
-
-def _read_project_identity_from_env(workspace: pathlib.Path) -> str | None:
-    env_file = workspace / ".env"
-    if not env_file.exists():
-        return None
-
-    try:
-        content = env_file.read_text(encoding="utf-8", errors="replace")
-    except Exception:
-        return None
-
-    uid_match = re.search(r"(?m)^MAIN_SEQUENCE_PROJECT_UID=(.+?)\s*$", content)
-    project_uid = uid_match.group(1).strip() if uid_match else None
-    return project_uid or None
 
 
 def _detect_venv_info(workspace: pathlib.Path) -> tuple[str | None, str | None]:

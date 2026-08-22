@@ -173,9 +173,7 @@ def test_data_node_update_details_patches_by_data_node_update_uid(monkeypatch):
     assert isinstance(details, DataNodeUpdateDetails)
     assert details.related_table_uid == "data-node-update-44"
     assert captured["r_type"] == "PATCH"
-    assert captured["url"].endswith(
-        "/local-time-series-update-details/data-node-update-44/"
-    )
+    assert captured["url"].endswith("/local-time-series-update-details/data-node-update-44/")
     assert captured["payload"] == {"json": {"update_priority": 7}}
     assert captured["time_out"] == 12
 
@@ -724,6 +722,9 @@ def test_label_fields_exist_on_project_and_storage_models():
     project = Project(
         uid="project-uid-1",
         project_name="Project",
+        project_type="python",
+        primary_language="python",
+        framework="mainsequence",
         labels=["research"],
     )
     data_node_storage = TimeIndexMetaTable(
@@ -1001,9 +1002,7 @@ def test_data_node_update_filters_when_historical_update_stats_have_max_time(mon
     node._local_persist_manager = PersistManagerStub()
     node._validate_update_output = lambda temp_df: None
     historical_update = SimpleNamespace(
-        update_statistics=SimpleNamespace(
-            max_time_index_value=pd.Timestamp("2026-04-13T00:00:00Z")
-        )
+        update_statistics=SimpleNamespace(max_time_index_value=pd.Timestamp("2026-04-13T00:00:00Z"))
     )
 
     result = node._execute_local_update(historical_update=historical_update)

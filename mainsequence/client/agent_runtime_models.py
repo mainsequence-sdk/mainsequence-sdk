@@ -223,15 +223,9 @@ class AgentSessionRuntimeAccess(BasePydanticModel):
 
     @model_validator(mode="after")
     def _mirror_service_runtime_uid(self) -> AgentSessionRuntimeAccess:
-        if (
-            self.service_runtime_uid is None
-            and self.knative_service_runtime_uid is not None
-        ):
+        if self.service_runtime_uid is None and self.knative_service_runtime_uid is not None:
             self.service_runtime_uid = self.knative_service_runtime_uid
-        elif (
-            self.knative_service_runtime_uid is None
-            and self.service_runtime_uid is not None
-        ):
+        elif self.knative_service_runtime_uid is None and self.service_runtime_uid is not None:
             self.knative_service_runtime_uid = self.service_runtime_uid
         return self
 
@@ -567,10 +561,16 @@ class CodingAgentService(BaseObjectOrm, BasePydanticModel):
         body: dict[str, Any] = {"agent_type": str(agent_type)}
         if user_uid is not None:
             body["user_uid"] = cls._coerce_filter_uid(user_uid, field_name="user_uid")
-        if project_branch_uid is not None:
-            body["project_branch_uid"] = cls._coerce_filter_uid(
-                project_branch_uid,
-                field_name="project_branch_uid",
+        if str(agent_type) == "project-executor":
+            from mainsequence.project_context import resolve_project_branch_uid
+
+            body["project_branch_uid"] = resolve_project_branch_uid(
+                "CodingAgentService.resolve(project-executor)",
+                supplied_uid=project_branch_uid,
+            )
+        elif project_branch_uid is not None:
+            raise ValueError(
+                "project_branch_uid is only valid when resolving a project-executor service."
             )
         rows = cls.filter(timeout=timeout, **body)
         if len(rows) != 1:
@@ -596,7 +596,7 @@ class CodingAgentService(BaseObjectOrm, BasePydanticModel):
     def resolve_project_executor(
         cls,
         *,
-        project_branch_uid: str,
+        project_branch_uid: str | None = None,
         timeout=None,
     ) -> CodingAgentService:
         return cls.resolve(
@@ -609,7 +609,7 @@ class CodingAgentService(BaseObjectOrm, BasePydanticModel):
     def deploy_project(
         cls,
         *,
-        project_branch_uid: str,
+        project_branch_uid: str | None = None,
         llm_provider: str | None = None,
         llm_model: str | None = None,
         llm_thinking: str | None = None,
@@ -624,9 +624,11 @@ class CodingAgentService(BaseObjectOrm, BasePydanticModel):
         timeout=None,
         **extra: Any,
     ) -> dict[str, Any]:
-        resolved_project_branch_uid = cls._coerce_filter_uid(
-            project_branch_uid,
-            field_name="project_branch_uid",
+        from mainsequence.project_context import resolve_project_branch_uid
+
+        resolved_project_branch_uid = resolve_project_branch_uid(
+            "CodingAgentService.deploy_project",
+            supplied_uid=project_branch_uid,
         )
         body: dict[str, Any] = {
             key: value
@@ -657,6 +659,7 @@ class CodingAgentService(BaseObjectOrm, BasePydanticModel):
             timeout=timeout,
             expected_statuses=(200, 201, 202),
         )
+
 
 class AgentSessionInsightsBase(BasePydanticModel):
     has_insights: bool = Field(

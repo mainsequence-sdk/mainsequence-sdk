@@ -91,22 +91,26 @@ If the user goal or project context is unclear, stop before routing domain work.
 
 ## Resolve Local Project Context From Git
 
-Local project context is composed from two sources:
+The containing Git worktree is the only source of repository, attached branch,
+and exact commit identity. The SDK normalizes the non-secret repository remote,
+maps it to Project and ProjectBranch through the platform API, resolves once for
+the process, and reuses the immutable result. Authentication selects credentials
+and permissions; it does not select source identity. A `git switch` performed in
+a long-running process takes effect only in the next CLI invocation, worker,
+script, or other process run.
 
-- `.env` supplies `MAIN_SEQUENCE_PROJECT_UID`, the logical Project aggregate;
-- `git branch --show-current` supplies the active repository branch.
-
-Use `mainsequence project current --debug --json` to verify that pair resolves
+Use `mainsequence project current --debug --json` to verify that Git context resolves
 to `project_branch_status=resolved` and a nonempty `project_branch_uid`. The UID
 is an internal resolution result for branch-owned platform calls; it is not a
-local configuration input. Never require the user to look it up, never persist
-`MAIN_SEQUENCE_PROJECT_BRANCH_UID`, and never infer a branch from collection
-order. A detached checkout or an unregistered Git branch is unresolved project
-context and must block live branch-owned operations.
+local or environment configuration input. Never require the user to look it up,
+persist project identity in `.env`, accept a branch environment override, or
+infer a branch from collection order. Local and deployed project images use the
+same Git algorithm. A detached checkout or an unregistered Git branch is
+unresolved context and must block only live branch-owned operations.
 
 Keep the platform boundaries explicit:
 
-- use the logical Project UID for aggregate identity and Project operations;
+- use the Git-resolved logical Project UID for aggregate identity and Project operations;
 - let the SDK resolve the current Git branch to ProjectBranch only when Jobs,
   images, releases, resources, pods, or other branch-owned APIs require it;
 - treat GitRepository as repository metadata and clone-location ownership;
@@ -114,9 +118,12 @@ Keep the platform boundaries explicit:
 
 For ordinary local implementation, work naturally in the current Git branch.
 Do not make ProjectBranch selection a separate user workflow.
-An unregistered local branch may still use the logical Project default
-DataSource for generic MetaTable/session work. It remains invalid for Jobs,
-images, releases, resources, pods, and every other branch-owned platform API.
+An unregistered local branch remains valid for ordinary local development, but
+it has no ProjectBranch, Environment, or project-derived MetaTables DataSource.
+Only branch-owned operations fail. Register the branch before using Jobs,
+images, releases, resources, platform-managed MetaTables/DataNodes, migrations,
+pods, or other branch-owned platform APIs. Never fall back to another branch or
+to a Project-level default DataSource.
 
 ## Required Decisions
 

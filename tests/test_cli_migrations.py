@@ -11,6 +11,7 @@ import pytest
 from sqlalchemy import MetaData
 from typer.testing import CliRunner
 
+import mainsequence.project_context as project_context
 from mainsequence.client.metatables import MetaTable
 from mainsequence.client.metatables.core import MetaTableProjectContextRequest
 from mainsequence.meta_tables.migrations import (
@@ -70,6 +71,42 @@ def _project_context() -> MetaTableProjectContextRequest:
     return MetaTableProjectContextRequest(
         project_branch_uid="11111111-1111-4111-8111-111111111111",
     )
+
+
+@pytest.fixture(autouse=True)
+def _resolved_project_branch_context(monkeypatch):
+    project_uid = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    project_branch_uid = "11111111-1111-4111-8111-111111111111"
+    project_context._reset_project_runtime_context()
+    source = project_context.GitProjectSourceContext(
+        repository_root=pathlib.Path.cwd().resolve(),
+        canonical_repository_identity="github.com/mainsequence-sdk/migrations",
+        repository_branch="main",
+        repository_ref="refs/heads/main",
+        commit_sha="a" * 40,
+    )
+    monkeypatch.setattr(
+        project_context,
+        "_resolve_git_source_context",
+        lambda project_dir: source,
+    )
+    project_context.get_project_runtime_context(
+        _project_branch_context_loader=lambda resolved_source: types.SimpleNamespace(
+            canonical_repository_identity=(resolved_source.canonical_repository_identity),
+            repository_branch=resolved_source.repository_branch,
+            repository_ref=resolved_source.repository_ref,
+            commit_sha=resolved_source.commit_sha,
+            project_branch=types.SimpleNamespace(
+                uid=project_branch_uid,
+                project_uid=project_uid,
+                repository_branch=resolved_source.repository_branch,
+                organization_project_environment_uid=None,
+                metatables_data_source=None,
+            ),
+        ),
+    )
+    yield
+    project_context._reset_project_runtime_context()
 
 
 def _patch_preflight(monkeypatch, migration_cli, migration, *, emit_reservation=False):
@@ -647,9 +684,7 @@ def test_migrations_revision_passes_provider_version_path(monkeypatch):
             return ["0004"]
 
     def fake_script_directory_from_config(config):
-        captured["script_context_version_locations"] = config.get_main_option(
-            "version_locations"
-        )
+        captured["script_context_version_locations"] = config.get_main_option("version_locations")
         captured["script_context_path_separator"] = config.get_main_option("path_separator")
         return FakeScriptDirectory()
 

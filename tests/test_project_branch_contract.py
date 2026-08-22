@@ -20,8 +20,6 @@ def logical_project_payload() -> dict:
         "project_type": "python",
         "primary_language": "python",
         "framework": "mainsequence",
-        "default_metatables_data_source": None,
-        "default_metatables_data_source_uid": None,
         "git_repository_uid": REPOSITORY_UID,
         "archived": False,
         "created_by": "owner@example.com",
@@ -160,7 +158,6 @@ def test_project_create_sends_only_canonical_fields(monkeypatch):
     created = models_foundry.Project.create(
         project_name="Analytics",
         project_type="python",
-        default_metatables_data_source_uid="51111111-1111-4111-8111-111111111111",
         default_base_image_uid="61111111-1111-4111-8111-111111111111",
         github_org_uid="41111111-1111-4111-8111-111111111111",
         env_vars={"FOO": "bar"},
@@ -172,7 +169,6 @@ def test_project_create_sends_only_canonical_fields(monkeypatch):
         "json": {
             "project_name": "Analytics",
             "project_type": "python",
-            "default_metatables_data_source_uid": "51111111-1111-4111-8111-111111111111",
             "default_base_image_uid": "61111111-1111-4111-8111-111111111111",
             "github_org_uid": "41111111-1111-4111-8111-111111111111",
             "env_vars": [{"name": "FOO", "value": "bar"}],
@@ -186,9 +182,7 @@ def test_project_bulk_delete_uses_selection_and_options(monkeypatch):
 
     def fake_make_request(**kwargs):
         captured.update(kwargs)
-        return FakeResponse(
-            {"detail": "Projects deleted.", "matched_count": 1, "deleted_count": 1}
-        )
+        return FakeResponse({"detail": "Projects deleted.", "matched_count": 1, "deleted_count": 1})
 
     monkeypatch.setattr(
         models_foundry.Project,
@@ -267,13 +261,10 @@ def test_project_branch_summary_uses_branch_route(monkeypatch):
     monkeypatch.setattr(models_foundry, "make_request", fake_make_request)
 
     assert branch.summary() == {"uid": PROJECT_BRANCH_UID}
-    assert captured["url"] == (
-        f"https://api/project-branches/{PROJECT_BRANCH_UID}/summary/"
-    )
+    assert captured["url"] == (f"https://api/project-branches/{PROJECT_BRANCH_UID}/summary/")
 
 
 def test_local_branch_resolution_does_not_infer_the_only_branch(monkeypatch):
-    monkeypatch.setattr(cli_mod, "_current_git_branch", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(
         cli_mod,
         "get_project_branch",

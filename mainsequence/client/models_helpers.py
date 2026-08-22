@@ -11,14 +11,20 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, PositiveInt
 
-from .base import BaseObjectOrm, BasePydanticModel, ShareableObjectMixin
+from mainsequence.project_context import resolve_project_branch_uid
+
+from .base import (
+    BaseObjectOrm,
+    BasePydanticModel,
+    CurrentProjectBranchCollectionMixin,
+    ShareableObjectMixin,
+)
 from .compute_validation import (
     decimal_to_storage,
     normalize_string,
     validate_and_normalize_compute_fields,
 )
 from .exceptions import raise_for_response
-from .metatables.core import _resolve_local_pod_project
 from .models_foundry import (
     ProjectBranch,
     ProjectImage,
@@ -115,17 +121,17 @@ class AutomaticRedeploymentPolicy(BaseModel):
     )
 
 
-class Job(BaseObjectOrm, BasePydanticModel):
+class Job(CurrentProjectBranchCollectionMixin, BaseObjectOrm, BasePydanticModel):
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
         "uid": ["in", "exact"],
-        "project__uid": ["in", "exact"],
+        "project_branch_uid": ["in", "exact"],
         "name": ["in", "exact", "contains"],
     }
     FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
         "uid": "uid",
         "uid__in": "uid",
-        "project__uid": "uid",
-        "project__uid__in": "uid",
+        "project_branch_uid": "uid",
+        "project_branch_uid__in": "uid",
         "name": "str",
         "name__in": "str",
         "name__contains": "str",
@@ -303,19 +309,10 @@ class Job(BaseObjectOrm, BasePydanticModel):
         cls,
         project_branch_uid: str | ProjectBranch | dict[str, Any] | None = None,
     ) -> str:
-        ref = project_branch_uid
-        if ref is None:
-            resolution = _resolve_local_pod_project()
-            if resolution.project_branch is not None:
-                ref = resolution.project_branch
-
-        resolved = cls._coerce_uid(ref, field_name="project_branch_uid")
-        if resolved is None:
-            raise ValueError(
-                "project_branch_uid is required. Pass it explicitly or run inside a "
-                "registered branch of a configured local Project."
-            )
-        return resolved
+        return resolve_project_branch_uid(
+            "Job.create",
+            supplied_uid=project_branch_uid,
+        )
 
     @classmethod
     def _normalize_allowed_execution_extensions(
@@ -912,7 +909,7 @@ class JobRun(BaseObjectOrm, BasePydanticModel):
         return r.json()
 
 
-class ProjectResource(BaseObjectOrm, BasePydanticModel):
+class ProjectResource(CurrentProjectBranchCollectionMixin, BaseObjectOrm, BasePydanticModel):
     SEARCH_FIELDS: ClassVar[list[str]] = [
         "project__uid",
         "uid",
@@ -929,6 +926,7 @@ class ProjectResource(BaseObjectOrm, BasePydanticModel):
         "project__uid": "uid",
         "uid": "uid",
     }
+    PROJECT_BRANCH_FILTER_FIELD: ClassVar[str] = "project__uid"
 
     uid: str | None = Field(
         None,
@@ -1048,7 +1046,12 @@ class ResourceReleaseKind(str, Enum):
     STATIC_SITE = "static_site"
 
 
-class ResourceRelease(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
+class ResourceRelease(
+    CurrentProjectBranchCollectionMixin,
+    ShareableObjectMixin,
+    BaseObjectOrm,
+    BasePydanticModel,
+):
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
         "uid": ["exact", "in"],
         "project_branch_uid": ["exact"],
@@ -1328,7 +1331,7 @@ class DeploymentRunLogPage(BaseModel):
     retention_expires_at: datetime.datetime | None = None
 
 
-class DeploymentRun(BaseObjectOrm, BasePydanticModel):
+class DeploymentRun(CurrentProjectBranchCollectionMixin, BaseObjectOrm, BasePydanticModel):
     ENDPOINT: ClassVar[str] = "deployment-runs"
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
         "project_branch_uid": ["exact", "in"],

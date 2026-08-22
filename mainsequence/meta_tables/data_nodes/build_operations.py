@@ -18,7 +18,6 @@ from uuid import UUID
 from pydantic import BaseModel
 
 from mainsequence.client import BaseObjectOrm
-from mainsequence.client.metatables.core import _resolve_local_pod_project
 from mainsequence.client.models_helpers import get_model_class
 from mainsequence.meta_tables.pydantic_metadata import (
     is_serialized_pydantic_model,
@@ -237,7 +236,11 @@ def parse_dictionary_before_hashing(dictionary: dict[str, Any]) -> dict[str, Any
     return local_ts_dict_to_hash
 
 
-def hash_signature(dictionary: dict[str, Any]) -> tuple[str, str]:
+def hash_signature(
+    dictionary: dict[str, Any],
+    *,
+    update_hash_components: Mapping[str, Any] | None = None,
+) -> tuple[str, str]:
     """
     Computes MD5 hashes for local and remote configurations from a single dictionary.
     """
@@ -251,11 +254,8 @@ def hash_signature(dictionary: dict[str, Any]) -> tuple[str, str]:
     )
     remote_ts_in_db_hash = _strip_pydantic_hash_exclusions(parsed_dictionary, for_storage_hash=True)
 
-    # Branch-owned DataNodes must hash against the active ProjectBranch, resolved
-    # from the stable logical Project UID and the actual checked-out Git branch.
-    resolution = _resolve_local_pod_project()
-    if resolution.project_branch is not None and getattr(resolution.project_branch, "uid", None):
-        local_ts_dict_to_hash["project_branch_uid"] = resolution.project_branch.uid
+    if update_hash_components:
+        local_ts_dict_to_hash.update(dict(update_hash_components))
     # Encode and hash both versions
     encoded_local = json.dumps(local_ts_dict_to_hash, sort_keys=True).encode()
     encoded_remote = json.dumps(remote_ts_in_db_hash, sort_keys=True).encode()
@@ -455,6 +455,7 @@ def create_config(
     *,
     update_hash_prefix: str | None = None,
     storage_hash_prefix: str | None = None,
+    update_hash_components: Mapping[str, Any] | None = None,
 ):
     """
     Creates the configuration and hashes using the original hash_signature logic.
@@ -471,7 +472,10 @@ def create_config(
     dict_to_hash = copy.deepcopy(serialized_core_kwargs)
 
     # 3. Generate the hashes
-    update_hash, storage_hash = hash_signature(dict_to_hash)
+    update_hash, storage_hash = hash_signature(
+        dict_to_hash,
+        update_hash_components=update_hash_components,
+    )
 
     # 4. Create the remote configuration by removing ignored keys
     remote_config = copy.deepcopy(dict_to_hash)

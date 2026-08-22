@@ -34,6 +34,7 @@ from mainsequence.meta_tables.data_nodes.persist_managers import (
     PersistManager,
     ensure_registered_storage_table,
 )
+from mainsequence.project_context import require_project_branch_context
 
 from .models import BaseConfiguration
 from .namespacing import current_hash_namespace
@@ -198,7 +199,9 @@ class APIDataNode(DataAccessMixin):
             None,
         )
         if physical_table_name in (None, ""):
-            raise ValueError("APIDataNode.build_from_local_time_serie requires physical_table_name.")
+            raise ValueError(
+                "APIDataNode.build_from_local_time_serie requires physical_table_name."
+            )
         return cls(
             data_source_uid=cls._require_data_source_uid(
                 source_table.data_source,
@@ -377,7 +380,9 @@ class APIDataNode(DataAccessMixin):
         )
         storage_table = self._local_persist_manager.storage_table
 
-        assert storage_table is not None, f"Verify that the table {self.physical_table_name} exists "
+        assert storage_table is not None, (
+            f"Verify that the table {self.physical_table_name} exists "
+        )
 
     def get_update_statistics(self):
         """
@@ -990,6 +995,7 @@ class DataNode(DataAccessMixin, ABC):
             Result returned by ``UpdateRunner.run()``.
         """
 
+        require_project_branch_context("DataNode.run")
         debug_mode = True  # Todo: onle enterpsie distributed has the distribured node update.
 
         def _do_run():

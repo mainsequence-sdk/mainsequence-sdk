@@ -47,6 +47,11 @@ from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.version import InvalidVersion, Version
 
 from ..client.compute_validation import decimal_to_storage, parse_cpu_request, parse_memory_request
+from ..project_context import (
+    ProjectRuntimeContextError,
+    get_project_runtime_context,
+    require_project_branch_context,
+)
 from ..project_skills import (
     ProjectSkillAssemblyError,
     install_dual_source_project_skills,
@@ -133,7 +138,6 @@ from .api import (
     list_data_node_storage_users_can_edit,
     list_data_node_storage_users_can_view,
     list_data_node_storages,
-    list_data_sources,
     list_github_organizations,
     list_meta_table_users_can_edit,
     list_meta_table_users_can_view,
@@ -697,8 +701,8 @@ def _ensure_project_repository_ssh_access(
         normalized_project_ref = str(project_ref or "").strip()
         if not normalized_project_ref:
             raise ApiError(
-                "The repository SSH key is not authorized and no MAIN_SEQUENCE_PROJECT_UID "
-                "is available for deploy-key registration."
+                "The repository SSH key is not authorized and the current Git repository "
+                "could not be resolved to a platform Project for deploy-key registration."
             )
         key_title = str(platform.node() or "").strip()
         if not key_title or "\n" in key_title or "\r" in key_title:
@@ -729,68 +733,8 @@ def _project_identity_value(project: dict) -> str:
     return str(project.get("uid") or "").strip()
 
 
-def _project_ref_matches_env(project_dir: pathlib.Path, project_ref: str) -> bool:
-    env_path = project_dir / ".env"
-    if not env_path.is_file():
-        return False
-    try:
-        content = env_path.read_text(encoding="utf-8", errors="replace")
-    except Exception:
-        return False
-
-    uid_match = re.search(r"(?m)^MAIN_SEQUENCE_PROJECT_UID=(.+?)\s*$", content)
-    if uid_match and uid_match.group(1).strip() == project_ref:
-        return True
-
-    return False
-
-
-def _find_local_project_dir(
-    base_dir: str, org_slug: str, project_ref: int | str, project_name: str | None = None
-) -> str | None:
-    """
-    Find local folder for a project reference.
-
-    Matching is by the canonical `MAIN_SEQUENCE_PROJECT_UID` `.env` marker.
-    """
-    normalized_ref = str(project_ref).strip()
-    root = _projects_root(base_dir, org_slug)
-    if root.exists():
-        # Prefer CWD hints when the local .env explicitly points at this project.
-        try:
-            cwd = pathlib.Path.cwd().resolve()
-            for parent in [cwd] + list(cwd.parents):
-                try:
-                    parent.relative_to(root)
-                except Exception:
-                    continue
-                if parent.is_dir() and _project_ref_matches_env(parent, normalized_ref):
-                    return str(parent)
-        except Exception:
-            pass
-
-        # canonical if name provided
-        if project_name:
-            slug = safe_slug(project_name)
-            cand = root / f"{slug}-{normalized_ref}"
-            if cand.is_dir():
-                return str(cand)
-
-        # scan root for .env markers first
-        try:
-            for d in root.iterdir():
-                if not d.is_dir():
-                    continue
-                if _project_ref_matches_env(d, normalized_ref):
-                    return str(d)
-        except Exception:
-            pass
-
-    return None
-
-
-def _render_projects_table(items: list[dict], base_dir: str, org_slug: str) -> str:
-    """Return an aligned table with project identity, init state, and local mapping."""
+def _render_projects_table(items: list[dict]) -> str:
+    """Return an aligned table with platform project and branch identity."""
 
     rows = []
     for p in items:
@@ -805,12 +749,9 @@ def _render_projects_table(items: list[dict], base_dir: str, org_slug: str) -> s
             or "-"
         )
 
-        local_path = _find_local_project_dir(base_dir, org_slug, public_id, name)
-        local = "Local" if local_path else "-"
-        path_col = local_path or "-"
-        rows.append((public_id or "-", name, branches, local, path_col))
+        rows.append((public_id or "-", name, branches))
 
-    header = ["UID", "Project", "Branches", "Local", "Path"]
+    header = ["UID", "Project", "Branches"]
     if not rows:
         return "No projects."
 
@@ -868,129 +809,58 @@ def _exchange_runtime_credential_for_cli_login(backend_url: str) -> str:
 
 def _resolve_project_dir(project_id: str | None, path: str | None) -> pathlib.Path:
     """
-    Resolve project directory by:
-      - explicit --path, or
-      - current working directory when local `.env` exposes `MAIN_SEQUENCE_PROJECT_UID`, or
-      - scanning the projects root for a matching logical Project UID
+    Resolve the containing Git worktree from an explicit path or the current directory.
 
     Raises:
         typer.Exit(1) on failure.
     """
-    if path:
-        p = normalize_path(path)
-        if not p.exists():
-            error(f"Folder does not exist: {p}")
+    candidate = normalize_path(path) if path else pathlib.Path.cwd()
+    if not candidate.exists():
+        error(f"Folder does not exist: {candidate}")
+        raise typer.Exit(1)
+    if (candidate / ".git").exists():
+        p = candidate.resolve()
+    else:
+        try:
+            result = subprocess.run(
+                ["git", "rev-parse", "--show-toplevel"],
+                cwd=str(candidate),
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            error("Run this command inside a Git project checkout or pass --path.")
+            raise typer.Exit(1) from exc
+        root = result.stdout.strip() if result.returncode == 0 else ""
+        if not root:
+            error("Run this command inside a Git project checkout or pass --path.")
             raise typer.Exit(1)
-        return p
-
-    if project_id is None:
-        return _resolve_current_project_dir_from_env()
-
-    cfg_obj = cfg.get_config()
-    base = cfg_obj["mainsequence_path"]
-
-    # If logged in, we can use org_slug from profile; if not, fall back to 'default'
-    org_slug = "default"
-    try:
-        prof = get_current_user_profile()
-        if prof and prof.get("organization"):
-            org_slug = _org_slug_from_profile()
-    except Exception:
-        pass
-
-    found = _find_local_project_dir(base, org_slug, project_id, None)
-    if not found:
-        error(
-            "No local folder mapped for this project. Run `mainsequence project set-up-locally <project_uid>` first."
-        )
+        p = pathlib.Path(root).resolve()
+    if not p.is_dir():
+        error(f"Git project root is missing: {p}")
         raise typer.Exit(1)
-
-    p = pathlib.Path(found)
-    if not p.exists():
-        error(f"Folder missing: {p}")
-        raise typer.Exit(1)
+    if project_id:
+        try:
+            get_project_runtime_context(project_uid=project_id, project_dir=p)
+        except ProjectRuntimeContextError as exc:
+            error(f"Project UID assertion failed: {exc}")
+            raise typer.Exit(1) from exc
     return p
-
-
-def _read_project_ref_from_env_file(project_dir: pathlib.Path) -> str | None:
-    """
-    Read the preferred local project reference from `<project_dir>/.env`.
-
-    The public contract is `MAIN_SEQUENCE_PROJECT_UID`.
-    """
-    env_path = project_dir / ".env"
-    if not env_path.is_file():
-        return None
-    try:
-        content = env_path.read_text(encoding="utf-8", errors="replace")
-    except Exception:
-        return None
-
-    uid_match = re.search(r"(?m)^MAIN_SEQUENCE_PROJECT_UID=(.+?)\s*$", content)
-    if uid_match:
-        return uid_match.group(1).strip() or None
-
-    return None
-
-
-def _resolve_current_project_dir_from_env() -> pathlib.Path:
-    """
-    Resolve the current working directory as a project folder when local `.env`
-    declares `MAIN_SEQUENCE_PROJECT_UID`.
-    """
-    cwd = pathlib.Path.cwd()
-    if _read_project_ref_from_env_file(cwd) is None:
-        error(
-            "No PROJECT_UID was provided and the current directory does not expose "
-            "MAIN_SEQUENCE_PROJECT_UID in .env."
-        )
-        raise typer.Exit(1)
-    return cwd
-
-
-def _resolve_project_id_from_local_env(path: str | None = None) -> str:
-    """
-    Resolve the local project reference from `<path>/.env` or `./.env`.
-    """
-    project_dir = normalize_path(path) if path else pathlib.Path.cwd()
-    project_ref = _read_project_ref_from_env_file(project_dir)
-    if project_ref is None:
-        error(f"Could not determine project uid from {project_dir / '.env'}.")
-        raise typer.Exit(1)
-    return project_ref
-
-
-def _current_git_branch(project_dir: pathlib.Path | None = None) -> str | None:
-    try:
-        result = subprocess.run(
-            ["git", "branch", "--show-current"],
-            cwd=str(project_dir or pathlib.Path.cwd()),
-            capture_output=True,
-            text=True,
-            timeout=2,
-            check=False,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return None
-    branch = result.stdout.strip() if result.returncode == 0 else ""
-    return branch or None
 
 
 def _resolve_project_branch(
     project: dict,
     *,
     repository_branch: str | None = None,
-    project_dir: pathlib.Path | None = None,
     prompt_if_ambiguous: bool = False,
-    use_current_git_branch: bool = True,
 ) -> dict:
     branches = [item for item in list(project.get("branches") or []) if isinstance(item, dict)]
     if not branches:
         raise ApiError("This Project has no ProjectBranches.")
 
     branch_name = (repository_branch or "").strip()
-    if not branch_name and use_current_git_branch:
-        branch_name = _current_git_branch(project_dir) or ""
     if branch_name:
         matches = [
             item for item in branches if str(item.get("repository_branch") or "") == branch_name
@@ -1017,33 +887,27 @@ def _resolve_project_branch(
 
 
 def _resolve_git_project_branch_context(
-    project_ref: str,
+    project_ref: str | None = None,
     *,
     project_dir: pathlib.Path | None = None,
-    repository_branch: str | None = None,
 ) -> tuple[str, str]:
-    """Resolve the current Git branch to its registered ProjectBranch UID."""
-    branch_name = (repository_branch or "").strip()
-    if not branch_name:
-        branch_name = _current_git_branch(project_dir) or ""
-    if not branch_name:
-        raise ApiError("Current Git checkout is detached or has no named branch.")
-
-    project = resolve_project(project_ref)
-    project_branch = _resolve_project_branch(
-        project,
-        repository_branch=branch_name,
-        project_dir=project_dir,
-        use_current_git_branch=False,
-    )
-    uid = str(project_branch.get("uid") or "").strip()
-    if not uid:
-        raise ApiError("The resolved ProjectBranch has no UID.")
-    return branch_name, uid
+    """Read the process-lifetime context for a current-project CLI workflow."""
+    try:
+        context = get_project_runtime_context(
+            project_uid=project_ref,
+            project_dir=project_dir,
+        )
+        context = require_project_branch_context(
+            "This current-project CLI operation",
+            context=context,
+        )
+    except ProjectRuntimeContextError as exc:
+        raise ApiError(str(exc)) from exc
+    return context.repository_branch, str(context.project_branch_uid)
 
 
 def _resolve_project_branch_uid_for_command(
-    project_ref: str,
+    project_ref: str | None = None,
     *,
     project_dir: pathlib.Path | None = None,
 ) -> str:
@@ -2248,7 +2112,6 @@ def _render_project_runtime_env_text(
     *,
     auth_env: dict[str, str],
     backend_url: str,
-    project_runtime_uid: str | None = None,
 ) -> str:
     """
     Return `.env` text with managed runtime auth keys refreshed.
@@ -2264,6 +2127,9 @@ def _render_project_runtime_env_text(
         "MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET=",
         "MAINSEQUENCE_ENDPOINT=",
         "MAIN_SEQUENCE_PROJECT_UID=",
+        "MAIN_SEQUENCE_PROJECT_BRANCH_UID=",
+        "MAINSEQUENCE_REPOSITORY_BRANCH=",
+        "MAIN_SEQUENCE_ORGANIZATION_PROJECT_ENVIRONMENT_UID=",
         "MAIN_SEQUENCE_PROJECT_ID=",
         "MAINSEQUENCE_TOKEN=",
     )
@@ -2278,14 +2144,7 @@ def _render_project_runtime_env_text(
 
     lines.extend(
         [f"{key}={value}" for key, value in auth_env.items() if value]
-        + [
-            f"MAINSEQUENCE_ENDPOINT={backend_url}",
-        ]
-        + (
-            [f"MAIN_SEQUENCE_PROJECT_UID={project_runtime_uid}"]
-            if project_runtime_uid is not None
-            else []
-        )
+        + [f"MAINSEQUENCE_ENDPOINT={backend_url}"]
     )
 
     final_env = "\n".join(lines).replace("\r", "")
@@ -7176,7 +7035,7 @@ def project_list(
     """
     List projects visible to the authenticated user.
 
-    The output includes project identity, initialization state, and local mapping status.
+    The output includes platform Project identity and registered branches.
 
     Examples
     --------
@@ -7195,13 +7054,10 @@ def project_list(
     )
 
     _require_login()
-    cfg_obj = cfg.get_config()
-    base = cfg_obj["mainsequence_path"]
-    org_slug = _org_slug_from_profile()
     items = get_projects()
     if _emit_json(items):
         return
-    typer.echo(_render_projects_table(items, base, org_slug))
+    typer.echo(_render_projects_table(items))
 
 
 def _print_project_data_node_updates(
@@ -7219,7 +7075,7 @@ def _print_project_data_node_updates(
     Parameters
     ----------
     project_id:
-        Platform project UID. If omitted, resolve it from `MAIN_SEQUENCE_PROJECT_UID` in `./.env`.
+        Optional Project UID assertion. Git repository identity remains authoritative.
     timeout:
         Optional request timeout in seconds.
 
@@ -7236,11 +7092,8 @@ def _print_project_data_node_updates(
         filter_entries=filter_entries,
         show_filters=show_filters,
         command_label="Project Data Node Updates",
-        reserved_filter_descriptions={"project_id": "always set from PROJECT_UID or local .env"},
+        reserved_filter_descriptions={"project_id": "resolved from the current Git repository"},
     )
-
-    if project_id is None:
-        project_id = _resolve_project_id_from_local_env()
 
     _require_login()
     try:
@@ -7483,11 +7336,6 @@ def project_validate_name_alias_cmd(
 def project_create_cmd(
     project_name: str | None = typer.Argument(None, help="Project name"),
     project_type: str = typer.Option("python", "--project-type", help="Project type"),
-    default_metatables_data_source_uid: str | None = typer.Option(
-        None,
-        "--default-metatables-data-source-uid",
-        help="Logical Project default MetaTables data source UID",
-    ),
     default_base_image_uid: str | None = typer.Option(
         None, "--default-base-image-uid", help="Default base image UID"
     ),
@@ -7512,9 +7360,6 @@ def project_create_cmd(
         Project name. If omitted, prompt is shown.
     project_type:
         Immutable type of the logical Project, shared by every ProjectBranch.
-    default_metatables_data_source_uid:
-        Required logical Project default MetaTables data source UID. It is
-        assigned automatically to the initial main ProjectBranch.
     default_base_image_uid:
         Default base image UID.
     github_org_uid:
@@ -7569,23 +7414,6 @@ def project_create_cmd(
                     "Suggested Project Names", ["Project Name"], [[item] for item in suggestions]
                 )
             raise typer.Exit(1)
-
-        if default_metatables_data_source_uid is None:
-            ds_items = list_data_sources(status="AVAILABLE")
-            ds_rows: list[list[str]] = []
-            for item in ds_items:
-                uid = _require_item_uid(item, prompt_label="data source uid")
-                ds_name = item.get("display_name") or item.get("class_type") or f"data-source-{uid}"
-                ds_details = (
-                    f"class={item.get('class_type') or '-'}, status={item.get('status') or '-'}"
-                )
-                ds_rows.append([uid, str(ds_name), str(ds_details)])
-            default_metatables_data_source_uid = _prompt_select_uid(
-                title="Available Data Sources",
-                prompt_label="Data source uid",
-                items=ds_items,
-                rows=ds_rows,
-            )
 
         if default_base_image_uid is None:
             img_items = list_project_base_images()
@@ -7642,7 +7470,6 @@ def project_create_cmd(
         created = create_project(
             project_name=project_name,
             project_type=project_type,
-            default_metatables_data_source_uid=default_metatables_data_source_uid,
             default_base_image_uid=default_base_image_uid,
             github_org_uid=github_org_uid,
             env_vars=env_vars,
@@ -8067,9 +7894,6 @@ def _project_resources_list_impl(
     _require_login()
 
     project_dir = _resolve_project_dir(project_id, path)
-    if project_id is None:
-        project_id = _resolve_project_id_from_local_env(str(project_dir))
-
     try:
         upstream, repo_commit_sha = _get_remote_branch_head_commit(project_dir)
     except RuntimeError as e:
@@ -8123,7 +7947,7 @@ def _project_resources_list_impl(
 @project_project_resource_group.command("list")
 def project_project_resource_list_cmd(
     project_id: str | None = typer.Argument(
-        None, help="Project UID. Defaults to local .env when omitted."
+        None, help="Optional Project UID assertion; Git repository identity is authoritative."
     ),
     path: str | None = typer.Option(
         None, "--path", help="Project repository path (default: current project)"
@@ -8143,9 +7967,9 @@ def project_project_resource_list_cmd(
     Parameters
     ----------
     project_id:
-        Platform project UID. Defaults to local `.env`.
+        Optional Project UID assertion.
     path:
-        Local project path. Used when resolving project uid and remote branch head commit.
+        Local repository path used for Git context and remote branch head resolution.
     timeout:
         Request timeout in seconds.
 
@@ -8184,9 +8008,6 @@ def _project_resource_release_create_impl(
     _require_login()
 
     project_dir = _resolve_project_dir(project_id, path)
-    if project_id is None:
-        project_id = _resolve_project_id_from_local_env(str(project_dir))
-
     try:
         project_branch_uid = _resolve_project_branch_uid_for_command(
             project_id,
@@ -8349,7 +8170,7 @@ def _project_resource_release_create_impl(
 @project_project_resource_group.command("create_dashboard")
 def project_project_resource_create_dashboard_cmd(
     project_id: str | None = typer.Argument(
-        None, help="Project UID. Defaults to local .env when omitted."
+        None, help="Optional Project UID assertion; Git repository identity is authoritative."
     ),
     resource_uid: str | None = typer.Option(None, "--resource-uid", help="Project resource UID."),
     path: str | None = typer.Option(
@@ -8401,7 +8222,7 @@ def project_project_resource_create_dashboard_cmd(
 @project_project_resource_group.command("create_fastapi")
 def project_project_resource_create_fastapi_cmd(
     project_id: str | None = typer.Argument(
-        None, help="Project UID. Defaults to local .env when omitted."
+        None, help="Optional Project UID assertion; Git repository identity is authoritative."
     ),
     resource_uid: str | None = typer.Option(None, "--resource-uid", help="Project resource UID."),
     path: str | None = typer.Option(
@@ -8568,11 +8389,12 @@ def _project_images_list_impl(
 
     _require_login()
 
-    if project_id is None:
-        project_id = _resolve_project_id_from_local_env(path)
-
+    project_dir = _resolve_project_dir(project_id, path)
     try:
-        project_branch_uid = _resolve_project_branch_uid_for_command(project_id)
+        project_branch_uid = _resolve_project_branch_uid_for_command(
+            project_id,
+            project_dir=project_dir,
+        )
         images = list_project_images(
             related_project_branch_uid=project_branch_uid,
             filters=filters,
@@ -8605,7 +8427,7 @@ def _project_images_list_impl(
 @project_images_group.command("list")
 def project_images_list_cmd(
     project_id: str | None = typer.Argument(
-        None, help="Project UID. Defaults to local .env when omitted."
+        None, help="Optional Project UID assertion; Git repository identity is authoritative."
     ),
     path: str | None = typer.Option(
         None, "--path", help="Project repository path (default: current project)"
@@ -8624,9 +8446,9 @@ def project_images_list_cmd(
     Parameters
     ----------
     project_id:
-        Platform project UID. Defaults to local `.env`.
+        Optional Project UID assertion.
     path:
-        Local project path. Used when resolving project uid from `.env`.
+        Local repository path used for Git-native context resolution.
     timeout:
         Request timeout in seconds.
 
@@ -8710,13 +8532,7 @@ def _project_images_create_impl(
 ) -> None:
     _require_login()
 
-    project_dir = (
-        _resolve_project_dir(project_id, path)
-        if (project_id is not None or path)
-        else _resolve_current_project_dir_from_env()
-    )
-    if project_id is None:
-        project_id = _resolve_project_id_from_local_env(str(project_dir))
+    project_dir = _resolve_project_dir(project_id, path)
 
     try:
         project_branch_uid = _resolve_project_branch_uid_for_command(
@@ -8890,7 +8706,7 @@ def _project_images_create_impl(
 @project_images_group.command("create")
 def project_images_create_cmd(
     project_id: str | None = typer.Argument(
-        None, help="Project UID. Defaults to local .env when omitted."
+        None, help="Optional Project UID assertion; Git repository identity is authoritative."
     ),
     project_repo_hash: str | None = typer.Argument(
         None,
@@ -8912,14 +8728,14 @@ def project_images_create_cmd(
     """
     Create a project image from a pushed git commit.
 
-    If `project_id` is omitted, the command reads `MAIN_SEQUENCE_PROJECT_UID`
-    from the local project `.env`. If `project_repo_hash` is omitted, it shows
+    The current Git repository and attached branch select the ProjectBranch.
+    If `project_repo_hash` is omitted, the command shows
     only commits already present on the remote and prompts for a selection.
 
     Parameters
     ----------
     project_id:
-        Platform project UID. Defaults to local `.env`.
+        Optional Project UID assertion.
     project_repo_hash:
         Git commit hash already pushed to remote.
     path:
@@ -8954,7 +8770,7 @@ def project_images_create_cmd(
 @project.command("create_image", hidden=True)
 def project_create_image_cmd(
     project_id: str | None = typer.Argument(
-        None, help="Project UID. Defaults to local .env when omitted."
+        None, help="Optional Project UID assertion; Git repository identity is authoritative."
     ),
     project_repo_hash: str | None = typer.Argument(
         None,
@@ -8999,17 +8815,18 @@ def _project_jobs_list_impl(
         show_filters=show_filters,
         command_label="Project Jobs",
         reserved_filter_descriptions={
-            "project__uid": "always scoped to the selected ProjectBranch",
+            "project_branch_uid": "always scoped to the selected ProjectBranch",
         },
     )
 
     _require_login()
 
-    if project_id is None:
-        project_id = _resolve_project_id_from_local_env(path)
-
+    project_dir = _resolve_project_dir(project_id, path)
     try:
-        project_branch_uid = _resolve_project_branch_uid_for_command(project_id)
+        project_branch_uid = _resolve_project_branch_uid_for_command(
+            project_id,
+            project_dir=project_dir,
+        )
         jobs = list_project_jobs(
             project_branch_uid=project_branch_uid,
             filters=filters,
@@ -9183,7 +9000,7 @@ def _print_job_run_logs_rows(rows, *, start_index: int = 0) -> int:
 @project_jobs_group.command("list")
 def project_jobs_list_cmd(
     project_id: str | None = typer.Argument(
-        None, help="Project UID. Defaults to local .env when omitted."
+        None, help="Optional Project UID assertion; Git repository identity is authoritative."
     ),
     path: str | None = typer.Option(
         None, "--path", help="Project repository path (default: current project)"
@@ -9466,13 +9283,7 @@ def _project_jobs_create_impl(
 ) -> None:
     _require_login()
 
-    project_dir = (
-        _resolve_project_dir(project_id, path)
-        if (project_id is not None or path)
-        else _resolve_current_project_dir_from_env()
-    )
-    if project_id is None:
-        project_id = _resolve_project_id_from_local_env(str(project_dir))
+    project_dir = _resolve_project_dir(project_id, path)
 
     try:
         project_branch_uid = _resolve_project_branch_uid_for_command(
@@ -9661,7 +9472,7 @@ def _project_jobs_create_impl(
 @project_jobs_group.command("create")
 def project_jobs_create_cmd(
     project_id: str | None = typer.Argument(
-        None, help="Project UID. Defaults to local .env when omitted."
+        None, help="Optional Project UID assertion; Git repository identity is authoritative."
     ),
     name: str | None = pydantic_option(JOB_MODEL_REF, "name", None, "--name"),
     path: str | None = typer.Option(
@@ -9876,7 +9687,6 @@ def project_set_up_locally(
             p,
             repository_branch=branch,
             prompt_if_ambiguous=True,
-            use_current_git_branch=False,
         )
     except ApiError as e:
         error(str(e))
@@ -9953,7 +9763,6 @@ def project_set_up_locally(
         "",
         auth_env=auth_env,
         backend_url=backend_url,
-        project_runtime_uid=project_uid,
     )
     (target_dir / ".env").write_text(final_env, encoding="utf-8")
 
@@ -9966,7 +9775,9 @@ def project_set_up_locally(
 
 @project.command("open")
 def project_open(
-    project_id: str | None = typer.Argument(None, help="Project UID"),
+    project_id: str | None = typer.Argument(
+        None, help="Optional Project UID assertion against the current Git worktree"
+    ),
     path: str | None = typer.Option(
         None, "--path", help="Open an explicit path instead of resolving by id"
     ),
@@ -9977,7 +9788,7 @@ def project_open(
     Parameters
     ----------
     project_id:
-        Project UID to resolve local folder.
+        Optional Project UID assertion against the current Git worktree.
     path:
         Explicit local path to open.
 
@@ -9995,7 +9806,9 @@ def project_open(
 
 @project.command("delete-local")
 def project_delete_local(
-    project_id: str | None = typer.Argument(None, help="Project UID"),
+    project_id: str | None = typer.Argument(
+        None, help="Optional Project UID assertion against the current Git worktree"
+    ),
     path: str | None = typer.Option(
         None, "--path", help="Delete an explicit path instead of resolving by id"
     ),
@@ -10009,7 +9822,7 @@ def project_delete_local(
     Parameters
     ----------
     project_id:
-        Project UID to resolve local path.
+        Optional Project UID assertion against the current Git worktree.
     path:
         Explicit local path to delete.
     yes:
@@ -10059,7 +9872,9 @@ def project_delete_local(
 
 @project.command("open-signed-terminal")
 def project_open_signed_terminal(
-    project_id: str | None = typer.Argument(None, help="Project UID"),
+    project_id: str | None = typer.Argument(
+        None, help="Optional Project UID assertion against the current Git worktree"
+    ),
     path: str | None = typer.Option(None, "--path", help="Open in a specific project directory"),
 ):
     """
@@ -10068,7 +9883,7 @@ def project_open_signed_terminal(
     Parameters
     ----------
     project_id:
-        Project UID to resolve local folder.
+        Optional Project UID assertion against the current Git worktree.
     path:
         Explicit local path.
 
@@ -10083,8 +9898,9 @@ def project_open_signed_terminal(
 
     origin = git_origin(project_dir)
     name = repo_name_from_git_url(origin) or project_dir.name
-    project_ref = str(project_id or _read_project_ref_from_env_file(project_dir) or "").strip()
     try:
+        context = get_project_runtime_context(project_uid=project_id, project_dir=project_dir)
+        project_ref = str(context.project_uid or "").strip()
         key_path, _public_key, _git_env = _ensure_project_repository_ssh_access(
             origin=origin,
             project_ref=project_ref or None,
@@ -10098,7 +9914,9 @@ def project_open_signed_terminal(
 
 @project.command("build_local_venv")
 def project_build_local_venv(
-    project_id: str | None = typer.Argument(None, help="Project UID"),
+    project_id: str | None = typer.Argument(
+        None, help="Optional Project UID assertion against the current Git worktree"
+    ),
     path: str | None = typer.Option(None, "--path", help="Project directory"),
     recreate: bool = typer.Option(
         False,
@@ -10114,8 +9932,7 @@ def project_build_local_venv(
     Parameters
     ----------
     project_id:
-        Project UID to resolve local folder. If omitted, the current directory is used when
-        `MAIN_SEQUENCE_PROJECT_UID` is present in `./.env`.
+        Optional Project UID assertion. The current Git worktree selects the folder.
     path:
         Explicit local path.
 
@@ -10128,11 +9945,7 @@ def project_build_local_venv(
     mainsequence project build_local_venv --path . --recreate
     ```
     """
-    project_dir = (
-        _resolve_project_dir(project_id, path)
-        if (project_id is not None or path)
-        else _resolve_current_project_dir_from_env()
-    )
+    project_dir = _resolve_project_dir(project_id, path)
     pyproject_path = project_dir / "pyproject.toml"
     if not pyproject_path.is_file():
         error("pyproject.toml not found in the project root.")
@@ -10238,7 +10051,9 @@ def project_build_local_venv(
 
 @project.command("refresh_token")
 def project_refresh_token(
-    project_id: str | None = typer.Argument(None, help="Project UID"),
+    project_id: str | None = typer.Argument(
+        None, help="Optional Project UID assertion against the current Git worktree"
+    ),
     path: str | None = typer.Option(None, "--path", help="Project directory"),
 ):
     """
@@ -10251,7 +10066,7 @@ def project_refresh_token(
     Parameters
     ----------
     project_id:
-        Project UID to resolve local folder. If omitted, the current directory is used.
+        Optional Project UID assertion against the current Git worktree.
     path:
         Explicit local path. If omitted, the current directory is used.
 
@@ -10264,11 +10079,7 @@ def project_refresh_token(
     ```
     """
     _require_login()
-    project_dir = (
-        _resolve_project_dir(project_id, path)
-        if (project_id is not None or path)
-        else pathlib.Path.cwd()
-    )
+    project_dir = _resolve_project_dir(project_id, path)
     env_path = project_dir / ".env"
     if not env_path.is_file():
         error(f".env not found in project root: {env_path}")
@@ -10293,15 +10104,10 @@ def project_refresh_token(
         error(f"Could not read .env: {e}")
         raise typer.Exit(1) from e
 
-    inferred_project_id = (
-        str(project_id) if project_id is not None else _read_project_ref_from_env_file(project_dir)
-    )
-
     final_env = _render_project_runtime_env_text(
         env_text,
         auth_env=auth_env,
         backend_url=backend_url,
-        project_runtime_uid=inferred_project_id,
     )
     env_path.write_text(final_env, encoding="utf-8")
     success(f"Refreshed auth entries in: {env_path}")
@@ -10309,7 +10115,9 @@ def project_refresh_token(
 
 @project.command("freeze-env")
 def project_freeze_env(
-    project_id: str | None = typer.Argument(None, help="Project UID"),
+    project_id: str | None = typer.Argument(
+        None, help="Optional Project UID assertion against the current Git worktree"
+    ),
     path: str | None = typer.Option(None, "--path", help="Project directory"),
     ensure_uv: bool = typer.Option(
         True,
@@ -10323,7 +10131,7 @@ def project_freeze_env(
     Parameters
     ----------
     project_id:
-        Project UID to resolve local folder.
+        Optional Project UID assertion against the current Git worktree.
     path:
         Explicit local path.
     ensure_uv:
@@ -10356,7 +10164,9 @@ def project_freeze_env(
 @project.command("sync")
 def project_sync(
     message: str | None = typer.Argument(None, help="Git commit message"),
-    project_id: str | None = typer.Argument(None, help="Project UID"),
+    project_id: str | None = typer.Argument(
+        None, help="Optional Project UID assertion against the current Git worktree"
+    ),
     path: str | None = typer.Option(None, "--path", help="Project directory"),
     message_opt: str | None = typer.Option(None, "--message", "-m", help="Git commit message"),
     dry_run: bool = typer.Option(
@@ -10382,7 +10192,7 @@ def project_sync(
     message:
         Commit message. Can be passed positionally or via `--message`.
     project_id:
-        Project UID to resolve local folder.
+        Optional Project UID assertion against the current Git worktree.
     path:
         Explicit local path.
     dry_run:
@@ -10411,19 +10221,12 @@ def project_sync(
         error("Commit message is required.")
         raise typer.Exit(1)
 
-    project_ref = str(project_id or _read_project_ref_from_env_file(project_dir) or "").strip()
-    if not project_ref:
-        error(
-            "Project sync preflight failed: MAIN_SEQUENCE_PROJECT_UID is not configured "
-            f"in {project_dir / '.env'}."
-        )
-        raise typer.Exit(1)
-
     try:
         git_branch, project_branch_uid = _resolve_git_project_branch_context(
-            project_ref,
+            project_id,
             project_dir=project_dir,
         )
+        project_ref = str(get_project_runtime_context().project_uid or "").strip()
     except ApiError as exc:
         error(f"Project sync preflight failed: {exc}")
         raise typer.Exit(1) from exc
@@ -10571,7 +10374,9 @@ def project_sync_project(
 
 @project.command("build-docker-env")
 def project_build_docker_env(
-    project_id: str | None = typer.Argument(None, help="Project UID"),
+    project_id: str | None = typer.Argument(
+        None, help="Optional Project UID assertion against the current Git worktree"
+    ),
     path: str | None = typer.Option(None, "--path", help="Project directory"),
     image_ref: str | None = typer.Option(
         None, "--image-ref", help="Docker image ref to build (default: computed)"
@@ -10588,7 +10393,7 @@ def project_build_docker_env(
     Parameters
     ----------
     project_id:
-        Project UID to resolve local folder.
+        Optional Project UID assertion against the current Git worktree.
     path:
         Explicit local path.
     image_ref:
@@ -10662,33 +10467,33 @@ def project_current(
         raise typer.Exit(1)
 
     project_path = pathlib.Path(project_info.path)
-    project_uid = str(getattr(project_info, "project_uid", None) or "").strip()
-    git_branch = _current_git_branch(project_path)
+    project_uid = ""
+    git_branch = None
     project_branch_uid = None
-    project_branch_status = "detached"
-    project_branch_error = "Current Git checkout is detached or has no named branch."
-    if git_branch and not project_uid:
-        project_branch_status = "missing_project_uid"
-        project_branch_error = "MAIN_SEQUENCE_PROJECT_UID is not configured."
-    elif git_branch and project_uid:
-        try:
-            _, project_branch_uid = _resolve_git_project_branch_context(
-                project_uid,
-                project_dir=project_path,
-                repository_branch=git_branch,
-            )
-        except ApiError as exc:
-            project_branch_status = "unresolved"
-            project_branch_error = str(exc)
-        else:
-            project_branch_status = "resolved"
-            project_branch_error = None
+    repository_identity = None
+    commit_sha = None
+    project_branch_status = "unresolved"
+    project_branch_error = None
+    try:
+        context = get_project_runtime_context(project_dir=project_path)
+    except ProjectRuntimeContextError as exc:
+        project_branch_error = str(exc)
+    else:
+        project_uid = str(context.project_uid or "")
+        git_branch = context.repository_branch
+        project_branch_uid = context.project_branch_uid
+        repository_identity = context.canonical_repository_identity
+        commit_sha = context.commit_sha
+        project_branch_status = context.status
+        project_branch_error = context.detail or None
 
     current_project_payload = {
         "path": project_info.path,
         "folder": project_info.folder,
         "project_uid": project_uid or None,
         "git_branch": git_branch,
+        "git_repository": repository_identity,
+        "git_commit": commit_sha,
         "project_branch_uid": project_branch_uid,
         "project_branch_status": project_branch_status,
         "project_branch_error": project_branch_error,
@@ -10737,6 +10542,8 @@ def project_current(
         ("Folder", project_info.folder),
         ("Project UID", project_uid or "-"),
         ("Git Branch", git_branch or "detached/unavailable"),
+        ("Git Repository", repository_identity or "-"),
+        ("Git Commit", commit_sha or "-"),
         ("ProjectBranch UID", project_branch_uid or "-"),
         ("Branch Status", project_branch_status),
         ("Venv", project_info.venv_path or "not found"),
@@ -10765,7 +10572,9 @@ def project_current(
 
 @project.command("sdk-status")
 def project_sdk_status(
-    project_id: str | None = typer.Argument(None, help="Project UID"),
+    project_id: str | None = typer.Argument(
+        None, help="Optional Project UID assertion against the current Git worktree"
+    ),
     path: str | None = typer.Option(None, "--path", help="Project directory"),
 ):
     """
@@ -10774,7 +10583,7 @@ def project_sdk_status(
     Parameters
     ----------
     project_id:
-        Project UID to resolve local folder.
+        Optional Project UID assertion against the current Git worktree.
     path:
         Explicit local path.
 
@@ -10820,7 +10629,9 @@ def project_sdk_status(
 
 @project.command("update-sdk")
 def project_update_sdk(
-    project_id: str | None = typer.Argument(None, help="Project UID"),
+    project_id: str | None = typer.Argument(
+        None, help="Optional Project UID assertion against the current Git worktree"
+    ),
     path: str | None = typer.Option(None, "--path", help="Project directory"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Print steps but do not execute"),
 ):
@@ -10830,7 +10641,7 @@ def project_update_sdk(
     Parameters
     ----------
     project_id:
-        Project UID to resolve local folder.
+        Optional Project UID assertion against the current Git worktree.
     path:
         Explicit local path.
     dry_run:
@@ -10872,7 +10683,10 @@ def project_update_scaffold_target(
         ..., help="Scaffold target to update. Currently supported: AGENTS.md"
     ),
     project_id: str | None = typer.Option(
-        None, "--project-uid", "--project-id", help="Project UID to resolve local folder"
+        None,
+        "--project-uid",
+        "--project-id",
+        help="Optional Project UID assertion against the current Git worktree",
     ),
     path: str | None = typer.Option(None, "--path", help="Project directory"),
 ):
@@ -10946,7 +10760,10 @@ def project_update_scaffold_target(
 @project.command("update-agent-skills", hidden=True)
 def project_update_agent_skills(
     project_id: str | None = typer.Option(
-        None, "--project-uid", "--project-id", help="Project UID to resolve local folder"
+        None,
+        "--project-uid",
+        "--project-id",
+        help="Optional Project UID assertion against the current Git worktree",
     ),
     path: str | None = typer.Option(None, "--path", help="Project directory"),
 ):

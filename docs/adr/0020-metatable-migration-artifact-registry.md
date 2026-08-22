@@ -241,10 +241,10 @@ appears to match.
 ## Alembic Version MetaTable Reservation Contract
 
 The SDK reservation wire request for Alembic's version table is the root
-`platform_managed` and `alembic_managed` MetaTable for the provider. The shown
-`project_context` is inserted internally for a genuine local checkout;
-application callers never provide it, and a deployed branch-owned runtime
-omits it for backend derivation:
+`platform_managed` and `alembic_managed` MetaTable for the provider. Under ADR
+0031, the shown `project_context` is inserted internally from the frozen
+Git-native context in both local and deployed project-code runs; application
+callers never provide it:
 
 ```json
 {

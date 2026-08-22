@@ -21,26 +21,18 @@ from structlog.stdlib import BoundLogger
 
 from .defaults import resolve_backend_endpoint
 from .instrumentation import OTelJSONRenderer
-from .runtime_context import (
-    RUNTIME_PROJECT_CONTEXT_ENV,
-    BackendRuntimeContextSource,
-    BackendRuntimeProjectContextError,
-    _get_backend_runtime_project_context_state,
-    _install_backend_runtime_project_context,
-)
 from .runtime_flags import is_running_in_pod
 
 logger = None
 
-def _apply_runtime_project_context(
-    payload: Mapping[str, Any],
-    *,
-    source: BackendRuntimeContextSource,
-) -> None:
-    try:
-        _install_backend_runtime_project_context(payload, source=source)
-    except BackendRuntimeProjectContextError as exc:
-        raise RuntimeError(str(exc)) from exc
+_RETIRED_PROJECT_SOURCE_ENV = frozenset(
+    {
+        "MAIN_SEQUENCE_PROJECT_UID",
+        "MAIN_SEQUENCE_PROJECT_BRANCH_UID",
+        "MAINSEQUENCE_REPOSITORY_BRANCH",
+        "MAIN_SEQUENCE_ORGANIZATION_PROJECT_ENVIRONMENT_UID",
+    }
+)
 
 
 def _get_sdk_version() -> str:
@@ -141,7 +133,6 @@ def _request_job_startup_state(*, timeout_s: float = 10.0) -> dict[str, Any]:
         if not access_token:
             return False
 
-        _apply_runtime_project_context(data, source="runtime_credential_exchange")
         os.environ["MAINSEQUENCE_ACCESS_TOKEN"] = access_token
         return True
 
@@ -231,21 +222,13 @@ def _request_job_startup_state(*, timeout_s: float = 10.0) -> dict[str, Any]:
 
 
 def _apply_additional_environment(startup_state: Mapping[str, Any]) -> None:
-    if (
-        startup_state.get("runtime_project_context") is None
-        and (os.getenv("MAINSEQUENCE_AUTH_MODE") or "").strip() == "session_jwt"
-        and bool((os.getenv("JOB_RUN_UID") or "").strip())
-    ):
-        raise RuntimeError(
-            "runtime_project_context_missing: JobRun startup state did not "
-            "include backend-issued ProjectBranch context."
-        )
-    if "runtime_project_context" in startup_state:
-        _apply_runtime_project_context(startup_state, source="job_run_startup")
     extra = startup_state.get("additional_environment")
     if isinstance(extra, dict):
         for k, v in extra.items():
-            os.environ[str(k)] = str(v)
+            key = str(k)
+            if key in _RETIRED_PROJECT_SOURCE_ENV:
+                continue
+            os.environ[key] = str(v)
 
 
 def _build_backend_bindings(
@@ -259,16 +242,11 @@ def _build_backend_bindings(
         "job_run_uid": startup_state.get("job_run_uid"),
         "command_id": startup_state.get("command_id"),
     }
-    runtime_state = _get_backend_runtime_project_context_state()
-    runtime_context = runtime_state.context.as_dict() if runtime_state.context else {}
-    for field in RUNTIME_PROJECT_CONTEXT_ENV:
-        bindings[field] = runtime_context.get(field)
 
-    if not bindings.get("project_branch_uid"):
-        if "user_id" in startup_state:
-            bindings["user_id"] = startup_state.get("user_id")
-        elif not bindings.get("job_run_uid"):
-            bindings["local_mode"] = "no_app"
+    if "user_id" in startup_state:
+        bindings["user_id"] = startup_state.get("user_id")
+    elif not bindings.get("job_run_uid"):
+        bindings["local_mode"] = "no_app"
 
     # drop None values
     return {k: v for k, v in bindings.items() if v is not None}

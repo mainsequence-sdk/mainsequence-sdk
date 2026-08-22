@@ -23,11 +23,6 @@ from urllib3.util.retry import Retry
 
 from mainsequence.defaults import resolve_backend_endpoint
 from mainsequence.logconf import logger
-from mainsequence.runtime_context import (
-    BackendRuntimeProjectContextError,
-    _get_backend_runtime_project_context_state,
-    _install_backend_runtime_project_context,
-)
 
 # ---- Backend defaults (single source of truth) ----
 MAINSEQUENCE_ENDPOINT = resolve_backend_endpoint()
@@ -65,18 +60,6 @@ class DateInfo(TypedDict, total=False):
 
 class AuthError(Exception):
     pass
-
-
-def _apply_runtime_project_context_from_exchange(payload: object) -> None:
-    if not isinstance(payload, dict):
-        raise AuthError("Runtime credential exchange response must be an object.")
-    try:
-        _install_backend_runtime_project_context(
-            payload,
-            source="runtime_credential_exchange",
-        )
-    except BackendRuntimeProjectContextError as exc:
-        raise AuthError(str(exc)) from exc
 
 
 def set_mainsequence_endpoint(endpoint: str) -> None:
@@ -219,8 +202,6 @@ class RuntimeCredentialAuthProvider(BaseAuthProvider):
         return (os.getenv("MAINSEQUENCE_ACCESS_TOKEN") or "").strip() or None
 
     def _needs_exchange(self) -> bool:
-        if not _get_backend_runtime_project_context_state().verified:
-            return True
         access_token = self._current_access_token()
         if not access_token:
             return True
@@ -277,7 +258,6 @@ class RuntimeCredentialAuthProvider(BaseAuthProvider):
                 )
 
             data = response.json()
-            _apply_runtime_project_context_from_exchange(data)
             access = str(data.get("access") or "").strip()
             if not access:
                 raise AuthError(
