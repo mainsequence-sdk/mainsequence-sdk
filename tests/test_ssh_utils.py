@@ -107,3 +107,81 @@ def test_ensure_key_for_repo_rejects_partial_keypair(monkeypatch, tmp_path):
 
     with pytest.raises(RuntimeError, match=str(public_key_path)):
         ssh_utils.ensure_key_for_repo("git@github.com:org/app.git")
+
+
+def test_verify_git_tag_absent_checks_the_exact_local_ref(monkeypatch, tmp_path):
+    calls = []
+
+    def fake_run(command, *args, env=None, cwd=None):
+        calls.append((command, args, env, cwd))
+        return (0, "", "") if args[0] == "check-ref-format" else (1, "", "")
+
+    monkeypatch.setattr(ssh_utils, "run", fake_run)
+
+    ssh_utils.verify_git_tag_absent(tmp_path, "v1.2.4-feature.1")
+
+    assert calls == [
+        ("git", ("check-ref-format", "refs/tags/v1.2.4-feature.1"), None, str(tmp_path)),
+        (
+            "git",
+            ("show-ref", "--verify", "--quiet", "refs/tags/v1.2.4-feature.1"),
+            None,
+            str(tmp_path),
+        ),
+    ]
+
+
+def test_verify_git_tag_absent_rejects_local_collision(monkeypatch, tmp_path):
+    monkeypatch.setattr(ssh_utils, "run", lambda *args, **kwargs: (0, "", ""))
+
+    with pytest.raises(RuntimeError, match="already exists locally"):
+        ssh_utils.verify_git_tag_absent(tmp_path, "v1.2.4")
+
+
+def test_verify_git_remote_tag_absent_queries_exact_ref(monkeypatch, tmp_path):
+    calls = []
+    env = {"GIT_SSH_COMMAND": "forced"}
+
+    def fake_run(command, *args, env=None, cwd=None):
+        calls.append((command, args, env, cwd))
+        return 2, "", ""
+
+    monkeypatch.setattr(ssh_utils, "run", fake_run)
+
+    ssh_utils.verify_git_remote_tag_absent(tmp_path, "v1.2.4-feature.1", env)
+
+    assert calls == [
+        (
+            "git",
+            (
+                "ls-remote",
+                "--exit-code",
+                "--refs",
+                "--tags",
+                "origin",
+                "refs/tags/v1.2.4-feature.1",
+            ),
+            env,
+            str(tmp_path),
+        )
+    ]
+
+
+@pytest.mark.parametrize(
+    ("status", "stderr", "message"),
+    [
+        (0, "", "already exists remotely"),
+        (1, "Permission denied", "Permission denied"),
+    ],
+)
+def test_verify_git_remote_tag_absent_distinguishes_failures(
+    monkeypatch, tmp_path, status, stderr, message
+):
+    monkeypatch.setattr(
+        ssh_utils,
+        "run",
+        lambda *args, **kwargs: (status, "", stderr),
+    )
+
+    with pytest.raises(RuntimeError, match=message):
+        ssh_utils.verify_git_remote_tag_absent(tmp_path, "v1.2.4", {})

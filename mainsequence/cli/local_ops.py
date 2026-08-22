@@ -11,6 +11,7 @@ Local operations shared by several commands:
 
 from __future__ import annotations
 
+import json
 import os
 import pathlib
 import shutil
@@ -120,6 +121,44 @@ def uv_project_version(
     if not version:
         raise RuntimeError("uv version --short returned an empty project version.")
     return version.splitlines()[-1].strip()
+
+
+def uv_preview_patch_version(
+    uv_path: pathlib.Path,
+    cwd: pathlib.Path,
+    env: dict[str, str] | None = None,
+) -> str:
+    """Return the version ``uv version --bump patch`` would produce without mutation."""
+    result = subprocess.run(
+        [
+            str(uv_path),
+            "version",
+            "--bump",
+            "patch",
+            "--dry-run",
+            "--output-format",
+            "json",
+        ],
+        cwd=str(cwd),
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "").strip()
+        suffix = f": {detail}" if detail else ""
+        raise RuntimeError(
+            f"Command failed ({result.returncode}): {uv_path} version --bump patch "
+            f"--dry-run --output-format json{suffix}"
+        )
+    try:
+        payload = json.loads(result.stdout or "")
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("uv version patch preview returned invalid JSON.") from exc
+    version = payload.get("version") if isinstance(payload, dict) else None
+    if not isinstance(version, str) or not version.strip():
+        raise RuntimeError("uv version patch preview returned no project version.")
+    return version.strip()
 
 
 def git_origin(project_dir: pathlib.Path) -> str:

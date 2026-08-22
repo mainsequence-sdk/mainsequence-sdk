@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- Preflight the exact backend-owned project-sync tag before mutation: preview the `uv` patch
+  version, reject local and remote tag collisions, verify the applied bump matches the preview, and
+  atomically push the explicit branch and tag refs.
 - Made repository SSH key filenames collision-resistant across projects by deriving them from the
   canonical Git origin identity instead of the repository basename. Local setup, signed terminals,
   and project sync now register keys when needed and verify the forced identity before mutation;

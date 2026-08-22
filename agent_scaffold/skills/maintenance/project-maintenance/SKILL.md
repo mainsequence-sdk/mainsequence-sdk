@@ -192,9 +192,11 @@ a detached checkout and rejects a Git branch that is not registered under the
 logical Project. Do not bypass that validation or supply a ProjectBranch UID
 manually. Register or select the correct Git branch first.
 
-After that read-only preflight, `--dry-run` prints the complete plan and returns
-without generating an SSH key, resolving or installing `uv`, requesting a tag,
-changing dependencies or project files, or mutating Git state.
+After that branch preflight, `--dry-run` resolves the existing `uv` executable,
+previews its patch version without mutation, requests the backend-owned tag for
+that future version, rejects an invalid or existing local tag, prints the
+complete plan, and returns without generating an SSH key, querying private
+remote refs, changing dependencies or project files, or mutating Git state.
 
 After review:
 
@@ -207,15 +209,17 @@ The canonical command always:
 1. selects `mainsequence-<repository-slug>-<first-16-sha256>` from the normalized
    `host[:non-default-port]/repository/path`, never from the repository basename alone and never
    from a legacy basename-only key;
-2. registers a new or inaccessible key through the owning Project and verifies a dry-run push with
+2. previews the `uv` patch version, requests the backend-owned ProjectBranch tag, and rejects an
+   invalid or existing local tag;
+3. registers a new or inaccessible key through the owning Project and verifies a dry-run push with
    that forced identity;
-3. applies a patch version bump;
-4. requests the backend-owned tag for the resolved ProjectBranch;
-5. runs `uv lock` and `uv sync`;
-6. exports locked production requirements;
-7. stages and commits the changes;
-8. creates the returned annotated tag unchanged; and
-9. pushes the branch and tag with `--follow-tags`.
+4. queries the exact tag ref on `origin` and stops if it exists or cannot be checked;
+5. applies the patch version bump and verifies it matches the preview;
+6. runs `uv lock` and `uv sync`;
+7. exports locked production requirements;
+8. stages and commits the changes;
+9. creates the returned annotated tag unchanged; and
+10. atomically pushes the explicit branch and tag refs with `--follow-tags`.
 
 Do not offer alternate bump modes, a no-push mode, or a hand-written sequence
 of equivalent commands. Do not call `sync-after-commit` or any backend repair

@@ -176,6 +176,60 @@ def verify_git_push_access(
         )
 
 
+def verify_git_tag_absent(repo_dir: str | pathlib.Path, tag_name: str) -> None:
+    """Reject an invalid tag or one that already exists in the local repository."""
+    tag = str(tag_name or "").strip()
+    if not tag or "\n" in tag or "\r" in tag:
+        raise RuntimeError("Git tag must contain one non-empty line.")
+    ref = f"refs/tags/{tag}"
+    rc, out, err = run("git", "check-ref-format", ref, cwd=str(repo_dir))
+    if rc != 0:
+        detail = (err or out).strip()
+        raise RuntimeError(
+            f"Invalid Git tag: {tag}" + (f": {detail}" if detail else ".")
+        )
+    rc, out, err = run("git", "show-ref", "--verify", "--quiet", ref, cwd=str(repo_dir))
+    if rc == 0:
+        raise RuntimeError(f"Git tag already exists locally: {tag}")
+    if rc != 1:
+        detail = (err or out).strip()
+        raise RuntimeError(
+            f"Could not check whether Git tag already exists: {tag}"
+            + (f": {detail}" if detail else ".")
+        )
+
+
+def verify_git_remote_tag_absent(
+    repo_dir: str | pathlib.Path,
+    tag_name: str,
+    env: dict[str, str],
+) -> None:
+    """Reject an exact tag that already exists on origin using the forced identity."""
+    tag = str(tag_name or "").strip()
+    if not tag or "\n" in tag or "\r" in tag:
+        raise RuntimeError("Git tag must contain one non-empty line.")
+    ref = f"refs/tags/{tag}"
+    rc, out, err = run(
+        "git",
+        "ls-remote",
+        "--exit-code",
+        "--refs",
+        "--tags",
+        "origin",
+        ref,
+        env=env,
+        cwd=str(repo_dir),
+    )
+    if rc == 0:
+        raise RuntimeError(f"Git tag already exists remotely: {tag}")
+    if rc != 2:
+        detail = (err or out).strip()
+        raise RuntimeError(
+            f"Could not check whether Git tag exists remotely: {tag}"
+            + (f": {detail}" if detail else ".")
+        )
+
+
 def start_agent_and_add_key(key_path: pathlib.Path) -> dict:
     env = os.environ.copy()
     # try existing agent

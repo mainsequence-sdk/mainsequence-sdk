@@ -10282,6 +10282,9 @@ def test_project_sync(
     )
     monkeypatch.setattr(cli_mod, "ensure_uv_installed", lambda *_: uv_path)
     monkeypatch.setattr(cli_mod, "uv_project_version", lambda *_, **__: "1.2.4")
+    monkeypatch.setattr(cli_mod, "uv_preview_patch_version", lambda *_, **__: "1.2.4")
+    monkeypatch.setattr(cli_mod, "verify_git_tag_absent", lambda *_, **__: None)
+    monkeypatch.setattr(cli_mod, "verify_git_remote_tag_absent", lambda *_, **__: None)
     monkeypatch.setattr(
         cli_mod,
         "render_project_branch_default_redeployment_tag",
@@ -10313,7 +10316,15 @@ def test_project_sync(
     assert ["git", "add", "-A"] in git_calls
     assert ["git", "commit", "-m", "Update deps"] in git_calls
     assert ["git", "tag", "-a", rendered_tag, "-m", rendered_tag] in git_calls
-    assert ["git", "push", "--follow-tags"] in git_calls
+    assert [
+        "git",
+        "push",
+        "--atomic",
+        "--follow-tags",
+        "origin",
+        f"HEAD:refs/heads/{git_branch}",
+        f"refs/tags/{rendered_tag}:refs/tags/{rendered_tag}",
+    ] in git_calls
     assert tag_requests == [("project-branch-uid-123", "1.2.4")]
 
 
@@ -10342,6 +10353,9 @@ def test_project_sync_defaults_to_cwd_with_positional_message(
     )
     monkeypatch.setattr(cli_mod, "ensure_uv_installed", lambda *_: uv_path)
     monkeypatch.setattr(cli_mod, "uv_project_version", lambda *_, **__: "1.2.4")
+    monkeypatch.setattr(cli_mod, "uv_preview_patch_version", lambda *_, **__: "1.2.4")
+    monkeypatch.setattr(cli_mod, "verify_git_tag_absent", lambda *_, **__: None)
+    monkeypatch.setattr(cli_mod, "verify_git_remote_tag_absent", lambda *_, **__: None)
     monkeypatch.setattr(
         cli_mod,
         "render_project_branch_default_redeployment_tag",
@@ -10424,15 +10438,22 @@ def test_project_sync_dry_run_does_not_mutate(cli_mod, runner, monkeypatch, tmp_
     )
     monkeypatch.setattr(cli_mod, "ensure_venv", lambda *_: None)
     monkeypatch.setattr(cli_mod, "git_origin", lambda *_: "git@github.com:org/repo.git")
+    monkeypatch.setattr(cli_mod, "ensure_uv_installed", lambda *_: target / ".venv/bin/uv")
+    monkeypatch.setattr(cli_mod, "uv_project_version", lambda *_, **__: "1.2.3")
+    monkeypatch.setattr(cli_mod, "uv_preview_patch_version", lambda *_, **__: "1.2.4")
+    monkeypatch.setattr(
+        cli_mod,
+        "render_project_branch_default_redeployment_tag",
+        lambda uid, *, version: "v1.2.4",
+    )
+    monkeypatch.setattr(cli_mod, "verify_git_tag_absent", lambda *_, **__: None)
 
     def fail_mutation(*args, **kwargs):
         pytest.fail("dry-run must not execute sync mutations")
 
     for name in (
         "_ensure_project_repository_ssh_access",
-        "ensure_uv_installed",
-        "uv_project_version",
-        "render_project_branch_default_redeployment_tag",
+        "verify_git_remote_tag_absent",
         "run_uv",
         "uv_export_requirements",
         "run_cmd",
@@ -10454,7 +10475,126 @@ def test_project_sync_dry_run_does_not_mutate(cli_mod, runner, monkeypatch, tmp_
 
     assert result.exit_code == 0
     assert "ensure repository SSH key" in result.output
+    assert "Next version" in result.output
+    assert "1.2.4" in result.output
+    assert "v1.2.4" in result.output
     assert "read-only preflight complete; no changes made" in result.output
+
+
+def test_project_sync_remote_tag_collision_stops_before_mutation(
+    cli_mod, runner, monkeypatch, tmp_path
+):
+    target = tmp_path / "project"
+    target.mkdir(parents=True, exist_ok=True)
+    (target / ".env").write_text(
+        "MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n",
+        encoding="utf-8",
+    )
+    uv_path = target / ".venv" / "bin" / "uv"
+
+    monkeypatch.setattr(cli_mod, "ensure_venv", lambda *_: None)
+    monkeypatch.setattr(
+        cli_mod,
+        "_resolve_git_project_branch_context",
+        lambda *args, **kwargs: ("main", "project-branch-uid-123"),
+    )
+    monkeypatch.setattr(cli_mod, "git_origin", lambda *_: "git@github.com:org/repo.git")
+    monkeypatch.setattr(cli_mod, "ensure_uv_installed", lambda *_: uv_path)
+    monkeypatch.setattr(cli_mod, "uv_project_version", lambda *_, **__: "1.2.3")
+    monkeypatch.setattr(cli_mod, "uv_preview_patch_version", lambda *_, **__: "1.2.4")
+    monkeypatch.setattr(
+        cli_mod,
+        "render_project_branch_default_redeployment_tag",
+        lambda uid, *, version: "v1.2.4",
+    )
+    monkeypatch.setattr(cli_mod, "verify_git_tag_absent", lambda *_, **__: None)
+    monkeypatch.setattr(
+        cli_mod,
+        "_ensure_project_repository_ssh_access",
+        lambda **kwargs: (tmp_path / "key", "pub", {"GIT_SSH_COMMAND": "forced"}),
+    )
+    monkeypatch.setattr(
+        cli_mod,
+        "verify_git_remote_tag_absent",
+        lambda *_, **__: (_ for _ in ()).throw(
+            RuntimeError("Git tag already exists remotely: v1.2.4")
+        ),
+    )
+    monkeypatch.setattr(
+        cli_mod,
+        "run_uv",
+        lambda *_, **__: pytest.fail("version mutation must not run after a collision"),
+    )
+    monkeypatch.setattr(
+        cli_mod,
+        "run_cmd",
+        lambda *_, **__: pytest.fail("Git mutation must not run after a collision"),
+    )
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["project", "sync", "--message", "Update deps", "--path", str(target)],
+    )
+
+    assert result.exit_code == 1
+    assert "Project sync remote tag preflight failed" in result.output
+    assert "already exists remotely: v1.2.4" in result.output
+
+
+def test_project_sync_version_mismatch_stops_before_lock_or_git_mutation(
+    cli_mod, runner, monkeypatch, tmp_path
+):
+    target = tmp_path / "project"
+    target.mkdir(parents=True, exist_ok=True)
+    (target / ".env").write_text(
+        "MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n",
+        encoding="utf-8",
+    )
+    uv_path = target / ".venv" / "bin" / "uv"
+    versions = iter(["1.2.3", "1.2.5"])
+    uv_calls = []
+
+    monkeypatch.setattr(cli_mod, "ensure_venv", lambda *_: None)
+    monkeypatch.setattr(
+        cli_mod,
+        "_resolve_git_project_branch_context",
+        lambda *args, **kwargs: ("main", "project-branch-uid-123"),
+    )
+    monkeypatch.setattr(cli_mod, "git_origin", lambda *_: "git@github.com:org/repo.git")
+    monkeypatch.setattr(cli_mod, "ensure_uv_installed", lambda *_: uv_path)
+    monkeypatch.setattr(cli_mod, "uv_project_version", lambda *_, **__: next(versions))
+    monkeypatch.setattr(cli_mod, "uv_preview_patch_version", lambda *_, **__: "1.2.4")
+    monkeypatch.setattr(
+        cli_mod,
+        "render_project_branch_default_redeployment_tag",
+        lambda uid, *, version: "v1.2.4",
+    )
+    monkeypatch.setattr(cli_mod, "verify_git_tag_absent", lambda *_, **__: None)
+    monkeypatch.setattr(cli_mod, "verify_git_remote_tag_absent", lambda *_, **__: None)
+    monkeypatch.setattr(
+        cli_mod,
+        "_ensure_project_repository_ssh_access",
+        lambda **kwargs: (tmp_path / "key", "pub", {"GIT_SSH_COMMAND": "forced"}),
+    )
+    monkeypatch.setattr(
+        cli_mod,
+        "run_uv",
+        lambda uv, args, cwd, env=None: uv_calls.append(args),
+    )
+    monkeypatch.setattr(
+        cli_mod,
+        "run_cmd",
+        lambda *_, **__: pytest.fail("Git mutation must not run after a version mismatch"),
+    )
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["project", "sync", "--message", "Update deps", "--path", str(target)],
+    )
+
+    assert result.exit_code == 1
+    assert "uv produced 1.2.5; preflight expected 1.2.4" in result.output
+    assert uv_calls == [["version", "--bump", "patch"]]
 
 
 def test_project_schedule_batch_jobs_is_removed(cli_mod, runner):
@@ -10487,6 +10627,9 @@ def test_project_sync_project(cli_mod, runner, monkeypatch, tmp_path):
     )
     monkeypatch.setattr(cli_mod, "ensure_uv_installed", lambda *_: uv_path)
     monkeypatch.setattr(cli_mod, "uv_project_version", lambda *_, **__: "1.2.4")
+    monkeypatch.setattr(cli_mod, "uv_preview_patch_version", lambda *_, **__: "1.2.4")
+    monkeypatch.setattr(cli_mod, "verify_git_tag_absent", lambda *_, **__: None)
+    monkeypatch.setattr(cli_mod, "verify_git_remote_tag_absent", lambda *_, **__: None)
     monkeypatch.setattr(
         cli_mod,
         "render_project_branch_default_redeployment_tag",
@@ -10522,7 +10665,15 @@ def test_project_sync_project(cli_mod, runner, monkeypatch, tmp_path):
         ["git", "add", "-A"],
         ["git", "commit", "-m", "Update deps"],
         ["git", "tag", "-a", "v1.2.4", "-m", "v1.2.4"],
-        ["git", "push", "--follow-tags"],
+        [
+            "git",
+            "push",
+            "--atomic",
+            "--follow-tags",
+            "origin",
+            "HEAD:refs/heads/main",
+            "refs/tags/v1.2.4:refs/tags/v1.2.4",
+        ],
     ]
 
 
@@ -10551,6 +10702,9 @@ def test_project_sync_project_defaults_to_current_project_dir(
     )
     monkeypatch.setattr(cli_mod, "ensure_uv_installed", lambda *_: uv_path)
     monkeypatch.setattr(cli_mod, "uv_project_version", lambda *_, **__: "1.2.4")
+    monkeypatch.setattr(cli_mod, "uv_preview_patch_version", lambda *_, **__: "1.2.4")
+    monkeypatch.setattr(cli_mod, "verify_git_tag_absent", lambda *_, **__: None)
+    monkeypatch.setattr(cli_mod, "verify_git_remote_tag_absent", lambda *_, **__: None)
     monkeypatch.setattr(
         cli_mod,
         "render_project_branch_default_redeployment_tag",

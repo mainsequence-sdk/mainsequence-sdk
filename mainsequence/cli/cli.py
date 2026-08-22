@@ -214,6 +214,7 @@ from .local_ops import (
     run_cmd,
     run_uv,
     uv_export_requirements,
+    uv_preview_patch_version,
     uv_project_version,
 )
 from .migrations import migrations as migrations_group
@@ -236,6 +237,8 @@ from .ssh_utils import (
     start_agent_and_add_key,
     verify_git_push_access,
     verify_git_remote_access,
+    verify_git_remote_tag_absent,
+    verify_git_tag_absent,
 )
 from .ui import error, info, print_kv, print_table, status, success, warn
 
@@ -10366,12 +10369,13 @@ def project_sync(
     Run end-to-end sync workflow for project dependencies and git state.
 
     Workflow:
-    1. patch the package version via `uv version`,
-    2. request the backend-owned default tag for this ProjectBranch,
-    3. run `uv lock` + `uv sync`,
-    4. export locked `requirements.txt`,
-    5. commit the changes and create that annotated tag,
-    6. push the branch and tag with `--follow-tags`.
+    1. preview the patch version and backend-owned ProjectBranch tag,
+    2. reject local and remote collisions before mutating the project,
+    3. apply and verify the patch version via `uv version`,
+    4. run `uv lock` + `uv sync`,
+    5. export locked `requirements.txt`,
+    6. commit the changes and create that annotated tag,
+    7. atomically push the branch and tag.
 
     Parameters
     ----------
@@ -10437,22 +10441,47 @@ def project_sync(
         error(f"Project sync preflight failed: {exc}")
         raise typer.Exit(1) from exc
 
+    try:
+        ensure_venv(project_dir)
+        uv = ensure_uv_installed(project_dir)
+        current_version = uv_project_version(uv, cwd=project_dir)
+        next_version = uv_preview_patch_version(uv, cwd=project_dir)
+        tag = render_project_branch_default_redeployment_tag(
+            project_branch_uid,
+            version=next_version,
+        )
+        verify_git_tag_absent(project_dir, tag)
+    except (ApiError, RuntimeError) as exc:
+        error(f"Project sync tag preflight failed: {exc}")
+        raise typer.Exit(1) from exc
+
     steps = [
+        "preview uv patch version",
+        "request backend default redeployment tag",
+        "verify backend tag does not exist locally",
         "ensure repository SSH key",
         "register a new or inaccessible SSH key through the owning Project",
         "git push --dry-run --follow-tags origin HEAD:refs/heads/<branch>",
-        "resolve uv executable",
+        "verify exact backend tag does not exist remotely",
         "uv version --bump patch",
-        "request backend default redeployment tag",
+        "verify bumped version matches the preflight version",
         "uv lock",
         "uv sync",
         "uv export (locked) -> requirements.txt",
         "git add -A",
         f'git commit -m "{safe_message}"',
         "git tag -a <backend tag> -m <backend tag>",
-        "git push --follow-tags",
+        "git push --atomic --follow-tags origin HEAD:refs/heads/<branch> refs/tags/<backend tag>:refs/tags/<backend tag>",
     ]
 
+    print_kv(
+        "Sync release",
+        [
+            ("Current version", current_version),
+            ("Next version", next_version),
+            ("Branch tag", tag),
+        ],
+    )
     print_table("Sync plan", ["Step"], [[s] for s in steps])
 
     if dry_run:
@@ -10473,19 +10502,21 @@ def project_sync(
         error(f"Project sync SSH preflight failed: {exc}")
         raise typer.Exit(1) from exc
 
-    ensure_venv(project_dir)
-    uv = ensure_uv_installed(project_dir)
+    try:
+        verify_git_remote_tag_absent(project_dir, tag, env)
+    except RuntimeError as exc:
+        error(f"Project sync remote tag preflight failed: {exc}")
+        raise typer.Exit(1) from exc
+
     with status("Running uv + git sync steps..."):
         run_uv(uv, ["version", "--bump", "patch"], cwd=project_dir, env=env)
         version = uv_project_version(uv, cwd=project_dir, env=env)
-        try:
-            tag = render_project_branch_default_redeployment_tag(
-                project_branch_uid,
-                version=version,
+        if version != next_version:
+            error(
+                f"Project sync version verification failed: uv produced {version}; "
+                f"preflight expected {next_version}."
             )
-        except ApiError as exc:
-            error(f"Project sync tag resolution failed: {exc}")
-            raise typer.Exit(1) from exc
+            raise typer.Exit(1)
         run_uv(uv, ["lock"], cwd=project_dir, env=env)
         run_uv(uv, ["sync"], cwd=project_dir, env=env)
         # `uv sync` can prune ad hoc packages from `.venv`, including a `uv`
@@ -10503,7 +10534,19 @@ def project_sync(
         run_cmd(["git", "add", "-A"], cwd=project_dir, env=env)
         run_cmd(["git", "commit", "-m", safe_message], cwd=project_dir, env=env)
         run_cmd(["git", "tag", "-a", tag, "-m", tag], cwd=project_dir, env=env)
-        run_cmd(["git", "push", "--follow-tags"], cwd=project_dir, env=env)
+        run_cmd(
+            [
+                "git",
+                "push",
+                "--atomic",
+                "--follow-tags",
+                "origin",
+                f"HEAD:refs/heads/{git_branch}",
+                f"refs/tags/{tag}:refs/tags/{tag}",
+            ],
+            cwd=project_dir,
+            env=env,
+        )
 
     success(f"Synced: {repo_name}")
 
