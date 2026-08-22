@@ -442,6 +442,21 @@ class Project(LabelableObjectMixin, ShareableObjectMixin, BasePydanticModel, Bas
         raise_for_response(r)
         return ProjectBulkDeleteResponse.model_validate(r.json())
 
+    def add_deploy_key(self, *, key_title: str, public_key: str, timeout=None) -> None:
+        """Register a repository deploy key through the owning Project."""
+        r = make_request(
+            s=type(self).build_session(),
+            loaders=type(self).LOADERS,
+            r_type="POST",
+            url=(
+                f"{type(self).get_object_url()}/{self._public_detail_reference()}"
+                "/add-deploy-key/"
+            ),
+            payload={"json": {"key_title": key_title, "public_key": public_key}},
+            time_out=timeout,
+        )
+        raise_for_response(r)
+
     def __str__(self):
         return yaml.safe_dump(
             self.model_dump(),
@@ -522,17 +537,6 @@ class ProjectBranch(BasePydanticModel, BaseObjectOrm):
         )
         raise_for_response(r)
         return r.json()
-
-    def add_deploy_key(self, *, key_title: str, public_key: str, timeout=None) -> None:
-        r = make_request(
-            s=type(self).build_session(),
-            loaders=type(self).LOADERS,
-            r_type="POST",
-            url=self._action_url("add-deploy-key"),
-            payload={"json": {"key_title": key_title, "public_key": public_key}},
-            time_out=timeout,
-        )
-        raise_for_response(r)
 
     def get_data_nodes_updates(self, *, timeout: int | None = None) -> list[Any]:
         from .metatables import DataNodeUpdate

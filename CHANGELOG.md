@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [6.0.37] - 2026-08-22
+
+### Fixed
+
+- Moved deploy-key registration from the ProjectBranch SDK surface to the
+  owning Project. Local project setup now calls the project-scoped endpoint
+  with the logical Project UID while retaining ProjectBranch selection only
+  for clone readiness and branch choice.
+
 ## [6.0.36] - 2026-08-21
 
 ### Changed

@@ -268,6 +268,11 @@ mainsequence project sdk-status --path .
 mainsequence project update-sdk --path .
 ```
 
+During `set-up-locally`, deploy-key registration is a best-effort Project
+operation. The CLI posts the generated public key to
+`/api/v1/projects/{project_uid}/add-deploy-key/`. Repository branch selection
+only chooses the branch to clone; it is not deploy-key ownership.
+
 ## List Filters
 
 Most `list` commands accept the same generic filter interface:

@@ -2578,6 +2578,31 @@ def test_get_current_user_profile_accepts_top_level_organization_object(cli_mod,
     assert out == {"username": "jose@main-sequence.io", "organization": "Main Sequence Dev"}
 
 
+def test_add_deploy_key_uses_project_route(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {}
+
+    class _Response:
+        @staticmethod
+        def raise_for_status():
+            return None
+
+    def _authed(method, path, body=None):
+        captured.update(method=method, path=path, body=body)
+        return _Response()
+
+    monkeypatch.setattr(api_mod, "resolve_project_uid", lambda project_ref: "project-uid-123")
+    monkeypatch.setattr(api_mod, "authed", _authed)
+
+    api_mod.add_deploy_key("project-uid-123", "workstation", "ssh-ed25519 AAA test")
+
+    assert captured == {
+        "method": "POST",
+        "path": "/api/v1/projects/project-uid-123/add-deploy-key/",
+        "body": {"key_title": "workstation", "public_key": "ssh-ed25519 AAA test"},
+    }
+
+
 def test_render_project_branch_default_redeployment_tag_uses_backend_contract(
     cli_mod,
     monkeypatch,
@@ -9537,7 +9562,12 @@ def test_project_set_up_locally(cli_mod, runner, monkeypatch, tmp_path):
         cli_mod, "ensure_key_for_repo", lambda repo: (key, pub, "ssh-ed25519 AAA test")
     )
     monkeypatch.setattr(cli_mod, "_copy_clipboard", lambda txt: True)
-    monkeypatch.setattr(cli_mod, "add_deploy_key", lambda *a, **k: None)
+    deploy_key_requests = []
+    monkeypatch.setattr(
+        cli_mod,
+        "add_deploy_key",
+        lambda *args, **kwargs: deploy_key_requests.append((args, kwargs)),
+    )
     monkeypatch.setattr(cli_mod, "start_agent_and_add_key", lambda *_: {})
 
     def _clone(cmd, env=None, cwd=None):
@@ -9558,6 +9588,10 @@ def test_project_set_up_locally(cli_mod, runner, monkeypatch, tmp_path):
     )
     assert result.exit_code == 0
     assert repository_requests == ["repository-uid-123"]
+    assert len(deploy_key_requests) == 1
+    assert deploy_key_requests[0][0][0] == "project-uid-123"
+    assert deploy_key_requests[0][0][2] == "ssh-ed25519 AAA test"
+    assert deploy_key_requests[0][1] == {}
 
     env_file = base / "org" / "projects" / "demo-project-uid-123" / ".env"
     assert env_file.exists()
@@ -9628,7 +9662,12 @@ def test_project_set_up_locally_runtime_credential(cli_mod, runner, monkeypatch,
         cli_mod, "ensure_key_for_repo", lambda repo: (key, pub, "ssh-ed25519 AAA test")
     )
     monkeypatch.setattr(cli_mod, "_copy_clipboard", lambda txt: True)
-    monkeypatch.setattr(cli_mod, "add_deploy_key", lambda *a, **k: None)
+    deploy_key_requests = []
+    monkeypatch.setattr(
+        cli_mod,
+        "add_deploy_key",
+        lambda *args, **kwargs: deploy_key_requests.append((args, kwargs)),
+    )
     monkeypatch.setattr(cli_mod, "start_agent_and_add_key", lambda *_: {})
 
     def _clone(cmd, env=None, cwd=None):
@@ -9654,6 +9693,10 @@ def test_project_set_up_locally_runtime_credential(cli_mod, runner, monkeypatch,
     )
     assert result.exit_code == 0
     assert repository_requests == ["repository-uid-123"]
+    assert len(deploy_key_requests) == 1
+    assert deploy_key_requests[0][0][0] == "project-uid-123"
+    assert deploy_key_requests[0][0][2] == "ssh-ed25519 AAA test"
+    assert deploy_key_requests[0][1] == {}
 
     env_file = base / "org" / "projects" / "demo-project-uid-123" / ".env"
     env_text = env_file.read_text(encoding="utf-8")

@@ -5116,7 +5116,7 @@ def bulk_delete_projects(
     return data
 
 
-def add_deploy_key(project_branch_uid: str, key_title: str, public_key: str) -> None:
+def add_deploy_key(project_uid: str, key_title: str, public_key: str) -> None:
     """
     Add a deploy key for the project.
 
@@ -5125,7 +5125,7 @@ def add_deploy_key(project_branch_uid: str, key_title: str, public_key: str) -> 
     """
     r = authed(
         "POST",
-        f"/api/v1/project-branches/{resolve_project_branch_uid(project_branch_uid)}/add-deploy-key/",
+        f"/api/v1/projects/{resolve_project_uid(project_uid)}/add-deploy-key/",
         {"key_title": key_title, "public_key": public_key},
     )
     r.raise_for_status()

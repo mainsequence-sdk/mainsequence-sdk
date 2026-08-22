@@ -9786,7 +9786,7 @@ def project_set_up_locally(
     Clone a project locally and provision runtime `.env`.
 
     Workflow:
-    - ensure SSH key and optionally register deploy key,
+    - ensure an SSH key and optionally register it through the owning Project,
     - clone repository into local projects root,
     - build local runtime auth/backend entries for the active auth mode,
     - write/update `.env` with local runtime values.
@@ -9832,7 +9832,6 @@ def project_set_up_locally(
         error(str(e))
         raise typer.Exit(1) from e
 
-    project_branch_uid = str(project_branch.get("uid") or "").strip()
     repository_branch = str(project_branch.get("repository_branch") or "").strip()
     is_initialized = project_branch.get("is_initialized")
 
@@ -9857,10 +9856,10 @@ def project_set_up_locally(
     key_path, _pub_path, pub = ensure_key_for_repo(repo)
     copied = _copy_clipboard(pub)
 
-    # Best-effort deploy key (do not fail set-up-locally on this)
+    # Best-effort Project-owned deploy key (do not fail set-up-locally on this)
     try:
         host = platform.node()
-        add_deploy_key(project_branch_uid, host, pub)
+        add_deploy_key(project_uid, host, pub)
     except Exception as e:
         warn(f"Could not add deploy key automatically (continuing): {e}")
 

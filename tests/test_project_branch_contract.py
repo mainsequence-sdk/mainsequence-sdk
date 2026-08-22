@@ -186,6 +186,36 @@ def test_project_bulk_delete_uses_selection_and_options(monkeypatch):
     }
 
 
+def test_project_add_deploy_key_uses_project_route(monkeypatch):
+    captured = {}
+    project = models_foundry.Project(**logical_project_payload())
+
+    def fake_make_request(**kwargs):
+        captured.update(kwargs)
+        return FakeResponse(None)
+
+    monkeypatch.setattr(
+        models_foundry.Project,
+        "get_object_url",
+        classmethod(lambda cls: "https://api/projects"),
+    )
+    monkeypatch.setattr(
+        models_foundry.Project,
+        "build_session",
+        classmethod(lambda cls: object()),
+    )
+    monkeypatch.setattr(models_foundry, "make_request", fake_make_request)
+
+    project.add_deploy_key(key_title="workstation", public_key="ssh-ed25519 AAA test")
+
+    assert captured["r_type"] == "POST"
+    assert captured["url"] == f"https://api/projects/{PROJECT_UID}/add-deploy-key/"
+    assert captured["payload"] == {
+        "json": {"key_title": "workstation", "public_key": "ssh-ed25519 AAA test"}
+    }
+    assert not hasattr(models_foundry.ProjectBranch, "add_deploy_key")
+
+
 def test_project_branch_summary_uses_branch_route(monkeypatch):
     captured = {}
     branch = models_foundry.ProjectBranch(**project_branch_payload())

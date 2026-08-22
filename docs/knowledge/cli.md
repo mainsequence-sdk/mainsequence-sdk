@@ -57,6 +57,10 @@ and do not carry obsolete `MAINSEQUENCE_TOKEN` or
 ProjectBranch UID, repository branch, Organization Environment UID, or another
 caller-selected deployed runtime context.
 
+Local setup registers the generated deploy key against the logical Project at
+`/api/v1/projects/{project_uid}/add-deploy-key/`. The selected ProjectBranch is
+only the Git branch to clone and is not the owner of repository credentials.
+
 ## Quickstart
 
 ```bash
