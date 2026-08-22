@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- Made repository SSH key filenames collision-resistant across projects by deriving them from the
+  canonical Git origin identity instead of the repository basename. Local setup, signed terminals,
+  and project sync now register keys when needed and verify the forced identity before mutation;
+  legacy basename-only key files remain untouched and are not reused as a fallback.
+
+## [6.0.38] - 2026-08-22
+
+### Fixed
+
+- Made `mainsequence project sync --dry-run` non-mutating after its read-only
+  project and Git preflight. It now returns before SSH key generation,
+  dependency operations, backend tag requests, and Git changes.
+
 ## [6.0.37] - 2026-08-22
 
 ### Fixed

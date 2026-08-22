@@ -57,9 +57,16 @@ and do not carry obsolete `MAINSEQUENCE_TOKEN` or
 ProjectBranch UID, repository branch, Organization Environment UID, or another
 caller-selected deployed runtime context.
 
-Local setup registers the generated deploy key against the logical Project at
-`/api/v1/projects/{project_uid}/add-deploy-key/`. The selected ProjectBranch is
-only the Git branch to clone and is not the owner of repository credentials.
+Local setup registers a new or inaccessible deploy key against the logical Project at
+`/api/v1/projects/{project_uid}/add-deploy-key/` and verifies repository access with that forced
+identity before cloning. The selected ProjectBranch is only the Git branch to clone and is not the
+owner of repository credentials.
+
+Repository keys use the cross-CLI filename
+`~/.ssh/mainsequence-<repository-slug>-<first-16-sha256>` derived from the normalized
+`host[:non-default-port]/repository/path`. Equivalent SCP and `ssh://` origins select the same key,
+while repositories that only share a basename do not. Legacy basename-only files are left
+untouched and are not used as a fallback.
 
 ## Quickstart
 

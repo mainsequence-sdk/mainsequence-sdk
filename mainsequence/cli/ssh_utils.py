@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import pathlib
@@ -7,6 +8,14 @@ import re
 import shutil
 import subprocess
 import sys
+from urllib.parse import urlsplit
+
+_SUPPORTED_GIT_ORIGIN_SCHEMES = {"git", "git+ssh", "http", "https", "ssh"}
+_SSH_GIT_ORIGIN_SCHEMES = {"git+ssh", "ssh"}
+_DEFAULT_GIT_ORIGIN_PORTS = {"http": 80, "https": 443, "ssh": 22, "git+ssh": 22}
+_SCP_GIT_ORIGIN_PATTERN = re.compile(
+    r"^(?:[^@/\s]+@)?(?P<host>[^:/\s]+):(?P<path>.+)$"
+)
 
 
 def which(cmd: str) -> str | None:
@@ -22,19 +31,97 @@ def run(cmd, *args, env=None, cwd=None) -> tuple[int, str, str]:
     return proc.returncode, out, err
 
 
+def _clean_git_repository_path(value: str) -> str:
+    if "\\" in value:
+        raise ValueError("Git origin repository paths must use forward slashes.")
+    path = re.sub(r"/+", "/", value).strip("/")
+    if path.lower().endswith(".git"):
+        path = path[:-4]
+    path = path.rstrip("/")
+    if not path:
+        raise ValueError("Git origin must include a repository path.")
+    return path
+
+
+def repository_ssh_key_identity(repo_url: str) -> tuple[str, bool]:
+    """Return the transport-neutral repository identity and whether the origin uses SSH."""
+    candidate = re.sub(r"[?#].*$", "", str(repo_url or "").strip())
+    if not candidate:
+        raise ValueError("Git origin must be non-empty.")
+    if "\n" in candidate or "\r" in candidate:
+        raise ValueError("Git origin must contain one non-empty line.")
+
+    scheme_match = re.match(r"^(?P<scheme>[A-Za-z][A-Za-z0-9+.-]*)://", candidate)
+    if scheme_match:
+        scheme = scheme_match.group("scheme").lower()
+        if scheme not in _SUPPORTED_GIT_ORIGIN_SCHEMES:
+            raise ValueError(f"Unsupported Git origin scheme: {scheme}.")
+        try:
+            parsed = urlsplit(candidate)
+            port = parsed.port
+        except ValueError as exc:
+            raise ValueError(f"Invalid Git origin: {repo_url!r}.") from exc
+        host = (parsed.hostname or "").lower().rstrip(".")
+        if not host:
+            raise ValueError("Git origin must include a hostname.")
+        path = _clean_git_repository_path(parsed.path)
+        default_port = _DEFAULT_GIT_ORIGIN_PORTS.get(scheme)
+        host_identity = host if port in (None, default_port) else f"{host}:{port}"
+        return f"{host_identity}/{path}", scheme in _SSH_GIT_ORIGIN_SCHEMES
+
+    scp_match = _SCP_GIT_ORIGIN_PATTERN.fullmatch(candidate)
+    if not scp_match:
+        raise ValueError("Git origin must be an SSH, Git, HTTP, or HTTPS repository URL.")
+    host = scp_match.group("host").lower().rstrip(".")
+    path = _clean_git_repository_path(scp_match.group("path"))
+    return f"{host}/{path}", True
+
+
+def repository_ssh_key_name(repo_url: str) -> str:
+    """Derive the cross-CLI Repository SSH Key Identity v1 filename."""
+    identity, _uses_ssh = repository_ssh_key_identity(repo_url)
+    repository_name = identity.rsplit("/", 1)[-1]
+    slug = re.sub(r"[^A-Za-z0-9._-]+", "-", repository_name).strip("._-").lower()
+    slug = slug[:48].rstrip("._-") or "repository"
+    digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:16]
+    return f"mainsequence-{slug}-{digest}"
+
+
+def repository_ssh_key_paths(repo_url: str) -> tuple[pathlib.Path, pathlib.Path]:
+    key = pathlib.Path.home() / ".ssh" / repository_ssh_key_name(repo_url)
+    return key, pathlib.Path(f"{key}.pub")
+
+
+def git_ssh_environment(
+    key_path: pathlib.Path,
+    *,
+    base_env: dict[str, str] | None = None,
+) -> dict[str, str]:
+    env = dict(base_env or os.environ)
+    env["GIT_SSH_COMMAND"] = f'ssh -i "{str(key_path)}" -o IdentitiesOnly=yes'
+    return env
+
+
+def require_ssh_git_origin(repo_url: str) -> str:
+    identity, uses_ssh = repository_ssh_key_identity(repo_url)
+    if not uses_ssh:
+        raise ValueError(
+            "Git origin must use SSH before a repository deploy key can be selected."
+        )
+    return identity
+
+
 def ensure_key_for_repo(repo_url: str) -> tuple[pathlib.Path, pathlib.Path, str]:
-    home = pathlib.Path.home()
-    key_dir = home / ".ssh"
-    key_dir.mkdir(parents=True, exist_ok=True)
-    # derive safe name
-    last = re.sub(r"[?#].*$", "", repo_url).split("/")[-1]
-    if last.lower().endswith(".git"):
-        last = last[:-4]
-    safe = re.sub(r"[^A-Za-z0-9._-]+", "-", last)
-    key = key_dir / safe
-    pub = key.with_suffix(key.suffix + ".pub")
-    if not key.exists():
-        run(
+    require_ssh_git_origin(repo_url)
+    key, pub = repository_ssh_key_paths(repo_url)
+    key.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    private_key_exists = key.exists()
+    public_key_exists = pub.exists()
+    if private_key_exists != public_key_exists:
+        missing_path = pub if private_key_exists else key
+        raise RuntimeError(f"Repository SSH keypair is incomplete; missing: {missing_path}")
+    if not private_key_exists:
+        rc, _out, err = run(
             "ssh-keygen",
             "-t",
             "ed25519",
@@ -45,8 +132,48 @@ def ensure_key_for_repo(repo_url: str) -> tuple[pathlib.Path, pathlib.Path, str]
             "-N",
             "",
         )
-    public_key = pub.read_text(encoding="utf-8")
+        if rc != 0:
+            detail = err.strip()
+            raise RuntimeError(
+                f"ssh-keygen failed for {key}" + (f": {detail}" if detail else ".")
+            )
+    if not key.is_file() or not pub.is_file():
+        raise RuntimeError(f"Repository SSH keypair was not created: {key}")
+    public_key = pub.read_text(encoding="utf-8").strip()
+    if not public_key or "\n" in public_key or "\r" in public_key:
+        raise RuntimeError(f"Repository SSH public key must contain one non-empty line: {pub}")
     return key, pub, public_key
+
+
+def verify_git_remote_access(repo_url: str, env: dict[str, str]) -> None:
+    rc, out, err = run("git", "ls-remote", repo_url, "HEAD", env=env)
+    if rc != 0:
+        detail = (err or out).strip()
+        raise RuntimeError(
+            "Git remote access verification failed" + (f": {detail}" if detail else ".")
+        )
+
+
+def verify_git_push_access(
+    repo_dir: str | pathlib.Path,
+    branch: str,
+    env: dict[str, str],
+) -> None:
+    rc, out, err = run(
+        "git",
+        "push",
+        "--dry-run",
+        "--follow-tags",
+        "origin",
+        f"HEAD:refs/heads/{branch}",
+        env=env,
+        cwd=str(repo_dir),
+    )
+    if rc != 0:
+        detail = (err or out).strip()
+        raise RuntimeError(
+            "Git push access verification failed" + (f": {detail}" if detail else ".")
+        )
 
 
 def start_agent_and_add_key(key_path: pathlib.Path) -> dict:

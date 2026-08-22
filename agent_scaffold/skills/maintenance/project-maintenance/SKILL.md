@@ -192,6 +192,10 @@ a detached checkout and rejects a Git branch that is not registered under the
 logical Project. Do not bypass that validation or supply a ProjectBranch UID
 manually. Register or select the correct Git branch first.
 
+After that read-only preflight, `--dry-run` prints the complete plan and returns
+without generating an SSH key, resolving or installing `uv`, requesting a tag,
+changing dependencies or project files, or mutating Git state.
+
 After review:
 
 ```bash
@@ -200,13 +204,18 @@ mainsequence project sync --path . -m "<specific commit message>"
 
 The canonical command always:
 
-1. applies a patch version bump;
-2. runs `uv lock`;
-3. runs `uv sync`;
-4. exports locked production requirements;
-5. stages and commits the changes;
-6. creates an annotated `v<version>` tag; and
-7. pushes the branch and tag with `--follow-tags`.
+1. selects `mainsequence-<repository-slug>-<first-16-sha256>` from the normalized
+   `host[:non-default-port]/repository/path`, never from the repository basename alone and never
+   from a legacy basename-only key;
+2. registers a new or inaccessible key through the owning Project and verifies a dry-run push with
+   that forced identity;
+3. applies a patch version bump;
+4. requests the backend-owned tag for the resolved ProjectBranch;
+5. runs `uv lock` and `uv sync`;
+6. exports locked production requirements;
+7. stages and commits the changes;
+8. creates the returned annotated tag unchanged; and
+9. pushes the branch and tag with `--follow-tags`.
 
 Do not offer alternate bump modes, a no-push mode, or a hand-written sequence
 of equivalent commands. Do not call `sync-after-commit` or any backend repair

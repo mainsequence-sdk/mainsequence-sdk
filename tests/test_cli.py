@@ -9509,6 +9509,81 @@ def test_resolve_project_repository_ssh_url_requires_ssh_url(cli_mod, monkeypatc
         cli_mod._resolve_project_repository_ssh_url({"git_repository_uid": repository_uid})
 
 
+def test_ensure_project_repository_ssh_access_registers_new_key_before_verification(
+    cli_mod, monkeypatch, tmp_path
+):
+    origin = "git@github.com:org/repo.git"
+    key = tmp_path / "mainsequence-repo-example"
+    public_key_path = pathlib.Path(f"{key}.pub")
+    events = []
+
+    monkeypatch.setattr(cli_mod, "repository_ssh_key_paths", lambda repo: (key, public_key_path))
+    monkeypatch.setattr(
+        cli_mod,
+        "ensure_key_for_repo",
+        lambda repo: (key, public_key_path, "ssh-ed25519 AAA test"),
+    )
+    monkeypatch.setattr(cli_mod.platform, "node", lambda: "developer-laptop")
+    monkeypatch.setattr(
+        cli_mod,
+        "add_deploy_key",
+        lambda project_ref, title, public_key: events.append(
+            ("register", project_ref, title, public_key)
+        ),
+    )
+
+    key_path, public_key, env = cli_mod._ensure_project_repository_ssh_access(
+        origin=origin,
+        project_ref="project-uid-123",
+        verify_access=lambda ssh_env: events.append(("verify", ssh_env["GIT_SSH_COMMAND"])),
+    )
+
+    assert key_path == key
+    assert public_key == "ssh-ed25519 AAA test"
+    assert env["GIT_SSH_COMMAND"] == f'ssh -i "{key}" -o IdentitiesOnly=yes'
+    assert events == [
+        ("register", "project-uid-123", "developer-laptop", "ssh-ed25519 AAA test"),
+        ("verify", env["GIT_SSH_COMMAND"]),
+    ]
+
+
+def test_ensure_project_repository_ssh_access_registers_inaccessible_existing_key(
+    cli_mod, monkeypatch, tmp_path
+):
+    origin = "git@github.com:org/repo.git"
+    key = tmp_path / "mainsequence-repo-example"
+    public_key_path = pathlib.Path(f"{key}.pub")
+    key.write_text("private", encoding="utf-8")
+    public_key_path.write_text("ssh-ed25519 AAA test\n", encoding="utf-8")
+    events = []
+
+    monkeypatch.setattr(cli_mod, "repository_ssh_key_paths", lambda repo: (key, public_key_path))
+    monkeypatch.setattr(
+        cli_mod,
+        "ensure_key_for_repo",
+        lambda repo: (key, public_key_path, "ssh-ed25519 AAA test"),
+    )
+    monkeypatch.setattr(cli_mod.platform, "node", lambda: "developer-laptop")
+    monkeypatch.setattr(
+        cli_mod,
+        "add_deploy_key",
+        lambda project_ref, title, public_key: events.append("register"),
+    )
+
+    def verify_access(env):
+        events.append("verify")
+        if events == ["verify"]:
+            raise RuntimeError("not registered")
+
+    cli_mod._ensure_project_repository_ssh_access(
+        origin=origin,
+        project_ref="project-uid-123",
+        verify_access=verify_access,
+    )
+
+    assert events == ["verify", "register", "verify"]
+
+
 def test_project_set_up_locally(cli_mod, runner, monkeypatch, tmp_path):
     base = tmp_path / "base"
     base.mkdir(parents=True, exist_ok=True)
@@ -9561,6 +9636,8 @@ def test_project_set_up_locally(cli_mod, runner, monkeypatch, tmp_path):
     monkeypatch.setattr(
         cli_mod, "ensure_key_for_repo", lambda repo: (key, pub, "ssh-ed25519 AAA test")
     )
+    monkeypatch.setattr(cli_mod, "repository_ssh_key_paths", lambda repo: (key, pub))
+    monkeypatch.setattr(cli_mod, "verify_git_remote_access", lambda repo, env: None)
     monkeypatch.setattr(cli_mod, "_copy_clipboard", lambda txt: True)
     deploy_key_requests = []
     monkeypatch.setattr(
@@ -9661,6 +9738,8 @@ def test_project_set_up_locally_runtime_credential(cli_mod, runner, monkeypatch,
     monkeypatch.setattr(
         cli_mod, "ensure_key_for_repo", lambda repo: (key, pub, "ssh-ed25519 AAA test")
     )
+    monkeypatch.setattr(cli_mod, "repository_ssh_key_paths", lambda repo: (key, pub))
+    monkeypatch.setattr(cli_mod, "verify_git_remote_access", lambda repo, env: None)
     monkeypatch.setattr(cli_mod, "_copy_clipboard", lambda txt: True)
     deploy_key_requests = []
     monkeypatch.setattr(
@@ -9929,7 +10008,9 @@ def test_project_open_signed_terminal(cli_mod, runner, monkeypatch, tmp_path):
 
     monkeypatch.setattr(cli_mod, "git_origin", lambda _: "git@github.com:org/repo.git")
     monkeypatch.setattr(
-        cli_mod, "ensure_key_for_repo", lambda repo: (key, key.with_suffix(".pub"), "pub")
+        cli_mod,
+        "_ensure_project_repository_ssh_access",
+        lambda **kwargs: (key, "pub", {"GIT_SSH_COMMAND": "forced"}),
     )
     monkeypatch.setattr(
         cli_mod,
@@ -10195,7 +10276,9 @@ def test_project_sync(
     )
     monkeypatch.setattr(cli_mod, "git_origin", lambda *_: "git@github.com:org/repo.git")
     monkeypatch.setattr(
-        cli_mod, "ensure_key_for_repo", lambda *_: (key, key.with_suffix(".pub"), "pub")
+        cli_mod,
+        "_ensure_project_repository_ssh_access",
+        lambda **kwargs: (key, "pub", {"GIT_SSH_COMMAND": "forced"}),
     )
     monkeypatch.setattr(cli_mod, "ensure_uv_installed", lambda *_: uv_path)
     monkeypatch.setattr(cli_mod, "uv_project_version", lambda *_, **__: "1.2.4")
@@ -10253,7 +10336,9 @@ def test_project_sync_defaults_to_cwd_with_positional_message(
     )
     monkeypatch.setattr(cli_mod, "git_origin", lambda *_: "git@github.com:org/repo.git")
     monkeypatch.setattr(
-        cli_mod, "ensure_key_for_repo", lambda *_: (key, key.with_suffix(".pub"), "pub")
+        cli_mod,
+        "_ensure_project_repository_ssh_access",
+        lambda **kwargs: (key, "pub", {"GIT_SSH_COMMAND": "forced"}),
     )
     monkeypatch.setattr(cli_mod, "ensure_uv_installed", lambda *_: uv_path)
     monkeypatch.setattr(cli_mod, "uv_project_version", lambda *_, **__: "1.2.4")
@@ -10324,6 +10409,54 @@ def test_project_sync_rejects_invalid_branch_before_local_mutation(
     assert f"Project sync preflight failed: {preflight_error}" in result.output
 
 
+def test_project_sync_dry_run_does_not_mutate(cli_mod, runner, monkeypatch, tmp_path):
+    target = tmp_path / "project"
+    target.mkdir(parents=True, exist_ok=True)
+    (target / ".env").write_text(
+        "MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        cli_mod,
+        "_resolve_git_project_branch_context",
+        lambda *args, **kwargs: ("main", "project-branch-uid-123"),
+    )
+    monkeypatch.setattr(cli_mod, "ensure_venv", lambda *_: None)
+    monkeypatch.setattr(cli_mod, "git_origin", lambda *_: "git@github.com:org/repo.git")
+
+    def fail_mutation(*args, **kwargs):
+        pytest.fail("dry-run must not execute sync mutations")
+
+    for name in (
+        "_ensure_project_repository_ssh_access",
+        "ensure_uv_installed",
+        "uv_project_version",
+        "render_project_branch_default_redeployment_tag",
+        "run_uv",
+        "uv_export_requirements",
+        "run_cmd",
+    ):
+        monkeypatch.setattr(cli_mod, name, fail_mutation)
+
+    result = runner.invoke(
+        cli_mod.app,
+        [
+            "project",
+            "sync",
+            "--message",
+            "Preview release",
+            "--path",
+            str(target),
+            "--dry-run",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "ensure repository SSH key" in result.output
+    assert "read-only preflight complete; no changes made" in result.output
+
+
 def test_project_schedule_batch_jobs_is_removed(cli_mod, runner):
     result = runner.invoke(cli_mod.app, ["project", "schedule_batch_jobs"])
 
@@ -10348,7 +10481,9 @@ def test_project_sync_project(cli_mod, runner, monkeypatch, tmp_path):
     )
     monkeypatch.setattr(cli_mod, "git_origin", lambda *_: "git@github.com:org/repo.git")
     monkeypatch.setattr(
-        cli_mod, "ensure_key_for_repo", lambda *_: (key, key.with_suffix(".pub"), "pub")
+        cli_mod,
+        "_ensure_project_repository_ssh_access",
+        lambda **kwargs: (key, "pub", {"GIT_SSH_COMMAND": "forced"}),
     )
     monkeypatch.setattr(cli_mod, "ensure_uv_installed", lambda *_: uv_path)
     monkeypatch.setattr(cli_mod, "uv_project_version", lambda *_, **__: "1.2.4")
@@ -10410,7 +10545,9 @@ def test_project_sync_project_defaults_to_current_project_dir(
     )
     monkeypatch.setattr(cli_mod, "git_origin", lambda *_: "git@github.com:org/repo.git")
     monkeypatch.setattr(
-        cli_mod, "ensure_key_for_repo", lambda *_: (key, key.with_suffix(".pub"), "pub")
+        cli_mod,
+        "_ensure_project_repository_ssh_access",
+        lambda **kwargs: (key, "pub", {"GIT_SSH_COMMAND": "forced"}),
     )
     monkeypatch.setattr(cli_mod, "ensure_uv_installed", lambda *_: uv_path)
     monkeypatch.setattr(cli_mod, "uv_project_version", lambda *_, **__: "1.2.4")

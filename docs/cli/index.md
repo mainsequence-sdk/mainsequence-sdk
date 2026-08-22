@@ -259,6 +259,7 @@ mainsequence project update_agent_skills --path .
 # 4) Day-to-day sync
 mainsequence project sync "Update environment"
 mainsequence project sync --path . -m "Update environment"
+mainsequence project sync --path . -m "Preview environment" --dry-run
 
 # 5) Docker/devcontainer
 mainsequence project build-docker-env --path .
@@ -268,10 +269,15 @@ mainsequence project sdk-status --path .
 mainsequence project update-sdk --path .
 ```
 
-During `set-up-locally`, deploy-key registration is a best-effort Project
-operation. The CLI posts the generated public key to
-`/api/v1/projects/{project_uid}/add-deploy-key/`. Repository branch selection
+During `set-up-locally`, the CLI registers a new or inaccessible deploy key through
+`/api/v1/projects/{project_uid}/add-deploy-key/` and verifies repository access with the forced
+identity before cloning. Registration or access failure stops setup. Repository branch selection
 only chooses the branch to clone; it is not deploy-key ownership.
+
+The key filename is `~/.ssh/mainsequence-<repository-slug>-<first-16-sha256>`, with SHA-256 applied
+to normalized `host[:non-default-port]/repository/path`. Equivalent SCP and `ssh://` origins share
+one identity; same-basename repositories do not. Basename-only legacy keys are neither modified nor
+used as a compatibility fallback.
 
 ## List Filters
 
@@ -538,7 +544,7 @@ ontology and each installed platform skill.
 - `mainsequence project add_team_to_view`, `add_team_to_edit`, `remove_team_from_view`, and `remove_team_from_edit` mutate project team sharing through the SDK `ShareableObjectMixin` team-action paths.
 - `mainsequence project project_resource list` lists project resources through the SDK client `ProjectResource.filter()` path and always applies `repo_commit_sha` from the current upstream branch head.
 - `mainsequence project current` reports the logical Project UID, current named Git branch, resolved ProjectBranch UID, and branch-resolution status. Local `.env` files do not persist a branch UID; deployed runtimes receive their immutable ProjectBranch UID directly from the backend.
-- `mainsequence project sync` is the canonical local release workflow. Its preflight rejects detached checkouts and Git branches that are not registered under `MAIN_SEQUENCE_PROJECT_UID`; only then does it patch the project version, request the canonical default tag from that ProjectBranch's backend action, run `uv lock`, run `uv sync`, export locked production requirements, commit, create the returned annotated tag, and push with `--follow-tags`. The backend returns a stable tag on `main` and a branch-qualified tag on every other branch. Backend repository reconciliation is triggered independently by the GitHub branch-push webhook; there is no client post-commit callback.
+- `mainsequence project sync` is the canonical local release workflow. Its preflight rejects detached checkouts and Git branches that are not registered under `MAIN_SEQUENCE_PROJECT_UID`. With `--dry-run`, that read-only preflight prints the complete plan and returns before SSH key generation, dependency changes, backend tag requests, or Git mutations. A normal run then patches the project version, requests the canonical default tag from that ProjectBranch's backend action, runs `uv lock`, runs `uv sync`, exports locked production requirements, commits, creates the returned annotated tag, and pushes with `--follow-tags`. The backend returns a stable tag on `main` and a branch-qualified tag on every other branch. Backend repository reconciliation is triggered independently by the GitHub branch-push webhook; there is no client post-commit callback.
 - `mainsequence project jobs runs list` lists job-run history through the SDK client `JobRun.filter(job__uid=job_uid)` exact-filter path. Multi-job callers can use `job__uid__in` with a list.
 - `mainsequence project jobs runs logs` fetches logs through the SDK client `JobRun.get_logs()` path, polls every 30 seconds by default while the job run is `PENDING` or `RUNNING`, and stops after 10 minutes unless you override `--max-wait-seconds` or disable it with `--max-wait-seconds 0`.
 - `mainsequence project jobs run` triggers a manual run through the SDK client `Job.run_job()` path.

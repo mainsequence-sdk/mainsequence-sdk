@@ -228,9 +228,14 @@ from .pydantic_cli import (
 from .sdk_utils import fetch_latest_sdk_version, normalize_version, read_local_sdk_version
 from .ssh_utils import (
     ensure_key_for_repo,
+    git_ssh_environment,
     open_folder,
     open_signed_terminal,
+    repository_ssh_key_paths,
+    require_ssh_git_origin,
     start_agent_and_add_key,
+    verify_git_push_access,
+    verify_git_remote_access,
 )
 from .ui import error, info, print_kv, print_table, status, success, warn
 
@@ -672,6 +677,48 @@ def _resolve_project_repository_ssh_url(project: dict) -> str:
     if not repository_ssh_url:
         raise ApiError(f"GitRepository {repository_uid} has no SSH clone URL.")
     return repository_ssh_url
+
+
+def _ensure_project_repository_ssh_access(
+    *,
+    origin: str,
+    project_ref: str | None,
+    verify_access,
+) -> tuple[pathlib.Path, str, dict[str, str]]:
+    expected_key_path, expected_public_key_path = repository_ssh_key_paths(origin)
+    keypair_existed = expected_key_path.is_file() and expected_public_key_path.is_file()
+    key_path, _public_key_path, public_key = ensure_key_for_repo(origin)
+    env = git_ssh_environment(key_path)
+
+    def register_key() -> None:
+        normalized_project_ref = str(project_ref or "").strip()
+        if not normalized_project_ref:
+            raise ApiError(
+                "The repository SSH key is not authorized and no MAIN_SEQUENCE_PROJECT_UID "
+                "is available for deploy-key registration."
+            )
+        key_title = str(platform.node() or "").strip()
+        if not key_title or "\n" in key_title or "\r" in key_title:
+            raise ApiError("Local hostname must contain one non-empty line.")
+        try:
+            add_deploy_key(normalized_project_ref, key_title, public_key)
+        except Exception as exc:
+            raise ApiError(f"Project deploy-key registration failed: {exc}") from exc
+
+    if not keypair_existed:
+        register_key()
+    else:
+        try:
+            verify_access(env)
+            return key_path, public_key, env
+        except RuntimeError:
+            register_key()
+
+    try:
+        verify_access(env)
+    except RuntimeError as exc:
+        raise ApiError(str(exc)) from exc
+    return key_path, public_key, env
 
 
 def _project_identity_value(project: dict) -> str:
@@ -9786,7 +9833,7 @@ def project_set_up_locally(
     Clone a project locally and provision runtime `.env`.
 
     Workflow:
-    - ensure an SSH key and optionally register it through the owning Project,
+    - ensure, register when needed, and verify a repository-specific SSH key,
     - clone repository into local projects root,
     - build local runtime auth/backend entries for the active auth mode,
     - write/update `.env` with local runtime values.
@@ -9853,24 +9900,24 @@ def project_set_up_locally(
     target_dir = projects_root / f"{name}-{project_uid}"
     projects_root.mkdir(parents=True, exist_ok=True)
 
-    key_path, _pub_path, pub = ensure_key_for_repo(repo)
-    copied = _copy_clipboard(pub)
-
-    # Best-effort Project-owned deploy key (do not fail set-up-locally on this)
-    try:
-        host = platform.node()
-        add_deploy_key(project_uid, host, pub)
-    except Exception as e:
-        warn(f"Could not add deploy key automatically (continuing): {e}")
-
-    agent_env = start_agent_and_add_key(key_path)
-
     if target_dir.exists():
         warn(f"Target already exists: {target_dir}")
         raise typer.Exit(2)
 
-    env = os.environ.copy() | agent_env
-    env["GIT_SSH_COMMAND"] = f'ssh -i "{str(key_path)}" -o IdentitiesOnly=yes'
+    try:
+        key_path, pub, _git_env = _ensure_project_repository_ssh_access(
+            origin=repo,
+            project_ref=project_uid,
+            verify_access=lambda env: verify_git_remote_access(repo, env),
+        )
+    except (ApiError, RuntimeError, ValueError) as exc:
+        error(f"Repository SSH key setup failed: {exc}")
+        raise typer.Exit(1) from exc
+
+    copied = _copy_clipboard(pub)
+    agent_env = start_agent_and_add_key(key_path)
+
+    env = git_ssh_environment(key_path, base_env=os.environ.copy() | agent_env)
 
     with status(f"Cloning repo into {target_dir}..."):
         rc = subprocess.call(
@@ -10033,7 +10080,16 @@ def project_open_signed_terminal(
 
     origin = git_origin(project_dir)
     name = repo_name_from_git_url(origin) or project_dir.name
-    key_path, _, _ = ensure_key_for_repo(origin)  # creates if missing
+    project_ref = str(project_id or _read_project_ref_from_env_file(project_dir) or "").strip()
+    try:
+        key_path, _public_key, _git_env = _ensure_project_repository_ssh_access(
+            origin=origin,
+            project_ref=project_ref or None,
+            verify_access=lambda env: verify_git_remote_access(origin, env),
+        )
+    except (ApiError, RuntimeError, ValueError) as exc:
+        error(f"Repository SSH key setup failed: {exc}")
+        raise typer.Exit(1) from exc
     open_signed_terminal(str(project_dir), key_path, name)
 
 
@@ -10300,7 +10356,11 @@ def project_sync(
     project_id: str | None = typer.Argument(None, help="Project UID"),
     path: str | None = typer.Option(None, "--path", help="Project directory"),
     message_opt: str | None = typer.Option(None, "--message", "-m", help="Git commit message"),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Print steps but do not execute"),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Run read-only preflight and print steps without generating keys or changing the project",
+    ),
 ):
     """
     Run end-to-end sync workflow for project dependencies and git state.
@@ -10322,7 +10382,8 @@ def project_sync(
     path:
         Explicit local path.
     dry_run:
-        Print plan without executing commands.
+        Run read-only preflight and print the plan without generating keys or
+        changing project files, dependencies, Git state, or backend state.
 
     Examples
     --------
@@ -10368,13 +10429,18 @@ def project_sync(
         f"Git branch {git_branch!r} to ProjectBranch {project_branch_uid}."
     )
 
-    ensure_venv(project_dir)
-
     origin = git_origin(project_dir)
     repo_name = repo_name_from_git_url(origin) or project_dir.name
-    key_path, _, _ = ensure_key_for_repo(origin)
+    try:
+        require_ssh_git_origin(origin)
+    except ValueError as exc:
+        error(f"Project sync preflight failed: {exc}")
+        raise typer.Exit(1) from exc
 
     steps = [
+        "ensure repository SSH key",
+        "register a new or inaccessible SSH key through the owning Project",
+        "git push --dry-run --follow-tags origin HEAD:refs/heads/<branch>",
         "resolve uv executable",
         "uv version --bump patch",
         "request backend default redeployment tag",
@@ -10390,12 +10456,24 @@ def project_sync(
     print_table("Sync plan", ["Step"], [[s] for s in steps])
 
     if dry_run:
-        warn("Dry run: no commands executed.")
+        warn("Dry run: read-only preflight complete; no changes made.")
         return
 
-    env = os.environ.copy()
-    env["GIT_SSH_COMMAND"] = f'ssh -i "{str(key_path)}" -o IdentitiesOnly=yes'
+    try:
+        _key_path, _public_key, env = _ensure_project_repository_ssh_access(
+            origin=origin,
+            project_ref=project_ref,
+            verify_access=lambda ssh_env: verify_git_push_access(
+                project_dir,
+                git_branch,
+                ssh_env,
+            ),
+        )
+    except (ApiError, RuntimeError, ValueError) as exc:
+        error(f"Project sync SSH preflight failed: {exc}")
+        raise typer.Exit(1) from exc
 
+    ensure_venv(project_dir)
     uv = ensure_uv_installed(project_dir)
     with status("Running uv + git sync steps..."):
         run_uv(uv, ["version", "--bump", "patch"], cwd=project_dir, env=env)
