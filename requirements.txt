@@ -78,7 +78,7 @@ opentelemetry-sdk==1.37.0
     #   opentelemetry-exporter-otlp-proto-http
 opentelemetry-semantic-conventions==0.58b0
     # via opentelemetry-sdk
-packaging==25.0
+packaging==26.3
     # via mainsequence
 pandas==2.3.3
     # via mainsequence
