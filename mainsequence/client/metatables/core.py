@@ -3719,6 +3719,13 @@ class TimeIndexMetaTable(MetaTable):
 
 class Scheduler(BasePydanticModel, BaseObjectOrm):
     uid: str | None = Field(None, description="Public uid of this scheduler")
+    organization_project_environment_uid: str = Field(
+        ...,
+        description=(
+            "Read-only public UID of the Organization Environment derived by the "
+            "backend from the scheduler's update nodes."
+        ),
+    )
     name: str
     is_running: bool
     running_process_pid: int | None
