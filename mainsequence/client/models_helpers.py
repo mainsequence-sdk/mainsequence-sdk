@@ -760,6 +760,14 @@ class JobRun(BaseObjectOrm, BasePydanticModel):
         description="Read-only repository branch name associated with the run, or null for an unscoped run.",
         examples=["main"],
     )
+    organization_project_environment_uid: str = Field(
+        ...,
+        description=(
+            "Read-only public UID of the Organization Environment resolved from the "
+            "JobRun's owning project branch."
+        ),
+        examples=["58218213-5e4e-43de-a5bd-6757f4e1c8f6"],
+    )
 
     execution_start: datetime.datetime | None = Field(
         default=None,

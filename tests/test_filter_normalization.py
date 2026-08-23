@@ -180,6 +180,7 @@ def test_job_run_status_uses_status_detail_endpoint(monkeypatch):
         project_name=None,
         project_branch_uid=None,
         project_branch_name=None,
+        organization_project_environment_uid=ENVIRONMENT_UID,
         runtime_image_uid="6cfdb152-923e-45b9-a150-c4541c68b0d1",
         runtime_image_digest="sha256:" + "b" * 64,
     )
@@ -271,6 +272,7 @@ def test_job_run_deserializes_uid_payload_without_id():
         project_name="market-data-service",
         project_branch_uid="5a28020a-0f1b-47ee-aab8-334286234bea",
         project_branch_name="main",
+        organization_project_environment_uid=ENVIRONMENT_UID,
         status="RUNNING",
         cpu_request="1",
         cpu_limit="2",
@@ -286,6 +288,7 @@ def test_job_run_deserializes_uid_payload_without_id():
     dumped = job_run.model_dump()
     assert dumped["uid"] == "4c1d77c8-8a42-42b8-a9c1-06be9a336e5d"
     assert dumped["job_uid"] == "ab6a5d50-8a3e-4f0d-a9bb-7e84180bd50e"
+    assert dumped["organization_project_environment_uid"] == ENVIRONMENT_UID
     assert "id" not in dumped
 
 
@@ -2464,6 +2467,7 @@ def test_job_run_requires_immutable_runtime_image_snapshot():
         "project_name": "market-data-service",
         "project_branch_uid": "5a28020a-0f1b-47ee-aab8-334286234bea",
         "project_branch_name": "main",
+        "organization_project_environment_uid": ENVIRONMENT_UID,
         "commit_hash": "a" * 40,
         "runtime_image_uid": "6cfdb152-923e-45b9-a150-c4541c68b0d1",
         "runtime_image_digest": "sha256:" + "b" * 64,
@@ -2477,6 +2481,7 @@ def test_job_run_requires_immutable_runtime_image_snapshot():
     assert run.project_name == payload["project_name"]
     assert run.project_branch_uid == payload["project_branch_uid"]
     assert run.project_branch_name == payload["project_branch_name"]
+    assert run.organization_project_environment_uid == ENVIRONMENT_UID
 
     missing_project_context = dict(payload)
     missing_project_context.pop("project_uid")
@@ -2492,6 +2497,7 @@ def test_job_run_requires_immutable_runtime_image_snapshot():
                 "project_name": None,
                 "project_branch_uid": None,
                 "project_branch_name": None,
+                "organization_project_environment_uid": ENVIRONMENT_UID,
                 "runtime_image_digest": "sha256:" + "b" * 64,
             }
         )

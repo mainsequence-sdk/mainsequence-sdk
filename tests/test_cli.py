@@ -5803,6 +5803,9 @@ def test_get_project_job_run_logs_uses_client_model(cli_mod, monkeypatch):
                     "project_name": "market-data-service",
                     "project_branch_uid": "5a28020a-0f1b-47ee-aab8-334286234bea",
                     "project_branch_name": "main",
+                    "organization_project_environment_uid": (
+                        "58218213-5e4e-43de-a5bd-6757f4e1c8f6"
+                    ),
                     "status": "RUNNING",
                     "runtime_image_uid": "6cfdb152-923e-45b9-a150-c4541c68b0d1",
                     "runtime_image_digest": "sha256:" + "b" * 64,
@@ -5811,6 +5814,9 @@ def test_get_project_job_run_logs_uses_client_model(cli_mod, monkeypatch):
 
         def get_logs(self, *, timeout=None):
             captured["get_logs_timeout"] = timeout
+            captured["organization_project_environment_uid"] = (
+                self.organization_project_environment_uid
+            )
             return {
                 "job_run_uid": self.uid,
                 "status": self.status,
@@ -5829,6 +5835,9 @@ def test_get_project_job_run_logs_uses_client_model(cli_mod, monkeypatch):
     out = api_mod.get_project_job_run_logs("4c1d77c8-8a42-42b8-a9c1-06be9a336e5d")
     assert captured["job_run_uid_arg"] == "4c1d77c8-8a42-42b8-a9c1-06be9a336e5d"
     assert captured["get_logs_timeout"] is None
+    assert captured["organization_project_environment_uid"] == (
+        "58218213-5e4e-43de-a5bd-6757f4e1c8f6"
+    )
     assert captured["jwt"] == ("acc", "ref")
     assert out == {
         "job_run_uid": "4c1d77c8-8a42-42b8-a9c1-06be9a336e5d",
