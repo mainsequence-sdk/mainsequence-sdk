@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Superseded by Astro ADR 47, Explicit A2A Response Kind
 
 ## Context
 
@@ -24,7 +24,8 @@ The canonical A2A send flow is:
    resolve fresh access, and retry once with the exact same body and
    `message.messageId`.
 
-The SDK calls Django only for runtime access:
+For the default direct Message path, the SDK calls Django only for runtime
+access:
 
 ```http
 POST /api/v1/agent-sessions/{agent_session_uid}/resolve-runtime-access/
@@ -43,10 +44,16 @@ The SDK sends the message only to:
 POST {rpc_url}/api/a2a/v1/message:send
 Content-Type: application/a2a+json
 Accept: application/a2a+json
+A2A-Extensions: https://mainsequence.ai/a2a/extensions/response-kind/v1
 ```
 
 The SDK must not call legacy runtime attach/status endpoints or poll runtime
 readiness for standard A2A sends.
+
+Under the superseding ADR 47 contract, explicit Task selection additionally
+uses backend Agent discovery (and, when necessary, the session's `agent_uid`)
+to verify that the target advertises Task support before the runtime request.
+That discovery call is not part of direct Message execution.
 
 ## Request Shape
 
@@ -66,7 +73,7 @@ Plain text:
   },
   "configuration": {
     "acceptedOutputModes": ["text/plain"],
-    "returnImmediately": false
+    "responseKind": "message"
   }
 }
 ```
@@ -87,7 +94,7 @@ Strict dictionary:
   },
   "configuration": {
     "acceptedOutputModes": ["application/json"],
-    "returnImmediately": false
+    "responseKind": "message"
   },
   "metadata": {
     "https://mainsequence.ai/a2a/extensions/output-contract/v1": {
@@ -100,6 +107,12 @@ Strict dictionary:
   }
 }
 ```
+
+ADR 47 replaces the timing Boolean with an explicit result contract. The SDK
+uses `response_kind="message"` for direct execution and
+`response_kind="task"` only when Agent discovery advertises Task support. Task
+mode returns a typed Task and is followed through the SDK get, wait, and cancel
+helpers; direct Message mode does not create an A2A Task.
 
 ## CLI Contract
 
@@ -133,7 +146,11 @@ The CLI must not require a prior runtime resolve, attach, prewarm, status, or
 readiness command before `a2a send`.
 
 If the CLI generates the `message.messageId` and the send fails, it must print
-the generated message id so the caller can retry the exact same logical message.
+the generated message id so the caller can preserve request identity if a retry
+is explicitly chosen. Under the superseding ADR 47 contract, direct `message`
+execution has no durable replay receipt and must not be retried automatically;
+the first turn may already have executed. Use `task` when durable recovery is
+required.
 
 ## Caching
 

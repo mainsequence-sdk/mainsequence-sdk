@@ -1417,7 +1417,7 @@ def send_agent_session_a2a_message(
     message_id: str | None = None,
     strict_dictionary: bool = False,
     json_repair_attempts: int = 3,
-    return_immediately: bool = False,
+    response_kind: str = "message",
     timeout: int | None = None,
 ) -> dict[str, Any]:
     """
@@ -1437,7 +1437,7 @@ def send_agent_session_a2a_message(
                 cached_runtime_access=cached_runtime_access,
                 strict_dictionary=strict_dictionary,
                 json_repair_attempts=json_repair_attempts,
-                return_immediately=return_immediately,
+                response_kind=response_kind,
                 timeout=timeout,
             ),
         )
@@ -1463,7 +1463,7 @@ def _send_agent_session_a2a_message_with_cache(
     cached_runtime_access: dict[str, Any] | None,
     strict_dictionary: bool,
     json_repair_attempts: int,
-    return_immediately: bool,
+    response_kind: str,
     timeout: int | None,
 ):
     if cached_runtime_access is not None:
@@ -1476,7 +1476,7 @@ def _send_agent_session_a2a_message_with_cache(
         message_id=message_id,
         strict_dictionary=strict_dictionary,
         json_repair_attempts=json_repair_attempts,
-        return_immediately=return_immediately,
+        response_kind=response_kind,
         timeout=timeout,
     )
 

@@ -1777,6 +1777,9 @@ def test_agent_runtime_models_deserialize_backend_uid_payloads():
     assert agent.repository_branch == "main"
     assert agent.organization_project_environment_uid == environment_uid
     assert agent.organization_project_environment_name == "production"
+    assert agent.a2a_profile.supported_response_kinds == [
+        agent_models_mod.A2AResponseKind.MESSAGE
+    ]
 
     search_result = agent_models_mod.AgentSemanticSearchResult.model_validate(
         {
@@ -1798,6 +1801,9 @@ def test_agent_runtime_models_deserialize_backend_uid_payloads():
     assert search_result.repository_branch == "main"
     assert search_result.organization_project_environment_uid == environment_uid
     assert search_result.organization_project_environment_name == "production"
+    assert search_result.a2a_profile.default_response_kind == (
+        agent_models_mod.A2AResponseKind.MESSAGE
+    )
 
     session = agent_models_mod.AgentSession.model_validate(
         {
@@ -3247,7 +3253,8 @@ def test_agent_session_send_a2a_message_posts_standard_contract(monkeypatch):
         "payload": {"json": {}},
         "timeout": 15,
     }
-    assert payload["message"]["parts"] == [{"text": "I can analyze workspaces."}]
+    assert payload.message is not None
+    assert payload.message["parts"] == [{"text": "I can analyze workspaces."}]
     assert captured["runtime"]["url"] == (
         "https://7bd86be3-d11a-4ad1-8fe2-9260ccdbca7f.coding-agent.main-sequence.app/"
         "api/a2a/v1/message:send"
@@ -3255,6 +3262,9 @@ def test_agent_session_send_a2a_message_posts_standard_contract(monkeypatch):
     assert captured["runtime"]["headers"]["Content-Type"] == "application/a2a+json"
     assert captured["runtime"]["headers"]["Accept"] == "application/a2a+json"
     assert captured["runtime"]["headers"]["Authorization"] == "Bearer tok-secret"
+    assert captured["runtime"]["headers"]["A2A-Extensions"] == (
+        agent_models_mod.STANDARD_A2A_RESPONSE_KIND_EXTENSION_URI
+    )
     request_body = json.loads(captured["runtime"]["data"])
     assert request_body == {
         "message": {
@@ -3265,10 +3275,177 @@ def test_agent_session_send_a2a_message_posts_standard_contract(monkeypatch):
         },
         "configuration": {
             "acceptedOutputModes": ["text/plain"],
-            "returnImmediately": False,
+            "responseKind": "message",
         },
     }
     assert "omit_reasoning" not in captured["runtime"]["data"]
+
+
+def test_agent_session_send_a2a_task_returns_typed_task(monkeypatch):
+    captured = {}
+    session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
+    agent_models_mod.AgentSession.clear_cached_runtime_access(session_uid)
+    agent_models_mod.AgentSession.cache_runtime_access(
+        session_uid,
+        {
+            "mode": "token",
+            "rpc_url": "https://runtime.example.test/",
+            "token": "tok-secret",
+        },
+    )
+
+    class FakeRuntimeResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {
+                "task": {
+                    "kind": "task",
+                    "id": "task-1",
+                    "contextId": session_uid,
+                    "status": {"state": "TASK_STATE_SUBMITTED"},
+                    "artifacts": [],
+                }
+            }
+
+    def _fake_post(url, *, headers, data, timeout):
+        captured.update(url=url, headers=headers, data=data, timeout=timeout)
+        return FakeRuntimeResponse()
+
+    monkeypatch.setattr(agent_models_mod.requests, "post", _fake_post)
+
+    result = agent_models_mod.AgentSession.send_a2a_message(
+        session_uid,
+        message="Run this asynchronously.",
+        response_kind=agent_models_mod.A2AResponseKind.TASK,
+        a2a_profile={
+            "supported_response_kinds": ["message", "task"],
+            "default_response_kind": "message",
+        },
+    )
+
+    assert result.response_kind is agent_models_mod.A2AResponseKind.TASK
+    assert result.task is not None
+    assert result.task.id == "task-1"
+    assert result.task.context_id == session_uid
+    assert json.loads(captured["data"])["configuration"]["responseKind"] == "task"
+
+
+def test_agent_a2a_profile_requires_message_default_and_support():
+    with pytest.raises(ValueError, match="must include 'message'"):
+        agent_models_mod.AgentA2AProfile(
+            supported_response_kinds=[agent_models_mod.A2AResponseKind.TASK],
+            default_response_kind=agent_models_mod.A2AResponseKind.MESSAGE,
+        )
+
+    with pytest.raises(ValueError, match="must be 'message'"):
+        agent_models_mod.AgentA2AProfile(
+            supported_response_kinds=[
+                agent_models_mod.A2AResponseKind.MESSAGE,
+                agent_models_mod.A2AResponseKind.TASK,
+            ],
+            default_response_kind=agent_models_mod.A2AResponseKind.TASK,
+        )
+
+    with pytest.raises(ValueError, match="extension_uri is not supported"):
+        agent_models_mod.AgentA2AProfile(
+            response_kind_extension_uri="https://example.test/a2a/response-kind",
+        )
+
+    with pytest.raises(ValidationError, match="Input should be 'task'"):
+        agent_models_mod.A2ATask.model_validate(
+            {
+                "kind": "message",
+                "id": "task-1",
+                "contextId": "session-1",
+                "status": {"state": "TASK_STATE_SUBMITTED"},
+            }
+        )
+
+
+def test_agent_session_task_send_discovers_message_only_profile_before_runtime(monkeypatch):
+    session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
+    agent_uid = "e0e75693-4110-464c-a253-e302754872c1"
+    discovered = {}
+
+    def _get_session(cls, pk=None, timeout=None, **_filters):
+        discovered["session"] = (pk, timeout)
+        return SimpleNamespace(agent_uid=agent_uid)
+
+    def _get_agent(cls, pk=None, timeout=None, **_filters):
+        discovered["agent"] = (pk, timeout)
+        return SimpleNamespace(a2a_profile=agent_models_mod.AgentA2AProfile())
+
+    monkeypatch.setattr(agent_models_mod.AgentSession, "get", classmethod(_get_session))
+    monkeypatch.setattr(agent_models_mod.Agent, "get", classmethod(_get_agent))
+
+    with pytest.raises(ValueError, match="is not advertised"):
+        agent_models_mod.AgentSession.send_a2a_message(
+            session_uid,
+            message="Run this asynchronously.",
+            response_kind=agent_models_mod.A2AResponseKind.TASK,
+            timeout=17,
+        )
+
+    assert discovered == {
+        "session": (session_uid, 17),
+        "agent": (agent_uid, 17),
+    }
+
+
+def test_agent_session_a2a_task_helpers_get_wait_and_cancel(monkeypatch):
+    session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
+    agent_models_mod.AgentSession.clear_cached_runtime_access(session_uid)
+    agent_models_mod.AgentSession.cache_runtime_access(
+        session_uid,
+        {
+            "mode": "token",
+            "rpc_url": "https://runtime.example.test/",
+            "token": "tok-secret",
+        },
+    )
+    states = iter(["TASK_STATE_WORKING", "TASK_STATE_COMPLETED", "TASK_STATE_CANCELED"])
+    calls = []
+
+    class FakeTaskResponse:
+        status_code = 200
+
+        def __init__(self, state):
+            self.state = state
+
+        def json(self):
+            return {
+                "task": {
+                    "kind": "task",
+                    "id": "task-1",
+                    "contextId": session_uid,
+                    "status": {"state": self.state},
+                    "artifacts": [],
+                }
+            }
+
+    def _fake_request(method, url, *, headers, timeout):
+        calls.append((method, url, headers, timeout))
+        return FakeTaskResponse(next(states))
+
+    monkeypatch.setattr(agent_models_mod.requests, "request", _fake_request)
+    monkeypatch.setattr(agent_models_mod.time, "sleep", lambda _seconds: None)
+
+    completed = agent_models_mod.AgentSession.wait_for_a2a_task(
+        session_uid,
+        task_id="task-1",
+        poll_interval_seconds=0.01,
+    )
+    canceled = agent_models_mod.AgentSession.cancel_a2a_task(
+        session_uid,
+        task_id="task-1",
+    )
+
+    assert completed.status.state == "TASK_STATE_COMPLETED"
+    assert canceled.status.state == "TASK_STATE_CANCELED"
+    assert [method for method, *_rest in calls] == ["GET", "GET", "POST"]
+    assert calls[-1][1].endswith("/api/a2a/v1/tasks/task-1:cancel")
 
 
 def test_agent_session_send_a2a_message_reports_unavailable_runtime_without_post(
@@ -3448,7 +3625,8 @@ def test_agent_session_send_a2a_message_refreshes_access_and_reuses_body(monkeyp
         message_id="msg-client-retry-1",
     )
 
-    assert payload["message"]["parts"] == [{"text": "Done."}]
+    assert payload.message is not None
+    assert payload.message["parts"] == [{"text": "Done."}]
     assert captured["resolve_count"] == 2
     assert captured["runtime_bodies"][0] == captured["runtime_bodies"][1]
     request_body = json.loads(captured["runtime_bodies"][0])

@@ -20,7 +20,11 @@ DEFAULT_AGENT_SESSION_LONG_REQUEST_TIMEOUT = (5.0, 900.0)
 DEFAULT_AGENT_RUNTIME_ACCESS_CACHE_TTL_SECONDS = 60.0
 DEFAULT_AGENT_RUNTIME_ACCESS_CACHE_EXPIRY_SKEW_SECONDS = 30.0
 STANDARD_A2A_MESSAGE_SEND_PATH = "/api/a2a/v1/message:send"
+STANDARD_A2A_TASKS_PATH = "/api/a2a/v1/tasks"
 STANDARD_A2A_CONTENT_TYPE = "application/a2a+json"
+STANDARD_A2A_RESPONSE_KIND_EXTENSION_URI = (
+    "https://mainsequence.ai/a2a/extensions/response-kind/v1"
+)
 STANDARD_A2A_OUTPUT_CONTRACT_METADATA_KEY = (
     "https://mainsequence.ai/a2a/extensions/output-contract/v1"
 )
@@ -33,6 +37,67 @@ class AgentSessionStatus(str, Enum):
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELED = "canceled"
+
+
+class A2AResponseKind(str, Enum):
+    MESSAGE = "message"
+    TASK = "task"
+
+
+class AgentA2AProfile(BasePydanticModel):
+    response_kind_extension_uri: str = STANDARD_A2A_RESPONSE_KIND_EXTENSION_URI
+    supported_response_kinds: list[A2AResponseKind] = Field(
+        default_factory=lambda: [A2AResponseKind.MESSAGE]
+    )
+    default_response_kind: A2AResponseKind = A2AResponseKind.MESSAGE
+
+    @model_validator(mode="after")
+    def _validate_default(self) -> AgentA2AProfile:
+        if self.response_kind_extension_uri != STANDARD_A2A_RESPONSE_KIND_EXTENSION_URI:
+            raise ValueError("response_kind_extension_uri is not supported")
+        self.supported_response_kinds = list(dict.fromkeys(self.supported_response_kinds))
+        if not self.supported_response_kinds:
+            raise ValueError("supported_response_kinds must not be empty")
+        if A2AResponseKind.MESSAGE not in self.supported_response_kinds:
+            raise ValueError("supported_response_kinds must include 'message'")
+        if self.default_response_kind is not A2AResponseKind.MESSAGE:
+            raise ValueError("default_response_kind must be 'message'")
+        return self
+
+
+class A2ATaskStatus(BasePydanticModel):
+    model_config = ConfigDict(extra="allow")
+
+    state: str
+    timestamp: str | None = None
+    message: Any | None = None
+
+
+class A2ATask(BasePydanticModel):
+    model_config = ConfigDict(extra="allow", populate_by_name=True, serialize_by_alias=True)
+
+    kind: Literal["task"] = "task"
+    id: str
+    context_id: str = Field(alias="contextId")
+    status: A2ATaskStatus
+    artifacts: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class A2AMessageSendResult(BasePydanticModel):
+    model_config = ConfigDict(serialize_by_alias=True)
+
+    message: dict[str, Any] | None = None
+    task: A2ATask | None = None
+
+    @model_validator(mode="after")
+    def _require_exact_result(self) -> A2AMessageSendResult:
+        if (self.message is None) == (self.task is None):
+            raise ValueError("A2A message-send result must contain exactly one of message or task")
+        return self
+
+    @property
+    def response_kind(self) -> A2AResponseKind:
+        return A2AResponseKind.TASK if self.task is not None else A2AResponseKind.MESSAGE
 
 
 class AgentHarnessKind(str, Enum):
@@ -56,6 +121,7 @@ class AgentSemanticSearchResult(BasePydanticModel):
         "",
         description="Short description returned by semantic search for the matched agent.",
     )
+    a2a_profile: AgentA2AProfile = Field(default_factory=AgentA2AProfile)
     project_branch_uid: str = Field(
         ...,
         description="Public UID of the ProjectBranch that owns the matched Project Coding Agent.",
@@ -278,6 +344,7 @@ class Agent(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
         None,
         description="Optional structured agent card payload.",
     )
+    a2a_profile: AgentA2AProfile = Field(default_factory=AgentA2AProfile)
 
     llm_thinking: str
     llm_provider: str = Field(
@@ -958,7 +1025,7 @@ class AgentSession(BaseObjectOrm, BasePydanticModel):
         message_id: str | None = None,
         strict_dictionary: bool = False,
         json_repair_attempts: int = 3,
-        return_immediately: bool = False,
+        response_kind: A2AResponseKind = A2AResponseKind.MESSAGE,
     ) -> dict[str, Any]:
         normalized_message = str(message)
         if not normalized_message.strip():
@@ -970,6 +1037,10 @@ class AgentSession(BaseObjectOrm, BasePydanticModel):
             normalized_message_id = f"msg-{uuid.uuid4()}"
 
         accepted_output_modes = ["application/json"] if strict_dictionary else ["text/plain"]
+        try:
+            normalized_response_kind = A2AResponseKind(response_kind)
+        except ValueError as exc:
+            raise ValueError("response_kind must be 'message' or 'task'") from exc
         parts: list[dict[str, Any]] = [{"text": normalized_message}]
         for file_spec in files or []:
             parts.append(AgentSession._build_standard_a2a_raw_file_part(file_spec))
@@ -983,7 +1054,7 @@ class AgentSession(BaseObjectOrm, BasePydanticModel):
             },
             "configuration": {
                 "acceptedOutputModes": accepted_output_modes,
-                "returnImmediately": bool(return_immediately),
+                "responseKind": normalized_response_kind.value,
             },
         }
         if strict_dictionary:
@@ -1060,6 +1131,7 @@ class AgentSession(BaseObjectOrm, BasePydanticModel):
             "Authorization": f"Bearer {access.token.strip()}",
             "Content-Type": STANDARD_A2A_CONTENT_TYPE,
             "Accept": STANDARD_A2A_CONTENT_TYPE,
+            "A2A-Extensions": STANDARD_A2A_RESPONSE_KIND_EXTENSION_URI,
         }
         return requests.post(
             url,
@@ -1069,8 +1141,10 @@ class AgentSession(BaseObjectOrm, BasePydanticModel):
         )
 
     @staticmethod
-    def extract_a2a_message_text(payload: dict[str, Any]) -> str:
-        message = payload.get("message")
+    def extract_a2a_message_text(
+        payload: dict[str, Any] | A2AMessageSendResult,
+    ) -> str:
+        message = payload.message if isinstance(payload, A2AMessageSendResult) else payload.get("message")
         if not isinstance(message, dict):
             return ""
         parts = message.get("parts")
@@ -1092,13 +1166,38 @@ class AgentSession(BaseObjectOrm, BasePydanticModel):
         message_id: str | None = None,
         strict_dictionary: bool = False,
         json_repair_attempts: int = 3,
-        return_immediately: bool = False,
+        response_kind: A2AResponseKind = A2AResponseKind.MESSAGE,
+        a2a_profile: AgentA2AProfile | dict[str, Any] | None = None,
         timeout=None,
-    ) -> dict[str, Any]:
+    ) -> A2AMessageSendResult:
         """
         Send one standard A2A message to the runtime for this agent session.
         """
         session_uid = cls._resolve_agent_session_uid(agent_session)
+        normalized_response_kind = A2AResponseKind(response_kind)
+        resolved_profile: AgentA2AProfile | None = None
+        if a2a_profile is not None:
+            resolved_profile = (
+                a2a_profile
+                if isinstance(a2a_profile, AgentA2AProfile)
+                else AgentA2AProfile.model_validate(a2a_profile)
+            )
+        elif normalized_response_kind is A2AResponseKind.TASK:
+            session = (
+                agent_session
+                if isinstance(agent_session, AgentSession)
+                else cls.get(pk=session_uid, timeout=timeout)
+            )
+            if not session.agent_uid:
+                raise ValueError("Task response_kind requires a session with an agent_uid")
+            resolved_profile = Agent.get(pk=session.agent_uid, timeout=timeout).a2a_profile
+        if (
+            resolved_profile is not None
+            and normalized_response_kind not in resolved_profile.supported_response_kinds
+        ):
+            raise ValueError(
+                f"response_kind {normalized_response_kind.value!r} is not advertised by the agent"
+            )
         body = cls._build_standard_a2a_message_send_body(
             agent_session_uid=session_uid,
             message=message,
@@ -1106,7 +1205,7 @@ class AgentSession(BaseObjectOrm, BasePydanticModel):
             message_id=message_id,
             strict_dictionary=strict_dictionary,
             json_repair_attempts=json_repair_attempts,
-            return_immediately=return_immediately,
+            response_kind=normalized_response_kind,
         )
         access = cls._resolve_runtime_access_for_message_send(session_uid, timeout=timeout)
         response = cls._post_standard_a2a_message(
@@ -1140,7 +1239,150 @@ class AgentSession(BaseObjectOrm, BasePydanticModel):
             ) from exc
         if not isinstance(payload, dict):
             raise TypeError("Standard A2A response must be a JSON object")
-        return payload
+        try:
+            result = A2AMessageSendResult.model_validate(payload)
+        except ValueError as exc:
+            raise ApiError(
+                "Standard A2A response must contain exactly one valid message or task result.",
+                response=response,
+                payload=body,
+            ) from exc
+        if result.response_kind is not normalized_response_kind:
+            raise ApiError(
+                "Standard A2A response kind does not match the requested response_kind.",
+                response=response,
+                payload=body,
+            )
+        return result
+
+    @classmethod
+    def _request_a2a_task(
+        cls,
+        agent_session: str | AgentSession,
+        *,
+        task_id: str,
+        cancel: bool,
+        timeout=None,
+    ) -> A2ATask:
+        session_uid = cls._resolve_agent_session_uid(agent_session)
+        normalized_task_id = str(task_id or "").strip()
+        if not normalized_task_id or "/" in normalized_task_id:
+            raise ValueError("task_id must be a non-empty A2A task identifier")
+
+        def request(access: AgentSessionRuntimeAccess) -> requests.Response:
+            if access.mode != "token":
+                raise ApiError("Coding-agent runtime access is unavailable.")
+            if not isinstance(access.token, str) or not access.token.strip():
+                raise ApiError("Runtime access response is missing token.")
+            path = f"{STANDARD_A2A_TASKS_PATH}/{normalized_task_id}"
+            method = "GET"
+            if cancel:
+                path = f"{path}:cancel"
+                method = "POST"
+            request_timeout = (
+                DEFAULT_AGENT_SESSION_LONG_REQUEST_TIMEOUT if timeout is None else timeout
+            )
+            return requests.request(
+                method,
+                _join_runtime_url(access.rpc_url, path),
+                headers={
+                    "Authorization": f"Bearer {access.token.strip()}",
+                    "Accept": STANDARD_A2A_CONTENT_TYPE,
+                },
+                timeout=request_timeout,
+            )
+
+        access = cls._resolve_runtime_access_for_message_send(session_uid, timeout=timeout)
+        response = request(access)
+        if response.status_code in (401, 403):
+            cls.clear_cached_runtime_access(session_uid)
+            access = cls.resolve_runtime_access(session_uid, cache=True, timeout=timeout)
+            response = request(access)
+            if response.status_code in (401, 403):
+                cls.clear_cached_runtime_access(session_uid)
+        if not (200 <= response.status_code < 300):
+            raise_for_response(response)
+        try:
+            payload = response.json()
+        except Exception as exc:
+            raise ApiError(
+                "Standard A2A task response must be a JSON object.",
+                response=response,
+            ) from exc
+        task_payload = payload.get("task") if isinstance(payload, dict) else None
+        if not isinstance(task_payload, dict):
+            raise ApiError(
+                "Standard A2A task response must contain a task object.",
+                response=response,
+            )
+        return A2ATask.model_validate(task_payload)
+
+    @classmethod
+    def get_a2a_task(
+        cls,
+        agent_session: str | AgentSession,
+        *,
+        task_id: str,
+        timeout=None,
+    ) -> A2ATask:
+        return cls._request_a2a_task(
+            agent_session,
+            task_id=task_id,
+            cancel=False,
+            timeout=timeout,
+        )
+
+    @classmethod
+    def cancel_a2a_task(
+        cls,
+        agent_session: str | AgentSession,
+        *,
+        task_id: str,
+        timeout=None,
+    ) -> A2ATask:
+        return cls._request_a2a_task(
+            agent_session,
+            task_id=task_id,
+            cancel=True,
+            timeout=timeout,
+        )
+
+    @classmethod
+    def wait_for_a2a_task(
+        cls,
+        agent_session: str | AgentSession,
+        *,
+        task_id: str,
+        poll_interval_seconds: float = 1.0,
+        wait_timeout_seconds: float = 900.0,
+        timeout=None,
+    ) -> A2ATask:
+        if poll_interval_seconds <= 0:
+            raise ValueError("poll_interval_seconds must be greater than 0")
+        if wait_timeout_seconds <= 0:
+            raise ValueError("wait_timeout_seconds must be greater than 0")
+        deadline = time.monotonic() + wait_timeout_seconds
+        terminal_states = {
+            "completed",
+            "failed",
+            "canceled",
+            "rejected",
+            "TASK_STATE_COMPLETED",
+            "TASK_STATE_FAILED",
+            "TASK_STATE_CANCELED",
+            "TASK_STATE_REJECTED",
+        }
+        while True:
+            task = cls.get_a2a_task(
+                agent_session,
+                task_id=task_id,
+                timeout=timeout,
+            )
+            if task.status.state in terminal_states:
+                return task
+            if time.monotonic() >= deadline:
+                raise TimeoutError(f"Timed out waiting for A2A task {task_id}")
+            time.sleep(poll_interval_seconds)
 
     @classmethod
     def resolve_runtime_access(
@@ -1415,7 +1657,12 @@ class AgentSession(BaseObjectOrm, BasePydanticModel):
 
 
 __all__ = [
+    "A2AMessageSendResult",
+    "A2AResponseKind",
+    "A2ATask",
+    "A2ATaskStatus",
     "Agent",
+    "AgentA2AProfile",
     "AgentRuntimeImageDrift",
     "AgentRuntimeImageDriftCheck",
     "AgentHarnessKind",

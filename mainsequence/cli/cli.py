@@ -3788,7 +3788,7 @@ def _agent_session_a2a_send_impl(
     strict_dictionary: bool,
     json_repair_attempts: int,
     message_id: str | None,
-    return_immediately: bool,
+    response_kind: str,
     timeout: int | None,
 ) -> None:
     try:
@@ -3805,6 +3805,9 @@ def _agent_session_a2a_send_impl(
         raise typer.Exit(1)
     if json_repair_attempts < 1:
         error("--json-repair-attempts must be greater than 0.")
+        raise typer.Exit(1)
+    if response_kind not in {"message", "task"}:
+        error("--response-kind must be 'message' or 'task'.")
         raise typer.Exit(1)
     attachment_paths = list(files or [])
     attachment_media_types = list(media_types or [])
@@ -3841,12 +3844,12 @@ def _agent_session_a2a_send_impl(
             message_id=effective_message_id,
             strict_dictionary=strict_dictionary,
             json_repair_attempts=json_repair_attempts,
-            return_immediately=return_immediately,
+            response_kind=response_kind,
             timeout=timeout,
         )
     except ApiError as e:
         error(str(e))
-        error(f"A2A message id for exact retry: {effective_message_id}")
+        error(f"A2A message id for request retry: {effective_message_id}")
         raise typer.Exit(1) from e
 
     typer.echo(json.dumps(response_payload, indent=2))
@@ -4991,12 +4994,12 @@ def agent_session_a2a_send_cmd(
     message_id: str | None = typer.Option(
         None,
         "--message-id",
-        help="Stable A2A message.messageId to reuse for an exact retry.",
+        help="Stable A2A message.messageId to preserve request identity across a retry.",
     ),
-    return_immediately: bool = typer.Option(
-        False,
-        "--return-immediately",
-        help="Ask the runtime to return immediately instead of waiting for final output.",
+    response_kind: str = typer.Option(
+        "message",
+        "--response-kind",
+        help="Select the A2A result contract: message or task.",
     ),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
@@ -5015,7 +5018,7 @@ def agent_session_a2a_send_cmd(
         strict_dictionary=strict_dictionary,
         json_repair_attempts=json_repair_attempts,
         message_id=message_id,
-        return_immediately=return_immediately,
+        response_kind=response_kind,
         timeout=timeout,
     )
 

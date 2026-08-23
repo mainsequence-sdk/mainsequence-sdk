@@ -6867,7 +6867,7 @@ def test_agent_session_a2a_send_always_returns_json(cli_mod, runner, monkeypatch
     assert captured["kwargs"]["message_id"] == "msg-client-1"
     assert captured["kwargs"]["strict_dictionary"] is True
     assert captured["kwargs"]["json_repair_attempts"] == 3
-    assert captured["kwargs"]["return_immediately"] is False
+    assert captured["kwargs"]["response_kind"] == "message"
     assert "omit_reasoning" not in captured["kwargs"]
 
 
