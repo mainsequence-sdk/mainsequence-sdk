@@ -1184,6 +1184,15 @@ class ResourceRelease(
             "The revision is returned by the API and is not part of create requests."
         ),
     )
+    cors_allowed_origins: list[str] | None = Field(
+        default=None,
+        title="CORS Allowed Origins",
+        description=(
+            "Browser origins allowed to call a FastAPI release. The backend omits "
+            "this field for other release kinds."
+        ),
+        examples=[["https://app.example.com", "https://*.site-dev.main-sequence.app"]],
+    )
 
     @classmethod
     def create(

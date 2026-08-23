@@ -2668,6 +2668,52 @@ def test_project_resource_accepts_canonical_backend_resource_types(resource_type
     assert resource.resource_type == resource_type
 
 
+def test_resource_release_get_accepts_fastapi_cors_allowed_origins(monkeypatch):
+    captured = {}
+    release_uid = "2f4c4c3d-5669-4da5-9d86-b84633c1e6ed"
+    response_payload = {
+        "uid": release_uid,
+        "resource_uid": "857bec7b-dd77-4272-aecd-13fc2138eacc",
+        "readme_resource_uid": None,
+        "related_job_uid": "7d0ab07c-d1c0-4b7f-9c69-3c1a41c0a4da",
+        "release_kind": "fastapi",
+        "automatic_deployment": True,
+        "automatic_redeployment_policy": None,
+        "cors_allowed_origins": [
+            "https://app.example.com",
+            "https://*.site-dev.main-sequence.app",
+        ],
+    }
+
+    class FakeResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return dict(response_payload)
+
+    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
+        captured.update(
+            {
+                "r_type": r_type,
+                "url": url,
+                "payload": payload,
+                "timeout": time_out,
+            }
+        )
+        return FakeResponse()
+
+    monkeypatch.setattr(base_mod, "make_request", _fake_make_request)
+
+    release = models_helpers_mod.ResourceRelease.get(pk=release_uid, timeout=13)
+
+    assert release.release_kind == models_helpers_mod.ResourceReleaseKind.FAST_API
+    assert release.cors_allowed_origins == response_payload["cors_allowed_origins"]
+    assert captured["r_type"] == "GET"
+    assert captured["url"].endswith(f"/resource-releases/{release_uid}/")
+    assert captured["timeout"] == 13
+
+
 def _resource_release_pipeline_payload(*, running_step: str | None = None):
     keys = (
         "resolve_revision",
