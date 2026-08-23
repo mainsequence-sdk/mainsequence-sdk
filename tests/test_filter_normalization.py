@@ -2640,6 +2640,34 @@ def test_project_resource_create_release_uses_related_image_uid(monkeypatch):
     assert captured["timeout"] == 7
 
 
+@pytest.mark.parametrize(
+    "resource_type",
+    [
+        "configuration",
+        "notebook",
+        "script",
+        "dashboard",
+        "agent",
+        "fastapi",
+        "project_agent_card",
+        "markdown",
+    ],
+)
+def test_project_resource_accepts_canonical_backend_resource_types(resource_type):
+    resource = models_helpers_mod.ProjectResource.model_validate(
+        {
+            "uid": "857bec7b-dd77-4272-aecd-13fc2138eacc",
+            "project_branch_uid": PROJECT_BRANCH_UID,
+            "name": ".agents/agent_card.json",
+            "resource_type": resource_type,
+            "path": ".agents/agent_card.json",
+            "repo_commit_sha": "abc123",
+        }
+    )
+
+    assert resource.resource_type == resource_type
+
+
 def _resource_release_pipeline_payload(*, running_step: str | None = None):
     keys = (
         "resolve_revision",

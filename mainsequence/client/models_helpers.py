@@ -955,14 +955,33 @@ class ProjectResource(CurrentProjectBranchCollectionMixin, BaseObjectOrm, BasePy
         description="Display name of the resource discovered in the project's repository.",
         examples=["analytics_dashboard.py"],
     )
-    resource_type: Literal["dashboard", "fastapi", "markdown", "agent"] | None = Field(
+    resource_type: Literal[
+        "configuration",
+        "notebook",
+        "script",
+        "dashboard",
+        "agent",
+        "fastapi",
+        "project_agent_card",
+        "markdown",
+    ] | None = Field(
         None,
         title="Resource Type",
         description=(
-            "Type of the project resource. Allowed values are `dashboard`, `fastapi`, "
-            "`markdown`, and `agent`."
+            "Canonical backend discriminator for the discovered project resource. "
+            "Allowed values are `configuration`, `notebook`, `script`, `dashboard`, "
+            "`agent`, `fastapi`, `project_agent_card`, and `markdown`."
         ),
-        examples=["dashboard", "fastapi", "markdown", "agent"],
+        examples=[
+            "configuration",
+            "notebook",
+            "script",
+            "dashboard",
+            "agent",
+            "fastapi",
+            "project_agent_card",
+            "markdown",
+        ],
     )
     code: str | None = Field(
         None,

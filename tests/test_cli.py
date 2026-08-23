@@ -4253,7 +4253,16 @@ def test_list_project_resources_uses_client_model(cli_mod, monkeypatch):
                         "last_modified": "2026-03-15T10:30:00Z",
                         "repo_commit_sha": "abc123",
                     }
-                )
+                ),
+                types.SimpleNamespace(
+                    model_dump=lambda: {
+                        "uid": "12cc8937-2e90-45da-8326-9e09a46f32cb",
+                        "name": "Project Agent Card",
+                        "resource_type": "project_agent_card",
+                        "path": ".agents/agent_card.json",
+                        "repo_commit_sha": "abc123",
+                    }
+                ),
             ]
 
     fake_base.BaseObjectOrm = FakeBaseObjectOrm
@@ -4280,6 +4289,11 @@ def test_list_project_resources_uses_client_model(cli_mod, monkeypatch):
     assert captured["env_project_uid"] is None
     assert captured["jwt"] == ("acc", "ref")
     assert out[0]["name"] == "analytics_dashboard.py"
+    assert [resource["resource_type"] for resource in out] == [
+        "script",
+        "project_agent_card",
+    ]
+    assert out[1]["path"] == ".agents/agent_card.json"
     assert os.environ.get("MAIN_SEQUENCE_PROJECT_UID") is None
 
 
