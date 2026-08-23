@@ -45,6 +45,26 @@ to inspect table contracts, compile governed SQL operations, and define the
 provider-based Alembic migration scope
 used by MetaTable schema migrations.
 
+## Collection Scope
+
+Human collection requests must name the Organization Environment explicitly:
+
+```python
+tables = MetaTable.filter(
+    organization_project_environment_uid=environment_uid,
+    namespace="mainsequence.examples",
+)
+```
+
+`TimeIndexMetaTable.filter(...)` uses the same canonical filter. The SDK sends
+`organization_project_environment_uid` exactly as written as the public API
+query parameter.
+
+The CLI derives this scope from the process-frozen, Git-resolved
+ProjectBranch when run inside a registered project checkout. Administrative
+use outside that checkout can pass
+`--organization-project-environment-uid <ENVIRONMENT_UID>` explicitly.
+
 ## Registration Primitive
 
 Low-level SDK call:

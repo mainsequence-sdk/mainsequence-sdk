@@ -1320,6 +1320,47 @@ def _merge_cli_filter_alias(
     return merged
 
 
+def _scope_table_collection_filters(
+    filters: dict[str, object],
+    *,
+    organization_project_environment_uid: object | None,
+    command_label: str,
+) -> dict[str, object]:
+    filter_key = "organization_project_environment_uid"
+    scoped = _merge_cli_filter_alias(
+        filters,
+        filter_key=filter_key,
+        value=organization_project_environment_uid,
+        option_name="organization-project-environment-uid",
+    )
+    if filter_key in scoped:
+        return scoped
+
+    try:
+        context = require_project_branch_context(
+            command_label,
+            context=get_project_runtime_context(),
+        )
+    except ProjectRuntimeContextError as exc:
+        error(
+            f"{command_label} requires an Organization Environment scope. "
+            "Run inside a registered ProjectBranch checkout or pass "
+            "`--organization-project-environment-uid`."
+        )
+        raise typer.Exit(1) from exc
+
+    environment_uid = str(context.organization_project_environment_uid or "").strip()
+    if not environment_uid:
+        error(
+            f"{command_label} cannot resolve an Organization Environment from "
+            "the active ProjectBranch."
+        )
+        raise typer.Exit(1)
+
+    scoped[filter_key] = environment_uid
+    return scoped
+
+
 def _require_item_uid(item: dict, *, prompt_label: str) -> str:
     uid = str(item.get("uid") or "").strip()
     if not uid:
@@ -4425,6 +4466,7 @@ def _data_node_storage_list_impl(
     filter_entries: list[str] | None,
     show_filters: bool,
     data_source_uid: str | None = None,
+    organization_project_environment_uid: object | None = None,
 ) -> None:
     filters = _resolve_cli_list_filters(
         model_ref=DATA_NODE_STORAGE_MODEL_REF,
@@ -4439,6 +4481,11 @@ def _data_node_storage_list_impl(
         option_name="data-source-uid",
     )
     _require_login()
+    filters = _scope_table_collection_filters(
+        filters,
+        organization_project_environment_uid=organization_project_environment_uid,
+        command_label="Data Node Storage listing",
+    )
 
     try:
         storages = list_data_node_storages(timeout=timeout, filters=filters)
@@ -4472,6 +4519,7 @@ def _meta_table_list_impl(
     filter_entries: list[str] | None,
     show_filters: bool,
     data_source_uid: str | None = None,
+    organization_project_environment_uid: object | None = None,
 ) -> None:
     filters = _resolve_cli_list_filters(
         model_ref=META_TABLE_MODEL_REF,
@@ -4486,6 +4534,11 @@ def _meta_table_list_impl(
         option_name="data-source-uid",
     )
     _require_login()
+    filters = _scope_table_collection_filters(
+        filters,
+        organization_project_environment_uid=organization_project_environment_uid,
+        command_label="MetaTable listing",
+    )
 
     try:
         meta_tables = list_meta_tables(timeout=timeout, filters=filters)
@@ -6014,6 +6067,11 @@ def meta_table_list_cmd(
     data_source_uid: str | None = typer.Option(
         None, "--data-source-uid", help="Filter by data source UID."
     ),
+    organization_project_environment_uid: uuid.UUID | None = typer.Option(
+        None,
+        "--organization-project-environment-uid",
+        help=("Organization Environment scope. Defaults to the active Git-resolved ProjectBranch."),
+    ),
     filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
     show_filters: bool = typer.Option(
         False, "--show-filters", help="Show the filters supported by this list command and exit."
@@ -6030,6 +6088,7 @@ def meta_table_list_cmd(
         filter_entries=filter_entries,
         show_filters=show_filters,
         data_source_uid=data_source_uid,
+        organization_project_environment_uid=organization_project_environment_uid,
     )
 
 
@@ -6300,6 +6359,11 @@ def data_node_storage_list_cmd(
     data_source_uid: str | None = typer.Option(
         None, "--data-source-uid", help="Filter by data source UID."
     ),
+    organization_project_environment_uid: uuid.UUID | None = typer.Option(
+        None,
+        "--organization-project-environment-uid",
+        help=("Organization Environment scope. Defaults to the active Git-resolved ProjectBranch."),
+    ),
     filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
     show_filters: bool = typer.Option(
         False, "--show-filters", help="Show the filters supported by this list command and exit."
@@ -6331,6 +6395,7 @@ def data_node_storage_list_cmd(
         filter_entries=filter_entries,
         show_filters=show_filters,
         data_source_uid=data_source_uid,
+        organization_project_environment_uid=organization_project_environment_uid,
     )
 
 

@@ -7422,11 +7422,13 @@ def test_secrets_add_to_edit(cli_mod, runner, monkeypatch):
 
 
 def test_data_node_storage_list(cli_mod, runner, monkeypatch):
+    captured = {}
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
-    monkeypatch.setattr(
-        cli_mod,
-        "list_data_node_storages",
-        lambda filters=None, timeout=None: [
+
+    def _list(filters=None, timeout=None):
+        captured["filters"] = filters
+        captured["timeout"] = timeout
+        return [
             {
                 "uid": "data-node-storage-42",
                 "physical_table_name": "weights_daily_physical",
@@ -7435,11 +7437,18 @@ def test_data_node_storage_list(cli_mod, runner, monkeypatch):
                 "namespace": "pytest_weights",
                 "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},
             }
-        ],
-    )
+        ]
+
+    monkeypatch.setattr(cli_mod, "list_data_node_storages", _list)
 
     result = runner.invoke(cli_mod.app, ["data-node", "list"])
     assert result.exit_code == 0
+    assert captured == {
+        "filters": {
+            "organization_project_environment_uid": "environment-uid-123",
+        },
+        "timeout": None,
+    }
     assert "Data Node Storages" in result.output
     assert "weights_" in result.output
     assert "Node" in result.output
@@ -7487,6 +7496,8 @@ def test_meta_table_list_uses_canonical_command(cli_mod, runner, monkeypatch):
             "namespace=pytest_weights",
             "--data-source-uid",
             "data-source-1",
+            "--organization-project-environment-uid",
+            "22222222-2222-4222-8222-222222222222",
             "--timeout",
             "15",
         ],
@@ -7497,7 +7508,11 @@ def test_meta_table_list_uses_canonical_command(cli_mod, runner, monkeypatch):
         "model_ref": "mainsequence.client.metatables.MetaTable",
         "entries": ["namespace=pytest_weights"],
         "timeout": 15,
-        "filters": {"namespace": "pytest_weights", "data_source__uid": "data-source-1"},
+        "filters": {
+            "namespace": "pytest_weights",
+            "data_source__uid": "data-source-1",
+            "organization_project_environment_uid": ("22222222-2222-4222-8222-222222222222"),
+        },
     }
     assert "MetaTables" in result.output
     assert "weights_" in result.output
@@ -7564,7 +7579,13 @@ def test_data_node_storage_list_forwards_namespace_filter(cli_mod, runner, monke
     )
 
     assert result.exit_code == 0
-    assert captured == {"timeout": None, "filters": {"namespace": "pytest_weights"}}
+    assert captured == {
+        "timeout": None,
+        "filters": {
+            "namespace": "pytest_weights",
+            "organization_project_environment_uid": "environment-uid-123",
+        },
+    }
 
 
 def test_project_validate_name_cmd(cli_mod, runner, monkeypatch):
@@ -7615,7 +7636,10 @@ def test_data_node_storage_list_passes_cli_filters(cli_mod, runner, monkeypatch)
     )
     assert result.exit_code == 0
     assert captured["entries"] == ["uid__in=data-node-storage-42,data-node-storage-43"]
-    assert captured["filters"] == {"uid__in": ["data-node-storage-42", "data-node-storage-43"]}
+    assert captured["filters"] == {
+        "uid__in": ["data-node-storage-42", "data-node-storage-43"],
+        "organization_project_environment_uid": "environment-uid-123",
+    }
 
 
 def test_data_node_storage_search_supports_data_source_uid_option(cli_mod, runner, monkeypatch):

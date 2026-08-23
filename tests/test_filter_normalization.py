@@ -501,16 +501,68 @@ def test_data_node_storage_normalizes_environment_filters():
 
     normalized = TimeIndexMetaTable._normalize_filter_kwargs(
         {
-            "organization_project_environment__uid": {"uid": uid},
-            "organization_project_environment__uid__in": [{"uid": uid}],
-            "organization_project_environment__isnull": "false",
+            "organization_project_environment_uid": {"uid": uid},
+            "organization_project_environment_uid__in": [{"uid": uid}],
         }
     )
 
     assert normalized == {
-        "organization_project_environment__uid": str(uid),
-        "organization_project_environment__uid__in": [str(uid)],
-        "organization_project_environment__isnull": False,
+        "organization_project_environment_uid": str(uid),
+        "organization_project_environment_uid__in": [str(uid)],
+    }
+
+
+@pytest.mark.parametrize(
+    "model_class",
+    [
+        models_metatables_mod.MetaTable,
+        models_metatables_mod.TimeIndexMetaTable,
+    ],
+)
+def test_meta_table_collection_sends_canonical_environment_query_params(
+    monkeypatch,
+    model_class,
+):
+    captured = {}
+    environment_uid = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+
+    class FakeResponse:
+        status_code = 200
+        content = b'{"results": [], "next": null}'
+
+        @staticmethod
+        def json():
+            return {"results": [], "next": None}
+
+    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
+        captured.update(
+            {
+                "r_type": r_type,
+                "payload": payload,
+                "timeout": time_out,
+            }
+        )
+        return FakeResponse()
+
+    monkeypatch.setattr(base_mod, "make_request", _fake_make_request)
+    monkeypatch.setattr(model_class, "build_session", classmethod(lambda cls: object()))
+
+    rows = model_class.filter(
+        organization_project_environment_uid=environment_uid,
+        organization_project_environment_uid__in=[environment_uid],
+        timeout=17,
+    )
+
+    assert rows == []
+    assert captured == {
+        "r_type": "GET",
+        "payload": {
+            "params": {
+                "organization_project_environment_uid": environment_uid,
+                "organization_project_environment_uid__in": environment_uid,
+            }
+        },
+        "timeout": 17,
     }
 
 
@@ -939,16 +991,14 @@ def test_meta_table_normalizes_environment_filters():
 
     normalized = MetaTable._normalize_filter_kwargs(
         {
-            "organization_project_environment__uid": {"uid": uid},
-            "organization_project_environment__uid__in": [{"uid": uid}],
-            "organization_project_environment__isnull": True,
+            "organization_project_environment_uid": {"uid": uid},
+            "organization_project_environment_uid__in": [{"uid": uid}],
         }
     )
 
     assert normalized == {
-        "organization_project_environment__uid": uid,
-        "organization_project_environment__uid__in": [uid],
-        "organization_project_environment__isnull": True,
+        "organization_project_environment_uid": uid,
+        "organization_project_environment_uid__in": [uid],
     }
 
 

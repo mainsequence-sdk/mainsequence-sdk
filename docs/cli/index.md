@@ -175,6 +175,7 @@ mainsequence data-node list --show-filters
 mainsequence data-node list --filter namespace=pytest_alice
 mainsequence data-node list --filter uid__in=<DATA_NODE_STORAGE_UID>
 mainsequence data-node list --data-source-uid <DATA_SOURCE_UID>
+mainsequence data-node list --organization-project-environment-uid <ENVIRONMENT_UID>
 mainsequence data_node search "close price"
 mainsequence data-node search "close price" --data-source-uid <DATA_SOURCE_UID>
 mainsequence data-node search close --mode column
@@ -510,6 +511,7 @@ ontology and each installed platform skill.
 - `mainsequence data-node list --show-filters` prints the filters exposed by `TimeIndexMetaTable.FILTERSET_FIELDS` and the expected value shapes from `FILTER_VALUE_NORMALIZERS`.
 - `mainsequence data-node list --filter namespace=...` is the first-class CLI form for narrowing data node storages by storage namespace.
 - `mainsequence data-node list --data-source-uid <DATA_SOURCE_UID>` is the first-class shortcut for the canonical `data_source__uid` filter.
+- `mainsequence data-node list` and `mainsequence meta-table list` derive the required Organization Environment scope from the process-frozen, Git-resolved ProjectBranch. Outside a registered project checkout, pass `--organization-project-environment-uid <ENVIRONMENT_UID>` explicitly.
 - `mainsequence data-node search` is the public semantic discovery command for data nodes and MetaTable metadata. It uses `TimeIndexMetaTable.description_search()` against `/api/v1/time-index-meta-tables/description-search/?q=<text>`.
 - `mainsequence data-node search --data-source-uid <DATA_SOURCE_UID>` narrows semantic discovery results by data source.
 - `mainsequence data-node search --trigram-k 200 --embed-k 200 --w-trgm 0.65 --w-emb 0.35` tunes description-search ranking.

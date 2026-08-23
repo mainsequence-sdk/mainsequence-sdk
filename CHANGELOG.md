@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [6.0.40] - 2026-08-23
+
+### Fixed
+
+- Aligned MetaTable and TimeIndexMetaTable collection filtering with the backend's
+  canonical `organization_project_environment_uid` query parameter. CLI table listings now
+  derive the exact environment scope from the active Git-resolved ProjectBranch or accept an
+  explicit administrative scope outside a registered project checkout.
+
 ## [6.0.39] - 2026-08-23
 
 ### Changed

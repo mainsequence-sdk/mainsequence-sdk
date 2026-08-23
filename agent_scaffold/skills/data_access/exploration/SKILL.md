@@ -154,6 +154,13 @@ field to filter by:
 - `mainsequence data-node list --filter KEY=VALUE`
 - `mainsequence data-node detail <DATA_NODE_STORAGE_UID>`
 
+Collection listing is scoped to one Organization Environment. Inside a
+registered project checkout, the CLI derives that scope from the process-frozen
+Git-resolved ProjectBranch. Outside one, pass
+`--organization-project-environment-uid <ENVIRONMENT_UID>` explicitly. Direct
+SDK calls use the canonical
+`organization_project_environment_uid=<ENVIRONMENT_UID>` filter.
+
 Column lookup is also a different path. Use it only for schema-name discovery,
 not as the default dataset discovery flow:
 
