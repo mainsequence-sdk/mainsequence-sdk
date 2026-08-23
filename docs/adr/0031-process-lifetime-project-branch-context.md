@@ -2,7 +2,7 @@
 
 Date: 2026-08-22
 
-Status: Accepted
+Status: Accepted - SDK Environment-resource integration implemented
 
 Platform decision: `tdag-django` ADR-0037, stable fingerprint
 `git-native-project-source-context-v1`
@@ -96,8 +96,11 @@ project_branch_not_registered
 The canonical backend action deliberately exposes one not-found result rather
 than leaking whether the repository or only its branch is registered. This
 permits ordinary work on local repositories and new feature branches. Only an
-operation that owns or enumerates branch-linked platform objects calls
-`require_project_branch_context()` and fails before its backend request.
+operation that requires branch-linked platform context calls
+`require_project_branch_context()` and fails before its backend request. This
+includes both ProjectBranch-owned objects and project-facing operations on
+Environment-owned resources whose Environment is resolved from the current
+ProjectBranch.
 
 No unresolved state may fall back to `main`, a sibling ProjectBranch, a
 Project-level DataSource, an Environment inferred from a DataSource, collection
@@ -137,6 +140,105 @@ inventing another branch selector. Backend authorization remains the final
 enforcement boundary and deployed runtime endpoints must require the
 Git-resolved ProjectBranch to equal the authenticated runtime target.
 
+### Environment-owned resources resolved from the current ProjectBranch
+
+Object ownership and operation context are separate concerns. `Secret`,
+`Constant`, logical `Bucket`, `Artifact`, and `MetaTable` belong to one
+`OrganizationProjectEnvironment`; they are not owned by one ProjectBranch.
+Projects and branches participating in the same Environment may use the same
+resources.
+
+Project-facing SDK operations nevertheless resolve that Environment only through
+the frozen current ProjectBranch:
+
+```text
+actual Git worktree and attached branch
+  -> get_project_runtime_context()
+  -> exact persisted ProjectBranch
+  -> OrganizationProjectEnvironment
+  -> Environment-owned resource operation
+```
+
+This rule covers project-facing create, lookup, list, search, update, and delete
+operations for Secrets, Constants, Buckets, and Artifacts. It also covers
+MetaTable registration and import, including `external_registered` MetaTables.
+An external MetaTable may select its physical DataSource, but that DataSource is
+not Environment identity and cannot override the Environment derived from the
+ProjectBranch.
+
+The public project-facing SDK API accepts neither
+`organization_project_environment_uid` nor a caller-supplied ProjectBranch UID.
+The SDK resolves the current ProjectBranch once and transports its derived
+Environment UID as an SDK-owned wire field:
+
+```json
+{
+  "organization_project_environment_uid": "<branch-derived Environment UID>"
+}
+```
+
+This is a transport detail, not user-selected authority. The SDK owns the field
+and rejects attempts to supply or override it. For local human credentials, the
+value comes from the authenticated `resolve-git-context` response. For a
+deployed JobRun or Knative runtime, the same Git-native resolution is verified
+against the authenticated runtime target. Resource endpoints must reject a
+transported Environment that disagrees with that runtime target.
+
+Create requests carry the SDK-owned field in their body. List, detail, patch,
+delete, and detail-action requests carry it as a query parameter. Both forms
+have the same semantics: the Environment came from the frozen current
+ProjectBranch and is not a public selector. Backend endpoints must normalize
+these inputs through one Environment resolver before filtering or resolving a
+known resource UID.
+
+An unregistered local branch remains valid for unrelated development. A
+project-facing operation on one of these Environment-owned resources calls
+`require_project_branch_context()` and fails before its request because no
+Environment can be derived. It must not fall back to `main`, another branch, an
+Environment UID, a DataSource, or Organization-wide enumeration.
+
+Explicit Organization-administration APIs may allow an administrator to select
+an Environment without a Git worktree. Such APIs are separate from the
+project-facing SDK contract and must be named and authorized as administrative
+surfaces; they are not a fallback for project code.
+
+Backend responses expose the derived
+`organization_project_environment_uid` and
+`organization_project_environment_name` as required read-only projections. The
+SDK models parse those fields but never use them as write authority.
+
+## Coordinated Implementation Plan
+
+- [ ] Add one backend ProjectBranch-context resolver for Environment-owned
+  resource operations. It must accept SDK-resolved local context, derive context
+  from authenticated deployed runtimes, verify equality when both exist, and
+  return the canonical Environment.
+- [ ] Apply that resolver to Secret, Constant, Bucket, and Artifact list, detail,
+  create, update, and delete paths. Known public UIDs must not bypass the same
+  Environment boundary.
+- [ ] Change project-facing external MetaTable registration and import to derive
+  Environment from ProjectBranch context. Preserve the explicitly selected
+  physical DataSource without treating it as Environment identity.
+- [x] Add one SDK helper that attaches the branch-derived Environment to request
+  bodies or query parameters. The helper calls
+  `require_project_branch_context()` and rejects caller overrides.
+- [x] Route `Secret`, `Constant`, `Bucket`, and `Artifact` SDK methods and their
+  CLI commands through that helper. Remove direct Environment selection from
+  project-facing command and method signatures.
+- [x] Route external `MetaTable.register()` through the same helper instead of
+  skipping Environment injection. Keep managed MetaTable,
+  migration, and DataNode paths on the existing shared resolver.
+- [x] Add read-only Environment UID and name projections to all affected
+  SDK response models while preserving strict rejection of unknown fields.
+- [x] Test SDK request injection, caller override rejection, canonical response
+  parsing, missing Environment context, and existing process context locking.
+- [ ] Add coordinated backend integration coverage for local human credentials,
+  deployed JobRun credentials, deployed Knative credentials, mismatched runtime
+  context, cross-Environment known-UID access, and same-Environment sharing.
+- [x] Update CLI documentation and agent skills to describe branch-derived
+  Environment resolution and remove instructions that ask project users to
+  choose an Environment UID.
+
 ## Consequences
 
 - Local and deployed project code use one resolution algorithm.
@@ -144,7 +246,8 @@ Git-resolved ProjectBranch to equal the authenticated runtime target.
 - Every project-sensitive consumer sees one repository, branch, and commit for
   the complete process run.
 - Unregistered branches remain usable for local development but cannot create,
-  mutate, or enumerate branch-owned platform resources.
+  mutate, or enumerate branch-owned platform resources or project-facing
+  Environment-owned resources that require branch-derived context.
 - Supported runtime images must preserve a sanitized attached Git checkout.
   Images without that contract must be rebuilt; the SDK has no permanent
   environment fallback.
@@ -184,7 +287,10 @@ assertions against Git resolution, never selectors.
 - Detached HEAD, missing Git metadata, missing/ambiguous remote identity, and
   source drift fail explicitly.
 - Unregistered repository or branch state does not abort unrelated local work.
-- Branch-owned operations reject unresolved context before backend calls.
+- Branch-owned operations and project-facing Environment-resource operations
+  reject unresolved context before backend calls.
+- Project-facing resource APIs never accept caller-selected ProjectBranch or
+  Environment identity.
 - The four retired identity variables never influence source resolution.
 - No ProjectBranch, Environment, sibling-branch, or DataSource fallback exists.
 - Backend authorization remains authoritative and must verify deployed target

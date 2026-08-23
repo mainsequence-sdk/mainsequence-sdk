@@ -195,6 +195,10 @@ push alone does not prove deployment success.
 
 Use `Artifact` when the operational unit is a file.
 
+Artifact and Bucket operations derive their Organization Environment from the
+process-frozen current Git branch and registered `ProjectBranch`. Do not ask the
+user to select an Environment UID or branch UID.
+
 Examples:
 
 - vendor drops

@@ -19,6 +19,7 @@ from mainsequence.client.base import BaseObjectOrm, BasePydanticModel, Shareable
 
 PROJECT_UID = "1d0530c0-65d1-4db0-856b-dc29d8260a09"
 PROJECT_BRANCH_UID = "5a28020a-0f1b-47ee-aab8-334286234bea"
+ENVIRONMENT_UID = "58218213-5e4e-43de-a5bd-6757f4e1c8f6"
 
 
 @pytest.fixture(autouse=True)
@@ -46,7 +47,7 @@ def _resolved_project_context(monkeypatch):
                 uid=PROJECT_BRANCH_UID,
                 project_uid=PROJECT_UID,
                 repository_branch=resolved_source.repository_branch,
-                organization_project_environment_uid=None,
+                organization_project_environment_uid=ENVIRONMENT_UID,
                 metatables_data_source=None,
             ),
         ),
@@ -494,22 +495,15 @@ def test_data_node_storage_normalizes_data_source_uid_filters():
     }
 
 
-def test_data_node_storage_normalizes_environment_filters():
+def test_data_node_storage_does_not_expose_environment_filters():
     from mainsequence.client.metatables import TimeIndexMetaTable
 
     uid = uuid.UUID("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb")
 
-    normalized = TimeIndexMetaTable._normalize_filter_kwargs(
-        {
-            "organization_project_environment_uid": {"uid": uid},
-            "organization_project_environment_uid__in": [{"uid": uid}],
-        }
-    )
-
-    assert normalized == {
-        "organization_project_environment_uid": str(uid),
-        "organization_project_environment_uid__in": [str(uid)],
-    }
+    with pytest.raises(ValueError, match="Unsupported TimeIndexMetaTable filter"):
+        TimeIndexMetaTable._normalize_filter_kwargs(
+            {"organization_project_environment_uid": {"uid": uid}}
+        )
 
 
 @pytest.mark.parametrize(
@@ -524,8 +518,6 @@ def test_meta_table_collection_sends_canonical_environment_query_params(
     model_class,
 ):
     captured = {}
-    environment_uid = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
-
     class FakeResponse:
         status_code = 200
         content = b'{"results": [], "next": null}'
@@ -547,23 +539,25 @@ def test_meta_table_collection_sends_canonical_environment_query_params(
     monkeypatch.setattr(base_mod, "make_request", _fake_make_request)
     monkeypatch.setattr(model_class, "build_session", classmethod(lambda cls: object()))
 
-    rows = model_class.filter(
-        organization_project_environment_uid=environment_uid,
-        organization_project_environment_uid__in=[environment_uid],
-        timeout=17,
-    )
+    rows = model_class.filter(timeout=17)
 
     assert rows == []
     assert captured == {
         "r_type": "GET",
         "payload": {
             "params": {
-                "organization_project_environment_uid": environment_uid,
-                "organization_project_environment_uid__in": environment_uid,
+                "organization_project_environment_uid": ENVIRONMENT_UID,
             }
         },
         "timeout": 17,
     }
+
+    with pytest.raises(ValueError, match="cannot override SDK-resolved context"):
+        model_class.filter(
+            organization_project_environment_uid=(
+                "11111111-1111-4111-8111-111111111111"
+            )
+        )
 
 
 def test_data_node_storage_rejects_data_source_id_filter():
@@ -984,22 +978,15 @@ def test_meta_table_normalizes_data_source_uid_filters():
     }
 
 
-def test_meta_table_normalizes_environment_filters():
+def test_meta_table_does_not_expose_environment_filters():
     from mainsequence.client.metatables import MetaTable
 
     uid = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
 
-    normalized = MetaTable._normalize_filter_kwargs(
-        {
-            "organization_project_environment_uid": {"uid": uid},
-            "organization_project_environment_uid__in": [{"uid": uid}],
-        }
-    )
-
-    assert normalized == {
-        "organization_project_environment_uid": uid,
-        "organization_project_environment_uid__in": [uid],
-    }
+    with pytest.raises(ValueError, match="Unsupported MetaTable filter"):
+        MetaTable._normalize_filter_kwargs(
+            {"organization_project_environment_uid": {"uid": uid}}
+        )
 
 
 def test_meta_table_rejects_data_source_id_filter():
@@ -2349,6 +2336,57 @@ def test_job_requires_exact_image_and_exposes_automatic_redeployment_state():
     assert job.automatic_deployment is True
     assert job.automatic_redeployment_policy is not None
     assert job.automatic_redeployment_policy.policy_revision == 4
+
+
+@pytest.mark.parametrize("environment_uid", [None, ENVIRONMENT_UID])
+def test_job_accepts_backend_derived_environment_uid(environment_uid):
+    job = models_helpers_mod.Job.model_validate(
+        {
+            "uid": "7d0ab07c-d1c0-4b7f-9c69-3c1a41c0a4da",
+            "name": "Daily prices",
+            "project_branch_uid": PROJECT_BRANCH_UID,
+            "organization_project_environment_uid": environment_uid,
+            "related_image_uid": "6cfdb152-923e-45b9-a150-c4541c68b0d1",
+            "project_repo_hash": "a" * 40,
+            "image_status": "ready",
+        }
+    )
+
+    assert job.organization_project_environment_uid == environment_uid
+
+
+def test_job_filter_parses_backend_derived_environment_uid(monkeypatch):
+    captured = {}
+
+    class FakeResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return [
+                {
+                    "uid": "7d0ab07c-d1c0-4b7f-9c69-3c1a41c0a4da",
+                    "name": "Daily prices",
+                    "project_branch_uid": PROJECT_BRANCH_UID,
+                    "organization_project_environment_uid": ENVIRONMENT_UID,
+                    "related_image_uid": "6cfdb152-923e-45b9-a150-c4541c68b0d1",
+                    "project_repo_hash": "a" * 40,
+                    "image_status": "ready",
+                }
+            ]
+
+    def fake_make_request(**kwargs):
+        captured.update(kwargs)
+        return FakeResponse()
+
+    monkeypatch.setattr(base_mod, "make_request", fake_make_request)
+
+    jobs = models_helpers_mod.Job.filter()
+
+    assert jobs[0].organization_project_environment_uid == ENVIRONMENT_UID
+    assert captured["payload"]["params"] == {
+        "project_branch_uid": PROJECT_BRANCH_UID,
+    }
 
 
 def test_job_create_requires_exact_image_and_does_not_send_commit(monkeypatch):

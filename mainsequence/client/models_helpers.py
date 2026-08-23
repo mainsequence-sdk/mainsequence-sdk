@@ -168,6 +168,15 @@ class Job(CurrentProjectBranchCollectionMixin, BaseObjectOrm, BasePydanticModel)
         examples=["5a28020a-0f1b-47ee-aab8-334286234bea"],
     )
 
+    organization_project_environment_uid: str | None = Field(
+        default=None,
+        description=(
+            "Read-only Organization Environment UID derived by the backend "
+            "from the owning ProjectBranch."
+        ),
+        examples=["58218213-5e4e-43de-a5bd-6757f4e1c8f6"],
+    )
+
     project_repo_hash: str | None = Field(
         default=None,
         description=(

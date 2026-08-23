@@ -300,6 +300,41 @@ def test_unregistered_branch_is_nonfatal_until_branch_context_is_required(monkey
         project_context.require_project_branch_context("Create Job", context=context)
 
 
+def test_project_environment_uid_comes_from_frozen_branch_context(monkeypatch):
+    _resolve(monkeypatch)
+
+    assert (
+        project_context.resolve_project_environment_uid("Create Secret")
+        == ENVIRONMENT_UID
+    )
+
+
+def test_project_environment_operation_fails_when_branch_has_no_environment(monkeypatch):
+    context = _resolve(monkeypatch)
+    missing_environment_context = project_context.ProjectRuntimeContext(
+        source_context=context.source_context,
+        project_uid=context.project_uid,
+        project_branch_uid=context.project_branch_uid,
+        organization_project_environment_uid=None,
+        metatables_data_source=context.metatables_data_source,
+        status=context.status,
+        process_id=context.process_id,
+        project_branch=context.project_branch,
+        detail=context.detail,
+    )
+    monkeypatch.setattr(
+        project_context,
+        "require_project_branch_context",
+        lambda operation: missing_environment_context,
+    )
+
+    with pytest.raises(
+        project_context.ProjectEnvironmentContextRequiredError,
+        match="none was returned",
+    ):
+        project_context.resolve_project_environment_uid("Create Secret")
+
+
 def test_runtime_target_mismatch_is_not_treated_as_unregistered(monkeypatch):
     source = _source()
     monkeypatch.setattr(

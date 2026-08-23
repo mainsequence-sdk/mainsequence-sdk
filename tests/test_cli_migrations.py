@@ -77,6 +77,7 @@ def _project_context() -> MetaTableProjectContextRequest:
 def _resolved_project_branch_context(monkeypatch):
     project_uid = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
     project_branch_uid = "11111111-1111-4111-8111-111111111111"
+    environment_uid = "22222222-2222-4222-8222-222222222222"
     project_context._reset_project_runtime_context()
     source = project_context.GitProjectSourceContext(
         repository_root=pathlib.Path.cwd().resolve(),
@@ -100,7 +101,7 @@ def _resolved_project_branch_context(monkeypatch):
                 uid=project_branch_uid,
                 project_uid=project_uid,
                 repository_branch=resolved_source.repository_branch,
-                organization_project_environment_uid=None,
+                organization_project_environment_uid=environment_uid,
                 metatables_data_source=None,
             ),
         ),

@@ -54,9 +54,15 @@ A useful mental split is:
 
 That keeps the repository cleaner and reduces the amount of environment-specific data hardcoded into scripts and jobs.
 
+Constants and Secrets are owned by an Organization Environment. Project-facing
+SDK operations resolve that Environment from the process-frozen current Git
+branch and its registered `ProjectBranch`. Users do not pass an Environment UID
+or branch UID. Projects and branches mapped to the same Environment can use the
+same configuration identities.
+
 ## Names Are Unique Identities
 
-Treat constant and secret names as organization-level unique configuration keys.
+Treat constant and secret names as Environment-level unique configuration keys.
 
 In practice, this means:
 

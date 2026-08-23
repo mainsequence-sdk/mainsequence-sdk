@@ -33,9 +33,16 @@ from mainsequence.project_context import (
     get_project_runtime_context,
     require_project_branch_context,
     require_project_metatables_data_source,
+    resolve_project_environment_uid,
 )
 
-from ..base import BaseObjectOrm, BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin
+from ..base import (
+    BaseObjectOrm,
+    BasePydanticModel,
+    CurrentProjectEnvironmentResourceMixin,
+    LabelableObjectMixin,
+    ShareableObjectMixin,
+)
 from ..data_sources_interfaces import get_duckdb_interface_class, get_sqlite_interface_class
 from ..dtype_codec import (
     DATE,
@@ -1237,7 +1244,13 @@ class DataSource(BasePydanticModel, BaseObjectOrm):
             raise NotImplementedError
 
 
-class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, BaseObjectOrm):
+class MetaTable(
+    CurrentProjectEnvironmentResourceMixin,
+    BasePydanticModel,
+    LabelableObjectMixin,
+    ShareableObjectMixin,
+    BaseObjectOrm,
+):
     ENDPOINT: ClassVar[str] = "meta-tables"
     COLLECTION_CREATE_ROW_MODEL: ClassVar[type[ManagedMetaTableCollectionCreateRow]] = (
         ManagedMetaTableCollectionCreateRow
@@ -1246,7 +1259,6 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
         "identifier": ["in", "exact", "contains"],
         "uid": ["in", "exact"],
         "data_source__uid": ["in", "exact"],
-        "organization_project_environment_uid": ["in", "exact"],
         "namespace": ["exact", "contains", "in", "isnull"],
         "management_mode": ["exact", "in"],
         "provisioning_status": ["exact", "in"],
@@ -1261,8 +1273,6 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
         "uid__in": "str",
         "data_source__uid": "uid",
         "data_source__uid__in": "uid",
-        "organization_project_environment_uid": "uid",
-        "organization_project_environment_uid__in": "uid",
         "physical_schema": "str",
         "physical_schema__in": "str",
         "labels": "str",
@@ -1331,6 +1341,11 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
     registration: dict[str, Any] = Field(default_factory=dict)
 
     model_config = ConfigDict(populate_by_name=True)
+
+    @classmethod
+    def _sdk_owned_create_context(cls, operation: str) -> dict[str, str]:
+        # MetaTable collection creation has its own managed project_context contract.
+        return {}
 
     @model_validator(mode="before")
     @classmethod
@@ -1425,9 +1440,11 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
         timeout: int | float | tuple[float, float] | None = None,
         **filters: Any,
     ) -> list[MetaTable]:
+        operation = f"{cls.__name__}.filter_by_body"
+        cls._reject_sdk_context_overrides(filters, operation=operation)
         response_json = cls._post_action(
             "filter",
-            filters,
+            {**filters, **cls._sdk_owned_query_context(operation)},
             timeout=timeout,
             expected_statuses=(200,),
         )
@@ -1472,7 +1489,12 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
         **kwargs,
     ):
         url = f"{type(self).get_object_url().rstrip('/')}/{self._public_uid()}/"
-        payload = {"json": serialize_to_json(kwargs)}
+        operation = f"{type(self).__name__}.patch"
+        type(self)._reject_sdk_context_overrides(kwargs, operation=operation)
+        payload = {
+            "json": serialize_to_json(kwargs),
+            "params": type(self)._sdk_owned_query_context(operation),
+        }
         response = make_request(
             s=type(self).build_session(),
             loaders=type(self).LOADERS,
@@ -1504,6 +1526,7 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
                 "full_delete_downstream_tables": full_delete_downstream_tables,
                 "delete_with_no_table": delete_with_no_table,
                 "override_protection": override_protection,
+                **cls._sdk_owned_query_context(f"{cls.__name__}.delete"),
             }
         }
         response = make_request(
@@ -1550,9 +1573,13 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
             raise ValueError(
                 "project_context is SDK-controlled and cannot be supplied by the caller."
             )
+        if "organization_project_environment_uid" in unvalidated_payload:
+            raise ValueError(
+                "organization_project_environment_uid is SDK-controlled and cannot "
+                "be supplied by the caller."
+            )
         payload = MetaTableRegistrationRequest.model_validate(unvalidated_payload)
-        if payload.management_mode != "external_registered":
-            payload = _with_current_metatable_project_context(payload)
+        payload = _with_current_metatable_project_context(payload)
         response_json = cls._post_action(
             "register",
             payload,
@@ -1823,6 +1850,8 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
         q = (q or "").strip()
         if not q:
             raise ValueError("q is required")
+        operation = f"{cls.__name__}.description_search"
+        cls._reject_sdk_context_overrides(filters, operation=operation)
 
         body = {
             "q": q,
@@ -1838,6 +1867,7 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
 
         if filters:
             body.update(filters)
+        body.update(cls._sdk_owned_query_context(operation))
 
         payload = {"params": serialize_to_json(body)}
         response = make_request(
@@ -1857,8 +1887,14 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
         q = (q or "").strip()
         if not q:
             raise ValueError("q is required")
+        operation = f"{cls.__name__}.column_search"
+        cls._reject_sdk_context_overrides(filters, operation=operation)
 
-        payload = {"params": serialize_to_json({"q": q, **filters})}
+        payload = {
+            "params": serialize_to_json(
+                {"q": q, **filters, **cls._sdk_owned_query_context(operation)}
+            )
+        }
         response = make_request(
             s=cls.build_session(),
             loaders=cls.LOADERS,
@@ -3080,7 +3116,6 @@ class TimeIndexMetaTable(MetaTable):
         "identifier": ["in", "exact", "contains"],
         "uid": ["in", "exact"],
         "data_source__uid": ["in", "exact"],
-        "organization_project_environment_uid": ["in", "exact"],
         "namespace": ["exact", "contains", "in", "isnull"],
         "physical_schema": ["exact", "in"],
         "physical_table_name": ["exact", "contains", "in"],
@@ -3091,8 +3126,6 @@ class TimeIndexMetaTable(MetaTable):
         "uid__in": "uid",
         "data_source__uid": "uid",
         "data_source__uid__in": "uid",
-        "organization_project_environment_uid": "uid",
-        "organization_project_environment_uid__in": "uid",
         "physical_schema": "str",
         "physical_schema__in": "str",
         "labels": "str",
@@ -3330,6 +3363,11 @@ class TimeIndexMetaTable(MetaTable):
         if "project_context" in unvalidated_payload:
             raise ValueError(
                 "project_context is SDK-controlled and cannot be supplied by the caller."
+            )
+        if "organization_project_environment_uid" in unvalidated_payload:
+            raise ValueError(
+                "organization_project_environment_uid is SDK-controlled and cannot "
+                "be supplied by the caller."
             )
         payload = TimeIndexMetaTableRegistrationRequest.model_validate(unvalidated_payload)
         payload_json = _with_current_metatable_project_context(payload)
@@ -4706,6 +4744,10 @@ def _current_metatable_project_context() -> MetaTableProjectContextRequest:
     return _metatable_project_context_from_resolution(get_project_runtime_context())
 
 
+def _current_metatable_environment_uid() -> str:
+    return resolve_project_environment_uid("External MetaTable registration")
+
+
 def _metatable_project_context_for_request() -> MetaTableProjectContextRequest | None:
     return _current_metatable_project_context()
 
@@ -4716,7 +4758,15 @@ def _with_current_metatable_project_context(
     payload_json = _payload_json(payload)
     if "project_context" in payload_json:
         raise ValueError("project_context is SDK-controlled and cannot be supplied by the caller.")
+    if "organization_project_environment_uid" in payload_json:
+        raise ValueError(
+            "organization_project_environment_uid is SDK-controlled and cannot "
+            "be supplied by the caller."
+        )
     if payload_json.get("management_mode") == "external_registered":
+        payload_json["organization_project_environment_uid"] = (
+            _current_metatable_environment_uid()
+        )
         return payload_json
     project_context = _metatable_project_context_for_request()
     if project_context is not None:
@@ -4730,13 +4780,23 @@ def _with_current_metatable_project_context_collection(
     payload_rows = [dict(payload) for payload in payloads]
     if any("project_context" in row for row in payload_rows):
         raise ValueError("project_context is SDK-controlled and cannot be supplied by the caller.")
+    if any("organization_project_environment_uid" in row for row in payload_rows):
+        raise ValueError(
+            "organization_project_environment_uid is SDK-controlled and cannot "
+            "be supplied by the caller."
+        )
     managed_rows = [
         row for row in payload_rows if row.get("management_mode") != "external_registered"
     ]
-    if not managed_rows:
-        return payload_rows
+    external_rows = [
+        row for row in payload_rows if row.get("management_mode") == "external_registered"
+    ]
+    if external_rows:
+        environment_uid = _current_metatable_environment_uid()
+        for row in external_rows:
+            row["organization_project_environment_uid"] = environment_uid
 
-    project_context = _metatable_project_context_for_request()
+    project_context = _metatable_project_context_for_request() if managed_rows else None
     if project_context is not None:
         current_project_context = project_context.model_dump(mode="json")
         for row in managed_rows:

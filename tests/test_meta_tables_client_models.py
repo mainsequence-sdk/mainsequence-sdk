@@ -7,7 +7,19 @@ import pytest
 from pydantic import ValidationError
 
 import mainsequence.client.metatables as meta_table_models
+import mainsequence.project_context as project_context
 from mainsequence.meta_tables.compiled_sql.v1 import build_operation, compile_sqlalchemy_statement
+
+ENVIRONMENT_UID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+
+
+@pytest.fixture(autouse=True)
+def _resolved_environment(monkeypatch):
+    monkeypatch.setattr(
+        project_context,
+        "resolve_project_environment_uid",
+        lambda operation: ENVIRONMENT_UID,
+    )
 
 
 class _Response:
@@ -535,6 +547,51 @@ def test_meta_table_register_posts_contract_to_meta_table_endpoint(monkeypatch):
     assert "organization_project_environment_uid" not in captured["payload"]["json"]
 
 
+def test_external_meta_table_register_uses_branch_derived_environment(monkeypatch):
+    captured = {}
+    environment_uid = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+
+    def fake_make_request(**kwargs):
+        captured.update(kwargs)
+        return _Response(
+            _meta_table_response(
+                management_mode="external_registered",
+                organization_project_environment_uid=environment_uid,
+                organization_project_environment_name="development",
+            ),
+            status_code=201,
+        )
+
+    monkeypatch.setattr(meta_table_models, "make_request", fake_make_request)
+    monkeypatch.setattr(
+        meta_table_models,
+        "_current_metatable_environment_uid",
+        lambda: environment_uid,
+    )
+
+    table = meta_table_models.MetaTable.register(
+        management_mode="external_registered",
+        **_registration_fields(),
+    )
+
+    assert table.organization_project_environment_uid == environment_uid
+    assert captured["payload"]["json"]["organization_project_environment_uid"] == (
+        environment_uid
+    )
+    assert "project_context" not in captured["payload"]["json"]
+
+
+def test_external_meta_table_register_rejects_caller_environment():
+    with pytest.raises(ValueError, match="SDK-controlled"):
+        meta_table_models.MetaTable.register(
+            management_mode="external_registered",
+            organization_project_environment_uid=(
+                "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+            ),
+            **_registration_fields(),
+        )
+
+
 def test_meta_table_registration_rejects_physical_schema_mismatch():
     with pytest.raises(ValidationError, match="physical_schema must match"):
         meta_table_models.MetaTableRegistrationRequest(
@@ -764,6 +821,7 @@ def test_meta_table_filter_by_body_posts_identifier_filters(monkeypatch):
     assert captured["payload"]["json"] == {
         "identifiers": ["mainsequence.examples.Asset"],
         "limit": 1,
+        "organization_project_environment_uid": ENVIRONMENT_UID,
     }
 
 

@@ -97,6 +97,26 @@ class CurrentProjectBranchCollectionMixin:
         return list(cls.iter_filter_admin(timeout=timeout, **kwargs))
 
 
+class CurrentProjectEnvironmentResourceMixin:
+    """Scope project-facing Environment resources to the frozen Git context."""
+
+    SDK_OWNED_CONTEXT_FIELDS: ClassVar[frozenset[str]] = frozenset(
+        {"organization_project_environment_uid"}
+    )
+
+    @classmethod
+    def _sdk_owned_query_context(cls, operation: str) -> dict[str, str]:
+        from mainsequence.project_context import resolve_project_environment_uid
+
+        return {
+            "organization_project_environment_uid": resolve_project_environment_uid(operation)
+        }
+
+    @classmethod
+    def _sdk_owned_create_context(cls, operation: str) -> dict[str, str]:
+        return cls._sdk_owned_query_context(operation)
+
+
 class BaseObjectOrm:
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]] | None] = None
     FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str | Callable[..., Any]]] = {}
@@ -105,6 +125,7 @@ class BaseObjectOrm:
     DESTROY_QUERY_PARAMS: ClassVar[dict[str, str | Callable[..., Any]] | None] = None
     DESTROY_QUERY_PARAM_DESCRIPTIONS: ClassVar[dict[str, str] | None] = None
     PUBLIC_LOOKUP_FIELD: ClassVar[str] = "uid"
+    SDK_OWNED_CONTEXT_FIELDS: ClassVar[frozenset[str]] = frozenset()
 
     END_POINTS = {
         "User": "users",
@@ -153,6 +174,37 @@ class BaseObjectOrm:
     def build_session(cls):
         s = session
         return s
+
+    @classmethod
+    def _sdk_owned_query_context(cls, operation: str) -> dict[str, Any]:
+        return {}
+
+    @classmethod
+    def _sdk_owned_create_context(cls, operation: str) -> dict[str, Any]:
+        return {}
+
+    @classmethod
+    def _reject_sdk_context_overrides(
+        cls,
+        values: dict[str, Any],
+        *,
+        operation: str,
+    ) -> None:
+        overridden = sorted(set(values) & set(cls.SDK_OWNED_CONTEXT_FIELDS))
+        if overridden:
+            raise ValueError(
+                f"{operation} cannot override SDK-resolved context field(s): "
+                f"{', '.join(overridden)}."
+            )
+
+    @classmethod
+    def _with_sdk_owned_create_context(
+        cls,
+        operation: str,
+        values: dict[str, Any],
+    ) -> dict[str, Any]:
+        cls._reject_sdk_context_overrides(values, operation=operation)
+        return {**values, **cls._sdk_owned_create_context(operation)}
 
     @property
     def s(self):
@@ -468,11 +520,19 @@ class BaseObjectOrm:
         """
         Generator variant: yields objects across all pages without accumulating into memory.
         """
+        operation = f"{cls.__name__}.filter"
+        cls._reject_sdk_context_overrides(kwargs, operation=operation)
         filter_kwargs, read_query_kwargs = cls._split_filter_and_read_query_kwargs(kwargs)
         normalized_filters = cls._normalize_filter_kwargs(filter_kwargs)
         normalized_read_query = cls._normalize_read_query_kwargs(read_query_kwargs)
         base_url = cls.get_object_url()
-        params = cls._parse_parameters_filter({**normalized_filters, **normalized_read_query})
+        params = cls._parse_parameters_filter(
+            {
+                **normalized_filters,
+                **normalized_read_query,
+                **cls._sdk_owned_query_context(operation),
+            }
+        )
 
         next_url = f"{base_url}/"
         yielded = 0
@@ -534,6 +594,8 @@ class BaseObjectOrm:
         Raises Exception if multiple or unexpected data is returned.
         """
         if pk is not None:
+            operation = f"{cls.__name__}.get"
+            cls._reject_sdk_context_overrides(filters, operation=operation)
             base_url = cls.get_object_url()
             detail_url = f"{base_url}/{pk}/"
             _, read_query_kwargs = cls._split_filter_and_read_query_kwargs(filters)
@@ -541,7 +603,11 @@ class BaseObjectOrm:
             extra_params = {
                 key: value for key, value in filters.items() if key not in read_query_kwargs
             }
-            params = {**extra_params, **normalized_read_query}
+            params = {
+                **extra_params,
+                **normalized_read_query,
+                **cls._sdk_owned_query_context(operation),
+            }
 
             r = make_request(
                 s=cls.build_session(),
@@ -585,7 +651,10 @@ class BaseObjectOrm:
     @classmethod
     def create(cls, timeout=None, files=None, *args, **kwargs):
         base_url = cls.get_object_url()
-        data = cls.serialize_for_json(kwargs)
+        operation = f"{cls.__name__}.create"
+        data = cls.serialize_for_json(
+            cls._with_sdk_owned_create_context(operation, dict(kwargs))
+        )
         payload = {"json": data}
         if files:
             payload["files"] = files
@@ -604,6 +673,8 @@ class BaseObjectOrm:
     @classmethod
     def _destroy_by_reference(cls, public_reference, *args, timeout=None, **kwargs):
         base_url = cls.get_object_url()
+        operation = f"{cls.__name__}.delete"
+        cls._reject_sdk_context_overrides(kwargs, operation=operation)
         payload: dict[str, Any] = {}
 
         if getattr(cls, "DESTROY_QUERY_PARAMS", None):
@@ -614,6 +685,10 @@ class BaseObjectOrm:
             data = cls.serialize_for_json(kwargs)
             if data:
                 payload["json"] = data
+
+        query_context = cls._sdk_owned_query_context(operation)
+        if query_context:
+            payload.setdefault("params", {}).update(query_context)
 
         r = make_request(
             s=cls.build_session(),
@@ -634,8 +709,13 @@ class BaseObjectOrm:
     def _patch_by_reference(cls, public_reference, *args, _into=None, **kwargs):
         base_url = cls.get_object_url()
         url = f"{base_url}/{public_reference}/"
+        operation = f"{cls.__name__}.patch"
+        cls._reject_sdk_context_overrides(kwargs, operation=operation)
         data = cls.serialize_for_json(kwargs)
         payload = {"json": data}
+        query_context = cls._sdk_owned_query_context(operation)
+        if query_context:
+            payload["params"] = query_context
 
         r = make_request(
             s=cls.build_session(),
@@ -769,7 +849,18 @@ class DetailActionObjectMixin:
         expected_statuses: tuple[int, ...] = (200,),
         empty_response: Any = None,
     ) -> Any:
-        payload = payload or {}
+        payload = dict(payload or {})
+        query_context = type(self)._sdk_owned_query_context(
+            f"{type(self).__name__}.{action_name}"
+        )
+        if query_context:
+            params = dict(payload.get("params") or {})
+            type(self)._reject_sdk_context_overrides(
+                params,
+                operation=f"{type(self).__name__}.{action_name}",
+            )
+            params.update(query_context)
+            payload["params"] = params
         response = make_request(
             s=type(self).build_session(),
             loaders=type(self).LOADERS,

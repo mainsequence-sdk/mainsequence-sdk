@@ -20,7 +20,6 @@ Think of an Artifact as a file with a stable platform identity:
 - a **bucket**
 - a **name**
 - the **content**
-- a **created_by_resource_name**
 - a **creation timestamp**
 
 That gives you a reference that survives beyond your laptop or a temporary network share.
@@ -29,6 +28,10 @@ In practical terms:
 
 - local path: where the file happens to live today
 - Artifact: how the platform knows that file tomorrow
+
+Buckets and Artifacts are owned by an Organization Environment. The SDK derives
+that Environment from the process-frozen current Git branch and registered
+`ProjectBranch`; callers do not provide an Environment UID or branch UID.
 
 ## When Artifacts are the right tool
 
@@ -97,7 +100,6 @@ for path in tqdm(vector_files):
         filepath=str(path),
         name=path.name,
         bucket_name=BUCKET_NAME,
-        created_by_resource_name="vector-upload-script",
     )
     logger.info("Artifact available: %s (uid=%s)", path.name, artifact.uid)
 ```

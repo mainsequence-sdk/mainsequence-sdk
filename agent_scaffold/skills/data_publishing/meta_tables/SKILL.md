@@ -72,6 +72,8 @@ Before changing code, collect or infer:
 - who owns the MetaTable catalog lifecycle
 - who owns physical DDL: TS Manager, Alembic, or an external authority
 - for `external_registered`, the target canonical `DataSource` UID
+- the actual current Git branch; the SDK resolves its registered `ProjectBranch`
+  and Environment, and the user must not provide either UID
 - for contract changes, the selected `AlembicMetaTableMigration` provider or provider module path
 - for contract changes, the provider's `AlembicVersionMetaTable` root and whether it has been reserved
 - for contract changes, the intended Alembic revision, parent/current revision, target revision, and updated SQLAlchemy declarations

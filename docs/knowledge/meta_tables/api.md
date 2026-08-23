@@ -47,23 +47,17 @@ used by MetaTable schema migrations.
 
 ## Collection Scope
 
-Human collection requests must name the Organization Environment explicitly:
+Project-facing collection requests derive the Organization Environment from the
+process-frozen current ProjectBranch:
 
 ```python
-tables = MetaTable.filter(
-    organization_project_environment_uid=environment_uid,
-    namespace="mainsequence.examples",
-)
+tables = MetaTable.filter(namespace="mainsequence.examples")
 ```
 
-`TimeIndexMetaTable.filter(...)` uses the same canonical filter. The SDK sends
-`organization_project_environment_uid` exactly as written as the public API
-query parameter.
-
-The CLI derives this scope from the process-frozen, Git-resolved
-ProjectBranch when run inside a registered project checkout. Administrative
-use outside that checkout can pass
-`--organization-project-environment-uid <ENVIRONMENT_UID>` explicitly.
+`TimeIndexMetaTable.filter(...)` uses the same resolution. The SDK sends the
+branch-derived Environment UID internally and rejects caller attempts to select
+another Environment. An unregistered branch can continue ordinary local work,
+but table operations fail because they require registered ProjectBranch context.
 
 ## Registration Primitive
 

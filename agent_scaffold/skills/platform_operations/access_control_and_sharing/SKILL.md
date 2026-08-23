@@ -158,7 +158,10 @@ Do not downgrade a secret into a constant for convenience.
 
 ### 6. `Constant` and `Secret` names are unique configuration identities
 
-Treat `Constant.name` and `Secret.name` as unique organization-level configuration keys.
+Treat `Constant.name` and `Secret.name` as unique Environment-level
+configuration keys. Project-facing SDK and CLI operations derive the
+Environment from the process-frozen current Git branch and registered
+`ProjectBranch`. Never ask the user to provide an Environment UID or branch UID.
 
 For creation or sync tasks:
 

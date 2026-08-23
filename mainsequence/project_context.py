@@ -28,6 +28,10 @@ class ProjectBranchContextRequiredError(ProjectRuntimeContextError):
     """Raised when an operation requires a registered current ProjectBranch."""
 
 
+class ProjectEnvironmentContextRequiredError(ProjectBranchContextRequiredError):
+    """Raised when the current ProjectBranch has no resolved Environment."""
+
+
 class ProjectDataSourceContextRequiredError(ProjectRuntimeContextError):
     """Raised when project-derived data access has no usable branch DataSource."""
 
@@ -406,6 +410,19 @@ def resolve_project_branch_uid(operation: str, supplied_uid: Any = None) -> str:
     return resolved_uid
 
 
+def resolve_project_environment_uid(operation: str) -> str:
+    """Return the Environment UID derived from the process-frozen ProjectBranch."""
+
+    context = require_project_branch_context(operation)
+    environment_uid = str(context.organization_project_environment_uid or "").strip()
+    if not environment_uid:
+        raise ProjectEnvironmentContextRequiredError(
+            f"{operation} requires an Organization Environment resolved from "
+            f"ProjectBranch {context.project_branch_uid!r}, but none was returned."
+        )
+    return environment_uid
+
+
 def scope_current_project_branch_filters(
     operation: str,
     filters: Mapping[str, Any],
@@ -472,6 +489,7 @@ __all__ = [
     "GitProjectSourceContext",
     "ProjectBranchContextRequiredError",
     "ProjectDataSourceContextRequiredError",
+    "ProjectEnvironmentContextRequiredError",
     "ProjectRuntimeContext",
     "ProjectRuntimeContextError",
     "ProjectSourceContextDriftError",
@@ -479,6 +497,7 @@ __all__ = [
     "normalize_git_repository_identity",
     "require_project_branch_context",
     "require_project_metatables_data_source",
+    "resolve_project_environment_uid",
     "resolve_project_branch_uid",
     "scope_current_project_branch_filters",
     "validate_project_source_context",

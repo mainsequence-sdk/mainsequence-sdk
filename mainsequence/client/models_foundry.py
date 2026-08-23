@@ -17,6 +17,7 @@ from .base import (
     BaseObjectOrm,
     BasePydanticModel,
     CurrentProjectBranchCollectionMixin,
+    CurrentProjectEnvironmentResourceMixin,
     LabelableObjectMixin,
     ShareableObjectMixin,
 )
@@ -899,7 +900,12 @@ class DynamicResource(BasePydanticModel, BaseObjectOrm):
         return super().create(*args, **kwargs)
 
 
-class Bucket(ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
+class Bucket(
+    CurrentProjectEnvironmentResourceMixin,
+    ShareableObjectMixin,
+    BasePydanticModel,
+    BaseObjectOrm,
+):
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
         "uid": ["in", "exact"],
         "name": ["in", "exact"],
@@ -924,9 +930,34 @@ class Bucket(ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
         examples=["daily_positions_report.pdf"],
         json_schema_extra={"label": "Bucket Name"},
     )
+    organization_project_environment_uid: str | None = Field(
+        None,
+        description="Read-only UID of the owning Organization Environment.",
+    )
+    organization_project_environment_name: str | None = Field(
+        None,
+        description="Read-only name of the owning Organization Environment.",
+    )
+    physical_bucket_uid: str | None = Field(
+        None,
+        description="Read-only UID of the provider-backed physical bucket.",
+    )
+    backing_ready: bool | None = Field(
+        None,
+        description="Whether the physical bucket backing is ready for use.",
+    )
+    backing_last_discovered_at: datetime.datetime | None = Field(
+        None,
+        description="Last successful physical backing discovery timestamp.",
+    )
 
 
-class Artifact(ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
+class Artifact(
+    CurrentProjectEnvironmentResourceMixin,
+    ShareableObjectMixin,
+    BasePydanticModel,
+    BaseObjectOrm,
+):
     uid: str | None = Field(
         None,
         title="Artifact UID",
@@ -970,6 +1001,14 @@ class Artifact(ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
         examples=["2026-03-15T10:30:00Z"],
         json_schema_extra={"label": "Creation Date"},
     )
+    organization_project_environment_uid: str | None = Field(
+        None,
+        description="Read-only UID of the owning Organization Environment.",
+    )
+    organization_project_environment_name: str | None = Field(
+        None,
+        description="Read-only name of the owning Organization Environment.",
+    )
 
     @classmethod
     def upload_file(cls, filepath, name, bucket_name=None):
@@ -985,10 +1024,13 @@ class Artifact(ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
         url = cls.get_object_url() + "/get-or-create/"
         s = cls.build_session()
         with open(filepath, "rb") as f:
-            data = {
-                "name": name,
-                "bucket_name": bucket_name if bucket_name else "default_bucket",
-            }
+            data = cls._with_sdk_owned_create_context(
+                "Artifact.get_or_create",
+                {
+                    "name": name,
+                    "bucket_name": bucket_name if bucket_name else "default_bucket",
+                },
+            )
             files = {"content": (str(filepath), f, "application/pdf")}
             payload = {"json": data, "files": files}
             r = make_request(s=s, loaders=cls.LOADERS, r_type="POST", url=url, payload=payload)
@@ -1029,7 +1071,12 @@ def _norm_kwargs(kwargs: dict[str, Any]) -> tuple[tuple[str, Any], ...]:
     return tuple(sorted(items))
 
 
-class Secret(ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
+class Secret(
+    CurrentProjectEnvironmentResourceMixin,
+    ShareableObjectMixin,
+    BasePydanticModel,
+    BaseObjectOrm,
+):
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
         "uid": ["in", "exact"],
         "name": ["in", "exact"],
@@ -1046,6 +1093,14 @@ class Secret(ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
         None,
         description="Secret value. The create endpoint may omit it in the response.",
         exclude=True,
+    )
+    organization_project_environment_uid: str | None = Field(
+        None,
+        description="Read-only UID of the owning Organization Environment.",
+    )
+    organization_project_environment_name: str | None = Field(
+        None,
+        description="Read-only name of the owning Organization Environment.",
     )
 
     @classmethod
@@ -1073,7 +1128,12 @@ class Secret(ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
         return super().create(name=name, value=value, timeout=timeout)
 
 
-class Constant(ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
+class Constant(
+    CurrentProjectEnvironmentResourceMixin,
+    ShareableObjectMixin,
+    BasePydanticModel,
+    BaseObjectOrm,
+):
     """
     Simple organization-level constant.
     """
@@ -1100,6 +1160,14 @@ class Constant(ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
         description="Small JSON value (string/number/bool/object/array). Keep it small (e.g., <=10KB).",
     )
     category: str | None = None
+    organization_project_environment_uid: str | None = Field(
+        None,
+        description="Read-only UID of the owning Organization Environment.",
+    )
+    organization_project_environment_name: str | None = Field(
+        None,
+        description="Read-only name of the owning Organization Environment.",
+    )
 
     # Class-level cache & lock (Pydantic ignores ClassVar)
     _filter_cache: ClassVar[TTLCache] = TTLCache(maxsize=512, ttl=600)
