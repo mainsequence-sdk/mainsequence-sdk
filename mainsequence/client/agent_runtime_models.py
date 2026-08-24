@@ -14,6 +14,7 @@ from pydantic import ConfigDict, Field, model_validator
 
 from .base import BaseObjectOrm, BasePydanticModel, ShareableObjectMixin
 from .exceptions import ApiError, raise_for_response
+from .models_helpers import AutomaticRedeploymentPolicy
 from .utils import make_request, serialize_to_json
 
 DEFAULT_AGENT_SESSION_LONG_REQUEST_TIMEOUT = (5.0, 900.0)
@@ -566,6 +567,10 @@ class CodingAgentService(BaseObjectOrm, BasePydanticModel):
     }
 
     uid: str | None = Field(None, description="Public UID of the coding-agent service.")
+    harness: AgentHarnessKind = Field(
+        ...,
+        description="Runtime harness deployed by this coding-agent service.",
+    )
     agent_uid: str | None = Field(None, description="Public UID of the owning Agent.")
     agent_type: str | None = Field(
         None,
@@ -586,11 +591,55 @@ class CodingAgentService(BaseObjectOrm, BasePydanticModel):
     image_drift: dict[str, Any] | None = Field(
         None, description="Runtime image drift status payload."
     )
+    llm_provider: str | None = Field(
+        ...,
+        description="Read-only LLM provider projected from the owning Agent.",
+    )
+    llm_model: str | None = Field(
+        ...,
+        description="Read-only LLM model projected from the owning Agent.",
+    )
+    llm_thinking: str | None = Field(
+        ...,
+        description="Read-only thinking level projected from the owning Agent.",
+    )
+    cpu_request: str | None = Field(
+        ...,
+        description="Read-only CPU request projected from the backing Job.",
+    )
+    cpu_limit: str | None = Field(
+        ...,
+        description="Read-only CPU limit projected from the backing Job.",
+    )
+    memory_request: str | None = Field(
+        ...,
+        description="Read-only memory request projected from the backing Job.",
+    )
+    memory_limit: str | None = Field(
+        ...,
+        description="Read-only memory limit projected from the backing Job.",
+    )
+    gpu_request: str | None = Field(
+        ...,
+        description="Read-only GPU request projected from the backing Job.",
+    )
+    gpu_type: str | None = Field(
+        ...,
+        description="Read-only GPU type projected from the backing Job.",
+    )
+    spot: bool | None = Field(
+        ...,
+        description="Read-only spot scheduling flag projected from the backing Job.",
+    )
     related_job_uid: str | None = Field(
         None, description="Public UID of the backing job, if attached."
     )
     service_runtime_uid: str | None = Field(
         None, description="Public UID of the backing service runtime, if attached."
+    )
+    automatic_redeployment_policy: AutomaticRedeploymentPolicy | None = Field(
+        ...,
+        description="Automatic redeployment policy for a Project Executor service.",
     )
 
     @classmethod

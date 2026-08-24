@@ -1855,6 +1855,7 @@ def test_agent_runtime_models_deserialize_backend_uid_payloads():
     service = agent_models_mod.CodingAgentService.model_validate(
         {
             "uid": service_uid,
+            "harness": "tau",
             "agent_uid": agent_uid,
             "agent_type": "project-executor",
             "scope": {
@@ -1863,16 +1864,36 @@ def test_agent_runtime_models_deserialize_backend_uid_payloads():
             },
             "is_ready": True,
             "image_drift": {"has_drift": False, "checks": []},
+            "llm_provider": "openai",
+            "llm_model": "gpt-5.4",
+            "llm_thinking": "medium",
+            "cpu_request": "250m",
+            "cpu_limit": "1000m",
+            "memory_request": "512Mi",
+            "memory_limit": "2Gi",
+            "gpu_request": None,
+            "gpu_type": None,
+            "spot": False,
             "related_job_uid": "job-uid",
             "service_runtime_uid": "runtime-uid",
             "automatic_deployment": True,
+            "automatic_redeployment_policy": {
+                "tag_regex": None,
+                "policy_revision": 1,
+            },
         }
     )
     assert service.uid == service_uid
     assert service.agent_uid == agent_uid
     assert service.agent_type == "project-executor"
+    assert service.harness is agent_models_mod.AgentHarnessKind.TAU
     assert service.scope["project_branch_uid"] == "project-branch-uid"
+    assert service.llm_model == "gpt-5.4"
+    assert service.cpu_request == "250m"
+    assert service.spot is False
     assert service.service_runtime_uid == "runtime-uid"
+    assert service.automatic_redeployment_policy is not None
+    assert service.automatic_redeployment_policy.policy_revision == 1
 
 
 def test_agent_scope_projection_is_required_but_nullable():
