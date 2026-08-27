@@ -109,8 +109,8 @@ def test_project_branch_owns_branch_configuration():
     assert branch.project_uid == PROJECT_UID
     assert branch.repository_branch == "main"
     assert branch.default_base_image.uid == "61111111-1111-4111-8111-111111111111"
-    assert branch.organization_project_environment_uid is None
-    assert branch.organization_project_environment_name is None
+    assert branch.organization_environment_uid is None
+    assert branch.organization_environment_name is None
     assert not hasattr(branch, "project_type")
     assert not hasattr(branch, "primary_language")
     assert not hasattr(branch, "framework")

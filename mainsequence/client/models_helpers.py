@@ -11,7 +11,10 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, PositiveInt
 
-from mainsequence.project_context import resolve_project_branch_uid
+from mainsequence.project_context import (
+    resolve_organization_environment_uid,
+    resolve_project_branch_uid,
+)
 
 from .base import (
     BaseObjectOrm,
@@ -28,6 +31,11 @@ from .exceptions import raise_for_response
 from .models_foundry import (
     ProjectBranch,
     ProjectImage,
+)
+from .observability import (
+    ObservabilityLinks,
+    OwnerLogMixin,
+    OwnerResourceUsageMixin,
 )
 from .utils import make_request
 
@@ -168,7 +176,7 @@ class Job(CurrentProjectBranchCollectionMixin, BaseObjectOrm, BasePydanticModel)
         examples=["5a28020a-0f1b-47ee-aab8-334286234bea"],
     )
 
-    organization_project_environment_uid: str | None = Field(
+    organization_environment_uid: str | None = Field(
         default=None,
         description=(
             "Read-only Organization Environment UID derived by the backend "
@@ -701,7 +709,12 @@ class Job(CurrentProjectBranchCollectionMixin, BaseObjectOrm, BasePydanticModel)
         return r.json()
 
 
-class JobRun(BaseObjectOrm, BasePydanticModel):
+class JobRun(
+    OwnerLogMixin,
+    OwnerResourceUsageMixin,
+    BaseObjectOrm,
+    BasePydanticModel,
+):
     PUBLIC_LOOKUP_FIELD: ClassVar[str] = "uid"
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
         "job__uid": ["in", "exact"],
@@ -760,13 +773,17 @@ class JobRun(BaseObjectOrm, BasePydanticModel):
         description="Read-only repository branch name associated with the run, or null for an unscoped run.",
         examples=["main"],
     )
-    organization_project_environment_uid: str = Field(
+    organization_environment_uid: str = Field(
         ...,
         description=(
             "Read-only public UID of the Organization Environment resolved from the "
             "JobRun's owning project branch."
         ),
         examples=["58218213-5e4e-43de-a5bd-6757f4e1c8f6"],
+    )
+    observability: ObservabilityLinks | None = Field(
+        default=None,
+        description="Backend-owned application log and resource-usage capabilities.",
     )
 
     execution_start: datetime.datetime | None = Field(
@@ -870,25 +887,6 @@ class JobRun(BaseObjectOrm, BasePydanticModel):
         examples=[["sync", "--from", "2026-04-01"]],
     )
 
-    def get_logs(self, *, timeout: int | None = None) -> dict[str, Any]:
-        job_run_uid = self._public_detail_reference()
-        url = f"{self.get_object_url()}/{job_run_uid}/get-logs/"
-        s = self.build_session()
-
-        r = make_request(
-            s=s,
-            loaders=self.LOADERS,
-            r_type="GET",
-            url=url,
-            payload={},
-            time_out=timeout,
-        )
-
-        if r.status_code != 200:
-            raise_for_response(r)
-
-        return r.json()
-
     def job_run_status(
         self,
         *,
@@ -963,16 +961,19 @@ class ProjectResource(CurrentProjectBranchCollectionMixin, BaseObjectOrm, BasePy
         description="Display name of the resource discovered in the project's repository.",
         examples=["analytics_dashboard.py"],
     )
-    resource_type: Literal[
-        "configuration",
-        "notebook",
-        "script",
-        "dashboard",
-        "agent",
-        "fastapi",
-        "project_agent_card",
-        "markdown",
-    ] | None = Field(
+    resource_type: (
+        Literal[
+            "configuration",
+            "notebook",
+            "script",
+            "dashboard",
+            "agent",
+            "fastapi",
+            "project_agent_card",
+            "markdown",
+        ]
+        | None
+    ) = Field(
         None,
         title="Resource Type",
         description=(
@@ -1084,6 +1085,8 @@ class ResourceReleaseKind(str, Enum):
 
 class ResourceRelease(
     CurrentProjectBranchCollectionMixin,
+    OwnerLogMixin,
+    OwnerResourceUsageMixin,
     ShareableObjectMixin,
     BaseObjectOrm,
     BasePydanticModel,
@@ -1138,6 +1141,10 @@ class ResourceRelease(
         title="Related Job UID",
         description="Public UID of the job associated with this resource release.",
         examples=["7d0ab07c-d1c0-4b7f-9c69-3c1a41c0a4da"],
+    )
+    observability: ObservabilityLinks | None = Field(
+        default=None,
+        description="Backend-owned runtime observability and related-history capabilities.",
     )
     release_kind: ResourceReleaseKind | None = Field(
         None,
@@ -1447,6 +1454,9 @@ class DeploymentRun(CurrentProjectBranchCollectionMixin, BaseObjectOrm, BasePyda
                 "step_uid": str(step_uid) if step_uid is not None else None,
                 "source": source,
                 "level": level,
+                "organization_environment_uid": resolve_organization_environment_uid(
+                    "DeploymentRun.get_logs"
+                ),
             }.items()
             if value is not None
         }

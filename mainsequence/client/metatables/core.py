@@ -33,7 +33,7 @@ from mainsequence.project_context import (
     get_project_runtime_context,
     require_project_branch_context,
     require_project_metatables_data_source,
-    resolve_project_environment_uid,
+    resolve_organization_environment_uid,
 )
 
 from ..base import (
@@ -1336,8 +1336,8 @@ class MetaTable(
     creation_date: datetime.datetime | None = None
     created_by_user_uid: str | None = None
     organization_owner_uid: str | None = None
-    organization_project_environment_uid: str | None = None
-    organization_project_environment_name: str | None = None
+    organization_environment_uid: str | None = None
+    organization_environment_name: str | None = None
     registration: dict[str, Any] = Field(default_factory=dict)
 
     model_config = ConfigDict(populate_by_name=True)
@@ -1573,9 +1573,9 @@ class MetaTable(
             raise ValueError(
                 "project_context is SDK-controlled and cannot be supplied by the caller."
             )
-        if "organization_project_environment_uid" in unvalidated_payload:
+        if "organization_environment_uid" in unvalidated_payload:
             raise ValueError(
-                "organization_project_environment_uid is SDK-controlled and cannot "
+                "organization_environment_uid is SDK-controlled and cannot "
                 "be supplied by the caller."
             )
         payload = MetaTableRegistrationRequest.model_validate(unvalidated_payload)
@@ -3364,9 +3364,9 @@ class TimeIndexMetaTable(MetaTable):
             raise ValueError(
                 "project_context is SDK-controlled and cannot be supplied by the caller."
             )
-        if "organization_project_environment_uid" in unvalidated_payload:
+        if "organization_environment_uid" in unvalidated_payload:
             raise ValueError(
-                "organization_project_environment_uid is SDK-controlled and cannot "
+                "organization_environment_uid is SDK-controlled and cannot "
                 "be supplied by the caller."
             )
         payload = TimeIndexMetaTableRegistrationRequest.model_validate(unvalidated_payload)
@@ -3719,7 +3719,7 @@ class TimeIndexMetaTable(MetaTable):
 
 class Scheduler(BasePydanticModel, BaseObjectOrm):
     uid: str | None = Field(None, description="Public uid of this scheduler")
-    organization_project_environment_uid: str = Field(
+    organization_environment_uid: str = Field(
         ...,
         description=(
             "Read-only public UID of the Organization Environment derived by the "
@@ -4752,7 +4752,7 @@ def _current_metatable_project_context() -> MetaTableProjectContextRequest:
 
 
 def _current_metatable_environment_uid() -> str:
-    return resolve_project_environment_uid("External MetaTable registration")
+    return resolve_organization_environment_uid("External MetaTable registration")
 
 
 def _metatable_project_context_for_request() -> MetaTableProjectContextRequest | None:
@@ -4765,15 +4765,12 @@ def _with_current_metatable_project_context(
     payload_json = _payload_json(payload)
     if "project_context" in payload_json:
         raise ValueError("project_context is SDK-controlled and cannot be supplied by the caller.")
-    if "organization_project_environment_uid" in payload_json:
+    if "organization_environment_uid" in payload_json:
         raise ValueError(
-            "organization_project_environment_uid is SDK-controlled and cannot "
-            "be supplied by the caller."
+            "organization_environment_uid is SDK-controlled and cannot be supplied by the caller."
         )
     if payload_json.get("management_mode") == "external_registered":
-        payload_json["organization_project_environment_uid"] = (
-            _current_metatable_environment_uid()
-        )
+        payload_json["organization_environment_uid"] = _current_metatable_environment_uid()
         return payload_json
     project_context = _metatable_project_context_for_request()
     if project_context is not None:
@@ -4787,10 +4784,9 @@ def _with_current_metatable_project_context_collection(
     payload_rows = [dict(payload) for payload in payloads]
     if any("project_context" in row for row in payload_rows):
         raise ValueError("project_context is SDK-controlled and cannot be supplied by the caller.")
-    if any("organization_project_environment_uid" in row for row in payload_rows):
+    if any("organization_environment_uid" in row for row in payload_rows):
         raise ValueError(
-            "organization_project_environment_uid is SDK-controlled and cannot "
-            "be supplied by the caller."
+            "organization_environment_uid is SDK-controlled and cannot be supplied by the caller."
         )
     managed_rows = [
         row for row in payload_rows if row.get("management_mode") != "external_registered"
@@ -4801,7 +4797,7 @@ def _with_current_metatable_project_context_collection(
     if external_rows:
         environment_uid = _current_metatable_environment_uid()
         for row in external_rows:
-            row["organization_project_environment_uid"] = environment_uid
+            row["organization_environment_uid"] = environment_uid
 
     project_context = _metatable_project_context_for_request() if managed_rows else None
     if project_context is not None:

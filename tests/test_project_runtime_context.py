@@ -59,7 +59,7 @@ def _project_branch(*, branch: str = "main", data_source=None):
         uid=PROJECT_BRANCH_UID,
         project_uid=PROJECT_UID,
         repository_branch=branch,
-        organization_project_environment_uid=ENVIRONMENT_UID,
+        organization_environment_uid=ENVIRONMENT_UID,
         metatables_data_source=data_source,
     )
 
@@ -159,8 +159,8 @@ def test_project_branch_git_context_uses_canonical_backend_action(monkeypatch):
                     "repository_branch": "main",
                     "metatables_data_source": None,
                     "metatables_data_source_uid": None,
-                    "organization_project_environment_uid": ENVIRONMENT_UID,
-                    "organization_project_environment_name": "Development",
+                    "organization_environment_uid": ENVIRONMENT_UID,
+                    "organization_environment_name": "Development",
                     "default_base_image": {"uid": "base-image-uid"},
                     "sdks": [],
                     "git_repository_uid": "repository-uid",
@@ -275,7 +275,7 @@ def test_identity_environment_variables_never_select_context(monkeypatch):
     assert context.project_uid == PROJECT_UID
     assert context.repository_branch == "main"
     assert context.project_branch_uid == PROJECT_BRANCH_UID
-    assert context.organization_project_environment_uid == ENVIRONMENT_UID
+    assert context.organization_environment_uid == ENVIRONMENT_UID
 
 
 def test_unregistered_git_context_is_nonfatal_until_branch_context_is_required(monkeypatch):
@@ -304,7 +304,7 @@ def test_project_environment_uid_comes_from_frozen_branch_context(monkeypatch):
     _resolve(monkeypatch)
 
     assert (
-        project_context.resolve_project_environment_uid("Create Secret")
+        project_context.resolve_organization_environment_uid("Create Secret")
         == ENVIRONMENT_UID
     )
 
@@ -315,7 +315,7 @@ def test_project_environment_operation_fails_when_branch_has_no_environment(monk
         source_context=context.source_context,
         project_uid=context.project_uid,
         project_branch_uid=context.project_branch_uid,
-        organization_project_environment_uid=None,
+        organization_environment_uid=None,
         metatables_data_source=context.metatables_data_source,
         status=context.status,
         process_id=context.process_id,
@@ -332,7 +332,7 @@ def test_project_environment_operation_fails_when_branch_has_no_environment(monk
         project_context.ProjectEnvironmentContextRequiredError,
         match="none was returned",
     ):
-        project_context.resolve_project_environment_uid("Create Secret")
+        project_context.resolve_organization_environment_uid("Create Secret")
 
 
 def test_runtime_target_mismatch_is_not_treated_as_unregistered(monkeypatch):

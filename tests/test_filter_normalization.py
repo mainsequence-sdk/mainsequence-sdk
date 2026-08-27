@@ -47,7 +47,7 @@ def _resolved_project_context(monkeypatch):
                 uid=PROJECT_BRANCH_UID,
                 project_uid=PROJECT_UID,
                 repository_branch=resolved_source.repository_branch,
-                organization_project_environment_uid=ENVIRONMENT_UID,
+                organization_environment_uid=ENVIRONMENT_UID,
                 metatables_data_source=None,
             ),
         ),
@@ -180,7 +180,7 @@ def test_job_run_status_uses_status_detail_endpoint(monkeypatch):
         project_name=None,
         project_branch_uid=None,
         project_branch_name=None,
-        organization_project_environment_uid=ENVIRONMENT_UID,
+        organization_environment_uid=ENVIRONMENT_UID,
         runtime_image_uid="6cfdb152-923e-45b9-a150-c4541c68b0d1",
         runtime_image_digest="sha256:" + "b" * 64,
     )
@@ -272,7 +272,7 @@ def test_job_run_deserializes_uid_payload_without_id():
         project_name="market-data-service",
         project_branch_uid="5a28020a-0f1b-47ee-aab8-334286234bea",
         project_branch_name="main",
-        organization_project_environment_uid=ENVIRONMENT_UID,
+        organization_environment_uid=ENVIRONMENT_UID,
         status="RUNNING",
         cpu_request="1",
         cpu_limit="2",
@@ -288,7 +288,7 @@ def test_job_run_deserializes_uid_payload_without_id():
     dumped = job_run.model_dump()
     assert dumped["uid"] == "4c1d77c8-8a42-42b8-a9c1-06be9a336e5d"
     assert dumped["job_uid"] == "ab6a5d50-8a3e-4f0d-a9bb-7e84180bd50e"
-    assert dumped["organization_project_environment_uid"] == ENVIRONMENT_UID
+    assert dumped["organization_environment_uid"] == ENVIRONMENT_UID
     assert "id" not in dumped
 
 
@@ -504,9 +504,7 @@ def test_data_node_storage_does_not_expose_environment_filters():
     uid = uuid.UUID("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb")
 
     with pytest.raises(ValueError, match="Unsupported TimeIndexMetaTable filter"):
-        TimeIndexMetaTable._normalize_filter_kwargs(
-            {"organization_project_environment_uid": {"uid": uid}}
-        )
+        TimeIndexMetaTable._normalize_filter_kwargs({"organization_environment_uid": {"uid": uid}})
 
 
 @pytest.mark.parametrize(
@@ -521,6 +519,7 @@ def test_meta_table_collection_sends_canonical_environment_query_params(
     model_class,
 ):
     captured = {}
+
     class FakeResponse:
         status_code = 200
         content = b'{"results": [], "next": null}'
@@ -549,18 +548,14 @@ def test_meta_table_collection_sends_canonical_environment_query_params(
         "r_type": "GET",
         "payload": {
             "params": {
-                "organization_project_environment_uid": ENVIRONMENT_UID,
+                "organization_environment_uid": ENVIRONMENT_UID,
             }
         },
         "timeout": 17,
     }
 
     with pytest.raises(ValueError, match="cannot override SDK-resolved context"):
-        model_class.filter(
-            organization_project_environment_uid=(
-                "11111111-1111-4111-8111-111111111111"
-            )
-        )
+        model_class.filter(organization_environment_uid=("11111111-1111-4111-8111-111111111111"))
 
 
 def test_data_node_storage_rejects_data_source_id_filter():
@@ -987,9 +982,7 @@ def test_meta_table_does_not_expose_environment_filters():
     uid = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
 
     with pytest.raises(ValueError, match="Unsupported MetaTable filter"):
-        MetaTable._normalize_filter_kwargs(
-            {"organization_project_environment_uid": {"uid": uid}}
-        )
+        MetaTable._normalize_filter_kwargs({"organization_environment_uid": {"uid": uid}})
 
 
 def test_meta_table_rejects_data_source_id_filter():
@@ -1765,8 +1758,8 @@ def test_agent_runtime_models_deserialize_backend_uid_payloads():
             "agent_service_automatic_deployment": True,
             "project_branch_uid": project_branch_uid,
             "repository_branch": "main",
-            "organization_project_environment_uid": environment_uid,
-            "organization_project_environment_name": "production",
+            "organization_environment_uid": environment_uid,
+            "organization_environment_name": "production",
         }
     )
     assert agent.uid == agent_uid
@@ -1775,11 +1768,9 @@ def test_agent_runtime_models_deserialize_backend_uid_payloads():
     assert agent.agent_service_automatic_deployment is True
     assert agent.project_branch_uid == project_branch_uid
     assert agent.repository_branch == "main"
-    assert agent.organization_project_environment_uid == environment_uid
-    assert agent.organization_project_environment_name == "production"
-    assert agent.a2a_profile.supported_response_kinds == [
-        agent_models_mod.A2AResponseKind.MESSAGE
-    ]
+    assert agent.organization_environment_uid == environment_uid
+    assert agent.organization_environment_name == "production"
+    assert agent.a2a_profile.supported_response_kinds == [agent_models_mod.A2AResponseKind.MESSAGE]
 
     search_result = agent_models_mod.AgentSemanticSearchResult.model_validate(
         {
@@ -1789,8 +1780,8 @@ def test_agent_runtime_models_deserialize_backend_uid_payloads():
             "description": "Research assistant.",
             "project_branch_uid": project_branch_uid,
             "repository_branch": "main",
-            "organization_project_environment_uid": environment_uid,
-            "organization_project_environment_name": "production",
+            "organization_environment_uid": environment_uid,
+            "organization_environment_name": "production",
             "semantic_score": 0.91,
             "text_score": 0.74,
             "combined_score": 0.85,
@@ -1799,8 +1790,8 @@ def test_agent_runtime_models_deserialize_backend_uid_payloads():
     assert search_result.uid == agent_uid
     assert search_result.project_branch_uid == project_branch_uid
     assert search_result.repository_branch == "main"
-    assert search_result.organization_project_environment_uid == environment_uid
-    assert search_result.organization_project_environment_name == "production"
+    assert search_result.organization_environment_uid == environment_uid
+    assert search_result.organization_environment_name == "production"
     assert search_result.a2a_profile.default_response_kind == (
         agent_models_mod.A2AResponseKind.MESSAGE
     )
@@ -1901,15 +1892,15 @@ def test_agent_scope_projection_is_required_but_nullable():
         "name": "Astro Orchestrator",
         "llm_thinking": "medium",
         "repository_branch": None,
-        "organization_project_environment_uid": None,
-        "organization_project_environment_name": None,
+        "organization_environment_uid": None,
+        "organization_environment_name": None,
     }
 
     agent = agent_models_mod.Agent.model_validate(payload)
 
     assert agent.repository_branch is None
-    assert agent.organization_project_environment_uid is None
-    assert agent.organization_project_environment_name is None
+    assert agent.organization_environment_uid is None
+    assert agent.organization_environment_name is None
 
     missing_projection = dict(payload)
     missing_projection.pop("repository_branch")
@@ -1934,8 +1925,8 @@ def test_agent_filter_sends_environment_read_scope_and_parses_projection(monkeyp
                         "llm_thinking": "medium",
                         "project_branch_uid": "9d81d63f-b8c9-404d-9f1a-5f2ad29dbf16",
                         "repository_branch": "main",
-                        "organization_project_environment_uid": str(environment_uid),
-                        "organization_project_environment_name": "production",
+                        "organization_environment_uid": str(environment_uid),
+                        "organization_environment_name": "production",
                     }
                 ],
                 "next": None,
@@ -1960,7 +1951,7 @@ def test_agent_filter_sends_environment_read_scope_and_parses_projection(monkeyp
     )
 
     agents = agent_models_mod.Agent.filter(
-        organization_project_environment_uid=environment_uid,
+        organization_environment_uid=environment_uid,
         agent_type="project-executor",
         timeout=11,
     )
@@ -1971,14 +1962,14 @@ def test_agent_filter_sends_environment_read_scope_and_parses_projection(monkeyp
         "payload": {
             "params": {
                 "agent_type": "project-executor",
-                "organization_project_environment_uid": str(environment_uid),
+                "organization_environment_uid": str(environment_uid),
             }
         },
         "timeout": 11,
     }
     assert len(agents) == 1
     assert agents[0].repository_branch == "main"
-    assert agents[0].organization_project_environment_uid == str(environment_uid)
+    assert agents[0].organization_environment_uid == str(environment_uid)
 
 
 def test_agent_semantic_search_sends_environment_scope_and_parses_projection(monkeypatch):
@@ -1998,8 +1989,8 @@ def test_agent_semantic_search_sends_environment_scope_and_parses_projection(mon
                     "description": "Project coding agent.",
                     "project_branch_uid": "9d81d63f-b8c9-404d-9f1a-5f2ad29dbf16",
                     "repository_branch": "main",
-                    "organization_project_environment_uid": str(environment_uid),
-                    "organization_project_environment_name": "production",
+                    "organization_environment_uid": str(environment_uid),
+                    "organization_environment_name": "production",
                     "semantic_score": 0.91,
                     "text_score": 0.74,
                     "combined_score": 0.85,
@@ -2026,7 +2017,7 @@ def test_agent_semantic_search_sends_environment_scope_and_parses_projection(mon
 
     results = agent_models_mod.Agent.semantic_search(
         "project coding",
-        organization_project_environment_uid=environment_uid,
+        organization_environment_uid=environment_uid,
         limit=7,
         timeout=13,
     )
@@ -2036,7 +2027,7 @@ def test_agent_semantic_search_sends_environment_scope_and_parses_projection(mon
         "url": f"{agent_models_mod.Agent.get_object_url()}/semantic-search/",
         "payload": {
             "json": {
-                "organization_project_environment_uid": str(environment_uid),
+                "organization_environment_uid": str(environment_uid),
                 "q": "project coding",
                 "limit": 7,
             }
@@ -2045,7 +2036,7 @@ def test_agent_semantic_search_sends_environment_scope_and_parses_projection(mon
     }
     assert len(results) == 1
     assert results[0].project_branch_uid == "9d81d63f-b8c9-404d-9f1a-5f2ad29dbf16"
-    assert results[0].organization_project_environment_name == "production"
+    assert results[0].organization_environment_name == "production"
 
 
 def test_agent_session_filter_supports_archive_history_query(monkeypatch):
@@ -2375,14 +2366,14 @@ def test_job_accepts_backend_derived_environment_uid(environment_uid):
             "uid": "7d0ab07c-d1c0-4b7f-9c69-3c1a41c0a4da",
             "name": "Daily prices",
             "project_branch_uid": PROJECT_BRANCH_UID,
-            "organization_project_environment_uid": environment_uid,
+            "organization_environment_uid": environment_uid,
             "related_image_uid": "6cfdb152-923e-45b9-a150-c4541c68b0d1",
             "project_repo_hash": "a" * 40,
             "image_status": "ready",
         }
     )
 
-    assert job.organization_project_environment_uid == environment_uid
+    assert job.organization_environment_uid == environment_uid
 
 
 def test_job_filter_parses_backend_derived_environment_uid(monkeypatch):
@@ -2398,7 +2389,7 @@ def test_job_filter_parses_backend_derived_environment_uid(monkeypatch):
                     "uid": "7d0ab07c-d1c0-4b7f-9c69-3c1a41c0a4da",
                     "name": "Daily prices",
                     "project_branch_uid": PROJECT_BRANCH_UID,
-                    "organization_project_environment_uid": ENVIRONMENT_UID,
+                    "organization_environment_uid": ENVIRONMENT_UID,
                     "related_image_uid": "6cfdb152-923e-45b9-a150-c4541c68b0d1",
                     "project_repo_hash": "a" * 40,
                     "image_status": "ready",
@@ -2413,7 +2404,7 @@ def test_job_filter_parses_backend_derived_environment_uid(monkeypatch):
 
     jobs = models_helpers_mod.Job.filter()
 
-    assert jobs[0].organization_project_environment_uid == ENVIRONMENT_UID
+    assert jobs[0].organization_environment_uid == ENVIRONMENT_UID
     assert captured["payload"]["params"] == {
         "project_branch_uid": PROJECT_BRANCH_UID,
     }
@@ -2494,7 +2485,7 @@ def test_job_run_requires_immutable_runtime_image_snapshot():
         "project_name": "market-data-service",
         "project_branch_uid": "5a28020a-0f1b-47ee-aab8-334286234bea",
         "project_branch_name": "main",
-        "organization_project_environment_uid": ENVIRONMENT_UID,
+        "organization_environment_uid": ENVIRONMENT_UID,
         "commit_hash": "a" * 40,
         "runtime_image_uid": "6cfdb152-923e-45b9-a150-c4541c68b0d1",
         "runtime_image_digest": "sha256:" + "b" * 64,
@@ -2508,7 +2499,7 @@ def test_job_run_requires_immutable_runtime_image_snapshot():
     assert run.project_name == payload["project_name"]
     assert run.project_branch_uid == payload["project_branch_uid"]
     assert run.project_branch_name == payload["project_branch_name"]
-    assert run.organization_project_environment_uid == ENVIRONMENT_UID
+    assert run.organization_environment_uid == ENVIRONMENT_UID
 
     missing_project_context = dict(payload)
     missing_project_context.pop("project_uid")
@@ -2524,7 +2515,7 @@ def test_job_run_requires_immutable_runtime_image_snapshot():
                 "project_name": None,
                 "project_branch_uid": None,
                 "project_branch_name": None,
-                "organization_project_environment_uid": ENVIRONMENT_UID,
+                "organization_environment_uid": ENVIRONMENT_UID,
                 "runtime_image_digest": "sha256:" + "b" * 64,
             }
         )
@@ -3064,7 +3055,13 @@ def test_unified_deployment_run_models_and_filters(monkeypatch):
     assert captured == {
         "r_type": "GET",
         "url": f"{models_helpers_mod.DeploymentRun.get_object_url()}/{run_uid}/logs/",
-        "payload": {"params": {"limit": 25, "source": "orchestrator"}},
+        "payload": {
+            "params": {
+                "limit": 25,
+                "source": "orchestrator",
+                "organization_environment_uid": ENVIRONMENT_UID,
+            }
+        },
         "timeout": 8,
     }
 
@@ -3655,6 +3652,113 @@ def test_agent_session_send_a2a_message_refreshes_access_and_reuses_body(monkeyp
     assert captured["tokens"] == ["Bearer tok-secret-1", "Bearer tok-secret-2"]
 
 
+def test_agent_respond_uses_agent_scoped_sessionless_contract(monkeypatch):
+    captured = {}
+    agent_uid = "e0e75693-4110-464c-93e0-82c7fd9c9a23"
+    agent = agent_models_mod.Agent(
+        uid=agent_uid,
+        name="Research Copilot",
+        agent_type="custom",
+        description="Research assistant.",
+        agent_card=None,
+        llm_provider="openai",
+        llm_model="gpt-5.4",
+        llm_thinking="medium",
+        repository_branch=None,
+        organization_environment_uid=None,
+        organization_environment_name=None,
+    )
+
+    class FakeAccessResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {
+                "mode": "token",
+                "rpc_url": "https://runtime.example.test",
+                "token": "runtime-token",
+                "runtime_paths": {
+                    "responses": f"/api/agents/{agent_uid}/responses",
+                },
+            }
+
+    class FakeRuntimeResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {
+                "message": {
+                    "kind": "message",
+                    "messageId": "msg-output",
+                    "role": "ROLE_AGENT",
+                    "parts": [{"data": {"answer": 42}, "mediaType": "application/json"}],
+                }
+            }
+
+    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
+        captured["access"] = {
+            "r_type": r_type,
+            "url": url,
+            "payload": payload,
+            "timeout": time_out,
+        }
+        return FakeAccessResponse()
+
+    def _fake_post(url, *, headers, data, timeout, stream):
+        captured["runtime"] = {
+            "url": url,
+            "headers": headers,
+            "body": json.loads(data),
+            "timeout": timeout,
+            "stream": stream,
+        }
+        return FakeRuntimeResponse()
+
+    monkeypatch.setattr(agent_models_mod, "make_request", _fake_make_request)
+    monkeypatch.setattr(agent_models_mod.requests, "post", _fake_post)
+
+    result = agent.respond(
+        message="Return an answer.",
+        message_id="msg-input",
+        strict_dictionary=True,
+        provider="anthropic",
+        model="claude-sonnet-4-5",
+        thinking="high",
+        max_output_tokens=512,
+        timeout_seconds=30,
+        timeout=17,
+    )
+
+    assert result.message is not None
+    assert result.message["parts"][0]["data"] == {"answer": 42}
+    assert captured["access"] == {
+        "r_type": "POST",
+        "url": f"{agent.get_detail_url()}resolve-runtime-access/",
+        "payload": {"json": {}},
+        "timeout": 17,
+    }
+    runtime = captured["runtime"]
+    assert runtime["url"] == f"https://runtime.example.test/api/agents/{agent_uid}/responses"
+    assert runtime["headers"]["Content-Type"] == "application/a2a+json"
+    assert runtime["stream"] is False
+    body = runtime["body"]
+    assert body["message"] == {
+        "messageId": "msg-input",
+        "role": "ROLE_USER",
+        "parts": [{"text": "Return an answer."}],
+    }
+    assert "contextId" not in body["message"]
+    assert body["metadata"][agent_models_mod.STANDARD_AGENT_INFERENCE_METADATA_KEY] == {
+        "provider": "anthropic",
+        "model": "claude-sonnet-4-5",
+        "thinking": "high",
+        "maxOutputTokens": 512,
+        "timeoutSeconds": 30,
+    }
+
+
 def test_agent_get_or_create_session_posts_new_contract(monkeypatch):
     captured = {}
     agent_uid = "e0e75693-4110-464c-93e0-82c7fd9c9a23"
@@ -3671,8 +3775,8 @@ def test_agent_get_or_create_session_posts_new_contract(monkeypatch):
         llm_model="gpt-5.4",
         llm_thinking="medium",
         repository_branch=None,
-        organization_project_environment_uid=None,
-        organization_project_environment_name=None,
+        organization_environment_uid=None,
+        organization_environment_name=None,
     )
 
     class FakeResponse:
@@ -3765,8 +3869,8 @@ def test_agent_get_or_create_session_by_uid_sends_only_session_uid(monkeypatch):
         llm_model="gpt-5.4",
         llm_thinking="medium",
         repository_branch=None,
-        organization_project_environment_uid=None,
-        organization_project_environment_name=None,
+        organization_environment_uid=None,
+        organization_environment_name=None,
     )
 
     class FakeResponse:

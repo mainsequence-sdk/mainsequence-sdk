@@ -506,8 +506,8 @@ class ProjectBranch(BasePydanticModel, BaseObjectOrm):
     repository_branch: str
     metatables_data_source: _DataSource | None = None
     metatables_data_source_uid: str | None = None
-    organization_project_environment_uid: str | None = None
-    organization_project_environment_name: str | None = None
+    organization_environment_uid: str | None = None
+    organization_environment_name: str | None = None
     default_base_image: ProjectBaseImage
     sdks: list[ProjectSDKObservation] = Field(default_factory=list)
     git_repository_uid: str | None = None
@@ -930,11 +930,11 @@ class Bucket(
         examples=["daily_positions_report.pdf"],
         json_schema_extra={"label": "Bucket Name"},
     )
-    organization_project_environment_uid: str | None = Field(
+    organization_environment_uid: str | None = Field(
         None,
         description="Read-only UID of the owning Organization Environment.",
     )
-    organization_project_environment_name: str | None = Field(
+    organization_environment_name: str | None = Field(
         None,
         description="Read-only name of the owning Organization Environment.",
     )
@@ -1001,11 +1001,11 @@ class Artifact(
         examples=["2026-03-15T10:30:00Z"],
         json_schema_extra={"label": "Creation Date"},
     )
-    organization_project_environment_uid: str | None = Field(
+    organization_environment_uid: str | None = Field(
         None,
         description="Read-only UID of the owning Organization Environment.",
     )
-    organization_project_environment_name: str | None = Field(
+    organization_environment_name: str | None = Field(
         None,
         description="Read-only name of the owning Organization Environment.",
     )
@@ -1094,11 +1094,11 @@ class Secret(
         description="Secret value. The create endpoint may omit it in the response.",
         exclude=True,
     )
-    organization_project_environment_uid: str | None = Field(
+    organization_environment_uid: str | None = Field(
         None,
         description="Read-only UID of the owning Organization Environment.",
     )
-    organization_project_environment_name: str | None = Field(
+    organization_environment_name: str | None = Field(
         None,
         description="Read-only name of the owning Organization Environment.",
     )
@@ -1160,11 +1160,11 @@ class Constant(
         description="Small JSON value (string/number/bool/object/array). Keep it small (e.g., <=10KB).",
     )
     category: str | None = None
-    organization_project_environment_uid: str | None = Field(
+    organization_environment_uid: str | None = Field(
         None,
         description="Read-only UID of the owning Organization Environment.",
     )
-    organization_project_environment_name: str | None = Field(
+    organization_environment_name: str | None = Field(
         None,
         description="Read-only name of the owning Organization Environment.",
     )

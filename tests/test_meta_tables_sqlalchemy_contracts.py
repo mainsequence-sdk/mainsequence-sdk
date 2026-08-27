@@ -58,7 +58,7 @@ def _clear_metatable_registration_registry(monkeypatch):
                 uid=project_branch_uid,
                 project_uid=project_uid,
                 repository_branch=resolved_source.repository_branch,
-                organization_project_environment_uid=None,
+                organization_environment_uid=None,
                 metatables_data_source=None,
             ),
         ),

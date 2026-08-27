@@ -17,7 +17,7 @@ ENVIRONMENT_UID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
 def _resolved_environment(monkeypatch):
     monkeypatch.setattr(
         project_context,
-        "resolve_project_environment_uid",
+        "resolve_organization_environment_uid",
         lambda operation: ENVIRONMENT_UID,
     )
 
@@ -75,8 +75,8 @@ def _meta_table_response(**overrides):
         "creation_date": "2026-05-25T08:00:00Z",
         "created_by_user_uid": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
         "organization_owner_uid": "ffffffff-ffff-4fff-8fff-ffffffffffff",
-        "organization_project_environment_uid": None,
-        "organization_project_environment_name": None,
+        "organization_environment_uid": None,
+        "organization_environment_name": None,
     }
     payload.update(overrides)
     return payload
@@ -90,7 +90,7 @@ def _project_context():
 
 @pytest.mark.parametrize(
     "legacy_field",
-    ["organization_project_environment_uid", "project_uid", "repository_branch"],
+    ["organization_environment_uid", "project_uid", "repository_branch"],
 )
 def test_metatable_project_context_rejects_legacy_routing_fields(legacy_field):
     with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
@@ -378,7 +378,7 @@ def test_time_index_meta_table_register_injects_sdk_resolved_local_context(monke
     assert captured["payload"]["json"]["project_context"] == (
         _project_context().model_dump(mode="json")
     )
-    assert "organization_project_environment_uid" not in captured["payload"]["json"]
+    assert "organization_environment_uid" not in captured["payload"]["json"]
 
 
 def test_metatable_register_rejects_caller_project_context():
@@ -421,13 +421,13 @@ def test_meta_table_models_accept_backend_environment_identity(
 ):
     table = model(
         **_meta_table_response(
-            organization_project_environment_uid=environment_uid,
-            organization_project_environment_name=environment_name,
+            organization_environment_uid=environment_uid,
+            organization_environment_name=environment_name,
         )
     )
 
-    assert table.organization_project_environment_uid == environment_uid
-    assert table.organization_project_environment_name == environment_name
+    assert table.organization_environment_uid == environment_uid
+    assert table.organization_environment_name == environment_name
 
 
 def test_metatable_accepts_projection_relation_fields():
@@ -544,7 +544,7 @@ def test_meta_table_register_posts_contract_to_meta_table_endpoint(monkeypatch):
     assert captured["payload"]["json"]["project_context"] == {
         "project_branch_uid": "22222222-2222-4222-8222-222222222222",
     }
-    assert "organization_project_environment_uid" not in captured["payload"]["json"]
+    assert "organization_environment_uid" not in captured["payload"]["json"]
 
 
 def test_external_meta_table_register_uses_branch_derived_environment(monkeypatch):
@@ -556,8 +556,8 @@ def test_external_meta_table_register_uses_branch_derived_environment(monkeypatc
         return _Response(
             _meta_table_response(
                 management_mode="external_registered",
-                organization_project_environment_uid=environment_uid,
-                organization_project_environment_name="development",
+                organization_environment_uid=environment_uid,
+                organization_environment_name="development",
             ),
             status_code=201,
         )
@@ -574,8 +574,8 @@ def test_external_meta_table_register_uses_branch_derived_environment(monkeypatc
         **_registration_fields(),
     )
 
-    assert table.organization_project_environment_uid == environment_uid
-    assert captured["payload"]["json"]["organization_project_environment_uid"] == (
+    assert table.organization_environment_uid == environment_uid
+    assert captured["payload"]["json"]["organization_environment_uid"] == (
         environment_uid
     )
     assert "project_context" not in captured["payload"]["json"]
@@ -585,7 +585,7 @@ def test_external_meta_table_register_rejects_caller_environment():
     with pytest.raises(ValueError, match="SDK-controlled"):
         meta_table_models.MetaTable.register(
             management_mode="external_registered",
-            organization_project_environment_uid=(
+            organization_environment_uid=(
                 "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
             ),
             **_registration_fields(),
@@ -821,7 +821,7 @@ def test_meta_table_filter_by_body_posts_identifier_filters(monkeypatch):
     assert captured["payload"]["json"] == {
         "identifiers": ["mainsequence.examples.Asset"],
         "limit": 1,
-        "organization_project_environment_uid": ENVIRONMENT_UID,
+        "organization_environment_uid": ENVIRONMENT_UID,
     }
 
 

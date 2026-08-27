@@ -4,6 +4,7 @@ from .metatables import *  # noqa: F403
 from .models_foundry import *  # noqa: F403
 from .models_helpers import *  # noqa: F403
 from .models_user import *  # noqa: F403
+from .observability import *  # noqa: F403
 from .utils import (
     META_TABLES_CONSTANTS as META_TABLES_CONSTANTS,
 )

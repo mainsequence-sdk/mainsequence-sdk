@@ -100,17 +100,13 @@ class CurrentProjectBranchCollectionMixin:
 class CurrentProjectEnvironmentResourceMixin:
     """Scope project-facing Environment resources to the frozen Git context."""
 
-    SDK_OWNED_CONTEXT_FIELDS: ClassVar[frozenset[str]] = frozenset(
-        {"organization_project_environment_uid"}
-    )
+    SDK_OWNED_CONTEXT_FIELDS: ClassVar[frozenset[str]] = frozenset({"organization_environment_uid"})
 
     @classmethod
     def _sdk_owned_query_context(cls, operation: str) -> dict[str, str]:
-        from mainsequence.project_context import resolve_project_environment_uid
+        from mainsequence.project_context import resolve_organization_environment_uid
 
-        return {
-            "organization_project_environment_uid": resolve_project_environment_uid(operation)
-        }
+        return {"organization_environment_uid": resolve_organization_environment_uid(operation)}
 
     @classmethod
     def _sdk_owned_create_context(cls, operation: str) -> dict[str, str]:
@@ -652,9 +648,7 @@ class BaseObjectOrm:
     def create(cls, timeout=None, files=None, *args, **kwargs):
         base_url = cls.get_object_url()
         operation = f"{cls.__name__}.create"
-        data = cls.serialize_for_json(
-            cls._with_sdk_owned_create_context(operation, dict(kwargs))
-        )
+        data = cls.serialize_for_json(cls._with_sdk_owned_create_context(operation, dict(kwargs)))
         payload = {"json": data}
         if files:
             payload["files"] = files
@@ -850,9 +844,7 @@ class DetailActionObjectMixin:
         empty_response: Any = None,
     ) -> Any:
         payload = dict(payload or {})
-        query_context = type(self)._sdk_owned_query_context(
-            f"{type(self).__name__}.{action_name}"
-        )
+        query_context = type(self)._sdk_owned_query_context(f"{type(self).__name__}.{action_name}")
         if query_context:
             params = dict(payload.get("params") or {})
             type(self)._reject_sdk_context_overrides(

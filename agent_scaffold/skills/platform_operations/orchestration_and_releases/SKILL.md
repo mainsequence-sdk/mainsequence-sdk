@@ -63,8 +63,9 @@ This skill must not claim ownership of:
 1. `docs/tutorial/scheduling_jobs.md`
 2. `docs/knowledge/infrastructure/scheduling_jobs.md`
 3. `docs/knowledge/infrastructure/artifacts.md`
-4. `docs/tutorial/dashboards/streamlit/streamlit_integration_2.md` when deploying or verifying a Streamlit dashboard
-5. `docs/knowledge/dashboards/streamlit/index.md` when deployment metadata or SDK/dashboard boundary questions matter
+4. `docs/knowledge/infrastructure/owner_observability.md` when inspecting logs or resource usage
+5. `docs/tutorial/dashboards/streamlit/streamlit_integration_2.md` when deploying or verifying a Streamlit dashboard
+6. `docs/knowledge/dashboards/streamlit/index.md` when deployment metadata or SDK/dashboard boundary questions matter
 
 If the task touches deployed FastAPI APIs, also read the relevant API skill/docs before changing the operational workflow.
 
@@ -183,6 +184,27 @@ Verify:
 - the job exists
 - the run was triggered manually when immediate validation matters, or has already been triggered by the scheduler
 - the logs and run status match expectations
+
+Use owner-scoped observability rather than infrastructure discovery:
+
+- `JobRun.get_logs()` and `JobRun.get_resource_usage()`
+- `ResourceRelease.get_logs()` and `ResourceRelease.get_resource_usage()`
+- `Agent.get_logs()` and `Agent.get_resource_usage()`
+- `AgentSession.get_logs()` for one fixed session
+- `mainsequence project jobs runs logs <JOB_RUN_UID>`
+- `mainsequence project jobs runs resource-usage <JOB_RUN_UID>`
+- `mainsequence project project_resource logs <RESOURCE_RELEASE_UID>`
+- `mainsequence project project_resource resource-usage <RESOURCE_RELEASE_UID>`
+- `mainsequence agent logs <AGENT_UID>`
+- `mainsequence agent resource-usage <AGENT_UID>`
+- `mainsequence agent session logs <AGENT_SESSION_UID>`
+
+Do not ask the user for an Environment UID for these owner operations. The SDK
+preserves the backend-owned capability scope. Do not discover Knative services,
+revisions, pods, namespaces, or provider resources to retrieve telemetry.
+
+DeploymentRun build and orchestration logs remain a separate product surface;
+do not parse them as application-runtime `OwnerLogPage` rows.
 
 ### 4. Workflow application is backend-owned
 

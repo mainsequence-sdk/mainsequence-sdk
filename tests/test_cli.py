@@ -56,7 +56,7 @@ def cli_mod(monkeypatch):
             canonical_repository_identity=("github.com/mainsequence-sdk/cli-test-project"),
             commit_sha="a" * 40,
             project_branch_uid="project-branch-uid-123",
-            organization_project_environment_uid="environment-uid-123",
+            organization_environment_uid="environment-uid-123",
             status="resolved",
             detail="",
         ),
@@ -597,7 +597,7 @@ def test_list_agents_uses_client_model(cli_mod, monkeypatch):
     monkeypatch.setattr(api_mod, "_run_sdk_model_operation", _run_sdk_model_operation)
 
     out = api_mod.list_agents(
-        organization_project_environment_uid=environment_uid,
+        organization_environment_uid=environment_uid,
         timeout=9,
         filters={"agent_type": "custom"},
     )
@@ -607,7 +607,7 @@ def test_list_agents_uses_client_model(cli_mod, monkeypatch):
         "timeout": 9,
         "filters": {
             "agent_type": "custom",
-            "organization_project_environment_uid": environment_uid,
+            "organization_environment_uid": environment_uid,
         },
     }
     assert out == [
@@ -692,14 +692,12 @@ def test_semantic_search_agents_uses_client_model(cli_mod, monkeypatch):
                 cls,
                 q,
                 *,
-                organization_project_environment_uid,
+                organization_environment_uid,
                 limit=20,
                 timeout=None,
             ):
                 captured["q"] = q
-                captured["organization_project_environment_uid"] = (
-                    organization_project_environment_uid
-                )
+                captured["organization_environment_uid"] = organization_environment_uid
                 captured["limit"] = limit
                 captured["timeout"] = timeout
                 return [FakeSearchResult()]
@@ -710,7 +708,7 @@ def test_semantic_search_agents_uses_client_model(cli_mod, monkeypatch):
 
     out = api_mod.semantic_search_agents(
         "data research",
-        organization_project_environment_uid=environment_uid,
+        organization_environment_uid=environment_uid,
         limit=10,
         timeout=17,
     )
@@ -718,7 +716,7 @@ def test_semantic_search_agents_uses_client_model(cli_mod, monkeypatch):
         "module_name": "mainsequence.client.agent_runtime_models",
         "class_name": "Agent",
         "q": "data research",
-        "organization_project_environment_uid": environment_uid,
+        "organization_environment_uid": environment_uid,
         "limit": 10,
         "timeout": 17,
     }
@@ -4147,7 +4145,7 @@ def test_list_project_jobs_uses_client_model(cli_mod, monkeypatch):
                         model_dump=lambda: {
                             "uid": "7d0ab07c-d1c0-4b7f-9c69-3c1a41c0a4da",
                             "name": "daily-run",
-                            "organization_project_environment_uid": (
+                            "organization_environment_uid": (
                                 "58218213-5e4e-43de-a5bd-6757f4e1c8f6"
                             ),
                             "project_repo_hash": "abc123",
@@ -4189,9 +4187,7 @@ def test_list_project_jobs_uses_client_model(cli_mod, monkeypatch):
         {
             "uid": "7d0ab07c-d1c0-4b7f-9c69-3c1a41c0a4da",
             "name": "daily-run",
-            "organization_project_environment_uid": (
-                "58218213-5e4e-43de-a5bd-6757f4e1c8f6"
-            ),
+            "organization_environment_uid": ("58218213-5e4e-43de-a5bd-6757f4e1c8f6"),
             "project_repo_hash": "abc123",
             "execution_path": "src.jobs.daily:main",
             "app_name": None,
@@ -5803,20 +5799,17 @@ def test_get_project_job_run_logs_uses_client_model(cli_mod, monkeypatch):
                     "project_name": "market-data-service",
                     "project_branch_uid": "5a28020a-0f1b-47ee-aab8-334286234bea",
                     "project_branch_name": "main",
-                    "organization_project_environment_uid": (
-                        "58218213-5e4e-43de-a5bd-6757f4e1c8f6"
-                    ),
+                    "organization_environment_uid": ("58218213-5e4e-43de-a5bd-6757f4e1c8f6"),
                     "status": "RUNNING",
                     "runtime_image_uid": "6cfdb152-923e-45b9-a150-c4541c68b0d1",
                     "runtime_image_digest": "sha256:" + "b" * 64,
                 }
             )
 
-        def get_logs(self, *, timeout=None):
+        def get_logs(self, *, timeout=None, **filters):
             captured["get_logs_timeout"] = timeout
-            captured["organization_project_environment_uid"] = (
-                self.organization_project_environment_uid
-            )
+            captured["get_logs_filters"] = filters
+            captured["organization_environment_uid"] = self.organization_environment_uid
             return {
                 "job_run_uid": self.uid,
                 "status": self.status,
@@ -5835,9 +5828,17 @@ def test_get_project_job_run_logs_uses_client_model(cli_mod, monkeypatch):
     out = api_mod.get_project_job_run_logs("4c1d77c8-8a42-42b8-a9c1-06be9a336e5d")
     assert captured["job_run_uid_arg"] == "4c1d77c8-8a42-42b8-a9c1-06be9a336e5d"
     assert captured["get_logs_timeout"] is None
-    assert captured["organization_project_environment_uid"] == (
-        "58218213-5e4e-43de-a5bd-6757f4e1c8f6"
-    )
+    assert captured["get_logs_filters"] == {
+        "start": None,
+        "end": None,
+        "cursor": None,
+        "limit": None,
+        "severity": None,
+        "request_id": None,
+        "event": None,
+        "outcome": None,
+    }
+    assert captured["organization_environment_uid"] == ("58218213-5e4e-43de-a5bd-6757f4e1c8f6")
     assert captured["jwt"] == ("acc", "ref")
     assert out == {
         "job_run_uid": "4c1d77c8-8a42-42b8-a9c1-06be9a336e5d",
@@ -6409,7 +6410,7 @@ def test_agent_list(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(
         cli_mod,
         "list_agents",
-        lambda organization_project_environment_uid, timeout=None, filters=None: [
+        lambda organization_environment_uid, timeout=None, filters=None: [
             {
                 "uid": "e0e75693-4110-464c-93e0-82c7fd9c9a23",
                 "name": "Research Copilot",
@@ -6442,7 +6443,7 @@ def test_agent_list_json(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(
         cli_mod,
         "list_agents",
-        lambda organization_project_environment_uid, timeout=None, filters=None: [
+        lambda organization_environment_uid, timeout=None, filters=None: [
             {
                 "uid": "e0e75693-4110-464c-93e0-82c7fd9c9a23",
                 "name": "Research Copilot",
@@ -6471,11 +6472,11 @@ def test_agent_search(cli_mod, runner, monkeypatch):
     environment_uid = "22222222-2222-4222-8222-222222222222"
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
 
-    def _search(q, *, organization_project_environment_uid, limit=20, timeout=None):
+    def _search(q, *, organization_environment_uid, limit=20, timeout=None):
         captured.update(
             {
                 "q": q,
-                "organization_project_environment_uid": organization_project_environment_uid,
+                "organization_environment_uid": organization_environment_uid,
                 "limit": limit,
                 "timeout": timeout,
             }
@@ -6510,7 +6511,7 @@ def test_agent_search(cli_mod, runner, monkeypatch):
     assert result.exit_code == 0
     assert captured == {
         "q": "data research",
-        "organization_project_environment_uid": environment_uid,
+        "organization_environment_uid": environment_uid,
         "limit": 10,
         "timeout": 17,
     }
@@ -6637,6 +6638,70 @@ def test_agent_detail_uses_agent_uid(cli_mod, runner, monkeypatch):
     assert captured == {"agent_uid": agent_uid, "timeout": 11}
     assert "Agent" in result.output
     assert agent_uid[:8] in result.output
+
+
+def test_agent_logs_forwards_owner_filters(cli_mod, runner, monkeypatch):
+    captured = {}
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+
+    def fake_get_agent_logs(agent_uid, **kwargs):
+        captured.update(agent_uid=agent_uid, **kwargs)
+        return {
+            "organization_environment_uid": "environment-uid",
+            "start": 100,
+            "end": 200,
+            "next_cursor": None,
+            "truncated": False,
+            "rows": [{"severity": "ERROR", "message": "failed"}],
+        }
+
+    monkeypatch.setattr(cli_mod, "get_agent_logs", fake_get_agent_logs)
+
+    result = runner.invoke(
+        cli_mod.app,
+        [
+            "agent",
+            "logs",
+            "agent-uid-1",
+            "--severity",
+            "ERROR",
+            "--agent-session-uid",
+            "session-uid-1",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured["agent_uid"] == "agent-uid-1"
+    assert captured["severity"] == "ERROR"
+    assert captured["agent_session_uid"] == "session-uid-1"
+    assert "failed" in result.output
+
+
+def test_agent_session_logs_has_fixed_owner_path(cli_mod, runner, monkeypatch):
+    captured = {}
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+
+    def fake_get_agent_session_logs(agent_session_uid, **kwargs):
+        captured.update(agent_session_uid=agent_session_uid, **kwargs)
+        return {
+            "organization_environment_uid": "environment-uid",
+            "start": 100,
+            "end": 200,
+            "next_cursor": None,
+            "truncated": False,
+            "rows": [],
+        }
+
+    monkeypatch.setattr(cli_mod, "get_agent_session_logs", fake_get_agent_session_logs)
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["agent", "session", "logs", "session-uid-1", "--event", "tool.completed"],
+    )
+
+    assert result.exit_code == 0
+    assert captured["agent_session_uid"] == "session-uid-1"
+    assert captured["event"] == "tool.completed"
 
 
 def test_agent_session_list_scoped_by_agent_uid(cli_mod, runner, monkeypatch):
@@ -8657,7 +8722,7 @@ def test_project_job_runs_logs(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(
         cli_mod,
         "get_project_job_run_logs",
-        lambda job_run_uid, timeout=None: {
+        lambda job_run_uid, timeout=None, **kwargs: {
             "job_run_uid": job_run_uid,
             "status": "COMPLETED",
             "rows": [
@@ -8702,7 +8767,9 @@ def test_project_job_runs_logs_polls_and_prints_incrementally(cli_mod, runner, m
     sleeps = []
 
     monkeypatch.setattr(
-        cli_mod, "get_project_job_run_logs", lambda job_run_uid, timeout=None: next(responses)
+        cli_mod,
+        "get_project_job_run_logs",
+        lambda job_run_uid, timeout=None, **kwargs: next(responses),
     )
     monkeypatch.setattr(cli_mod.time, "sleep", lambda seconds: sleeps.append(seconds))
 
@@ -8746,7 +8813,9 @@ def test_project_job_runs_logs_stops_after_max_wait(cli_mod, runner, monkeypatch
     monotonic_values = iter([100.0, 100.0, 106.0])
 
     monkeypatch.setattr(
-        cli_mod, "get_project_job_run_logs", lambda job_run_uid, timeout=None: next(responses)
+        cli_mod,
+        "get_project_job_run_logs",
+        lambda job_run_uid, timeout=None, **kwargs: next(responses),
     )
     monkeypatch.setattr(cli_mod.time, "sleep", lambda seconds: sleeps.append(seconds))
     monkeypatch.setattr(cli_mod.time, "monotonic", lambda: next(monotonic_values))

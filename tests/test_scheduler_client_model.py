@@ -11,7 +11,7 @@ UPDATE_NODE_UID = "00000000-0000-4000-8000-000000000002"
 def _scheduler_payload():
     return {
         "uid": SCHEDULER_UID,
-        "organization_project_environment_uid": ENVIRONMENT_UID,
+        "organization_environment_uid": ENVIRONMENT_UID,
         "name": "tutorial",
         "is_running": False,
         "running_process_pid": None,
@@ -43,7 +43,7 @@ class _SchedulerResponse:
 def test_scheduler_strict_model_accepts_environment_projection():
     scheduler = core_mod.Scheduler.model_validate(_scheduler_payload())
 
-    assert scheduler.organization_project_environment_uid == ENVIRONMENT_UID
+    assert scheduler.organization_environment_uid == ENVIRONMENT_UID
 
     with pytest.raises(ValidationError, match="unexpected_projection"):
         core_mod.Scheduler.model_validate(
@@ -72,11 +72,11 @@ def test_scheduler_build_derives_environment_without_request_override(monkeypatc
     )
 
     request_body = captured["payload"]["json"]
-    assert "organization_project_environment_uid" not in request_body
-    assert "organization_project_environment_uid" not in request_body["scheduler_kwargs"]
+    assert "organization_environment_uid" not in request_body
+    assert "organization_environment_uid" not in request_body["scheduler_kwargs"]
     assert request_body["update_node_uids"] == [UPDATE_NODE_UID]
     assert captured["time_out"] == 11
-    assert scheduler.organization_project_environment_uid == ENVIRONMENT_UID
+    assert scheduler.organization_environment_uid == ENVIRONMENT_UID
 
 
 def test_scheduler_get_for_update_node_accepts_environment_projection(monkeypatch):
@@ -97,7 +97,7 @@ def test_scheduler_get_for_update_node_accepts_environment_projection(monkeypatc
 
     assert captured["r_type"] == "GET"
     assert captured["payload"] == {"params": {"update_node_uid": UPDATE_NODE_UID}}
-    assert scheduler.organization_project_environment_uid == ENVIRONMENT_UID
+    assert scheduler.organization_environment_uid == ENVIRONMENT_UID
 
 
 def test_scheduler_assign_accepts_environment_projection(monkeypatch):
@@ -119,4 +119,4 @@ def test_scheduler_assign_accepts_environment_projection(monkeypatch):
 
     assert captured["r_type"] == "PATCH"
     assert captured["payload"] == {"json": {"update_node_uids": [UPDATE_NODE_UID]}}
-    assert assigned.organization_project_environment_uid == ENVIRONMENT_UID
+    assert assigned.organization_environment_uid == ENVIRONMENT_UID

@@ -70,7 +70,7 @@ repository_ref
 commit_sha
 project_uid | None
 project_branch_uid | None
-organization_project_environment_uid | None
+organization_environment_uid | None
 metatables_data_source | None
 status
 process_id
@@ -167,13 +167,13 @@ not Environment identity and cannot override the Environment derived from the
 ProjectBranch.
 
 The public project-facing SDK API accepts neither
-`organization_project_environment_uid` nor a caller-supplied ProjectBranch UID.
+`organization_environment_uid` nor a caller-supplied ProjectBranch UID.
 The SDK resolves the current ProjectBranch once and transports its derived
 Environment UID as an SDK-owned wire field:
 
 ```json
 {
-  "organization_project_environment_uid": "<branch-derived Environment UID>"
+  "organization_environment_uid": "<branch-derived Environment UID>"
 }
 ```
 
@@ -203,8 +203,8 @@ project-facing SDK contract and must be named and authorized as administrative
 surfaces; they are not a fallback for project code.
 
 Backend responses expose the derived
-`organization_project_environment_uid` and
-`organization_project_environment_name` as required read-only projections. The
+`organization_environment_uid` and
+`organization_environment_name` as required read-only projections. The
 SDK models parse those fields but never use them as write authority.
 
 ## Coordinated Implementation Plan

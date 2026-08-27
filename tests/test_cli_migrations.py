@@ -101,7 +101,7 @@ def _resolved_project_branch_context(monkeypatch):
                 uid=project_branch_uid,
                 project_uid=project_uid,
                 repository_branch=resolved_source.repository_branch,
-                organization_project_environment_uid=environment_uid,
+                organization_environment_uid=environment_uid,
                 metatables_data_source=None,
             ),
         ),

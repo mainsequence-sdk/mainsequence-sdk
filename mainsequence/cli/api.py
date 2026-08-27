@@ -1159,7 +1159,7 @@ def delete_organization_team(
 
 def list_agents(
     *,
-    organization_project_environment_uid: str,
+    organization_environment_uid: str,
     timeout: int | None = None,
     filters: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
@@ -1168,7 +1168,7 @@ def list_agents(
     """
     try:
         read_params = dict(filters or {})
-        read_params["organization_project_environment_uid"] = organization_project_environment_uid
+        read_params["organization_environment_uid"] = organization_environment_uid
         payload = _run_sdk_model_operation(
             module_name="mainsequence.client.agent_runtime_models",
             class_name="Agent",
@@ -1205,10 +1205,93 @@ def get_agent(
         raise ApiError(f"Agent fetch failed: {e}") from e
 
 
+def _get_owner_observability(
+    *,
+    module_name: str,
+    class_name: str,
+    owner_uid: str,
+    action_name: str,
+    action_kwargs: dict[str, Any],
+    timeout: int | None,
+) -> dict[str, Any]:
+    """Run one SDK owner-observability action through the authenticated CLI client."""
+
+    try:
+
+        def _run(ClientModel):
+            owner = ClientModel.get(pk=str(owner_uid), timeout=timeout)
+            result = getattr(owner, action_name)(timeout=timeout, **action_kwargs)
+            return _sdk_object_to_dict(result)
+
+        return _run_sdk_model_operation(
+            module_name=module_name,
+            class_name=class_name,
+            operation=_run,
+        )
+    except Exception as e:
+        err_name = type(e).__name__
+        if err_name == "NotFoundError":
+            raise ApiError(f"{class_name} not found: {owner_uid}") from e
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"{class_name} {action_name} failed: {e}") from e
+
+
+def get_agent_logs(
+    agent_uid: str,
+    *,
+    start: int | float | None = None,
+    end: int | float | None = None,
+    cursor: str | None = None,
+    limit: int | None = None,
+    severity: str | None = None,
+    request_id: str | None = None,
+    event: str | None = None,
+    outcome: str | None = None,
+    agent_session_uid: str | None = None,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    return _get_owner_observability(
+        module_name="mainsequence.client.agent_runtime_models",
+        class_name="Agent",
+        owner_uid=agent_uid,
+        action_name="get_logs",
+        action_kwargs={
+            "start": start,
+            "end": end,
+            "cursor": cursor,
+            "limit": limit,
+            "severity": severity,
+            "request_id": request_id,
+            "event": event,
+            "outcome": outcome,
+            "agent_session_uid": agent_session_uid,
+        },
+        timeout=timeout,
+    )
+
+
+def get_agent_resource_usage(
+    agent_uid: str,
+    *,
+    start: int | float | None = None,
+    end: int | float | None = None,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    return _get_owner_observability(
+        module_name="mainsequence.client.agent_runtime_models",
+        class_name="Agent",
+        owner_uid=agent_uid,
+        action_name="get_resource_usage",
+        action_kwargs={"start": start, "end": end},
+        timeout=timeout,
+    )
+
+
 def semantic_search_agents(
     q: str,
     *,
-    organization_project_environment_uid: str,
+    organization_environment_uid: str,
     limit: int = 20,
     timeout: int | None = None,
 ) -> list[dict[str, Any]]:
@@ -1221,7 +1304,7 @@ def semantic_search_agents(
             class_name="Agent",
             operation=lambda ClientAgent: ClientAgent.semantic_search(
                 q,
-                organization_project_environment_uid=organization_project_environment_uid,
+                organization_environment_uid=organization_environment_uid,
                 limit=limit,
                 timeout=timeout,
             ),
@@ -1407,6 +1490,38 @@ def get_agent_session(
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
         raise ApiError(f"Agent session fetch failed: {e}") from e
+
+
+def get_agent_session_logs(
+    agent_session_uid: str,
+    *,
+    start: int | float | None = None,
+    end: int | float | None = None,
+    cursor: str | None = None,
+    limit: int | None = None,
+    severity: str | None = None,
+    request_id: str | None = None,
+    event: str | None = None,
+    outcome: str | None = None,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    return _get_owner_observability(
+        module_name="mainsequence.client.agent_runtime_models",
+        class_name="AgentSession",
+        owner_uid=agent_session_uid,
+        action_name="get_logs",
+        action_kwargs={
+            "start": start,
+            "end": end,
+            "cursor": cursor,
+            "limit": limit,
+            "severity": severity,
+            "request_id": request_id,
+            "event": event,
+            "outcome": outcome,
+        },
+        timeout=timeout,
+    )
 
 
 def send_agent_session_a2a_message(
@@ -2404,6 +2519,55 @@ def get_resource_release(
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
         raise ApiError(f"Resource release fetch failed: {e}") from e
+
+
+def get_resource_release_logs(
+    release_uid: str,
+    *,
+    start: int | float | None = None,
+    end: int | float | None = None,
+    cursor: str | None = None,
+    limit: int | None = None,
+    severity: str | None = None,
+    request_id: str | None = None,
+    event: str | None = None,
+    outcome: str | None = None,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    return _get_owner_observability(
+        module_name="mainsequence.client.models_helpers",
+        class_name="ResourceRelease",
+        owner_uid=release_uid,
+        action_name="get_logs",
+        action_kwargs={
+            "start": start,
+            "end": end,
+            "cursor": cursor,
+            "limit": limit,
+            "severity": severity,
+            "request_id": request_id,
+            "event": event,
+            "outcome": outcome,
+        },
+        timeout=timeout,
+    )
+
+
+def get_resource_release_resource_usage(
+    release_uid: str,
+    *,
+    start: int | float | None = None,
+    end: int | float | None = None,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    return _get_owner_observability(
+        module_name="mainsequence.client.models_helpers",
+        class_name="ResourceRelease",
+        owner_uid=release_uid,
+        action_name="get_resource_usage",
+        action_kwargs={"start": start, "end": end},
+        timeout=timeout,
+    )
 
 
 def delete_resource_release(
@@ -4733,6 +4897,14 @@ def list_project_job_runs(
 def get_project_job_run_logs(
     job_run_uid: str,
     *,
+    start: int | float | None = None,
+    end: int | float | None = None,
+    cursor: str | None = None,
+    limit: int | None = None,
+    severity: str | None = None,
+    request_id: str | None = None,
+    event: str | None = None,
+    outcome: str | None = None,
     timeout: int | None = None,
 ) -> dict[str, Any]:
     """
@@ -4787,12 +4959,21 @@ def get_project_job_run_logs(
         ClientJobRun.ROOT_URL = root_url
 
         job_run = ClientJobRun.get(pk=job_run_uid, timeout=timeout)
-        payload = job_run.get_logs(timeout=timeout)
-        if isinstance(payload, dict):
-            return payload
-        if hasattr(payload, "model_dump"):
-            return payload.model_dump()
-        return {"job_run_uid": job_run_uid, "rows": []}
+        result = job_run.get_logs(
+            start=start,
+            end=end,
+            cursor=cursor,
+            limit=limit,
+            severity=severity,
+            request_id=request_id,
+            event=event,
+            outcome=outcome,
+            timeout=timeout,
+        )
+        payload = _sdk_object_to_dict(result)
+        payload["job_run_uid"] = str(job_run.uid or job_run_uid)
+        payload["status"] = job_run.status
+        return payload
 
     except Exception as e:
         err_name = type(e).__name__
@@ -4827,6 +5008,23 @@ def get_project_job_run_logs(
                 os.environ.pop(k, None)
             else:
                 os.environ[k] = v
+
+
+def get_project_job_run_resource_usage(
+    job_run_uid: str,
+    *,
+    start: int | float | None = None,
+    end: int | float | None = None,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    return _get_owner_observability(
+        module_name="mainsequence.client.models_helpers",
+        class_name="JobRun",
+        owner_uid=job_run_uid,
+        action_name="get_resource_usage",
+        action_kwargs={"start": start, "end": end},
+        timeout=timeout,
+    )
 
 
 def _json_results(r: requests.Response) -> list[dict]:

@@ -111,7 +111,10 @@ from .api import (
     delete_secret,
     fetch_platform_project_skill_catalog,
     get_agent,
+    get_agent_logs,
+    get_agent_resource_usage,
     get_agent_session,
+    get_agent_session_logs,
     get_constant,
     get_current_user_profile,
     get_data_node_storage,
@@ -124,9 +127,12 @@ from .api import (
     get_project_image,
     get_project_job,
     get_project_job_run_logs,
+    get_project_job_run_resource_usage,
     get_project_repository,
     get_projects,
     get_resource_release,
+    get_resource_release_logs,
+    get_resource_release_resource_usage,
     get_secret,
     list_agent_sessions,
     list_agent_users_can_edit,
@@ -3456,8 +3462,67 @@ def _format_agent_session_details(
     ]
 
 
+def _render_owner_logs(payload: dict[str, object], *, title: str) -> None:
+    if _emit_json(payload):
+        return
+    rows = payload.get("rows") or []
+    if not isinstance(rows, list):
+        rows = [rows]
+    print_kv(
+        title,
+        [
+            ("Environment UID", str(payload.get("organization_environment_uid") or "-")),
+            ("Start", str(payload.get("start") or "-")),
+            ("End", str(payload.get("end") or "-")),
+            ("Truncated", str(bool(payload.get("truncated"))).lower()),
+            ("Next Cursor", str(payload.get("next_cursor") or "-")),
+        ],
+    )
+    for row in rows:
+        typer.echo(_format_job_run_log_row(row))
+    if not rows:
+        info("No logs matched the requested window and filters.")
+
+
+def _render_owner_resource_usage(payload: dict[str, object], *, title: str) -> None:
+    if _emit_json(payload):
+        return
+    summary = payload.get("summary")
+    summary = summary if isinstance(summary, dict) else {}
+    print_kv(
+        title,
+        [
+            ("Start", str(payload.get("start") or "-")),
+            ("End", str(payload.get("end") or "-")),
+            ("Step Seconds", str(payload.get("step_seconds") or "-")),
+            ("CPU Current", str(summary.get("cpu_cores_current") or "-")),
+            ("CPU Peak", str(summary.get("cpu_cores_peak") or "-")),
+            ("Memory GiB Current", str(summary.get("memory_gib_current") or "-")),
+            ("Memory GiB Peak", str(summary.get("memory_gib_peak") or "-")),
+            ("Disk GiB Current", str(summary.get("disk_gib_current") or "-")),
+            ("Disk GiB Peak", str(summary.get("disk_gib_peak") or "-")),
+        ],
+    )
+    rows = payload.get("rows") or []
+    if isinstance(rows, list) and rows:
+        print_table(
+            "Usage Samples",
+            ["Time", "CPU Cores", "Memory GiB", "Disk GiB"],
+            [
+                [
+                    str(row.get("time") or "-"),
+                    str(row.get("cpu_cores") or "-"),
+                    str(row.get("memory_gib") or "-"),
+                    str(row.get("disk_gib") or "-"),
+                ]
+                for row in rows
+                if isinstance(row, dict)
+            ],
+        )
+
+
 def _agent_list_impl(
-    organization_project_environment_uid: str,
+    organization_environment_uid: str,
     timeout: int | None,
     filter_entries: list[str] | None,
     show_filters: bool,
@@ -3472,7 +3537,7 @@ def _agent_list_impl(
 
     try:
         agents = list_agents(
-            organization_project_environment_uid=organization_project_environment_uid,
+            organization_environment_uid=organization_environment_uid,
             timeout=timeout,
             filters=filters,
         )
@@ -3546,7 +3611,7 @@ def _agent_detail_impl(
 def _agent_search_impl(
     *,
     q: str,
-    organization_project_environment_uid: str,
+    organization_environment_uid: str,
     limit: int,
     timeout: int | None,
 ) -> None:
@@ -3555,7 +3620,7 @@ def _agent_search_impl(
     try:
         results = semantic_search_agents(
             q,
-            organization_project_environment_uid=organization_project_environment_uid,
+            organization_environment_uid=organization_environment_uid,
             limit=limit,
             timeout=timeout,
         )
@@ -4685,7 +4750,7 @@ def _print_data_node_storage_search_section(
 
 @agent.command("list")
 def agent_list_cmd(
-    organization_project_environment_uid: uuid.UUID = typer.Option(
+    organization_environment_uid: uuid.UUID = typer.Option(
         ...,
         "--environment-uid",
         help="Organization Environment UID that scopes Agent discovery.",
@@ -4700,7 +4765,7 @@ def agent_list_cmd(
     List agents visible to the authenticated user.
     """
     _agent_list_impl(
-        organization_project_environment_uid=str(organization_project_environment_uid),
+        organization_environment_uid=str(organization_environment_uid),
         timeout=timeout,
         filter_entries=filter_entries,
         show_filters=show_filters,
@@ -4723,10 +4788,71 @@ def agent_detail_cmd(
     _agent_detail_impl(agent_uid=agent_uid, timeout=timeout)
 
 
+@agent.command("logs")
+def agent_logs_cmd(
+    agent_uid: str = pydantic_argument(AGENT_MODEL_REF, "uid", ..., help="Agent UID."),
+    start: float | None = typer.Option(
+        None, "--start", help="Window start as epoch seconds or milliseconds."
+    ),
+    end: float | None = typer.Option(
+        None, "--end", help="Window end as epoch seconds or milliseconds."
+    ),
+    cursor: str | None = typer.Option(None, "--cursor", help="Opaque continuation cursor."),
+    limit: int | None = typer.Option(None, "--limit", min=1, max=500),
+    severity: str | None = typer.Option(None, "--severity"),
+    request_id: str | None = typer.Option(None, "--request-id"),
+    event: str | None = typer.Option(None, "--event"),
+    outcome: str | None = typer.Option(None, "--outcome"),
+    agent_session_uid: str | None = typer.Option(None, "--agent-session-uid"),
+    timeout: int | None = typer.Option(None, "--timeout"),
+):
+    """Read application logs owned by an Agent."""
+    _require_login()
+    try:
+        payload = get_agent_logs(
+            agent_uid,
+            start=start,
+            end=end,
+            cursor=cursor,
+            limit=limit,
+            severity=severity,
+            request_id=request_id,
+            event=event,
+            outcome=outcome,
+            agent_session_uid=agent_session_uid,
+            timeout=timeout,
+        )
+    except ApiError as e:
+        error(f"Agent logs fetch failed: {e}")
+        raise typer.Exit(1) from e
+    _render_owner_logs(payload, title="Agent Logs")
+
+
+@agent.command("resource-usage")
+def agent_resource_usage_cmd(
+    agent_uid: str = pydantic_argument(AGENT_MODEL_REF, "uid", ..., help="Agent UID."),
+    start: float | None = typer.Option(
+        None, "--start", help="Window start as epoch seconds or milliseconds."
+    ),
+    end: float | None = typer.Option(
+        None, "--end", help="Window end as epoch seconds or milliseconds."
+    ),
+    timeout: int | None = typer.Option(None, "--timeout"),
+):
+    """Read aggregate CPU, memory, and disk usage owned by an Agent."""
+    _require_login()
+    try:
+        payload = get_agent_resource_usage(agent_uid, start=start, end=end, timeout=timeout)
+    except ApiError as e:
+        error(f"Agent resource usage fetch failed: {e}")
+        raise typer.Exit(1) from e
+    _render_owner_resource_usage(payload, title="Agent Resource Usage")
+
+
 @agent.command("search")
 def agent_search_cmd(
     q: str = typer.Argument(..., help="Natural-language query to match against agents."),
-    organization_project_environment_uid: uuid.UUID = typer.Option(
+    organization_environment_uid: uuid.UUID = typer.Option(
         ...,
         "--environment-uid",
         help="Organization Environment UID that scopes Agent discovery.",
@@ -4750,7 +4876,7 @@ def agent_search_cmd(
     """
     _agent_search_impl(
         q=q,
-        organization_project_environment_uid=str(organization_project_environment_uid),
+        organization_environment_uid=str(organization_environment_uid),
         limit=limit,
         timeout=timeout,
     )
@@ -5043,6 +5169,49 @@ def agent_session_detail_cmd(
     ```
     """
     _agent_session_detail_impl(agent_session_uid=agent_session_uid, timeout=timeout)
+
+
+@agent_session_group.command("logs")
+def agent_session_logs_cmd(
+    agent_session_uid: str = pydantic_argument(
+        AGENT_SESSION_MODEL_REF,
+        "uid",
+        ...,
+        help="Agent session UID.",
+    ),
+    start: float | None = typer.Option(
+        None, "--start", help="Window start as epoch seconds or milliseconds."
+    ),
+    end: float | None = typer.Option(
+        None, "--end", help="Window end as epoch seconds or milliseconds."
+    ),
+    cursor: str | None = typer.Option(None, "--cursor", help="Opaque continuation cursor."),
+    limit: int | None = typer.Option(None, "--limit", min=1, max=500),
+    severity: str | None = typer.Option(None, "--severity"),
+    request_id: str | None = typer.Option(None, "--request-id"),
+    event: str | None = typer.Option(None, "--event"),
+    outcome: str | None = typer.Option(None, "--outcome"),
+    timeout: int | None = typer.Option(None, "--timeout"),
+):
+    """Read logs fixed to one AgentSession owner path."""
+    _require_login()
+    try:
+        payload = get_agent_session_logs(
+            agent_session_uid,
+            start=start,
+            end=end,
+            cursor=cursor,
+            limit=limit,
+            severity=severity,
+            request_id=request_id,
+            event=event,
+            outcome=outcome,
+            timeout=timeout,
+        )
+    except ApiError as e:
+        error(f"Agent session logs fetch failed: {e}")
+        raise typer.Exit(1) from e
+    _render_owner_logs(payload, title="Agent Session Logs")
 
 
 @agent.command("can_view")
@@ -8373,6 +8542,70 @@ def project_project_resource_delete_fastapi_cmd(
     )
 
 
+@project_project_resource_group.command("logs")
+def project_resource_logs_cmd(
+    release_uid: str = typer.Argument(..., help="ResourceRelease UID."),
+    start: float | None = typer.Option(
+        None, "--start", help="Window start as epoch seconds or milliseconds."
+    ),
+    end: float | None = typer.Option(
+        None, "--end", help="Window end as epoch seconds or milliseconds."
+    ),
+    cursor: str | None = typer.Option(None, "--cursor", help="Opaque continuation cursor."),
+    limit: int | None = typer.Option(None, "--limit", min=1, max=500),
+    severity: str | None = typer.Option(None, "--severity"),
+    request_id: str | None = typer.Option(None, "--request-id"),
+    event: str | None = typer.Option(None, "--event"),
+    outcome: str | None = typer.Option(None, "--outcome"),
+    timeout: int | None = typer.Option(None, "--timeout"),
+):
+    """Read application logs owned by a runtime-backed ResourceRelease."""
+    _require_login()
+    try:
+        payload = get_resource_release_logs(
+            release_uid,
+            start=start,
+            end=end,
+            cursor=cursor,
+            limit=limit,
+            severity=severity,
+            request_id=request_id,
+            event=event,
+            outcome=outcome,
+            timeout=timeout,
+        )
+    except ApiError as e:
+        error(f"Resource release logs fetch failed: {e}")
+        raise typer.Exit(1) from e
+    _render_owner_logs(payload, title="Resource Release Logs")
+
+
+@project_project_resource_group.command("resource-usage")
+def project_resource_usage_cmd(
+    release_uid: str = typer.Argument(..., help="ResourceRelease UID."),
+    start: float | None = typer.Option(
+        None, "--start", help="Window start as epoch seconds or milliseconds."
+    ),
+    end: float | None = typer.Option(
+        None, "--end", help="Window end as epoch seconds or milliseconds."
+    ),
+    timeout: int | None = typer.Option(None, "--timeout"),
+):
+    """Read aggregate runtime usage owned by a ResourceRelease."""
+    _require_login()
+    try:
+        payload = get_resource_release_resource_usage(
+            release_uid,
+            start=start,
+            end=end,
+            timeout=timeout,
+        )
+    except ApiError as e:
+        error(f"Resource release usage fetch failed: {e}")
+        raise typer.Exit(1) from e
+    _render_owner_resource_usage(payload, title="Resource Release Resource Usage")
+
+
 def _project_images_list_impl(
     project_id: str | None,
     path: str | None,
@@ -8981,13 +9214,16 @@ def _format_job_run_log_row(row) -> str:
     if not isinstance(row, dict):
         return str(row)
 
-    timestamp = str(row.get("timestamp") or "").strip()
-    level = str(row.get("level") or "").strip().upper()
+    timestamp = str(row.get("timestamp") or row.get("time") or "").strip()
+    level = str(row.get("severity") or row.get("level") or "").strip().upper()
     event = str(row.get("event") or "").strip()
+    message = str(row.get("message") or row.get("text") or "").strip()
 
     parts = [part for part in (timestamp, level, event) if part]
-    if parts:
-        return " | ".join(parts)
+    if parts and message:
+        return f"{' | '.join(parts)} | {message}"
+    if parts or message:
+        return " | ".join([*parts, message] if message else parts)
     return json.dumps(row, default=str, sort_keys=True)
 
 
@@ -9167,6 +9403,18 @@ def project_job_runs_logs_cmd(
     job_run_uid: str = pydantic_argument(
         JOB_RUN_MODEL_REF, "uid", ..., help="Job run UID whose logs will be shown."
     ),
+    start: float | None = typer.Option(
+        None, "--start", help="Window start as epoch seconds or milliseconds."
+    ),
+    end: float | None = typer.Option(
+        None, "--end", help="Window end as epoch seconds or milliseconds."
+    ),
+    cursor: str | None = typer.Option(None, "--cursor", help="Opaque continuation cursor."),
+    limit: int | None = typer.Option(None, "--limit", min=1, max=500),
+    severity: str | None = typer.Option(None, "--severity"),
+    request_id: str | None = typer.Option(None, "--request-id"),
+    event: str | None = typer.Option(None, "--event"),
+    outcome: str | None = typer.Option(None, "--outcome"),
     poll_interval: int = typer.Option(
         30,
         "--poll-interval",
@@ -9201,12 +9449,25 @@ def project_job_runs_logs_cmd(
         error("--max-wait-seconds must be >= 0.")
         raise typer.Exit(2)
 
-    shown_rows = 0
+    seen_rows: set[str] = set()
+    request_cursor = cursor
+    header_printed = False
     poll_started_at = time.monotonic()
 
     while True:
         try:
-            payload = get_project_job_run_logs(job_run_uid=job_run_uid, timeout=timeout)
+            payload = get_project_job_run_logs(
+                job_run_uid=job_run_uid,
+                start=start,
+                end=end,
+                cursor=request_cursor,
+                limit=limit,
+                severity=severity,
+                request_id=request_id,
+                event=event,
+                outcome=outcome,
+                timeout=timeout,
+            )
         except ApiError as e:
             error(f"Project job run logs fetch failed: {e}")
             raise typer.Exit(1) from e
@@ -9219,7 +9480,7 @@ def project_job_runs_logs_cmd(
         if not isinstance(rows, list):
             rows = [rows]
 
-        if shown_rows == 0:
+        if not header_printed:
             print_kv(
                 "Job Run Logs",
                 [
@@ -9230,16 +9491,26 @@ def project_job_runs_logs_cmd(
                     ("Status", status_value),
                 ],
             )
+            header_printed = True
         else:
             info(f"Job run status: {status_value}")
 
-        if len(rows) < shown_rows:
-            warn("Log stream was reset by the backend. Reprinting from the beginning.")
-            shown_rows = 0
-
-        shown_rows = _print_job_run_logs_rows(rows, start_index=shown_rows)
-        if shown_rows == 0:
+        printed_rows = 0
+        for row in rows:
+            row_key = json.dumps(row, default=str, sort_keys=True)
+            if row_key in seen_rows:
+                continue
+            seen_rows.add(row_key)
+            typer.echo(_format_job_run_log_row(row))
+            printed_rows += 1
+        if printed_rows == 0 and not seen_rows:
             info("No logs yet.")
+
+        next_cursor = str(payload.get("next_cursor") or "").strip()
+        if next_cursor:
+            request_cursor = next_cursor
+            continue
+        request_cursor = None
 
         if status_value not in {JOB_RUN_STATUS_PENDING, JOB_RUN_STATUS_RUNNING}:
             break
@@ -9259,6 +9530,37 @@ def project_job_runs_logs_cmd(
 
         info(f"Job run is still {status_value}. Polling again in {sleep_for:g}s...")
         time.sleep(sleep_for)
+
+
+@project_job_runs_group.command("resource-usage")
+def project_job_runs_resource_usage_cmd(
+    job_run_uid: str = pydantic_argument(
+        JOB_RUN_MODEL_REF,
+        "uid",
+        ...,
+        help="Job run UID whose aggregate resource usage will be shown.",
+    ),
+    start: float | None = typer.Option(
+        None, "--start", help="Window start as epoch seconds or milliseconds."
+    ),
+    end: float | None = typer.Option(
+        None, "--end", help="Window end as epoch seconds or milliseconds."
+    ),
+    timeout: int | None = typer.Option(None, "--timeout"),
+):
+    """Read aggregate CPU, memory, and disk usage owned by a JobRun."""
+    _require_login()
+    try:
+        payload = get_project_job_run_resource_usage(
+            job_run_uid,
+            start=start,
+            end=end,
+            timeout=timeout,
+        )
+    except ApiError as e:
+        error(f"Project job run resource usage fetch failed: {e}")
+        raise typer.Exit(1) from e
+    _render_owner_resource_usage(payload, title="Job Run Resource Usage")
 
 
 def _project_jobs_create_impl(

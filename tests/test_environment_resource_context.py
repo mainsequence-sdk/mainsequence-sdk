@@ -26,7 +26,7 @@ class _Response:
 def _resolved_environment(monkeypatch):
     monkeypatch.setattr(
         project_context,
-        "resolve_project_environment_uid",
+        "resolve_organization_environment_uid",
         lambda operation: ENVIRONMENT_UID,
     )
 
@@ -35,8 +35,8 @@ def _secret_payload():
     return {
         "uid": "498d499f-b74c-43f7-acf1-2e2955ad0e6b",
         "name": "API_KEY",
-        "organization_project_environment_uid": ENVIRONMENT_UID,
-        "organization_project_environment_name": "Development",
+        "organization_environment_uid": ENVIRONMENT_UID,
+        "organization_environment_name": "Development",
     }
 
 
@@ -54,14 +54,14 @@ def test_environment_resource_reads_use_sdk_owned_scope(monkeypatch):
     listed = models_module.Secret.filter(name="API_KEY")
     detail = models_module.Secret.get_by_uid(_secret_payload()["uid"])
 
-    assert listed[0].organization_project_environment_uid == ENVIRONMENT_UID
-    assert detail.organization_project_environment_name == "Development"
+    assert listed[0].organization_environment_uid == ENVIRONMENT_UID
+    assert detail.organization_environment_name == "Development"
     assert requests[0]["payload"]["params"] == {
         "name": "API_KEY",
-        "organization_project_environment_uid": ENVIRONMENT_UID,
+        "organization_environment_uid": ENVIRONMENT_UID,
     }
     assert requests[1]["payload"]["params"] == {
-        "organization_project_environment_uid": ENVIRONMENT_UID,
+        "organization_environment_uid": ENVIRONMENT_UID,
     }
 
 
@@ -85,20 +85,20 @@ def test_environment_resource_create_delete_and_detail_actions_are_scoped(monkey
     assert requests[0]["payload"]["json"] == {
         "name": "API_KEY",
         "value": "secret",
-        "organization_project_environment_uid": ENVIRONMENT_UID,
+        "organization_environment_uid": ENVIRONMENT_UID,
     }
     assert requests[1]["payload"]["params"] == {
-        "organization_project_environment_uid": ENVIRONMENT_UID,
+        "organization_environment_uid": ENVIRONMENT_UID,
     }
     assert requests[2]["payload"]["params"] == {
-        "organization_project_environment_uid": ENVIRONMENT_UID,
+        "organization_environment_uid": ENVIRONMENT_UID,
     }
 
 
 def test_environment_resource_rejects_caller_scope_override():
     with pytest.raises(ValueError, match="cannot override SDK-resolved context"):
         models_module.Secret.filter(
-            organization_project_environment_uid=(
+            organization_environment_uid=(
                 "11111111-1111-4111-8111-111111111111"
             )
         )
@@ -119,8 +119,8 @@ def test_artifact_upload_uses_sdk_owned_environment(monkeypatch, tmp_path):
                 "bucket_uid": "33333333-3333-4333-8333-333333333333",
                 "content": "https://signed.example/report.pdf",
                 "creation_date": "2026-01-01T00:00:00Z",
-                "organization_project_environment_uid": ENVIRONMENT_UID,
-                "organization_project_environment_name": "Development",
+                "organization_environment_uid": ENVIRONMENT_UID,
+                "organization_environment_name": "Development",
             },
             status_code=201,
         )
@@ -132,11 +132,11 @@ def test_artifact_upload_uses_sdk_owned_environment(monkeypatch, tmp_path):
         "report.pdf",
     )
 
-    assert artifact.organization_project_environment_uid == ENVIRONMENT_UID
+    assert artifact.organization_environment_uid == ENVIRONMENT_UID
     assert captured["payload"]["json"] == {
         "name": "report.pdf",
         "bucket_name": "default_bucket",
-        "organization_project_environment_uid": ENVIRONMENT_UID,
+        "organization_environment_uid": ENVIRONMENT_UID,
     }
 
 
@@ -144,8 +144,8 @@ def test_environment_resource_models_accept_canonical_read_only_projections():
     bucket = models_module.Bucket(
         uid="33333333-3333-4333-8333-333333333333",
         name="default_bucket",
-        organization_project_environment_uid=ENVIRONMENT_UID,
-        organization_project_environment_name="Development",
+        organization_environment_uid=ENVIRONMENT_UID,
+        organization_environment_name="Development",
         physical_bucket_uid="55555555-5555-4555-8555-555555555555",
         backing_ready=True,
         backing_last_discovered_at=datetime.datetime(
@@ -159,10 +159,10 @@ def test_environment_resource_models_accept_canonical_read_only_projections():
         uid="22222222-2222-4222-8222-222222222222",
         name="APP__MODE",
         value="production",
-        organization_project_environment_uid=ENVIRONMENT_UID,
-        organization_project_environment_name="Development",
+        organization_environment_uid=ENVIRONMENT_UID,
+        organization_environment_name="Development",
     )
 
     assert bucket.backing_ready is True
-    assert bucket.organization_project_environment_uid == ENVIRONMENT_UID
-    assert constant.organization_project_environment_name == "Development"
+    assert bucket.organization_environment_uid == ENVIRONMENT_UID
+    assert constant.organization_environment_name == "Development"

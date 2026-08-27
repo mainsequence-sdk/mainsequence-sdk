@@ -6,6 +6,7 @@ import json
 import pathlib
 import time
 import uuid
+from collections.abc import Iterator
 from enum import Enum
 from typing import Any, ClassVar, Literal
 
@@ -15,6 +16,12 @@ from pydantic import ConfigDict, Field, model_validator
 from .base import BaseObjectOrm, BasePydanticModel, ShareableObjectMixin
 from .exceptions import ApiError, raise_for_response
 from .models_helpers import AutomaticRedeploymentPolicy
+from .observability import (
+    ObservabilityLinks,
+    OwnerLogMixin,
+    OwnerLogPage,
+    OwnerResourceUsageMixin,
+)
 from .utils import make_request, serialize_to_json
 
 DEFAULT_AGENT_SESSION_LONG_REQUEST_TIMEOUT = (5.0, 900.0)
@@ -23,12 +30,11 @@ DEFAULT_AGENT_RUNTIME_ACCESS_CACHE_EXPIRY_SKEW_SECONDS = 30.0
 STANDARD_A2A_MESSAGE_SEND_PATH = "/api/a2a/v1/message:send"
 STANDARD_A2A_TASKS_PATH = "/api/a2a/v1/tasks"
 STANDARD_A2A_CONTENT_TYPE = "application/a2a+json"
-STANDARD_A2A_RESPONSE_KIND_EXTENSION_URI = (
-    "https://mainsequence.ai/a2a/extensions/response-kind/v1"
-)
+STANDARD_A2A_RESPONSE_KIND_EXTENSION_URI = "https://mainsequence.ai/a2a/extensions/response-kind/v1"
 STANDARD_A2A_OUTPUT_CONTRACT_METADATA_KEY = (
     "https://mainsequence.ai/a2a/extensions/output-contract/v1"
 )
+STANDARD_AGENT_INFERENCE_METADATA_KEY = "https://mainsequence.ai/a2a/extensions/agent-inference/v1"
 MAX_INLINE_A2A_FILE_BYTES = 15 * 1024 * 1024
 
 
@@ -131,11 +137,11 @@ class AgentSemanticSearchResult(BasePydanticModel):
         ...,
         description="Repository branch of the matched Project Coding Agent.",
     )
-    organization_project_environment_uid: str = Field(
+    organization_environment_uid: str = Field(
         ...,
         description="Public UID of the Organization Environment that scoped the search result.",
     )
-    organization_project_environment_name: str = Field(
+    organization_environment_name: str = Field(
         ...,
         description="Name of the Organization Environment that scoped the search result.",
     )
@@ -307,7 +313,13 @@ def _join_runtime_url(rpc_url: str, runtime_path: str) -> str:
     return f"{rpc_url.rstrip('/')}/{runtime_path.lstrip('/')}"
 
 
-class Agent(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
+class Agent(
+    OwnerLogMixin,
+    OwnerResourceUsageMixin,
+    ShareableObjectMixin,
+    BaseObjectOrm,
+    BasePydanticModel,
+):
     ENDPOINT: ClassVar[str] = "agents"
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]] | None] = {
         "uid": ["exact", "in"],
@@ -321,10 +333,10 @@ class Agent(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
         "search": "str",
     }
     READ_QUERY_PARAMS: ClassVar[dict[str, str]] = {
-        "organization_project_environment_uid": "uid",
+        "organization_environment_uid": "uid",
     }
     READ_QUERY_PARAM_DESCRIPTIONS: ClassVar[dict[str, str]] = {
-        "organization_project_environment_uid": (
+        "organization_environment_uid": (
             "Required Organization Environment boundary for Agent discovery. "
             "This scopes reads and does not assign an environment to an Agent."
         ),
@@ -401,27 +413,258 @@ class Agent(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
             "or null when the Agent is not ProjectBranch-scoped."
         ),
     )
-    organization_project_environment_uid: str | None = Field(
+    organization_environment_uid: str | None = Field(
         ...,
         description=(
             "Read-only public UID of the Organization Environment derived from the "
             "canonical ProjectBranch, or null when the Agent is not environment-scoped."
         ),
     )
-    organization_project_environment_name: str | None = Field(
+    organization_environment_name: str | None = Field(
         ...,
         description=(
             "Read-only name of the Organization Environment derived from the canonical "
             "ProjectBranch, or null when the Agent is not environment-scoped."
         ),
     )
+    observability: ObservabilityLinks | None = Field(
+        default=None,
+        description="Backend-owned runtime observability and related-resource capabilities.",
+    )
+
+    def get_logs(
+        self,
+        *,
+        start: int | float | None = None,
+        end: int | float | None = None,
+        cursor: str | None = None,
+        limit: int | None = None,
+        severity: str | None = None,
+        request_id: str | None = None,
+        event: str | None = None,
+        outcome: str | None = None,
+        agent_session_uid: str | None = None,
+        timeout: int | float | tuple[float, float] | None = None,
+    ) -> OwnerLogPage:
+        return self._get_owner_logs(
+            start=start,
+            end=end,
+            cursor=cursor,
+            limit=limit,
+            severity=severity,
+            request_id=request_id,
+            event=event,
+            outcome=outcome,
+            agent_session_uid=agent_session_uid,
+            timeout=timeout,
+        )
+
+    def resolve_runtime_access(self, *, timeout=None) -> AgentSessionRuntimeAccess:
+        """Resolve this Agent's runtime without creating an AgentSession."""
+
+        if self.uid is None:
+            raise ValueError("Agent.uid is required to resolve runtime access")
+        body: dict[str, Any] = {}
+        payload = {"json": serialize_to_json(body)}
+        response = make_request(
+            s=self.build_session(),
+            loaders=self.LOADERS,
+            r_type="POST",
+            url=f"{self.get_detail_url()}resolve-runtime-access/",
+            payload=payload,
+            time_out=timeout,
+        )
+        if response.status_code != 200:
+            raise_for_response(response, payload=payload)
+        data = response.json()
+        if not isinstance(data, dict):
+            raise TypeError("Agent runtime access response must be a JSON object")
+        return AgentSessionRuntimeAccess(**data)
+
+    def _build_response_body(
+        self,
+        *,
+        message: str,
+        files: list[Any] | None,
+        message_id: str | None,
+        strict_dictionary: bool,
+        json_repair_attempts: int,
+        provider: str | None,
+        model: str | None,
+        thinking: str | None,
+        max_output_tokens: int | None,
+        timeout_seconds: int | None,
+    ) -> dict[str, Any]:
+        normalized_message = str(message)
+        if not normalized_message.strip():
+            raise ValueError("message must not be empty")
+        if json_repair_attempts < 1:
+            raise ValueError("json_repair_attempts must be greater than 0")
+        parts: list[dict[str, Any]] = [{"text": normalized_message}]
+        for file_spec in files or []:
+            parts.append(AgentSession._build_standard_a2a_raw_file_part(file_spec))
+        body: dict[str, Any] = {
+            "message": {
+                "messageId": str(message_id or "").strip() or f"msg-{uuid.uuid4()}",
+                "role": "ROLE_USER",
+                "parts": parts,
+            },
+            "configuration": {
+                "acceptedOutputModes": ["application/json" if strict_dictionary else "text/plain"],
+                "responseKind": "message",
+            },
+        }
+        metadata: dict[str, Any] = {}
+        inference = {
+            key: value
+            for key, value in {
+                "provider": provider,
+                "model": model,
+                "thinking": thinking,
+                "maxOutputTokens": max_output_tokens,
+                "timeoutSeconds": timeout_seconds,
+            }.items()
+            if value is not None
+        }
+        if inference:
+            metadata[STANDARD_AGENT_INFERENCE_METADATA_KEY] = inference
+        if strict_dictionary:
+            metadata[STANDARD_A2A_OUTPUT_CONTRACT_METADATA_KEY] = {
+                "strict": True,
+                "responseFormat": {"type": "dictionary", "strict": True},
+                "jsonRepairAttempts": int(json_repair_attempts),
+            }
+        if metadata:
+            body["metadata"] = metadata
+        return body
+
+    def _post_response(
+        self,
+        *,
+        access: AgentSessionRuntimeAccess,
+        body: dict[str, Any],
+        stream: bool,
+        timeout,
+    ) -> requests.Response:
+        if self.uid is None:
+            raise ValueError("Agent.uid is required")
+        if access.mode != "token" or not access.rpc_url or not access.token:
+            raise ApiError(access.detail or "Coding-agent runtime access is unavailable.")
+        runtime_paths = access.runtime_paths.model_dump()
+        path_key = "responses_stream" if stream else "responses"
+        runtime_path = str(runtime_paths.get(path_key) or "").strip()
+        if not runtime_path:
+            raise ApiError(f"Agent runtime access did not include runtime_paths.{path_key}.")
+        url = _join_runtime_url(
+            access.rpc_url,
+            runtime_path,
+        )
+        return requests.post(
+            url,
+            headers={
+                "Authorization": f"Bearer {access.token.strip()}",
+                "Content-Type": STANDARD_A2A_CONTENT_TYPE,
+                "Accept": "text/event-stream" if stream else STANDARD_A2A_CONTENT_TYPE,
+            },
+            data=json.dumps(serialize_to_json(body)),
+            timeout=(DEFAULT_AGENT_SESSION_LONG_REQUEST_TIMEOUT if timeout is None else timeout),
+            stream=stream,
+        )
+
+    def respond(
+        self,
+        *,
+        message: str,
+        files: list[Any] | None = None,
+        message_id: str | None = None,
+        strict_dictionary: bool = False,
+        json_repair_attempts: int = 3,
+        provider: str | None = None,
+        model: str | None = None,
+        thinking: str | None = None,
+        max_output_tokens: int | None = None,
+        timeout_seconds: int | None = None,
+        timeout=None,
+    ) -> A2AMessageSendResult:
+        """Ask this Agent one independent question without creating durable state."""
+
+        body = self._build_response_body(
+            message=message,
+            files=files,
+            message_id=message_id,
+            strict_dictionary=strict_dictionary,
+            json_repair_attempts=json_repair_attempts,
+            provider=provider,
+            model=model,
+            thinking=thinking,
+            max_output_tokens=max_output_tokens,
+            timeout_seconds=timeout_seconds,
+        )
+        response = self._post_response(
+            access=self.resolve_runtime_access(timeout=timeout),
+            body=body,
+            stream=False,
+            timeout=timeout,
+        )
+        if not (200 <= response.status_code < 300):
+            raise_for_response(response, payload=body)
+        payload = response.json()
+        if not isinstance(payload, dict):
+            raise TypeError("Agent response must be a JSON object")
+        return A2AMessageSendResult.model_validate(payload)
+
+    def stream_response(
+        self,
+        *,
+        message: str,
+        files: list[Any] | None = None,
+        message_id: str | None = None,
+        strict_dictionary: bool = False,
+        json_repair_attempts: int = 3,
+        provider: str | None = None,
+        model: str | None = None,
+        thinking: str | None = None,
+        max_output_tokens: int | None = None,
+        timeout_seconds: int | None = None,
+        timeout=None,
+    ) -> Iterator[dict[str, Any]]:
+        """Yield canonical SSE payloads from one sessionless Agent response."""
+
+        body = self._build_response_body(
+            message=message,
+            files=files,
+            message_id=message_id,
+            strict_dictionary=strict_dictionary,
+            json_repair_attempts=json_repair_attempts,
+            provider=provider,
+            model=model,
+            thinking=thinking,
+            max_output_tokens=max_output_tokens,
+            timeout_seconds=timeout_seconds,
+        )
+        response = self._post_response(
+            access=self.resolve_runtime_access(timeout=timeout),
+            body=body,
+            stream=True,
+            timeout=timeout,
+        )
+        if not (200 <= response.status_code < 300):
+            raise_for_response(response, payload=body)
+        with response:
+            for line in response.iter_lines(decode_unicode=True):
+                if not line or not line.startswith("data:"):
+                    continue
+                payload = json.loads(line.removeprefix("data:").strip())
+                if not isinstance(payload, dict):
+                    raise TypeError("Agent response SSE data must be a JSON object")
+                yield payload
 
     @classmethod
     def semantic_search(
         cls,
         q: str,
         *,
-        organization_project_environment_uid: str,
+        organization_environment_uid: str,
         limit: int = 20,
         timeout=None,
     ) -> list[AgentSemanticSearchResult]:
@@ -442,9 +685,9 @@ class Agent(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
             raise ValueError("limit must be between 1 and 100")
 
         body: dict[str, Any] = {
-            "organization_project_environment_uid": cls._coerce_filter_uid(
-                organization_project_environment_uid,
-                field_name="organization_project_environment_uid",
+            "organization_environment_uid": cls._coerce_filter_uid(
+                organization_environment_uid,
+                field_name="organization_environment_uid",
             ),
             "q": q,
             "limit": limit,
@@ -640,6 +883,10 @@ class CodingAgentService(BaseObjectOrm, BasePydanticModel):
     automatic_redeployment_policy: AutomaticRedeploymentPolicy | None = Field(
         ...,
         description="Automatic redeployment policy for a Project Executor service.",
+    )
+    observability: ObservabilityLinks | None = Field(
+        default=None,
+        description="Backend-owned observability capabilities projected from the owning Agent.",
     )
 
     @classmethod
@@ -917,7 +1164,7 @@ class TauAgentSessionInsights(AgentSessionInsightsBase):
 AgentSessionInsights = PiAgentSessionInsights | TauAgentSessionInsights
 
 
-class AgentSession(BaseObjectOrm, BasePydanticModel):
+class AgentSession(OwnerLogMixin, BaseObjectOrm, BasePydanticModel):
     ENDPOINT: ClassVar[str] = "agent-sessions"
     _RUNTIME_ACCESS_CACHE: ClassVar[dict[str, tuple[float | None, AgentSessionRuntimeAccess]]] = {}
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]] | None] = {
@@ -1193,7 +1440,9 @@ class AgentSession(BaseObjectOrm, BasePydanticModel):
     def extract_a2a_message_text(
         payload: dict[str, Any] | A2AMessageSendResult,
     ) -> str:
-        message = payload.message if isinstance(payload, A2AMessageSendResult) else payload.get("message")
+        message = (
+            payload.message if isinstance(payload, A2AMessageSendResult) else payload.get("message")
+        )
         if not isinstance(message, dict):
             return ""
         parts = message.get("parts")
@@ -1555,6 +1804,10 @@ class AgentSession(BaseObjectOrm, BasePydanticModel):
         return type(self)._set_archive_state(self, action="unarchive", timeout=timeout)
 
     uid: str | None = Field(None, description="Public UID of the agent session.")
+    observability: ObservabilityLinks | None = Field(
+        default=None,
+        description="Backend-owned application-log capability for this exact session.",
+    )
     agent_uid: str | None = Field(
         None, description="Public UID of the agent definition used for this session."
     )

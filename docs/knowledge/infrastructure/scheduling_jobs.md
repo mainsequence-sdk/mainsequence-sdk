@@ -344,7 +344,13 @@ job_runs = JobRun.filter(job__uid=nightly_job.uid)
 
 latest_run = job_runs[0]
 logs = latest_run.get_logs()
+usage = latest_run.get_resource_usage()
 ```
+
+`logs` is an `OwnerLogPage` with opaque cursor pagination and enriched rows.
+`usage` is a `ResourceUsagePage` containing aggregate CPU, memory, and disk
+samples. The SDK takes the required Environment scope from the backend-owned
+JobRun capability links; application code does not provide an Environment UID.
 
 In practice, the client gives you the same lifecycle as the CLI:
 

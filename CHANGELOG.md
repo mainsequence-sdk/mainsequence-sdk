@@ -6,12 +6,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [6.0.48] - 2026-08-27
+
+### Changed
+
+- Replaced the retired project-qualified Organization Environment field names
+  throughout SDK models, project-context resolution, MetaTables, CLI operations,
+  tests, and documentation with canonical `organization_environment_uid` and
+  `organization_environment_name` fields. No legacy aliases remain.
+- Added owner-scoped logs and aggregate resource usage for JobRun,
+  ResourceRelease, and Agent, plus fixed-owner AgentSession logs. The SDK follows
+  authenticated same-backend capability links and does not expose Environment
+  selection through owner method arguments.
+- Kept DeploymentRun build and orchestration logs on their separate response
+  contract while adding the SDK-resolved canonical Environment authorization
+  query.
+
+### Added
+
+- Added sessionless `Agent.respond()` and `Agent.stream_response()` helpers that
+  resolve Agent runtime access and use the canonical A2A response endpoints with
+  optional inference and strict dictionary metadata.
+
 ## [6.0.40] - 2026-08-23
 
 ### Fixed
 
 - Aligned MetaTable and TimeIndexMetaTable collection filtering with the backend's
-  canonical `organization_project_environment_uid` query parameter. CLI table listings now
+  canonical `organization_environment_uid` query parameter. CLI table listings now
   derive the exact environment scope from the active Git-resolved ProjectBranch or accept an
   explicit administrative scope outside a registered project checkout.
 

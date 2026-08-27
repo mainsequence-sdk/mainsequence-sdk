@@ -53,7 +53,7 @@ class ProjectRuntimeContext:
     source_context: GitProjectSourceContext
     project_uid: str | None
     project_branch_uid: str | None
-    organization_project_environment_uid: str | None
+    organization_environment_uid: str | None
     metatables_data_source: Any | None
     status: ProjectRuntimeContextStatus
     process_id: int
@@ -263,7 +263,7 @@ def _build_project_runtime_context(
             source_context=source,
             project_uid=None,
             project_branch_uid=None,
-            organization_project_environment_uid=None,
+            organization_environment_uid=None,
             metatables_data_source=None,
             status="project_branch_not_registered",
             process_id=os.getpid(),
@@ -306,8 +306,8 @@ def _build_project_runtime_context(
         source_context=source,
         project_uid=project_uid,
         project_branch_uid=project_branch_uid,
-        organization_project_environment_uid=(
-            _normalized_value(project_branch, "organization_project_environment_uid") or None
+        organization_environment_uid=(
+            _normalized_value(project_branch, "organization_environment_uid") or None
         ),
         metatables_data_source=_object_value(project_branch, "metatables_data_source"),
         status="resolved",
@@ -410,11 +410,11 @@ def resolve_project_branch_uid(operation: str, supplied_uid: Any = None) -> str:
     return resolved_uid
 
 
-def resolve_project_environment_uid(operation: str) -> str:
+def resolve_organization_environment_uid(operation: str) -> str:
     """Return the Environment UID derived from the process-frozen ProjectBranch."""
 
     context = require_project_branch_context(operation)
-    environment_uid = str(context.organization_project_environment_uid or "").strip()
+    environment_uid = str(context.organization_environment_uid or "").strip()
     if not environment_uid:
         raise ProjectEnvironmentContextRequiredError(
             f"{operation} requires an Organization Environment resolved from "
@@ -497,7 +497,7 @@ __all__ = [
     "normalize_git_repository_identity",
     "require_project_branch_context",
     "require_project_metatables_data_source",
-    "resolve_project_environment_uid",
+    "resolve_organization_environment_uid",
     "resolve_project_branch_uid",
     "scope_current_project_branch_filters",
     "validate_project_source_context",

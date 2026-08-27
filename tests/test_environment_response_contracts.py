@@ -5,8 +5,8 @@ import mainsequence.client.metatables.core as metatable_models
 import mainsequence.client.models_foundry as foundry_models
 import mainsequence.client.models_helpers as helper_models
 
-ENVIRONMENT_UID_FIELD = "organization_project_environment_uid"
-ENVIRONMENT_NAME_FIELD = "organization_project_environment_name"
+ENVIRONMENT_UID_FIELD = "organization_environment_uid"
+ENVIRONMENT_NAME_FIELD = "organization_environment_name"
 
 
 @pytest.mark.parametrize(
@@ -94,3 +94,18 @@ def test_backend_environment_response_contract_is_declared_by_strict_sdk_model(
     """Keep SDK response models aligned with ADR-0036/ADR-0037 projections."""
     assert model.model_config.get("extra") == "forbid", serializer_names
     assert expected_fields <= set(model.model_fields), serializer_names
+
+
+@pytest.mark.parametrize(
+    "model",
+    [
+        agent_models.Agent,
+        agent_models.AgentSession,
+        agent_models.CodingAgentService,
+        helper_models.JobRun,
+        helper_models.ResourceRelease,
+    ],
+)
+def test_owner_observability_projection_is_declared_by_strict_sdk_model(model):
+    assert model.model_config.get("extra") == "forbid"
+    assert "observability" in model.model_fields
