@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [6.0.52] - 2026-08-27
+
+### Added
+
+- Added typed, explicitly confirmed cascade deletion for MetaTables, including
+  reference-cascade controls, Alembic schema-protection override, SDK-owned
+  Organization Environment context, and typed backend error propagation.
+
 ## [6.0.51] - 2026-08-27
 
 ### Fixed

@@ -108,6 +108,13 @@ platform-managed, Alembic-managed reservations and are validated before HTTP.
 - Do not create SDK reset/reconcile commands for stale reserved state. If stale
   reserved state exists, fail clearly and require an explicit backend/admin
   repair path.
+- Ordinary `MetaTable.delete()` must not bypass Alembic schema-management
+  protection. For a deliberate organization-admin teardown/reset only, use
+  `MetaTable.delete_with_cascade(confirm_cascade_delete=True, ...)` and set
+  `override_schema_management_protection=True` when deleting Alembic-managed
+  tables. Decide explicitly whether referencing MetaTables and time-indexed Data
+  Nodes are also deleted. This permanently deletes catalog rows and physical
+  tables; never use it as migration reconciliation or an Alembic downgrade.
 - Do not write direct backend migration request bodies in examples. Use the CLI
   and SDK provider APIs.
 - Do not call platform-managed model `.register()` in normal application code.

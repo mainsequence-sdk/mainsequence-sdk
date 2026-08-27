@@ -8,6 +8,7 @@ from pydantic import ValidationError
 
 import mainsequence.client.metatables as meta_table_models
 import mainsequence.project_context as project_context
+from mainsequence.client.exceptions import ConflictError, PermissionDeniedError
 from mainsequence.meta_tables.compiled_sql.v1 import build_operation, compile_sqlalchemy_statement
 
 ENVIRONMENT_UID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
@@ -86,6 +87,162 @@ def _project_context():
     return meta_table_models.MetaTableProjectContextRequest(
         project_branch_uid="22222222-2222-4222-8222-222222222222",
     )
+
+
+def _cascade_delete_response():
+    return {
+        "ok": True,
+        "action": "delete_with_cascade",
+        "root_meta_table_uid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "deleted_meta_tables": [
+            {
+                "meta_table_uid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                "physical_schema": "public",
+                "physical_table_name": "example_assets__asset",
+                "management_mode": "platform_managed",
+                "physical_table_drop_scheduled": True,
+                "physical_table_drop_cascade": True,
+                "schema_management_protection_overridden": True,
+            }
+        ],
+        "deleted_dynamic_tables": [
+            {
+                "type": "meta_table",
+                "table_kind": "time_indexed",
+                "time_indexed": True,
+                "uid": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+                "identifier": "AssetPrices",
+                "namespace": "example.assets",
+                "physical_schema": "public",
+                "physical_table_name": "example_assets__asset_prices",
+            }
+        ],
+        "deleted_meta_table_count": 1,
+        "deleted_dynamic_table_count": 1,
+        "blocking_edges": [
+            {
+                "relationship_type": "meta_table_to_meta_table",
+                "source_table_kind": "time_indexed",
+            }
+        ],
+    }
+
+
+def test_meta_table_confirmed_cascade_delete_posts_typed_contract(monkeypatch):
+    captured = {}
+
+    def fake_make_request(**kwargs):
+        captured.update(kwargs)
+        return _Response(_cascade_delete_response())
+
+    monkeypatch.setattr(meta_table_models, "make_request", fake_make_request)
+    monkeypatch.setattr(
+        meta_table_models.MetaTable,
+        "build_session",
+        classmethod(lambda cls: SimpleNamespace(headers={})),
+    )
+    meta_table = meta_table_models.MetaTable(
+        **_meta_table_response(
+            schema_management_mode="alembic_managed",
+            migration_provider_key="example:assets",
+        )
+    )
+
+    result = meta_table.delete_with_cascade(
+        confirm_cascade_delete=True,
+        delete_referencing_meta_tables=False,
+        delete_referencing_dynamic_tables=True,
+        override_schema_management_protection=True,
+        timeout=19,
+    )
+
+    assert isinstance(result, meta_table_models.MetaTableCascadeDeleteResponse)
+    assert result.root_meta_table_uid == meta_table.uid
+    assert result.deleted_meta_table_count == 1
+    assert result.deleted_dynamic_tables[0].table_kind == "time_indexed"
+    assert captured["r_type"] == "POST"
+    assert captured["url"].endswith(f"/meta-tables/{meta_table.uid}/delete-with-cascade/")
+    assert captured["payload"] == {
+        "json": {
+            "confirm_cascade_delete": True,
+            "delete_referencing_meta_tables": False,
+            "delete_referencing_dynamic_tables": True,
+            "override_schema_management_protection": True,
+        },
+        "params": {"organization_environment_uid": ENVIRONMENT_UID},
+    }
+    assert captured["time_out"] == 19
+
+
+@pytest.mark.parametrize("confirmation", [None, False, 1, "true"])
+def test_meta_table_cascade_delete_requires_explicit_true_confirmation(
+    monkeypatch,
+    confirmation,
+):
+    monkeypatch.setattr(
+        meta_table_models,
+        "make_request",
+        lambda **kwargs: pytest.fail("missing confirmation must fail before HTTP"),
+    )
+
+    with pytest.raises(ValidationError, match="confirm_cascade_delete"):
+        meta_table_models.MetaTable.delete_with_cascade_by_uid(
+            "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            confirm_cascade_delete=confirmation,
+        )
+
+
+@pytest.mark.parametrize(
+    ("status_code", "error_type", "detail"),
+    [
+        (
+            403,
+            PermissionDeniedError,
+            "Only organization admins can perform this destructive MetaTable action.",
+        ),
+        (
+            409,
+            ConflictError,
+            "Alembic-managed MetaTables require schema-management override.",
+        ),
+    ],
+)
+def test_meta_table_cascade_delete_preserves_typed_backend_errors(
+    monkeypatch,
+    status_code,
+    error_type,
+    detail,
+):
+    captured = {}
+
+    def fake_make_request(**kwargs):
+        captured.update(kwargs)
+        return _Response(
+            {
+                "ok": False,
+                "code": "permission_denied"
+                if status_code == 403
+                else "alembic_managed_delete_blocked",
+                "detail": detail,
+            },
+            status_code=status_code,
+        )
+
+    monkeypatch.setattr(meta_table_models, "make_request", fake_make_request)
+
+    with pytest.raises(error_type, match=detail) as error:
+        meta_table_models.MetaTable.delete_with_cascade_by_uid(
+            "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            confirm_cascade_delete=True,
+            override_schema_management_protection=True,
+        )
+
+    assert error.value.status_code == status_code
+    assert error.value.payload["code"] in {
+        "permission_denied",
+        "alembic_managed_delete_blocked",
+    }
+    assert captured["payload"]["params"] == {"organization_environment_uid": ENVIRONMENT_UID}
 
 
 @pytest.mark.parametrize(

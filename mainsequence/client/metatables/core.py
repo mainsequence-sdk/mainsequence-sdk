@@ -1030,6 +1030,67 @@ class ManagedMetaTableFinalizeResponse(BasePydanticModel):
     model_config = ConfigDict(extra="allow")
 
 
+class MetaTableCascadeDeleteRequest(BasePydanticModel):
+    confirm_cascade_delete: Literal[True] = Field(
+        ...,
+        description="Explicit confirmation required for destructive cascade deletion.",
+    )
+    delete_referencing_meta_tables: bool = Field(
+        default=True,
+        description="Delete MetaTables that reference the selected MetaTable.",
+    )
+    delete_referencing_dynamic_tables: bool = Field(
+        default=True,
+        description="Delete time-indexed Data Nodes that reference the selected MetaTable.",
+    )
+    override_schema_management_protection: bool = Field(
+        default=False,
+        description=(
+            "Explicitly allow deletion of Alembic-managed MetaTables. The backend "
+            "still requires organization-admin permission."
+        ),
+    )
+
+    @field_validator("confirm_cascade_delete", mode="before")
+    @classmethod
+    def _require_explicit_confirmation(cls, value: Any) -> Any:
+        if value is not True:
+            raise ValueError("confirm_cascade_delete must be explicitly set to true.")
+        return value
+
+
+class MetaTableCascadeDeletedMetaTable(BasePydanticModel):
+    meta_table_uid: str
+    physical_schema: str | None = None
+    physical_table_name: str | None = None
+    management_mode: MetaTableManagementMode
+    physical_table_drop_scheduled: bool
+    physical_table_drop_cascade: bool
+    schema_management_protection_overridden: bool
+
+
+class MetaTableCascadeDeletedDynamicTable(BasePydanticModel):
+    type: Literal["meta_table"]
+    table_kind: Literal["time_indexed"]
+    time_indexed: Literal[True]
+    uid: str
+    identifier: str | None = None
+    namespace: str | None = None
+    physical_schema: str | None = None
+    physical_table_name: str | None = None
+
+
+class MetaTableCascadeDeleteResponse(BasePydanticModel):
+    ok: Literal[True]
+    action: Literal["delete_with_cascade"]
+    root_meta_table_uid: str
+    deleted_meta_tables: list[MetaTableCascadeDeletedMetaTable]
+    deleted_dynamic_tables: list[MetaTableCascadeDeletedDynamicTable]
+    deleted_meta_table_count: int = Field(..., ge=0)
+    deleted_dynamic_table_count: int = Field(..., ge=0)
+    blocking_edges: list[dict[str, Any]]
+
+
 class DataSource(BasePydanticModel, BaseObjectOrm):
     model_config = ConfigDict(extra="allow")
 
@@ -1556,6 +1617,60 @@ class MetaTable(
             full_delete_downstream_tables=full_delete_downstream_tables,
             delete_with_no_table=delete_with_no_table,
             override_protection=override_protection,
+        )
+
+    @classmethod
+    def delete_with_cascade_by_uid(
+        cls,
+        uid: str,
+        *,
+        confirm_cascade_delete: bool | None = None,
+        delete_referencing_meta_tables: bool = True,
+        delete_referencing_dynamic_tables: bool = True,
+        override_schema_management_protection: bool = False,
+        timeout: int | float | tuple[float, float] | None = None,
+    ) -> MetaTableCascadeDeleteResponse:
+        if uid in (None, ""):
+            raise ValueError(f"{cls.__name__} uid is required for cascade deletion.")
+        request = MetaTableCascadeDeleteRequest(
+            confirm_cascade_delete=confirm_cascade_delete,
+            delete_referencing_meta_tables=delete_referencing_meta_tables,
+            delete_referencing_dynamic_tables=delete_referencing_dynamic_tables,
+            override_schema_management_protection=override_schema_management_protection,
+        )
+        operation = f"{cls.__name__}.delete_with_cascade"
+        request_payload: dict[str, Any] = {"json": _payload_json(request)}
+        query_context = cls._sdk_owned_query_context(operation)
+        if query_context:
+            request_payload["params"] = query_context
+        response = make_request(
+            s=cls.build_session(),
+            loaders=cls.LOADERS,
+            r_type="POST",
+            url=(f"{cls.get_object_url().rstrip('/')}/{uid}/delete-with-cascade/"),
+            payload=request_payload,
+            time_out=timeout,
+        )
+        if response.status_code != 200:
+            raise_for_response(response, payload=request_payload)
+        return MetaTableCascadeDeleteResponse.model_validate(response.json())
+
+    def delete_with_cascade(
+        self,
+        *,
+        confirm_cascade_delete: bool | None = None,
+        delete_referencing_meta_tables: bool = True,
+        delete_referencing_dynamic_tables: bool = True,
+        override_schema_management_protection: bool = False,
+        timeout: int | float | tuple[float, float] | None = None,
+    ) -> MetaTableCascadeDeleteResponse:
+        return type(self).delete_with_cascade_by_uid(
+            self._public_uid(),
+            confirm_cascade_delete=confirm_cascade_delete,
+            delete_referencing_meta_tables=delete_referencing_meta_tables,
+            delete_referencing_dynamic_tables=delete_referencing_dynamic_tables,
+            override_schema_management_protection=override_schema_management_protection,
+            timeout=timeout,
         )
 
     @classmethod
@@ -4967,6 +5082,10 @@ __all__ = [
     "ManagedMetaTableCollectionCreateRow",
     "ManagedTimeIndexMetaTableCollectionCreateRow",
     "MetaTable",
+    "MetaTableCascadeDeleteRequest",
+    "MetaTableCascadeDeleteResponse",
+    "MetaTableCascadeDeletedDynamicTable",
+    "MetaTableCascadeDeletedMetaTable",
     "MetaTableMigrationConnection",
     "MetaTableMigrationConnectionRequest",
     "MetaTableColumnContract",

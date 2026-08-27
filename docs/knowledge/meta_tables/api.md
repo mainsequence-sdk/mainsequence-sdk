@@ -111,6 +111,30 @@ Do not treat management, schema ownership, and provisioning as one state:
 The Alembic registry is the platform-managed, Alembic-managed root of its
 provider. It is never an `external_registered` table.
 
+### Destructive teardown
+
+Ordinary `MetaTable.delete()` does not bypass Alembic schema-management
+protection. An organization administrator performing an explicit teardown or
+reset can use the confirmed cascade action:
+
+```python
+result = meta_table.delete_with_cascade(
+    confirm_cascade_delete=True,
+    delete_referencing_meta_tables=True,
+    delete_referencing_dynamic_tables=True,
+    override_schema_management_protection=True,
+)
+```
+
+The operation permanently removes the selected MetaTable, enabled inbound
+MetaTable/Data Node dependencies, and their physical tables. Confirmation must
+be the boolean `True`; truthy substitutes are rejected before HTTP. The SDK
+supplies Organization Environment context for human credentials, while deployed
+runtime credentials use their authenticated backend context. The backend still
+enforces organization-admin permission and returns typed `PermissionDeniedError`
+or `ConflictError` failures. Use this only for deliberate teardown/reset, never
+as a substitute for Alembic downgrade or ordinary migration reconciliation.
+
 `MetaTableRegistrationRequest` validates this matrix during construction, and
 `MetaTable.register(...)` revalidates model and mapping inputs before HTTP.
 `TimeIndexMetaTable.register(...)` has fixed platform catalog ownership and
