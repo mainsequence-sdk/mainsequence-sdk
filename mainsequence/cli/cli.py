@@ -2221,7 +2221,7 @@ def login(
     Persists auth tokens in the active CLI auth store so subsequent
     CLI invocations can run without re-authentication. Backend/base-folder
     overrides passed to `login` are scoped to the current terminal session.
-    When no backend is provided, login defaults to the standard production backend.
+    When no backend is provided, login uses the currently configured backend.
 
     Interactive login uses browser-based authentication and finishes with
     standard JWT access/refresh tokens persisted by the CLI.
@@ -2304,8 +2304,9 @@ def login(
             error("Pass backend either positionally or with --backend, not both.")
             raise typer.Exit(1)
     explicit_backend_input = backend_option if backend_option is not None else backend
+    current_backend = cfg.backend_url()
     effective_backend_input = (
-        explicit_backend_input if explicit_backend_input is not None else cfg.STANDARD_BACKEND_URL
+        explicit_backend_input if explicit_backend_input is not None else current_backend
     )
 
     if projects_base and projects_base_option:
@@ -2328,7 +2329,6 @@ def login(
         error("JWT login requires both --access-token and --refresh-token.")
         raise typer.Exit(1)
 
-    current_backend = cfg.backend_url()
     normalized_backend = cfg.normalize_backend_url(effective_backend_input)
 
     if explicit_backend_input is not None and normalized_backend != current_backend:

@@ -28,6 +28,11 @@ The CLI stores config and tokens in a platform-specific directory:
 - `MAINSEQUENCE_ENDPOINT` overrides the configured backend URL.
 - `MAINSEQUENCE_ACCESS_TOKEN` and `MAINSEQUENCE_REFRESH_TOKEN` can be used to provide JWT auth for the current process.
 
+`mainsequence login`, including `mainsequence login --mcp`, uses this resolved
+configured backend unless `--backend` is supplied explicitly. The backend shown
+by `mainsequence doctor` is therefore the backend that receives an implicit
+login handoff.
+
 For the full authentication model, including runtime credential auth and request-bound auth, see [Authentication](infrastructure/auth.md).
 
 When a backend-launched process has

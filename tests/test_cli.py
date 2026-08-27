@@ -1394,6 +1394,7 @@ def test_config_session_overrides_do_not_persist(cli_mod, monkeypatch, tmp_path)
 
 
 def test_login_mocked(cli_mod, runner, monkeypatch):
+    configured_backend = "https://configured.example.test"
     session_override = {}
     monkeypatch.setattr(
         cli_mod,
@@ -1424,6 +1425,7 @@ def test_login_mocked(cli_mod, runner, monkeypatch):
         "get_projects",
         lambda: (_ for _ in ()).throw(AssertionError("login should not fetch projects")),
     )
+    monkeypatch.setenv("MAINSEQUENCE_ENDPOINT", configured_backend)
 
     result = runner.invoke(
         cli_mod.app,
@@ -1434,9 +1436,9 @@ def test_login_mocked(cli_mod, runner, monkeypatch):
     assert "__  __" in result.output
     assert "Signed in as user@example.com" in result.output
     assert "Auth tokens are persisted in secure OS storage" in result.output
-    assert cli_mod.cfg.STANDARD_BACKEND_URL in result.output
+    assert configured_backend in result.output
     assert session_override == {
-        "backend_url": cli_mod.cfg.STANDARD_BACKEND_URL,
+        "backend_url": configured_backend,
         "mainsequence_path": None,
     }
 
@@ -1446,12 +1448,15 @@ def test_login_via_mcp_handoff_persists_without_browser(
     runner,
     monkeypatch,
 ):
+    configured_backend = "https://dev.example.test"
     handoff_uid = "00000000-0000-4000-8000-000000000001"
     captured: dict[str, object] = {}
     saved: list[tuple[str, str, str]] = []
+    saved_backends: list[str] = []
 
     def _mcp_login(*, timeout_seconds, on_handoff):
         captured["timeout_seconds"] = timeout_seconds
+        captured["backend_during_handoff"] = cli_mod.cfg.backend_url()
         on_handoff(
             {
                 "mcp_tool": "auth.cli_authorize",
@@ -1459,11 +1464,16 @@ def test_login_via_mcp_handoff_persists_without_browser(
             }
         )
         return {
-            "backend": cli_mod.cfg.STANDARD_BACKEND_URL,
+            "backend": captured["backend_during_handoff"],
             "access": "mcp-access",
             "refresh": "mcp-refresh",
             "user": {"username": "coding-agent@example.com"},
         }
+
+    def _save_tokens(username, access, refresh):
+        saved.append((username, access, refresh))
+        saved_backends.append(cli_mod.cfg.backend_url())
+        return True
 
     monkeypatch.setattr(cli_mod, "login_via_mcp_handoff", _mcp_login)
     monkeypatch.setattr(
@@ -1474,7 +1484,7 @@ def test_login_via_mcp_handoff_persists_without_browser(
     monkeypatch.setattr(
         cli_mod.cfg,
         "save_tokens",
-        lambda username, access, refresh: saved.append((username, access, refresh)) or True,
+        _save_tokens,
     )
     monkeypatch.setattr(
         cli_mod.cfg,
@@ -1491,6 +1501,7 @@ def test_login_via_mcp_handoff_persists_without_browser(
         "auth_persistence_label",
         lambda: "local CLI auth storage",
     )
+    monkeypatch.setenv("MAINSEQUENCE_ENDPOINT", configured_backend)
 
     result = runner.invoke(
         cli_mod.app,
@@ -1499,6 +1510,7 @@ def test_login_via_mcp_handoff_persists_without_browser(
 
     assert result.exit_code == 0, result.output
     assert captured["timeout_seconds"] == 42
+    assert captured["backend_during_handoff"] == configured_backend
     assert '"tool":"auth.cli_authorize"' in result.output
     assert handoff_uid in result.output
     assert "mcp-access" not in result.output
@@ -1511,6 +1523,80 @@ def test_login_via_mcp_handoff_persists_without_browser(
             "mcp-refresh",
         ),
     ]
+    assert saved_backends == [configured_backend, configured_backend]
+    assert captured["session"] == {
+        "backend_url": configured_backend,
+        "mainsequence_path": None,
+    }
+    assert os.environ["MAINSEQUENCE_ENDPOINT"] == configured_backend
+
+
+def test_login_via_mcp_handoff_explicit_backend_overrides_configured_backend(
+    cli_mod,
+    runner,
+    monkeypatch,
+    tmp_path,
+):
+    configured_backend = "https://configured.example.test"
+    explicit_backend = "https://explicit.example.test"
+    projects_base = str(tmp_path / "projects")
+    captured: dict[str, object] = {}
+
+    def _mcp_login(*, timeout_seconds, on_handoff):
+        captured["backend_during_handoff"] = cli_mod.cfg.backend_url()
+        return {
+            "backend": captured["backend_during_handoff"],
+            "access": "mcp-access",
+            "refresh": "mcp-refresh",
+            "user": {"username": "coding-agent@example.com"},
+        }
+
+    monkeypatch.setattr(cli_mod, "login_via_mcp_handoff", _mcp_login)
+    monkeypatch.setattr(
+        cli_mod,
+        "login_via_browser",
+        lambda **_kwargs: (_ for _ in ()).throw(AssertionError("browser login must not run")),
+    )
+    monkeypatch.setattr(cli_mod.cfg, "save_tokens", lambda username, access, refresh: True)
+    monkeypatch.setattr(
+        cli_mod.cfg,
+        "get_config",
+        lambda: {
+            "mainsequence_path": projects_base,
+            "backend_url": configured_backend,
+        },
+    )
+    monkeypatch.setattr(
+        cli_mod.cfg,
+        "set_session_overrides",
+        lambda **kwargs: captured.update({"session": kwargs}),
+    )
+    monkeypatch.setattr(
+        cli_mod.cfg,
+        "auth_persistence_label",
+        lambda: "local CLI auth storage",
+    )
+    monkeypatch.setenv("MAINSEQUENCE_ENDPOINT", configured_backend)
+
+    result = runner.invoke(
+        cli_mod.app,
+        [
+            "login",
+            "--mcp",
+            "--backend",
+            explicit_backend,
+            "--projects-base",
+            projects_base,
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert captured["backend_during_handoff"] == explicit_backend
+    assert captured["session"] == {
+        "backend_url": explicit_backend,
+        "mainsequence_path": projects_base,
+    }
+    assert os.environ["MAINSEQUENCE_ENDPOINT"] == configured_backend
 
 
 def test_login_via_mcp_handoff_rejects_export(cli_mod, runner, monkeypatch):
@@ -1705,6 +1791,7 @@ def test_login_export_env(cli_mod, runner, monkeypatch):
 
 
 def test_login_with_jwt_tokens(cli_mod, runner, monkeypatch):
+    configured_backend = "https://configured.example.test"
     saved = {}
     session_override = {}
 
@@ -1732,6 +1819,7 @@ def test_login_with_jwt_tokens(cli_mod, runner, monkeypatch):
         "get_projects",
         lambda: (_ for _ in ()).throw(AssertionError("login should not fetch projects")),
     )
+    monkeypatch.setenv("MAINSEQUENCE_ENDPOINT", configured_backend)
 
     result = runner.invoke(
         cli_mod.app,
@@ -1749,17 +1837,19 @@ def test_login_with_jwt_tokens(cli_mod, runner, monkeypatch):
     assert "Signed in with JWT tokens" in result.output
     assert "Auth tokens are persisted in local CLI auth storage" in result.output
     assert session_override == {
-        "backend_url": cli_mod.cfg.STANDARD_BACKEND_URL,
+        "backend_url": configured_backend,
         "mainsequence_path": None,
     }
 
 
 def test_login_runtime_credential_exchanges_token(cli_mod, runner, monkeypatch):
+    configured_backend = "https://configured.example.test"
     session_override = {}
     exchange = {"called": False}
     saved = {}
 
     monkeypatch.setenv("MAINSEQUENCE_AUTH_MODE", "runtime_credential")
+    monkeypatch.setenv("MAINSEQUENCE_ENDPOINT", configured_backend)
 
     def _exchange_runtime_credential_for_cli_login(backend_url):
         exchange["called"] = True
@@ -1799,14 +1889,14 @@ def test_login_runtime_credential_exchanges_token(cli_mod, runner, monkeypatch):
 
     assert result.exit_code == 0
     assert exchange["called"] is True
-    assert exchange["backend_url"]
+    assert exchange["backend_url"] == configured_backend
     assert saved == {"username": "", "access": "runtime-access", "refresh": ""}
     assert os.environ["MAINSEQUENCE_ACCESS_TOKEN"] == "runtime-access"
     assert "Signed in with runtime credential" in result.output
     assert "no CLI JWT refresh token exists" in result.output
     assert "re-exchange the runtime credential automatically" in result.output
     assert session_override == {
-        "backend_url": cli_mod.cfg.STANDARD_BACKEND_URL,
+        "backend_url": configured_backend,
         "mainsequence_path": None,
     }
 

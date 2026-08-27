@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [6.0.50] - 2026-08-27
+
+### Fixed
+
+- Made every CLI login mode use the backend resolved by the active CLI
+  configuration when `--backend` is omitted. MCP handoff creation and polling
+  can no longer silently target the standard backend while `mainsequence
+  doctor` reports a different configured backend; explicit backend precedence
+  and different-backend projects-base validation remain unchanged.
+
 ## [6.0.49] - 2026-08-27
 
 ### Fixed
