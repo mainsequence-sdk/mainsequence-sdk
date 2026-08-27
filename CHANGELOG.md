@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [6.0.53] - 2026-08-27
+
+### Fixed
+
+- Aligned strict `AgentSession` parsing with the backend-owned, read-only
+  `runtime_capabilities` version map across list, detail, and handle-based
+  get-or-create responses.
+
 ## [6.0.52] - 2026-08-27
 
 ### Added

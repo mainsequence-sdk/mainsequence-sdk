@@ -483,6 +483,7 @@ ontology and each installed platform skill.
 - `mainsequence agent session get_or_create <AGENT_UID> --session-uid <SESSION_UID>` resolves one existing session through `POST /api/v1/agents/{agent_uid}/sessions/get-or-create-session/`.
 - `mainsequence agent session get_or_create <AGENT_UID> --handle-unique-id <HANDLE>` gets or creates a reusable session handle through `POST /api/v1/agents/{agent_uid}/sessions/get-or-create-session/`.
 - `mainsequence agent session get_or_create` sends exactly one lookup key: either `session_uid` or `handle_unique_id`. Creation options such as `--name`, `--parent-session-uid`, `--llm-provider`, `--llm-model`, and `--llm-thinking` are valid only with `--handle-unique-id`.
+- Agent session list, detail, and get-or-create responses expose the backend-owned, read-only `runtime_capabilities` version map. Callers may inspect advertised capabilities but must not send or override them.
 - In runtime A2A allocation, `--parent-session-uid` proves the immediate calling Agent. The backend, not the CLI, copies the parent session's User owner into the child session and handle. That User owns provider credentials across the chain; provider credentials are never forwarded in A2A content.
 - `mainsequence agent session a2a send <SESSION_UID> --message "..."` resolves runtime access internally, sends a standard A2A message, and always returns the standard A2A JSON response.
 - `mainsequence agent session a2a send <SESSION_UID> --message "..." --strict-dictionary` requests a strict JSON dictionary using the standard A2A output contract.

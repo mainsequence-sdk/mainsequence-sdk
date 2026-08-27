@@ -1808,6 +1808,13 @@ class AgentSession(OwnerLogMixin, BaseObjectOrm, BasePydanticModel):
         default=None,
         description="Backend-owned application-log capability for this exact session.",
     )
+    runtime_capabilities: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "Read-only versioned runtime capabilities advertised by the session "
+            "harness. Capability names are backend-extensible."
+        ),
+    )
     agent_uid: str | None = Field(
         None, description="Public UID of the agent definition used for this session."
     )

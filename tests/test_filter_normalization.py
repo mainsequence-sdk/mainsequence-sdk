@@ -1832,6 +1832,18 @@ def test_agent_runtime_models_deserialize_backend_uid_payloads():
                 "owner_user_uid": user_uid,
                 "is_locked": False,
             },
+            "observability": {
+                "application_logs_url": f"/api/v1/agent-sessions/{session_uid}/logs/",
+                "resource_usage_url": None,
+                "deployment_runs_url": None,
+                "sessions_url": None,
+            },
+            "runtime_capabilities": {
+                "tau_runtime_bootstrap": "v1",
+                "tau_resume_snapshot": "v1",
+                "tau_activity_sequence": "v1",
+                "tau_turn_commit": "v1",
+            },
         }
     )
     assert session.uid == session_uid
@@ -1842,6 +1854,13 @@ def test_agent_runtime_models_deserialize_backend_uid_payloads():
     assert session.harness_version == "0.3.1"
     assert session.is_archived is False
     assert session.active_model == "gpt-5.4"
+    assert session.observability.application_logs_url.endswith(f"/{session_uid}/logs/")
+    assert session.runtime_capabilities == {
+        "tau_runtime_bootstrap": "v1",
+        "tau_resume_snapshot": "v1",
+        "tau_activity_sequence": "v1",
+        "tau_turn_commit": "v1",
+    }
 
     service = agent_models_mod.CodingAgentService.model_validate(
         {
@@ -2087,6 +2106,70 @@ def test_agent_session_filter_supports_archive_history_query(monkeypatch):
         },
         "timeout": 7,
     }
+
+
+def test_agent_session_list_and_detail_parse_runtime_capabilities(monkeypatch):
+    session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
+    agent_uid = "e0e75693-4110-464c-93e0-82c7fd9c9a23"
+    session_payload = {
+        "uid": session_uid,
+        "agent_uid": agent_uid,
+        "agent_name": "Research Copilot",
+        "agent_type": "custom",
+        "harness": "tau",
+        "harness_protocol": "tau-session-v1",
+        "harness_version": "0.3.1",
+        "name": "Reusable session",
+        "status": "running",
+        "llm_provider": "openai",
+        "llm_model": "gpt-5.4",
+        "llm_thinking": "medium",
+        "observability": {
+            "application_logs_url": f"/api/v1/agent-sessions/{session_uid}/logs/",
+            "resource_usage_url": None,
+            "deployment_runs_url": None,
+            "sessions_url": None,
+        },
+        "runtime_capabilities": {
+            "tau_runtime_bootstrap": "v1",
+            "tau_resume_snapshot": "v1",
+            "tau_activity_sequence": "v1",
+            "tau_turn_commit": "v1",
+        },
+    }
+    responses = iter(
+        [
+            {"count": 1, "next": None, "previous": None, "results": [dict(session_payload)]},
+            dict(session_payload),
+        ]
+    )
+
+    class FakeResponse:
+        status_code = 200
+        content = b'{"ok": true}'
+
+        def __init__(self, payload):
+            self._payload = payload
+
+        def json(self):
+            return self._payload
+
+    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
+        return FakeResponse(next(responses))
+
+    monkeypatch.setattr(base_mod, "make_request", _fake_make_request)
+
+    listed = agent_models_mod.AgentSession.filter(agent_uid=agent_uid)
+    detailed = agent_models_mod.AgentSession.get(pk=session_uid)
+
+    assert listed[0].runtime_capabilities["tau_turn_commit"] == "v1"
+    assert detailed.runtime_capabilities == listed[0].runtime_capabilities
+    assert detailed.observability.application_logs_url.endswith(f"/{session_uid}/logs/")
+
+    with pytest.raises(ValidationError, match="unexpected_projection"):
+        agent_models_mod.AgentSession.model_validate(
+            {**session_payload, "unexpected_projection": "still forbidden"}
+        )
 
 
 def test_agent_session_get_insights_parses_pi_response(monkeypatch):
@@ -3988,6 +4071,80 @@ def test_agent_get_or_create_session_posts_new_contract(monkeypatch):
         },
         "timeout": 13,
     }
+
+
+def test_agent_get_or_create_session_parses_reused_handle_capabilities(monkeypatch):
+    agent_uid = "e0e75693-4110-464c-93e0-82c7fd9c9a23"
+    session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
+    handle_unique_id = "tutorial-evaluation-development"
+    agent = agent_models_mod.Agent(
+        uid=agent_uid,
+        name="Research Copilot",
+        agent_type="custom",
+        description="Research assistant.",
+        agent_card=None,
+        llm_provider="openai",
+        llm_model="gpt-5.4",
+        llm_thinking="medium",
+        repository_branch=None,
+        organization_environment_uid=None,
+        organization_environment_name=None,
+    )
+    captured = {}
+
+    class FakeResponse:
+        status_code = 200
+        content = b'{"ok": true}'
+
+        @staticmethod
+        def json():
+            return {
+                "uid": session_uid,
+                "agent_uid": agent_uid,
+                "agent_name": "Research Copilot",
+                "agent_type": "custom",
+                "harness": "tau",
+                "harness_protocol": "tau-session-v1",
+                "harness_version": "0.3.1",
+                "name": "Tutorial evaluation",
+                "status": "running",
+                "llm_provider": "openai",
+                "llm_model": "gpt-5.4",
+                "llm_thinking": "medium",
+                "bound_handle": {
+                    "uid": "44444444-4444-4444-8444-444444444444",
+                    "handle_unique_id": handle_unique_id,
+                    "owner_user_uid": "fdf409f7-d16f-4f71-986b-9057db6c7eca",
+                    "is_locked": False,
+                },
+                "observability": {
+                    "application_logs_url": f"/api/v1/agent-sessions/{session_uid}/logs/",
+                    "resource_usage_url": None,
+                    "deployment_runs_url": None,
+                    "sessions_url": None,
+                },
+                "runtime_capabilities": {
+                    "tau_runtime_bootstrap": "v1",
+                    "tau_resume_snapshot": "v1",
+                    "tau_activity_sequence": "v1",
+                    "tau_turn_commit": "v1",
+                },
+            }
+
+    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
+        captured.update({"r_type": r_type, "url": url, "payload": payload, "timeout": time_out})
+        return FakeResponse()
+
+    monkeypatch.setattr(agent_models_mod, "make_request", _fake_make_request)
+
+    session = agent.get_or_create_session(handle_unique_id=handle_unique_id, timeout=13)
+
+    assert session.uid == session_uid
+    assert session.bound_handle["handle_unique_id"] == handle_unique_id
+    assert session.runtime_capabilities["tau_runtime_bootstrap"] == "v1"
+    assert session.observability.application_logs_url.endswith(f"/{session_uid}/logs/")
+    assert captured["payload"] == {"json": {"handle_unique_id": handle_unique_id}}
+    assert captured["timeout"] == 13
 
 
 def test_agent_get_or_create_session_by_uid_sends_only_session_uid(monkeypatch):

@@ -71,6 +71,9 @@ mainsequence agent session get_or_create \
 ```
 
 Use the returned session `uid` as the target `AgentSession` UID.
+The returned `runtime_capabilities` map is a read-only advertisement from the
+session harness. Inspect it when capability-aware behavior is required; never
+construct, send, or override it from client code.
 
 If this A2A request originates from an existing caller session, include the
 parent session UID:

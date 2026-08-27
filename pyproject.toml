@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mainsequence"
-version = "6.0.52"
+version = "6.0.53"
 description = "Main Sequence SDK "
 readme = "README.md"
 requires-python = ">=3.13"
