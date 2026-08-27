@@ -14,6 +14,7 @@ ProjectRuntimeContextStatus = Literal[
     "resolved",
     "project_branch_not_registered",
 ]
+ProjectRuntimeContextSource = Literal["git", "authenticated_runtime"]
 
 
 class ProjectRuntimeContextError(RuntimeError):
@@ -50,7 +51,7 @@ ProjectBranchContextLoader = Callable[[GitProjectSourceContext], Any]
 
 @dataclass(frozen=True, slots=True)
 class ProjectRuntimeContext:
-    source_context: GitProjectSourceContext
+    source_context: GitProjectSourceContext | None
     project_uid: str | None
     project_branch_uid: str | None
     organization_environment_uid: str | None
@@ -59,26 +60,41 @@ class ProjectRuntimeContext:
     process_id: int
     project_branch: Any | None
     detail: str = ""
+    context_source: ProjectRuntimeContextSource = "git"
+    runtime_repository_branch: str | None = None
+
+    @property
+    def is_authenticated_runtime(self) -> bool:
+        return self.context_source == "authenticated_runtime"
+
+    def _require_git_source_context(self) -> GitProjectSourceContext:
+        if self.source_context is None:
+            raise ProjectRuntimeContextError(
+                "Authenticated deployed runtime context has no local Git source."
+            )
+        return self.source_context
 
     @property
     def repository_root(self) -> pathlib.Path:
-        return self.source_context.repository_root
+        return self._require_git_source_context().repository_root
 
     @property
     def canonical_repository_identity(self) -> str:
-        return self.source_context.canonical_repository_identity
+        return self._require_git_source_context().canonical_repository_identity
 
     @property
     def repository_branch(self) -> str:
-        return self.source_context.repository_branch
+        if self.source_context is not None:
+            return self.source_context.repository_branch
+        return str(self.runtime_repository_branch or "")
 
     @property
     def repository_ref(self) -> str:
-        return self.source_context.repository_ref
+        return self._require_git_source_context().repository_ref
 
     @property
     def commit_sha(self) -> str:
-        return self.source_context.commit_sha
+        return self._require_git_source_context().commit_sha
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,6 +107,110 @@ class _ContextState:
 
 _STATE_CONDITION = threading.Condition(threading.RLock())
 _STATE = _ContextState(process_id=os.getpid(), phase="uninitialized")
+_AUTHENTICATED_RUNTIME_CONTEXT: tuple[int, dict[str, str]] | None = None
+
+
+def _normalize_authenticated_runtime_context(
+    value: Mapping[str, Any],
+) -> dict[str, str]:
+    required_fields = (
+        "project_uid",
+        "project_branch_uid",
+        "repository_branch",
+        "organization_environment_uid",
+    )
+    normalized = {field: str(value.get(field) or "").strip() for field in required_fields}
+    missing = [field for field, field_value in normalized.items() if not field_value]
+    if missing:
+        raise ProjectRuntimeContextError(
+            "Authenticated runtime project context is incomplete; missing "
+            + ", ".join(sorted(missing))
+            + "."
+        )
+    return normalized
+
+
+def _install_authenticated_runtime_project_context(value: Mapping[str, Any]) -> None:
+    """Install only backend-authenticated deployed-runtime ProjectBranch context."""
+
+    global _AUTHENTICATED_RUNTIME_CONTEXT, _STATE
+
+    normalized = _normalize_authenticated_runtime_context(value)
+    process_id = os.getpid()
+    with _STATE_CONDITION:
+        if _STATE.process_id != process_id:
+            _STATE = _ContextState(process_id=process_id, phase="uninitialized")
+        if _STATE.phase == "resolving":
+            installed = _authenticated_runtime_context_for_process()
+            if installed is not None and installed != normalized:
+                raise ProjectSourceContextDriftError(
+                    "Authenticated runtime project context changed while resolving."
+                )
+        if _STATE.phase == "resolved":
+            assert _STATE.context is not None
+            existing = _STATE.context
+            if (
+                not existing.is_authenticated_runtime
+                or any(
+                    str(getattr(existing, field) or "") != normalized[field]
+                    for field in (
+                        "project_uid",
+                        "project_branch_uid",
+                        "organization_environment_uid",
+                    )
+                )
+                or existing.repository_branch != normalized["repository_branch"]
+            ):
+                raise ProjectSourceContextDriftError(
+                    "Authenticated runtime project context changed after process initialization."
+                )
+        _AUTHENTICATED_RUNTIME_CONTEXT = (process_id, normalized)
+        if _STATE.phase == "failed":
+            _STATE = _ContextState(process_id=process_id, phase="uninitialized")
+        _STATE_CONDITION.notify_all()
+
+
+def _authenticated_runtime_context_for_process() -> dict[str, str] | None:
+    installed = _AUTHENTICATED_RUNTIME_CONTEXT
+    if installed is None or installed[0] != os.getpid():
+        return None
+    return dict(installed[1])
+
+
+def is_authenticated_runtime_project_context() -> bool:
+    if _authenticated_runtime_context_for_process() is not None:
+        return True
+    with _STATE_CONDITION:
+        return bool(
+            _STATE.process_id == os.getpid()
+            and _STATE.phase == "resolved"
+            and _STATE.context is not None
+            and _STATE.context.is_authenticated_runtime
+        )
+
+
+def _exchange_authenticated_runtime_context_if_configured() -> None:
+    if _authenticated_runtime_context_for_process() is not None:
+        return
+    if (os.getenv("MAINSEQUENCE_AUTH_MODE") or "").strip().lower() != "runtime_credential":
+        return
+    if not (os.getenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_ID") or "").strip():
+        return
+    if not (os.getenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET") or "").strip():
+        return
+
+    from mainsequence.client.utils import AuthError, loaders
+
+    try:
+        loaders.refresh_headers(force=True)
+    except AuthError as exc:
+        raise ProjectRuntimeContextError(
+            "Could not exchange the deployed runtime credential for project context."
+        ) from exc
+    if _authenticated_runtime_context_for_process() is None:
+        raise ProjectRuntimeContextError(
+            "The authenticated runtime target has no ProjectBranch context."
+        )
 
 
 def _object_value(value: Any, field: str, default: Any = None) -> Any:
@@ -316,17 +436,68 @@ def _build_project_runtime_context(
     )
 
 
+def _build_authenticated_runtime_project_context(
+    authenticated_context: Mapping[str, str],
+) -> ProjectRuntimeContext:
+    from mainsequence.client.models_foundry import ProjectBranch
+
+    project_branch = ProjectBranch.get_by_uid(authenticated_context["project_branch_uid"])
+    expected_fields = {
+        "project_uid": authenticated_context["project_uid"],
+        "project_branch_uid": authenticated_context["project_branch_uid"],
+        "repository_branch": authenticated_context["repository_branch"],
+        "organization_environment_uid": authenticated_context["organization_environment_uid"],
+    }
+    observed_fields = {
+        "project_uid": _normalized_value(project_branch, "project_uid"),
+        "project_branch_uid": _normalized_value(project_branch, "uid"),
+        "repository_branch": _normalized_value(project_branch, "repository_branch"),
+        "organization_environment_uid": _normalized_value(
+            project_branch,
+            "organization_environment_uid",
+        ),
+    }
+    mismatched = sorted(
+        field for field, expected in expected_fields.items() if observed_fields[field] != expected
+    )
+    if mismatched:
+        raise ProjectRuntimeContextError(
+            "Authenticated runtime project context does not match the target "
+            "ProjectBranch: " + ", ".join(mismatched) + "."
+        )
+
+    return ProjectRuntimeContext(
+        source_context=None,
+        project_uid=expected_fields["project_uid"],
+        project_branch_uid=expected_fields["project_branch_uid"],
+        organization_environment_uid=expected_fields["organization_environment_uid"],
+        metatables_data_source=_object_value(
+            project_branch,
+            "metatables_data_source",
+        ),
+        status="resolved",
+        process_id=os.getpid(),
+        project_branch=project_branch,
+        context_source="authenticated_runtime",
+        runtime_repository_branch=expected_fields["repository_branch"],
+        detail=(
+            "ProjectBranch context installed from an authenticated runtime credential exchange."
+        ),
+    )
+
+
 def get_project_runtime_context(
     *,
     project_dir: str | pathlib.Path | None = None,
     project_uid: str | None = None,
     _project_branch_context_loader: ProjectBranchContextLoader | None = None,
 ) -> ProjectRuntimeContext:
-    """Resolve and freeze Git-native ProjectBranch context once per process."""
+    """Resolve and freeze authenticated runtime or local Git context once per process."""
 
     global _STATE
 
     process_id = os.getpid()
+    _exchange_authenticated_runtime_context_if_configured()
     normalized_project_dir = pathlib.Path(project_dir or pathlib.Path.cwd()).resolve()
     with _STATE_CONDITION:
         if _STATE.process_id != process_id:
@@ -346,12 +517,16 @@ def get_project_runtime_context(
         _STATE = _ContextState(process_id=process_id, phase="resolving")
 
     try:
-        context = _build_project_runtime_context(
-            project_dir=normalized_project_dir,
-            project_branch_context_loader=(
-                _project_branch_context_loader or _default_project_branch_context_loader
-            ),
-        )
+        authenticated_context = _authenticated_runtime_context_for_process()
+        if authenticated_context is not None:
+            context = _build_authenticated_runtime_project_context(authenticated_context)
+        else:
+            context = _build_project_runtime_context(
+                project_dir=normalized_project_dir,
+                project_branch_context_loader=(
+                    _project_branch_context_loader or _default_project_branch_context_loader
+                ),
+            )
         if project_uid and str(project_uid).strip() != context.project_uid:
             raise ProjectRuntimeContextError(
                 "Requested Project does not match the resolved Git repository."
@@ -375,6 +550,8 @@ def validate_project_source_context(
     """Fail if the current worktree no longer matches the frozen source context."""
 
     resolved = context or get_project_runtime_context()
+    if resolved.is_authenticated_runtime:
+        return resolved
     observed = _resolve_git_source_context(resolved.repository_root)
     if observed != resolved.source_context:
         raise ProjectSourceContextDriftError(
@@ -435,6 +612,12 @@ def scope_current_project_branch_filters(
     exact_value = scoped.get(field_name)
     in_field_name = f"{field_name}__in"
     in_value = scoped.get(in_field_name)
+    if context.is_authenticated_runtime:
+        if exact_value not in (None, "") or in_value not in (None, ""):
+            raise ProjectBranchContextRequiredError(
+                f"{operation} cannot select a ProjectBranch in an authenticated runtime."
+            )
+        return scoped
     if exact_value not in (None, ""):
         normalized = str(_object_value(exact_value, "uid", exact_value) or "").strip()
         if normalized != project_branch_uid:
@@ -479,8 +662,9 @@ def require_project_metatables_data_source(
 def _reset_project_runtime_context() -> None:
     """Reset call-once state for isolated SDK tests."""
 
-    global _STATE
+    global _AUTHENTICATED_RUNTIME_CONTEXT, _STATE
     with _STATE_CONDITION:
+        _AUTHENTICATED_RUNTIME_CONTEXT = None
         _STATE = _ContextState(process_id=os.getpid(), phase="uninitialized")
         _STATE_CONDITION.notify_all()
 
@@ -494,6 +678,7 @@ __all__ = [
     "ProjectRuntimeContextError",
     "ProjectSourceContextDriftError",
     "get_project_runtime_context",
+    "is_authenticated_runtime_project_context",
     "normalize_git_repository_identity",
     "require_project_branch_context",
     "require_project_metatables_data_source",

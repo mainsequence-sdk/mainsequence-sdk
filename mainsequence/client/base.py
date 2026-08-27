@@ -104,9 +104,15 @@ class CurrentProjectEnvironmentResourceMixin:
 
     @classmethod
     def _sdk_owned_query_context(cls, operation: str) -> dict[str, str]:
-        from mainsequence.project_context import resolve_organization_environment_uid
+        from mainsequence.project_context import (
+            is_authenticated_runtime_project_context,
+            resolve_organization_environment_uid,
+        )
 
-        return {"organization_environment_uid": resolve_organization_environment_uid(operation)}
+        environment_uid = resolve_organization_environment_uid(operation)
+        if is_authenticated_runtime_project_context():
+            return {}
+        return {"organization_environment_uid": environment_uid}
 
     @classmethod
     def _sdk_owned_create_context(cls, operation: str) -> dict[str, str]:

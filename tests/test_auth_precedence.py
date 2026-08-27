@@ -236,6 +236,13 @@ def test_runtime_credential_provider_exchanges_and_writes_access_token(monkeypat
     monkeypatch.setenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET", "cred-secret")
 
     utils = _load_mainsequence_submodule("mainsequence.client.utils")
+    runtime_context_module = importlib.import_module("mainsequence.project_context")
+    installed_contexts: list[dict] = []
+    monkeypatch.setattr(
+        runtime_context_module,
+        "_install_authenticated_runtime_project_context",
+        lambda value: installed_contexts.append(dict(value)),
+    )
     calls: list[dict] = []
 
     def _fake_post(url, **kwargs):
@@ -246,6 +253,12 @@ def test_runtime_credential_provider_exchanges_and_writes_access_token(monkeypat
                 "access": "runtime-access",
                 "token_type": "Bearer",
                 "expires_in": 300,
+                "runtime_project_context": {
+                    "project_uid": "project-uid",
+                    "project_branch_uid": "project-branch-uid",
+                    "repository_branch": "main",
+                    "organization_environment_uid": "environment-uid",
+                },
             },
         )
 
@@ -263,6 +276,14 @@ def test_runtime_credential_provider_exchanges_and_writes_access_token(monkeypat
     assert calls[0]["headers"]["Content-Type"] == "application/json"
     assert os.environ["MAINSEQUENCE_ACCESS_TOKEN"] == "runtime-access"
     assert os.environ["MAINSEQUENCE_REFRESH_TOKEN"] == "must-not-be-used"
+    assert installed_contexts == [
+        {
+            "project_uid": "project-uid",
+            "project_branch_uid": "project-branch-uid",
+            "repository_branch": "main",
+            "organization_environment_uid": "environment-uid",
+        }
+    ]
 
 
 def test_runtime_credential_provider_reuses_valid_exchanged_access_token(monkeypatch):

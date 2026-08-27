@@ -4756,6 +4756,8 @@ def _current_metatable_environment_uid() -> str:
 
 
 def _metatable_project_context_for_request() -> MetaTableProjectContextRequest | None:
+    if get_project_runtime_context().is_authenticated_runtime:
+        return None
     return _current_metatable_project_context()
 
 
@@ -4770,7 +4772,8 @@ def _with_current_metatable_project_context(
             "organization_environment_uid is SDK-controlled and cannot be supplied by the caller."
         )
     if payload_json.get("management_mode") == "external_registered":
-        payload_json["organization_environment_uid"] = _current_metatable_environment_uid()
+        if not get_project_runtime_context().is_authenticated_runtime:
+            payload_json["organization_environment_uid"] = _current_metatable_environment_uid()
         return payload_json
     project_context = _metatable_project_context_for_request()
     if project_context is not None:
@@ -4795,9 +4798,10 @@ def _with_current_metatable_project_context_collection(
         row for row in payload_rows if row.get("management_mode") == "external_registered"
     ]
     if external_rows:
-        environment_uid = _current_metatable_environment_uid()
-        for row in external_rows:
-            row["organization_environment_uid"] = environment_uid
+        if not get_project_runtime_context().is_authenticated_runtime:
+            environment_uid = _current_metatable_environment_uid()
+            for row in external_rows:
+                row["organization_environment_uid"] = environment_uid
 
     project_context = _metatable_project_context_for_request() if managed_rows else None
     if project_context is not None:

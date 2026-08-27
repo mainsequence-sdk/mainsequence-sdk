@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [6.0.51] - 2026-08-27
+
+### Fixed
+
+- Installed backend-authenticated `runtime_project_context` during Knative
+  runtime-credential exchange before resolving project state. Branch-owned
+  deployed workloads now resolve their exact ProjectBranch and MetaTables Data
+  Source without inspecting container Git, and SDK-owned runtime requests omit
+  caller-selectable ProjectBranch and Organization Environment selectors.
+
 ## [6.0.50] - 2026-08-27
 
 ### Fixed
