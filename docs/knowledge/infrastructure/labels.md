@@ -57,8 +57,8 @@ The CLI exposes the same verbs on the object groups that support labels:
 mainsequence project add-label <PROJECT_UID> --label rates --label research
 mainsequence project remove-label <PROJECT_UID> --label archive
 
-mainsequence data-node add-label <DATA_NODE_STORAGE_UID> --label curated
-mainsequence data-node remove-label <DATA_NODE_STORAGE_UID> --label archive
+mainsequence time-index-table add-label <TIME_INDEX_META_TABLE_UID> --label curated
+mainsequence time-index-table remove-label <TIME_INDEX_META_TABLE_UID> --label archive
 ```
 
 Each command calls the SDK model method for that object. The label mutation updates organizational metadata only.

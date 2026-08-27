@@ -174,7 +174,7 @@ It contains:
 
 The selected data source does not belong inside `table_contract`. In normal
 project execution it is resolved from the active Main Sequence session, the same
-way DataNode resolves its data source.
+way TimeIndexTableUpdater resolves its data source.
 
 ```python
 request = Asset.build_registration_request()
@@ -214,7 +214,7 @@ class Asset(PlatformManagedMetaTable, Base):
     __metatable_identifier__ = "sdk_examples.Asset"
 ```
 
-For time-indexed DataNode storage, use `PlatformTimeIndexMetaTable` instead of
+For time-indexed updater output tables, use `PlatformTimeIndexMetaTable` instead of
 the generic `PlatformManagedMetaTable`. It includes `time_index_name` and
 `index_names` in the authored table contract and registers through the
 TimeIndexMetaTable endpoint.

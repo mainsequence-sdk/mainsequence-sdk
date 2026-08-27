@@ -3,7 +3,7 @@ import types
 import pytest
 
 import mainsequence.client.metatables as models_metatables
-from mainsequence.meta_tables.data_nodes import build_operations
+from mainsequence.meta_tables.time_index_table_updates import configuration
 
 DATA_SOURCE_UID = "864e7c22-482a-464a-8758-0d3408abd77f"
 
@@ -154,14 +154,14 @@ def test_delete_table_does_not_create_duckdb_source_to_classify(monkeypatch):
     )
 
     storage = models_metatables.TimeIndexMetaTable.model_construct(
-        physical_table_name="node-storage",
+        physical_table_name="table-storage",
         data_source=types.SimpleNamespace(class_type=models_metatables.DUCK_DB),
     )
 
     storage.delete_table()
 
-    assert drops == ["node-storage"]
-    assert deletes == ["node-storage"]
+    assert drops == ["table-storage"]
+    assert deletes == ["table-storage"]
 
 
 def test_delete_table_uses_sqlite_adapter_for_sqlite_storage(monkeypatch):
@@ -178,50 +178,46 @@ def test_delete_table_uses_sqlite_adapter_for_sqlite_storage(monkeypatch):
         lambda self: deletes.append(self.physical_table_name),
     )
     storage = models_metatables.TimeIndexMetaTable.model_construct(
-        physical_table_name="node-storage",
+        physical_table_name="table-storage",
         data_source=types.SimpleNamespace(class_type=models_metatables.SQLITE),
     )
 
     storage.delete_table()
 
-    assert drops == ["node-storage"]
-    assert deletes == ["node-storage"]
+    assert drops == ["table-storage"]
+    assert deletes == ["table-storage"]
 
 
-def test_build_operations_data_node_reference_serialization_uses_data_source_uid():
-    data_node = types.SimpleNamespace(
+def test_table_updater_serialization_uses_canonical_update_and_table_identity():
+    updater = types.SimpleNamespace(
         update_hash="update-hash-1",
-        data_source_uid=DATA_SOURCE_UID,
+        output_table_uid="table-uid-1",
     )
 
-    payload = build_operations._serialize_timeserie(data_node)
+    payload = configuration._serialize_table_updater(updater)
 
     assert payload == {
-        "is_time_serie_instance": True,
+        "kind": "table_update",
         "update_hash": "update-hash-1",
-        "data_source_uid": DATA_SOURCE_UID,
+        "output_table_uid": "table-uid-1",
     }
-    assert "data_source_id" not in payload
-    assert "is_time_serie_pickled" not in payload
 
 
-def test_build_operations_api_node_reference_serialization_uses_data_source_uid():
-    api_node = types.SimpleNamespace(
-        update_hash="api-update-hash-1",
+def test_table_ref_serialization_uses_canonical_table_and_data_source_identity():
+    table_ref = types.SimpleNamespace(
+        output_table_uid="table-uid-1",
         data_source_uid=DATA_SOURCE_UID,
     )
 
-    payload = build_operations._serialize_api_timeserie(api_node)
+    payload = configuration._serialize_table_ref(table_ref)
 
     assert payload == {
-        "is_api_time_serie_instance": True,
-        "update_hash": "api-update-hash-1",
+        "kind": "time_index_table_ref",
+        "time_index_meta_table_uid": "table-uid-1",
         "data_source_uid": DATA_SOURCE_UID,
     }
-    assert "data_source_id" not in payload
-    assert "is_api_time_serie_pickled" not in payload
 
 
-def test_build_operations_does_not_expose_data_node_cold_rebuild_helpers():
-    assert not hasattr(build_operations, "rebuild_from_configuration")
-    assert not hasattr(build_operations, "rebuild_and_set_from_update_hash")
+def test_configuration_does_not_expose_cold_rebuild_helpers():
+    assert not hasattr(configuration, "rebuild_from_configuration")
+    assert not hasattr(configuration, "rebuild_and_set_from_update_hash")

@@ -30,13 +30,13 @@ This skill is for:
 - enforce standard Main Sequence repository structure expectations
 - separate verified facts from assumptions
 - surface documentation mismatches to the user
-- enforce the namespace-first safety rule for new or modified DataNodes
+- enforce the namespace-first safety rule for new or modified TimeIndexTableUpdaters
 
 ## This Skill Must Not Claim
 
 This skill must not claim ownership of:
 
-- DataNode engineering
+- TimeIndexTableUpdater engineering
 - MetaTable design
 - Command Center-serving FastAPI contract and release design
 - jobs, schedules, images, resources, or releases
@@ -49,8 +49,8 @@ Do not let this skill become a domain manual.
 
 ## Route Adjacent Work
 
-- DataNodes:
-  `.agents/skills/mainsequence/data_publishing/data_nodes/SKILL.md`
+- TimeIndexTableUpdaters:
+  `.agents/skills/mainsequence/data_publishing/time_index_table_updates/SKILL.md`
 - MetaTables:
   `.agents/skills/mainsequence/data_publishing/meta_tables/SKILL.md`
 - platform data discovery before implementation:
@@ -121,7 +121,7 @@ Do not make ProjectBranch selection a separate user workflow.
 An unregistered local branch remains valid for ordinary local development, but
 it has no ProjectBranch, Environment, or project-derived MetaTables DataSource.
 Only branch-owned operations fail. Register the branch before using Jobs,
-images, releases, resources, platform-managed MetaTables/DataNodes, migrations,
+images, releases, resources, platform-managed MetaTables/TimeIndexTableUpdaters, migrations,
 pods, or other branch-owned platform APIs. Never fall back to another branch or
 to a Project-level default DataSource.
 
@@ -198,9 +198,9 @@ Once the task boundary is clear, move into the correct specialized skill.
 
 Do not teach domain semantics here.
 
-### 6. Use namespaces first for new or modified DataNodes
+### 6. Use namespaces first for new or modified TimeIndexTableUpdaters
 
-Before first-running or validating a new or changed DataNode, use an explicit namespace before any non-namespaced run.
+Before first-running or validating a new or changed TimeIndexTableUpdater, use an explicit namespace before any non-namespaced run.
 
 ## Review Rules
 

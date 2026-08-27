@@ -19,10 +19,14 @@ _LAZY_IMPORTS = {
     ),
     "POSTGRES_IDENTIFIER_MAX_LENGTH": (".hashing", "POSTGRES_IDENTIFIER_MAX_LENGTH"),
     "SchemaTableNameParts": (".schema_names", "SchemaTableNameParts"),
-    "BaseConfiguration": (".data_nodes", "BaseConfiguration"),
-    "APIDataNode": (".data_nodes", "APIDataNode"),
-    "DataNode": (".data_nodes", "DataNode"),
-    "DataNodeConfiguration": (".data_nodes", "DataNodeConfiguration"),
+    "BaseConfiguration": (".time_index_table_updates", "BaseConfiguration"),
+    "TableDependency": (".time_index_table_updates", "TableDependency"),
+    "TimeIndexTableRef": (".time_index_table_refs", "TimeIndexTableRef"),
+    "TimeIndexTableUpdater": (".time_index_table_updates", "TimeIndexTableUpdater"),
+    "TimeIndexTableUpdateConfig": (
+        ".time_index_table_updates",
+        "TimeIndexTableUpdateConfig",
+    ),
     "build_meta_table_configured_storage_hash": (
         ".hashing",
         "build_meta_table_configured_storage_hash",

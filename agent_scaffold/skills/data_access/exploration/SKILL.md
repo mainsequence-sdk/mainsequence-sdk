@@ -1,27 +1,27 @@
 ---
 name: mainsequence-data-exploration
-description: Use this skill when the task is to discover what `DataNode` or `MetaTable` data already exists on the Main Sequence platform before implementation starts.
+description: Use this skill when the task is to discover what `TimeIndexMetaTable` or `MetaTable` data already exists on the Main Sequence platform before implementation starts.
 ---
 
 # Main Sequence Data Exploration
 
 ## Overview
 
-Use this skill when the task is about discovering what `DataNode` or `MetaTable` data is already available on the platform before implementation starts.
+Use this skill when the task is about discovering what `TimeIndexMetaTable` or `MetaTable` data is already available on the platform before implementation starts.
 
 This skill is for discovery only.
 
 It helps answer questions such as:
 
 - what published data already exists on this platform
-- whether the right surface is a `DataNode` or `MetaTable`
+- whether the right storage surface is a `TimeIndexMetaTable` or `MetaTable`
 - which identifier, storage UID, or object UID should be used
 - what metadata is available for those objects
 - what still needs to be clarified before implementation starts
 
 ## This Skill Can Do
 
-- discover published `DataNode` tables through the CLI
+- discover published time-index tables through the CLI
 - inspect published table identifiers, storage UIDs, and metadata
 - search for tables by keyword, description, or column name
 - inspect organization-visible table identifiers
@@ -32,7 +32,7 @@ It helps answer questions such as:
 
 This skill must not claim ownership of:
 
-- producing or modifying `DataNode` pipelines
+- producing or modifying `TimeIndexTableUpdater` pipelines
 - designing `MetaTable` registration or operation behavior
 - deciding code-level read patterns for discovered datasets
 - building APIs or dashboards
@@ -45,8 +45,8 @@ This skill discovers and identifies data. It does not publish, redesign, or defi
 
 - project bootstrap, scaffolding, and routing:
   `.agents/skills/mainsequence/project_design/SKILL.md`
-- `DataNode` creation or modification:
-  `.agents/skills/mainsequence/data_publishing/data_nodes/SKILL.md`
+- `TimeIndexTableUpdater` creation or modification:
+  `.agents/skills/mainsequence/data_publishing/time_index_table_updates/SKILL.md`
 - `MetaTable` registration or operation work:
   `.agents/skills/mainsequence/data_publishing/meta_tables/SKILL.md`
 - FastAPI providers serving the Command Center frontend:
@@ -62,7 +62,7 @@ Streamlit dashboard implementation is app-owned project code, not a Main Sequenc
 
 1. `AGENTS.md`
 2. `docs/cli/index.md`
-3. `docs/knowledge/data_nodes.md`
+3. `docs/knowledge/time_index_table_updates.md`
 4. `docs/knowledge/meta_tables/index.md` when the exploration touches row-oriented storage
 
 ## Inputs This Skill Needs
@@ -79,7 +79,7 @@ Before exploring, collect or infer:
 
 For every non-trivial exploration task, decide:
 
-1. Is the data surface a `DataNode` or `MetaTable`?
+1. Is the storage surface a `TimeIndexMetaTable` or `MetaTable`?
 2. Do we know the identifier already, or do we need to search first?
 3. What metadata or object details are needed to complete the discovery?
 4. Which implementation skill should receive the handoff after discovery?
@@ -97,17 +97,17 @@ Discovery priority:
 - use column lookup only when the user is specifically searching for a schema or column name
 - use detail only after you have identified the candidate object you want to inspect
 
-Semantic description discovery for published DataNode storage searches
+Semantic description discovery for published time-index tables searches
 `TimeIndexMetaTable` metadata rows through:
 
 - `GET /api/v1/time-index-meta-tables/description-search/?q=<text>`
 
-This is the DataNode discovery surface because published DataNode storage is
+This is the time-index table discovery surface because published output tables are
 represented by `TimeIndexMetaTable` metadata.
 
 Typical semantic discovery commands:
 
-- `mainsequence data-node search "<keyword>"`
+- `mainsequence time-index-table search "<keyword>"`
 
 Optional ranking knobs for description discovery:
 
@@ -149,10 +149,10 @@ profile-to-table identity and must match the parent `TimeIndexMetaTable.uid`.
 Structured filtering is a different path. Use it only when you already know the
 field to filter by:
 
-- `mainsequence data-node list`
-- `mainsequence data-node list --show-filters`
-- `mainsequence data-node list --filter KEY=VALUE`
-- `mainsequence data-node detail <DATA_NODE_STORAGE_UID>`
+- `mainsequence time-index-table list`
+- `mainsequence time-index-table list --show-filters`
+- `mainsequence time-index-table list --filter KEY=VALUE`
+- `mainsequence time-index-table detail <TIME_INDEX_META_TABLE_UID>`
 
 Collection listing is scoped to one Organization Environment. Inside a
 registered project checkout, the CLI derives that scope from the process-frozen
@@ -163,15 +163,15 @@ context while unrelated local development remains available.
 Column lookup is also a different path. Use it only for schema-name discovery,
 not as the default dataset discovery flow:
 
-- `mainsequence data-node search "<column-name>" --mode column`
+- `mainsequence time-index-table search "<column-name>" --mode column`
 
 Raw SQL inspection is only for targeted exploration after you have a UID:
 
 - `mainsequence meta-table run_query <META_TABLE_UID> "SELECT * FROM public.some_table LIMIT 100"`
-- `mainsequence data-node run_query <DATA_NODE_STORAGE_UID> "SELECT * FROM public.some_table LIMIT 100"`
+- `mainsequence time-index-table run_query <TIME_INDEX_META_TABLE_UID> "SELECT * FROM public.some_table LIMIT 100"`
 
-Use the MetaTable command for `MetaTable` UIDs. Use the DataNode command only
-for `DataNode` storage UIDs. Do not confuse the two surfaces.
+Use the MetaTable command for `MetaTable` UIDs. Use the time-index-table command only
+for `TimeIndexMetaTable` UIDs. Do not confuse the two surfaces.
 
 For direct SDK/backend usage, MetaTable raw SQL is sent as a JSON string body,
 not as an object. Do not send `{ "sql": "SELECT ..." }`.
@@ -182,12 +182,12 @@ Use the CLI or SDK client to identify what exists and collect the relevant ident
 
 Do not define code-level read patterns here.
 
-For `DataNode` discovery specifically:
+For time-index table discovery specifically:
 
-- start with `mainsequence data-node search`
-- use `mainsequence data-node list` only when you need broader enumeration or structured filters
-- use `mainsequence data-node search "<column-name>" --mode column` only for schema-name lookup
-- use `mainsequence data-node detail` only after search or list identified the target storage
+- start with `mainsequence time-index-table search`
+- use `mainsequence time-index-table list` only when you need broader enumeration or structured filters
+- use `mainsequence time-index-table search "<column-name>" --mode column` only for schema-name lookup
+- use `mainsequence time-index-table detail` only after search or list identified the target storage
 
 ### 3. Report platform objects with evidence
 
@@ -205,7 +205,7 @@ Once the discovery is complete, hand off to the correct implementation skill.
 
 Examples:
 
-- if the task is about publishing or modifying time-series data, hand off to `.agents/skills/mainsequence/data_publishing/data_nodes/SKILL.md`
+- if the task is about publishing or modifying time-series data, hand off to `.agents/skills/mainsequence/data_publishing/time_index_table_updates/SKILL.md`
 - if the task is about row-oriented operational data, hand off to `.agents/skills/mainsequence/data_publishing/meta_tables/SKILL.md`
 - if the task is about APIs or dashboards, hand off to the relevant surface skill after discovery is complete
 
@@ -214,7 +214,7 @@ Examples:
 When reviewing an exploration result, look for:
 
 - a discovery claim without CLI evidence
-- confusion between `DataNode` and `MetaTable`
+- confusion between updater behavior, `TimeIndexMetaTable`, and `MetaTable`
 - jumping into implementation work before discovery is complete
 - claiming implementation conclusions from a discovery-only pass
 

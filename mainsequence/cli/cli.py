@@ -68,11 +68,6 @@ from .api import (
     add_constant_team_to_view,
     add_constant_user_to_edit,
     add_constant_user_to_view,
-    add_data_node_storage_labels,
-    add_data_node_storage_team_to_edit,
-    add_data_node_storage_team_to_view,
-    add_data_node_storage_user_to_edit,
-    add_data_node_storage_user_to_view,
     add_deploy_key,
     add_meta_table_labels,
     add_meta_table_team_to_edit,
@@ -90,6 +85,11 @@ from .api import (
     add_secret_user_to_view,
     add_team_user_to_edit,
     add_team_user_to_view,
+    add_time_index_table_labels,
+    add_time_index_table_team_to_edit,
+    add_time_index_table_team_to_view,
+    add_time_index_table_user_to_edit,
+    add_time_index_table_user_to_view,
     bulk_delete_projects,
     create_agent,
     create_constant,
@@ -99,16 +99,14 @@ from .api import (
     create_project_job,
     create_project_resource_release,
     create_secret,
-    data_node_storage_column_search,
-    data_node_storage_description_search,
     delete_agent,
     delete_constant,
-    delete_data_node_storage,
     delete_meta_table,
     delete_organization_team,
     delete_project_image,
     delete_resource_release,
     delete_secret,
+    delete_time_index_table,
     fetch_platform_project_skill_catalog,
     get_agent,
     get_agent_logs,
@@ -117,23 +115,23 @@ from .api import (
     get_agent_session_logs,
     get_constant,
     get_current_user_profile,
-    get_data_node_storage,
     get_logged_user_details,
     get_meta_table,
     get_or_create_agent_session,
     get_organization_team,
     get_project_branch,
-    get_project_data_node_updates,
     get_project_image,
     get_project_job,
     get_project_job_run_logs,
     get_project_job_run_resource_usage,
     get_project_repository,
+    get_project_time_index_table_updates,
     get_projects,
     get_resource_release,
     get_resource_release_logs,
     get_resource_release_resource_usage,
     get_secret,
+    get_time_index_table,
     list_agent_sessions,
     list_agent_users_can_edit,
     list_agent_users_can_view,
@@ -141,9 +139,6 @@ from .api import (
     list_constant_users_can_edit,
     list_constant_users_can_view,
     list_constants,
-    list_data_node_storage_users_can_edit,
-    list_data_node_storage_users_can_view,
-    list_data_node_storages,
     list_github_organizations,
     list_meta_table_users_can_edit,
     list_meta_table_users_can_view,
@@ -161,8 +156,11 @@ from .api import (
     list_secrets,
     list_team_users_can_edit,
     list_team_users_can_view,
+    list_time_index_table_users_can_edit,
+    list_time_index_table_users_can_view,
+    list_time_index_tables,
     logout_cli_session,
-    refresh_data_node_storage_search_index,
+    refresh_time_index_table_search_index,
     remove_agent_team_from_edit,
     remove_agent_team_from_view,
     remove_agent_user_from_edit,
@@ -171,11 +169,6 @@ from .api import (
     remove_constant_team_from_view,
     remove_constant_user_from_edit,
     remove_constant_user_from_view,
-    remove_data_node_storage_labels,
-    remove_data_node_storage_team_from_edit,
-    remove_data_node_storage_team_from_view,
-    remove_data_node_storage_user_from_edit,
-    remove_data_node_storage_user_from_view,
     remove_meta_table_labels,
     remove_meta_table_team_from_edit,
     remove_meta_table_team_from_view,
@@ -192,16 +185,23 @@ from .api import (
     remove_secret_user_from_view,
     remove_team_user_from_edit,
     remove_team_user_from_view,
+    remove_time_index_table_labels,
+    remove_time_index_table_team_from_edit,
+    remove_time_index_table_team_from_view,
+    remove_time_index_table_user_from_edit,
+    remove_time_index_table_user_from_view,
     render_project_branch_default_redeployment_tag,
     repo_name_from_git_url,
     resolve_project,
-    run_data_node_storage_query,
     run_meta_table_query,
     run_project_job,
+    run_time_index_table_query,
     safe_slug,
     search_projects,
     semantic_search_agents,
     send_agent_session_a2a_message,
+    time_index_table_column_search,
+    time_index_table_description_search,
     update_organization_team,
     validate_project_name,
 )
@@ -350,11 +350,13 @@ secrets = typer.Typer(help="Secret commands")
 organization = typer.Typer(help="Organization commands")
 organization_teams_group = typer.Typer(help="Organization team commands")
 meta_table_group = typer.Typer(help="MetaTable table-storage commands")
-data_node_storage_group = typer.Typer(help="DataNode update/read-helper commands")
+time_index_table_group = typer.Typer(help="Time-index table discovery and access commands")
 project = typer.Typer(help="Project commands (remote + local operations)")
 project_list_group = typer.Typer(help="List-related project commands")
 project_project_resource_group = typer.Typer(help="Project resource commands")
-project_data_node_updates_group = typer.Typer(help="Project data node update commands")
+project_time_index_table_updates_group = typer.Typer(
+    help="Project time-index table update commands"
+)
 project_images_group = typer.Typer(help="Project image commands")
 project_jobs_group = typer.Typer(help="Project job commands")
 project_job_runs_group = typer.Typer(help="Project job run commands")
@@ -371,14 +373,11 @@ app.add_typer(organization, name="organization")
 app.add_typer(skills, name="skills")
 app.add_typer(meta_table_group, name="meta-table")
 app.add_typer(meta_table_group, name="meta_table")
-app.add_typer(data_node_storage_group, name="data-node")
-app.add_typer(data_node_storage_group, name="data_node")
-app.add_typer(data_node_storage_group, name="data-node-storage", hidden=True)
-app.add_typer(data_node_storage_group, name="data_node_storage", hidden=True)
+app.add_typer(time_index_table_group, name="time-index-table")
 app.add_typer(project, name="project")
 project.add_typer(project_list_group, name="list")
 project.add_typer(project_project_resource_group, name="project_resource")
-project.add_typer(project_data_node_updates_group, name="data-node-updates")
+project.add_typer(project_time_index_table_updates_group, name="time-index-table-updates")
 project.add_typer(project_images_group, name="images")
 project.add_typer(project_jobs_group, name="jobs")
 project_jobs_group.add_typer(project_job_runs_group, name="runs")
@@ -418,7 +417,7 @@ JOB_RUN_MODEL_REF = "mainsequence.client.models_helpers.JobRun"
 PROJECT_IMAGE_MODEL_REF = "mainsequence.client.models_foundry.ProjectImage"
 PROJECT_RESOURCE_MODEL_REF = "mainsequence.client.models_helpers.ProjectResource"
 RESOURCE_RELEASE_MODEL_REF = "mainsequence.client.models_helpers.ResourceRelease"
-DATA_NODE_STORAGE_MODEL_REF = "mainsequence.client.metatables.TimeIndexMetaTable"
+TIME_INDEX_TABLE_MODEL_REF = "mainsequence.client.metatables.TimeIndexMetaTable"
 META_TABLE_MODEL_REF = "mainsequence.client.metatables.MetaTable"
 CONSTANT_MODEL_REF = "mainsequence.client.models_foundry.Constant"
 SECRET_MODEL_REF = "mainsequence.client.models_foundry.Secret"
@@ -1383,13 +1382,13 @@ def _require_delete_verification(
         raise typer.Exit(0)
 
 
-def _format_data_node_storage_delete_preview(storage: dict[str, object]) -> list[tuple[str, str]]:
+def _format_time_index_table_delete_preview(storage: dict[str, object]) -> list[tuple[str, str]]:
     return [
         ("UID", str(storage.get("uid") or "-")),
         ("Physical Table", str(storage.get("physical_table_name") or "-")),
         ("Identifier", str(storage.get("identifier") or "-")),
         ("Source Class", str(storage.get("source_class_name") or "-")),
-        ("Data Source", _format_data_node_storage_data_source(storage.get("data_source"))),
+        ("Data Source", _format_time_index_table_data_source(storage.get("data_source"))),
         ("Protected", str(storage.get("protect_from_deletion"))),
     ]
 
@@ -1401,7 +1400,7 @@ def _format_meta_table_delete_preview(meta_table: dict[str, object]) -> list[tup
         ("Namespace", str(meta_table.get("namespace") or "-")),
         ("Physical Table", str(meta_table.get("physical_table_name") or "-")),
         ("Management Mode", str(meta_table.get("management_mode") or "-")),
-        ("Data Source", _format_data_node_storage_data_source(meta_table.get("data_source"))),
+        ("Data Source", _format_time_index_table_data_source(meta_table.get("data_source"))),
         ("Protected", str(meta_table.get("protect_from_deletion"))),
     ]
 
@@ -1627,7 +1626,7 @@ def _format_nested_summary(
     return str(value)
 
 
-def _format_data_node_storage_data_source(value) -> str:
+def _format_time_index_table_data_source(value) -> str:
     if isinstance(value, dict):
         display_name = str(value.get("display_name") or "").strip()
         class_type = str(value.get("class_type") or "").strip()
@@ -4488,17 +4487,17 @@ def _parse_cli_csv_list(values: list[str] | None) -> list[str]:
     return items
 
 
-def _data_node_storage_list_impl(
+def _time_index_table_list_impl(
     timeout: int | None,
     filter_entries: list[str] | None,
     show_filters: bool,
     data_source_uid: str | None = None,
 ) -> None:
     filters = _resolve_cli_list_filters(
-        model_ref=DATA_NODE_STORAGE_MODEL_REF,
+        model_ref=TIME_INDEX_TABLE_MODEL_REF,
         filter_entries=filter_entries,
         show_filters=show_filters,
-        command_label="Data Node Storage",
+        command_label="Time-Index Table",
     )
     filters = _merge_cli_filter_alias(
         filters,
@@ -4509,9 +4508,9 @@ def _data_node_storage_list_impl(
     _require_login()
 
     try:
-        storages = list_data_node_storages(timeout=timeout, filters=filters)
+        storages = list_time_index_tables(timeout=timeout, filters=filters)
     except ApiError as e:
-        error(f"Data node storages fetch failed: {e}")
+        error(f"Time-index tables fetch failed: {e}")
         raise typer.Exit(1) from e
 
     if _emit_json(storages):
@@ -4519,7 +4518,7 @@ def _data_node_storage_list_impl(
 
     if storages:
         print_table(
-            "Data Node Storages",
+            "Time-Index Tables",
             [
                 "UID",
                 "Physical Table",
@@ -4528,11 +4527,11 @@ def _data_node_storage_list_impl(
                 "Namespace",
                 "Data Source",
             ],
-            _build_data_node_storage_rows(storages),
+            _build_time_index_table_rows(storages),
         )
     else:
-        info("No data node storages.")
-    info(f"Total data node storages: {len(storages)}")
+        info("No time-index tables.")
+    info(f"Total time-index tables: {len(storages)}")
 
 
 def _meta_table_list_impl(
@@ -4582,7 +4581,7 @@ def _meta_table_list_impl(
     info(f"Total MetaTables: {len(meta_tables)}")
 
 
-def _build_data_node_storage_rows(storages: list[dict[str, object]]) -> list[list[str]]:
+def _build_time_index_table_rows(storages: list[dict[str, object]]) -> list[list[str]]:
     rows: list[list[str]] = []
     for storage in storages:
         rows.append(
@@ -4592,7 +4591,7 @@ def _build_data_node_storage_rows(storages: list[dict[str, object]]) -> list[lis
                 str(storage.get("source_class_name") or "-"),
                 str(storage.get("identifier") or "-"),
                 str(storage.get("namespace") or "-"),
-                _format_data_node_storage_data_source(storage.get("data_source")),
+                _format_time_index_table_data_source(storage.get("data_source")),
             ]
         )
     return rows
@@ -4608,7 +4607,7 @@ def _build_meta_table_rows(meta_tables: list[dict[str, object]]) -> list[list[st
                 str(meta_table.get("identifier") or "-"),
                 str(meta_table.get("namespace") or "-"),
                 str(meta_table.get("management_mode") or "-"),
-                _format_data_node_storage_data_source(meta_table.get("data_source")),
+                _format_time_index_table_data_source(meta_table.get("data_source")),
             ]
         )
     return rows
@@ -4630,7 +4629,7 @@ def _parse_cli_embedding(value: str | None) -> list[float] | None:
         raise typer.Exit(1) from e
 
 
-def _unpack_data_node_storage_search_response(
+def _unpack_time_index_table_search_response(
     payload: dict[str, object] | list[dict[str, object]],
 ) -> tuple[list[dict[str, object]], dict[str, object]]:
     if isinstance(payload, list):
@@ -4650,7 +4649,7 @@ def _unpack_data_node_storage_search_response(
     return [], {}
 
 
-def _data_node_storage_search_impl(
+def _time_index_table_search_impl(
     *,
     command_label: str,
     title: str,
@@ -4660,7 +4659,7 @@ def _data_node_storage_search_impl(
     search_fn,
 ) -> None:
     filters = _resolve_cli_list_filters(
-        model_ref=DATA_NODE_STORAGE_MODEL_REF,
+        model_ref=TIME_INDEX_TABLE_MODEL_REF,
         filter_entries=filter_entries,
         show_filters=show_filters,
         command_label=command_label,
@@ -4676,7 +4675,7 @@ def _data_node_storage_search_impl(
     if _emit_json(payload):
         return
 
-    storages, pagination = _unpack_data_node_storage_search_response(payload)
+    storages, pagination = _unpack_time_index_table_search_response(payload)
     if storages:
         print_table(
             title,
@@ -4688,10 +4687,10 @@ def _data_node_storage_search_impl(
                 "Namespace",
                 "Data Source",
             ],
-            _build_data_node_storage_rows(storages),
+            _build_time_index_table_rows(storages),
         )
     else:
-        info("No data node storages matched the search.")
+        info("No time-index tables matched the search.")
 
     if pagination:
         print_kv(
@@ -4705,16 +4704,16 @@ def _data_node_storage_search_impl(
             ],
         )
     else:
-        info(f'Returned data node storages for query "{q}": {len(storages)}')
+        info(f'Returned time-index tables for query "{q}": {len(storages)}')
 
 
-def _print_data_node_storage_search_section(
+def _print_time_index_table_search_section(
     *,
     title: str,
     q: str,
     payload: dict[str, object] | list[dict[str, object]],
 ) -> int:
-    storages, pagination = _unpack_data_node_storage_search_response(payload)
+    storages, pagination = _unpack_time_index_table_search_response(payload)
     if storages:
         print_table(
             title,
@@ -4726,10 +4725,10 @@ def _print_data_node_storage_search_section(
                 "Namespace",
                 "Data Source",
             ],
-            _build_data_node_storage_rows(storages),
+            _build_time_index_table_rows(storages),
         )
     else:
-        info(f'No data node storages matched "{q}" for {title.lower()}.')
+        info(f'No time-index tables matched "{q}" for {title.lower()}.')
 
     if pagination:
         print_kv(
@@ -5940,13 +5939,13 @@ def secrets_remove_team_from_edit_cmd(
     )
 
 
-def _data_node_storage_detail_impl(storage_uid: str, timeout: int | None) -> None:
+def _time_index_table_detail_impl(table_uid: str, timeout: int | None) -> None:
     _require_login()
 
     try:
-        storage = get_data_node_storage(storage_uid, timeout=timeout)
+        storage = get_time_index_table(table_uid, timeout=timeout)
     except ApiError as e:
-        error(f"Data node storage fetch failed: {e}")
+        error(f"Time-index table fetch failed: {e}")
         raise typer.Exit(1) from e
 
     if _emit_json(storage):
@@ -5960,13 +5959,13 @@ def _data_node_storage_detail_impl(storage_uid: str, timeout: int | None) -> Non
         physical_index_plan = time_indexed_profile.get("physical_index_plan") or physical_index_plan
 
     print_kv(
-        "Data Node Storage",
+        "Time-Index Table",
         [
-            ("UID", str(storage.get("uid") or storage_uid)),
+            ("UID", str(storage.get("uid") or table_uid)),
             ("Physical Table", str(storage.get("physical_table_name") or "-")),
             ("Identifier", str(storage.get("identifier") or "-")),
             ("Source Class", str(storage.get("source_class_name") or "-")),
-            ("Data Source", _format_data_node_storage_data_source(storage.get("data_source"))),
+            ("Data Source", _format_time_index_table_data_source(storage.get("data_source"))),
             ("Protected", str(storage.get("protect_from_deletion"))),
             ("Created", str(storage.get("creation_date") or "-")),
             ("Created By", str(storage.get("created_by_user") or "-")),
@@ -5976,7 +5975,7 @@ def _data_node_storage_detail_impl(storage_uid: str, timeout: int | None) -> Non
     )
 
     print_kv(
-        "Data Node Storage Config",
+        "Time-Index Table Config",
         [
             ("Time Indexed Profile", _format_json_value(time_indexed_profile)),
             ("Storage Layout", _format_json_value(storage_layout)),
@@ -6008,7 +6007,7 @@ def _meta_table_detail_impl(meta_table_uid: str, timeout: int | None) -> None:
             ("Identifier", str(meta_table.get("identifier") or "-")),
             ("Namespace", str(meta_table.get("namespace") or "-")),
             ("Management Mode", str(meta_table.get("management_mode") or "-")),
-            ("Data Source", _format_data_node_storage_data_source(meta_table.get("data_source"))),
+            ("Data Source", _format_time_index_table_data_source(meta_table.get("data_source"))),
             ("Protected", str(meta_table.get("protect_from_deletion"))),
             ("Created", str(meta_table.get("creation_date") or "-")),
             ("Created By", str(meta_table.get("created_by_user_uid") or "-")),
@@ -6057,18 +6056,18 @@ def _meta_table_run_query_impl(
         raise typer.Exit(1)
 
 
-def _data_node_storage_run_query_impl(
+def _time_index_table_run_query_impl(
     *,
-    storage_uid: str,
+    table_uid: str,
     sql: str,
     timeout: int | None,
 ) -> None:
     _require_login()
 
     try:
-        payload = run_data_node_storage_query(storage_uid, sql, timeout=timeout)
+        payload = run_time_index_table_query(table_uid, sql, timeout=timeout)
     except ApiError as e:
-        error(f"Data node query failed: {e}")
+        error(f"Time-index table query failed: {e}")
         raise typer.Exit(1) from e
 
     ok = bool(payload.get("ok"))
@@ -6078,17 +6077,17 @@ def _data_node_storage_run_query_impl(
         return
 
     if ok:
-        success(f"Data node query completed: uid={storage_uid}")
+        success(f"Time-index table query completed: uid={table_uid}")
     else:
-        error(f"Data node query failed: uid={storage_uid}")
-    _print_storage_query_payload("Data Node Query", payload)
+        error(f"Time-index table query failed: uid={table_uid}")
+    _print_storage_query_payload("Time-Index Table Query", payload)
     if not ok:
         raise typer.Exit(1)
 
 
-def _data_node_storage_delete_impl(
+def _time_index_table_delete_impl(
     *,
-    storage_uid: str,
+    table_uid: str,
     full_delete_selected: bool,
     full_delete_downstream_tables: bool,
     delete_with_no_table: bool,
@@ -6098,20 +6097,18 @@ def _data_node_storage_delete_impl(
     _require_login()
 
     try:
-        storage = get_data_node_storage(storage_uid, timeout=timeout)
+        storage = get_time_index_table(table_uid, timeout=timeout)
     except ApiError as e:
-        error(f"Data node storage fetch failed: {e}")
+        error(f"Time-index table fetch failed: {e}")
         raise typer.Exit(1) from e
 
-    verification_value = str(
-        storage.get("physical_table_name") or storage.get("uid") or storage_uid
-    )
+    verification_value = str(storage.get("physical_table_name") or storage.get("uid") or table_uid)
     verification_label = (
         "physical table name" if storage.get("physical_table_name") else "storage uid"
     )
     _require_delete_verification(
-        preview_title="Data Node Storage Delete Preview",
-        preview_items=_format_data_node_storage_delete_preview(storage)
+        preview_title="Time-Index Table Delete Preview",
+        preview_items=_format_time_index_table_delete_preview(storage)
         + [
             ("full_delete_selected", str(full_delete_selected).lower()),
             ("full_delete_downstream_tables", str(full_delete_downstream_tables).lower()),
@@ -6123,8 +6120,8 @@ def _data_node_storage_delete_impl(
     )
 
     try:
-        deleted = delete_data_node_storage(
-            storage_uid,
+        deleted = delete_time_index_table(
+            table_uid,
             full_delete_selected=full_delete_selected,
             full_delete_downstream_tables=full_delete_downstream_tables,
             delete_with_no_table=delete_with_no_table,
@@ -6132,14 +6129,14 @@ def _data_node_storage_delete_impl(
             timeout=timeout,
         )
     except ApiError as e:
-        error(f"Data node storage deletion failed: {e}")
+        error(f"Time-index table deletion failed: {e}")
         raise typer.Exit(1) from e
 
     if _emit_json(deleted):
         return
 
-    success(f"Data node storage deleted: uid={storage_uid}")
-    print_kv("Deleted Data Node Storage", _format_data_node_storage_delete_preview(deleted))
+    success(f"Time-index table deleted: uid={table_uid}")
+    print_kv("Deleted Time-Index Table", _format_time_index_table_delete_preview(deleted))
 
 
 def _meta_table_delete_impl(
@@ -6467,8 +6464,8 @@ def meta_table_remove_team_from_edit_cmd(
     )
 
 
-@data_node_storage_group.command("list")
-def data_node_storage_list_cmd(
+@time_index_table_group.command("list")
+def time_index_table_list_cmd(
     data_source_uid: str | None = typer.Option(
         None, "--data-source-uid", help="Filter by data source UID."
     ),
@@ -6479,7 +6476,7 @@ def data_node_storage_list_cmd(
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
-    List data node storages visible to the authenticated user.
+    List time-index tables visible to the authenticated user.
 
     Uses SDK client `TimeIndexMetaTable.filter()` as the single source of truth.
 
@@ -6491,14 +6488,13 @@ def data_node_storage_list_cmd(
     Examples
     --------
     ```bash
-    mainsequence data-node list
-    mainsequence data_node list
-    mainsequence data-node list --filter namespace=pytest_alice
-    mainsequence data-node list --data-source-uid <DATA_SOURCE_UID>
-    mainsequence data-node list --timeout 60
+    mainsequence time-index-table list
+    mainsequence time-index-table list --filter namespace=pytest_alice
+    mainsequence time-index-table list --data-source-uid <DATA_SOURCE_UID>
+    mainsequence time-index-table list --timeout 60
     ```
     """
-    _data_node_storage_list_impl(
+    _time_index_table_list_impl(
         timeout=timeout,
         filter_entries=filter_entries,
         show_filters=show_filters,
@@ -6506,13 +6502,13 @@ def data_node_storage_list_cmd(
     )
 
 
-@data_node_storage_group.command("detail")
-def data_node_storage_detail_cmd(
-    storage_uid: str = typer.Argument(..., help="Data node storage UID."),
+@time_index_table_group.command("detail")
+def time_index_table_detail_cmd(
+    table_uid: str = typer.Argument(..., help="Time-index table UID."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
-    Show one data node storage and render its configuration in the terminal.
+    Show one time-index table and render its configuration in the terminal.
 
     The configuration view includes the server-derived `storage_layout` and
     `physical_index_plan` when the backend exposes them on the source table
@@ -6522,85 +6518,72 @@ def data_node_storage_detail_cmd(
 
     Parameters
     ----------
-    storage_uid:
-        Data node storage UID.
+    table_uid:
+        Time-index table UID.
     timeout:
         Request timeout in seconds.
 
     Examples
     --------
     ```bash
-    mainsequence data-node detail <DATA_NODE_STORAGE_UID>
-    mainsequence data_node detail <DATA_NODE_STORAGE_UID>
-    mainsequence data-node detail <DATA_NODE_STORAGE_UID> --timeout 60
+    mainsequence time-index-table detail <TIME_INDEX_TABLE_UID>
+    mainsequence time-index-table detail <TIME_INDEX_TABLE_UID> --timeout 60
     ```
     """
-    _data_node_storage_detail_impl(storage_uid=storage_uid, timeout=timeout)
+    _time_index_table_detail_impl(table_uid=table_uid, timeout=timeout)
 
 
-@data_node_storage_group.command("run_query")
-def data_node_storage_run_query_cmd(
-    storage_uid: str = typer.Argument(..., help="Data node storage UID."),
+@time_index_table_group.command("run_query")
+def time_index_table_run_query_cmd(
+    table_uid: str = typer.Argument(..., help="Time-index table UID."),
     sql: str = typer.Argument(..., help="Raw SQL query to run."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
-    Run a raw SQL query against one data node storage.
+    Run a raw SQL query against one time-index table.
     """
-    _data_node_storage_run_query_impl(storage_uid=storage_uid, sql=sql, timeout=timeout)
+    _time_index_table_run_query_impl(table_uid=table_uid, sql=sql, timeout=timeout)
 
 
-@data_node_storage_group.command("refresh-search-index")
-def data_node_storage_refresh_search_index_cmd(
-    storage_uid: str = typer.Argument(..., help="Data node storage UID."),
+@time_index_table_group.command("refresh-search-index")
+def time_index_table_refresh_search_index_cmd(
+    table_uid: str = typer.Argument(..., help="Time-index table UID."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
-    Refresh the semantic search index for one data node storage.
+    Refresh the semantic search index for one time-index table.
 
     Uses SDK client `TimeIndexMetaTable.refresh_table_search_index()` as the single source of truth.
 
     Examples
     --------
     ```bash
-    mainsequence data-node refresh-search-index <DATA_NODE_STORAGE_UID>
-    mainsequence data_node refresh-search-index <DATA_NODE_STORAGE_UID>
-    mainsequence data-node refresh-search-index <DATA_NODE_STORAGE_UID> --timeout 60
+    mainsequence time-index-table refresh-search-index <TIME_INDEX_TABLE_UID>
+    mainsequence time-index-table refresh-search-index <TIME_INDEX_TABLE_UID> --timeout 60
     ```
     """
     _require_login()
 
     try:
-        payload = refresh_data_node_storage_search_index(storage_uid, timeout=timeout)
+        payload = refresh_time_index_table_search_index(table_uid, timeout=timeout)
     except ApiError as e:
-        error(f"Data node search index refresh failed: {e}")
+        error(f"Time-index table search index refresh failed: {e}")
         raise typer.Exit(1) from e
 
     if _emit_json(payload):
         return
 
-    success(f"Data node search index refresh requested: uid={storage_uid}")
+    success(f"Time-index table search index refresh requested: uid={table_uid}")
     print_kv(
-        "Data Node Search Index Refresh",
+        "Time-Index Table Search Index Refresh",
         [(str(k), _format_json_value(v)) for k, v in payload.items()],
     )
 
 
-@data_node_storage_group.command("refresh_search_index", hidden=True)
-def data_node_storage_refresh_search_index_alias_cmd(
-    storage_uid: str = typer.Argument(..., help="Data node storage UID."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    """
-    Backward-compatible alias for `mainsequence data-node refresh-search-index`.
-    """
-    data_node_storage_refresh_search_index_cmd(storage_uid=storage_uid, timeout=timeout)
-
-
-@data_node_storage_group.command("search")
-def data_node_storage_search_cmd(
+@time_index_table_group.command("search")
+def time_index_table_search_cmd(
     q: str = typer.Argument(
-        ..., help="Natural-language query to match against data node descriptions."
+        ..., help="Natural-language query to match against time-index table descriptions."
     ),
     mode: str = typer.Option(
         "description",
@@ -6635,7 +6618,7 @@ def data_node_storage_search_cmd(
     ),
 ):
     """
-    Search data node storages through MetaTable metadata.
+    Search time-index tables through MetaTable metadata.
 
     Default search uses `TimeIndexMetaTable.description_search()`, backed by
     `/api/v1/time-index-meta-tables/description-search/`. Column mode is a
@@ -6645,10 +6628,10 @@ def data_node_storage_search_cmd(
     Examples
     --------
     ```bash
-    mainsequence data_node search "close price"
-    mainsequence data-node search "node weights" --data-source-uid <DATA_SOURCE_UID>
-    mainsequence data-node search "close" --mode column
-    mainsequence data-node search "node weights" --q-embedding 0.1,0.2,0.3
+    mainsequence time-index-table search "close price"
+    mainsequence time-index-table search "node weights" --data-source-uid <DATA_SOURCE_UID>
+    mainsequence time-index-table search "close" --mode column
+    mainsequence time-index-table search "node weights" --q-embedding 0.1,0.2,0.3
     ```
     """
     normalized_mode = (mode or "").strip().lower()
@@ -6658,10 +6641,10 @@ def data_node_storage_search_cmd(
 
     parsed_embedding = _parse_cli_embedding(q_embedding)
     filters = _resolve_cli_list_filters(
-        model_ref=DATA_NODE_STORAGE_MODEL_REF,
+        model_ref=TIME_INDEX_TABLE_MODEL_REF,
         filter_entries=filter_entries,
         show_filters=show_filters,
-        command_label="Data Node Search",
+        command_label="Time-Index Table Search",
     )
     filters = _merge_cli_filter_alias(
         filters,
@@ -6677,7 +6660,7 @@ def data_node_storage_search_cmd(
 
     if normalized_mode in {"both", "description"}:
         try:
-            description_payload = data_node_storage_description_search(
+            description_payload = time_index_table_description_search(
                 q,
                 q_embedding=parsed_embedding,
                 trigram_k=trigram_k,
@@ -6688,18 +6671,18 @@ def data_node_storage_search_cmd(
                 filters=filters,
             )
         except ApiError as e:
-            error(f"Data Node Search failed: {e}")
+            error(f"Time-Index Table Search failed: {e}")
             raise typer.Exit(1) from e
-        storages, _ = _unpack_data_node_storage_search_response(description_payload)
+        storages, _ = _unpack_time_index_table_search_response(description_payload)
         total_matches += len(storages)
 
     if normalized_mode in {"both", "column"}:
         try:
-            column_payload = data_node_storage_column_search(q, filters=filters)
+            column_payload = time_index_table_column_search(q, filters=filters)
         except ApiError as e:
-            error(f"Data Node Search failed: {e}")
+            error(f"Time-Index Table Search failed: {e}")
             raise typer.Exit(1) from e
-        storages, _ = _unpack_data_node_storage_search_response(column_payload)
+        storages, _ = _unpack_time_index_table_search_response(column_payload)
         total_matches += len(storages)
 
     if _emit_json(
@@ -6716,14 +6699,14 @@ def data_node_storage_search_cmd(
         return
 
     if normalized_mode in {"both", "description"} and description_payload is not None:
-        _print_data_node_storage_search_section(
+        _print_time_index_table_search_section(
             title="Description Matches",
             q=q,
             payload=description_payload,
         )
 
     if normalized_mode in {"both", "column"} and column_payload is not None:
-        _print_data_node_storage_search_section(
+        _print_time_index_table_search_section(
             title="Column Matches",
             q=q,
             payload=column_payload,
@@ -6732,10 +6715,10 @@ def data_node_storage_search_cmd(
     info(f'Total search matches for "{q}": {total_matches}')
 
 
-@data_node_storage_group.command("description-search", hidden=True)
-def data_node_storage_description_search_cmd(
+@time_index_table_group.command("description-search", hidden=True)
+def time_index_table_description_search_cmd(
     q: str = typer.Argument(
-        ..., help="Natural-language query to match against data node descriptions."
+        ..., help="Natural-language query to match against time-index table descriptions."
     ),
     data_source_uid: str | None = typer.Option(
         None, "--data-source-uid", help="Filter by data source UID."
@@ -6766,10 +6749,10 @@ def data_node_storage_description_search_cmd(
     """
     parsed_embedding = _parse_cli_embedding(q_embedding)
     filters = _resolve_cli_list_filters(
-        model_ref=DATA_NODE_STORAGE_MODEL_REF,
+        model_ref=TIME_INDEX_TABLE_MODEL_REF,
         filter_entries=filter_entries,
         show_filters=show_filters,
-        command_label="Data Node Description Search",
+        command_label="Time-Index Table Description Search",
     )
     filters = _merge_cli_filter_alias(
         filters,
@@ -6779,7 +6762,7 @@ def data_node_storage_description_search_cmd(
     )
     _require_login()
     try:
-        payload = data_node_storage_description_search(
+        payload = time_index_table_description_search(
             q,
             q_embedding=parsed_embedding,
             trigram_k=trigram_k,
@@ -6790,20 +6773,20 @@ def data_node_storage_description_search_cmd(
             filters=filters,
         )
     except ApiError as e:
-        error(f"Data Node Description Search failed: {e}")
+        error(f"Time-Index Table Description Search failed: {e}")
         raise typer.Exit(1) from e
     if _emit_json(payload):
         return
-    _print_data_node_storage_search_section(
+    _print_time_index_table_search_section(
         title="Description Matches",
         q=q,
         payload=payload,
     )
 
 
-@data_node_storage_group.command("column-search", hidden=True)
-def data_node_storage_column_search_cmd(
-    q: str = typer.Argument(..., help="Column name or term to search in data node columns."),
+@time_index_table_group.command("column-search", hidden=True)
+def time_index_table_column_search_cmd(
+    q: str = typer.Argument(..., help="Column name or term to search in time-index table columns."),
     data_source_uid: str | None = typer.Option(
         None, "--data-source-uid", help="Filter by data source UID."
     ),
@@ -6815,22 +6798,22 @@ def data_node_storage_column_search_cmd(
     ),
 ):
     """
-    Search data node storages by column metadata.
+    Search time-index tables by column metadata.
 
     Uses SDK client `TimeIndexMetaTable.column_search()` as the single source of truth.
 
     Examples
     --------
     ```bash
-    mainsequence data-node column-search weight
-    mainsequence data-node column-search close --filter physical_table_name__contains=weights
+    mainsequence time-index-table column-search weight
+    mainsequence time-index-table column-search close --filter physical_table_name__contains=weights
     ```
     """
     filters = _resolve_cli_list_filters(
-        model_ref=DATA_NODE_STORAGE_MODEL_REF,
+        model_ref=TIME_INDEX_TABLE_MODEL_REF,
         filter_entries=filter_entries,
         show_filters=show_filters,
-        command_label="Data Node Column Search",
+        command_label="Time-Index Table Column Search",
     )
     filters = _merge_cli_filter_alias(
         filters,
@@ -6840,26 +6823,26 @@ def data_node_storage_column_search_cmd(
     )
     _require_login()
     try:
-        payload = data_node_storage_column_search(q, filters=filters)
+        payload = time_index_table_column_search(q, filters=filters)
     except ApiError as e:
-        error(f"Data Node Column Search failed: {e}")
+        error(f"Time-Index Table Column Search failed: {e}")
         raise typer.Exit(1) from e
     if _emit_json(payload):
         return
-    _print_data_node_storage_search_section(
+    _print_time_index_table_search_section(
         title="Column Matches",
         q=q,
         payload=payload,
     )
 
 
-@data_node_storage_group.command("delete")
-def data_node_storage_delete_cmd(
-    storage_uid: str = typer.Argument(..., help="Data node storage UID."),
+@time_index_table_group.command("delete")
+def time_index_table_delete_cmd(
+    table_uid: str = typer.Argument(..., help="Time-index table UID."),
     full_delete_selected: bool = typer.Option(
         False,
         "--full-delete-selected/--no-full-delete-selected",
-        help="Fully delete the selected DataNode instance.",
+        help="Fully delete the selected TimeIndexMetaTable and its backing table.",
     ),
     full_delete_downstream_tables: bool = typer.Option(
         False,
@@ -6869,7 +6852,7 @@ def data_node_storage_delete_cmd(
     delete_with_no_table: bool = typer.Option(
         False,
         "--delete-with-no-table/--no-delete-with-no-table",
-        help="Scan DataNode rows and fully delete records whose backing DB table does not exist.",
+        help="Scan TimeIndexMetaTable rows and fully delete records whose backing DB table does not exist.",
     ),
     override_protection: bool = typer.Option(
         False,
@@ -6879,20 +6862,20 @@ def data_node_storage_delete_cmd(
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
-    Delete one data node storage using the SDK client `TimeIndexMetaTable.delete()` path.
+    Delete one time-index table using the SDK client `TimeIndexMetaTable.delete()` path.
 
     The command always requires typed verification before the delete call is executed.
 
     Examples
     --------
     ```bash
-    mainsequence data-node delete <DATA_NODE_STORAGE_UID>
-    mainsequence data-node delete <DATA_NODE_STORAGE_UID> --full-delete-selected
-    mainsequence data-node delete <DATA_NODE_STORAGE_UID> --full-delete-selected --override-protection
+    mainsequence time-index-table delete <TIME_INDEX_TABLE_UID>
+    mainsequence time-index-table delete <TIME_INDEX_TABLE_UID> --full-delete-selected
+    mainsequence time-index-table delete <TIME_INDEX_TABLE_UID> --full-delete-selected --override-protection
     ```
     """
-    _data_node_storage_delete_impl(
-        storage_uid=storage_uid,
+    _time_index_table_delete_impl(
+        table_uid=table_uid,
         full_delete_selected=full_delete_selected,
         full_delete_downstream_tables=full_delete_downstream_tables,
         delete_with_no_table=delete_with_no_table,
@@ -6901,61 +6884,59 @@ def data_node_storage_delete_cmd(
     )
 
 
-@data_node_storage_group.command("can_view")
-def data_node_storage_can_view_cmd(
-    storage_uid: str = typer.Argument(..., help="Data node storage UID."),
+@time_index_table_group.command("can_view")
+def time_index_table_can_view_cmd(
+    table_uid: str = typer.Argument(..., help="Time-index table UID."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
-    List users who can view one data node storage.
+    List users who can view one time-index table.
 
     Uses the SDK `ShareableObjectMixin.can_view()` path through the `TimeIndexMetaTable` model.
 
     Examples
     --------
     ```bash
-    mainsequence data-node can_view <DATA_NODE_STORAGE_UID>
-    mainsequence data_node can_view <DATA_NODE_STORAGE_UID>
+    mainsequence time-index-table can_view <TIME_INDEX_TABLE_UID>
     ```
     """
     _shareable_user_list_impl(
-        fetch_fn=list_data_node_storage_users_can_view,
-        object_label="Data Node",
+        fetch_fn=list_time_index_table_users_can_view,
+        object_label="Time-Index Table",
         access_label="view",
-        object_uid=storage_uid,
+        object_uid=table_uid,
         timeout=timeout,
     )
 
 
-@data_node_storage_group.command("can_edit")
-def data_node_storage_can_edit_cmd(
-    storage_uid: str = typer.Argument(..., help="Data node storage UID."),
+@time_index_table_group.command("can_edit")
+def time_index_table_can_edit_cmd(
+    table_uid: str = typer.Argument(..., help="Time-index table UID."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
-    List users who can edit one data node storage.
+    List users who can edit one time-index table.
 
     Uses the SDK `ShareableObjectMixin.can_edit()` path through the `TimeIndexMetaTable` model.
 
     Examples
     --------
     ```bash
-    mainsequence data-node can_edit <DATA_NODE_STORAGE_UID>
-    mainsequence data_node can_edit <DATA_NODE_STORAGE_UID>
+    mainsequence time-index-table can_edit <TIME_INDEX_TABLE_UID>
     ```
     """
     _shareable_user_list_impl(
-        fetch_fn=list_data_node_storage_users_can_edit,
-        object_label="Data Node",
+        fetch_fn=list_time_index_table_users_can_edit,
+        object_label="Time-Index Table",
         access_label="edit",
-        object_uid=storage_uid,
+        object_uid=table_uid,
         timeout=timeout,
     )
 
 
-@data_node_storage_group.command("add-label")
-def data_node_storage_add_label_cmd(
-    storage_uid: str = typer.Argument(..., help="Data node storage UID."),
+@time_index_table_group.command("add-label")
+def time_index_table_add_label_cmd(
+    table_uid: str = typer.Argument(..., help="Time-index table UID."),
     labels: list[str] | None = typer.Option(
         None,
         "--label",
@@ -6964,33 +6945,23 @@ def data_node_storage_add_label_cmd(
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
-    Add one or more organizational labels to a data node storage.
+    Add one or more organizational labels to a time-index table.
 
     Labels are helpers for grouping and discovery only. They do not affect runtime behavior or functionality.
     """
     _labelable_object_labels_update_impl(
-        action_fn=add_data_node_storage_labels,
-        object_label="Data Node",
+        action_fn=add_time_index_table_labels,
+        object_label="Time-Index Table",
         action_label="add-label",
-        object_uid=storage_uid,
+        object_uid=table_uid,
         labels=labels,
         timeout=timeout,
     )
 
 
-@data_node_storage_group.command("add_label", hidden=True)
-def data_node_storage_add_label_alias_cmd(
-    storage_uid: str = typer.Argument(..., help="Data node storage UID."),
-    labels: list[str] | None = typer.Option(None, "--label", help="Organizational label to add."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    """Backward-compatible alias for `mainsequence data-node add-label`."""
-    data_node_storage_add_label_cmd(storage_uid=storage_uid, labels=labels, timeout=timeout)
-
-
-@data_node_storage_group.command("remove-label")
-def data_node_storage_remove_label_cmd(
-    storage_uid: str = typer.Argument(..., help="Data node storage UID."),
+@time_index_table_group.command("remove-label")
+def time_index_table_remove_label_cmd(
+    table_uid: str = typer.Argument(..., help="Time-index table UID."),
     labels: list[str] | None = typer.Option(
         None,
         "--label",
@@ -6999,195 +6970,179 @@ def data_node_storage_remove_label_cmd(
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
-    Remove one or more organizational labels from a data node storage.
+    Remove one or more organizational labels from a time-index table.
 
     Labels are helpers for grouping and discovery only. They do not affect runtime behavior or functionality.
     """
     _labelable_object_labels_update_impl(
-        action_fn=remove_data_node_storage_labels,
-        object_label="Data Node",
+        action_fn=remove_time_index_table_labels,
+        object_label="Time-Index Table",
         action_label="remove-label",
-        object_uid=storage_uid,
+        object_uid=table_uid,
         labels=labels,
         timeout=timeout,
     )
 
 
-@data_node_storage_group.command("remove_label", hidden=True)
-def data_node_storage_remove_label_alias_cmd(
-    storage_uid: str = typer.Argument(..., help="Data node storage UID."),
-    labels: list[str] | None = typer.Option(
-        None, "--label", help="Organizational label to remove."
-    ),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    """Backward-compatible alias for `mainsequence data-node remove-label`."""
-    data_node_storage_remove_label_cmd(storage_uid=storage_uid, labels=labels, timeout=timeout)
-
-
-@data_node_storage_group.command("add_to_view")
-def data_node_storage_add_to_view_cmd(
-    storage_uid: str = typer.Argument(..., help="Data node storage UID."),
+@time_index_table_group.command("add_to_view")
+def time_index_table_add_to_view_cmd(
+    table_uid: str = typer.Argument(..., help="Time-index table UID."),
     user_uid: uuid.UUID = typer.Argument(..., help="User UID to grant view access."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
-    Grant explicit view access to one user for one data node storage.
+    Grant explicit view access to one user for one time-index table.
 
     Examples
     --------
     ```bash
-    mainsequence data-node add_to_view <DATA_NODE_STORAGE_UID> <USER_UID>
-    mainsequence data_node add_to_view <DATA_NODE_STORAGE_UID> <USER_UID>
+    mainsequence time-index-table add_to_view <TIME_INDEX_TABLE_UID> <USER_UID>
     ```
     """
     _shareable_user_access_update_impl(
-        action_fn=add_data_node_storage_user_to_view,
-        object_label="Data Node",
+        action_fn=add_time_index_table_user_to_view,
+        object_label="Time-Index Table",
         action_label="add_to_view",
-        object_uid=storage_uid,
+        object_uid=table_uid,
         user_uid=user_uid,
         timeout=timeout,
     )
 
 
-@data_node_storage_group.command("add_to_edit")
-def data_node_storage_add_to_edit_cmd(
-    storage_uid: str = typer.Argument(..., help="Data node storage UID."),
+@time_index_table_group.command("add_to_edit")
+def time_index_table_add_to_edit_cmd(
+    table_uid: str = typer.Argument(..., help="Time-index table UID."),
     user_uid: uuid.UUID = typer.Argument(..., help="User UID to grant edit access."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
-    Grant explicit edit access to one user for one data node storage.
+    Grant explicit edit access to one user for one time-index table.
 
     Examples
     --------
     ```bash
-    mainsequence data-node add_to_edit <DATA_NODE_STORAGE_UID> <USER_UID>
-    mainsequence data_node add_to_edit <DATA_NODE_STORAGE_UID> <USER_UID>
+    mainsequence time-index-table add_to_edit <TIME_INDEX_TABLE_UID> <USER_UID>
     ```
     """
     _shareable_user_access_update_impl(
-        action_fn=add_data_node_storage_user_to_edit,
-        object_label="Data Node",
+        action_fn=add_time_index_table_user_to_edit,
+        object_label="Time-Index Table",
         action_label="add_to_edit",
-        object_uid=storage_uid,
+        object_uid=table_uid,
         user_uid=user_uid,
         timeout=timeout,
     )
 
 
-@data_node_storage_group.command("remove_from_view")
-def data_node_storage_remove_from_view_cmd(
-    storage_uid: str = typer.Argument(..., help="Data node storage UID."),
+@time_index_table_group.command("remove_from_view")
+def time_index_table_remove_from_view_cmd(
+    table_uid: str = typer.Argument(..., help="Time-index table UID."),
     user_uid: uuid.UUID = typer.Argument(..., help="User UID to remove explicit view access from."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
-    Remove explicit view access from one user for one data node storage.
+    Remove explicit view access from one user for one time-index table.
 
     Examples
     --------
     ```bash
-    mainsequence data-node remove_from_view <DATA_NODE_STORAGE_UID> <USER_UID>
-    mainsequence data_node remove_from_view <DATA_NODE_STORAGE_UID> <USER_UID>
+    mainsequence time-index-table remove_from_view <TIME_INDEX_TABLE_UID> <USER_UID>
     ```
     """
     _shareable_user_access_update_impl(
-        action_fn=remove_data_node_storage_user_from_view,
-        object_label="Data Node",
+        action_fn=remove_time_index_table_user_from_view,
+        object_label="Time-Index Table",
         action_label="remove_from_view",
-        object_uid=storage_uid,
+        object_uid=table_uid,
         user_uid=user_uid,
         timeout=timeout,
     )
 
 
-@data_node_storage_group.command("remove_from_edit")
-def data_node_storage_remove_from_edit_cmd(
-    storage_uid: str = typer.Argument(..., help="Data node storage UID."),
+@time_index_table_group.command("remove_from_edit")
+def time_index_table_remove_from_edit_cmd(
+    table_uid: str = typer.Argument(..., help="Time-index table UID."),
     user_uid: uuid.UUID = typer.Argument(..., help="User UID to remove explicit edit access from."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
-    Remove explicit edit access from one user for one data node storage.
+    Remove explicit edit access from one user for one time-index table.
 
     Examples
     --------
     ```bash
-    mainsequence data-node remove_from_edit <DATA_NODE_STORAGE_UID> <USER_UID>
-    mainsequence data_node remove_from_edit <DATA_NODE_STORAGE_UID> <USER_UID>
+    mainsequence time-index-table remove_from_edit <TIME_INDEX_TABLE_UID> <USER_UID>
     ```
     """
     _shareable_user_access_update_impl(
-        action_fn=remove_data_node_storage_user_from_edit,
-        object_label="Data Node",
+        action_fn=remove_time_index_table_user_from_edit,
+        object_label="Time-Index Table",
         action_label="remove_from_edit",
-        object_uid=storage_uid,
+        object_uid=table_uid,
         user_uid=user_uid,
         timeout=timeout,
     )
 
 
-@data_node_storage_group.command("add_team_to_view")
-def data_node_storage_add_team_to_view_cmd(
-    storage_uid: str = typer.Argument(..., help="Data node storage UID."),
+@time_index_table_group.command("add_team_to_view")
+def time_index_table_add_team_to_view_cmd(
+    table_uid: str = typer.Argument(..., help="Time-index table UID."),
     team_uid: uuid.UUID = typer.Argument(..., help="Team UID to grant view access."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     _shareable_team_access_update_impl(
-        action_fn=add_data_node_storage_team_to_view,
-        object_label="Data Node",
+        action_fn=add_time_index_table_team_to_view,
+        object_label="Time-Index Table",
         action_label="add_team_to_view",
-        object_uid=storage_uid,
+        object_uid=table_uid,
         team_uid=team_uid,
         timeout=timeout,
     )
 
 
-@data_node_storage_group.command("add_team_to_edit")
-def data_node_storage_add_team_to_edit_cmd(
-    storage_uid: str = typer.Argument(..., help="Data node storage UID."),
+@time_index_table_group.command("add_team_to_edit")
+def time_index_table_add_team_to_edit_cmd(
+    table_uid: str = typer.Argument(..., help="Time-index table UID."),
     team_uid: uuid.UUID = typer.Argument(..., help="Team UID to grant edit access."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     _shareable_team_access_update_impl(
-        action_fn=add_data_node_storage_team_to_edit,
-        object_label="Data Node",
+        action_fn=add_time_index_table_team_to_edit,
+        object_label="Time-Index Table",
         action_label="add_team_to_edit",
-        object_uid=storage_uid,
+        object_uid=table_uid,
         team_uid=team_uid,
         timeout=timeout,
     )
 
 
-@data_node_storage_group.command("remove_team_from_view")
-def data_node_storage_remove_team_from_view_cmd(
-    storage_uid: str = typer.Argument(..., help="Data node storage UID."),
+@time_index_table_group.command("remove_team_from_view")
+def time_index_table_remove_team_from_view_cmd(
+    table_uid: str = typer.Argument(..., help="Time-index table UID."),
     team_uid: uuid.UUID = typer.Argument(..., help="Team UID to remove explicit view access from."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     _shareable_team_access_update_impl(
-        action_fn=remove_data_node_storage_team_from_view,
-        object_label="Data Node",
+        action_fn=remove_time_index_table_team_from_view,
+        object_label="Time-Index Table",
         action_label="remove_team_from_view",
-        object_uid=storage_uid,
+        object_uid=table_uid,
         team_uid=team_uid,
         timeout=timeout,
     )
 
 
-@data_node_storage_group.command("remove_team_from_edit")
-def data_node_storage_remove_team_from_edit_cmd(
-    storage_uid: str = typer.Argument(..., help="Data node storage UID."),
+@time_index_table_group.command("remove_team_from_edit")
+def time_index_table_remove_team_from_edit_cmd(
+    table_uid: str = typer.Argument(..., help="Time-index table UID."),
     team_uid: uuid.UUID = typer.Argument(..., help="Team UID to remove explicit edit access from."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     _shareable_team_access_update_impl(
-        action_fn=remove_data_node_storage_team_from_edit,
-        object_label="Data Node",
+        action_fn=remove_time_index_table_team_from_edit,
+        object_label="Time-Index Table",
         action_label="remove_team_from_edit",
-        object_uid=storage_uid,
+        object_uid=table_uid,
         team_uid=team_uid,
         timeout=timeout,
     )
@@ -7232,16 +7187,16 @@ def project_list(
     typer.echo(_render_projects_table(items))
 
 
-def _print_project_data_node_updates(
+def _print_project_time_index_table_updates(
     project_id: str | None = typer.Argument(None, help="Project UID"),
     filter_entries: list[str] | None = None,
     show_filters: bool = False,
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ) -> None:
     """
-    List data node updates for a project.
+    List time-index table updates for a project.
 
-    Uses SDK client `ProjectBranch.get_data_nodes_updates()` as the single source of truth
+    Uses SDK client `ProjectBranch.get_time_index_table_updates()` as the single source of truth
     for payload parsing and shape handling.
 
     Parameters
@@ -7254,23 +7209,23 @@ def _print_project_data_node_updates(
     Examples
     --------
     ```bash
-    mainsequence project data-node-updates list
-    mainsequence project data-node-updates list project-uid-123
-    mainsequence project data-node-updates list project-uid-123 --timeout 60
+    mainsequence project time-index-table-updates list
+    mainsequence project time-index-table-updates list project-uid-123
+    mainsequence project time-index-table-updates list project-uid-123 --timeout 60
     ```
     """
     _resolve_cli_list_filters(
         model_ref=None,
         filter_entries=filter_entries,
         show_filters=show_filters,
-        command_label="Project Data Node Updates",
+        command_label="Project Time-Index Table Updates",
         reserved_filter_descriptions={"project_id": "resolved from the current Git repository"},
     )
 
     _require_login()
     try:
         project_branch_uid = _resolve_project_branch_uid_for_command(project_id)
-        updates = get_project_data_node_updates(project_branch_uid, timeout=timeout)
+        updates = get_project_time_index_table_updates(project_branch_uid, timeout=timeout)
     except NotLoggedIn as e:
         error("Not logged in. Run: mainsequence login")
         raise typer.Exit(1) from e
@@ -7282,20 +7237,22 @@ def _print_project_data_node_updates(
         return
 
     if not updates:
-        info("No data node updates found.")
+        info("No time-index table updates found.")
         return
 
     rows: list[list[str]] = []
     for u in updates:
-        storage = u.get("data_node_storage")
-        if isinstance(storage, dict):
-            storage_value = storage.get("physical_table_name") or storage.get("uid") or "-"
+        output_table = u.get("output_table")
+        if isinstance(output_table, dict):
+            output_table_value = (
+                output_table.get("physical_table_name") or output_table.get("uid") or "-"
+            )
         else:
-            storage_value = storage if storage is not None else "-"
+            output_table_value = output_table if output_table is not None else "-"
 
         details = u.get("update_details")
         if isinstance(details, dict):
-            details_uid = details.get("related_table_uid") or "-"
+            details_uid = details.get("table_update_uid") or "-"
         else:
             details_uid = details if details is not None else "-"
 
@@ -7303,21 +7260,21 @@ def _print_project_data_node_updates(
             [
                 str(u.get("uid") or "-"),
                 str(u.get("update_hash") or "-"),
-                str(storage_value),
+                str(output_table_value),
                 str(details_uid),
             ]
         )
 
     print_table(
-        "Project Data Node Updates",
-        ["UID", "Update Hash", "Data Node Storage", "Update Details"],
+        "Project Time-Index Table Updates",
+        ["UID", "Update Hash", "Output Table", "Update Details"],
         rows,
     )
     info(f"Total updates: {len(rows)}")
 
 
-@project_data_node_updates_group.command("list")
-def project_data_node_updates_list_cmd(
+@project_time_index_table_updates_group.command("list")
+def project_time_index_table_updates_list_cmd(
     project_id: str | None = typer.Argument(None, help="Project UID"),
     filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
     show_filters: bool = typer.Option(
@@ -7326,57 +7283,17 @@ def project_data_node_updates_list_cmd(
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
-    List data node updates for a project.
+    List time-index table updates for a project.
 
     Examples
     --------
     ```bash
-    mainsequence project data-node-updates list
-    mainsequence project data-node-updates list project-uid-123
-    mainsequence project data-node-updates list project-uid-123 --timeout 60
+    mainsequence project time-index-table-updates list
+    mainsequence project time-index-table-updates list project-uid-123
+    mainsequence project time-index-table-updates list project-uid-123 --timeout 60
     ```
     """
-    _print_project_data_node_updates(
-        project_id=project_id,
-        filter_entries=filter_entries,
-        show_filters=show_filters,
-        timeout=timeout,
-    )
-
-
-@project_list_group.command("data_nodes_updates", hidden=True)
-def project_list_data_nodes_updates_cmd(
-    project_id: str | None = typer.Argument(None, help="Project UID"),
-    filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
-    show_filters: bool = typer.Option(
-        False, "--show-filters", help="Show the filters supported by this list command and exit."
-    ),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    """
-    Backward-compatible alias for `mainsequence project data-node-updates list`.
-    """
-    _print_project_data_node_updates(
-        project_id=project_id,
-        filter_entries=filter_entries,
-        show_filters=show_filters,
-        timeout=timeout,
-    )
-
-
-@project.command("get-data-node-updates", hidden=True)
-def project_get_data_node_updates_cmd(
-    project_id: str | None = typer.Argument(None, help="Project UID"),
-    filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
-    show_filters: bool = typer.Option(
-        False, "--show-filters", help="Show the filters supported by this list command and exit."
-    ),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    """
-    Backward-compatible alias for `mainsequence project data-node-updates list`.
-    """
-    _print_project_data_node_updates(
+    _print_project_time_index_table_updates(
         project_id=project_id,
         filter_entries=filter_entries,
         show_filters=show_filters,

@@ -62,7 +62,7 @@ CLI/SDK operations, and validation steps.
 Core responsibilities:
 
 - translate user intent into the correct Main Sequence implementation path:
-  - for data publishing and data pipelines, use `DataNode`s and `MetaTable`s
+  - for data publishing and data pipelines, use `TimeIndexTableUpdater`s and `MetaTable`s
   - for APIs serving the Command Center frontend, use the contract-authoritative
     FastAPI release workflow
   - for visualization, confirm the delivery target with the user:
@@ -80,7 +80,7 @@ Core responsibilities:
 
 Typical outcomes include:
 
-- build a `DataNode` to publish a data pipeline
+- build a `TimeIndexTableUpdater` to publish a data pipeline
 - build a `MetaTable` to record operational or application data
 - build and release a `FastAPI` API whose Command Center contract-bearing
   responses conform to a recorded revision of the canonical Command Center SDK
@@ -140,7 +140,7 @@ Delegation rules:
 
 ## Main Sequence Source-Of-Truth Rule
 
-For any task involving Main Sequence code, CLI usage, DataNodes, orchestration, jobs, dashboards,
+For any task involving Main Sequence code, CLI usage, TimeIndexTableUpdaters, orchestration, jobs, dashboards,
 agents, releases, artifacts, RBAC, or platform
 validation, always consult the latest relevant Main Sequence documentation before acting.
 
@@ -198,8 +198,8 @@ Typical routing:
   `.agents/skills/mainsequence/project_to_agent/SKILL.md`
 - project status audits, blocker analysis, failure classification, and upstream SDK assessment:
   `.agents/skills/mainsequence/maintenance/bug_auditor/SKILL.md`
-- DataNodes, updates, identifiers, schema, metadata:
-  `.agents/skills/mainsequence/data_publishing/data_nodes/SKILL.md`
+- TimeIndexTableUpdaters, updates, identifiers, schema, metadata:
+  `.agents/skills/mainsequence/data_publishing/time_index_table_updates/SKILL.md`
 - MetaTables, SQLAlchemy contracts, backend-managed registration, and governed operations:
   `.agents/skills/mainsequence/data_publishing/meta_tables/SKILL.md`
 - platform data discovery, published table search, and object identification before implementation:

@@ -1,6 +1,6 @@
 ---
 name: mainsequence-orchestration-and-releases
-description: Use this skill for Main Sequence jobs, schedules, backend-managed project workflow files, project images, run inspection, resources, releases, Streamlit deployment, and operational Artifacts. It does not own DataNode behavior, MetaTable schemas, API contracts, Streamlit design, or RBAC policy.
+description: Use this skill for Main Sequence jobs, schedules, backend-managed project workflow files, project images, run inspection, resources, releases, Streamlit deployment, and operational Artifacts. It does not own TimeIndexTableUpdater behavior, MetaTable schemas, API contracts, Streamlit design, or RBAC policy.
 ---
 
 # Main Sequence Orchestration And Releases
@@ -40,7 +40,7 @@ This skill is for:
 
 This skill must not claim ownership of:
 
-- DataNode producer behavior
+- TimeIndexTableUpdater producer behavior
 - MetaTable schema and row semantics
 - Command Center FastAPI wire contracts
 - RBAC or sharing policy
@@ -49,8 +49,8 @@ This skill must not claim ownership of:
 
 ## Route Adjacent Work
 
-- DataNodes:
-  `.agents/skills/mainsequence/data_publishing/data_nodes/SKILL.md`
+- TimeIndexTableUpdaters:
+  `.agents/skills/mainsequence/data_publishing/time_index_table_updates/SKILL.md`
 - MetaTables:
   `.agents/skills/mainsequence/data_publishing/meta_tables/SKILL.md`
 - Command Center FastAPI provider implementation and contract validation:

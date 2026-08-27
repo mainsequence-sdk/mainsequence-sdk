@@ -102,7 +102,7 @@ assert request.table_contract.physical.table_name == Account.__table__.name
 ```
 
 The data source is resolved from the active Main Sequence project/session, like
-DataNode. Registration metadata belongs on the model class, but users should
+TimeIndexTableUpdater. Registration metadata belongs on the model class, but users should
 not call `Account.register()` directly for platform-managed tables.
 
 Put platform-managed models in the selected migration provider:
@@ -172,9 +172,9 @@ The SDK contract serializer extracts:
 - unique flags
 - backend type strings such as `VARCHAR(64)`
 
-## Time-Indexed DataNode Storage
+## Time-Indexed Updater Output Tables
 
-Use `PlatformTimeIndexMetaTable` when the table is DynamicTable/DataNode storage rather
+Use `PlatformTimeIndexMetaTable` when the table is an updater output table rather
 than a generic relational MetaTable. It inherits the platform-managed MetaTable
 authoring behavior, but registers through:
 
@@ -192,7 +192,7 @@ The client sends only the explicit time-indexed table contract:
 - `cadence`, when the class defines `__cadence__`
 - `table_contract`, which owns columns
 
-`__index_names__` declares the full DataNode grain. The SDK adds a normal
+`__index_names__` declares the full TimeIndexTableUpdater grain. The SDK adds a normal
 SQLAlchemy unique index over that tuple before Alembic autogenerate runs, so
 the database enforces one row per `(time_index, dimensions...)` observation.
 `__cadence__` is optional first-class time-indexed metadata, and it is
@@ -272,7 +272,7 @@ class Account(PlatformManagedMetaTable, Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
 ```
 
-For time-indexed DataNode storage:
+For time-indexed updater output tables:
 
 ```python
 class AccountHoldings(PlatformTimeIndexMetaTable, Base):

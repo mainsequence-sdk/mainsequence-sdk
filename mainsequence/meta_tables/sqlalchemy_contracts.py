@@ -311,7 +311,7 @@ class PlatformManagedMetaTable:
 class PlatformTimeIndexMetaTable(PlatformManagedMetaTable):
     """SQLAlchemy declarative base mixin for platform-managed TimeIndexMetaTable.
 
-    This is the SDK authoring surface for time-indexed DataNode storage. It
+    This is the SDK authoring surface for time-indexed TimeIndexTableUpdater storage. It
     reuses the MetaTable column/type projection, but registers through the
     time-indexed MetaTable endpoint and validates the opinionated table shape:
     the first index must be the time index, and any extra index dimensions are
@@ -1394,14 +1394,13 @@ def _resolve_time_index_storage_layout(
     if not isinstance(resolved, Mapping):
         raise ValueError(
             "PlatformTimeIndexMetaTable storage_layout must be a mapping when provided."
-    )
+        )
     return resolved
 
 
 def _resolve_time_index_cadence(model_or_table: Any) -> str | None:
-    resolved = (
-        getattr(model_or_table, "__cadence__", None)
-        or getattr(model_or_table, "__dynamic_table_cadence__", None)
+    resolved = getattr(model_or_table, "__cadence__", None) or getattr(
+        model_or_table, "__dynamic_table_cadence__", None
     )
     if resolved in (None, ""):
         return None
@@ -1519,11 +1518,7 @@ def _iter_unique_constraints(table: Any) -> list[Any]:
     constraints = getattr(table, "constraints", None)
     if constraints is None:
         return []
-    return [
-        constraint
-        for constraint in constraints
-        if isinstance(constraint, UniqueConstraint)
-    ]
+    return [constraint for constraint in constraints if isinstance(constraint, UniqueConstraint)]
 
 
 def _constraint_column_names(constraint: Any) -> list[str]:

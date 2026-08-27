@@ -22,7 +22,7 @@ Own:
 Do not own:
 
 - platform ontology or Project Blueprint design;
-- domain implementation for MetaTables, DataNodes, APIs, jobs, or releases;
+- domain implementation for MetaTables, TimeIndexTableUpdaters, APIs, jobs, or releases;
 - backend repository reconciliation;
 - MCP authorization policy, OAuth token storage, or access-token extraction;
 - project-owned skills outside `.agents/skills/mainsequence/`.

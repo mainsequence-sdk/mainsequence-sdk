@@ -462,7 +462,7 @@ def test_project_image_filter_accepts_boolean_build_error(monkeypatch):
     assert [image.build_error for image in images] == [False, True]
 
 
-def test_data_node_storage_normalizes_namespace_filters():
+def test_output_table_normalizes_namespace_filters():
     from mainsequence.client.metatables import TimeIndexMetaTable
 
     normalized = TimeIndexMetaTable._normalize_filter_kwargs(
@@ -480,7 +480,7 @@ def test_data_node_storage_normalizes_namespace_filters():
     }
 
 
-def test_data_node_storage_normalizes_data_source_uid_filters():
+def test_output_table_normalizes_data_source_uid_filters():
     from mainsequence.client.metatables import TimeIndexMetaTable
 
     uid = uuid.UUID("dddddddd-dddd-4ddd-8ddd-dddddddddddd")
@@ -498,7 +498,7 @@ def test_data_node_storage_normalizes_data_source_uid_filters():
     }
 
 
-def test_data_node_storage_does_not_expose_environment_filters():
+def test_output_table_does_not_expose_environment_filters():
     from mainsequence.client.metatables import TimeIndexMetaTable
 
     uid = uuid.UUID("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb")
@@ -558,17 +558,17 @@ def test_meta_table_collection_sends_canonical_environment_query_params(
         model_class.filter(organization_environment_uid=("11111111-1111-4111-8111-111111111111"))
 
 
-def test_data_node_storage_rejects_data_source_id_filter():
+def test_output_table_rejects_data_source_id_filter():
     from mainsequence.client.metatables import TimeIndexMetaTable
 
     with pytest.raises(ValueError, match="Unsupported TimeIndexMetaTable filter"):
         TimeIndexMetaTable._normalize_filter_kwargs({"data_source__id": {"id": 7}})
 
 
-def test_include_relations_detail_is_only_data_node_update_read_param():
-    from mainsequence.client.metatables import DataNodeUpdate, TimeIndexMetaTable
+def test_include_relations_detail_is_only_table_update_read_param():
+    from mainsequence.client.metatables import TimeIndexMetaTable, TimeIndexTableUpdate
 
-    assert "include_relations_detail" in DataNodeUpdate.READ_QUERY_PARAMS
+    assert "include_relations_detail" in TimeIndexTableUpdate.READ_QUERY_PARAMS
     assert "include_relations_detail" not in (TimeIndexMetaTable.READ_QUERY_PARAMS or {})
 
     filter_kwargs, read_query_kwargs = TimeIndexMetaTable._split_filter_and_read_query_kwargs(
@@ -581,7 +581,7 @@ def test_include_relations_detail_is_only_data_node_update_read_param():
         TimeIndexMetaTable._normalize_filter_kwargs(filter_kwargs)
 
 
-def test_data_node_storage_delete_after_date_posts_tail_delete(monkeypatch):
+def test_output_table_delete_after_date_posts_tail_delete(monkeypatch):
     from mainsequence.client import metatables as models_metatables
 
     captured = {}
@@ -631,7 +631,7 @@ def test_data_node_storage_delete_after_date_posts_tail_delete(monkeypatch):
         source_class_name="PricesNode",
         creation_date="2026-04-01T00:00:00Z",
         time_indexed_profile=models_metatables.TimeIndexedProfile(
-            related_table_uid="714",
+            time_index_meta_table_uid="714",
             time_index_name="time_index",
             index_names=["time_index", "entity_uid"],
             column_dtypes_map={
@@ -670,7 +670,7 @@ def test_data_node_storage_delete_after_date_posts_tail_delete(monkeypatch):
     }
 
 
-def test_data_node_storage_delete_after_date_accepts_index_coordinates(monkeypatch):
+def test_output_table_delete_after_date_accepts_index_coordinates(monkeypatch):
     from mainsequence.client import metatables as models_metatables
 
     captured = {}
@@ -706,7 +706,7 @@ def test_data_node_storage_delete_after_date_accepts_index_coordinates(monkeypat
         source_class_name="PricesNode",
         creation_date="2026-04-01T00:00:00Z",
         time_indexed_profile=models_metatables.TimeIndexedProfile(
-            related_table_uid="714",
+            time_index_meta_table_uid="714",
             time_index_name="time_index",
             index_names=["time_index", "entity_uid"],
             column_dtypes_map={
@@ -737,7 +737,7 @@ def test_data_node_storage_delete_after_date_accepts_index_coordinates(monkeypat
     }
 
 
-def test_data_node_storage_run_query_posts_plain_text_sql(monkeypatch):
+def test_output_table_run_query_posts_plain_text_sql(monkeypatch):
     from mainsequence.client import metatables as models_metatables
 
     captured = {}
@@ -862,7 +862,7 @@ def test_meta_table_run_query_posts_json_sql(monkeypatch):
     assert session.headers == {"Content-Type": "application/json"}
 
 
-def test_data_node_storage_run_query_returns_structured_error_envelope(monkeypatch):
+def test_output_table_run_query_returns_structured_error_envelope(monkeypatch):
     from mainsequence.client import metatables as models_metatables
 
     session = SimpleNamespace(headers={})
@@ -913,49 +913,49 @@ def test_data_node_storage_run_query_returns_structured_error_envelope(monkeypat
     assert result["error"]["kind"] == "validation_error"
 
 
-def test_data_node_update_normalizes_related_table_namespace_filters():
-    from mainsequence.client.metatables import DataNodeUpdate
+def test_table_update_normalizes_output_table_namespace_filters():
+    from mainsequence.client.metatables import TimeIndexTableUpdate
 
-    normalized = DataNodeUpdate._normalize_filter_kwargs(
+    normalized = TimeIndexTableUpdate._normalize_filter_kwargs(
         {
-            "related_table__namespace__contains": "  pytest  ",
-            "related_table__namespace__in": [" alpha ", "beta"],
-            "related_table__namespace__isnull": "false",
+            "output_table__namespace__contains": "  pytest  ",
+            "output_table__namespace__in": [" alpha ", "beta"],
+            "output_table__namespace__isnull": "false",
         }
     )
 
     assert normalized == {
-        "related_table__namespace__contains": "pytest",
-        "related_table__namespace__in": ["alpha", "beta"],
-        "related_table__namespace__isnull": False,
+        "output_table__namespace__contains": "pytest",
+        "output_table__namespace__in": ["alpha", "beta"],
+        "output_table__namespace__isnull": False,
     }
 
 
-def test_data_node_update_accepts_uid_update_lookup_filters():
-    from mainsequence.client.metatables import DataNodeUpdate
+def test_table_update_accepts_uid_update_lookup_filters():
+    from mainsequence.client.metatables import TimeIndexTableUpdate
 
     uid = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
 
-    normalized = DataNodeUpdate._normalize_filter_kwargs(
+    normalized = TimeIndexTableUpdate._normalize_filter_kwargs(
         {
             "update_hash": " weights_daily ",
-            "remote_table__uid": {"uid": uid},
-            "remote_table__data_source__uid": {"uid": uid},
+            "output_table__uid": {"uid": uid},
+            "output_table__data_source__uid": {"uid": uid},
         }
     )
 
     assert normalized == {
         "update_hash": "weights_daily",
-        "remote_table__uid": uid,
-        "remote_table__data_source__uid": uid,
+        "output_table__uid": uid,
+        "output_table__data_source__uid": uid,
     }
 
 
-def test_data_node_update_rejects_data_source_id_filter():
-    from mainsequence.client.metatables import DataNodeUpdate
+def test_table_update_rejects_data_source_id_filter():
+    from mainsequence.client.metatables import TimeIndexTableUpdate
 
-    with pytest.raises(ValueError, match="Unsupported DataNodeUpdate filter"):
-        DataNodeUpdate._normalize_filter_kwargs({"remote_table__data_source__id": {"id": 7}})
+    with pytest.raises(ValueError, match="Unsupported TimeIndexTableUpdate filter"):
+        TimeIndexTableUpdate._normalize_filter_kwargs({"output_table__data_source__id": {"id": 7}})
 
 
 def test_meta_table_normalizes_data_source_uid_filters():

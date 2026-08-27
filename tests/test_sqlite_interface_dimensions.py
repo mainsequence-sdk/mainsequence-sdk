@@ -195,9 +195,7 @@ def test_sqlite_data_source_dispatch_uses_local_interface(monkeypatch):
     monkeypatch.setattr(models_metatables, "_sqlite_interface", lambda: FakeSQLiteInterface())
 
     data_source = models_metatables.DataSource.model_construct(class_type=models_metatables.SQLITE)
-    update = SimpleNamespace(
-        data_node_storage=SimpleNamespace(physical_table_name="storage-hash")
-    )
+    update = SimpleNamespace(output_table=SimpleNamespace(physical_table_name="storage-hash"))
     df = pd.DataFrame(
         {
             "time_index": [_dt(0)],
@@ -209,7 +207,7 @@ def test_sqlite_data_source_dispatch_uses_local_interface(monkeypatch):
 
     data_source.insert_data_into_table(
         serialized_data_frame=df,
-        data_node_update=update,
+        table_update=update,
         overwrite=True,
         time_index_name="time_index",
         index_names=INDEX_NAMES,
@@ -262,7 +260,7 @@ def test_sqlite_read_dispatch_uses_adjusted_constrain_read_outputs(monkeypatch):
     )
     update = SimpleNamespace(
         update_hash="update-hash",
-        data_node_storage=SimpleNamespace(
+        output_table=SimpleNamespace(
             physical_table_name="storage-hash",
             time_indexed_profile=stc,
         ),
@@ -278,7 +276,7 @@ def test_sqlite_read_dispatch_uses_adjusted_constrain_read_outputs(monkeypatch):
         }
     ]
     result = data_source.get_data_by_time_index(
-        data_node_update=update,
+        table_update=update,
         start_date=_dt(0),
         end_date=_dt(3),
         dimension_range_map=original_range_map,

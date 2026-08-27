@@ -14,7 +14,7 @@ def _source_config(index_names: list[str]) -> models_metatables.TimeIndexedProfi
     }
     column_dtypes_map.update({name: "object" for name in index_names[1:]})
     return models_metatables.TimeIndexedProfile(
-        related_table_uid="714",
+        time_index_meta_table_uid="714",
         time_index_name="time_index",
         index_names=index_names,
         column_dtypes_map=column_dtypes_map,
@@ -39,13 +39,13 @@ def _storage(index_names: list[str]) -> models_metatables.TimeIndexMetaTable:
             "data_source_uid": "data-source-uid",
             "class_type": "timescale_db",
         },
-        source_class_name="PricesNode",
+        source_class_name="PricesUpdater",
         creation_date="2026-04-01T00:00:00Z",
         time_indexed_profile=_source_config(index_names),
     )
 
 
-def test_data_node_storage_has_no_initialize_source_table_method():
+def test_output_table_has_no_initialize_source_table_method():
     assert not hasattr(models_metatables.TimeIndexMetaTable, "initialize_source_table")
 
 
@@ -188,9 +188,7 @@ def test_get_data_between_dates_rejects_incomplete_dimension_range_map(monkeypat
     start = datetime.datetime(2026, 5, 1, 0, tzinfo=datetime.UTC)
 
     with pytest.raises(ValueError) as exc:
-        _storage(
-            ["time_index", "account_uid", "asset_identifier"]
-        ).get_data_between_dates_from_api(
+        _storage(["time_index", "account_uid", "asset_identifier"]).get_data_between_dates_from_api(
             start_date=start,
             dimension_range_map=[
                 {
@@ -234,9 +232,7 @@ def test_get_data_between_dates_raises_backend_error(monkeypatch):
     start = datetime.datetime(2026, 5, 1, 0, tzinfo=datetime.UTC)
 
     with pytest.raises(BadRequestError) as exc:
-        _storage(
-            ["time_index", "account_uid", "asset_identifier"]
-        ).get_data_between_dates_from_api(
+        _storage(["time_index", "account_uid", "asset_identifier"]).get_data_between_dates_from_api(
             start_date=start,
             dimension_range_map=[
                 {
@@ -252,7 +248,7 @@ def test_get_data_between_dates_raises_backend_error(monkeypatch):
     assert "asset_identifier" in str(exc.value)
 
 
-def test_get_data_between_dates_from_node_identifier_sends_canonical_dimensions(monkeypatch):
+def test_get_data_between_dates_from_table_update_sends_canonical_dimensions(monkeypatch):
     captured = {}
 
     class FakeResponse:
@@ -264,7 +260,7 @@ def test_get_data_between_dates_from_node_identifier_sends_canonical_dimensions(
             return {
                 "results": [],
                 "next_offset": None,
-                "storage_node": _storage(
+                "output_table": _storage(
                     ["time_index", "account_uid", "unique_identifier"]
                 ).model_dump(mode="json"),
             }
@@ -281,15 +277,18 @@ def test_get_data_between_dates_from_node_identifier_sends_canonical_dimensions(
         classmethod(lambda cls: object()),
     )
 
-    df, storage = models_metatables.TimeIndexMetaTable.get_data_between_dates_from_node_identifier(
-        node_identifier="prices-node",
-        dimension_filters={"account_uid": ["account-a"]},
-        index_coordinates=[{"account_uid": "account-a", "unique_identifier": "BTC"}],
+    df, output_table = (
+        models_metatables.TimeIndexMetaTable.get_data_between_dates_from_table_update(
+            table_update_uid="table-update-uid",
+            dimension_filters={"account_uid": ["account-a"]},
+            index_coordinates=[{"account_uid": "account-a", "unique_identifier": "BTC"}],
+        )
     )
 
     assert df.empty
-    assert storage.uid == "714"
-    assert captured["payload"]["json"]["node_identifier"] == "prices-node"
+    assert output_table.uid == "714"
+    assert captured["url"].endswith("/get-data-between-dates-from-table-update/")
+    assert captured["payload"]["json"]["table_update_uid"] == "table-update-uid"
     assert captured["payload"]["json"]["dimension_filters"] == {"account_uid": ["account-a"]}
     assert captured["payload"]["json"]["index_coordinates"] == [
         {"account_uid": "account-a", "unique_identifier": "BTC"}

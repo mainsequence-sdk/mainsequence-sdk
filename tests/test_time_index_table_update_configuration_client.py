@@ -11,23 +11,37 @@ from pydantic import ValidationError
 
 import mainsequence.client.metatables as models_metatables
 import mainsequence.client.models_foundry as models_foundry
-import mainsequence.meta_tables.data_nodes.data_nodes as data_nodes_mod
+import mainsequence.meta_tables.time_index_table_updates.updaters as updaters_module
 from mainsequence.client.metatables import (
-    DataNodeUpdate,
-    DataNodeUpdateDetails,
     MetaTable,
     TimeIndexMetaTable,
+    TimeIndexTableUpdate,
+    TimeIndexTableUpdateDetails,
 )
 from mainsequence.client.models_foundry import (
     Project,
 )
 from mainsequence.meta_tables import (
-    DataNode,
-    DataNodeConfiguration,
     PlatformTimeIndexMetaTable,
+    TimeIndexTableUpdateConfig,
+    TimeIndexTableUpdater,
 )
-from mainsequence.meta_tables.data_nodes.persist_managers import BasePersistManager
-from mainsequence.meta_tables.data_nodes.run_operations import UpdateRunner
+from mainsequence.meta_tables.time_index_table_updates.managers import (
+    BaseTimeIndexTableUpdateManager,
+)
+from mainsequence.meta_tables.time_index_table_updates.runner import UpdateRunner
+
+
+def _canonical_build_configuration(**values: object) -> dict[str, object]:
+    configuration: dict[str, object] = {
+        "configuration_schema_version": 2,
+        "table_updater_class_import_path": {
+            "module": "tests.test_time_index_table_update_configuration_client",
+            "qualname": "ExampleUpdater",
+        },
+    }
+    configuration.update(values)
+    return configuration
 
 
 def _meta_table(
@@ -52,17 +66,17 @@ def _meta_table(
     )
 
 
-def _platform_storage_model(meta_table: MetaTable) -> type[PlatformTimeIndexMetaTable]:
-    class RuntimeStorageTable(PlatformTimeIndexMetaTable):
+def _platform_output_model(meta_table: MetaTable) -> type[PlatformTimeIndexMetaTable]:
+    class RuntimeOutputTable(PlatformTimeIndexMetaTable):
         pass
 
     if not isinstance(meta_table, TimeIndexMetaTable):
         meta_table = TimeIndexMetaTable.model_construct(**meta_table.model_dump())
-    RuntimeStorageTable._bind_meta_table(meta_table)
-    return RuntimeStorageTable
+    RuntimeOutputTable._bind_meta_table(meta_table)
+    return RuntimeOutputTable
 
 
-def test_data_node_storage_uses_time_index_meta_table_endpoint():
+def test_output_table_uses_time_index_meta_table_endpoint():
     assert issubclass(TimeIndexMetaTable, MetaTable)
     for inherited_field in (
         "storage_hash",
@@ -74,7 +88,7 @@ def test_data_node_storage_uses_time_index_meta_table_endpoint():
         assert inherited_field not in TimeIndexMetaTable.__annotations__
 
     storage = TimeIndexMetaTable(
-        uid="data-node-storage-12",
+        uid="time-index-table-storage-12",
         storage_hash="prices_storage_hash",
         management_mode="platform_managed",
         physical_table_name="prices_storage_hash",
@@ -98,9 +112,9 @@ def test_metatable_update_models_are_not_exported_from_models_foundry():
         "TimeIndexMetaTable",
         "TimeIndexedProfile",
         "TimeIndexMetaTableRegistrationRequest",
-        "DataNodeUpdate",
-        "DataNodeUpdateDetails",
-        "RunConfiguration",
+        "TimeIndexTableUpdate",
+        "TimeIndexTableUpdateDetails",
+        "TimeIndexTableUpdateConfiguration",
         "Scheduler",
         "UpdateStatistics",
         "DataSource",
@@ -113,35 +127,35 @@ def test_metatable_update_models_are_not_exported_from_models_foundry():
     assert not hasattr(models_metatables, "DynamicTableDataSource")
 
 
-def test_data_node_update_accepts_local_time_serie_update_details_in_run_configuration():
+def test_table_update_accepts_canonical_update_details_uid_in_run_configuration():
     payload = {
-        "uid": "data-node-update-44",
+        "uid": "time-index-table-update-44",
         "update_hash": "issue-44-update-hash",
-        "data_node_storage": "data-node-storage-1",
-        "build_configuration": {},
+        "output_table": "time-index-table-storage-1",
+        "build_configuration": _canonical_build_configuration(),
         "run_configuration": {
             "update_schedule": "*/1 * * * *",
-            "local_time_serie_update_details": 8053,
+            "table_update_details_uid": "update-details-8053",
         },
         "update_details": {
-            "related_table_uid": "data-node-update-44",
+            "table_update_uid": "time-index-table-update-44",
             "run_configuration": {
                 "update_schedule": "*/1 * * * *",
-                "local_time_serie_update_details": 8053,
+                "table_update_details_uid": "update-details-8053",
             },
         },
     }
 
-    update = DataNodeUpdate(**payload)
+    update = TimeIndexTableUpdate(**payload)
 
     assert update.run_configuration is not None
-    assert update.run_configuration.local_time_serie_update_details == 8053
-    assert isinstance(update.update_details, DataNodeUpdateDetails)
+    assert update.run_configuration.table_update_details_uid == "update-details-8053"
+    assert isinstance(update.update_details, TimeIndexTableUpdateDetails)
     assert update.update_details.run_configuration is not None
-    assert update.update_details.run_configuration.local_time_serie_update_details == 8053
+    assert update.update_details.run_configuration.table_update_details_uid == "update-details-8053"
 
 
-def test_data_node_update_details_patches_by_data_node_update_uid(monkeypatch):
+def test_table_update_details_patches_by_table_update_uid(monkeypatch):
     captured = {}
 
     class FakeResponse:
@@ -149,7 +163,7 @@ def test_data_node_update_details_patches_by_data_node_update_uid(monkeypatch):
 
         @staticmethod
         def json():
-            return {"related_table_uid": "data-node-update-44"}
+            return {"table_update_uid": "time-index-table-update-44"}
 
     def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
         captured.update(
@@ -164,71 +178,71 @@ def test_data_node_update_details_patches_by_data_node_update_uid(monkeypatch):
 
     monkeypatch.setattr(models_metatables, "make_request", _fake_make_request)
 
-    details = DataNodeUpdateDetails.patch_for_data_node_update_uid(
-        "data-node-update-44",
+    details = TimeIndexTableUpdateDetails.patch_for_table_update_uid(
+        "time-index-table-update-44",
         update_priority=7,
         timeout=12,
     )
 
-    assert isinstance(details, DataNodeUpdateDetails)
-    assert details.related_table_uid == "data-node-update-44"
+    assert isinstance(details, TimeIndexTableUpdateDetails)
+    assert details.table_update_uid == "time-index-table-update-44"
     assert captured["r_type"] == "PATCH"
-    assert captured["url"].endswith("/local-time-series-update-details/data-node-update-44/")
+    assert captured["url"].endswith("/time-index-table-update-details/time-index-table-update-44/")
     assert captured["payload"] == {"json": {"update_priority": 7}}
     assert captured["time_out"] == 12
 
 
-def test_persist_manager_build_update_details_uses_update_details_resource():
+def test_update_manager_build_update_details_uses_update_details_resource():
     patched = []
     patched_event = threading.Event()
 
     class UpdateDetailsResource:
         @classmethod
-        def patch_for_data_node_update_uid(cls, data_node_update_uid, **kwargs):
-            patched.append((data_node_update_uid, kwargs))
+        def patch_for_table_update_uid(cls, table_update_uid, **kwargs):
+            patched.append((table_update_uid, kwargs))
             patched_event.set()
 
-    class StorageActionTrap:
+    class OutputTableActionTrap:
         def build_or_update_update_details(self, **_kwargs):
             raise AssertionError("storage-table update-details action should not be used")
 
-    class UpdateDetailsPersistManager(BasePersistManager):
+    class UpdateDetailsTimeIndexTableUpdateManager(BaseTimeIndexTableUpdateManager):
         UPDATE_DETAILS_CLASS = UpdateDetailsResource
 
-    storage_table = _platform_storage_model(_meta_table())
+    output_table = _platform_output_model(_meta_table())
 
-    manager = UpdateDetailsPersistManager(
+    manager = UpdateDetailsTimeIndexTableUpdateManager(
         update_hash="prices-update-hash",
-        storage_table=storage_table,
-        data_node_update=SimpleNamespace(
-            uid="data-node-update-44",
-            data_node_storage=StorageActionTrap(),
+        output_table=output_table,
+        table_update=SimpleNamespace(
+            uid="time-index-table-update-44",
+            output_table=OutputTableActionTrap(),
         ),
     )
-    manager.set_data_node_update_lazy_callback = lambda _future: None
+    manager.set_table_update_lazy_callback = lambda _future: None
 
     manager.build_update_details(source_class_name="PricesNode")
 
     assert patched_event.wait(2)
-    assert patched == [("data-node-update-44", {})]
+    assert patched == [("time-index-table-update-44", {})]
 
 
-def test_persist_manager_does_not_pass_storage_contract_schema_override_to_update():
+def test_update_manager_does_not_pass_storage_contract_schema_override_to_update():
     captured = {}
 
     class UpdateResource:
-        build_configuration = {}
+        build_configuration = _canonical_build_configuration()
 
         def upsert_data_into_table(self, **kwargs):
             captured.update(kwargs)
             return self
 
-    storage_metadata = TimeIndexMetaTable.model_construct(
-        uid="data-node-storage-44",
+    output_metadata = TimeIndexMetaTable.model_construct(
+        uid="time-index-table-storage-44",
         data_source_uid="data-source-uid",
         data_source=SimpleNamespace(class_type="postgresql"),
         time_indexed_profile=models_metatables.TimeIndexedProfile(
-            related_table_uid="data-node-storage-44",
+            time_index_meta_table_uid="time-index-table-storage-44",
             time_index_name="time_index",
             index_names=["time_index", "account_uid", "unique_identifier"],
             column_dtypes_map={
@@ -248,11 +262,11 @@ def test_persist_manager_does_not_pass_storage_contract_schema_override_to_updat
             },
         ),
     )
-    storage_table = _platform_storage_model(storage_metadata)
-    manager = BasePersistManager(
+    output_table = _platform_output_model(output_metadata)
+    manager = BaseTimeIndexTableUpdateManager(
         update_hash="account-holdings-update-hash",
-        storage_table=storage_table,
-        data_node_update=UpdateResource(),
+        output_table=output_table,
+        table_update=UpdateResource(),
     )
     df = pd.DataFrame(
         {"quantity": [12.0]},
@@ -266,9 +280,9 @@ def test_persist_manager_does_not_pass_storage_contract_schema_override_to_updat
     assert "source_table_schema" not in captured
 
 
-def test_data_node_storage_accepts_namespace():
+def test_output_table_accepts_namespace():
     storage = TimeIndexMetaTable(
-        uid="data-node-storage-12",
+        uid="time-index-table-storage-12",
         storage_hash="prices_storage_hash",
         management_mode="platform_managed",
         physical_table_name="prices_physical_table",
@@ -296,9 +310,9 @@ def test_data_node_storage_accepts_namespace():
         "table_name",
     ],
 )
-def test_data_node_storage_rejects_removed_backend_fields(removed_field):
+def test_output_table_rejects_removed_backend_fields(removed_field):
     payload = {
-        "uid": "data-node-storage-1",
+        "uid": "time-index-table-storage-1",
         "storage_hash": "hash",
         "management_mode": "platform_managed",
         "physical_table_name": "hash",
@@ -316,24 +330,24 @@ def test_data_node_storage_rejects_removed_backend_fields(removed_field):
         TimeIndexMetaTable(**payload)
 
 
-def test_persist_manager_requires_storage_table_constructor_argument():
+def test_update_manager_requires_output_table_constructor_argument():
     class UpdateResource:
         @staticmethod
         def get_or_none(**kwargs):
             return None
 
-    class ExplicitStoragePersistManager(BasePersistManager):
+    class ExplicitOutputTimeIndexTableUpdateManager(BaseTimeIndexTableUpdateManager):
         UPDATE_CLASS = UpdateResource
 
-    with pytest.raises(TypeError, match="storage_table"):
-        ExplicitStoragePersistManager(
+    with pytest.raises(TypeError, match="output_table"):
+        ExplicitOutputTimeIndexTableUpdateManager(
             update_hash="prices-update-hash",
         )
 
 
-def test_persist_manager_validates_storage_table_without_creating_storage():
+def test_update_manager_validates_output_table_without_creating_storage():
     meta_table = _meta_table(physical_table_name="canonical_prices_table")
-    storage_table = _platform_storage_model(meta_table)
+    output_table = _platform_output_model(meta_table)
     created_update_payloads = []
 
     class UpdateResource:
@@ -346,51 +360,51 @@ def test_persist_manager_validates_storage_table_without_creating_storage():
             created_update_payloads.append(kwargs)
             return SimpleNamespace(
                 build_configuration=kwargs["build_configuration"],
-                data_node_storage=meta_table,
+                output_table=meta_table,
             )
 
-    class ExplicitStoragePersistManager(BasePersistManager):
+    class ExplicitOutputTimeIndexTableUpdateManager(BaseTimeIndexTableUpdateManager):
         UPDATE_CLASS = UpdateResource
 
-    manager = ExplicitStoragePersistManager(
+    manager = ExplicitOutputTimeIndexTableUpdateManager(
         update_hash="prices-update-hash",
-        storage_table=storage_table,
+        output_table=output_table,
     )
 
-    manager.local_persist_exist_set_config(
-        local_configuration={"config": {"identifier": "prices"}},
+    manager.ensure_table_update(
+        local_configuration=_canonical_build_configuration(config={"identifier": "prices"}),
     )
 
     assert created_update_payloads == [
         {
             "update_hash": "prices-update-hash",
-            "build_configuration": {"config": {"identifier": "prices"}},
-            "meta_table_uid": "meta-table-uid",
+            "build_configuration": _canonical_build_configuration(config={"identifier": "prices"}),
+            "output_table_uid": "meta-table-uid",
         }
     ]
-    assert manager.storage_table is storage_table
-    assert manager.storage_metadata.uid == meta_table.uid
-    assert isinstance(manager.storage_metadata, TimeIndexMetaTable)
+    assert manager.output_table is output_table
+    assert manager.output_metadata.uid == meta_table.uid
+    assert isinstance(manager.output_metadata, TimeIndexMetaTable)
 
 
-def test_persist_manager_rejects_unbound_platform_time_index_storage_table():
-    class UnboundStorageTable(PlatformTimeIndexMetaTable):
+def test_update_manager_rejects_unbound_platform_time_index_output_table():
+    class UnboundOutputTable(PlatformTimeIndexMetaTable):
         pass
 
     with pytest.raises(ValueError, match="not bound to backend TimeIndexMetaTable"):
-        BasePersistManager(
+        BaseTimeIndexTableUpdateManager(
             update_hash="prices-update-hash",
-            storage_table=UnboundStorageTable,
+            output_table=UnboundOutputTable,
         )
 
 
-def test_persist_manager_uses_platform_managed_storage_identity():
+def test_update_manager_uses_platform_managed_storage_identity():
     meta_table = _meta_table(
         uid="platform-meta-table-uid",
         data_source_uid="platform-data-source-uid",
         physical_table_name="canonical_prices_table",
     )
-    storage_table = _platform_storage_model(meta_table)
+    output_table = _platform_output_model(meta_table)
     created_update_payloads = []
 
     class UpdateResource:
@@ -403,44 +417,44 @@ def test_persist_manager_uses_platform_managed_storage_identity():
             created_update_payloads.append(kwargs)
             return SimpleNamespace(
                 build_configuration=kwargs["build_configuration"],
-                data_node_storage=meta_table,
+                output_table=meta_table,
             )
 
-    class ExplicitStoragePersistManager(BasePersistManager):
+    class ExplicitOutputTimeIndexTableUpdateManager(BaseTimeIndexTableUpdateManager):
         UPDATE_CLASS = UpdateResource
 
-    manager = ExplicitStoragePersistManager(
+    manager = ExplicitOutputTimeIndexTableUpdateManager(
         update_hash="prices-update-hash",
-        storage_table=storage_table,
+        output_table=output_table,
     )
 
-    manager.local_persist_exist_set_config(
-        local_configuration={"config": {"identifier": "prices"}},
+    manager.ensure_table_update(
+        local_configuration=_canonical_build_configuration(config={"identifier": "prices"}),
     )
 
     assert created_update_payloads == [
         {
             "update_hash": "prices-update-hash",
-            "build_configuration": {"config": {"identifier": "prices"}},
-            "meta_table_uid": "platform-meta-table-uid",
+            "build_configuration": _canonical_build_configuration(config={"identifier": "prices"}),
+            "output_table_uid": "platform-meta-table-uid",
         }
     ]
 
 
-def test_persist_manager_update_lookup_uses_storage_uid_not_data_source_uid():
+def test_update_manager_update_lookup_uses_storage_uid_not_data_source_uid():
     meta_table = _meta_table(
         uid="platform-meta-table-uid",
         data_source_uid="platform-data-source-uid",
         physical_table_name="canonical_prices_table",
     )
-    storage_table = _platform_storage_model(meta_table)
+    output_table = _platform_output_model(meta_table)
 
-    class ExplicitStoragePersistManager(BasePersistManager):
+    class ExplicitOutputTimeIndexTableUpdateManager(BaseTimeIndexTableUpdateManager):
         UPDATE_CLASS = object
 
-    manager = ExplicitStoragePersistManager(
+    manager = ExplicitOutputTimeIndexTableUpdateManager(
         update_hash=None,
-        storage_table=storage_table,
+        output_table=output_table,
     )
     manager.update_hash = "prices-update-hash"
 
@@ -449,12 +463,12 @@ def test_persist_manager_update_lookup_uses_storage_uid_not_data_source_uid():
     assert lookup == {
         "update_hash": "prices-update-hash",
         "include_relations_detail": True,
-        "remote_table__uid": "platform-meta-table-uid",
+        "output_table__uid": "platform-meta-table-uid",
     }
-    assert "remote_table__data_source__uid" not in lookup
+    assert "output_table__data_source__uid" not in lookup
 
 
-def test_persist_manager_missing_update_warning_names_data_node_update():
+def test_update_manager_missing_update_warning_names_table_update():
     warnings = []
 
     class UpdateResource:
@@ -462,7 +476,7 @@ def test_persist_manager_missing_update_warning_names_data_node_update():
         def get_or_none(**kwargs):
             return None
 
-    class ExplicitStoragePersistManager(BasePersistManager):
+    class ExplicitOutputTimeIndexTableUpdateManager(BaseTimeIndexTableUpdateManager):
         UPDATE_CLASS = UpdateResource
 
     meta_table = _meta_table(
@@ -470,20 +484,20 @@ def test_persist_manager_missing_update_warning_names_data_node_update():
         data_source_uid="platform-data-source-uid",
         physical_table_name="canonical_prices_table",
     )
-    storage_table = _platform_storage_model(meta_table)
-    manager = ExplicitStoragePersistManager(
+    output_table = _platform_output_model(meta_table)
+    manager = ExplicitOutputTimeIndexTableUpdateManager(
         update_hash=None,
-        storage_table=storage_table,
+        output_table=output_table,
     )
     manager.update_hash = "importvalmer_f59da5843b77a34711b2e5e7cb94927b"
     manager.logger = SimpleNamespace(warning=warnings.append)
 
-    manager.set_data_node_update_lazy(force_registry=True)
-    assert manager._data_node_update_future is not None
-    assert manager._data_node_update_future.result(timeout=5) is None
+    manager.set_table_update_lazy(force_registry=True)
+    assert manager._table_update_future is not None
+    assert manager._table_update_future.result(timeout=5) is None
 
     assert warnings == [
-        "DataNodeUpdate importvalmer_f59da5843b77a34711b2e5e7cb94927b "
+        "TimeIndexTableUpdate importvalmer_f59da5843b77a34711b2e5e7cb94927b "
         "for MetaTable platform-meta-table-uid "
         "(physical_schema=public, physical_table_name=canonical_prices_table) "
         "not found in backend"
@@ -492,7 +506,7 @@ def test_persist_manager_missing_update_warning_names_data_node_update():
     assert "platform-data-source-uid" not in warnings[0]
 
 
-def test_persist_manager_preserves_storage_table_during_update_lookup():
+def test_update_manager_preserves_output_table_during_update_lookup():
     stale_response_storage = _meta_table(
         uid="stale-meta-table-uid",
         data_source_uid="stale-data-source-uid",
@@ -503,37 +517,37 @@ def test_persist_manager_preserves_storage_table_during_update_lookup():
         @staticmethod
         def get_or_none(**kwargs):
             return SimpleNamespace(
-                build_configuration={},
-                data_node_storage=stale_response_storage,
+                build_configuration=_canonical_build_configuration(),
+                output_table=stale_response_storage,
             )
 
-    class ExplicitStoragePersistManager(BasePersistManager):
+    class ExplicitOutputTimeIndexTableUpdateManager(BaseTimeIndexTableUpdateManager):
         UPDATE_CLASS = UpdateResource
 
     meta_table = _meta_table(physical_table_name="canonical_prices_table")
-    storage_table = _platform_storage_model(meta_table)
-    manager = ExplicitStoragePersistManager(
+    output_table = _platform_output_model(meta_table)
+    manager = ExplicitOutputTimeIndexTableUpdateManager(
         update_hash="prices-update-hash",
-        storage_table=storage_table,
+        output_table=output_table,
     )
 
-    assert manager.data_node_update.data_node_storage is stale_response_storage
-    assert manager.storage_table is storage_table
-    assert manager.storage_metadata.uid == meta_table.uid
-    assert isinstance(manager.storage_metadata, TimeIndexMetaTable)
+    assert manager.table_update.output_table is stale_response_storage
+    assert manager.output_table is output_table
+    assert manager.output_metadata.uid == meta_table.uid
+    assert isinstance(manager.output_metadata, TimeIndexMetaTable)
 
 
-def test_data_node_accepts_platform_time_index_storage_table_runtime_argument():
-    class Config(DataNodeConfiguration):
+def test_time_index_table_accepts_platform_time_index_output_table_runtime_argument():
+    class Config(TimeIndexTableUpdateConfig):
         identifier: str
 
-    class StorageTableNode(DataNode):
+    class OutputTableUpdater(TimeIndexTableUpdater):
         def __init__(
             self,
             config: Config,
-            storage_table: type[PlatformTimeIndexMetaTable],
+            output_table: type[PlatformTimeIndexMetaTable],
         ):
-            super().__init__(config=config, storage_table=storage_table)
+            super().__init__(config=config, output_table=output_table)
 
         def dependencies(self):
             return {}
@@ -541,30 +555,28 @@ def test_data_node_accepts_platform_time_index_storage_table_runtime_argument():
         def update(self):
             return pd.DataFrame()
 
-    storage_table = _platform_storage_model(
-        _meta_table(physical_table_name="canonical_prices_table")
-    )
-    node = StorageTableNode(Config(identifier="prices"), storage_table=storage_table)
+    output_table = _platform_output_model(_meta_table(physical_table_name="canonical_prices_table"))
+    node = OutputTableUpdater(Config(identifier="prices"), output_table=output_table)
 
-    assert node.storage_table is storage_table
-    assert node.storage_metadata.physical_table_name == "canonical_prices_table"
+    assert node.output_table is output_table
+    assert node.output_metadata.physical_table_name == "canonical_prices_table"
     assert "storage_hash" not in node.__dict__
-    assert "storage_table" not in node.build_configuration
-    assert "storage_table" not in node.local_initial_configuration
-    assert "storage_table" not in node.remote_initial_configuration
+    assert "output_table" not in node.build_configuration
+    assert "output_table" not in node.local_initial_configuration
+    assert "output_table" not in node.remote_initial_configuration
 
 
-def test_data_node_rejects_test_node_constructor_shortcut():
-    class Config(DataNodeConfiguration):
+def test_time_index_table_rejects_test_node_constructor_shortcut():
+    class Config(TimeIndexTableUpdateConfig):
         identifier: str
 
-    class StorageTableNode(DataNode):
+    class OutputTableUpdater(TimeIndexTableUpdater):
         def __init__(
             self,
             config: Config,
-            storage_table: type[PlatformTimeIndexMetaTable],
+            output_table: type[PlatformTimeIndexMetaTable],
         ):
-            super().__init__(config=config, storage_table=storage_table)
+            super().__init__(config=config, output_table=output_table)
 
         def dependencies(self):
             return {}
@@ -572,23 +584,21 @@ def test_data_node_rejects_test_node_constructor_shortcut():
         def update(self):
             return pd.DataFrame()
 
-    storage_table = _platform_storage_model(
-        _meta_table(physical_table_name="canonical_prices_table")
-    )
+    output_table = _platform_output_model(_meta_table(physical_table_name="canonical_prices_table"))
 
     with pytest.raises(TypeError, match="test_node has been removed"):
-        StorageTableNode(
+        OutputTableUpdater(
             Config(identifier="prices"),
-            storage_table=storage_table,
+            output_table=output_table,
             test_node=True,
         )
 
 
-def test_data_node_requires_storage_table_constructor_argument():
-    class Config(DataNodeConfiguration):
+def test_time_index_table_requires_output_table_constructor_argument():
+    class Config(TimeIndexTableUpdateConfig):
         identifier: str
 
-    class StorageTableNode(DataNode):
+    class OutputTableUpdater(TimeIndexTableUpdater):
         def __init__(self, config: Config):
             super().__init__(config=config)
 
@@ -598,37 +608,37 @@ def test_data_node_requires_storage_table_constructor_argument():
         def update(self):
             return pd.DataFrame()
 
-    with pytest.raises(TypeError, match="storage_table"):
-        StorageTableNode(Config(identifier="prices"))
+    with pytest.raises(TypeError, match="output_table"):
+        OutputTableUpdater(Config(identifier="prices"))
 
 
-def test_data_node_passes_storage_table_to_persist_manager(monkeypatch):
+def test_time_index_table_passes_output_table_to_update_manager(monkeypatch):
     captured = {}
 
-    def fake_get_from_storage_table(storage_table, **kwargs):
+    def fake_get_from_output_table(output_table, **kwargs):
         captured.update(kwargs)
-        captured["storage_table_arg"] = storage_table
+        captured["output_table_arg"] = output_table
         return SimpleNamespace(
-            data_node_update=None,
-            storage_table=storage_table,
+            table_update=None,
+            output_table=output_table,
         )
 
     monkeypatch.setattr(
-        data_nodes_mod.PersistManager,
-        "get_from_storage_table",
-        staticmethod(fake_get_from_storage_table),
+        updaters_module.TimeIndexTableUpdateManager,
+        "get_from_output_table",
+        staticmethod(fake_get_from_output_table),
     )
 
-    class Config(DataNodeConfiguration):
+    class Config(TimeIndexTableUpdateConfig):
         identifier: str
 
-    class StorageTableNode(DataNode):
+    class OutputTableUpdater(TimeIndexTableUpdater):
         def __init__(
             self,
             config: Config,
-            storage_table: type[PlatformTimeIndexMetaTable],
+            output_table: type[PlatformTimeIndexMetaTable],
         ):
-            super().__init__(config=config, storage_table=storage_table)
+            super().__init__(config=config, output_table=output_table)
 
         def dependencies(self):
             return {}
@@ -636,82 +646,78 @@ def test_data_node_passes_storage_table_to_persist_manager(monkeypatch):
         def update(self):
             return pd.DataFrame()
 
-    storage_table = _platform_storage_model(
-        _meta_table(physical_table_name="canonical_prices_table")
-    )
-    node = StorageTableNode(Config(identifier="prices"), storage_table=storage_table)
+    output_table = _platform_output_model(_meta_table(physical_table_name="canonical_prices_table"))
+    node = OutputTableUpdater(Config(identifier="prices"), output_table=output_table)
 
-    assert node.local_persist_manager.storage_table is storage_table
-    assert captured["storage_table_arg"] is storage_table
+    assert node.update_manager.output_table is output_table
+    assert captured["output_table_arg"] is output_table
 
 
-def test_data_node_data_source_uid_is_derived_from_storage_table():
-    class StorageTableNode(DataNode):
+def test_time_index_table_data_source_uid_is_derived_from_output_table():
+    class OutputTableUpdater(TimeIndexTableUpdater):
         def dependencies(self):
             return {}
 
         def update(self):
             return pd.DataFrame()
 
-    node = StorageTableNode.__new__(StorageTableNode)
-    node.storage_table = _platform_storage_model(
-        _meta_table(data_source_uid="canonical-data-source")
-    )
+    node = OutputTableUpdater.__new__(OutputTableUpdater)
+    node.output_table = _platform_output_model(_meta_table(data_source_uid="canonical-data-source"))
 
     assert node.data_source_uid == "canonical-data-source"
 
 
-def test_data_node_rejects_client_meta_table_storage_argument():
-    class StorageTableNode(DataNode):
+def test_time_index_table_rejects_client_meta_table_storage_argument():
+    class OutputTableUpdater(TimeIndexTableUpdater):
         def dependencies(self):
             return {}
 
         def update(self):
             return pd.DataFrame()
 
-    node = StorageTableNode.__new__(StorageTableNode)
+    node = OutputTableUpdater.__new__(OutputTableUpdater)
 
     with pytest.raises(TypeError, match="PlatformTimeIndexMetaTable"):
-        node.storage_table = _meta_table()
+        node.output_table = _meta_table()
 
 
-def test_data_node_rejects_unbound_platform_time_index_storage_table():
-    class StorageTableNode(DataNode):
+def test_time_index_table_rejects_unbound_platform_time_index_output_table():
+    class OutputTableUpdater(TimeIndexTableUpdater):
         def dependencies(self):
             return {}
 
         def update(self):
             return pd.DataFrame()
 
-    class UnboundStorageTable(PlatformTimeIndexMetaTable):
+    class UnboundOutputTable(PlatformTimeIndexMetaTable):
         pass
 
-    node = StorageTableNode.__new__(StorageTableNode)
+    node = OutputTableUpdater.__new__(OutputTableUpdater)
 
     with pytest.raises(ValueError, match="not bound to backend TimeIndexMetaTable"):
-        node.storage_table = UnboundStorageTable
+        node.output_table = UnboundOutputTable
 
 
-def test_data_node_rejects_none_storage_table():
-    class StorageTableNode(DataNode):
+def test_time_index_table_rejects_none_output_table():
+    class OutputTableUpdater(TimeIndexTableUpdater):
         def dependencies(self):
             return {}
 
         def update(self):
             return pd.DataFrame()
 
-    node = StorageTableNode.__new__(StorageTableNode)
+    node = OutputTableUpdater.__new__(OutputTableUpdater)
 
     with pytest.raises(TypeError, match="required"):
-        node.storage_table = None
+        node.output_table = None
 
 
-def test_data_node_update_accepts_labels():
-    update = DataNodeUpdate(
-        uid="data-node-update-44",
+def test_table_update_accepts_labels():
+    update = TimeIndexTableUpdate(
+        uid="time-index-table-update-44",
         update_hash="issue-44-update-hash",
-        data_node_storage="data-node-storage-1",
-        build_configuration={},
+        output_table="time-index-table-storage-1",
+        build_configuration=_canonical_build_configuration(),
         labels=["pricing", "daily"],
     )
 
@@ -727,8 +733,8 @@ def test_label_fields_exist_on_project_and_storage_models():
         framework="mainsequence",
         labels=["research"],
     )
-    data_node_storage = TimeIndexMetaTable(
-        uid="data-node-storage-12",
+    output_table = TimeIndexMetaTable(
+        uid="time-index-table-storage-12",
         storage_hash="prices_storage_hash",
         management_mode="platform_managed",
         physical_table_name="prices_storage_hash",
@@ -742,12 +748,12 @@ def test_label_fields_exist_on_project_and_storage_models():
         labels=["vendor-data"],
     )
     assert project.labels == ["research"]
-    assert data_node_storage.labels == ["vendor-data"]
+    assert output_table.labels == ["vendor-data"]
 
 
-def test_data_node_configuration_rejects_records_field():
+def test_time_index_table_configuration_rejects_records_field():
     with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
-        DataNodeConfiguration(
+        TimeIndexTableUpdateConfig(
             records=[
                 {
                     "column_name": "close",
@@ -757,7 +763,7 @@ def test_data_node_configuration_rejects_records_field():
         )
 
 
-def test_data_node_update_output_rejects_column_names_longer_than_63_characters():
+def test_table_update_output_rejects_column_names_longer_than_63_characters():
     frame = pd.DataFrame(
         {"a" * 64: [1.0]},
         index=pd.DatetimeIndex([pd.Timestamp("2026-04-13T00:00:00Z")], name="time_index"),
@@ -767,7 +773,7 @@ def test_data_node_update_output_rejects_column_names_longer_than_63_characters(
         UpdateRunner.validate_data_frame(frame, storage_class_type="timescale")
 
 
-def test_data_node_update_output_allows_datetime_payload_columns():
+def test_table_update_output_allows_datetime_payload_columns():
     frame = pd.DataFrame(
         {"event_time": [pd.Timestamp("2026-04-13T12:00:00Z")]},
         index=pd.DatetimeIndex([pd.Timestamp("2026-04-13T00:00:00Z")], name="time_index"),
@@ -776,7 +782,7 @@ def test_data_node_update_output_allows_datetime_payload_columns():
     UpdateRunner.validate_data_frame(frame, storage_class_type="timescale")
 
 
-def test_data_node_update_output_accepts_declared_temporal_payload_columns():
+def test_table_update_output_accepts_declared_temporal_payload_columns():
     frame = pd.DataFrame(
         {
             "event_date": pd.to_datetime(["2026-04-13"]),
@@ -798,7 +804,7 @@ def test_data_node_update_output_accepts_declared_temporal_payload_columns():
     )
 
 
-def test_data_node_update_output_rejects_remote_naive_datetime_payload_columns():
+def test_table_update_output_rejects_remote_naive_datetime_payload_columns():
     frame = pd.DataFrame(
         {"event_time": [pd.Timestamp("2026-04-13T12:00:00")]},
         index=pd.DatetimeIndex([pd.Timestamp("2026-04-13T00:00:00Z")], name="time_index"),
@@ -814,7 +820,7 @@ def test_data_node_update_output_rejects_remote_naive_datetime_payload_columns()
         )
 
 
-def test_data_node_update_output_rejects_declared_dtype_mismatch():
+def test_table_update_output_rejects_declared_dtype_mismatch():
     frame = pd.DataFrame(
         {"value": ["1.0"]},
         index=pd.DatetimeIndex([pd.Timestamp("2026-04-13T00:00:00Z")], name="time_index"),
@@ -828,7 +834,7 @@ def test_data_node_update_output_rejects_declared_dtype_mismatch():
         )
 
 
-def test_data_node_update_output_rejects_non_jsonb_record_values():
+def test_table_update_output_rejects_non_jsonb_record_values():
     frame = pd.DataFrame(
         {"venue_specific_properties": [object()]},
         index=pd.DatetimeIndex([pd.Timestamp("2026-04-13T00:00:00Z")], name="time_index"),
@@ -844,7 +850,7 @@ def test_data_node_update_output_rejects_non_jsonb_record_values():
         )
 
 
-def test_data_node_update_output_accepts_declared_string_for_python_string_columns():
+def test_table_update_output_accepts_declared_string_for_python_string_columns():
     frame = pd.DataFrame(
         {"name": ["Asset A", None]},
         index=pd.DatetimeIndex([pd.Timestamp("2026-04-13T00:00:00Z")] * 2, name="time_index"),
@@ -857,7 +863,7 @@ def test_data_node_update_output_accepts_declared_string_for_python_string_colum
     )
 
 
-def test_data_node_update_output_accepts_declared_object_for_pandas_str_dtype():
+def test_table_update_output_accepts_declared_object_for_pandas_str_dtype():
     with pd.option_context("future.infer_string", True):
         frame = pd.DataFrame(
             {"unique_identifier": ["asset-1", None]},
@@ -877,7 +883,7 @@ def test_data_node_update_output_accepts_declared_object_for_pandas_str_dtype():
     )
 
 
-def test_data_node_update_output_accepts_declared_character_varying_for_pandas_string_dtype():
+def test_table_update_output_accepts_declared_character_varying_for_pandas_string_dtype():
     frame = pd.DataFrame(
         {"asset_identifier": pd.Series(["asset-1", None], dtype="string")},
         index=pd.DatetimeIndex(
@@ -895,7 +901,7 @@ def test_data_node_update_output_accepts_declared_character_varying_for_pandas_s
     )
 
 
-def test_data_node_update_output_rejects_non_string_values_for_declared_string():
+def test_table_update_output_rejects_non_string_values_for_declared_string():
     frame = pd.DataFrame(
         {"name": ["Asset A", 123]},
         index=pd.DatetimeIndex([pd.Timestamp("2026-04-13T00:00:00Z")] * 2, name="time_index"),
@@ -909,8 +915,8 @@ def test_data_node_update_output_rejects_non_string_values_for_declared_string()
         )
 
 
-def test_data_node_update_output_validates_against_storage_table_contract():
-    class SchemaNode(DataNode):
+def test_table_update_output_validates_against_output_table_contract():
+    class SchemaUpdater(TimeIndexTableUpdater):
         def dependencies(self):
             return {}
 
@@ -921,8 +927,8 @@ def test_data_node_update_output_validates_against_storage_table_contract():
         {"value": ["1.0"]},
         index=pd.DatetimeIndex([pd.Timestamp("2026-04-13T00:00:00Z")], name="time_index"),
     )
-    node = SchemaNode.__new__(SchemaNode)
-    node.storage_table = _platform_storage_model(
+    node = SchemaUpdater.__new__(SchemaUpdater)
+    node.output_table = _platform_output_model(
         _meta_table(
             columns=[{"name": "value", "data_type": "float64"}],
             data_source={
@@ -936,23 +942,23 @@ def test_data_node_update_output_validates_against_storage_table_contract():
         node._validate_update_output(frame)
 
 
-def test_data_node_update_returning_none_is_invalid():
-    class NoneReturningNode(DataNode):
+def test_table_update_returning_none_is_invalid():
+    class NoneReturningUpdater(TimeIndexTableUpdater):
         def dependencies(self):
             return {}
 
         def update(self):
             return None
 
-    node = NoneReturningNode.__new__(NoneReturningNode)
+    node = NoneReturningUpdater.__new__(NoneReturningUpdater)
     node._logger = type("LoggerStub", (), {"debug": lambda *args, **kwargs: None})()
 
     with pytest.raises(Exception, match="needs to return a data frame"):
-        node._execute_local_update(historical_update=None)
+        node._execute_local_update(table_update_run=None)
 
 
-def test_data_node_update_filters_when_historical_update_stats_have_max_time(monkeypatch):
-    class FilteringNode(DataNode):
+def test_table_update_filters_when_table_update_run_stats_have_max_time(monkeypatch):
+    class FilteringUpdater(TimeIndexTableUpdater):
         def dependencies(self):
             return {}
 
@@ -978,7 +984,7 @@ def test_data_node_update_filters_when_historical_update_stats_have_max_time(mon
         def warning(self, *args, **kwargs):
             return None
 
-    class PersistManagerStub:
+    class TimeIndexTableUpdateManagerStub:
         def __init__(self):
             self.persisted = []
 
@@ -994,28 +1000,28 @@ def test_data_node_update_filters_when_historical_update_stats_have_max_time(mon
             self.filter_calls += 1
             return df.iloc[[1]]
 
-    monkeypatch.setattr(data_nodes_mod, "SessionDataSource", SimpleNamespace(is_local_db=False))
+    monkeypatch.setattr(updaters_module, "SessionDataSource", SimpleNamespace(is_local_db=False))
 
-    node = FilteringNode.__new__(FilteringNode)
+    node = FilteringUpdater.__new__(FilteringUpdater)
     node._logger = LoggerStub()
     node.update_statistics = UpdateStatisticsStub()
-    node._local_persist_manager = PersistManagerStub()
+    node._update_manager = TimeIndexTableUpdateManagerStub()
     node._validate_update_output = lambda temp_df: None
-    historical_update = SimpleNamespace(
+    table_update_run = SimpleNamespace(
         update_statistics=SimpleNamespace(max_time_index_value=pd.Timestamp("2026-04-13T00:00:00Z"))
     )
 
-    result = node._execute_local_update(historical_update=historical_update)
+    result = node._execute_local_update(table_update_run=table_update_run)
 
     assert node.update_statistics.filter_calls == 1
     assert result["value"].tolist() == [2]
-    [(persisted_df, overwrite)] = node.local_persist_manager.persisted
+    [(persisted_df, overwrite)] = node.update_manager.persisted
     assert persisted_df["value"].tolist() == [2]
     assert overwrite is True
 
 
-def test_data_node_update_does_not_filter_without_historical_max_time(monkeypatch):
-    class FilteringNode(DataNode):
+def test_table_update_does_not_filter_without_historical_max_time(monkeypatch):
+    class FilteringUpdater(TimeIndexTableUpdater):
         def dependencies(self):
             return {}
 
@@ -1041,7 +1047,7 @@ def test_data_node_update_does_not_filter_without_historical_max_time(monkeypatc
         def warning(self, *args, **kwargs):
             return None
 
-    class PersistManagerStub:
+    class TimeIndexTableUpdateManagerStub:
         def __init__(self):
             self.persisted = []
 
@@ -1057,21 +1063,19 @@ def test_data_node_update_does_not_filter_without_historical_max_time(monkeypatc
             self.filter_calls += 1
             return df.iloc[[1]]
 
-    monkeypatch.setattr(data_nodes_mod, "SessionDataSource", SimpleNamespace(is_local_db=False))
+    monkeypatch.setattr(updaters_module, "SessionDataSource", SimpleNamespace(is_local_db=False))
 
-    node = FilteringNode.__new__(FilteringNode)
+    node = FilteringUpdater.__new__(FilteringUpdater)
     node._logger = LoggerStub()
     node.update_statistics = UpdateStatisticsStub()
-    node._local_persist_manager = PersistManagerStub()
+    node._update_manager = TimeIndexTableUpdateManagerStub()
     node._validate_update_output = lambda temp_df: None
-    historical_update = SimpleNamespace(
-        update_statistics=SimpleNamespace(max_time_index_value=None)
-    )
+    table_update_run = SimpleNamespace(update_statistics=SimpleNamespace(max_time_index_value=None))
 
-    result = node._execute_local_update(historical_update=historical_update)
+    result = node._execute_local_update(table_update_run=table_update_run)
 
     assert node.update_statistics.filter_calls == 0
     assert result["value"].tolist() == [1, 2]
-    [(persisted_df, overwrite)] = node.local_persist_manager.persisted
+    [(persisted_df, overwrite)] = node.update_manager.persisted
     assert persisted_df["value"].tolist() == [1, 2]
     assert overwrite is False

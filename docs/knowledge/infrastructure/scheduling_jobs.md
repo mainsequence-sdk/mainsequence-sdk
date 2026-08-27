@@ -33,7 +33,7 @@ A scheduled workflow in Main Sequence usually has five moving parts:
 5. **Job run**  
    Every execution creates a job run. That is the object you inspect when you want status, logs, start time, end time, or resource usage.
 
-Some workflows also include an **Artifact**: a file stored in a platform bucket that a job or `DataNode` reads later.
+Some workflows also include an **Artifact**: a file stored in a platform bucket that a job or `TimeIndexTableUpdater` reads later.
 
 If you keep that chain in mind, most operational decisions become straightforward.
 

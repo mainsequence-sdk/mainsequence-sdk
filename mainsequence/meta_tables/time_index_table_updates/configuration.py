@@ -15,7 +15,7 @@ from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 from mainsequence.client import BaseObjectOrm
 from mainsequence.client.models_helpers import get_model_class
@@ -24,9 +24,57 @@ from mainsequence.meta_tables.pydantic_metadata import (
     serialize_pydantic_model,
     strip_pydantic_hash_exclusions,
 )
+from mainsequence.meta_tables.time_index_table_refs import TimeIndexTableRef
 
 if TYPE_CHECKING:
-    from .data_nodes import APIDataNode, DataNode
+    from .updaters import TimeIndexTableUpdater
+
+
+CONFIGURATION_SCHEMA_VERSION = 2
+_LEGACY_CONFIGURATION_KEYS = frozenset(
+    {
+        "data_node_update",
+        "data_node_update_uid",
+        "time_series_class_import_path",
+        "time_serie_class_import_path",
+        "is_time_serie_instance",
+        "is_api_time_serie_instance",
+        "is_time_serie_pickled",
+        "is_api_time_serie_pickled",
+        "is_time_series_config",
+        "data_node_storage",
+        "data_node_storage_uid",
+        "remote_table",
+        "remote_table_hash_id",
+        "storage_table",
+    }
+)
+_LEGACY_DEPENDENCY_KINDS = frozenset(
+    {
+        "api_data_node",
+        "api_time_serie",
+        "data_node",
+        "time_serie",
+    }
+)
+
+
+class BaseConfiguration(BaseModel):
+    """Base class for strictly validated updater configuration values."""
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class TimeIndexTableUpdateConfig(BaseConfiguration):
+    """Base configuration for a :class:`TimeIndexTableUpdater`."""
+
+    offset_start: datetime.datetime | None = Field(
+        default=None,
+        description=(
+            "Optional first-run fallback start date. This affects updater bootstrap "
+            "behavior and participates in update hashing."
+        ),
+    )
 
 
 def build_model(model_data):
@@ -49,21 +97,71 @@ def serialize_argument(value: Any) -> Any:
     return value
 
 
-def _serialize_timeserie(value: DataNode) -> dict[str, Any]:
-    """Serialization logic for DataNode objects."""
+def _serialize_table_updater(value: TimeIndexTableUpdater) -> dict[str, Any]:
+    """Serialization logic for TimeIndexTableUpdater objects."""
     return {
-        "is_time_serie_instance": True,
+        "kind": "table_update",
         "update_hash": value.update_hash,
+        "output_table_uid": value.output_table_uid,
+    }
+
+
+@serialize_argument.register(TimeIndexTableRef)
+def _serialize_table_ref(value: TimeIndexTableRef) -> dict[str, Any]:
+    return {
+        "kind": "time_index_table_ref",
+        "time_index_meta_table_uid": value.output_table_uid,
         "data_source_uid": str(value.data_source_uid),
     }
 
 
-def _serialize_api_timeserie(value: APIDataNode) -> dict[str, Any]:
-    return {
-        "is_api_time_serie_instance": True,
-        "update_hash": value.update_hash,
-        "data_source_uid": str(value.data_source_uid),
-    }
+def _legacy_configuration_paths(value: Any, *, path: str = "$") -> list[str]:
+    paths: list[str] = []
+    if isinstance(value, dict):
+        for key, item in value.items():
+            item_path = f"{path}.{key}"
+            if key in _LEGACY_CONFIGURATION_KEYS:
+                paths.append(item_path)
+            if key == "kind" and isinstance(item, str) and item in _LEGACY_DEPENDENCY_KINDS:
+                paths.append(item_path)
+            paths.extend(_legacy_configuration_paths(item, path=item_path))
+    elif isinstance(value, list | tuple):
+        for index, item in enumerate(value):
+            paths.extend(_legacy_configuration_paths(item, path=f"{path}[{index}]"))
+    return paths
+
+
+def reject_legacy_configuration(value: Any) -> None:
+    legacy_paths = _legacy_configuration_paths(value)
+    if legacy_paths:
+        raise ValueError(
+            "Legacy time-index table update configuration is unsupported; "
+            f"found {', '.join(legacy_paths)}."
+        )
+
+
+def validate_canonical_configuration(config: dict[str, Any]) -> None:
+    if not isinstance(config, dict):
+        raise TypeError("Time-index table update configuration must be a dictionary.")
+    reject_legacy_configuration(config)
+    version = config.get("configuration_schema_version")
+    if version != CONFIGURATION_SCHEMA_VERSION:
+        raise ValueError(
+            "Time-index table update configuration requires "
+            f"configuration_schema_version={CONFIGURATION_SCHEMA_VERSION}; got {version!r}."
+        )
+    import_path = config.get("table_updater_class_import_path")
+    if not isinstance(import_path, dict):
+        raise ValueError(
+            "Time-index table update configuration requires "
+            "table_updater_class_import_path with module and qualname."
+        )
+    for field_name in ("module", "qualname"):
+        if not isinstance(import_path.get(field_name), str) or not import_path[field_name].strip():
+            raise ValueError(
+                "Time-index table update configuration requires a non-empty "
+                f"table_updater_class_import_path.{field_name}."
+            )
 
 
 def _import_qualified_name(module_name: str, qualname: str) -> Any:
@@ -97,7 +195,7 @@ def _(value: type[Any]) -> Any:
         raise ValueError(
             "PlatformTimeIndexMetaTable config value is not registered. Run "
             "`mainsequence migrations upgrade --provider <provider> head` "
-            "before using it in DataNode configuration."
+            "before using it in TimeIndexTableUpdater configuration."
         )
 
     if uid in (None, ""):
@@ -178,12 +276,12 @@ def _(value):
 @serialize_argument.register(dict)
 def _(value: dict):
     # Check for the special marker key.
-    if value.get("is_time_series_config") is True:
+    if value.get("is_time_index_table_update_config") is True:
         # If it's a special config dict, preserve its unique structure.
         # Serialize its contents recursively.
         config_data = {k: serialize_argument(v) for k, v in value.items()}
 
-        return {"is_time_series_config": True, "config_data": config_data}
+        return {"is_time_index_table_update_config": True, "config_data": config_data}
 
     # Otherwise, handle it as a regular dictionary.
     return {k: serialize_argument(v) for k, v in value.items()}
@@ -209,31 +307,31 @@ def parse_dictionary_before_hashing(dictionary: dict[str, Any]) -> dict[str, Any
     Returns:
         A new dictionary ready for hashing.
     """
-    local_ts_dict_to_hash = {}
+    canonical_dict_to_hash = {}
     for key, value in dictionary.items():
-        local_ts_dict_to_hash[key] = value
+        canonical_dict_to_hash[key] = value
         if isinstance(value, dict):
             if "orm_class" in value.keys():
-                local_ts_dict_to_hash[key] = value["unique_identifier"]
+                canonical_dict_to_hash[key] = value["unique_identifier"]
 
-            elif "is_time_series_config" in value.keys():
-                tmp_local_ts, remote_ts = hash_signature(value["config_data"])
-                local_ts_dict_to_hash[key] = {
-                    "is_time_series_config": value["is_time_series_config"],
-                    "config_data": tmp_local_ts,
+            elif "is_time_index_table_update_config" in value.keys():
+                nested_update_hash, _ = hash_signature(value["config_data"])
+                canonical_dict_to_hash[key] = {
+                    "is_time_index_table_update_config": value["is_time_index_table_update_config"],
+                    "config_data": nested_update_hash,
                 }
 
             elif isinstance(value, dict) and value.get("__type__") == "orm_model_list":
                 # The value["items"] are already serialized dicts
 
-                local_ts_dict_to_hash[key] = [v["unique_identifier"] for v in value["items"]]
+                canonical_dict_to_hash[key] = [v["unique_identifier"] for v in value["items"]]
             elif value.get("__type__") == "platform_time_index_meta_table":
-                local_ts_dict_to_hash[key] = value["uid"]
+                canonical_dict_to_hash[key] = value["uid"]
             else:
                 # recursively apply hash signature
-                local_ts_dict_to_hash[key] = parse_dictionary_before_hashing(value)
+                canonical_dict_to_hash[key] = parse_dictionary_before_hashing(value)
 
-    return local_ts_dict_to_hash
+    return canonical_dict_to_hash
 
 
 def hash_signature(
@@ -244,21 +342,25 @@ def hash_signature(
     """
     Computes MD5 hashes for local and remote configurations from a single dictionary.
     """
+    reject_legacy_configuration(dictionary)
     dhash_local = hashlib.md5()
     dhash_remote = hashlib.md5()
 
     # The function expects to receive the full dictionary, including meta-args
     parsed_dictionary = parse_dictionary_before_hashing(dictionary)
-    local_ts_dict_to_hash = _strip_pydantic_hash_exclusions(
+    local_update_dict_to_hash = _strip_pydantic_hash_exclusions(
         parsed_dictionary, for_storage_hash=False
     )
-    remote_ts_in_db_hash = _strip_pydantic_hash_exclusions(parsed_dictionary, for_storage_hash=True)
+    remote_update_hash_material = _strip_pydantic_hash_exclusions(
+        parsed_dictionary,
+        for_storage_hash=True,
+    )
 
     if update_hash_components:
-        local_ts_dict_to_hash.update(dict(update_hash_components))
+        local_update_dict_to_hash.update(dict(update_hash_components))
     # Encode and hash both versions
-    encoded_local = json.dumps(local_ts_dict_to_hash, sort_keys=True).encode()
-    encoded_remote = json.dumps(remote_ts_in_db_hash, sort_keys=True).encode()
+    encoded_local = json.dumps(local_update_dict_to_hash, sort_keys=True).encode()
+    encoded_remote = json.dumps(remote_update_hash_material, sort_keys=True).encode()
 
     dhash_local.update(encoded_local)
     dhash_remote.update(encoded_remote)
@@ -296,7 +398,7 @@ class Serializer:
 
     def serialize_init_kwargs(self, kwargs: dict[str, Any]) -> dict[str, Any]:
         """
-        Serializes __init__ keyword arguments for a DataNode.
+        Serializes __init__ keyword arguments for a TimeIndexTableUpdater.
         This maps to your original `serialize_init_kwargs`.
         """
         return self._serialize_dict(kwargs=kwargs)
@@ -358,7 +460,7 @@ class ConfigRebuilder(BaseRebuilder):
     def registry(self) -> dict[str, Callable]:
         return {
             "pydantic_model_import_path": self._handle_pydantic_model,
-            "is_time_series_config": self._handle_timeseries_config,
+            "is_time_index_table_update_config": self._handle_table_update_config,
             "orm_class": self._handle_orm_model,
             "__type__": self._handle_complex_type,
         }
@@ -371,7 +473,7 @@ class ConfigRebuilder(BaseRebuilder):
         rebuilt_value = self.rebuild(value["serialized_model"], **kwargs)
         return PydanticClass(**rebuilt_value)
 
-    def _handle_timeseries_config(self, value: dict, **kwargs) -> dict:
+    def _handle_table_update_config(self, value: dict, **kwargs) -> dict:
         return self.rebuild(value["config_data"], **kwargs)
 
     def _handle_orm_model(self, value: dict, **kwargs) -> Any:
@@ -395,17 +497,18 @@ class DeserializerManager:
 
     def rebuild_config(self, config: dict[str, Any], **kwargs) -> dict[str, Any]:
         """Rebuilds an entire configuration dictionary."""
+        validate_canonical_configuration(config)
         return self.config_rebuilder.rebuild(config, **kwargs)
 
     def rebuild_serialized_config(
-        self, config: dict[str, Any], time_serie_class_name: str
+        self, config: dict[str, Any], updater_class_name: str
     ) -> dict[str, Any]:
         """
         Rebuilds a configuration dictionary from a serialized config.
 
         Args:
             config: The configuration dictionary.
-            time_serie_class_name: The name of the DataNode class.
+            updater_class_name: The name of the TimeIndexTableUpdater class.
 
         Returns:
             The rebuilt configuration dictionary.
@@ -416,7 +519,7 @@ class DeserializerManager:
 
 
 @dataclass
-class TimeSerieConfig:
+class TimeIndexTableUpdateBuild:
     """A container for all computed configuration attributes."""
 
     update_hash: str
@@ -450,7 +553,7 @@ def _crop_hash_prefix(prefix: str, *, max_length: int = POSTGRES_IDENTIFIER_MAX_
 
 
 def create_config(
-    ts_class_name: str,
+    updater_class_name: str,
     kwargs: dict[str, Any],
     *,
     update_hash_prefix: str | None = None,
@@ -460,13 +563,28 @@ def create_config(
     """
     Creates the configuration and hashes using the original hash_signature logic.
     """
+    canonical_kwargs = dict(kwargs)
+    reject_legacy_configuration(canonical_kwargs)
+    supplied_version = canonical_kwargs.get("configuration_schema_version")
+    if supplied_version not in (None, CONFIGURATION_SCHEMA_VERSION):
+        raise ValueError(
+            "configuration_schema_version is SDK-controlled and must be "
+            f"{CONFIGURATION_SCHEMA_VERSION}."
+        )
+    canonical_kwargs["configuration_schema_version"] = CONFIGURATION_SCHEMA_VERSION
+    if "table_updater_class_import_path" not in canonical_kwargs:
+        canonical_kwargs["table_updater_class_import_path"] = {
+            "module": "<configuration-only>",
+            "qualname": updater_class_name,
+        }
+
     try:
-        build_configuration_json_schema = extract_pydantic_fields_from_dict(kwargs)
+        build_configuration_json_schema = extract_pydantic_fields_from_dict(canonical_kwargs)
     except Exception as e:
         raise e
 
     # 1. Serialize the core arguments
-    serialized_core_kwargs = Serializer().serialize_init_kwargs(kwargs)
+    serialized_core_kwargs = Serializer().serialize_init_kwargs(canonical_kwargs)
 
     # 2. Prepare the dictionary for hashing
     dict_to_hash = copy.deepcopy(serialized_core_kwargs)
@@ -480,11 +598,11 @@ def create_config(
     # 4. Create the remote configuration by removing ignored keys
     remote_config = copy.deepcopy(dict_to_hash)
 
-    update_prefix = _crop_hash_prefix((update_hash_prefix or ts_class_name).lower())
-    storage_prefix = _crop_hash_prefix((storage_hash_prefix or ts_class_name).lower())
+    update_prefix = _crop_hash_prefix((update_hash_prefix or updater_class_name).lower())
+    storage_prefix = _crop_hash_prefix((storage_hash_prefix or updater_class_name).lower())
 
     # 5. Return all computed values in the structured dataclass
-    return TimeSerieConfig(
+    return TimeIndexTableUpdateBuild(
         update_hash=f"{update_prefix}_{update_hash}".lower(),
         storage_hash=f"{storage_prefix}_{storage_hash}".lower(),
         local_initial_configuration=dict_to_hash,

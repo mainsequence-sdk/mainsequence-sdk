@@ -1,13 +1,13 @@
 ---
 name: mainsequence-meta-tables
-description: Use this skill when the task is about defining, querying, or reviewing Main Sequence MetaTables. This skill owns SQLAlchemy table contracts, backend-managed table authoring, external table registration, governed compiled SQL operations, foreign keys, indexes, naming, cadence, and validation rules. For Alembic migration lifecycle work, use the mainsequence-metatable-migrations skill. It does not own DataNode producers, API route contracts, scheduling, releases, or sharing policy.
+description: Use this skill when the task is about defining, querying, or reviewing Main Sequence MetaTables. This skill owns SQLAlchemy table contracts, backend-managed table authoring, external table registration, governed compiled SQL operations, foreign keys, indexes, naming, cadence, and validation rules. For Alembic migration lifecycle work, use the mainsequence-metatable-migrations skill. It does not own TimeIndexTableUpdater producers, API route contracts, scheduling, releases, or sharing policy.
 ---
 
 # Main Sequence MetaTables
 
 ## Overview
 
-Use this skill when the task changes row-oriented project tables that are not naturally time-series DataNodes.
+Use this skill when the task changes row-oriented project tables that are not naturally time-indexed.
 
 This skill is for schema-driven application tables registered through TS Manager as `MetaTable` resources.
 
@@ -21,13 +21,13 @@ This skill is for schema-driven application tables registered through TS Manager
 - design governed compiled SQL read and write operations
 - route provider-based Alembic contract evolution to the MetaTable migration skill
 - review table contracts for physical-name, namespace, and identifier issues
-- review whether a task should be a `MetaTable` or a `DataNode`
+- review whether a task should be a `MetaTable` or a `TimeIndexTableUpdater`
 
 ## This Skill Must Not Claim
 
 This skill must not claim ownership of:
 
-- DataNode producer contracts
+- TimeIndexTableUpdater producer contracts
 - Command Center FastAPI wire contracts
 - workspace payloads
 - job scheduling, image pinning, or releases
@@ -41,8 +41,8 @@ If the user is still in the discovery process and does not yet know what data ex
   `.agents/skills/mainsequence/data_access/exploration/SKILL.md`
 - MetaTable migrations:
   `.agents/skills/mainsequence/data_publishing/meta_table_migrations/SKILL.md`
-- DataNodes:
-  `.agents/skills/mainsequence/data_publishing/data_nodes/SKILL.md`
+- TimeIndexTableUpdaters:
+  `.agents/skills/mainsequence/data_publishing/time_index_table_updates/SKILL.md`
 - Command Center-serving FastAPI providers:
   `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
 - Jobs, images, resources, and releases:
@@ -84,7 +84,7 @@ If ownership of the physical table lifecycle is unclear, stop before choosing a 
 
 For every non-trivial task, decide:
 
-1. Is this table really row-oriented, or should it be a DataNode?
+1. Is this table really row-oriented, or should it be a TimeIndexTableUpdater?
 2. What is the business key?
 3. Who owns the catalog boundary: `platform_managed` or `external_registered`?
 4. Who owns physical DDL: `backend_managed`, `alembic_managed`, or `external_registered`?
@@ -236,7 +236,7 @@ selected `AlembicMetaTableMigration.metatable_models` list and let
 and bind them.
 
 For platform-managed migration registration, the data source is resolved from
-the active Main Sequence project/session, the same way DataNode does. Do not
+the active Main Sequence project/session, the same way TimeIndexTableUpdater does. Do not
 require or thread a `data_source_uid` through normal platform-managed example
 code.
 
@@ -389,14 +389,14 @@ Only use physical table names returned by registered `MetaTable` objects when co
 
 Do not hardcode platform-managed physical names manually.
 
-### 7. DataNode storage deletes use the DataNode tail-delete API
+### 7. Updater output-table deletes use the time-index-table tail-delete API
 
-For `PlatformTimeIndexMetaTable` storage owned by DataNodes, do not design raw
+For `PlatformTimeIndexMetaTable` output tables populated by TimeIndexTableUpdaters, do not design raw
 SQL delete operations or compiled SQL delete operations for rollback, repair, or
-stream cleanup. Route that work to the DataNode skill and use
+stream cleanup. Route that work to the TimeIndexTableUpdater skill and use
 `TimeIndexMetaTable.delete_after_date(...)`.
 
-The DataNode delete path is:
+The TimeIndexTableUpdater delete path is:
 
 ```text
 POST /api/v1/time-index-meta-tables/<table_uid>/delete-after-date/
@@ -426,9 +426,9 @@ When reviewing an existing MetaTable workflow, look for:
 - migration work that asks users to define backend payloads, artifact rows, or SDK request objects
 - compiled SQL operations without complete table scope
 - raw SQL that hardcodes stale physical names
-- raw SQL or compiled SQL deletes against DataNode-owned
+- raw SQL or compiled SQL deletes against TimeIndexTableUpdater-owned
   `PlatformTimeIndexMetaTable` storage instead of `delete_after_date(...)`
-- a table that should really be modeled as a DataNode instead
+- a table that should really be modeled as a TimeIndexTableUpdater instead
 
 ## Validation Checklist
 

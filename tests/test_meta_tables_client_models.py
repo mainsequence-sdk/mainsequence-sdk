@@ -105,7 +105,7 @@ def _cascade_delete_response():
                 "schema_management_protection_overridden": True,
             }
         ],
-        "deleted_dynamic_tables": [
+        "deleted_time_index_meta_tables": [
             {
                 "type": "meta_table",
                 "table_kind": "time_indexed",
@@ -118,7 +118,7 @@ def _cascade_delete_response():
             }
         ],
         "deleted_meta_table_count": 1,
-        "deleted_dynamic_table_count": 1,
+        "deleted_time_index_meta_table_count": 1,
         "blocking_edges": [
             {
                 "relationship_type": "meta_table_to_meta_table",
@@ -151,7 +151,7 @@ def test_meta_table_confirmed_cascade_delete_posts_typed_contract(monkeypatch):
     result = meta_table.delete_with_cascade(
         confirm_cascade_delete=True,
         delete_referencing_meta_tables=False,
-        delete_referencing_dynamic_tables=True,
+        delete_referencing_time_index_meta_tables=True,
         override_schema_management_protection=True,
         timeout=19,
     )
@@ -159,14 +159,14 @@ def test_meta_table_confirmed_cascade_delete_posts_typed_contract(monkeypatch):
     assert isinstance(result, meta_table_models.MetaTableCascadeDeleteResponse)
     assert result.root_meta_table_uid == meta_table.uid
     assert result.deleted_meta_table_count == 1
-    assert result.deleted_dynamic_tables[0].table_kind == "time_indexed"
+    assert result.deleted_time_index_meta_tables[0].table_kind == "time_indexed"
     assert captured["r_type"] == "POST"
     assert captured["url"].endswith(f"/meta-tables/{meta_table.uid}/delete-with-cascade/")
     assert captured["payload"] == {
         "json": {
             "confirm_cascade_delete": True,
             "delete_referencing_meta_tables": False,
-            "delete_referencing_dynamic_tables": True,
+            "delete_referencing_time_index_meta_tables": True,
             "override_schema_management_protection": True,
         },
         "params": {"organization_environment_uid": ENVIRONMENT_UID},
@@ -377,9 +377,7 @@ def test_time_index_meta_table_bulk_create_posts_raw_collection_payload(monkeypa
                     physical_table_name="example_assets__prices",
                     time_indexed=True,
                     time_indexed_profile={
-                        "time_index_meta_table_uid": (
-                            "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
-                        ),
+                        "time_index_meta_table_uid": ("cccccccc-cccc-4ccc-8ccc-cccccccccccc"),
                         "time_index_name": "time_index",
                         "index_names": ["time_index"],
                     },
@@ -480,9 +478,7 @@ def test_time_index_meta_table_rejects_conflicting_profile_uid():
                 uid="cccccccc-cccc-4ccc-8ccc-cccccccccccc",
                 time_indexed=True,
                 time_indexed_profile={
-                    "time_index_meta_table_uid": (
-                        "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
-                    ),
+                    "time_index_meta_table_uid": ("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"),
                     "time_index_name": "time_index",
                     "index_names": ["time_index"],
                 },
@@ -628,14 +624,8 @@ def test_metatable_accepts_projection_relation_fields():
 
     assert meta_table.indexes_meta[0].name == "asset_symbol_idx"
     assert not hasattr(meta_table.foreign_keys[0], "target_table_storage_hash")
-    assert (
-        meta_table.foreign_keys[0].target_table_physical_table_name
-        == "example_assets__account"
-    )
-    assert (
-        meta_table.incoming_fks[0].target_table_physical_table_name
-        == "example_assets__asset"
-    )
+    assert meta_table.foreign_keys[0].target_table_physical_table_name == "example_assets__account"
+    assert meta_table.incoming_fks[0].target_table_physical_table_name == "example_assets__asset"
 
 
 def test_meta_table_register_posts_contract_to_meta_table_endpoint(monkeypatch):
@@ -732,9 +722,7 @@ def test_external_meta_table_register_uses_branch_derived_environment(monkeypatc
     )
 
     assert table.organization_environment_uid == environment_uid
-    assert captured["payload"]["json"]["organization_environment_uid"] == (
-        environment_uid
-    )
+    assert captured["payload"]["json"]["organization_environment_uid"] == (environment_uid)
     assert "project_context" not in captured["payload"]["json"]
 
 
@@ -742,9 +730,7 @@ def test_external_meta_table_register_rejects_caller_environment():
     with pytest.raises(ValueError, match="SDK-controlled"):
         meta_table_models.MetaTable.register(
             management_mode="external_registered",
-            organization_environment_uid=(
-                "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
-            ),
+            organization_environment_uid=("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"),
             **_registration_fields(),
         )
 
@@ -1013,7 +999,7 @@ def test_meta_table_execute_operation_serializes_scope_uid(monkeypatch):
                         metaTableUid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
                         alias="asset",
                     )
-                ]
+                ],
             ),
             limits=meta_table_models.MetaTableOperationLimits(
                 max_rows=1000,
@@ -1263,8 +1249,7 @@ def test_meta_table_issue_migration_connection_posts_scope(monkeypatch):
     assert result.owner_role_name == "ms_owner"
     assert captured["r_type"] == "POST"
     assert captured["url"].endswith(
-        "/meta-tables/"
-        "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/migration-connection/"
+        "/meta-tables/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/migration-connection/"
     )
     assert captured["payload"]["json"] == {
         "purpose": "schema_migration",
@@ -1535,7 +1520,7 @@ def test_compiled_sql_v1_protocol_is_validated_by_pydantic():
                     "alias": "asset",
                     "reservedPolicy": "reconcile",
                 }
-            ]
+            ],
         },
         limits={"max_rows": 1000, "statement_timeout_ms": 15000},
     )
@@ -1563,7 +1548,7 @@ def test_compiled_sql_v1_protocol_is_validated_by_pydantic():
                     meta_table_models.MetaTableOperationScopeTable(
                         metaTableUid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
                     )
-                ]
+                ],
             ),
         )
 
@@ -1589,7 +1574,7 @@ def test_compiled_sql_v1_operation_uses_backend_limit_defaults():
                     "metaTableUid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
                     "alias": "asset",
                 }
-            ]
+            ],
         },
     )
 
@@ -1673,7 +1658,7 @@ def test_compiled_sql_v1_rejects_untyped_temporal_parameters():
                         "metaTableUid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
                         "alias": "asset",
                     }
-                ]
+                ],
             },
         )
 

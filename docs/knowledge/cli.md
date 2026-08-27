@@ -86,7 +86,7 @@ mainsequence project open-signed-terminal <PROJECT_UID>
 
 # Project operations
 mainsequence project add-label <PROJECT_UID> --label rates --label research
-mainsequence data-node add-label <DATA_NODE_STORAGE_UID> --label curated
+mainsequence time-index-table add-label <TIME_INDEX_META_TABLE_UID> --label curated
 
 # Compile environment
 mainsequence project freeze-env --path .

@@ -121,13 +121,13 @@ reset can use the confirmed cascade action:
 result = meta_table.delete_with_cascade(
     confirm_cascade_delete=True,
     delete_referencing_meta_tables=True,
-    delete_referencing_dynamic_tables=True,
+    delete_referencing_time_index_meta_tables=True,
     override_schema_management_protection=True,
 )
 ```
 
 The operation permanently removes the selected MetaTable, enabled inbound
-MetaTable/Data Node dependencies, and their physical tables. Confirmation must
+MetaTable/time-index-table dependencies, and their physical tables. Confirmation must
 be the boolean `True`; truthy substitutes are rejected before HTTP. The SDK
 supplies Organization Environment context for human credentials, while deployed
 runtime credentials use their authenticated backend context. The backend still

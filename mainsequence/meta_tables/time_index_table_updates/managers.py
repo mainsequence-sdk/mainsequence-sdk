@@ -9,19 +9,15 @@ from typing import Any, ClassVar
 
 import pandas as pd
 
-from mainsequence.client.dtype_codec import (
-    TIMESTAMP_TZ,
-    sqlalchemy_type_to_token,
-    token_to_pandas_series,
-)
+from mainsequence.client.dtype_codec import sqlalchemy_type_to_token
 from mainsequence.client.metatables import (
     DUCK_DB,
     LOCAL_DATA_SOURCE_CLASS_TYPES,
     SQLITE,
-    DataNodeUpdate,
-    DataNodeUpdateDetails,
     DataSource,
     TimeIndexMetaTable,
+    TimeIndexTableUpdate,
+    TimeIndexTableUpdateDetails,
     UpdateStatistics,
     get_session_data_source,
 )
@@ -30,13 +26,14 @@ from mainsequence.logconf import logger
 from mainsequence.meta_tables import PlatformTimeIndexMetaTable, compute_metatable_contract_hash
 
 from .. import future_registry
+from .configuration import validate_canonical_configuration
 
-_STORAGE_TABLE_LOOKUP_LIMIT = 20
-_LEGACY_POSTGRES_SCHEMA = "public"
+_OUTPUT_TABLE_LOOKUP_LIMIT = 20
+_DEFAULT_POSTGRES_SCHEMA = "public"
 
 
 @dataclass(frozen=True)
-class _StorageTableLookupResult:
+class _OutputTableLookupResult:
     data_source_uid: str | None
     physical_schema: str | None
     table_name: str | None
@@ -46,119 +43,120 @@ class _StorageTableLookupResult:
     data_source_mismatch: tuple[str, str] | None = None
 
 
-def get_data_node_source_code(DataNodeClass: type[Any]) -> str:
+def get_table_updater_source_code(UpdaterClass: type[Any]) -> str:
     """
-    Gets the source code of a DataNode class.
+    Gets the source code of a TimeIndexTableUpdater class.
 
     Args:
-        DataNodeClass: The class to get the source code for.
+        UpdaterClass: The class to get the source code for.
 
     Returns:
         The source code as a string.
     """
     global logger
     try:
-        source = inspect.getsource(DataNodeClass)
+        source = inspect.getsource(UpdaterClass)
         if source.strip():
             return source
     except Exception:
         logger.warning(
-            "Your TimeSeries is not in a python module this will likely bring exceptions when running in a pipeline"
+            "Your TimeIndexTableUpdater is not in a Python module; pipeline "
+            "source provenance will be unavailable."
         )
     from IPython import get_ipython
 
     ip = get_ipython()
     if ip is not None:
         history = "\n".join(code for _, _, code in ip.history_manager.get_range())
-        marker = f"class {DataNodeClass.__name__}"
+        marker = f"class {UpdaterClass.__name__}"
         idx = history.find(marker)
         if idx != -1:
             return history[idx:]
     return "Source code unavailable."
 
 
-def get_data_node_source_code_git_hash(DataNodeClass: type[Any]) -> str:
+def get_table_updater_source_code_git_hash(UpdaterClass: type[Any]) -> str:
     """
-    Hashes the source code of a DataNode class using SHA-1 (Git style).
+    Hashes the source code of a TimeIndexTableUpdater class using SHA-1 (Git style).
 
     Args:
-        DataNodeClass: The class to hash.
+        UpdaterClass: The class to hash.
 
     Returns:
         The Git-style hash of the source code.
     """
-    data_node_class_source_code = get_data_node_source_code(DataNodeClass)
-    content = f"blob {len(data_node_class_source_code)}\0{data_node_class_source_code}"
+    updater_class_source_code = get_table_updater_source_code(UpdaterClass)
+    content = f"blob {len(updater_class_source_code)}\0{updater_class_source_code}"
     hash_object = hashlib.sha1(content.encode("utf-8"))
     return hash_object.hexdigest()
 
 
-def ensure_registered_storage_table(
-    storage_table: type[PlatformTimeIndexMetaTable],
+def ensure_registered_output_table(
+    output_table: type[PlatformTimeIndexMetaTable],
     *,
     context: str,
 ) -> type[PlatformTimeIndexMetaTable]:
-    if storage_table is None:
+    if output_table is None:
         raise TypeError(
-            f"{context} storage_table is required and must be a "
+            f"{context} output_table is required and must be a "
             "PlatformTimeIndexMetaTable model class."
         )
-    if not isinstance(storage_table, type) or not issubclass(
-        storage_table,
+    if not isinstance(output_table, type) or not issubclass(
+        output_table,
         PlatformTimeIndexMetaTable,
     ):
         raise TypeError(
-            f"{context} storage_table must be a PlatformTimeIndexMetaTable "
-            f"model class; got {type(storage_table).__name__}."
+            f"{context} output_table must be a PlatformTimeIndexMetaTable "
+            f"model class; got {type(output_table).__name__}."
         )
 
-    lookup_result: _StorageTableLookupResult | None = None
-    if storage_table.get_time_index_meta_table() is None:
-        lookup_result = _bind_registered_storage_table(storage_table)
+    lookup_result: _OutputTableLookupResult | None = None
+    if output_table.get_time_index_meta_table() is None:
+        lookup_result = _bind_registered_output_table(output_table)
 
-    storage_metadata = storage_table.get_time_index_meta_table()
-    if storage_metadata is None:
+    output_metadata = output_table.get_time_index_meta_table()
+    if output_metadata is None:
         raise ValueError(
-            _unbound_storage_table_message(
-                storage_table,
+            _unbound_output_table_message(
+                output_table,
                 context=context,
                 lookup_result=lookup_result,
             )
         )
-    if not isinstance(storage_metadata, TimeIndexMetaTable):
+    if not isinstance(output_metadata, TimeIndexMetaTable):
         raise TypeError(
-            f"{context} storage_table must bind TimeIndexMetaTable metadata; "
-            f"got {type(storage_metadata).__name__}."
+            f"{context} output_table must bind TimeIndexMetaTable metadata; "
+            f"got {type(output_metadata).__name__}."
         )
-    if storage_table.get_meta_table_uid() in (None, ""):
-        raise ValueError(f"{context} storage_table must provide a MetaTable UID.")
-    if storage_table.get_data_source_uid() in (None, ""):
-        raise ValueError(f"{context} storage_table must provide a data-source UID.")
-    return storage_table
+    if output_table.get_meta_table_uid() in (None, ""):
+        raise ValueError(f"{context} output_table must provide a MetaTable UID.")
+    if output_table.get_data_source_uid() in (None, ""):
+        raise ValueError(f"{context} output_table must provide a data-source UID.")
+    return output_table
 
 
-def _bind_registered_storage_table(
-    storage_table: type[PlatformTimeIndexMetaTable],
-) -> _StorageTableLookupResult:
-    lookup_result = _registered_storage_table_lookup(storage_table)
+def _bind_registered_output_table(
+    output_table: type[PlatformTimeIndexMetaTable],
+) -> _OutputTableLookupResult:
+    lookup_result = _registered_output_table_lookup(output_table)
     if len(lookup_result.matches) == 1:
-        storage_table._bind_meta_table(lookup_result.matches[0])
+        output_table._bind_meta_table(lookup_result.matches[0])
     return lookup_result
 
 
-def _registered_storage_table_lookup(
-    storage_table: type[PlatformTimeIndexMetaTable],
-) -> _StorageTableLookupResult:
-    table_name = _storage_table_physical_table_name(storage_table)
-    physical_schema = _storage_table_physical_schema(storage_table)
+def _registered_output_table_lookup(
+    output_table: type[PlatformTimeIndexMetaTable],
+) -> _OutputTableLookupResult:
+    table_name = _output_table_physical_table_name(output_table)
+    physical_schema = _output_table_physical_schema(output_table)
     (
         data_source_uid,
         data_source_resolution_error,
         data_source_mismatch,
-    ) = _storage_table_lookup_data_source_uid(storage_table)
+    ) = _output_table_lookup_data_source_uid(output_table)
 
     if data_source_mismatch is not None:
-        return _StorageTableLookupResult(
+        return _OutputTableLookupResult(
             data_source_uid=data_source_uid,
             physical_schema=physical_schema,
             table_name=table_name,
@@ -173,7 +171,7 @@ def _registered_storage_table_lookup(
             "data_source__uid": data_source_uid,
             "physical_schema__in": [physical_schema],
             "physical_table_name__in": [table_name],
-            "limit": _STORAGE_TABLE_LOOKUP_LIMIT,
+            "limit": _OUTPUT_TABLE_LOOKUP_LIMIT,
         }
         raw_matches = TimeIndexMetaTable.filter_by_body(**filters)
         matches = [
@@ -183,7 +181,7 @@ def _registered_storage_table_lookup(
             == (data_source_uid, physical_schema, table_name)
             and _time_index_meta_table_is_active(match)
         ]
-        return _StorageTableLookupResult(
+        return _OutputTableLookupResult(
             data_source_uid=data_source_uid,
             physical_schema=physical_schema,
             table_name=table_name,
@@ -192,7 +190,7 @@ def _registered_storage_table_lookup(
             data_source_resolution_error=data_source_resolution_error,
         )
 
-    return _StorageTableLookupResult(
+    return _OutputTableLookupResult(
         data_source_uid=data_source_uid,
         physical_schema=physical_schema,
         table_name=table_name,
@@ -202,10 +200,10 @@ def _registered_storage_table_lookup(
     )
 
 
-def _storage_table_lookup_data_source_uid(
-    storage_table: type[PlatformTimeIndexMetaTable],
+def _output_table_lookup_data_source_uid(
+    output_table: type[PlatformTimeIndexMetaTable],
 ) -> tuple[str | None, str | None, tuple[str, str] | None]:
-    explicit_uid = storage_table.get_data_source_uid()
+    explicit_uid = output_table.get_data_source_uid()
     explicit_uid = str(explicit_uid) if explicit_uid not in (None, "") else None
 
     session_uid: str | None = None
@@ -237,52 +235,52 @@ def _time_index_meta_table_is_active(meta_table: TimeIndexMetaTable) -> bool:
     return str(status) == "active"
 
 
-def _storage_table_physical_schema(
-    storage_table: type[PlatformTimeIndexMetaTable],
+def _output_table_physical_schema(
+    output_table: type[PlatformTimeIndexMetaTable],
 ) -> str | None:
-    schema_getter = getattr(storage_table, "get_physical_schema", None)
+    schema_getter = getattr(output_table, "get_physical_schema", None)
     physical_schema = schema_getter() if callable(schema_getter) else None
     if physical_schema not in (None, ""):
         return str(physical_schema)
-    table = getattr(storage_table, "__table__", None)
+    table = getattr(output_table, "__table__", None)
     table_schema = getattr(table, "schema", None)
     if table_schema not in (None, ""):
         return str(table_schema)
-    return _LEGACY_POSTGRES_SCHEMA
+    return _DEFAULT_POSTGRES_SCHEMA
 
 
-def _storage_table_physical_table_name(
-    storage_table: type[PlatformTimeIndexMetaTable],
+def _output_table_physical_table_name(
+    output_table: type[PlatformTimeIndexMetaTable],
 ) -> str | None:
-    physical_table_name = storage_table.get_physical_table_name()
+    physical_table_name = output_table.get_physical_table_name()
     if physical_table_name not in (None, ""):
         return str(physical_table_name)
-    table = getattr(storage_table, "__table__", None)
+    table = getattr(output_table, "__table__", None)
     table_name = getattr(table, "name", None)
     if table_name not in (None, ""):
         return str(table_name)
     return None
 
 
-def _storage_table_lookup_label(storage_table: type[PlatformTimeIndexMetaTable]) -> str:
-    physical_schema = _storage_table_physical_schema(storage_table) or "<unknown-schema>"
-    table_name = _storage_table_physical_table_name(storage_table) or "<unknown-table>"
-    return f"{storage_table.__name__}(schema={physical_schema}, table={table_name})"
+def _output_table_lookup_label(output_table: type[PlatformTimeIndexMetaTable]) -> str:
+    physical_schema = _output_table_physical_schema(output_table) or "<unknown-schema>"
+    table_name = _output_table_physical_table_name(output_table) or "<unknown-table>"
+    return f"{output_table.__name__}(schema={physical_schema}, table={table_name})"
 
 
-def _unbound_storage_table_message(
-    storage_table: type[PlatformTimeIndexMetaTable],
+def _unbound_output_table_message(
+    output_table: type[PlatformTimeIndexMetaTable],
     *,
     context: str,
-    lookup_result: _StorageTableLookupResult | None,
+    lookup_result: _OutputTableLookupResult | None,
 ) -> str:
-    label = _storage_table_lookup_label(storage_table)
-    identity = _storage_table_identity_summary(storage_table)
+    label = _output_table_lookup_label(output_table)
+    identity = _output_table_identity_summary(output_table)
     message = (
-        f"{context} storage_table class is not bound to backend TimeIndexMetaTable "
+        f"{context} output_table class is not bound to backend TimeIndexMetaTable "
         f"metadata in this Python process for {label}. {identity} "
         "Expected exactly one backend TimeIndexMetaTable catalog row before "
-        "constructing a DataNode."
+        "constructing a TimeIndexTableUpdater."
     )
     if lookup_result is None:
         return (
@@ -329,17 +327,17 @@ def _unbound_storage_table_message(
             "means the exact storage model/table has not been reserved and "
             "finalized by its migration provider. If the SQL table already exists "
             "without a TimeIndexMetaTable catalog row, it is still unusable by "
-            "DataNodes until the migration finalization step creates that row. "
+            "time-index table updaters until migration finalization creates that row. "
             "Add this exact storage model to the relevant migration provider "
             "or dynamic scoped provider and run the provider upgrade before "
-            "constructing the DataNode."
+            "constructing the TimeIndexTableUpdater."
         )
 
     candidates = "; ".join(
         _time_index_meta_table_candidate_summary(match)
-        for match in lookup_result.matches[:_STORAGE_TABLE_LOOKUP_LIMIT]
+        for match in lookup_result.matches[:_OUTPUT_TABLE_LOOKUP_LIMIT]
     )
-    qualifier = "at least " if match_count >= _STORAGE_TABLE_LOOKUP_LIMIT else ""
+    qualifier = "at least " if match_count >= _OUTPUT_TABLE_LOOKUP_LIMIT else ""
     return (
         f"{message} Lookup used TimeIndexMetaTable.filter_by_body({filters}) "
         f"and found {qualifier}{match_count} matching backend TimeIndexMetaTable "
@@ -349,24 +347,24 @@ def _unbound_storage_table_message(
     )
 
 
-def _storage_table_identity_summary(storage_table: type[PlatformTimeIndexMetaTable]) -> str:
+def _output_table_identity_summary(output_table: type[PlatformTimeIndexMetaTable]) -> str:
     parts = []
-    identifier = getattr(storage_table, "__metatable_identifier__", None)
+    identifier = getattr(output_table, "__metatable_identifier__", None)
     if identifier not in (None, ""):
         parts.append(f"identifier={identifier!r}")
     try:
-        contract_hash = compute_metatable_contract_hash(storage_table)
+        contract_hash = compute_metatable_contract_hash(output_table)
     except Exception:
         contract_hash = None
     if contract_hash not in (None, ""):
         parts.append(f"contract_hash={contract_hash!r}")
-    data_source_uid = storage_table.get_data_source_uid()
+    data_source_uid = output_table.get_data_source_uid()
     if data_source_uid not in (None, ""):
         parts.append(f"model_data_source_uid={data_source_uid!r}")
-    physical_schema = _storage_table_physical_schema(storage_table)
+    physical_schema = _output_table_physical_schema(output_table)
     if physical_schema not in (None, ""):
         parts.append(f"physical_schema={physical_schema!r}")
-    table_name = _storage_table_physical_table_name(storage_table)
+    table_name = _output_table_physical_table_name(output_table)
     if table_name not in (None, ""):
         parts.append(f"physical_table_name={table_name!r}")
     if not parts:
@@ -416,28 +414,28 @@ def _time_index_meta_table_identity(
             if isinstance(physical, dict):
                 physical_schema = physical.get("schema") or physical.get("schema_")
     if physical_schema in (None, ""):
-        physical_schema = _LEGACY_POSTGRES_SCHEMA
+        physical_schema = _DEFAULT_POSTGRES_SCHEMA
     table_name = getattr(meta_table, "physical_table_name", None)
     if data_source_uid in (None, "") or table_name in (None, ""):
         return None
     return str(data_source_uid), str(physical_schema), str(table_name)
 
 
-class BasePersistManager:
+class BaseTimeIndexTableUpdateManager:
     UPDATE_CLASS: ClassVar[type[Any] | None] = None
     UPDATE_DETAILS_CLASS: ClassVar[type[Any] | None] = None
 
-    UPDATE_GET_OR_NONE_STORAGE_LOOKUP: ClassVar[str] = "remote_table__uid"
-    UPDATE_CREATE_STORAGE_LOOKUP: ClassVar[str] = "meta_table_uid"
+    UPDATE_GET_OR_NONE_OUTPUT_LOOKUP: ClassVar[str] = "output_table__uid"
+    UPDATE_CREATE_OUTPUT_LOOKUP: ClassVar[str] = "output_table_uid"
     TIME_INDEXED_PROFILE_ATTR: ClassVar[str] = "time_indexed_profile"
 
     def __init__(
         self,
         update_hash: str,
-        storage_table: type[PlatformTimeIndexMetaTable],
+        output_table: type[PlatformTimeIndexMetaTable],
         description: str | None = None,
         class_name: str | None = None,
-        data_node_update: Any | None = None,
+        table_update: Any | None = None,
     ):
         self.update_hash: str = update_hash
         self.description: str | None = description
@@ -446,40 +444,40 @@ class BasePersistManager:
         self.table_model_loaded: bool = False
         self.class_name: str | None = class_name
 
-        self._data_node_update_future: Future | None = None
-        self._data_node_update_cached: Any | None = None
-        self._data_node_update_lock = threading.Lock()
-        self.storage_table: type[PlatformTimeIndexMetaTable] = self._validate_storage_table(
-            storage_table
+        self._table_update_future: Future | None = None
+        self._table_update_cached: Any | None = None
+        self._table_update_lock = threading.Lock()
+        self.output_table: type[PlatformTimeIndexMetaTable] = self._validate_output_table(
+            output_table
         )
 
         if self.update_hash is not None:
-            self.synchronize_data_node_update(data_node_update=data_node_update)
+            self.synchronize_table_update(table_update=table_update)
 
     @staticmethod
-    def _validate_storage_table(
-        storage_table: type[PlatformTimeIndexMetaTable],
+    def _validate_output_table(
+        output_table: type[PlatformTimeIndexMetaTable],
     ) -> type[PlatformTimeIndexMetaTable]:
-        return ensure_registered_storage_table(storage_table, context="PersistManager")
+        return ensure_registered_output_table(output_table, context="TimeIndexTableUpdateManager")
 
     @property
-    def storage_metadata(self) -> Any:
-        storage_metadata = self.storage_table.get_time_index_meta_table()
-        if storage_metadata is None:
+    def output_metadata(self) -> Any:
+        output_metadata = self.output_table.get_time_index_meta_table()
+        if output_metadata is None:
             raise ValueError(
-                "PersistManager storage_table registration metadata is unavailable after register()."
+                "TimeIndexTableUpdateManager output_table registration metadata is unavailable after register()."
             )
-        return storage_metadata
+        return output_metadata
 
     @property
     def data_source(self) -> DataSource:
-        data_source = getattr(self.storage_metadata, "data_source", None)
+        data_source = getattr(self.output_metadata, "data_source", None)
         if data_source not in (None, "") and not isinstance(data_source, int | str):
             return data_source
-        return DataSource.get_by_uid(self.storage_table.get_data_source_uid())
+        return DataSource.get_by_uid(self.output_table.get_data_source_uid())
 
     def _get_time_indexed_profile(self) -> Any | None:
-        return getattr(self.storage_metadata, self.TIME_INDEXED_PROFILE_ATTR, None)
+        return getattr(self.output_metadata, self.TIME_INDEXED_PROFILE_ATTR, None)
 
     def _build_update_get_or_none_kwargs(
         self,
@@ -490,19 +488,20 @@ class BasePersistManager:
             "update_hash": self.update_hash,
             "include_relations_detail": include_relations_detail,
         }
-        kwargs[self.UPDATE_GET_OR_NONE_STORAGE_LOOKUP] = self.storage_table.get_meta_table_uid()
+        kwargs[self.UPDATE_GET_OR_NONE_OUTPUT_LOOKUP] = self.output_table.get_meta_table_uid()
         return kwargs
 
     def _build_update_get_or_create_kwargs(
         self,
         *,
-        local_configuration: dict | None = None,
+        local_configuration: dict,
     ) -> dict[str, Any]:
+        validate_canonical_configuration(local_configuration)
         kwargs = dict(
             update_hash=self.update_hash,
             build_configuration=local_configuration,
         )
-        kwargs[self.UPDATE_CREATE_STORAGE_LOOKUP] = self.storage_table.get_meta_table_uid()
+        kwargs[self.UPDATE_CREATE_OUTPUT_LOOKUP] = self.output_table.get_meta_table_uid()
         return kwargs
 
     def _should_refresh_update_when_remote_exists(self) -> bool:
@@ -510,59 +509,59 @@ class BasePersistManager:
 
     @property
     def metadata(self) -> Any | None:
-        return self.storage_metadata
+        return self.output_metadata
 
     @property
     def remote_build_configuration(self) -> dict | None:
-        data_node_update = self.data_node_update
-        if data_node_update is None:
+        table_update = self.table_update
+        if table_update is None:
             return None
-        if isinstance(data_node_update, dict):
-            return data_node_update.get("build_configuration")
-        return getattr(data_node_update, "build_configuration", None)
+        if isinstance(table_update, dict):
+            return table_update.get("build_configuration")
+        return getattr(table_update, "build_configuration", None)
 
-    def synchronize_data_node_update(self, data_node_update: Any | None) -> None:
-        if data_node_update is not None:
-            self.set_data_node_update(data_node_update)
+    def synchronize_table_update(self, table_update: Any | None) -> None:
+        if table_update is not None:
+            self.set_table_update(table_update)
         else:
-            self.set_data_node_update_lazy(force_registry=True, include_relations_detail=True)
+            self.set_table_update_lazy(force_registry=True, include_relations_detail=True)
 
-    def set_data_node_update(self, data_node_update: Any) -> None:
-        self._data_node_update_cached = data_node_update
+    def set_table_update(self, table_update: Any) -> None:
+        self._table_update_cached = table_update
 
     @property
-    def data_node_update(self) -> Any:
-        with self._data_node_update_lock:
-            if self._data_node_update_cached is None:
-                if self._data_node_update_future is None:
-                    self.set_data_node_update_lazy(force_registry=True)
-                data_node_update = self._data_node_update_future.result()
-                if data_node_update is not None:
-                    self.set_data_node_update(data_node_update)
-            return self._data_node_update_cached
+    def table_update(self) -> Any:
+        with self._table_update_lock:
+            if self._table_update_cached is None:
+                if self._table_update_future is None:
+                    self.set_table_update_lazy(force_registry=True)
+                table_update = self._table_update_future.result()
+                if table_update is not None:
+                    self.set_table_update(table_update)
+            return self._table_update_cached
 
     @property
     def local_build_configuration(self) -> dict:
-        return self.data_node_update.build_configuration
+        return self.table_update.build_configuration
 
-    def set_data_node_update_lazy_callback(self, fut: Future) -> None:
+    def set_table_update_lazy_callback(self, fut: Future) -> None:
         try:
             fut.result()
         except Exception as exc:
             raise exc
-        self.set_data_node_update_lazy(force_registry=True)
+        self.set_table_update_lazy(force_registry=True)
 
-    def set_data_node_update_lazy(
+    def set_table_update_lazy(
         self, force_registry: bool = True, include_relations_detail: bool = True
     ) -> None:
-        with self._data_node_update_lock:
+        with self._table_update_lock:
             if force_registry:
-                self._data_node_update_cached = None
+                self._table_update_cached = None
             new_future = Future()
-            self._data_node_update_future = new_future
+            self._table_update_future = new_future
             future_registry.add_future(new_future)
 
-        def _get_or_none_data_node_update():
+        def _get_or_none_table_update():
             try:
                 result = self.UPDATE_CLASS.get_or_none(
                     **self._build_update_get_or_none_kwargs(
@@ -570,11 +569,11 @@ class BasePersistManager:
                     )
                 )
                 if result is None:
-                    meta_table_uid = self.storage_table.get_meta_table_uid()
-                    physical_schema = _storage_table_physical_schema(self.storage_table)
-                    physical_table_name = _storage_table_physical_table_name(self.storage_table)
+                    meta_table_uid = self.output_table.get_meta_table_uid()
+                    physical_schema = _output_table_physical_schema(self.output_table)
+                    physical_table_name = _output_table_physical_table_name(self.output_table)
                     self.logger.warning(
-                        f"DataNodeUpdate {self.update_hash} for MetaTable {meta_table_uid} "
+                        f"TimeIndexTableUpdate {self.update_hash} for MetaTable {meta_table_uid} "
                         f"(physical_schema={physical_schema}, "
                         f"physical_table_name={physical_table_name}) not found in backend"
                     )
@@ -585,113 +584,111 @@ class BasePersistManager:
                 future_registry.remove_future(new_future)
 
         thread = threading.Thread(
-            target=_get_or_none_data_node_update,
-            name=f"LocalStorageTableThreadPM-{self.update_hash}",
+            target=_get_or_none_table_update,
+            name=f"TableUpdateLookup-{self.update_hash}",
             daemon=False,
         )
         thread.start()
 
-    def depends_on_connect(self, new_ts: Any, is_api: bool) -> None:
-        if not is_api:
-            self.data_node_update.depends_on_connect(
-                target_update_node_uid=new_ts.data_node_update.uid
-            )
-        else:
-            self.data_node_update.depends_on_connect_to_api_table(
-                target_table_uid=new_ts.local_persist_manager.storage_table.uid
-            )
+    def connect_update_dependency(self, dependency: Any) -> None:
+        dependency_uid = getattr(dependency.table_update, "uid", None)
+        if dependency_uid in (None, ""):
+            raise ValueError("Upstream TimeIndexTableUpdate must have a uid.")
+        self.table_update.connect_update_dependency(
+            upstream_update_uid=str(dependency_uid),
+        )
+
+    def connect_table_dependency(self, dependency: Any) -> None:
+        self.table_update.connect_table_dependency(
+            time_index_meta_table_uid=dependency.output_table_uid,
+        )
 
     def get_all_dependencies_update_priority(self) -> pd.DataFrame:
-        return self.data_node_update.get_all_dependencies_update_priority()
+        return self.table_update.get_all_dependencies_update_priority()
 
     def clear_dependencies(self) -> Any:
-        result = self.data_node_update.clear_dependencies()
-        self.set_data_node_update_lazy(force_registry=True, include_relations_detail=True)
+        result = self.table_update.clear_dependencies()
+        self.set_table_update_lazy(force_registry=True, include_relations_detail=True)
         return result
 
     def set_ogm_dependencies_unlinked(self) -> None:
-        self.set_data_node_update(self.data_node_update.patch(ogm_dependencies_linked=False))
+        self.set_table_update(self.table_update.patch(ogm_dependencies_linked=False))
 
     def set_ogm_dependencies_linked(self) -> None:
-        self.set_data_node_update(self.data_node_update.patch(ogm_dependencies_linked=True))
+        self.set_table_update(self.table_update.patch(ogm_dependencies_linked=True))
 
     @property
     def update_details(self) -> Any | None:
-        return self.data_node_update.update_details
+        return self.table_update.update_details
 
     @property
     def run_configuration(self) -> dict | None:
-        return self.data_node_update.run_configuration
+        return self.table_update.run_configuration
 
     @property
     def time_indexed_profile(self) -> Any | None:
         return self._get_time_indexed_profile()
 
-    def update_source_informmation(self, git_hash_id: str, source_code: str) -> None:
-        logger.debug(
-            "Skipping storage-table source-code patch because backend storage "
-            "metadata no longer stores source code fields."
-        )
-
     @property
     def persist_size(self) -> int:
-        return getattr(self.storage_metadata, "table_size", 0)
+        return getattr(self.output_metadata, "table_size", 0)
 
-    def time_serie_exist(self) -> bool:
-        return self.storage_metadata is not None
+    def table_update_exists(self) -> bool:
+        return self.output_metadata is not None
 
-    def local_persist_exist_set_config(
+    def ensure_table_update(
         self,
         local_configuration: dict,
     ) -> None:
+        validate_canonical_configuration(local_configuration)
         if self._should_refresh_update_when_remote_exists():
-            self.set_data_node_update_lazy(force_registry=True, include_relations_detail=True)
+            self.set_table_update_lazy(force_registry=True, include_relations_detail=True)
 
-        self._verify_local_ts_exists(
+        self._ensure_table_update_exists(
             local_configuration=local_configuration,
         )
 
-    def _verify_local_ts_exists(
+    def _ensure_table_update_exists(
         self,
-        local_configuration: dict | None = None,
+        local_configuration: dict,
     ) -> None:
         local_build_configuration = None
-        if self.data_node_update is not None:
+        if self.table_update is not None:
             local_build_configuration = self.local_build_configuration
         if local_build_configuration is None:
-            logger.debug(f"data_node_update {self.update_hash} does not exist creating")
+            logger.debug(f"table_update {self.update_hash} does not exist creating")
             local_update = self.UPDATE_CLASS.get_or_none(
                 **self._build_update_get_or_none_kwargs(include_relations_detail=False)
             )
             if local_update is None:
-                data_node_update = self.UPDATE_CLASS.get_or_create(
+                table_update = self.UPDATE_CLASS.get_or_create(
                     **self._build_update_get_or_create_kwargs(
                         local_configuration=local_configuration,
                     ),
                 )
             else:
-                data_node_update = local_update
+                table_update = local_update
 
-            self.set_data_node_update(data_node_update=data_node_update)
+            self.set_table_update(table_update=table_update)
 
     def build_update_details(self, source_class_name: str) -> None:
         if self.UPDATE_DETAILS_CLASS is None:
             raise ValueError("UPDATE_DETAILS_CLASS must be configured to patch update details.")
-        data_node_update_uid = getattr(self.data_node_update, "uid", None)
-        if data_node_update_uid in (None, ""):
-            raise ValueError("DataNodeUpdate uid is required to patch update details.")
+        table_update_uid = getattr(self.table_update, "uid", None)
+        if table_update_uid in (None, ""):
+            raise ValueError("TimeIndexTableUpdate uid is required to patch update details.")
 
-        with self._data_node_update_lock:
-            self._data_node_update_future = Future()
-            future_registry.add_future(self._data_node_update_future)
+        with self._table_update_lock:
+            self._table_update_future = Future()
+            future_registry.add_future(self._table_update_future)
 
         future = Future()
         future_registry.add_future(future)
 
         def _update_task():
             try:
-                self.UPDATE_DETAILS_CLASS.patch_for_data_node_update_uid(
-                    data_node_update_uid,
+                self.UPDATE_DETAILS_CLASS.patch_for_table_update_uid(
+                    table_update_uid,
                 )
                 future.set_result(True)
             except Exception as exc:
@@ -703,18 +700,18 @@ class BasePersistManager:
             target=_update_task, name=f"BuildUpdateDetailsThread-{self.update_hash}", daemon=False
         )
         thread.start()
-        future.add_done_callback(self.set_data_node_update_lazy_callback)
+        future.add_done_callback(self.set_table_update_lazy_callback)
 
     def patch_table(self, **kwargs) -> None:
-        self.storage_metadata.patch(**kwargs)
+        self.output_metadata.patch(**kwargs)
 
     def protect_from_deletion(self, protect_from_deletion: bool = True) -> None:
-        self.storage_metadata.patch(protect_from_deletion=protect_from_deletion)
+        self.output_metadata.patch(protect_from_deletion=protect_from_deletion)
 
     def get_df_between_dates(self, *args, **kwargs) -> pd.DataFrame:
         return self.data_source.get_data_by_time_index(
             *args,
-            data_node_update=self.data_node_update,
+            table_update=self.table_update,
             **kwargs,
         )
 
@@ -725,7 +722,7 @@ class BasePersistManager:
         index_coordinates: list[dict[str, Any]] | None = None,
         dimension_range_map: list[dict[str, Any]] | None = None,
     ):
-        return self.storage_metadata.get_last_observation(
+        return self.output_metadata.get_last_observation(
             dimension_filters=dimension_filters,
             index_coordinates=index_coordinates,
             dimension_range_map=dimension_range_map,
@@ -745,11 +742,11 @@ class BasePersistManager:
                 db_interface = get_sqlite_interface_class()()
             else:
                 raise ValueError(f"Unsupported local DataSource class_type: {class_type!r}")
-            db_interface.drop_table(self.storage_metadata.physical_table_name)
+            db_interface.drop_table(self.output_metadata.physical_table_name)
 
-        self.storage_metadata.delete()
+        self.output_metadata.delete()
 
-    @tracer.start_as_current_span("TS: Persist Data")
+    @tracer.start_as_current_span("TableUpdate: Persist Data")
     def persist_updated_data(
         self,
         temp_df: pd.DataFrame,
@@ -760,7 +757,7 @@ class BasePersistManager:
             if overwrite is True:
                 self.logger.warning("Values will be overwritten")
 
-            self._data_node_update_cached = self.data_node_update.upsert_data_into_table(
+            self._table_update_cached = self.table_update.upsert_data_into_table(
                 data=temp_df,
                 data_source=self.data_source,
                 overwrite=overwrite,
@@ -770,139 +767,41 @@ class BasePersistManager:
         return persisted
 
     def get_update_statistics_for_table(self) -> UpdateStatistics:
-        return self.storage_metadata.get_data_updates()
+        return self.output_metadata.get_data_updates()
 
     def is_local_relation_tree_set(self) -> bool:
-        return self.data_node_update.ogm_dependencies_linked
-
-    def update_git_and_code_in_backend(self, time_serie_class) -> None:
-        logger.debug(
-            "Skipping storage-table source-code patch because backend storage "
-            "metadata no longer stores source code fields."
-        )
+        return self.table_update.ogm_dependencies_linked
 
 
-class APIPersistManager:
-    """
-    Manages persistence for time series data accessed via an API.
-    It handles asynchronous fetching of the storage table to avoid blocking operations.
-    """
-
-    def __init__(
-        self,
-        *,
-        physical_table_name: str | None = None,
-        physical_schema: str | None = None,
-        storage_hash: str | None = None,
-        data_source_uid: str,
-    ):
-        if data_source_uid in (None, ""):
-            raise ValueError("APIPersistManager requires data_source_uid.")
-        self.data_source_uid: str = str(data_source_uid)
-        self.physical_schema: str = str(physical_schema or _LEGACY_POSTGRES_SCHEMA)
-        self.physical_table_name: str | None = physical_table_name or storage_hash
-
-        logger.debug(
-            "Initializing APIDataNode storage "
-            f"{self.physical_schema}.{self.physical_table_name}"
-        )
-
-        self._storage_table_future = Future()
-        future_registry.add_future(self._storage_table_future)
-        thread = threading.Thread(
-            target=self._init_storage_table,
-            name=f"ApiStorageTableThread-{self.physical_table_name}",
-            daemon=False,
-        )
-        thread.start()
-
-    @property
-    def storage_table(self) -> TimeIndexMetaTable:
-        if not hasattr(self, "_storage_table_cached"):
-            self._storage_table_cached = self._storage_table_future.result()
-        return self._storage_table_cached
-
-    def _init_storage_table(self) -> None:
-        try:
-            result = TimeIndexMetaTable.get_or_none(
-                physical_schema=self.physical_schema,
-                physical_table_name=self.physical_table_name,
-                data_source__uid=self.data_source_uid,
-            )
-            self._storage_table_future.set_result(result)
-        except Exception as exc:
-            self._storage_table_future.set_exception(exc)
-        finally:
-            future_registry.remove_future(self._storage_table_future)
-
-    def get_last_observation(
-        self,
-        *,
-        dimension_filters: dict[str, list[Any]] | None = None,
-        index_coordinates: list[dict[str, Any]] | None = None,
-        dimension_range_map: list[dict[str, Any]] | None = None,
-    ):
-        last_observation = self.storage_table.get_last_observation(
-            dimension_filters=dimension_filters,
-            index_coordinates=index_coordinates,
-            dimension_range_map=dimension_range_map,
-        )
-        return last_observation
-
-    def get_df_between_dates(self, *args, **kwargs) -> pd.DataFrame:
-        filtered_data = self.storage_table.get_data_between_dates_from_api(*args, **kwargs)
-        if filtered_data.empty:
-            return filtered_data
-
-        time_index_name, index_names, column_dtypes_map = (
-            self.storage_table._require_time_indexed_table_contract()
-        )
-        filtered_data[time_index_name] = token_to_pandas_series(
-            filtered_data[time_index_name],
-            TIMESTAMP_TZ,
-            is_time_index=True,
-        )
-        column_filter = kwargs.get("columns") or column_dtypes_map.keys()
-        for c in column_filter:
-            c_type = column_dtypes_map[c]
-            if c in filtered_data.columns:
-                filtered_data[c] = token_to_pandas_series(
-                    filtered_data[c],
-                    c_type,
-                    is_time_index=c == time_index_name,
-                )
-        filtered_data = filtered_data.set_index(index_names)
-
-        return filtered_data
-
-
-class PersistManager(BasePersistManager):
-    UPDATE_CLASS = DataNodeUpdate
-    UPDATE_DETAILS_CLASS = DataNodeUpdateDetails
-    UPDATE_GET_OR_NONE_STORAGE_LOOKUP = "remote_table__uid"
-    UPDATE_CREATE_STORAGE_LOOKUP = "meta_table_uid"
+class TimeIndexTableUpdateManager(BaseTimeIndexTableUpdateManager):
+    UPDATE_CLASS = TimeIndexTableUpdate
+    UPDATE_DETAILS_CLASS = TimeIndexTableUpdateDetails
+    UPDATE_GET_OR_NONE_OUTPUT_LOOKUP = "output_table__uid"
+    UPDATE_CREATE_OUTPUT_LOOKUP = "output_table_uid"
 
     @classmethod
-    def get_from_storage_table(cls, storage_table: Any, *args, **kwargs) -> PersistManager:
-        return TimeScaleLocalPersistManager(*args, storage_table=storage_table, **kwargs)
+    def get_from_output_table(
+        cls, output_table: Any, *args, **kwargs
+    ) -> TimeIndexTableUpdateManager:
+        return TimeScaleTimeIndexTableUpdateManager(*args, output_table=output_table, **kwargs)
 
 
-class TimeScaleLocalPersistManager(PersistManager):
+class TimeScaleTimeIndexTableUpdateManager(TimeIndexTableUpdateManager):
     """
     Main Controller to interact with backend-backed table storage.
     """
 
     def get_table_schema(self, _):
-        storage_metadata = self.storage_metadata
-        profile = getattr(storage_metadata, "time_indexed_profile", None)
+        output_metadata = self.output_metadata
+        profile = getattr(output_metadata, "time_indexed_profile", None)
         if isinstance(profile, dict) and profile.get("column_dtypes_map"):
             return profile["column_dtypes_map"]
 
-        column_dtypes_map = getattr(storage_metadata, "column_dtypes_map", None)
+        column_dtypes_map = getattr(output_metadata, "column_dtypes_map", None)
         if column_dtypes_map is not None:
             return column_dtypes_map
 
-        table_contract = getattr(storage_metadata, "table_contract", None)
+        table_contract = getattr(output_metadata, "table_contract", None)
         contract_columns = []
         if isinstance(table_contract, dict):
             contract_columns = table_contract.get("columns") or []
@@ -910,7 +809,7 @@ class TimeScaleLocalPersistManager(PersistManager):
             contract_columns = getattr(table_contract, "columns", []) or []
 
         if not contract_columns:
-            table = getattr(self.storage_table, "__table__", None)
+            table = getattr(self.output_table, "__table__", None)
             contract_columns = list(getattr(table, "columns", []) or [])
 
         schema = {}

@@ -12,20 +12,30 @@ from pydantic import ValidationError
 from mainsequence.client import metatables as models_metatables
 
 
+def _canonical_build_configuration() -> dict[str, object]:
+    return {
+        "configuration_schema_version": 2,
+        "table_updater_class_import_path": {
+            "module": "tests.test_time_index_table_update_flow",
+            "qualname": "ExampleUpdater",
+        },
+    }
+
+
 def _dt(hour: int) -> datetime.datetime:
     return datetime.datetime(2026, 5, 1, hour, tzinfo=datetime.UTC)
 
 
 def _minimal_update(**kwargs):
     payload = {
-        "uid": "data-node-update-77",
+        "uid": "time-index-table-update-77",
         "update_hash": "update-hash",
-        "build_configuration": {},
+        "build_configuration": _canonical_build_configuration(),
         "ogm_dependencies_linked": False,
-        "data_node_storage": "data-node-storage-44",
+        "output_table": "time-index-table-storage-44",
     }
     payload.update(kwargs)
-    return models_metatables.DataNodeUpdate(**payload)
+    return models_metatables.TimeIndexTableUpdate(**payload)
 
 
 def _source_config(
@@ -35,7 +45,7 @@ def _source_config(
     columns_metadata: list[models_metatables.ColumnMetaData] | None = None,
 ) -> models_metatables.TimeIndexedProfile:
     return models_metatables.TimeIndexedProfile(
-        related_table_uid="data-node-storage-44",
+        time_index_meta_table_uid="time-index-table-storage-44",
         time_index_name="time_index",
         index_names=index_names,
         column_dtypes_map=column_dtypes_map,
@@ -57,7 +67,7 @@ def _storage_with_source_config(
     columns_metadata: list[models_metatables.ColumnMetaData] | None = None,
 ) -> models_metatables.TimeIndexMetaTable:
     return models_metatables.TimeIndexMetaTable.model_construct(
-        uid="data-node-storage-44",
+        uid="time-index-table-storage-44",
         storage_hash="storage-hash",
         time_indexed_profile=_source_config(
             index_names=index_names,
@@ -92,7 +102,7 @@ def test_post_data_frame_in_chunks_serializes_remote_temporal_payload_columns(mo
 
     monkeypatch.setattr(models_metatables, "make_request", _fake_make_request)
     monkeypatch.setattr(
-        models_metatables.DataNodeUpdate,
+        models_metatables.TimeIndexTableUpdate,
         "build_session",
         classmethod(lambda cls: object()),
     )
@@ -105,9 +115,9 @@ def test_post_data_frame_in_chunks_serializes_remote_temporal_payload_columns(mo
         }
     )
 
-    models_metatables.DataNodeUpdate.post_data_frame_in_chunks(
+    models_metatables.TimeIndexTableUpdate.post_data_frame_in_chunks(
         serialized_data_frame=frame,
-        data_node_update=_minimal_update(),
+        table_update=_minimal_update(),
         index_names=["time_index"],
         time_index_name="time_index",
         column_dtypes_map={
@@ -147,7 +157,7 @@ def test_post_data_frame_in_chunks_serializes_remote_uuid_payload_columns(monkey
 
     monkeypatch.setattr(models_metatables, "make_request", _fake_make_request)
     monkeypatch.setattr(
-        models_metatables.DataNodeUpdate,
+        models_metatables.TimeIndexTableUpdate,
         "build_session",
         classmethod(lambda cls: object()),
     )
@@ -162,9 +172,9 @@ def test_post_data_frame_in_chunks_serializes_remote_uuid_payload_columns(monkey
         }
     )
 
-    models_metatables.DataNodeUpdate.post_data_frame_in_chunks(
+    models_metatables.TimeIndexTableUpdate.post_data_frame_in_chunks(
         serialized_data_frame=frame,
-        data_node_update=_minimal_update(),
+        table_update=_minimal_update(),
         index_names=["time_index", "account_uid", "unique_identifier"],
         time_index_name="time_index",
         column_dtypes_map={
@@ -202,9 +212,9 @@ def test_set_start_of_execution_prefers_canonical_update_stats(monkeypatch):
         @staticmethod
         def json():
             return {
-                "historical_update": {
+                "table_update_run": {
                     "uid": "historical-update-15",
-                    "related_table_uid": "data-node-update-77",
+                    "table_update_uid": "time-index-table-update-77",
                     "update_time_start": "2026-05-01T03:00:00Z",
                 },
                 "global_index_progress": {
@@ -222,20 +232,20 @@ def test_set_start_of_execution_prefers_canonical_update_stats(monkeypatch):
 
     monkeypatch.setattr(models_metatables, "make_request", lambda **_kwargs: FakeResponse())
     monkeypatch.setattr(
-        models_metatables.DataNodeUpdate,
+        models_metatables.TimeIndexTableUpdate,
         "build_session",
         classmethod(lambda cls: object()),
     )
 
-    historical_update = _minimal_update().set_start_of_execution()
+    table_update_run = _minimal_update().set_start_of_execution()
 
-    stats = historical_update.update_statistics
+    stats = table_update_run.update_statistics
     assert stats.global_index_progress == {"min": _dt(0), "max": _dt(3)}
     assert stats.max_time_index_value == _dt(3)
     assert stats.index_progress == {"account-a": {"asset-1": _dt(2)}}
     assert stats.index_min == {"account-a": {"asset-1": _dt(0)}}
-    assert historical_update.must_update is True
-    assert historical_update.direct_dependency_uids == ["dependency-1", "dependency-2"]
+    assert table_update_run.must_update is True
+    assert table_update_run.direct_dependency_uids == ["dependency-1", "dependency-2"]
 
 
 def test_last_update_payload_model_accepts_top_level_and_nested_shapes():
@@ -364,11 +374,11 @@ def test_set_last_update_index_time_from_update_stats_sends_canonical_payload(mo
         @staticmethod
         def json():
             return {
-                "uid": "data-node-update-77",
+                "uid": "time-index-table-update-77",
                 "update_hash": "update-hash",
-                "build_configuration": {},
+                "build_configuration": _canonical_build_configuration(),
                 "ogm_dependencies_linked": False,
-                "data_node_storage": "data-node-storage-44",
+                "output_table": "time-index-table-storage-44",
             }
 
     def _fake_make_request(*, s, loaders, payload, r_type, url, time_out=None):
@@ -380,7 +390,7 @@ def test_set_last_update_index_time_from_update_stats_sends_canonical_payload(mo
 
     monkeypatch.setattr(models_metatables, "make_request", _fake_make_request)
     monkeypatch.setattr(
-        models_metatables.DataNodeUpdate,
+        models_metatables.TimeIndexTableUpdate,
         "build_session",
         classmethod(lambda cls: object()),
     )
@@ -473,12 +483,12 @@ def test_upsert_data_into_table_computes_canonical_stats(monkeypatch):
         def insert_data_into_table(self, **kwargs):
             calls["insert"] = kwargs
 
-    update = models_metatables.DataNodeUpdate.model_construct(
+    update = models_metatables.TimeIndexTableUpdate.model_construct(
         id=77,
         update_hash="update-hash",
-        build_configuration={},
+        build_configuration=_canonical_build_configuration(),
         ogm_dependencies_linked=False,
-        data_node_storage=_storage_with_source_config(
+        output_table=_storage_with_source_config(
             index_names=["time_index", "account_uid", "unique_identifier"],
             column_dtypes_map={
                 "time_index": "timestamp with time zone",
@@ -549,12 +559,12 @@ def test_upsert_data_into_table_uses_declared_record_dtype_for_payload_columns()
         def insert_data_into_table(self, **kwargs):
             calls["insert"] = kwargs
 
-    update = models_metatables.DataNodeUpdate.model_construct(
+    update = models_metatables.TimeIndexTableUpdate.model_construct(
         id=77,
         update_hash="update-hash",
-        build_configuration={},
+        build_configuration=_canonical_build_configuration(),
         ogm_dependencies_linked=False,
-        data_node_storage=_storage_with_source_config(
+        output_table=_storage_with_source_config(
             index_names=["time_index"],
             column_dtypes_map={
                 "time_index": "timestamp with time zone",
@@ -609,12 +619,12 @@ def test_upsert_data_into_table_uses_declared_record_dtype_for_payload_columns()
 
 
 def test_upsert_data_into_table_rejects_full_index_duplicates():
-    update = models_metatables.DataNodeUpdate.model_construct(
+    update = models_metatables.TimeIndexTableUpdate.model_construct(
         id=77,
         update_hash="update-hash",
-        build_configuration={},
+        build_configuration=_canonical_build_configuration(),
         ogm_dependencies_linked=False,
-        data_node_storage=_storage_with_source_config(
+        output_table=_storage_with_source_config(
             index_names=["time_index", "account_uid", "unique_identifier"],
             column_dtypes_map={
                 "time_index": "timestamp with time zone",
@@ -641,13 +651,13 @@ def test_upsert_data_into_table_rejects_full_index_duplicates():
         )
 
 
-def test_upsert_data_into_table_requires_bound_data_node_storage_contract():
-    update = models_metatables.DataNodeUpdate.model_construct(
+def test_upsert_data_into_table_requires_bound_output_table_contract():
+    update = models_metatables.TimeIndexTableUpdate.model_construct(
         id=77,
         update_hash="update-hash",
-        build_configuration={},
+        build_configuration=_canonical_build_configuration(),
         ogm_dependencies_linked=False,
-        data_node_storage="data-node-storage-uid",
+        output_table="time-index-table-storage-uid",
     )
     df = pd.DataFrame(
         {"value": [1.0]},

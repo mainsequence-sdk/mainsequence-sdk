@@ -6,6 +6,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [7.0.0] - 2026-08-27
+
+### Changed
+
+- Replaced the former DataNode SDK surface with the hard-cut time-index-table
+  vocabulary: `TimeIndexTableUpdater`, `TimeIndexTableUpdateConfig`,
+  `TimeIndexTableUpdate`, `TimeIndexTableUpdateDetails`, and `TableUpdateRun`.
+  The old package, imports, endpoint registry entries, routes, fields, and CLI
+  commands are not retained as aliases.
+- Split read-only upstream access into `TimeIndexTableRef` and
+  `TimeIndexTableReader`. References identify one canonical
+  `TimeIndexMetaTable`, create table-lineage edges, and have no updater,
+  scheduler, or execution behavior.
+- Versioned updater build configuration at schema version 2, introduced the
+  canonical updater/reference dependency discriminators, and intentionally
+  rotated updater hashes. Legacy configuration shapes fail validation.
+
+### Migration
+
+- Follow the [6.x to 7.0 hard-cut migration guide](docs/migrations/v7-time-index-table-updater-hard-cut.md).
+  Version `6.0.53` is the final pre-cutover SDK release; SDK and backend
+  generations cannot be mixed during this flag-day migration.
+
 ## [6.0.53] - 2026-08-27
 
 ### Fixed

@@ -91,7 +91,7 @@ mainsequence skills list
 mainsequence skills path
 mainsequence skills path sdk_project_execution
 mainsequence skills path maintenance/project-maintenance
-mainsequence data-node list
+mainsequence time-index-table list
 mainsequence user
 mainsequence settings show
 mainsequence sdk latest
@@ -170,32 +170,32 @@ mainsequence organization teams remove_from_view <TEAM_UID> <USER_UID>
 mainsequence organization teams remove_from_edit <TEAM_UID> <USER_UID>
 mainsequence organization teams delete <TEAM_UID>
 mainsequence meta-table run_query <META_TABLE_UID> "SELECT 1 AS ok"
-mainsequence data-node list
-mainsequence data-node list --show-filters
-mainsequence data-node list --filter namespace=pytest_alice
-mainsequence data-node list --filter uid__in=<DATA_NODE_STORAGE_UID>
-mainsequence data-node list --data-source-uid <DATA_SOURCE_UID>
-mainsequence data_node search "close price"
-mainsequence data-node search "close price" --data-source-uid <DATA_SOURCE_UID>
-mainsequence data-node search close --mode column
-mainsequence data-node detail <DATA_NODE_STORAGE_UID>
-mainsequence data-node run_query <DATA_NODE_STORAGE_UID> "SELECT 1 AS ok"
-mainsequence data-node refresh-search-index <DATA_NODE_STORAGE_UID>
-mainsequence data-node add-label <DATA_NODE_STORAGE_UID> --label curated
-mainsequence data-node remove-label <DATA_NODE_STORAGE_UID> --label legacy
-mainsequence data-node can_view <DATA_NODE_STORAGE_UID>
-mainsequence data-node can_edit <DATA_NODE_STORAGE_UID>
-mainsequence data-node add_to_view <DATA_NODE_STORAGE_UID> <USER_UID>
-mainsequence data-node add_to_edit <DATA_NODE_STORAGE_UID> <USER_UID>
-mainsequence data-node add_team_to_view <DATA_NODE_STORAGE_UID> <TEAM_UID>
-mainsequence data-node add_team_to_edit <DATA_NODE_STORAGE_UID> <TEAM_UID>
-mainsequence data-node remove_from_view <DATA_NODE_STORAGE_UID> <USER_UID>
-mainsequence data-node remove_from_edit <DATA_NODE_STORAGE_UID> <USER_UID>
-mainsequence data-node remove_team_from_view <DATA_NODE_STORAGE_UID> <TEAM_UID>
-mainsequence data-node remove_team_from_edit <DATA_NODE_STORAGE_UID> <TEAM_UID>
-mainsequence data-node delete <DATA_NODE_STORAGE_UID>
-mainsequence data-node delete <DATA_NODE_STORAGE_UID> --full-delete-selected
-mainsequence data-node delete <DATA_NODE_STORAGE_UID> --full-delete-selected --override-protection
+mainsequence time-index-table list
+mainsequence time-index-table list --show-filters
+mainsequence time-index-table list --filter namespace=pytest_alice
+mainsequence time-index-table list --filter uid__in=<TIME_INDEX_META_TABLE_UID>
+mainsequence time-index-table list --data-source-uid <DATA_SOURCE_UID>
+mainsequence time-index-table search "close price"
+mainsequence time-index-table search "close price" --data-source-uid <DATA_SOURCE_UID>
+mainsequence time-index-table search close --mode column
+mainsequence time-index-table detail <TIME_INDEX_META_TABLE_UID>
+mainsequence time-index-table run_query <TIME_INDEX_META_TABLE_UID> "SELECT 1 AS ok"
+mainsequence time-index-table refresh-search-index <TIME_INDEX_META_TABLE_UID>
+mainsequence time-index-table add-label <TIME_INDEX_META_TABLE_UID> --label curated
+mainsequence time-index-table remove-label <TIME_INDEX_META_TABLE_UID> --label legacy
+mainsequence time-index-table can_view <TIME_INDEX_META_TABLE_UID>
+mainsequence time-index-table can_edit <TIME_INDEX_META_TABLE_UID>
+mainsequence time-index-table add_to_view <TIME_INDEX_META_TABLE_UID> <USER_UID>
+mainsequence time-index-table add_to_edit <TIME_INDEX_META_TABLE_UID> <USER_UID>
+mainsequence time-index-table add_team_to_view <TIME_INDEX_META_TABLE_UID> <TEAM_UID>
+mainsequence time-index-table add_team_to_edit <TIME_INDEX_META_TABLE_UID> <TEAM_UID>
+mainsequence time-index-table remove_from_view <TIME_INDEX_META_TABLE_UID> <USER_UID>
+mainsequence time-index-table remove_from_edit <TIME_INDEX_META_TABLE_UID> <USER_UID>
+mainsequence time-index-table remove_team_from_view <TIME_INDEX_META_TABLE_UID> <TEAM_UID>
+mainsequence time-index-table remove_team_from_edit <TIME_INDEX_META_TABLE_UID> <TEAM_UID>
+mainsequence time-index-table delete <TIME_INDEX_META_TABLE_UID>
+mainsequence time-index-table delete <TIME_INDEX_META_TABLE_UID> --full-delete-selected
+mainsequence time-index-table delete <TIME_INDEX_META_TABLE_UID> --full-delete-selected --override-protection
 
 # 1) List and create
 mainsequence project list
@@ -230,8 +230,8 @@ mainsequence project jobs run <JOB_UID> --arg demo-from-cli
 mainsequence project jobs run <JOB_UID> -- --name demo-from-cli
 mainsequence project jobs create --name daily-run --execution-path scripts/test.py --related-image-uid <IMAGE_UID>
 mainsequence project jobs create --name promoted-run --execution-path scripts/test.py --automatic-deployment
-mainsequence project data-node-updates list
-mainsequence project data-node-updates list <PROJECT_UID>
+mainsequence project time-index-table-updates list
+mainsequence project time-index-table-updates list <PROJECT_UID>
 mainsequence project project_resource list
 mainsequence project project_resource list --show-filters
 mainsequence project project_resource list --filter resource_type=dashboard
@@ -507,38 +507,39 @@ ontology and each installed platform skill.
 - `mainsequence secrets add_team_to_view`, `add_team_to_edit`, `remove_team_from_view`, and `remove_team_from_edit` mutate secret team sharing through the SDK `ShareableObjectMixin` team-action paths.
 - `mainsequence secrets delete` deletes a secret through the SDK client `Secret.delete()` path and always requires typed verification before the delete call is sent.
 - Secret list and delete previews intentionally show metadata only, not secret values.
-- `mainsequence data-node list` lists data node storages through the SDK client `TimeIndexMetaTable.filter()` path.
-- `mainsequence data-node list --show-filters` prints the filters exposed by `TimeIndexMetaTable.FILTERSET_FIELDS` and the expected value shapes from `FILTER_VALUE_NORMALIZERS`.
-- `mainsequence data-node list --filter namespace=...` is the first-class CLI form for narrowing data node storages by storage namespace.
-- `mainsequence data-node list --data-source-uid <DATA_SOURCE_UID>` is the first-class shortcut for the canonical `data_source__uid` filter.
-- `mainsequence data-node list` and `mainsequence meta-table list` derive the required Organization Environment scope from the process-frozen, Git-resolved ProjectBranch. They do not accept an Environment selector; an unregistered branch fails only when this table context is required.
-- `mainsequence data-node search` is the public semantic discovery command for data nodes and MetaTable metadata. It uses `TimeIndexMetaTable.description_search()` against `/api/v1/time-index-meta-tables/description-search/?q=<text>`.
-- `mainsequence data-node search --data-source-uid <DATA_SOURCE_UID>` narrows semantic discovery results by data source.
-- `mainsequence data-node search --trigram-k 200 --embed-k 200 --w-trgm 0.65 --w-emb 0.35` tunes description-search ranking.
-- `mainsequence data-node list --filter KEY=VALUE` and `mainsequence data-node list --show-filters` are the structured filtering path. Do not treat list filters as semantic discovery.
-- `mainsequence data-node search --mode column` uses `TimeIndexMetaTable.column_search()` for schema or column-name lookup. Do not use it as the default dataset discovery path.
-- `mainsequence data-node detail` fetches one storage through `TimeIndexMetaTable.get()` and renders its configuration in the terminal, including the backend-derived `storage_layout` and `physical_index_plan` when the source table configuration exposes them.
-- `mainsequence data-node run_query` executes `TimeIndexMetaTable.run_query()` against one storage uid and prints the backend query envelope.
+- `mainsequence time-index-table list` lists time-index tables through the SDK client `TimeIndexMetaTable.filter()` path.
+- `mainsequence time-index-table list --show-filters` prints the filters exposed by `TimeIndexMetaTable.FILTERSET_FIELDS` and the expected value shapes from `FILTER_VALUE_NORMALIZERS`.
+- `mainsequence time-index-table list --filter namespace=...` is the first-class CLI form for narrowing time-index tables by storage namespace.
+- `mainsequence time-index-table list --data-source-uid <DATA_SOURCE_UID>` is the first-class shortcut for the canonical `data_source__uid` filter.
+- `mainsequence time-index-table list` and `mainsequence meta-table list` derive the required Organization Environment scope from the process-frozen, Git-resolved ProjectBranch. They do not accept an Environment selector; an unregistered branch fails only when this table context is required.
+- `mainsequence time-index-table search` is the public semantic discovery command for time-index tables and MetaTable metadata. It uses `TimeIndexMetaTable.description_search()` against `/api/v1/time-index-meta-tables/description-search/?q=<text>`.
+- `mainsequence time-index-table search --data-source-uid <DATA_SOURCE_UID>` narrows semantic discovery results by data source.
+- `mainsequence time-index-table search --trigram-k 200 --embed-k 200 --w-trgm 0.65 --w-emb 0.35` tunes description-search ranking.
+- `mainsequence time-index-table list --filter KEY=VALUE` and `mainsequence time-index-table list --show-filters` are the structured filtering path. Do not treat list filters as semantic discovery.
+- `mainsequence time-index-table search --mode column` uses `TimeIndexMetaTable.column_search()` for schema or column-name lookup. Do not use it as the default dataset discovery path.
+- `mainsequence time-index-table detail` fetches one storage through `TimeIndexMetaTable.get()` and renders its configuration in the terminal, including the backend-derived `storage_layout` and `physical_index_plan` when the source table configuration exposes them.
+- `mainsequence time-index-table run_query` executes `TimeIndexMetaTable.run_query()` against one storage uid and prints the backend query envelope.
 - `mainsequence meta-table run_query` executes `MetaTable.run_query()` against one MetaTable uid and prints the backend query envelope. The SDK sends raw SQL as a JSON string body, not as `{ "sql": ... }`.
-- `mainsequence data-node refresh-search-index` calls the SDK instance method `TimeIndexMetaTable.refresh_table_search_index()` for one storage and prints the backend response in the terminal.
-- `mainsequence data-node add-label` and `remove-label` mutate `TimeIndexMetaTable` labels through the SDK `LabelableObjectMixin` path. Labels are organizational metadata only and do not affect runtime behavior or functionality.
+- `mainsequence time-index-table refresh-search-index` calls the SDK instance method `TimeIndexMetaTable.refresh_table_search_index()` for one storage and prints the backend response in the terminal.
+- `mainsequence time-index-table add-label` and `remove-label` mutate `TimeIndexMetaTable` labels through the SDK `LabelableObjectMixin` path. Labels are organizational metadata only and do not affect runtime behavior or functionality.
 - `mainsequence project search "<QUERY>"` is the first-class CLI command for finding existing projects before creation or local setup. Use it for fuzzy discovery, then use `mainsequence project validate-name "<PROJECT_NAME>"` for the exact create-time availability check.
 - `mainsequence project validate-name "<PROJECT_NAME>"` validates a candidate project name through the SDK client `Project.validate_name()` path, prints normalized names and suggestions, and exits non-zero when the name is unavailable.
 - `mainsequence project update AGENTS.md` is project-scoped. It resolves the target project first, then reads `AGENTS.md` from the running CLI's installed `agent_scaffold` bundle. This command does not require the target project's `.venv`. If the target file is missing, it creates it from that installed bundle. If an existing `AGENTS.md` has no Main Sequence managed marker, the command replaces the whole file. If the managed marker exists, the command updates only that managed block.
 - `mainsequence project update_agent_skills` is project-scoped and dual-source. In one invocation it resolves SDK-owned execution skills from the target project's installed `agent_scaffold/skills/` bundle, uses the existing platform JWT to initialize `/mcp`, discovers the server-owned resource catalog through paginated `resources/list`, reads the ontology and its dynamically declared `skill_resources` through `resources/read`, validates the complete platform manifest revision and every generic resource/content rule, rejects SDK/platform destination collisions, stages the deterministically ordered combined tree, and replaces only `.agents/skills/mainsequence/`. It writes one schema-2 `.agents/skills/mainsequence/PINNED_FROM.txt` containing the installed SDK version/source path and the independent platform manifest version/hash, ontology hash, resource URIs, resource paths, and content hashes. A failed update preserves the previous managed tree and sentinel. It does not copy bundle-root files such as `AGENTS.md`, does not package platform content in the SDK, and does not modify project-owned skills outside `.agents/skills/mainsequence/`.
-- `mainsequence data-node can_view` lists users returned by the SDK `ShareableObjectMixin.can_view()` path for `TimeIndexMetaTable`.
-- `mainsequence data-node can_edit` lists users returned by the SDK `ShareableObjectMixin.can_edit()` path for `TimeIndexMetaTable`.
-- `mainsequence data-node add_to_view`, `add_to_edit`, `remove_from_view`, and `remove_from_edit` mutate data-node user sharing through the SDK `ShareableObjectMixin` paths and render the resulting permission state in the terminal.
-- `mainsequence data-node add_team_to_view`, `add_team_to_edit`, `remove_team_from_view`, and `remove_team_from_edit` mutate data-node team sharing through the SDK `ShareableObjectMixin` team-action paths.
-- `mainsequence data-node delete` executes the SDK client `TimeIndexMetaTable.delete()` path and exposes the same delete flags as the client: `full_delete_selected`, `full_delete_downstream_tables`, `delete_with_no_table`, and `override_protection`.
-- `mainsequence data-node delete` always requires typed verification before the delete call is sent.
+- `mainsequence time-index-table can_view` lists users returned by the SDK `ShareableObjectMixin.can_view()` path for `TimeIndexMetaTable`.
+- `mainsequence time-index-table can_edit` lists users returned by the SDK `ShareableObjectMixin.can_edit()` path for `TimeIndexMetaTable`.
+- `mainsequence time-index-table add_to_view`, `add_to_edit`, `remove_from_view`, and `remove_from_edit` mutate time-index-table user sharing through the SDK `ShareableObjectMixin` paths and render the resulting permission state in the terminal.
+- `mainsequence time-index-table add_team_to_view`, `add_team_to_edit`, `remove_team_from_view`, and `remove_team_from_edit` mutate time-index-table team sharing through the SDK `ShareableObjectMixin` team-action paths.
+- `mainsequence time-index-table delete` executes the SDK client `TimeIndexMetaTable.delete()` path and exposes the same delete flags as the client: `full_delete_selected`, `full_delete_downstream_tables`, `delete_with_no_table`, and `override_protection`.
+- `mainsequence time-index-table delete` always requires typed verification before the delete call is sent.
 - `mainsequence project images list` lists project images using the SDK client `ProjectImage.filter()` path.
 - `ProjectImage` responses include backend metadata such as `creation_date` and the required boolean `build_error` build-status flag.
 - All list commands share the same `--filter KEY=VALUE` and `--show-filters` pattern. Commands that already enforce scoping filters reject overriding those keys.
 - `mainsequence project images create` only accepts pushed commits for `project_repo_hash`. If omitted, it lists commits from the current branch upstream (or remote refs as fallback), shows which commits already have image ids, and waits until `is_ready=true` by polling every 30 seconds for up to 5 minutes by default.
 - `mainsequence project jobs list` lists project jobs through the SDK client `Job.filter()` path.
 - `mainsequence project jobs list` shows a human-readable schedule summary from `task_schedule`.
-- `mainsequence project data-node-updates list` lists data node updates through the SDK client `Project.get_data_nodes_updates()` path.
+- `mainsequence project time-index-table-updates list` lists persisted table
+  updates through `ProjectBranch.get_time_index_table_updates()`.
 - `mainsequence project add-label` and `remove-label` mutate `Project` labels through the SDK `LabelableObjectMixin` path. Labels are organizational metadata only and do not affect runtime behavior or functionality.
 - `mainsequence project can_view` lists users returned by the SDK `ShareableObjectMixin.users_can_view()` path for `Project`.
 - `mainsequence project can_edit` lists users returned by the SDK `ShareableObjectMixin.users_can_edit()` path for `Project`.

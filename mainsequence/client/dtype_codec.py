@@ -173,7 +173,9 @@ def record_definitions_to_column_dtypes_map(
         )
 
     if duplicate_columns:
-        raise ValueError(f"Duplicate DataNode record column names: {sorted(duplicate_columns)}")
+        raise ValueError(
+            f"Duplicate TimeIndexTableUpdater record column names: {sorted(duplicate_columns)}"
+        )
 
     return column_dtypes_map
 

@@ -606,7 +606,7 @@ def test_current_branch_collection_is_scoped_and_admin_path_is_explicit(monkeypa
         _ScopedCollection.filter(project_branch_uid="other-branch")
 
 
-def test_data_node_update_always_submits_git_resolved_branch(monkeypatch):
+def test_table_update_always_submits_git_resolved_branch(monkeypatch):
     monkeypatch.setenv("MAINSEQUENCE_AUTH_MODE", "runtime_credential")
     _resolve(monkeypatch)
     captured = {}
@@ -619,9 +619,15 @@ def test_data_node_update_always_submits_git_resolved_branch(monkeypatch):
             return {
                 "uid": "update-uid-1",
                 "update_hash": "abc123",
-                "build_configuration": {},
-                "orm_class": "DataNodeUpdate",
-                "data_node_storage": "storage-1",
+                "build_configuration": {
+                    "configuration_schema_version": 2,
+                    "table_updater_class_import_path": {
+                        "module": "tests.test_project_runtime_context",
+                        "qualname": "ExampleUpdater",
+                    },
+                },
+                "orm_class": "TimeIndexTableUpdate",
+                "output_table": "storage-1",
                 "labels": [],
                 "description": None,
                 "update_details": None,
@@ -629,7 +635,7 @@ def test_data_node_update_always_submits_git_resolved_branch(monkeypatch):
             }
 
     monkeypatch.setattr(
-        models_metatables.DataNodeUpdate,
+        models_metatables.TimeIndexTableUpdate,
         "build_session",
         classmethod(lambda cls: types.SimpleNamespace(headers={})),
     )
@@ -639,7 +645,17 @@ def test_data_node_update_always_submits_git_resolved_branch(monkeypatch):
         lambda **kwargs: captured.update(kwargs) or Response(),
     )
 
-    models_metatables.DataNodeUpdate.get_or_create(update_hash="abc123")
+    models_metatables.TimeIndexTableUpdate.get_or_create(
+        update_hash="abc123",
+        output_table_uid="storage-1",
+        build_configuration={
+            "configuration_schema_version": 2,
+            "table_updater_class_import_path": {
+                "module": "tests.test_project_runtime_context",
+                "qualname": "ExampleUpdater",
+            },
+        },
+    )
 
     assert captured["payload"]["json"]["current_project_branch_uid"] == PROJECT_BRANCH_UID
 

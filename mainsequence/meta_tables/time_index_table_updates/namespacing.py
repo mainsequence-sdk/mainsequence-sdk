@@ -1,4 +1,4 @@
-# mainsequence/meta_tables/data_nodes/namespacing.py
+# Hash namespace controls for time-index table updaters.
 from __future__ import annotations
 
 from contextlib import contextmanager
@@ -21,12 +21,12 @@ def current_hash_namespace() -> str:
 @contextmanager
 def hash_namespace(namespace: str):
     """
-    Use in tests to isolate ALL DataNodes created inside this context.
+    Use in tests to isolate every updater created inside this context.
 
     Example:
         with hash_namespace("pytest"):
-            ts = MyNode(...)
-            ts.run(...)
+            updater = PricesUpdater(...)
+            updater.run(...)
     """
     ns = (namespace or "").strip()
     token = _META_TABLES_HASH_NAMESPACE.set(ns)

@@ -4,7 +4,7 @@ Main Sequence is a platform for building data products, deploying workflows, and
 
 The Main Sequence platform allows you to:
 
-1. rapidly build and deploy data products and data workflows as a unified API with normalized table contracts through `MetaTable`s and `DataNode`s
+1. rapidly build and deploy data products with normalized `MetaTable` contracts and `TimeIndexTableUpdater` producer workflows
 2. rapidly deploy RBAC-enabled dashboards on the platform
 3. rapidly deploy agents using the Google Agent SDK
 
@@ -18,8 +18,9 @@ Use the Knowledge section if you already know the workflow you are building and 
 
 Key entry points:
 
-- [Data Nodes](knowledge/data_nodes.md)
+- [Time-Index Table Updaters](knowledge/time_index_table_updates.md)
 - [MetaTables](knowledge/meta_tables/index.md)
+- [Migrating from 6.x to 7.0](migrations/v7-time-index-table-updater-hard-cut.md)
 - [Constants and Secrets](knowledge/infrastructure/constants_and_secrets.md)
 - [Scheduling Jobs](knowledge/infrastructure/scheduling_jobs.md)
 - [Streamlit Dashboards](knowledge/dashboards/streamlit/index.md)
@@ -40,7 +41,7 @@ Use the generated reference when you need the API surface directly:
 
 The SDK is organized around a few main areas:
 
-- `mainsequence.meta_tables`: `DataNode`s, persistence, orchestration, and update workflows
+- `mainsequence.meta_tables`: `TimeIndexTableUpdater`s, persistence, orchestration, and update workflows
 - `mainsequence.client`: API client models for projects, jobs, tables, platform resources, and sharing
 - `mainsequence.cli`: the `mainsequence` command-line interface
 

@@ -1039,9 +1039,9 @@ class MetaTableCascadeDeleteRequest(BasePydanticModel):
         default=True,
         description="Delete MetaTables that reference the selected MetaTable.",
     )
-    delete_referencing_dynamic_tables: bool = Field(
+    delete_referencing_time_index_meta_tables: bool = Field(
         default=True,
-        description="Delete time-indexed Data Nodes that reference the selected MetaTable.",
+        description="Delete TimeIndexMetaTables that reference the selected MetaTable.",
     )
     override_schema_management_protection: bool = Field(
         default=False,
@@ -1069,7 +1069,7 @@ class MetaTableCascadeDeletedMetaTable(BasePydanticModel):
     schema_management_protection_overridden: bool
 
 
-class MetaTableCascadeDeletedDynamicTable(BasePydanticModel):
+class MetaTableCascadeDeletedTimeIndexMetaTable(BasePydanticModel):
     type: Literal["meta_table"]
     table_kind: Literal["time_indexed"]
     time_indexed: Literal[True]
@@ -1085,9 +1085,9 @@ class MetaTableCascadeDeleteResponse(BasePydanticModel):
     action: Literal["delete_with_cascade"]
     root_meta_table_uid: str
     deleted_meta_tables: list[MetaTableCascadeDeletedMetaTable]
-    deleted_dynamic_tables: list[MetaTableCascadeDeletedDynamicTable]
+    deleted_time_index_meta_tables: list[MetaTableCascadeDeletedTimeIndexMetaTable]
     deleted_meta_table_count: int = Field(..., ge=0)
-    deleted_dynamic_table_count: int = Field(..., ge=0)
+    deleted_time_index_meta_table_count: int = Field(..., ge=0)
     blocking_edges: list[dict[str, Any]]
 
 
@@ -1165,7 +1165,7 @@ class DataSource(BasePydanticModel, BaseObjectOrm):
     def insert_data_into_table(
         self,
         serialized_data_frame: pd.DataFrame,
-        data_node_update: Any,
+        table_update: Any,
         overwrite: bool,
         time_index_name: str,
         index_names: list,
@@ -1173,7 +1173,7 @@ class DataSource(BasePydanticModel, BaseObjectOrm):
         column_dtypes_map: Mapping[str, Any] | None = None,
     ):
         if self.class_type in LOCAL_DATA_SOURCE_CLASS_TYPES:
-            storage = data_node_update.data_node_storage
+            storage = table_update.output_table
             _local_data_interface(self.class_type).upsert(
                 df=serialized_data_frame,
                 table=_storage_physical_table_name(storage),
@@ -1181,9 +1181,9 @@ class DataSource(BasePydanticModel, BaseObjectOrm):
                 time_index_name=time_index_name,
             )
         else:
-            DataNodeUpdate.post_data_frame_in_chunks(
+            TimeIndexTableUpdate.post_data_frame_in_chunks(
                 serialized_data_frame=serialized_data_frame,
-                data_node_update=data_node_update,
+                table_update=table_update,
                 data_source=self,
                 index_names=index_names,
                 time_index_name=time_index_name,
@@ -1194,7 +1194,7 @@ class DataSource(BasePydanticModel, BaseObjectOrm):
     def insert_data_into_local_table(
         self,
         serialized_data_frame: pd.DataFrame,
-        data_node_update: Any,
+        table_update: Any,
         overwrite: bool,
         time_index_name: str,
         index_names: list,
@@ -1204,7 +1204,7 @@ class DataSource(BasePydanticModel, BaseObjectOrm):
 
     def get_data_by_time_index(
         self,
-        data_node_update: Any,
+        table_update: Any,
         start_date: datetime.datetime | None = None,
         end_date: datetime.datetime | None = None,
         great_or_equal: bool = True,
@@ -1216,7 +1216,7 @@ class DataSource(BasePydanticModel, BaseObjectOrm):
     ) -> pd.DataFrame:
         if self.class_type in LOCAL_DATA_SOURCE_CLASS_TYPES:
             db_interface = _local_data_interface(self.class_type)
-            storage = data_node_update.data_node_storage
+            storage = table_update.output_table
             table_name = _storage_physical_table_name(storage)
             time_index_name, index_names, _ = _storage_time_indexed_contract(storage)
 
@@ -1248,7 +1248,7 @@ class DataSource(BasePydanticModel, BaseObjectOrm):
             )
 
         else:
-            df = data_node_update.get_data_between_dates_from_api(
+            df = table_update.get_data_between_dates_from_api(
                 start_date=start_date,
                 end_date=end_date,
                 great_or_equal=great_or_equal,
@@ -1259,11 +1259,11 @@ class DataSource(BasePydanticModel, BaseObjectOrm):
                 columns=columns,
             )
         if len(df) == 0:
-            logger.warning(f"No data returned from remote API for {data_node_update.update_hash}")
+            logger.warning(f"No data returned from remote API for {table_update.update_hash}")
             return df
 
         time_index_name, index_names, column_dtypes_map = _storage_time_indexed_contract(
-            data_node_update.data_node_storage
+            table_update.output_table
         )
         try:
             df[time_index_name] = token_to_pandas_series(
@@ -1288,11 +1288,11 @@ class DataSource(BasePydanticModel, BaseObjectOrm):
 
     def get_earliest_value(
         self,
-        data_node_update: Any,
+        table_update: Any,
     ) -> tuple[pd.Timestamp | None, dict[Any, pd.Timestamp | None]]:
         if self.class_type in LOCAL_DATA_SOURCE_CLASS_TYPES:
             db_interface = _local_data_interface(self.class_type)
-            storage = data_node_update.data_node_storage
+            storage = table_update.output_table
             table_name = _storage_physical_table_name(storage)
             time_index_name, index_names, _ = _storage_time_indexed_contract(storage)
             return db_interface.time_index_minima(
@@ -1626,7 +1626,7 @@ class MetaTable(
         *,
         confirm_cascade_delete: bool | None = None,
         delete_referencing_meta_tables: bool = True,
-        delete_referencing_dynamic_tables: bool = True,
+        delete_referencing_time_index_meta_tables: bool = True,
         override_schema_management_protection: bool = False,
         timeout: int | float | tuple[float, float] | None = None,
     ) -> MetaTableCascadeDeleteResponse:
@@ -1635,7 +1635,7 @@ class MetaTable(
         request = MetaTableCascadeDeleteRequest(
             confirm_cascade_delete=confirm_cascade_delete,
             delete_referencing_meta_tables=delete_referencing_meta_tables,
-            delete_referencing_dynamic_tables=delete_referencing_dynamic_tables,
+            delete_referencing_time_index_meta_tables=(delete_referencing_time_index_meta_tables),
             override_schema_management_protection=override_schema_management_protection,
         )
         operation = f"{cls.__name__}.delete_with_cascade"
@@ -1660,7 +1660,7 @@ class MetaTable(
         *,
         confirm_cascade_delete: bool | None = None,
         delete_referencing_meta_tables: bool = True,
-        delete_referencing_dynamic_tables: bool = True,
+        delete_referencing_time_index_meta_tables: bool = True,
         override_schema_management_protection: bool = False,
         timeout: int | float | tuple[float, float] | None = None,
     ) -> MetaTableCascadeDeleteResponse:
@@ -1668,7 +1668,7 @@ class MetaTable(
             self._public_uid(),
             confirm_cascade_delete=confirm_cascade_delete,
             delete_referencing_meta_tables=delete_referencing_meta_tables,
-            delete_referencing_dynamic_tables=delete_referencing_dynamic_tables,
+            delete_referencing_time_index_meta_tables=(delete_referencing_time_index_meta_tables),
             override_schema_management_protection=override_schema_management_protection,
             timeout=timeout,
         )
@@ -2118,7 +2118,7 @@ class SchedulerDoesNotExist(Exception):
     pass
 
 
-class LocalTimeSeriesDoesNotExist(Exception):
+class TimeIndexTableUpdateDoesNotExist(Exception):
     pass
 
 
@@ -2427,9 +2427,6 @@ class TimeIndexedProfile(TimeIndexedProfileBase, BasePydanticModel):
     time_index_meta_table_uid: str | None = Field(
         None, description="Canonical public uid of the related TimeIndexMetaTable"
     )
-    related_table_uid: str | None = Field(
-        None, description="Public uid of the related TimeIndexMetaTable"
-    )
     time_index_name: str = Field(..., max_length=100, description="Time index name")
     cadence: str | None = Field(
         None,
@@ -2465,41 +2462,51 @@ class TimeIndexedProfile(TimeIndexedProfileBase, BasePydanticModel):
 
 
 class TableUpdateNode(BasePydanticModel):
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="forbid")
 
     uid: str | None = Field(None, description="Public uid of this update node")
     update_hash: str = Field(..., max_length=63, description="Max length of PostgreSQL table name")
     build_configuration: dict[str, Any] = Field(..., description="Configuration in JSON format")
     ogm_dependencies_linked: bool = Field(default=False, description="OGM dependencies linked flag")
-    downstream_direct_dependencies: list[TableUpdateNode] | None = Field(
+    upstream_update_dependencies: list[TableUpdateNode] | None = Field(
         None,
-        description="Optional serialized downstream direct dependency payloads.",
+        description="Optional serialized upstream update dependencies.",
     )
     all_dependencies_update_priority: list[dict[str, Any]] | None = Field(
         None,
         description="Optional serialized dependency priority payloads.",
     )
 
+    @field_validator("build_configuration", mode="before")
+    @classmethod
+    def _require_canonical_build_configuration(cls, value: Any) -> Any:
+        from mainsequence.meta_tables.time_index_table_updates.configuration import (
+            validate_canonical_configuration,
+        )
+
+        validate_canonical_configuration(value)
+        return value
+
     def _public_uid(self) -> str:
         return _require_public_uid(self, self.__class__.__name__)
 
 
-class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
+class TimeIndexTableUpdate(TableUpdateNode, BaseObjectOrm):
     model_config = ConfigDict(extra="forbid")
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
         "uid": ["in", "exact"],
         "update_hash": ["exact"],
-        "remote_table__uid": ["exact", "in"],
-        "remote_table__data_source__uid": ["exact", "in"],
-        "related_table__namespace": ["contains", "in", "isnull"],
+        "output_table__uid": ["exact", "in"],
+        "output_table__data_source__uid": ["exact", "in"],
+        "output_table__namespace": ["contains", "in", "isnull"],
     }
     FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
         "uid": "uid",
         "uid__in": "uid",
-        "remote_table__uid": "uid",
-        "remote_table__uid__in": "uid",
-        "remote_table__data_source__uid": "uid",
-        "remote_table__data_source__uid__in": "uid",
+        "output_table__uid": "uid",
+        "output_table__uid__in": "uid",
+        "output_table__data_source__uid": "uid",
+        "output_table__data_source__uid__in": "uid",
     }
     READ_QUERY_PARAMS: ClassVar[dict[str, str]] = {
         "include_relations_detail": "bool",
@@ -2511,9 +2518,9 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
         ),
     }
 
-    NODE_TYPE: ClassVar[str] = "local_time_serie"
+    NODE_TYPE: ClassVar[str] = "time_index_table_update"
 
-    data_node_storage: str | UUID | TimeIndexMetaTable
+    output_table: str | UUID | TimeIndexMetaTable
     labels: list[str] = Field(
         default_factory=list,
         description=(
@@ -2522,16 +2529,16 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
         ),
     )
     description: str | None = Field(None, description="Optional HTML description")
-    time_serie_source_code_git_hash: str | None = None
-    time_serie_source_code: str | None = None
-    update_details: DataNodeUpdateDetails | None = None
-    run_configuration: RunConfiguration | None = None
+    table_updater_source_code_git_hash: str | None = None
+    table_updater_source_code: str | None = None
+    update_details: TimeIndexTableUpdateDetails | None = None
+    run_configuration: TimeIndexTableUpdateConfiguration | None = None
 
     @property
     def data_source_uid(self):
-        if isinstance(self.data_node_storage, str | UUID):
+        if isinstance(self.output_table, str | UUID):
             return None
-        data_source = self.data_node_storage.data_source
+        data_source = self.output_table.data_source
         if isinstance(data_source, str):
             return data_source
         if isinstance(data_source, dict):
@@ -2540,13 +2547,37 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
 
     @classmethod
     def get_or_create(cls, **kwargs):
-        url = cls.get_object_url() + "/get-or-create/"
         if "current_project_branch_uid" in kwargs:
             raise ValueError(
                 "current_project_branch_uid is SDK-controlled and cannot be supplied by the caller."
             )
+        from mainsequence.meta_tables.time_index_table_updates.configuration import (
+            reject_legacy_configuration,
+            validate_canonical_configuration,
+        )
+
+        reject_legacy_configuration(kwargs)
+        required_fields = {"update_hash", "output_table_uid", "build_configuration"}
+        missing_fields = sorted(required_fields.difference(kwargs))
+        if missing_fields:
+            raise ValueError(
+                "TimeIndexTableUpdate.get_or_create requires canonical fields: "
+                f"{', '.join(missing_fields)}."
+            )
+        if "output_table" in kwargs:
+            raise ValueError(
+                "TimeIndexTableUpdate.get_or_create accepts output_table_uid, not output_table."
+            )
+        for field_name in ("update_hash", "output_table_uid"):
+            if kwargs[field_name] in (None, ""):
+                raise ValueError(
+                    f"TimeIndexTableUpdate.get_or_create requires a non-empty {field_name}."
+                )
+        validate_canonical_configuration(kwargs["build_configuration"])
+
+        url = cls.get_object_url() + "/get-or-create/"
         kwargs = serialize_to_json(kwargs)
-        context = require_project_branch_context("DataNodeUpdate.get_or_create")
+        context = require_project_branch_context("TimeIndexTableUpdate.get_or_create")
         kwargs["current_project_branch_uid"] = context.project_branch_uid
         payload = {"json": kwargs}
         s = cls.build_session()
@@ -2579,8 +2610,8 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
         index_progress = result.get("index_progress") or multi_index_stats.get("index_progress")
         index_min = result.get("index_min") or multi_index_stats.get("index_min")
 
-        hu = LocalTimeSeriesHistoricalUpdate(
-            **result["historical_update"],
+        table_update_run = TableUpdateRun(
+            **result["table_update_run"],
             update_statistics=UpdateStatistics(
                 global_index_progress=global_index_progress,
                 index_progress=index_progress,
@@ -2590,16 +2621,16 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
             must_update=result["must_update"],
             direct_dependency_uids=result.get("direct_dependency_uids"),
         )
-        return hu
+        return table_update_run
 
     def set_end_of_execution(
-        self, historical_update_uid: str, timeout=None, threaded_request=True, **kwargs
+        self, table_update_run_uid: str, timeout=None, threaded_request=True, **kwargs
     ):
         s = self.build_session()
         url = self.get_object_url() + f"/{self._public_uid()}/set-end-of-execution/"
-        if historical_update_uid in (None, ""):
-            raise ValueError("Historical update uid is required to end execution.")
-        kwargs.update(dict(historical_update_uid=str(historical_update_uid)))
+        if table_update_run_uid in (None, ""):
+            raise ValueError("TableUpdateRun uid is required to end execution.")
+        kwargs.update(dict(table_update_run_uid=str(table_update_run_uid)))
         payload = {"json": kwargs}
 
         def _do_request():
@@ -2645,17 +2676,19 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
             raise Exception("Error in request ")
 
     @classmethod
-    def set_last_update_index_time(cls, data_node_storage, timeout=None):
+    def set_last_update_index_time(cls, output_table, timeout=None):
         s = cls.build_session()
-        storage_uid = data_node_storage["uid"]
-        url = cls.get_object_url() + f"/{storage_uid}/set-last-update-index-time/"
+        output_table_uid = output_table["uid"]
+        url = cls.get_object_url() + f"/{output_table_uid}/set-last-update-index-time/"
         r = make_request(s=s, loaders=cls.LOADERS, r_type="GET", url=url, time_out=timeout)
 
         if r.status_code == 404:
             raise TimeIndexedProfileDoesNotExist
 
         if r.status_code != 200:
-            raise Exception(f"{data_node_storage['update_hash']}{r.text}")
+            raise Exception(
+                f"Failed to update last time index for output table {output_table_uid}: {r.text}"
+            )
         return r
 
     def set_last_update_index_time_from_update_stats(
@@ -2667,7 +2700,7 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
         multi_index_stats: dict[str, Any] | None = None,
         multi_index_column_stats: dict[str, Any] | None = None,
         timeout=None,
-    ) -> DataNodeUpdate:
+    ) -> TimeIndexTableUpdate:
         s = self.build_session()
         url = (
             self.get_object_url()
@@ -2699,12 +2732,12 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
 
         if r.status_code != 200:
             raise Exception(f"{self.update_hash}{r.text}")
-        return DataNodeUpdate(**r.json())
+        return TimeIndexTableUpdate(**r.json())
 
     @classmethod
-    def create_historical_update(cls, *args, **kwargs):
+    def create_table_update_run(cls, *args, **kwargs):
         s = cls.build_session()
-        base_url = cls.END_POINTS["LocalTimeSerieHistoricalUpdate"]
+        base_url = cls.get_object_url("TableUpdateRun")
         data = serialize_to_json(kwargs)
         payload = {
             "json": data,
@@ -2714,6 +2747,7 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
         )
         if r.status_code != 201:
             raise Exception(f"Error in request {r.url} {r.text}")
+        return TableUpdateRun(**r.json())
 
     def get_all_dependencies_update_priority(self, timeout=None) -> pd.DataFrame:
         s = self.build_session()
@@ -2724,43 +2758,22 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
 
         depth_df = pd.DataFrame(r.json())
         if not depth_df.empty:
-            uid_candidates = [
-                c
-                for c in ["update_node_uid", "local_time_serie_uid", "data_node_update_uid"]
-                if c in depth_df.columns
-            ]
-
-            if uid_candidates:
-                update_node_uid = None
-                for col in uid_candidates:
-                    series = depth_df[col]
-                    if isinstance(series, pd.DataFrame):
-                        series = series.iloc[:, 0]
-                    update_node_uid = (
-                        series if update_node_uid is None else update_node_uid.fillna(series)
-                    )
-
-                depth_df = depth_df.drop(
-                    columns=["update_node_uid", "local_time_serie_uid", "data_node_update_uid"],
-                    errors="ignore",
-                )
-                depth_df["update_node_uid"] = update_node_uid
+            if "update_node_uid" not in depth_df.columns:
+                raise ValueError("Dependency priority response requires canonical update_node_uid.")
 
         return depth_df
 
     def clear_dependencies(self, timeout=None) -> dict[str, Any] | None:
-        url = self.get_object_url() + f"/{self._public_uid()}/clear-dependencies/"
-        payload = {"json": {}}
+        url = self.get_object_url() + f"/{self._public_uid()}/dependencies/"
         r = make_request(
             s=self.build_session(),
             loaders=self.LOADERS,
-            r_type="POST",
+            r_type="DELETE",
             url=url,
-            payload=payload,
             time_out=timeout,
         )
         if r.status_code not in (200, 204):
-            raise_for_response(r, payload=payload)
+            raise_for_response(r)
         if not r.content:
             return None
         return r.json()
@@ -2783,14 +2796,14 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
         return r.json()
 
     def get_data_between_dates_from_api(self, *args, **kwargs):
-        return self.data_node_storage.get_data_between_dates_from_api(*args, **kwargs)
+        return self.output_table.get_data_between_dates_from_api(*args, **kwargs)
 
     @classmethod
     def post_data_frame_in_chunks(
         cls,
         serialized_data_frame: pd.DataFrame,
         chunk_size: int = 50_000,
-        data_node_update: DataNodeUpdate = None,
+        table_update: TimeIndexTableUpdate = None,
         data_source: str = None,
         index_names: list = None,
         time_index_name: str = "timestamp",
@@ -2802,7 +2815,7 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
         If a chunk is too large (HTTP 413), it's automatically split in half and retried.
         """
         s = cls.build_session()
-        update_uid = _require_public_uid(data_node_update, "DataNodeUpdate")
+        update_uid = _require_public_uid(table_update, "TimeIndexTableUpdate")
         url = cls.get_object_url() + f"/{update_uid}/insert-data-into-table/"
 
         def _send_chunk_recursively(
@@ -2902,7 +2915,7 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
             _send_chunk_recursively(chunk_df, i, total_chunks)
 
     @classmethod
-    def get_data_nodes_and_set_updates(
+    def get_table_updates_and_set_updates(
         cls,
         update_nodes: Sequence[UpdateNodeRef],
         update_details_kwargs: Mapping[str, Any],
@@ -2924,7 +2937,7 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
                 update_priority_dict=update_priority_dict,
             )
         }
-        url = f"{base_url}/get-metadatas-and-set-updates/"
+        url = f"{base_url}/get-table-updates-and-set-updates/"
         r = make_request(s=s, loaders=cls.LOADERS, r_type="POST", url=url, payload=payload)
         if r.status_code != 200:
             raise Exception(f"Error in request {r.text}")
@@ -2934,43 +2947,43 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
             for k, v in response_json["time_indexed_profile_map"].items()
         }
         state_data = {
-            str(k): DataNodeUpdateDetails(**v) for k, v in response_json["state_data"].items()
+            str(k): TimeIndexTableUpdateDetails(**v) for k, v in response_json["state_data"].items()
         }
         all_index_stats = {str(k): v for k, v in response_json["all_index_stats"].items()}
-        data_node_updates = [DataNodeUpdate(**v) for v in response_json["local_metadatas"]]
+        table_updates = [TimeIndexTableUpdate(**v) for v in response_json["table_updates"]]
         return UpdateBatchResponse[
-            DataNodeUpdate,
-            DataNodeUpdateDetails,
+            TimeIndexTableUpdate,
+            TimeIndexTableUpdateDetails,
             TimeIndexedProfile,
         ](
             time_indexed_profile_map=time_indexed_profile_map,
             state_data=state_data,
             all_index_stats=all_index_stats,
-            data_node_updates=data_node_updates,
+            table_updates=table_updates,
         )
 
-    def depends_on_connect(self, target_update_node_uid):
-        url = self.get_object_url() + f"/{self._public_uid()}/depends-on-connect/"
+    def connect_update_dependency(self, upstream_update_uid: str):
+        url = self.get_object_url() + f"/{self._public_uid()}/update-dependencies/"
         s = self.build_session()
         payload = dict(
             json={
-                "target_update_node_uid": str(target_update_node_uid),
+                "upstream_update_uid": str(upstream_update_uid),
             }
         )
-        r = make_request(s=s, loaders=self.LOADERS, r_type="PATCH", url=url, payload=payload)
+        r = make_request(s=s, loaders=self.LOADERS, r_type="POST", url=url, payload=payload)
         if r.status_code != 204:
             raise Exception(f"Error in request {r.text}")
 
-    def depends_on_connect_to_api_table(self, target_table_uid, timeout=None):
-        url = self.get_object_url() + f"/{self._public_uid()}/depends-on-connect-to-api-table/"
+    def connect_table_dependency(self, time_index_meta_table_uid: str, timeout=None):
+        url = self.get_object_url() + f"/{self._public_uid()}/table-dependencies/"
         s = self.build_session()
         payload = dict(
             json={
-                "target_table_uid": str(target_table_uid),
+                "time_index_meta_table_uid": str(time_index_meta_table_uid),
             }
         )
         r = make_request(
-            s=s, loaders=self.LOADERS, r_type="PATCH", url=url, time_out=timeout, payload=payload
+            s=s, loaders=self.LOADERS, r_type="POST", url=url, time_out=timeout, payload=payload
         )
         if r.status_code != 204:
             raise Exception(f"Error in request {r.text}")
@@ -3016,7 +3029,7 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
         ]
         if missing_record_columns:
             raise ValueError(
-                "DataNode records declare columns not present in the DataFrame: "
+                "TimeIndexTableUpdater records declare columns not present in the DataFrame: "
                 f"{missing_record_columns}"
             )
         column_dtypes_map.update(record_column_dtypes_map)
@@ -3033,18 +3046,18 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
         records: Sequence[Any] | None = None,
     ):
         overwrite = True  # ALWAYS OVERWRITE
-        if isinstance(self.data_node_storage, str | UUID):
+        if isinstance(self.output_table, str | UUID):
             raise ValueError(
-                "DataNode writes require data_node_storage to be a bound "
+                "TimeIndexTableUpdater writes require output_table to be a bound "
                 "TimeIndexMetaTable, not a UID reference."
             )
-        if not hasattr(self.data_node_storage, "_require_time_indexed_table_contract"):
+        if not hasattr(self.output_table, "_require_time_indexed_table_contract"):
             raise ValueError(
-                "DataNode writes require data_node_storage to expose a complete "
+                "TimeIndexTableUpdater writes require output_table to expose a complete "
                 "TimeIndexMetaTable contract."
             )
         schema_time_index_name, schema_index_names, schema_column_dtypes_map = (
-            self.data_node_storage._require_time_indexed_table_contract()
+            self.output_table._require_time_indexed_table_contract()
         )
 
         storage_class_type = data_source.class_type
@@ -3107,7 +3120,7 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
             multi_index_column_stats[c] = index_min_max_stats
         data_source.insert_data_into_table(
             serialized_data_frame=data,
-            data_node_update=self,
+            table_update=self,
             overwrite=overwrite,
             time_index_name=time_index_name,
             index_names=index_names,
@@ -3115,15 +3128,15 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
             column_dtypes_map=column_dtypes_map,
         )
 
-        data_node_update = self.set_last_update_index_time_from_update_stats(
+        table_update = self.set_last_update_index_time_from_update_stats(
             global_index_progress=index_stats["_GLOBAL_"],
             index_progress=index_stats["index_progress"],
             index_min=index_stats["index_min"],
             multi_index_column_stats=multi_index_column_stats,
         )
-        return data_node_update
+        return table_update
 
-    def get_node_time_to_wait(self):
+    def get_update_time_to_wait(self):
         next_update = self.update_details.next_update
         time_to_wait = 0.0
         if next_update is not None:
@@ -3139,7 +3152,7 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
         if self.update_details.error_on_last_update or self.update_details.last_update is None:
             return None
 
-        time_to_wait, next_update = self.get_node_time_to_wait()
+        time_to_wait, next_update = self.get_update_time_to_wait()
         if time_to_wait > 0:
             logger.info(f"Scheduler Waiting for ts update time at {next_update} {time_to_wait}")
             time.sleep(time_to_wait)
@@ -3172,29 +3185,29 @@ class BaseUpdateDetails:
     )
 
 
-class DataNodeUpdateDetails(BaseUpdateDetails, BasePydanticModel, BaseObjectOrm):
-    related_table_uid: str | None = Field(
-        None, description="Public uid of the related DataNodeUpdate"
+class TimeIndexTableUpdateDetails(BaseUpdateDetails, BasePydanticModel, BaseObjectOrm):
+    table_update_uid: str | None = Field(
+        None, description="Public uid of the related TimeIndexTableUpdate"
     )
-    run_configuration: RunConfiguration | None = None
+    run_configuration: TimeIndexTableUpdateConfiguration | None = None
 
     @classmethod
-    def patch_for_data_node_update_uid(
+    def patch_for_table_update_uid(
         cls,
-        data_node_update_uid: str,
+        table_update_uid: str,
         *,
         timeout: int | None = None,
         **kwargs,
-    ) -> DataNodeUpdateDetails:
-        if data_node_update_uid in (None, ""):
-            raise ValueError("DataNodeUpdate uid is required to patch update details.")
+    ) -> TimeIndexTableUpdateDetails:
+        if table_update_uid in (None, ""):
+            raise ValueError("TimeIndexTableUpdate uid is required to patch update details.")
 
         payload = {"json": serialize_to_json(kwargs)}
         r = make_request(
             s=cls.build_session(),
             loaders=cls.LOADERS,
             r_type="PATCH",
-            url=f"{cls.get_object_url()}/{data_node_update_uid}/",
+            url=f"{cls.get_object_url()}/{table_update_uid}/",
             payload=payload,
             time_out=timeout,
         )
@@ -3249,7 +3262,7 @@ class TimeIndexMetaTable(MetaTable):
     }
     build_configuration_json_schema: dict[str, Any] | None = Field(
         None,
-        description="JSON schema describing the DataNode update build configuration.",
+        description="JSON schema describing the TimeIndexTableUpdater update build configuration.",
     )
     source_class_name: str | None = None
     cadence: str | None = Field(
@@ -3683,12 +3696,10 @@ class TimeIndexMetaTable(MetaTable):
         index_coordinates: list[dict[str, Any]] | None = None,
         dimension_range_map: list[dict[str, Any]] | None = None,
         columns: list = None,
-        node_identifier: str | None = None,
-    ) -> pd.DataFrame:
+        table_update_uid: str | None = None,
+    ) -> pd.DataFrame | tuple[pd.DataFrame, TimeIndexMetaTable | None]:
         """Internal shared implementation for fetching data between dates."""
-        return_storage_node = False
-        if "get-data-between-dates-from-node-identifier" in url:
-            return_storage_node = True
+        return_output_table = table_update_uid is not None
 
         def fetch_one_batch(chunk_dimension_range_map):
             all_results_chunk = []
@@ -3710,8 +3721,8 @@ class TimeIndexMetaTable(MetaTable):
                 if chunk_dimension_range_map is not None:
                     payload_json["dimension_range_map"] = chunk_dimension_range_map
 
-                if node_identifier is not None:
-                    payload_json["node_identifier"] = node_identifier
+                if table_update_uid is not None:
+                    payload_json["table_update_uid"] = str(table_update_uid)
 
                 payload = {"json": payload_json}
 
@@ -3758,13 +3769,10 @@ class TimeIndexMetaTable(MetaTable):
             # If dimension_range_map is None, do a single batch with offset-based pagination.
             chunk_results, response_data = fetch_one_batch(None)
             all_results.extend(chunk_results)
-        if not return_storage_node:
+        if not return_output_table:
             return pd.DataFrame(all_results)
-        else:
-            storage_node = (
-                cls(**response_data["storage_node"]) if response_data is not None else None
-            )
-            return pd.DataFrame(all_results), storage_node
+        output_table = cls(**response_data["output_table"]) if response_data is not None else None
+        return pd.DataFrame(all_results), output_table
 
     def get_data_between_dates_from_api(
         self,
@@ -3795,13 +3803,13 @@ class TimeIndexMetaTable(MetaTable):
             index_coordinates=dimension_payload.get("index_coordinates"),
             dimension_range_map=dimension_payload.get("dimension_range_map"),
             columns=columns,
-            node_identifier=None,
+            table_update_uid=None,
         )
 
     @classmethod
-    def get_data_between_dates_from_node_identifier(
+    def get_data_between_dates_from_table_update(
         cls,
-        node_identifier: str,
+        table_update_uid: str,
         start_date: datetime.datetime = None,
         end_date: datetime.datetime = None,
         great_or_equal: bool = None,
@@ -3810,12 +3818,15 @@ class TimeIndexMetaTable(MetaTable):
         index_coordinates: list[dict[str, Any]] | None = None,
         dimension_range_map: list[dict[str, Any]] | None = None,
         columns: list = None,
-    ) -> [pd.DataFrame, TimeIndexMetaTable]:
+    ) -> tuple[pd.DataFrame, TimeIndexMetaTable | None]:
         """
-        Same behaviour as get_data_between_dates_from_api,
-        but calls the node-identifier endpoint and includes node_identifier in payload.
+        Fetch rows from the output table of one canonical table-update UID.
         """
-        url = cls.get_object_url() + "/get-data-between-dates-from-node-identifier/"
+        if table_update_uid in (None, ""):
+            raise ValueError(
+                "get_data_between_dates_from_table_update requires a TimeIndexTableUpdate uid."
+            )
+        url = cls.get_object_url() + "/get-data-between-dates-from-table-update/"
         dimension_range_map = cls._normalize_dimension_range_map(dimension_range_map)
 
         return cls._get_data_between_dates_common(
@@ -3828,7 +3839,7 @@ class TimeIndexMetaTable(MetaTable):
             index_coordinates=index_coordinates,
             dimension_range_map=dimension_range_map,
             columns=columns,
-            node_identifier=node_identifier,
+            table_update_uid=table_update_uid,
         )
 
 
@@ -3862,7 +3873,7 @@ class Scheduler(BasePydanticModel, BaseObjectOrm):
 
     @classmethod
     def get_scheduler_for_update_node(cls, update_node_uid: str):
-        """GET the scheduler assigned to a DataNodeUpdate uid."""
+        """GET the scheduler assigned to a TimeIndexTableUpdate uid."""
         if update_node_uid in (None, ""):
             raise ValueError("update_node_uid is required.")
         s = cls.build_session()
@@ -4015,9 +4026,9 @@ class Scheduler(BasePydanticModel, BaseObjectOrm):
         logger.info("Heartbeat thread stopped.")
 
 
-class RunConfiguration(BasePydanticModel, BaseObjectOrm):
+class TimeIndexTableUpdateConfiguration(BasePydanticModel, BaseObjectOrm):
     update_schedule: str = "*/1 * * * *"
-    local_time_serie_update_details: int | None = None
+    table_update_details_uid: str | None = None
 
     @classmethod
     @property
@@ -4035,7 +4046,7 @@ class BaseUpdateStatistics(BaseModel):
 
 class UpdateStatistics(BaseUpdateStatistics):
     """
-    Time-series-specific update statistics used by DataNode updaters.
+    Time-index-table progress statistics used by ``TimeIndexTableUpdater``.
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid")
@@ -4047,7 +4058,7 @@ class UpdateStatistics(BaseUpdateStatistics):
     max_time_index_value: datetime.datetime | None = (
         None  # does not include filter applicable for 1d index
     )
-    limit_update_time: datetime.datetime | None = None  # flag to limit the update of data node
+    limit_update_time: datetime.datetime | None = None  # Optional updater time limit.
 
     _max_time_in_update_statistics: datetime.datetime | None = None  # include filter
     _initial_fallback_date: datetime.datetime | None = None
@@ -4554,7 +4565,7 @@ class UpdateStatistics(BaseUpdateStatistics):
         time_level = names[0]
         identity_levels = [n for n in names if n != time_level]
 
-        # Single-index time series fallback
+        # Single-index time-index table fallback.
         if not identity_levels:
             if self.max_time_index_value is not None:
                 df = df[df.index > self.max_time_index_value]
@@ -4821,8 +4832,8 @@ def build_last_update_index_time_payload(
     return LastUpdateIndexTimePayload.model_validate(normalized_payload).to_nested_payload()
 
 
-class HistoricalUpdateRecord:
-    uid: str | None = Field(None, description="Public uid of this historical update")
+class _TableUpdateRunFields:
+    uid: str | None = Field(None, description="Public uid of this table update run")
     update_time_start: datetime.datetime
     update_time_end: datetime.datetime | None = None
     error_on_update: bool = False
@@ -4836,9 +4847,9 @@ class HistoricalUpdateRecord:
     direct_dependency_uids: list[str] | None = None
 
 
-class LocalTimeSeriesHistoricalUpdate(HistoricalUpdateRecord, BasePydanticModel, BaseObjectOrm):
-    related_table_uid: str | None = Field(
-        None, description="Public uid of the related DataNodeUpdate"
+class TableUpdateRun(_TableUpdateRunFields, BasePydanticModel, BaseObjectOrm):
+    table_update_uid: str | None = Field(
+        None, description="Public uid of the related TimeIndexTableUpdate"
     )
     last_time_index_value: datetime.datetime | None = None
 
@@ -4849,7 +4860,7 @@ class UpdateBatchResponse[UpdateT, UpdateDetailsT, TimeIndexedProfileT](BaseMode
     time_indexed_profile_map: dict[str, TimeIndexedProfileT | None]
     state_data: dict[str, UpdateDetailsT]
     all_index_stats: dict[str, Any]
-    data_node_updates: list[UpdateT]
+    table_updates: list[UpdateT]
 
 
 def _metatable_project_context_from_resolution(
@@ -4975,32 +4986,32 @@ class PodDataSource:
             raise ValueError("set_local_db requires a persisted local DataSource with a uid.")
 
         # drop local tables that are not in registered in the backend anymore (probably have been deleted)
-        remote_node_storages = TimeIndexMetaTable.filter(
+        registered_tables = TimeIndexMetaTable.filter(
             data_source__uid=data_source.uid,
             list_tables=True,
         )
-        remote_table_names = [
-            t.physical_table_name for t in remote_node_storages if t.physical_table_name
+        registered_table_names = [
+            table.physical_table_name for table in registered_tables if table.physical_table_name
         ]
         db_interface = _local_data_interface(class_type)
         local_table_names = db_interface.list_tables()
 
-        tables_to_delete_locally = set(local_table_names) - set(remote_table_names)
+        tables_to_delete_locally = set(local_table_names) - set(registered_table_names)
         for table_name in tables_to_delete_locally:
             logger.debug(f"Deleting table in local {class_type} db {table_name}")
             db_interface.drop_table(table_name)
 
-        tables_to_delete_remotely = set(remote_table_names) - set(local_table_names)
-        for remote_table in remote_node_storages:
-            remote_physical_table_name = getattr(remote_table, "physical_table_name", None)
-            if not remote_physical_table_name:
+        missing_local_table_names = set(registered_table_names) - set(local_table_names)
+        for registered_table in registered_tables:
+            physical_table_name = getattr(registered_table, "physical_table_name", None)
+            if not physical_table_name:
                 continue
-            if remote_physical_table_name in tables_to_delete_remotely:
-                logger.debug(f"Deleting table remotely {remote_physical_table_name}")
-                if remote_table.protect_from_deletion:
-                    remote_table.patch(protect_from_deletion=False)
+            if physical_table_name in missing_local_table_names:
+                logger.debug(f"Deleting registered table {physical_table_name}")
+                if registered_table.protect_from_deletion:
+                    registered_table.patch(protect_from_deletion=False)
 
-                remote_table.delete()
+                registered_table.delete()
 
         self.data_source = data_source
         self._project_context_process_id = None
@@ -5048,9 +5059,9 @@ def get_session_data_source() -> DataSource:
     return data_source
 
 
-DataNodeUpdateDetails.model_rebuild()
-DataNodeUpdate.model_rebuild()
-RunConfiguration.model_rebuild()
+TimeIndexTableUpdateDetails.model_rebuild()
+TimeIndexTableUpdate.model_rebuild()
+TimeIndexTableUpdateConfiguration.model_rebuild()
 TimeIndexedProfile.model_rebuild()
 TimeIndexMetaTable.model_rebuild()
 DataSource.model_rebuild()
@@ -5067,15 +5078,14 @@ __all__ = [
     "BaseColumnMetaData",
     "BaseUpdateStatistics",
     "ColumnMetaData",
-    "DataNodeUpdate",
-    "DataNodeUpdateDetails",
+    "TimeIndexTableUpdate",
+    "TimeIndexTableUpdateDetails",
     "DataSource",
     "DUCK_DB",
-    "HistoricalUpdateRecord",
     "LastUpdateIndexTimePayload",
     "LastUpdateMultiIndexStatsPayload",
     "LOCAL_DATA_SOURCE_CLASS_TYPES",
-    "LocalTimeSeriesHistoricalUpdate",
+    "TableUpdateRun",
     "ManagedMetaTableFinalizeRequest",
     "ManagedMetaTableFinalizeResponse",
     "ManagedMetaTableFinalizeTableResult",
@@ -5084,7 +5094,7 @@ __all__ = [
     "MetaTable",
     "MetaTableCascadeDeleteRequest",
     "MetaTableCascadeDeleteResponse",
-    "MetaTableCascadeDeletedDynamicTable",
+    "MetaTableCascadeDeletedTimeIndexMetaTable",
     "MetaTableCascadeDeletedMetaTable",
     "MetaTableMigrationConnection",
     "MetaTableMigrationConnectionRequest",
@@ -5110,7 +5120,7 @@ __all__ = [
     "MetaTableStatementPayload",
     "MetaTableValidateContractRequest",
     "PodDataSource",
-    "RunConfiguration",
+    "TimeIndexTableUpdateConfiguration",
     "Scheduler",
     "SchedulerDoesNotExist",
     "SessionDataSource",

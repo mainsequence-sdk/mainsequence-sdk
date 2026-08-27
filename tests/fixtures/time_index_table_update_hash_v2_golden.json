@@ -1,0 +1,141 @@
+{
+  "fixture_version": 1,
+  "configuration_schema_version": 2,
+  "purpose": "Offline backend migration input/output fixtures; these legacy inputs are never accepted by SDK runtime code.",
+  "cases": [
+    {
+      "name": "class_path_and_scalar_config",
+      "updater_class_name": "PricesNode",
+      "legacy_configuration": {
+        "config": {
+          "market": "XNYS",
+          "shard": "A"
+        },
+        "time_series_class_import_path": {
+          "module": "pipelines.prices",
+          "qualname": "PricesNode"
+        }
+      },
+      "offline_resolution": {},
+      "canonical_configuration": {
+        "config": {
+          "market": "XNYS",
+          "shard": "A"
+        },
+        "configuration_schema_version": 2,
+        "table_updater_class_import_path": {
+          "module": "pipelines.prices",
+          "qualname": "PricesNode"
+        }
+      },
+      "expected_update_hash": "pricesnode_ee3e5b3b908d664ce0e85675b77f45cc"
+    },
+    {
+      "name": "executable_update_dependency",
+      "updater_class_name": "ReturnsUpdater",
+      "legacy_configuration": {
+        "config": {
+          "prices": {
+            "is_time_serie_instance": true,
+            "update_hash": "pricesnode_0123456789abcdef0123456789abcdef",
+            "data_source_uid": "11111111-1111-4111-8111-111111111111"
+          }
+        },
+        "time_series_class_import_path": {
+          "module": "pipelines.returns",
+          "qualname": "ReturnsUpdater"
+        }
+      },
+      "offline_resolution": {
+        "table_update_output_table_uids": {
+          "pricesnode_0123456789abcdef0123456789abcdef": "22222222-2222-4222-8222-222222222222"
+        }
+      },
+      "canonical_configuration": {
+        "config": {
+          "prices": {
+            "kind": "table_update",
+            "update_hash": "pricesnode_0123456789abcdef0123456789abcdef",
+            "output_table_uid": "22222222-2222-4222-8222-222222222222"
+          }
+        },
+        "configuration_schema_version": 2,
+        "table_updater_class_import_path": {
+          "module": "pipelines.returns",
+          "qualname": "ReturnsUpdater"
+        }
+      },
+      "expected_update_hash": "returnsupdater_799ae4c2c0cb88ddb4e480d95ad79523"
+    },
+    {
+      "name": "read_only_table_dependency",
+      "updater_class_name": "SignalsUpdater",
+      "legacy_configuration": {
+        "config": {
+          "prices": {
+            "is_api_time_serie_instance": true,
+            "update_hash": "API_prices",
+            "data_source_uid": "33333333-3333-4333-8333-333333333333"
+          }
+        },
+        "time_series_class_import_path": {
+          "module": "pipelines.signals",
+          "qualname": "SignalsUpdater"
+        }
+      },
+      "offline_resolution": {
+        "time_index_meta_table_uids": {
+          "33333333-3333-4333-8333-333333333333:API_prices": "44444444-4444-4444-8444-444444444444"
+        }
+      },
+      "canonical_configuration": {
+        "config": {
+          "prices": {
+            "kind": "time_index_table_ref",
+            "time_index_meta_table_uid": "44444444-4444-4444-8444-444444444444",
+            "data_source_uid": "33333333-3333-4333-8333-333333333333"
+          }
+        },
+        "configuration_schema_version": 2,
+        "table_updater_class_import_path": {
+          "module": "pipelines.signals",
+          "qualname": "SignalsUpdater"
+        }
+      },
+      "expected_update_hash": "signalsupdater_09891b022d5622571fc61d2cb17848a8"
+    },
+    {
+      "name": "nested_update_config_marker",
+      "updater_class_name": "NestedConfigUpdater",
+      "legacy_configuration": {
+        "config": {
+          "is_time_series_config": true,
+          "config_data": {
+            "is_time_series_config": true,
+            "scope": "desk-a"
+          }
+        },
+        "time_series_class_import_path": {
+          "module": "pipelines.nested",
+          "qualname": "NestedConfigUpdater"
+        }
+      },
+      "offline_resolution": {},
+      "canonical_configuration": {
+        "config": {
+          "is_time_index_table_update_config": true,
+          "config_data": {
+            "is_time_index_table_update_config": true,
+            "scope": "desk-a"
+          }
+        },
+        "configuration_schema_version": 2,
+        "table_updater_class_import_path": {
+          "module": "pipelines.nested",
+          "qualname": "NestedConfigUpdater"
+        }
+      },
+      "expected_update_hash": "nestedconfigupdater_3b66c63d64c992b0e1bc87a6d00add4c"
+    }
+  ]
+}

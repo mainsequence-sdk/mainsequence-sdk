@@ -6,28 +6,26 @@ import mainsequence.client as msc
 
 
 def test_create_project():
-
     ds = msc.DataSource.filter(status=msc.DataSource.STATUS_AVAILABLE)[0]
     img = msc.ProjectBaseImage.filter()[0]
     org = msc.GithubOrganization.filter()[0]
 
+    project = msc.Project.filter(id=124)
 
-    project=msc.Project.filter(id=124)
-
-    #todo:loop unitl is_initialized == True
+    # todo:loop unitl is_initialized == True
     project = msc.Project.create(
         project_name="demo-project-002",
-        data_source=ds,                 # <-- pydantic obj with .id
-        default_base_image=img,         # <-- pydantic obj with .id (or None)
-        github_org=org,                 # <-- pydantic obj with .id (or None)
+        data_source=ds,  # <-- pydantic obj with .id
+        default_base_image=img,  # <-- pydantic obj with .id (or None)
+        github_org=org,  # <-- pydantic obj with .id (or None)
         repository_branch="main",
         env_vars={"FOO": "bar"},
     )
     print(project)
 
 
-def test_project_data_nodes_updates():
-    project = msc.Project.filter()[0]
+def test_project_time_index_table_updates():
+    project_branch = msc.ProjectBranch.filter()[0]
 
     updates = []
     poll_interval_s = 2
@@ -35,19 +33,22 @@ def test_project_data_nodes_updates():
     deadline = time.time() + timeout_s
 
     while not updates and time.time() < deadline:
-        updates = project.get_data_nodes_updates()
+        updates = project_branch.get_time_index_table_updates()
         if not updates:
             remaining = max(0, int(deadline - time.time()))
             print(
-                f"No data node updates yet for project {project.id}. "
+                f"No time-index table updates yet for project branch {project_branch.uid}. "
                 f"Retrying in {poll_interval_s}s (remaining: {remaining}s)..."
             )
             time.sleep(poll_interval_s)
 
-    assert updates, f"No data node updates found for project {project.id} within {timeout_s}s."
+    assert updates, (
+        "No time-index table updates found for project branch "
+        f"{project_branch.uid} within {timeout_s}s."
+    )
 
-    for data_node_update in updates:
-        print(data_node_update)
+    for table_update in updates:
+        print(table_update)
 
 
 def test_project_image_filter():
@@ -56,7 +57,9 @@ def test_project_image_filter():
         pytest.skip("No project images available for filter test.")
 
     image = images[0]
-    project_id = image.related_project.id if hasattr(image.related_project, "id") else image.related_project
+    project_id = (
+        image.related_project.id if hasattr(image.related_project, "id") else image.related_project
+    )
     repo_hash = image.project_repo_hash
 
     filtered_by_project = msc.ProjectImage.filter(related_project__id__in=[project_id])
@@ -103,9 +106,7 @@ def test_project_resource_filter():
         assert any(item.id == resource.id for item in filtered_by_repo_commit)
 
     if resource.resource_type:
-        filtered_by_resource_type = msc.ProjectResource.filter(
-            resource_type=resource.resource_type
-        )
+        filtered_by_resource_type = msc.ProjectResource.filter(resource_type=resource.resource_type)
         assert any(item.id == resource.id for item in filtered_by_resource_type)
 
     with pytest.raises(ValueError):

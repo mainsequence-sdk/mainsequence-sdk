@@ -1,33 +1,38 @@
-# Data Nodes
+# Time-Index Table Updaters
 
-DataNodes are the core unit of data production in Main Sequence. A good DataNode is not just code that runs - it is a stable data product that other people, jobs, dashboards, and agents can trust.
+`TimeIndexTableUpdater` is the SDK authoring base for producing time-indexed
+tables. A good updater is stable producer behavior; its `TimeIndexMetaTable`
+output is the data product that other people, jobs, dashboards, and agents can
+trust.
 
 This guide translates the internal rules into practical, human-friendly guidance.
 
 ## 1) Start with the right mental model
 
-A DataNode has two separate objects:
+Keep the five public concepts separate:
 
-- a registered `PlatformTimeIndexMetaTable` storage class, backed by a MetaTable
-  UID, that owns the dataset contract
-- a DataNode update process, identified by `update_hash`, that writes into that
-  registered storage table
+- `TimeIndexTableUpdater`: executable Python update behavior
+- `TimeIndexTableUpdate`: the persisted backend update process
+- `TableUpdateRun`: one execution attempt
+- `TimeIndexTableRef`: a read-only upstream table dependency
+- `TimeIndexMetaTable`: storage identity and table contract
 
-This is what allows multiple update processes to write safely into the same
-dataset contract.
+The updater takes a registered `PlatformTimeIndexMetaTable` class as
+`output_table`. Different updater configurations may have distinct
+`update_hash` values while writing into the same table contract.
 
 !!! tip "Rule of thumb"
     If a change modifies what the dataset means, change or migrate the
     storage contract with Alembic. If a change only modifies how one job updates
     data, it should affect `update_hash`.
 
-Use Alembic from the first version of a DataNode storage table when value
+Use Alembic from the first version of an updater output table when value
 columns or other table contract fields are expected to evolve. The MetaTable
 binding remains catalog metadata; Alembic owns the physical schema migration.
 
 ## 2) Guiding principles
 
-1. A DataNode is a product.
+1. The output table is the product; a TimeIndexTableUpdater is its producer behavior.
 2. Incremental updates are the default.
 3. Deterministic behavior beats clever behavior.
 4. Metadata is required for production-quality tables.
@@ -45,7 +50,7 @@ Use these conventions consistently:
 
 - Class name: `PascalCase` (`DailyFxRatesECB`)
 - File name: `snake_case.py` (`daily_fx_rates_ecb.py`)
-- Config model: `<Something>Config` based on `DataNodeConfiguration`
+- Config model: `<Something>Config` based on `TimeIndexTableUpdateConfig`
 - Published identifier: lowercase `snake_case`, readable, and stable when possible (`fx_ecb_daily_rates`)
 - Dependency keys: short and descriptive (`"prices"`, `"rates"`, `"raw"`)
 
@@ -71,13 +76,13 @@ is the default meaning of the storage-table identifier.
 This is useful when you want a portable public handle like `daily_prices` while
 moving the actual storage implementation underneath it.
 
-If you want to inspect existing DataNode table identifiers from the CLI, run:
+If you want to inspect existing time-index table identifiers from the CLI, run:
 
 ```bash
-mainsequence data-node list
+mainsequence time-index-table list
 ```
 
-The `Identifier` column lists DataNode table identifiers exposed by `TimeIndexMetaTable`.
+The `Identifier` column lists table identifiers exposed by `TimeIndexMetaTable`.
 It does not list row-level identity dimension values.
 
 ### 3.2 Labels are organization metadata only
@@ -99,40 +104,40 @@ A simple and scalable pattern is:
 
 - one Pydantic config object for update-scope fields,
 - one registered `PlatformTimeIndexMetaTable` class for storage,
-- make the node constructor accept both `config` and `storage_table`,
+- make the updater constructor accept both `config` and `output_table`,
 - operational runtime knobs outside `__init__`.
 
 Preferred constructor shape:
 
 ```python
 from mainsequence.meta_tables import (
-    DataNode,
-    DataNodeConfiguration,
+    TimeIndexTableUpdater,
+    TimeIndexTableUpdateConfig,
     PlatformTimeIndexMetaTable,
 )
 
 
-class MyNodeConfig(DataNodeConfiguration):
+class MyUpdaterConfig(TimeIndexTableUpdateConfig):
     ...
 
 
-class MyNode(DataNode):
+class MyUpdater(TimeIndexTableUpdater):
     def __init__(
         self,
-        config: MyNodeConfig,
-        storage_table: type[PlatformTimeIndexMetaTable],
+        config: MyUpdaterConfig,
+        output_table: type[PlatformTimeIndexMetaTable],
     ):
         self.my_field = config.my_field
-        super().__init__(config=config, storage_table=storage_table)
+        super().__init__(config=config, output_table=output_table)
 ```
 
-`DataNode` is strict about this contract. New nodes should not rely on raw
+`TimeIndexTableUpdater` is strict about this contract. New updaters should not rely on raw
 constructor args being reflected back into hashed configuration automatically,
 and they should not create storage manually inside `update()`.
 
 The output storage table itself is not config. It remains the explicit
-`storage_table: type[PlatformTimeIndexMetaTable]` constructor argument. If a node
-needs to select another DataNode's storage model as a dependency, that
+`output_table: type[PlatformTimeIndexMetaTable]` constructor argument. If an updater
+needs to select another updater's output-table model as a dependency, that
 dependency storage reference is update-scope config because changing it changes
 the dependency graph. Type that field as `type[PlatformTimeIndexMetaTable]`.
 
@@ -166,7 +171,7 @@ interval.
 
 ### 4.2 Config fields affect `update_hash`
 
-Every `DataNodeConfiguration` field participates in `update_hash`. Declare a
+Every `TimeIndexTableUpdateConfig` field participates in `update_hash`. Declare a
 normal config field when a value changes output values, dependencies, source
 choice, or updater scope.
 
@@ -184,10 +189,10 @@ from typing import ClassVar
 
 from pydantic import Field
 
-from mainsequence.meta_tables import DataNodeConfiguration
+from mainsequence.meta_tables import TimeIndexTableUpdateConfig
 
 
-class PricesConfig(DataNodeConfiguration):
+class PricesConfig(TimeIndexTableUpdateConfig):
     shard_id: str = Field(
         ...,
         description="Stable updater partition for this price job.",
@@ -213,7 +218,7 @@ Examples:
 Keep them in env vars or runtime config read inside `update()`.
 
 Published table identity and schema belong on the registered storage class,
-not on `DataNodeConfiguration`.
+not on `TimeIndexTableUpdateConfig`.
 
 ## 5) Hashing rules in plain English
 
@@ -231,7 +236,7 @@ Example:
 
 ## 5.1) Hash namespaces: what they actually do
 
-`DataNode` also supports a separate testing and isolation mechanism called `hash_namespace`.
+`TimeIndexTableUpdater` also supports a separate testing and isolation mechanism called `hash_namespace`.
 
 This is not the same thing as table identity, row identity, or business meaning.
 It is an extra namespace added to hashing so you can safely isolate runs on a
@@ -257,30 +262,30 @@ The code resolves namespace in this order:
 
 If the namespace is empty, nothing changes and hashes behave exactly as they do in normal production-style runs.
 
-If the namespace is non-empty, `DataNode` injects `hash_namespace` into the
+If the namespace is non-empty, `TimeIndexTableUpdater` injects `hash_namespace` into the
 build configuration. That changes `update_hash`.
 
-Storage identity is not created by `DataNode`. If a test needs isolated
+Storage identity is not created by `TimeIndexTableUpdater`. If a test needs isolated
 storage, pass a separately registered `PlatformTimeIndexMetaTable` storage class.
 
 ### What happens during `run()`
 
-If a node has a non-empty namespace, `run()` re-activates that namespace around the full execution.
+If an updater has a non-empty namespace, `run()` re-activates that namespace around the full execution.
 
 That matters because dependencies created inside `dependencies()` will inherit the same namespace automatically during the run.
 
-So the isolation is not only for the top-level node. It propagates across the run tree.
+So the isolation is not only for the top-level updater. It propagates across the run tree.
 
 ### What to prefer
 
 For tests, prefer:
 
 ```python
-from mainsequence.meta_tables.data_nodes import hash_namespace
+from mainsequence.meta_tables.time_index_table_updates import hash_namespace
 
 with hash_namespace("pytest_case_123"):
-    node = MyNode(...)
-    node.run(debug_mode=True, force_update=True)
+    updater = MyUpdater(...)
+    updater.run(debug_mode=True, force_update=True)
 ```
 
 ### What not to use it for
@@ -383,9 +388,10 @@ Recommended rules:
 
 Do:
 
-- instantiate dependency nodes in `__init__`
+- instantiate executable updater dependencies in `__init__`
+- resolve read-only upstreams as `TimeIndexTableRef`
 - return them in `dependencies()`
-- put dependency storage-table selection in `DataNodeConfiguration`
+- put dependency storage-table selection in `TimeIndexTableUpdateConfig`
 - keep dependency graph deterministic
 
 Do not:
@@ -394,9 +400,29 @@ Do not:
 - pass dependency storage tables as ad hoc constructor arguments
 - make dependency construction depend on current time or hidden env state
 
+Use `TimeIndexTableRef` when an updater reads an existing table but must not
+schedule or execute its producer:
+
+```python
+from mainsequence.meta_tables import TimeIndexTableRef
+
+
+class ReturnsUpdater(TimeIndexTableUpdater):
+    def __init__(self, config, output_table):
+        self.prices = TimeIndexTableRef.from_uid(config.prices_table_uid)
+        super().__init__(config=config, output_table=output_table)
+
+    def dependencies(self):
+        return {"prices": self.prices}
+```
+
+The reference has read helpers and canonical table identity. It deliberately
+has no `run()`, `update()`, `update_hash`, scheduler state, or no-op execution
+methods.
+
 ## 9) Records, foreign keys, and metadata
 
-For production nodes, define the table contract on the registered
+For production updaters, define the table contract on the registered
 `PlatformTimeIndexMetaTable` SQLAlchemy model. Use Alembic for physical schema
 migrations.
 That is the source of truth for:
@@ -411,14 +437,14 @@ The description should explain the table's intention, row grain, and analytical
 use, not only list its columns. Column-level descriptions still belong in
 `mapped_column(info={"description": ...})`.
 
-`DataNodeConfiguration` no longer accepts table metadata or output records.
+`TimeIndexTableUpdateConfig` no longer accepts table metadata or output records.
 Stable output contracts are declared on the registered `PlatformTimeIndexMetaTable`
 storage model and exposed through the MetaTable time-indexed profile/contract.
 
-When a DataNode source table should reference another table, declare the
+When a TimeIndexTableUpdater source table should reference another table, declare the
 relationship on the `PlatformTimeIndexMetaTable` storage model with normal
 SQLAlchemy `ForeignKey(...)` metadata. Foreign keys are not part of
-`DataNodeConfiguration` and are not serialized into the platform-managed
+`TimeIndexTableUpdateConfig` and are not serialized into the platform-managed
 MetaTable registration contract. Alembic, SQLAlchemy, and the database own the
 physical FK DDL. Prefer project-prefixed table names when using explicit FK
 string targets so project tables do not collide in shared schemas.
@@ -434,7 +460,7 @@ Avoid logging secrets.
 
 ### 10.1) Searchability and semantic discovery
 
-Good metadata is not just for humans reading code. It also powers search and discovery across published data nodes.
+Good metadata is not just for humans reading code. It also powers search and discovery across published time-index tables.
 
 `TimeIndexMetaTable` exposes separate discovery and lookup paths:
 
@@ -444,7 +470,7 @@ Good metadata is not just for humans reading code. It also powers search and dis
 Use them differently:
 
 - `description_search(...)` is the default semantic discovery path for published
-  `DataNode` storage and `MetaTable` metadata:
+  `TimeIndexMetaTable` output tables and `MetaTable` metadata:
   - "close price"
   - "daily allocation weights"
   - "crypto funding rates"
@@ -493,13 +519,13 @@ results = msc.TimeIndexMetaTable.description_search(
 CLI equivalent:
 
 ```bash
-mainsequence data_node search "daily close price" --data-source-uid <DATA_SOURCE_UID>
+mainsequence time-index-table search "daily close price" --data-source-uid <DATA_SOURCE_UID>
 ```
 
 The CLI also exposes the ranking knobs:
 
 ```bash
-mainsequence data-node search "daily btc price table" \
+mainsequence time-index-table search "daily btc price table" \
   --trigram-k 200 \
   --embed-k 200 \
   --w-trgm 0.65 \
@@ -544,7 +570,7 @@ This search hits:
 
 Extra keyword arguments are passed through as normal DRF filters, which makes it useful when you want to constrain the search to a known area such as one data source or one identifier family.
 
-Use this when the user remembers a column name or schema fragment, but not the data node name.
+Use this when the user remembers a column name or schema fragment, but not the time-index table name.
 Do not use this as the default semantic dataset discovery path.
 
 Example:
@@ -561,7 +587,7 @@ results = msc.TimeIndexMetaTable.column_search(
 CLI equivalent:
 
 ```bash
-mainsequence data_node search "close" --mode column --data-source-uid <DATA_SOURCE_UID>
+mainsequence time-index-table search "close" --mode column --data-source-uid <DATA_SOURCE_UID>
 ```
 
 #### Refreshing the search index
@@ -570,33 +596,33 @@ mainsequence data_node search "close" --mode column --data-source-uid <DATA_SOUR
 
 This method:
 
-- joins the table's column definitions with the code used to generate the data node
+- joins the table's column definitions with the code used to generate the time-index table updater
 - builds one consolidated textual description
 - embeds that description into the vector representation used for semantic search
 
 It hits:
 
-- `POST /{data_node_storage_uid}/refresh-table-search-index/`
+- `POST /{time_index_table_uid}/refresh-table-search-index/`
 
 Use it when:
 
 - you improved `get_table_metadata()` or `get_column_metadata()`
 - you changed code comments or table-generation logic in a way that should improve discovery
-- search results feel stale compared with the current node implementation
+- search results feel stale compared with the current updater implementation
 
 Example:
 
 ```python
 import mainsequence.client as msc
 
-storage = msc.TimeIndexMetaTable.get(uid="<DATA_NODE_STORAGE_UID>")
+storage = msc.TimeIndexMetaTable.get(uid="<TIME_INDEX_META_TABLE_UID>")
 storage.refresh_table_search_index()
 ```
 
 CLI equivalent:
 
 ```bash
-mainsequence data-node refresh-search-index <DATA_NODE_STORAGE_UID>
+mainsequence time-index-table refresh-search-index <TIME_INDEX_META_TABLE_UID>
 ```
 
 #### Running Read-Only SQL Against A Time-Indexed Table
@@ -604,11 +630,11 @@ mainsequence data-node refresh-search-index <DATA_NODE_STORAGE_UID>
 `TimeIndexMetaTable.run_query(...)` executes a raw SQL query directly against one
 published time-indexed table.
 
-This is for inspection and diagnostics on the storage that already exists. It is not a substitute for building a reusable `DataNode` API contract.
+This is for inspection and diagnostics on the storage that already exists. It is not a substitute for building a reusable `TimeIndexTableUpdater` API contract.
 
 The SDK uses:
 
-- `POST /api/v1/time-index-meta-tables/{data_node_storage_uid}/run-query/`
+- `POST /api/v1/time-index-meta-tables/{time_index_table_uid}/run-query/`
 
 Request contract:
 
@@ -622,7 +648,7 @@ Example:
 ```python
 import mainsequence.client as msc
 
-storage = msc.TimeIndexMetaTable.get(uid="<DATA_NODE_STORAGE_UID>")
+storage = msc.TimeIndexMetaTable.get(uid="<TIME_INDEX_META_TABLE_UID>")
 result = storage.run_query("SELECT * FROM my_table LIMIT 100")
 ```
 
@@ -632,7 +658,7 @@ Expected success envelope:
 {
     "ok": True,
     "query_id": "abc123",
-    "meta_table_uid": "<DATA_NODE_STORAGE_UID>",
+    "meta_table_uid": "<TIME_INDEX_META_TABLE_UID>",
     "results": [
         {
             "column_a": "value",
@@ -651,8 +677,8 @@ The method returns the backend query envelope directly. If the backend rejects t
 CLI:
 
 ```bash
-mainsequence data-node run_query <DATA_NODE_STORAGE_UID> "SELECT 1 AS ok"
-mainsequence data-node run_query <DATA_NODE_STORAGE_UID> "SELECT * FROM my_table LIMIT 100"
+mainsequence time-index-table run_query <TIME_INDEX_META_TABLE_UID> "SELECT 1 AS ok"
+mainsequence time-index-table run_query <TIME_INDEX_META_TABLE_UID> "SELECT * FROM my_table LIMIT 100"
 ```
 
 #### Tail deleting rows after a cutoff
@@ -669,7 +695,7 @@ This is not arbitrary range deletion:
 
 The SDK uses:
 
-- `POST /api/v1/time-index-meta-tables/{data_node_storage_uid}/delete-after-date/`
+- `POST /api/v1/time-index-meta-tables/{time_index_table_uid}/delete-after-date/`
 
 Use this for rollback-style cleanup when a bad tail load or backfill needs to be removed.
 
@@ -678,7 +704,7 @@ For a normal table:
 ```python
 import mainsequence.client as msc
 
-storage = msc.TimeIndexMetaTable.get(uid="<DATA_NODE_STORAGE_UID>")
+storage = msc.TimeIndexMetaTable.get(uid="<TIME_INDEX_META_TABLE_UID>")
 result = storage.delete_after_date("2026-04-01T00:00:00Z")
 ```
 
@@ -719,7 +745,7 @@ The response contains the authoritative post-delete table state:
 ```python
 {
     "ok": True,
-    "meta_table_uid": "<DATA_NODE_STORAGE_UID>",
+    "meta_table_uid": "<TIME_INDEX_META_TABLE_UID>",
     "deleted_count": 123,
     "table_empty": False,
     "dimension_filters": {"unique_identifier": ["AAPL", "MSFT"]},
@@ -758,26 +784,30 @@ Keep test runs bounded:
 
 In real projects, keep these tests in the `tests/` folder, for example:
 
-- `tests/test_my_node.py`
+- `tests/test_my_updater.py`
 
 A practical pattern is to keep the production class unchanged, pass a narrow
-`offset_start` in the test config, and run the node inside a namespace:
+`offset_start` in the test config, and run the updater inside a namespace:
 
 ```python
-from mainsequence.meta_tables.data_nodes import hash_namespace
+from mainsequence.meta_tables.time_index_table_updates import hash_namespace
 
-from src.data_nodes.my_node import MyNode, MyNodeConfig, MyNodeStorage
+from src.time_index_table_updates.my_updater import (
+    MyOutputTable,
+    MyUpdater,
+    MyUpdaterConfig,
+)
 
 
-def test_my_node_smoke():
-    config = MyNodeConfig(
+def test_my_updater_smoke():
+    config = MyUpdaterConfig(
         ...,
         offset_start="2025-01-01T00:00:00+00:00",
     )
 
-    with hash_namespace("pytest_my_node_smoke"):
-        node = MyNode(config=config, storage_table=MyNodeStorage)
-        err, df = node.run(debug_mode=True, force_update=True)
+    with hash_namespace("pytest_my_updater_smoke"):
+        updater = MyUpdater(config=config, output_table=MyOutputTable)
+        err, df = updater.run(debug_mode=True, force_update=True)
 
     assert err is False
     assert df is not None
@@ -787,10 +817,10 @@ Why this pattern works well:
 
 - the namespace isolates update hashes from production-like update records
 - the registered storage table keeps the table contract explicit
-- the production node stays unchanged
+- the production updater stays unchanged
 - the narrower `config.offset_start` prevents large first-run backfills during tests
 
-If you already have older nodes that still use class-level `OFFSET_START`, that
+If an updater uses class-level `OFFSET_START`, that
 fallback remains supported, but config-driven `offset_start` is the preferred
 pattern for new code and new documentation.
 
@@ -829,12 +859,12 @@ When you are consuming a table that already exists in the platform, the first qu
 
 "Do I just want to read one known table, or do I need a more flexible query?"
 
-Start with `APIDataNode.build_from_identifier(...)` when you already know the published table identifier.
+Start with `TimeIndexTableRef.from_identifier(...)` when you already know the published table identifier.
 
 ```python
-from mainsequence.meta_tables import APIDataNode
+from mainsequence.meta_tables import TimeIndexTableRef
 
-prices = APIDataNode.build_from_identifier("simulated_prices_tutorial")
+prices = TimeIndexTableRef.from_identifier("simulated_prices_tutorial")
 
 df = prices.get_df_between_dates(
     start_date="2026-01-01",
@@ -843,7 +873,7 @@ df = prices.get_df_between_dates(
 )
 ```
 
-This helper resolves the table metadata for you and returns an `APIDataNode` that is ready for normal read methods.
+This helper resolves the table metadata for you and returns a `TimeIndexTableRef` that is ready for normal read methods.
 
 Use it when:
 
@@ -855,7 +885,7 @@ This is especially useful in dashboards, notebooks, and integration code where t
 
 ## 14) Quick pre-ship checklist
 
-Before shipping a DataNode, verify:
+Before shipping a TimeIndexTableUpdater, verify:
 
 - identifier is stable and globally meaningful,
 - config fields are correctly split across meaning/scope/runtime,

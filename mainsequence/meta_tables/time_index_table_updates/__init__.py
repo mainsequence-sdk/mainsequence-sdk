@@ -3,10 +3,10 @@ from __future__ import annotations
 from importlib import import_module
 
 _LAZY_IMPORTS = {
-    "BaseConfiguration": (".models", "BaseConfiguration"),
-    "APIDataNode": (".data_nodes", "APIDataNode"),
-    "DataNode": (".data_nodes", "DataNode"),
-    "DataNodeConfiguration": (".models", "DataNodeConfiguration"),
+    "BaseConfiguration": (".configuration", "BaseConfiguration"),
+    "TableDependency": (".dependencies", "TableDependency"),
+    "TimeIndexTableUpdater": (".updaters", "TimeIndexTableUpdater"),
+    "TimeIndexTableUpdateConfig": (".configuration", "TimeIndexTableUpdateConfig"),
     "hash_namespace": (".namespacing", "hash_namespace"),
 }
 

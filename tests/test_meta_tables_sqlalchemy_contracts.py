@@ -28,7 +28,9 @@ from mainsequence.meta_tables import (
     table_contract_from_sqlalchemy_model,
     time_indexed_registration_request_from_sqlalchemy_model,
 )
-from mainsequence.meta_tables.data_nodes.persist_managers import ensure_registered_storage_table
+from mainsequence.meta_tables.time_index_table_updates.managers import (
+    ensure_registered_output_table,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -1253,7 +1255,7 @@ def test_time_index_meta_table_registration_request_uses_dynamic_contract():
 
     request = AccountHoldings.build_registration_request(
         data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
-        description="Account holdings data node storage",
+        description="Account holdings time-index table",
     )
 
     assert isinstance(request, TimeIndexMetaTableRegistrationRequest)
@@ -1261,7 +1263,7 @@ def test_time_index_meta_table_registration_request_uses_dynamic_contract():
     assert _configured_storage_hash(AccountHoldings) != table.name
     assert request.identifier == "AccountHoldings"
     assert request.namespace == "example.assets"
-    assert request.description == "Account holdings data node storage"
+    assert request.description == "Account holdings time-index table"
     assert request.time_index_name == "time_index"
     assert request.table_contract["physical"]["table_name"] == table.name
     assert request.table_contract["authoring"]["time_indexed"]["index_names"] == [
@@ -1596,7 +1598,7 @@ def test_time_index_meta_table_bind_rejects_unflagged_generic_metatable():
         AccountHoldings._bind_meta_table(generic_meta_table)
 
 
-def test_ensure_registered_storage_table_rejects_unbound_storage(monkeypatch):
+def test_ensure_registered_output_table_rejects_unbound_storage(monkeypatch):
     columns = [
         FakeColumn("time_index", DateTime(timezone=True), nullable=False),
         FakeColumn("asset_uid", Uuid(), nullable=False),
@@ -1615,14 +1617,14 @@ def test_ensure_registered_storage_table_rejects_unbound_storage(monkeypatch):
     )
 
     with pytest.raises(ValueError) as exc_info:
-        ensure_registered_storage_table(AssetSnapshots, context="DataNode")
+        ensure_registered_output_table(AssetSnapshots, context="TimeIndexTableUpdater")
     message = str(exc_info.value)
     assert "not bound to backend TimeIndexMetaTable" in message
     assert "found no backend TimeIndexMetaTable catalog row" in message
     assert "example_assets__asset_snapshots" in message
 
 
-def test_ensure_registered_storage_table_uses_session_data_source_for_unbound_model(
+def test_ensure_registered_output_table_uses_session_data_source_for_unbound_model(
     monkeypatch,
 ):
     columns = [
@@ -1655,14 +1657,17 @@ def test_ensure_registered_storage_table_uses_session_data_source_for_unbound_mo
         classmethod(fake_filter_by_body),
     )
 
-    assert ensure_registered_storage_table(AssetSnapshots, context="DataNode") is AssetSnapshots
+    assert (
+        ensure_registered_output_table(AssetSnapshots, context="TimeIndexTableUpdater")
+        is AssetSnapshots
+    )
     assert AssetSnapshots.get_time_index_meta_table() is backend_metadata
     assert captured["data_source__uid"] == "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
     assert captured["physical_schema__in"] == ["public"]
     assert captured["physical_table_name__in"] == ["example_assets__asset_snapshots"]
 
 
-def test_ensure_registered_storage_table_binds_existing_time_index_meta_table(monkeypatch):
+def test_ensure_registered_output_table_binds_existing_time_index_meta_table(monkeypatch):
     columns = [
         FakeColumn("time_index", DateTime(timezone=True), nullable=False),
         FakeColumn("asset_uid", Uuid(), nullable=False),
@@ -1694,7 +1699,10 @@ def test_ensure_registered_storage_table_binds_existing_time_index_meta_table(mo
         classmethod(fake_filter_by_body),
     )
 
-    assert ensure_registered_storage_table(AssetSnapshots, context="DataNode") is AssetSnapshots
+    assert (
+        ensure_registered_output_table(AssetSnapshots, context="TimeIndexTableUpdater")
+        is AssetSnapshots
+    )
     assert AssetSnapshots.get_time_index_meta_table() is backend_metadata
     assert AssetSnapshots.get_meta_table_uid() == "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
     assert captured == {
@@ -1705,7 +1713,7 @@ def test_ensure_registered_storage_table_binds_existing_time_index_meta_table(mo
     }
 
 
-def test_ensure_registered_storage_table_rejects_data_source_mismatch(monkeypatch):
+def test_ensure_registered_output_table_rejects_data_source_mismatch(monkeypatch):
     columns = [
         FakeColumn("time_index", DateTime(timezone=True), nullable=False),
         FakeColumn("asset_uid", Uuid(), nullable=False),
@@ -1731,14 +1739,14 @@ def test_ensure_registered_storage_table_rejects_data_source_mismatch(monkeypatc
     )
 
     with pytest.raises(ValueError) as exc_info:
-        ensure_registered_storage_table(AssetSnapshots, context="DataNode")
+        ensure_registered_output_table(AssetSnapshots, context="TimeIndexTableUpdater")
     assert not called
     message = str(exc_info.value)
     assert "does not match current project/session default data-source UID" in message
     assert "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee" in message
 
 
-def test_ensure_registered_storage_table_reports_duplicate_matches(monkeypatch):
+def test_ensure_registered_output_table_reports_duplicate_matches(monkeypatch):
     columns = [
         FakeColumn("time_index", DateTime(timezone=True), nullable=False),
         FakeColumn("asset_uid", Uuid(), nullable=False),
@@ -1773,7 +1781,7 @@ def test_ensure_registered_storage_table_reports_duplicate_matches(monkeypatch):
     )
 
     with pytest.raises(ValueError) as exc_info:
-        ensure_registered_storage_table(AssetSnapshots, context="DataNode")
+        ensure_registered_output_table(AssetSnapshots, context="TimeIndexTableUpdater")
     message = str(exc_info.value)
     assert "found 2 matching backend TimeIndexMetaTable catalog rows" in message
     assert "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" in message

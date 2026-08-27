@@ -134,10 +134,9 @@ class BaseObjectOrm:
         # TDAG
         "Scheduler": "schedulers",
         "TimeIndexMetaTable": "time-index-meta-tables",
-        "LocalTimeSerieNodesMethods": "local-time-series",
-        "DataNodeUpdate": "local-time-series",
-        "DataNodeUpdateDetails": "local-time-series-update-details",
-        "LocalTimeSerieHistoricalUpdate": "local-time-series-historical-updates",
+        "TimeIndexTableUpdate": "time-index-table-updates",
+        "TimeIndexTableUpdateDetails": "time-index-table-update-details",
+        "TableUpdateRun": "table-update-runs",
         "DataSource": "data-sources",
         "Project": "projects",
         "ProjectBranch": "project-branches",

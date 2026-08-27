@@ -32,7 +32,7 @@ from .utils import (
 )
 
 if TYPE_CHECKING:
-    from .metatables import DataNodeUpdate
+    from .metatables import TimeIndexTableUpdate
 
 _default_data_source = None  # Module-level cache
 
@@ -584,19 +584,33 @@ class ProjectBranch(BasePydanticModel, BaseObjectOrm):
         raise_for_response(r)
         return r.json()
 
-    def get_data_nodes_updates(self, *, timeout: int | None = None) -> list[Any]:
-        from .metatables import DataNodeUpdate
+    def get_time_index_table_updates(self, *, timeout: int | None = None) -> list[Any]:
+        from .metatables import TimeIndexTableUpdate
 
-        payload = self._get_action("get-data-nodes-updates", timeout=timeout)
+        payload = self._get_action("get-time-index-table-updates", timeout=timeout)
         if isinstance(payload, list):
             raw_updates = payload
         elif isinstance(payload, dict):
-            raw_updates = payload.get("results") or payload.get("data_node_updates") or []
+            if "time_index_table_updates" in payload:
+                raw_updates = payload["time_index_table_updates"]
+            elif "results" in payload:
+                raw_updates = payload["results"]
+            else:
+                raise ValueError(
+                    "ProjectBranch time-index table update response requires "
+                    "time_index_table_updates or results."
+                )
         else:
             raise ValueError(
-                f"Unexpected response type for ProjectBranch data node updates: {type(payload)!r}"
+                "Unexpected response type for ProjectBranch time-index table updates: "
+                f"{type(payload)!r}"
             )
-        return [u if isinstance(u, DataNodeUpdate) else DataNodeUpdate(**u) for u in raw_updates]
+        if not isinstance(raw_updates, list):
+            raise ValueError("ProjectBranch time-index table updates must be a list.")
+        return [
+            update if isinstance(update, TimeIndexTableUpdate) else TimeIndexTableUpdate(**update)
+            for update in raw_updates
+        ]
 
     def __str__(self):
         return yaml.safe_dump(self.model_dump(), sort_keys=False, default_flow_style=False)
@@ -816,18 +830,18 @@ class TimeScaleDB(_DataSource):
     def insert_data_into_table(
         self,
         serialized_data_frame: pd.DataFrame,
-        data_node_update: DataNodeUpdate,
+        table_update: TimeIndexTableUpdate,
         overwrite: bool,
         time_index_name: str,
         index_names: list,
         grouped_dates: dict,
         column_dtypes_map: Mapping[str, Any] | None = None,
     ):
-        from .metatables import DataNodeUpdate
+        from .metatables import TimeIndexTableUpdate
 
-        DataNodeUpdate.post_data_frame_in_chunks(
+        TimeIndexTableUpdate.post_data_frame_in_chunks(
             serialized_data_frame=serialized_data_frame,
-            data_node_update=data_node_update,
+            table_update=table_update,
             data_source=self,
             index_names=index_names,
             time_index_name=time_index_name,
@@ -837,7 +851,7 @@ class TimeScaleDB(_DataSource):
 
     def get_data_by_time_index(
         self,
-        data_node_update: DataNodeUpdate,
+        table_update: TimeIndexTableUpdate,
         start_date: datetime.datetime | None = None,
         end_date: datetime.datetime | None = None,
         great_or_equal: bool = True,
@@ -847,7 +861,7 @@ class TimeScaleDB(_DataSource):
         index_coordinates: list[dict[str, Any]] | None = None,
         dimension_range_map: list[dict[str, Any]] | None = None,
     ) -> pd.DataFrame:
-        df = data_node_update.get_data_between_dates_from_api(
+        df = table_update.get_data_between_dates_from_api(
             start_date=start_date,
             end_date=end_date,
             great_or_equal=great_or_equal,
@@ -859,13 +873,11 @@ class TimeScaleDB(_DataSource):
         )
         if len(df) == 0:
             if logger:
-                logger.warning(
-                    f"No data returned from remote API for {data_node_update.update_hash}"
-                )
+                logger.warning(f"No data returned from remote API for {table_update.update_hash}")
             return df
 
         time_index_name, index_names, column_dtypes_map = (
-            data_node_update.data_node_storage._require_time_indexed_table_contract()
+            table_update.output_table._require_time_indexed_table_contract()
         )
         df[time_index_name] = token_to_pandas_series(
             df[time_index_name],

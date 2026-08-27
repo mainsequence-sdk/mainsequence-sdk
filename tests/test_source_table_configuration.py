@@ -9,7 +9,6 @@ from mainsequence.client import metatables as models_metatables
 def _source_config_payload():
     return {
         "time_index_meta_table_uid": "storage-uid-44",
-        "related_table_uid": "storage-uid-44",
         "time_index_name": "time_index",
         "index_names": ["time_index", "account_uid", "unique_identifier"],
         "column_dtypes_map": {

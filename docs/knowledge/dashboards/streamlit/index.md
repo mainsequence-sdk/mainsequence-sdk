@@ -6,7 +6,7 @@ The SDK no longer ships `mainsequence.dashboards.streamlit` scaffolding, theme h
 
 Use the SDK from Streamlit dashboards for platform work:
 
-- read data products with `APIDataNode` and structured filters
+- read data products with `TimeIndexTableRef` and structured filters
 - query assets, releases, constants, users, and other platform resources through `mainsequence.client`
 - deploy dashboards through the CLI `streamlit_dashboard` release flow
 

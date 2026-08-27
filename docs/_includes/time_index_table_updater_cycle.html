@@ -1,11 +1,11 @@
-<div id="datanode-process-diagram" style="width: 100%; font-family: inherit; color: inherit; box-sizing: border-box; background-color: transparent;">
+<div id="time-index-table-updater-process-diagram" style="width: 100%; font-family: inherit; color: inherit; box-sizing: border-box; background-color: transparent;">
     <style>
-        /* Scoped CSS for DataNode Diagram */
-        #datanode-process-diagram * {
+        /* Scoped CSS for TimeIndexTableUpdater Diagram */
+        #time-index-table-updater-process-diagram * {
             box-sizing: border-box;
         }
 
-        #datanode-process-diagram .dn-grid {
+        #time-index-table-updater-process-diagram .dn-grid {
             display: grid;
             /* Crucial Fix: auto-fit adapts to parent width.
                minmax(240px, 1fr) ensures columns never get smaller than 240px,
@@ -16,7 +16,7 @@
             width: 100%;
         }
 
-        #datanode-process-diagram .dn-card {
+        #time-index-table-updater-process-diagram .dn-card {
             background-color: rgba(255, 255, 255, 0.03);
             border: 1px solid rgba(255, 255, 255, 0.1);
             border-radius: 6px;
@@ -30,13 +30,13 @@
             min-width: 0;
         }
 
-        #datanode-process-diagram .dn-card:hover {
+        #time-index-table-updater-process-diagram .dn-card:hover {
             background-color: rgba(255, 255, 255, 0.06);
             border-color: rgba(255, 255, 255, 0.2);
         }
 
         /* Step Number */
-        #datanode-process-diagram .dn-step-num {
+        #time-index-table-updater-process-diagram .dn-step-num {
             font-size: 0.75rem;
             text-transform: uppercase;
             letter-spacing: 0.05em;
@@ -47,7 +47,7 @@
         }
 
         /* Method Name */
-        #datanode-process-diagram .dn-method {
+        #time-index-table-updater-process-diagram .dn-method {
             font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
             font-size: 0.85rem;
             font-weight: 600;
@@ -66,7 +66,7 @@
         }
 
         /* Description */
-        #datanode-process-diagram .dn-desc {
+        #time-index-table-updater-process-diagram .dn-desc {
             font-size: 0.85rem;
             line-height: 1.4;
             opacity: 0.8;
@@ -80,50 +80,50 @@
     <div class="dn-grid">
         <div class="dn-card">
             <div class="dn-step-num">01 &mdash; Init</div>
-            <div class="dn-method">StorageNode Check</div>
-            <p class="dn-desc">Ensure <code>StorageNode</code> exists.</p>
+            <div class="dn-method">Resolve output_table</div>
+            <p class="dn-desc">Require a registered <code>TimeIndexMetaTable</code> binding.</p>
         </div>
 
         <div class="dn-card">
             <div class="dn-step-num">02 &mdash; Init</div>
-            <div class="dn-method">NodeUpdate Check</div>
-            <p class="dn-desc">Ensure <code>NodeUpdate</code> process exists.</p>
+            <div class="dn-method">Ensure TimeIndexTableUpdate</div>
+            <p class="dn-desc">Resolve or create the persisted update process.</p>
         </div>
 
         <div class="dn-card">
-            <div class="dn-step-num">03 &mdash; Sync</div>
-            <div class="dn-method">Sync DataNode</div>
-            <p class="dn-desc">Pull data from storage. Populate <code>update_statistics</code>.</p>
+            <div class="dn-step-num">03 &mdash; Graph</div>
+            <div class="dn-method">set_relation_tree()</div>
+            <p class="dn-desc">Link updater dependencies and read-only table lineage.</p>
         </div>
 
         <div class="dn-card">
-            <div class="dn-step-num">04 &mdash; Prep</div>
-            <div class="dn-method">Prepare Identity Scope</div>
-            <p class="dn-desc">Set any dimension-specific update scope before execution.</p>
+            <div class="dn-step-num">04 &mdash; Start</div>
+            <div class="dn-method">set_start_of_execution()</div>
+            <p class="dn-desc">Create a <code>TableUpdateRun</code> and load update statistics.</p>
         </div>
 
         <div class="dn-card">
-            <div class="dn-step-num">05 &mdash; Execute</div>
+            <div class="dn-step-num">05 &mdash; Dependencies</div>
+            <div class="dn-method">Update Executable Dependencies</div>
+            <p class="dn-desc">Run upstream updaters; never execute <code>TimeIndexTableRef</code>.</p>
+        </div>
+
+        <div class="dn-card">
+            <div class="dn-step-num">06 &mdash; Execute</div>
             <div class="dn-method">update()</div>
-            <p class="dn-desc">Run the primary update logic.</p>
+            <p class="dn-desc">Build the incremental DataFrame for this updater.</p>
         </div>
 
         <div class="dn-card">
-            <div class="dn-step-num">06 &mdash; Save</div>
-            <div class="dn-method">Persist Data</div>
-            <p class="dn-desc">Write results to <code>StorageNode</code>.</p>
+            <div class="dn-step-num">07 &mdash; Persist</div>
+            <div class="dn-method">Validate And Persist</div>
+            <p class="dn-desc">Check the table contract and write rows to <code>output_table</code>.</p>
         </div>
 
         <div class="dn-card">
-            <div class="dn-step-num">07 &mdash; Meta</div>
-            <div class="dn-method">get_column_metadata()</div>
-            <p class="dn-desc">Update column definitions.</p>
-        </div>
-
-        <div class="dn-card">
-            <div class="dn-step-num">08 &mdash; Meta</div>
-            <div class="dn-method">get_table_metadata()</div>
-            <p class="dn-desc">Update table definitions.</p>
+            <div class="dn-step-num">08 &mdash; Finish</div>
+            <div class="dn-method">set_end_of_execution()</div>
+            <p class="dn-desc">Finalize the <code>TableUpdateRun</code> success or error state.</p>
         </div>
 
         <div class="dn-card">

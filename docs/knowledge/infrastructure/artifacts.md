@@ -2,7 +2,10 @@
 
 Part 4 of the tutorial introduces jobs, schedules, and project images. This page explains another infrastructure concept that often appears right after that: **Artifacts**.
 
-An `Artifact` is the platform's file-storage primitive. If a `DataNode` is how you publish structured tables, an `Artifact` is how you store and retrieve files such as spreadsheets, CSV drops, reports, model binaries, or other payloads that do not naturally start as a table.
+An `Artifact` is the platform's file-storage primitive. A `TimeIndexTableUpdater`
+can produce a structured `TimeIndexMetaTable`; an `Artifact` stores and retrieves
+files such as spreadsheets, CSV drops, reports, model binaries, or other payloads
+that do not naturally start as a table.
 
 ## Quick Summary
 
@@ -10,7 +13,7 @@ In this guide, you will:
 
 - understand what an `Artifact` is and when to use it
 - upload files into platform buckets from the Python client
-- retrieve those files later from jobs, `DataNode`s, or dashboards
+- retrieve those files later from jobs, `TimeIndexTableUpdater`s, or dashboards
 - avoid common mistakes around duplicate uploads and fragile local paths
 
 ## Mental model
@@ -42,19 +45,24 @@ Common examples:
 - a vendor drops daily `.csv` or `.xls` files into a folder
 - a job produces a PDF, HTML report, or model pickle
 - a workflow needs a manually curated spreadsheet as input
-- a downstream `DataNode` needs to normalize a raw file before publishing a clean table
+- a downstream `TimeIndexTableUpdater` needs to normalize a raw file before publishing a clean table
 
-## When a DataNode is the better tool
+## When a published time-index table is the better tool
 
-Use a `DataNode` once the data should become a stable, queryable dataset with a schema, metadata, and incremental updates.
+Use a `TimeIndexTableUpdater` to produce a registered time-index table once the
+data should become a stable, queryable dataset with a schema, metadata, and
+incremental updates.
 
 That distinction matters:
 
 - Artifact: raw file or binary payload
-- `DataNode`: structured table meant for downstream reading
+- `TimeIndexMetaTable`: structured table meant for downstream reading
+- `TimeIndexTableUpdater`: executable behavior that maintains that table
 
 !!! tip "A practical rule"
-    If downstream users want to read rows and columns, you usually want a `DataNode`. If they need the original file, you usually want an `Artifact`.
+    If downstream users want to read rows and columns, you usually want a
+    published time-index table. If they need the original file, you usually want
+    an `Artifact`.
 
 ## Basic lifecycle
 
@@ -62,8 +70,8 @@ Most Artifact workflows follow the same path:
 
 1. Upload a file into a named bucket.
 2. Retrieve it later by `bucket` and `name`.
-3. Parse it inside a job, `DataNode`, or dashboard.
-4. If the content becomes part of your analytical layer, normalize it into a `DataNode`.
+3. Parse it inside a job, `TimeIndexTableUpdater`, or dashboard.
+4. If the content becomes part of your analytical layer, use a `TimeIndexTableUpdater` to normalize it into a registered output table.
 
 ## Uploading files
 
@@ -148,7 +156,7 @@ vector_df = pd.read_excel(source_artifact.content)
 
 That is the important shift: the file is now referenced through the platform, not through a laptop folder.
 
-## Reading Artifacts inside a DataNode
+## Reading Artifacts inside a TimeIndexTableUpdater
 
 This is a common pattern when an upstream system gives you files, but your downstream platform users need a proper table.
 
@@ -157,26 +165,26 @@ import pandas as pd
 
 from mainsequence.client import Artifact
 from mainsequence.meta_tables import (
-    DataNode,
-    DataNodeConfiguration,
+    TimeIndexTableUpdater,
+    TimeIndexTableUpdateConfig,
     PlatformTimeIndexMetaTable,
 )
 
 
-class ExternalPricesConfig(DataNodeConfiguration):
+class ExternalPricesConfig(TimeIndexTableUpdateConfig):
     artifact_name: str
     bucket_name: str
 
 
-class ExternalPrices(DataNode):
+class ExternalPrices(TimeIndexTableUpdater):
     def __init__(
         self,
         config: ExternalPricesConfig,
-        storage_table: type[PlatformTimeIndexMetaTable],
+        output_table: type[PlatformTimeIndexMetaTable],
     ):
         self.artifact_name = config.artifact_name
         self.bucket_name = config.bucket_name
-        super().__init__(config=config, storage_table=storage_table)
+        super().__init__(config=config, output_table=output_table)
 
     def update(self):
         source_artifact = Artifact.get(
@@ -191,7 +199,7 @@ Use Alembic for storage schema migrations. The SDK storage class can remain a
 normal `PlatformTimeIndexMetaTable`; migration execution is handled by Alembic
 SQL, not an SDK schema-migration subclass.
 
-This is one of the cleanest ways to bridge external operational files into the `DataNode` layer.
+This is one of the cleanest ways to bridge external operational files into the `TimeIndexTableUpdater` layer.
 
 ## How Artifacts fit with jobs
 
@@ -199,7 +207,7 @@ Artifacts and jobs work naturally together:
 
 - a manual job can upload a new vendor file drop
 - a scheduled job can refresh the bucket every day
-- a downstream `DataNode` can read the Artifact and publish a normalized table
+- a downstream `TimeIndexTableUpdater` can read the Artifact and publish a normalized table
 - a dashboard can read a generated report Artifact
 
 This is why Artifacts belong in the infrastructure layer of the docs. They are not just a client convenience; they are part of how files move through the platform.
@@ -243,9 +251,10 @@ Use a stable producer label so you can see what created the file:
 
 That works only on one machine. The Artifact reference is the durable identity.
 
-### Using Artifacts for data that should really be a DataNode
+### Using Artifacts for data that should really be a published table
 
-Artifacts are good raw inputs and outputs. They are not a replacement for structured tables.
+Artifacts are good raw inputs and outputs. They are not a replacement for
+structured tables or the updater behavior that maintains them.
 
 ### Forgetting that `upload_file()` already uses get-or-create
 
@@ -259,7 +268,7 @@ If you use `Artifact.filter(...)` first, add `continue` when you want to skip.
 
 Artifacts usually become relevant when infrastructure concepts start to matter:
 
-- first you build `DataNode`s
+- first you build `TimeIndexTableUpdater`s
 - then you learn how code runs as jobs
 - then you learn how files can move through the same platform
 
@@ -268,4 +277,4 @@ That keeps file movement aligned with the same Job and consumer lifecycle.
 ## Related Reading
 
 - [Scheduling Jobs](./scheduling_jobs.md)
-- [Data Nodes](../data_nodes.md)
+- [Time-Index Table Updaters](../time_index_table_updates.md)

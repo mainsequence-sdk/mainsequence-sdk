@@ -31,14 +31,15 @@ def build_meta_table_storage_hash(
     max_length: int = POSTGRES_IDENTIFIER_MAX_LENGTH,
 ) -> str:
     """
-    Build a PostgreSQL-safe MetaTable storage hash using the DataNode hash path.
+    Build a PostgreSQL-safe MetaTable storage hash using the TimeIndexTableUpdater hash path.
 
     The table name prefix keeps the identifier readable while the hash suffix is
-    produced by ``mainsequence.meta_tables.data_nodes.build_operations.create_config``.
+    produced by
+    ``mainsequence.meta_tables.time_index_table_updates.configuration.create_config``.
     """
 
     if max_length <= _HASH_SUFFIX_LENGTH:
-        raise ValueError("max_length must leave room for the DataNode hash suffix.")
+        raise ValueError("max_length must leave room for the TimeIndexTableUpdater hash suffix.")
 
     namespace = namespace.strip()
     identifier = identifier.strip()
@@ -64,7 +65,7 @@ def build_meta_table_storage_hash(
     if extra_hash_components:
         hash_payload.update(dict(extra_hash_components))
 
-    storage_hash = _build_storage_hash_with_data_node_machinery(
+    storage_hash = _build_storage_hash_with_table_update_configuration(
         prefix=prefix,
         hash_payload=hash_payload,
     )
@@ -93,7 +94,7 @@ def build_meta_table_configured_storage_hash(
     """
 
     if max_length <= _HASH_SUFFIX_LENGTH:
-        raise ValueError("max_length must leave room for the DataNode hash suffix.")
+        raise ValueError("max_length must leave room for the TimeIndexTableUpdater hash suffix.")
 
     namespace = namespace.strip()
     schema = schema.strip()
@@ -116,7 +117,7 @@ def build_meta_table_configured_storage_hash(
     if extra_hash_components:
         hash_payload.update(dict(extra_hash_components))
 
-    storage_hash = _build_storage_hash_with_data_node_machinery(
+    storage_hash = _build_storage_hash_with_table_update_configuration(
         prefix=prefix,
         hash_payload=hash_payload,
     )
@@ -127,19 +128,21 @@ def build_meta_table_configured_storage_hash(
     return storage_hash
 
 
-def _build_storage_hash_with_data_node_machinery(
+def _build_storage_hash_with_table_update_configuration(
     *,
     prefix: str,
     hash_payload: Mapping[str, Any],
 ) -> str:
     try:
-        from mainsequence.meta_tables.data_nodes.build_operations import create_config
+        from mainsequence.meta_tables.time_index_table_updates.configuration import (
+            create_config,
+        )
     except (AssertionError, ImportError):
         return _build_storage_hash_without_tdag_config(prefix=prefix, hash_payload=hash_payload)
 
     try:
         config = create_config(
-            ts_class_name="MetaTable",
+            updater_class_name="MetaTable",
             kwargs=dict(hash_payload),
             storage_hash_prefix=prefix,
         )

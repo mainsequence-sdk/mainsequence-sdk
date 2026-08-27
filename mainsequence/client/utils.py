@@ -664,7 +664,7 @@ session = build_session(loaders=loaders)
 
 
 def get_constants_tdag():
-    url = f"{MAINSEQUENCE_ENDPOINT}/api/v1/data-node-constants/"
+    url = f"{MAINSEQUENCE_ENDPOINT}/api/v1/time-index-table-update-constants/"
     r = make_request(s=session, loaders=loaders, r_type="GET", url=url)
     return r.json()
 

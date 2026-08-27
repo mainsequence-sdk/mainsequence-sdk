@@ -43,9 +43,9 @@ SDK gaps addressed by this implementation:
 - Alembic collection-create stripped schema from `table_contract.physical`.
 - Alembic prepare mapped rows by table name only.
 - Alembic finalize used table-name fallback before authoritative UID matching.
-- `DataNode` storage lookup filtered only by `physical_table_name__in`.
-- `APIDataNode.build_from_table_name(...)` is ambiguous because table name alone
-  cannot identify storage.
+- Updater output-table lookup filtered only by `physical_table_name__in`.
+- Table-name-only reference lookup was ambiguous because table name alone cannot
+  identify storage, so that factory has been removed.
 
 Backend gap:
 
@@ -161,7 +161,7 @@ Implemented SDK change set:
 - Stop stripping schema from Alembic `table_contract.physical`.
 - Send both top-level `physical_schema` and `table_contract.physical.schema`
   when the backend supports the top-level field.
-- Change Alembic prepare lookup and DataNode storage lookup to query and match
+- Change Alembic prepare lookup and updater output-table lookup to query and match
   by `(physical_schema, physical_table_name)`, scoped by data source where
   available.
 - Replace tests that assert `physical_table_name__in` alone with schema-aware
@@ -305,14 +305,13 @@ Implemented SDK change set:
    - Include schema in finalize failure messages.
    - Include schema in `_metatable_from_finalize_result(...)`.
 
-9. DataNode and APIDataNode lookup.
+9. TimeIndexTableUpdater and TimeIndexTableRef lookup.
 
    - Update registered storage lookup diagnostics to include schema.
    - Use full physical identity once backend schema filters exist.
-   - Add `APIDataNode.build_from_physical_identity(schema, table_name, ...)`.
-   - Deprecate `APIDataNode.build_from_table_name(...)` as ambiguous, or require
-     callers to pass schema explicitly. A temporary `schema="public"` default is
-     acceptable only for legacy Postgres compatibility and should warn.
+   - Use `TimeIndexTableRef.from_physical_identity(schema=..., table_name=..., ...)`.
+   - Require schema and table name. Do not provide a table-name-only factory or a
+     default schema.
 
 10. Local storage operations.
 
@@ -344,10 +343,10 @@ Phase 3: SDK sends schema and uses schema-aware matching.
 - Remove `exclude=True` from physical contract schema.
 - Stop stripping schema from Alembic reserve payloads.
 - Send top-level `physical_schema` where backend accepts it.
-- Switch prepare and DataNode lookups to full physical identity.
+- Switch prepare and TimeIndexTableUpdater lookups to full physical identity.
 - Keep finalize binding UID-first, with physical identity only as fallback and
   diagnostics.
-- Add table-name-only deprecation warnings.
+- Remove table-name-only reference lookup at the breaking boundary.
 
 Phase 4: Strict cleanup.
 
@@ -373,9 +372,9 @@ SDK tests:
 - Alembic prepare does not confuse `public.asset` with `analytics.asset`.
 - Alembic finalize binds by `meta_table_uid` before physical identity fallback.
 - Alembic finalize never falls back to table-name-only matching.
-- DataNode storage lookup includes schema once backend filter support is enabled.
-- APIDataNode physical identity constructor resolves schema plus table.
-- Table-name-only API produces the planned compatibility warning or error.
+- Updater output-table lookup includes schema once backend filter support is enabled.
+- TimeIndexTableRef physical identity constructor resolves schema plus table.
+- No table-name-only reference API exists.
 
 Backend tests:
 

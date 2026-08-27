@@ -13,7 +13,7 @@ The Main Sequence Python SDK is the client and development toolkit for the Main 
 
 The Main Sequence platform allows you to:
 
-1. rapidly build and deploy data products and data workflows as a unified API with normalized table contracts through `MetaTable`s and `DataNode`s
+1. rapidly build and deploy data products with normalized `MetaTable` contracts and `TimeIndexTableUpdater` producer workflows
 2. rapidly deploy RBAC-enabled dashboards on the platform
 3. rapidly deploy agents using the Google Agent SDK
 
@@ -27,6 +27,7 @@ The key idea is that you can focus on development and deployment, while the plat
 - Documentation: [Documentation Site](https://mainsequence-sdk.github.io/mainsequence-sdk/)
 - Security policy: [SECURITY.md](SECURITY.md)
 - Release history: [CHANGELOG.md](CHANGELOG.md)
+- Major-version migration: [6.x to 7.0 hard cut](docs/migrations/v7-time-index-table-updater-hard-cut.md)
 
 ## What this repository contains
 
@@ -34,8 +35,8 @@ This repository contains the SDK and the documentation used to build and operate
 
 Main package areas:
 
-- `mainsequence.meta_tables`: `MetaTable`s, `DataNode`s, update workflows, and persistence
-- `mainsequence.client`: API client models for projects, jobs, data node storages, sharing, and platform resources
+- `mainsequence.meta_tables`: `MetaTable`s, `TimeIndexTableUpdater`s, update workflows, and persistence
+- `mainsequence.client`: API client models for projects, jobs, time-index tables, sharing, and platform resources
 - `mainsequence.cli`: the `mainsequence` command-line interface
 
 Repository areas:
@@ -56,11 +57,13 @@ Recommended entry points:
 - Beginner tutorial:
   - [MainSequence SDK tutorial Project](https://github.com/mainsequence-projects/mainsequence-sdk-tutorial)
 - Knowledge:
-  - [Data Nodes](docs/knowledge/data_nodes.md)
+  - [Time-Index Table Updaters](docs/knowledge/time_index_table_updates.md)
   - [MetaTables](docs/knowledge/meta_tables/index.md)
   - [Constants and Secrets](docs/knowledge/infrastructure/constants_and_secrets.md)
   - [Scheduling Jobs](docs/knowledge/infrastructure/scheduling_jobs.md)
   - [Streamlit Dashboards](docs/knowledge/dashboards/streamlit/index.md)
+- Migrations:
+  - [6.x to 7.0: Time-Index Table Updater hard cut](docs/migrations/v7-time-index-table-updater-hard-cut.md)
 - CLI:
   - [CLI Overview](docs/cli/index.md)
 
@@ -107,7 +110,7 @@ mainsequence project build_local_venv --path .
 From there, the normal learning path is:
 
 1. model your first canonical table with a backend-managed `MetaTable`
-2. create your first `DataNode` as an opinionated MetaTable-backed update workflow
+2. create your first `TimeIndexTableUpdater` as an opinionated MetaTable-backed update workflow
 3. understand sharing and RBAC for published tables
 4. add an API or another application surface
 5. schedule jobs

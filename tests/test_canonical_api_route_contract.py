@@ -42,9 +42,7 @@ def test_literal_action_path_segments_are_kebab_case():
                 continue
             invalid_segments = [segment for segment in path.split("/") if "_" in segment]
             if invalid_segments:
-                violations.append(
-                    f"{source_file.relative_to(REPO_ROOT)}:{node.lineno}: {value}"
-                )
+                violations.append(f"{source_file.relative_to(REPO_ROOT)}:{node.lineno}: {value}")
 
     assert violations == []
 
@@ -86,9 +84,7 @@ def test_cli_auth_and_resource_roots_match_backend_contract():
         "github-organizations",
         "job-runs",
         "jobs",
-        "local-time-series",
-        "local-time-series-historical-updates",
-        "local-time-series-update-details",
+        "table-update-runs",
         "meta-tables",
         "notifications",
         "organizations",
@@ -102,6 +98,8 @@ def test_cli_auth_and_resource_roots_match_backend_contract():
         "schedulers",
         "secrets",
         "time-index-meta-tables",
+        "time-index-table-update-details",
+        "time-index-table-updates",
         "teams",
         "users",
     }
@@ -123,24 +121,18 @@ def test_client_auth_provider_routes_match_backend_contract(monkeypatch):
     )
 
     assert jwt_provider.obtain_url == "https://backend.example/auth/jwt-token/token/"
-    assert (
-        jwt_provider.refresh_url
-        == "https://backend.example/auth/jwt-token/token/refresh/"
-    )
-    assert (
-        runtime_provider.token_url
-        == "https://backend.example/api/v1/runtime-credentials/token/"
-    )
+    assert jwt_provider.refresh_url == "https://backend.example/auth/jwt-token/token/refresh/"
+    assert runtime_provider.token_url == "https://backend.example/api/v1/runtime-credentials/token/"
 
 
 def test_removed_backend_actions_are_not_exposed_by_client_models():
     from mainsequence.client.agent_runtime_models import CodingAgentService
-    from mainsequence.client.metatables import DataNodeUpdate, DataSource
+    from mainsequence.client.metatables import DataSource, TimeIndexTableUpdate
     from mainsequence.client.models_helpers import Job
 
     removed_actions = {
         DataSource: ("get_or_create_sqlite", "create_sqlite"),
-        DataNodeUpdate: ("add_tags", "filter_by_hash_id", "get_upstream_nodes"),
+        TimeIndexTableUpdate: ("add_tags", "filter_by_hash_id", "get_upstream_nodes"),
         Job: ("bulk_get_or_create", "create_from_configuration", "sync_jobs"),
         CodingAgentService: ("reconcile_runtime",),
     }

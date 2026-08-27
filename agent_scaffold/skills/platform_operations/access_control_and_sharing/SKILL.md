@@ -1,6 +1,6 @@
 ---
 name: mainsequence-access-control-and-sharing
-description: Use this skill when the task is about RBAC, resource sharing, or access verification in a Main Sequence project. This skill owns organization and team access concepts, view and edit semantics, choosing the correct shareable resource boundary, and access checks across projects, DataNodeStorage, constants, secrets, buckets, artifacts, and releases. It does not own job scheduling, DataNode producer logic, or API route design.
+description: Use this skill when the task is about RBAC, resource sharing, or access verification in a Main Sequence project. This skill owns organization and team access concepts, view and edit semantics, choosing the correct shareable resource boundary, and access checks across projects, TimeIndexMetaTable, constants, secrets, buckets, artifacts, and releases. It does not own job scheduling, TimeIndexTableUpdater producer logic, or API route design.
 ---
 
 # Main Sequence Access Control And Sharing
@@ -26,13 +26,13 @@ This skill is for:
 - decide whether a user needs `view` or `edit`
 - identify the correct shareable object boundary:
   - `Project`
-  - `DataNodeStorage`
+  - `TimeIndexMetaTable`
   - `Constant`
   - `Secret`
   - `Bucket`
   - `Artifact`
   - `ResourceRelease`
-- explain that sharing a DataNode usually means sharing its `DataNodeStorage`
+- explain that sharing an updater's published output means sharing its `TimeIndexMetaTable`
 - choose whether configuration belongs in a `Constant` or a `Secret`
 - review CLI sharing flows for existing resources
 - verify access assumptions before claiming a workflow is shareable
@@ -42,7 +42,7 @@ This skill is for:
 This skill must not claim ownership of:
 
 - job scheduling or image pinning
-- DataNode producer implementation
+- TimeIndexTableUpdater producer implementation
 - MetaTable schema design
 - FastAPI route design
 - Streamlit dashboard design or implementation
@@ -52,8 +52,8 @@ This skill must not claim ownership of:
 
 - jobs, schedules, images, project resources, releases, and Artifacts as operational workflows:
   `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
-- DataNodes:
-  `.agents/skills/mainsequence/data_publishing/data_nodes/SKILL.md`
+- TimeIndexTableUpdaters:
+  `.agents/skills/mainsequence/data_publishing/time_index_table_updates/SKILL.md`
 - MetaTables:
   `.agents/skills/mainsequence/data_publishing/meta_tables/SKILL.md`
 - Command Center-serving FastAPI providers:
@@ -110,7 +110,7 @@ Do not speak loosely about sharing "the code" when the operational boundary is a
 
 Examples:
 
-- sharing a DataNode usually means sharing the `DataNodeStorage`
+- sharing an updater's published output usually means sharing the `TimeIndexMetaTable`
 - sharing a deployed experience usually means sharing the `ResourceRelease`
 - sharing runtime configuration means sharing the `Constant` or `Secret`
 

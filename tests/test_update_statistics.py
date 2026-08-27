@@ -5,7 +5,7 @@ import pytest
 from pydantic import ValidationError
 
 from mainsequence.client.metatables import UpdateStatistics
-from mainsequence.meta_tables.data_nodes.data_nodes import DataNode
+from mainsequence.meta_tables.time_index_table_updates.updaters import TimeIndexTableUpdater
 
 
 def _dt(hour: int) -> datetime.datetime:
@@ -86,8 +86,8 @@ def test_update_statistics_missing_identity_has_no_last_update():
     assert stats.get_last_update_for_identity("asset-2") is None
 
 
-def test_base_data_node_attaches_update_statistics_without_forcing_fallback_date():
-    class ExampleNode(DataNode):
+def test_base_time_index_table_attaches_update_statistics_without_forcing_fallback_date():
+    class ExampleNode(TimeIndexTableUpdater):
         OFFSET_START = _dt(0)
 
         def dependencies(self):
@@ -106,8 +106,8 @@ def test_base_data_node_attaches_update_statistics_without_forcing_fallback_date
     assert stats._initial_fallback_date is None
 
 
-def test_base_data_node_update_statistics_prepare_hook_can_set_fallback_date():
-    class ExampleNode(DataNode):
+def test_base_table_update_statistics_prepare_hook_can_set_fallback_date():
+    class ExampleNode(TimeIndexTableUpdater):
         OFFSET_START = _dt(0)
 
         def prepare_update_statistics(self, update_statistics):

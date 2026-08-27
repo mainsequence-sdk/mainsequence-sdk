@@ -88,7 +88,7 @@ Record:
   administrative, webhook, external integration, or backend-to-backend
 - the exact contract ID and role for each request or response body
 - route paths, HTTP methods, authentication expectations, and error semantics
-- upstream `APIDataNode`, MetaTable, service, or external data dependencies
+- upstream `TimeIndexTableRef`, MetaTable, service, or external data dependencies
 - whether the API uses backend transport or a contract-defined direct
   development transport
 

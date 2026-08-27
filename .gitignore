@@ -136,3 +136,4 @@ copy_configs
 .idea/
 /.env*
 .vscode/
+/.scratchpad/

@@ -2871,20 +2871,20 @@ def test_project_list(cli_mod, runner, monkeypatch):
     assert "Class" not in result.output
 
 
-def test_project_get_data_node_updates(cli_mod, runner, monkeypatch):
+def test_project_get_time_index_table_updates(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(
         cli_mod,
-        "get_project_data_node_updates",
+        "get_project_time_index_table_updates",
         lambda project_branch_uid, timeout=None: [
             {
-                "uid": "data-node-update-uid-10",
+                "uid": "time-index-table-update-uid-10",
                 "update_hash": "abc123",
-                "data_node_storage": {
+                "output_table": {
                     "uid": "meta-table-uid-42",
                     "physical_table_name": "storage-xyz",
                 },
-                "update_details": {"related_table_uid": "data-node-update-uid-10"},
+                "update_details": {"table_update_uid": "time-index-table-update-uid-10"},
             }
         ],
     )
@@ -2894,10 +2894,9 @@ def test_project_get_data_node_updates(cli_mod, runner, monkeypatch):
         lambda *args, **kwargs: "project-branch-uid-123",
     )
 
-    result = runner.invoke(cli_mod.app, ["project", "data-node-updates", "list", "123"])
+    result = runner.invoke(cli_mod.app, ["project", "time-index-table-updates", "list", "123"])
     assert result.exit_code == 0
-    assert "Project Data Node Updates" in result.output
-    assert "data-node-update-ui" in result.output
+    assert "Project Time-Index Table Updates" in result.output
     assert "abc123" in result.output
     assert "storage-xyz" in result.output
     assert "Total updates: 1" in result.output
@@ -3048,7 +3047,7 @@ def test_project_add_team_to_view(cli_mod, runner, monkeypatch):
     assert "Research" in result.output
 
 
-def test_get_project_data_node_updates_sets_project_env(cli_mod, monkeypatch):
+def test_get_project_time_index_table_updates_sets_project_env(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
 
@@ -3112,7 +3111,7 @@ def test_get_project_data_node_updates_sets_project_env(cli_mod, monkeypatch):
 
     class FakeUpdate:
         def model_dump(self):
-            return {"uid": "data-node-update-uid-10", "update_hash": "abc123"}
+            return {"uid": "time-index-table-update-uid-10", "update_hash": "abc123"}
 
     class FakeProjectBranch:
         ROOT_URL = "https://old.test/api/v1/project-branches"
@@ -3121,7 +3120,9 @@ def test_get_project_data_node_updates_sets_project_env(cli_mod, monkeypatch):
         def get(cls, pk, timeout=None):
             captured["project_branch_uid_arg"] = pk
             captured["env_project_uid"] = os.environ.get("MAIN_SEQUENCE_PROJECT_UID")
-            return types.SimpleNamespace(get_data_nodes_updates=lambda timeout=None: [FakeUpdate()])
+            return types.SimpleNamespace(
+                get_time_index_table_updates=lambda timeout=None: [FakeUpdate()]
+            )
 
     fake_base.BaseObjectOrm = FakeBaseObjectOrm
     fake_models.ProjectBranch = FakeProjectBranch
@@ -3132,11 +3133,11 @@ def test_get_project_data_node_updates_sets_project_env(cli_mod, monkeypatch):
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
     monkeypatch.setitem(sys.modules, "mainsequence.client.models_foundry", fake_models)
 
-    out = api_mod.get_project_data_node_updates("5a28020a-0f1b-47ee-aab8-334286234bea")
+    out = api_mod.get_project_time_index_table_updates("5a28020a-0f1b-47ee-aab8-334286234bea")
     assert captured["project_branch_uid_arg"] == "5a28020a-0f1b-47ee-aab8-334286234bea"
     assert captured["env_project_uid"] is None
     assert captured["jwt"] == ("acc", "ref")
-    assert out == [{"uid": "data-node-update-uid-10", "update_hash": "abc123"}]
+    assert out == [{"uid": "time-index-table-update-uid-10", "update_hash": "abc123"}]
     assert os.environ.get("MAIN_SEQUENCE_PROJECT_UID") is None
 
 
@@ -4649,7 +4650,7 @@ def test_delete_resource_release_uses_client_model(cli_mod, monkeypatch):
     assert out["release_kind"] == "streamlit_dashboard"
 
 
-def test_list_data_node_storages_uses_client_model(cli_mod, monkeypatch):
+def test_list_time_index_tables_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {"filters": []}
 
@@ -4676,7 +4677,7 @@ def test_list_data_node_storages_uses_client_model(cli_mod, monkeypatch):
     class FakeBaseObjectOrm:
         ROOT_URL = "https://old.test/api/v1"
 
-    class FakeDataNodeStorage:
+    class FakeTimeIndexMetaTable:
         ROOT_URL = "https://old.test/api/v1/time-index-meta-tables"
 
         @classmethod
@@ -4685,9 +4686,9 @@ def test_list_data_node_storages_uses_client_model(cli_mod, monkeypatch):
             return [
                 types.SimpleNamespace(
                     model_dump=lambda *args, **kwargs: {
-                        "uid": "data-node-storage-42",
+                        "uid": "time-index-table-storage-42",
                         "physical_table_name": "weights_daily_physical",
-                        "source_class_name": "NodeWeights",
+                        "source_class_name": "WeightsUpdater",
                         "identifier": "weights_daily",
                         "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},
                     }
@@ -4701,7 +4702,7 @@ def test_list_data_node_storages_uses_client_model(cli_mod, monkeypatch):
                 model_dump=lambda *args, **kwargs: {
                     "uid": uid,
                     "physical_table_name": "weights_daily_physical",
-                    "source_class_name": "NodeWeights",
+                    "source_class_name": "WeightsUpdater",
                     "identifier": "weights_daily",
                     "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},
                     "protect_from_deletion": True,
@@ -4709,7 +4710,7 @@ def test_list_data_node_storages_uses_client_model(cli_mod, monkeypatch):
             )
 
     fake_base.BaseObjectOrm = FakeBaseObjectOrm
-    fake_models.TimeIndexMetaTable = FakeDataNodeStorage
+    fake_models.TimeIndexMetaTable = FakeTimeIndexMetaTable
     fake_client_pkg.utils = fake_utils
 
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
@@ -4717,21 +4718,21 @@ def test_list_data_node_storages_uses_client_model(cli_mod, monkeypatch):
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
     monkeypatch.setitem(sys.modules, "mainsequence.client.metatables", fake_models)
 
-    out = api_mod.list_data_node_storages(filters={"physical_table_name__contains": "weights"})
-    detail = api_mod.get_data_node_storage("data-node-storage-42")
+    out = api_mod.list_time_index_tables(filters={"physical_table_name__contains": "weights"})
+    detail = api_mod.get_time_index_table("time-index-table-storage-42")
     assert captured["filters"][0] == {"physical_table_name__contains": "weights"}
-    assert captured["get"] == {"uid": "data-node-storage-42", "filters": {}, "timeout": None}
+    assert captured["get"] == {"uid": "time-index-table-storage-42", "filters": {}, "timeout": None}
     assert captured["jwt"] == ("acc", "ref")
     assert out == [
         {
-            "uid": "data-node-storage-42",
+            "uid": "time-index-table-storage-42",
             "physical_table_name": "weights_daily_physical",
-            "source_class_name": "NodeWeights",
+            "source_class_name": "WeightsUpdater",
             "identifier": "weights_daily",
             "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},
         }
     ]
-    assert detail["uid"] == "data-node-storage-42"
+    assert detail["uid"] == "time-index-table-storage-42"
     assert detail["physical_table_name"] == "weights_daily_physical"
 
 
@@ -4884,7 +4885,7 @@ def test_validate_project_name_uses_client_model(cli_mod, monkeypatch):
     assert out["normalized"]["project_library_name"] == "rates_platform"
 
 
-def test_data_node_storage_description_search_uses_client_model(cli_mod, monkeypatch):
+def test_time_index_table_description_search_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
 
@@ -4911,7 +4912,7 @@ def test_data_node_storage_description_search_uses_client_model(cli_mod, monkeyp
     class FakeBaseObjectOrm:
         ROOT_URL = "https://old.test/api/v1"
 
-    class FakeDataNodeStorage:
+    class FakeTimeIndexMetaTable:
         ROOT_URL = "https://old.test/api/v1/time-index-meta-tables"
 
         @classmethod
@@ -4944,7 +4945,7 @@ def test_data_node_storage_description_search_uses_client_model(cli_mod, monkeyp
                 "results": [
                     types.SimpleNamespace(
                         model_dump=lambda *args, **kwargs: {
-                            "uid": "data-node-storage-42",
+                            "uid": "time-index-table-storage-42",
                             "physical_table_name": "weights_daily",
                             "identifier": "weights_daily",
                         }
@@ -4953,7 +4954,7 @@ def test_data_node_storage_description_search_uses_client_model(cli_mod, monkeyp
             }
 
     fake_base.BaseObjectOrm = FakeBaseObjectOrm
-    fake_models.TimeIndexMetaTable = FakeDataNodeStorage
+    fake_models.TimeIndexMetaTable = FakeTimeIndexMetaTable
     fake_client_pkg.utils = fake_utils
 
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
@@ -4961,7 +4962,7 @@ def test_data_node_storage_description_search_uses_client_model(cli_mod, monkeyp
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
     monkeypatch.setitem(sys.modules, "mainsequence.client.metatables", fake_models)
 
-    out = api_mod.data_node_storage_description_search(
+    out = api_mod.time_index_table_description_search(
         "node weights",
         q_embedding=[0.1, 0.2],
         trigram_k=150,
@@ -4989,7 +4990,7 @@ def test_data_node_storage_description_search_uses_client_model(cli_mod, monkeyp
         "previous": None,
         "results": [
             {
-                "uid": "data-node-storage-42",
+                "uid": "time-index-table-storage-42",
                 "physical_table_name": "weights_daily",
                 "identifier": "weights_daily",
             }
@@ -4997,7 +4998,7 @@ def test_data_node_storage_description_search_uses_client_model(cli_mod, monkeyp
     }
 
 
-def test_data_node_storage_column_search_uses_client_model(cli_mod, monkeypatch):
+def test_time_index_table_column_search_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
 
@@ -5024,7 +5025,7 @@ def test_data_node_storage_column_search_uses_client_model(cli_mod, monkeypatch)
     class FakeBaseObjectOrm:
         ROOT_URL = "https://old.test/api/v1"
 
-    class FakeDataNodeStorage:
+    class FakeTimeIndexMetaTable:
         ROOT_URL = "https://old.test/api/v1/time-index-meta-tables"
 
         @classmethod
@@ -5033,7 +5034,7 @@ def test_data_node_storage_column_search_uses_client_model(cli_mod, monkeypatch)
             return [
                 types.SimpleNamespace(
                     model_dump=lambda *args, **kwargs: {
-                        "uid": "data-node-storage-43",
+                        "uid": "time-index-table-storage-43",
                         "physical_table_name": "prices_daily",
                         "identifier": "prices_daily",
                     }
@@ -5041,7 +5042,7 @@ def test_data_node_storage_column_search_uses_client_model(cli_mod, monkeypatch)
             ]
 
     fake_base.BaseObjectOrm = FakeBaseObjectOrm
-    fake_models.TimeIndexMetaTable = FakeDataNodeStorage
+    fake_models.TimeIndexMetaTable = FakeTimeIndexMetaTable
     fake_client_pkg.utils = fake_utils
 
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
@@ -5049,7 +5050,7 @@ def test_data_node_storage_column_search_uses_client_model(cli_mod, monkeypatch)
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
     monkeypatch.setitem(sys.modules, "mainsequence.client.metatables", fake_models)
 
-    out = api_mod.data_node_storage_column_search(
+    out = api_mod.time_index_table_column_search(
         "close", filters={"physical_table_name__contains": "prices"}
     )
 
@@ -5060,14 +5061,14 @@ def test_data_node_storage_column_search_uses_client_model(cli_mod, monkeypatch)
     }
     assert out == [
         {
-            "uid": "data-node-storage-43",
+            "uid": "time-index-table-storage-43",
             "physical_table_name": "prices_daily",
             "identifier": "prices_daily",
         }
     ]
 
 
-def test_refresh_data_node_storage_search_index_uses_client_model(cli_mod, monkeypatch):
+def test_refresh_time_index_table_search_index_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
 
@@ -5094,7 +5095,7 @@ def test_refresh_data_node_storage_search_index_uses_client_model(cli_mod, monke
     class FakeBaseObjectOrm:
         ROOT_URL = "https://old.test/api/v1"
 
-    class FakeDataNodeStorage:
+    class FakeTimeIndexMetaTable:
         ROOT_URL = "https://old.test/api/v1/time-index-meta-tables"
 
         @classmethod
@@ -5113,7 +5114,7 @@ def test_refresh_data_node_storage_search_index_uses_client_model(cli_mod, monke
             return cls.get(uid=uid, timeout=timeout)
 
     fake_base.BaseObjectOrm = FakeBaseObjectOrm
-    fake_models.TimeIndexMetaTable = FakeDataNodeStorage
+    fake_models.TimeIndexMetaTable = FakeTimeIndexMetaTable
     fake_client_pkg.utils = fake_utils
 
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
@@ -5121,15 +5122,19 @@ def test_refresh_data_node_storage_search_index_uses_client_model(cli_mod, monke
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
     monkeypatch.setitem(sys.modules, "mainsequence.client.metatables", fake_models)
 
-    out = api_mod.refresh_data_node_storage_search_index("data-node-storage-42", timeout=30)
+    out = api_mod.refresh_time_index_table_search_index("time-index-table-storage-42", timeout=30)
 
     assert captured["jwt"] == ("acc", "ref")
-    assert captured["get"] == {"uid": "data-node-storage-42", "filters": {}, "timeout": 30}
+    assert captured["get"] == {"uid": "time-index-table-storage-42", "filters": {}, "timeout": 30}
     assert captured["refresh"] == {"timeout": 30}
-    assert out == {"status": "queued", "message": "refresh started", "uid": "data-node-storage-42"}
+    assert out == {
+        "status": "queued",
+        "message": "refresh started",
+        "uid": "time-index-table-storage-42",
+    }
 
 
-def test_delete_data_node_storage_uses_client_model(cli_mod, monkeypatch):
+def test_delete_time_index_table_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
 
@@ -5156,7 +5161,7 @@ def test_delete_data_node_storage_uses_client_model(cli_mod, monkeypatch):
     class FakeBaseObjectOrm:
         ROOT_URL = "https://old.test/api/v1"
 
-    class FakeDataNodeStorage:
+    class FakeTimeIndexMetaTable:
         ROOT_URL = "https://old.test/api/v1/time-index-meta-tables"
 
         @classmethod
@@ -5195,7 +5200,7 @@ def test_delete_data_node_storage_uses_client_model(cli_mod, monkeypatch):
             return cls.get(uid=uid, timeout=timeout)
 
     fake_base.BaseObjectOrm = FakeBaseObjectOrm
-    fake_models.TimeIndexMetaTable = FakeDataNodeStorage
+    fake_models.TimeIndexMetaTable = FakeTimeIndexMetaTable
     fake_client_pkg.utils = fake_utils
 
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
@@ -5203,15 +5208,15 @@ def test_delete_data_node_storage_uses_client_model(cli_mod, monkeypatch):
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
     monkeypatch.setitem(sys.modules, "mainsequence.client.metatables", fake_models)
 
-    out = api_mod.delete_data_node_storage(
-        "data-node-storage-42",
+    out = api_mod.delete_time_index_table(
+        "time-index-table-storage-42",
         full_delete_selected=True,
         full_delete_downstream_tables=True,
         delete_with_no_table=False,
         override_protection=True,
         timeout=30,
     )
-    assert captured["get"] == {"uid": "data-node-storage-42", "filters": {}, "timeout": 30}
+    assert captured["get"] == {"uid": "time-index-table-storage-42", "filters": {}, "timeout": 30}
     assert captured["delete"] == {
         "full_delete_selected": True,
         "full_delete_downstream_tables": True,
@@ -5221,13 +5226,13 @@ def test_delete_data_node_storage_uses_client_model(cli_mod, monkeypatch):
     }
     assert captured["jwt"] == ("acc", "ref")
     assert out == {
-        "uid": "data-node-storage-42",
+        "uid": "time-index-table-storage-42",
         "physical_table_name": "weights_daily",
         "identifier": "weights_daily",
     }
 
 
-def test_list_data_node_storage_users_can_view_uses_client_model(cli_mod, monkeypatch):
+def test_list_time_index_table_users_can_view_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
 
@@ -5254,7 +5259,7 @@ def test_list_data_node_storage_users_can_view_uses_client_model(cli_mod, monkey
     class FakeBaseObjectOrm:
         ROOT_URL = "https://old.test/api/v1"
 
-    class FakeDataNodeStorage:
+    class FakeTimeIndexMetaTable:
         ROOT_URL = "https://old.test/api/v1/time-index-meta-tables"
 
         @classmethod
@@ -5267,7 +5272,7 @@ def test_list_data_node_storage_users_can_view_uses_client_model(cli_mod, monkey
                     return types.SimpleNamespace(
                         model_dump=lambda mode="python": {
                             "object_uid": uid,
-                            "object_type": "tdag.datanodestorage",
+                            "object_type": "tdag.timeindexmetatable",
                             "access_level": "view",
                             "users": [
                                 {
@@ -5289,7 +5294,7 @@ def test_list_data_node_storage_users_can_view_uses_client_model(cli_mod, monkey
             return cls.get(uid=uid, timeout=timeout)
 
     fake_base.BaseObjectOrm = FakeBaseObjectOrm
-    fake_models.TimeIndexMetaTable = FakeDataNodeStorage
+    fake_models.TimeIndexMetaTable = FakeTimeIndexMetaTable
     fake_client_pkg.utils = fake_utils
 
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
@@ -5297,14 +5302,14 @@ def test_list_data_node_storage_users_can_view_uses_client_model(cli_mod, monkey
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
     monkeypatch.setitem(sys.modules, "mainsequence.client.metatables", fake_models)
 
-    out = api_mod.list_data_node_storage_users_can_view("data-node-storage-42", timeout=15)
-    assert captured["get"] == {"uid": "data-node-storage-42", "filters": {}, "timeout": 15}
+    out = api_mod.list_time_index_table_users_can_view("time-index-table-storage-42", timeout=15)
+    assert captured["get"] == {"uid": "time-index-table-storage-42", "filters": {}, "timeout": 15}
     assert captured["can_view_timeout"] == 15
     assert captured["jwt"] == ("acc", "ref")
     assert out["users"][0]["username"] == "viewer"
 
 
-def test_add_data_node_storage_user_to_edit_uses_client_model(cli_mod, monkeypatch):
+def test_add_time_index_table_user_to_edit_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
 
@@ -5331,7 +5336,7 @@ def test_add_data_node_storage_user_to_edit_uses_client_model(cli_mod, monkeypat
     class FakeBaseObjectOrm:
         ROOT_URL = "https://old.test/api/v1"
 
-    class FakeDataNodeStorage:
+    class FakeTimeIndexMetaTable:
         ROOT_URL = "https://old.test/api/v1/time-index-meta-tables"
 
         @classmethod
@@ -5346,7 +5351,7 @@ def test_add_data_node_storage_user_to_edit_uses_client_model(cli_mod, monkeypat
                         "action": "add_to_edit",
                         "detail": "User now has explicit edit access.",
                         "object_uid": uid,
-                        "object_type": "tdag.datanodestorage",
+                        "object_type": "tdag.timeindexmetatable",
                         "user": {
                             "uid": user_uid,
                             "username": "editor",
@@ -5365,7 +5370,7 @@ def test_add_data_node_storage_user_to_edit_uses_client_model(cli_mod, monkeypat
             return cls.get(uid=uid, timeout=timeout)
 
     fake_base.BaseObjectOrm = FakeBaseObjectOrm
-    fake_models.TimeIndexMetaTable = FakeDataNodeStorage
+    fake_models.TimeIndexMetaTable = FakeTimeIndexMetaTable
     fake_client_pkg.utils = fake_utils
 
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
@@ -5373,12 +5378,12 @@ def test_add_data_node_storage_user_to_edit_uses_client_model(cli_mod, monkeypat
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
     monkeypatch.setitem(sys.modules, "mainsequence.client.metatables", fake_models)
 
-    out = api_mod.add_data_node_storage_user_to_edit(
-        "data-node-storage-42",
+    out = api_mod.add_time_index_table_user_to_edit(
+        "time-index-table-storage-42",
         USER_UID,
         timeout=16,
     )
-    assert captured["get"] == {"uid": "data-node-storage-42", "filters": {}, "timeout": 16}
+    assert captured["get"] == {"uid": "time-index-table-storage-42", "filters": {}, "timeout": 16}
     assert captured["add_to_edit"] == {"user_uid": USER_UID, "timeout": 16}
     assert captured["jwt"] == ("acc", "ref")
     assert out["action"] == "add_to_edit"
@@ -5937,7 +5942,7 @@ def test_get_project_job_run_logs_uses_client_model(cli_mod, monkeypatch):
     }
 
 
-def test_project_get_data_node_updates_defaults_to_env_project_uid(
+def test_project_get_table_updates_defaults_to_env_project_uid(
     cli_mod, runner, monkeypatch, tmp_path
 ):
     target = tmp_path / "demo-123"
@@ -5958,19 +5963,19 @@ def test_project_get_data_node_updates_defaults_to_env_project_uid(
         captured["project_branch_uid"] = project_branch_uid
         return [
             {
-                "uid": "data-node-update-uid-10",
+                "uid": "time-index-table-update-uid-10",
                 "update_hash": "abc123",
-                "data_node_storage": {
+                "output_table": {
                     "uid": "meta-table-uid-42",
                     "physical_table_name": "storage-xyz",
                 },
-                "update_details": {"related_table_uid": "data-node-update-uid-10"},
+                "update_details": {"table_update_uid": "time-index-table-update-uid-10"},
             }
         ]
 
-    monkeypatch.setattr(cli_mod, "get_project_data_node_updates", _get_updates)
+    monkeypatch.setattr(cli_mod, "get_project_time_index_table_updates", _get_updates)
 
-    result = runner.invoke(cli_mod.app, ["project", "data-node-updates", "list"])
+    result = runner.invoke(cli_mod.app, ["project", "time-index-table-updates", "list"])
     assert result.exit_code == 0
     assert captured["project_branch_uid"] == "project-branch-uid-123"
     assert "abc123" in result.output
@@ -7605,7 +7610,7 @@ def test_secrets_add_to_edit(cli_mod, runner, monkeypatch):
     assert "editor@example.com" in result.output
 
 
-def test_data_node_storage_list(cli_mod, runner, monkeypatch):
+def test_time_index_table_list(cli_mod, runner, monkeypatch):
     captured = {}
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
 
@@ -7614,32 +7619,50 @@ def test_data_node_storage_list(cli_mod, runner, monkeypatch):
         captured["timeout"] = timeout
         return [
             {
-                "uid": "data-node-storage-42",
+                "uid": "time-index-table-storage-42",
                 "physical_table_name": "weights_daily_physical",
-                "source_class_name": "NodeWeights",
+                "source_class_name": "WeightsUpdater",
                 "identifier": "weights_daily",
                 "namespace": "pytest_weights",
                 "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},
             }
         ]
 
-    monkeypatch.setattr(cli_mod, "list_data_node_storages", _list)
+    monkeypatch.setattr(cli_mod, "list_time_index_tables", _list)
 
-    result = runner.invoke(cli_mod.app, ["data-node", "list"])
+    result = runner.invoke(cli_mod.app, ["time-index-table", "list"])
     assert result.exit_code == 0
     assert captured == {
         "filters": {},
         "timeout": None,
     }
-    assert "Data Node Storages" in result.output
+    assert "Time-Index Tables" in result.output
     assert "weights_" in result.output
-    assert "Node" in result.output
-    assert "NodeWeig" in result.output
+    assert "WeightsUpd" in result.output
     assert "Namespac" in result.output
     assert "pytest_w" in result.output
     assert "Default" in result.output
     assert "DB" in result.output
-    assert "Total data node storages: 1" in result.output
+    assert "Total time-index tables: 1" in result.output
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        ["data-node", "list"],
+        ["data_node", "list"],
+        ["data-node-storage", "list"],
+        ["data_node_storage", "list"],
+        ["project", "data-node-updates", "list"],
+        ["project", "list", "data_nodes_updates"],
+        ["project", "get-data-node-updates"],
+    ],
+)
+def test_removed_data_node_commands_are_unknown(cli_mod, runner, arguments):
+    result = runner.invoke(cli_mod.app, arguments)
+
+    assert result.exit_code != 0
+    assert "No such command" in result.output
 
 
 def test_meta_table_list_uses_canonical_command(cli_mod, runner, monkeypatch):
@@ -7755,21 +7778,21 @@ def test_meta_table_command_exposes_storage_help(cli_mod, runner):
     assert "add-label" in meta_result.output
 
 
-def test_data_node_storage_list_forwards_namespace_filter(cli_mod, runner, monkeypatch):
+def test_time_index_table_list_forwards_namespace_filter(cli_mod, runner, monkeypatch):
     captured = {}
 
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
 
-    def _fake_list_data_node_storages(filters=None, timeout=None):
+    def _fake_list_time_index_tables(filters=None, timeout=None):
         captured["timeout"] = timeout
         captured["filters"] = filters
         return []
 
-    monkeypatch.setattr(cli_mod, "list_data_node_storages", _fake_list_data_node_storages)
+    monkeypatch.setattr(cli_mod, "list_time_index_tables", _fake_list_time_index_tables)
 
     result = runner.invoke(
         cli_mod.app,
-        ["data-node", "list", "--filter", "namespace=pytest_weights"],
+        ["time-index-table", "list", "--filter", "namespace=pytest_weights"],
     )
 
     assert result.exit_code == 0
@@ -7807,34 +7830,41 @@ def test_project_validate_name_cmd(cli_mod, runner, monkeypatch):
     assert "Rates Platform 3" in result.output
 
 
-def test_data_node_storage_list_passes_cli_filters(cli_mod, runner, monkeypatch):
+def test_time_index_table_list_passes_cli_filters(cli_mod, runner, monkeypatch):
     captured = {}
 
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
 
     def _parse(model_ref, entries):
         captured["entries"] = list(entries or [])
-        return {"uid__in": ["data-node-storage-42", "data-node-storage-43"]}
+        return {"uid__in": ["time-index-table-storage-42", "time-index-table-storage-43"]}
 
     def _list(timeout=None, filters=None):
         captured["filters"] = filters
         return []
 
     monkeypatch.setattr(cli_mod, "parse_cli_model_filters", _parse)
-    monkeypatch.setattr(cli_mod, "list_data_node_storages", _list)
+    monkeypatch.setattr(cli_mod, "list_time_index_tables", _list)
 
     result = runner.invoke(
         cli_mod.app,
-        ["data-node", "list", "--filter", "uid__in=data-node-storage-42,data-node-storage-43"],
+        [
+            "time-index-table",
+            "list",
+            "--filter",
+            "uid__in=time-index-table-storage-42,time-index-table-storage-43",
+        ],
     )
     assert result.exit_code == 0
-    assert captured["entries"] == ["uid__in=data-node-storage-42,data-node-storage-43"]
+    assert captured["entries"] == [
+        "uid__in=time-index-table-storage-42,time-index-table-storage-43"
+    ]
     assert captured["filters"] == {
-        "uid__in": ["data-node-storage-42", "data-node-storage-43"],
+        "uid__in": ["time-index-table-storage-42", "time-index-table-storage-43"],
     }
 
 
-def test_data_node_storage_search_supports_data_source_uid_option(cli_mod, runner, monkeypatch):
+def test_time_index_table_search_supports_data_source_uid_option(cli_mod, runner, monkeypatch):
     captured = {}
 
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
@@ -7854,13 +7884,13 @@ def test_data_node_storage_search_supports_data_source_uid_option(cli_mod, runne
         captured["filters"] = filters
         return {"count": 0, "next": None, "previous": None, "results": []}
 
-    monkeypatch.setattr(cli_mod, "data_node_storage_description_search", _description)
-    monkeypatch.setattr(cli_mod, "data_node_storage_column_search", lambda q, *, filters=None: [])
+    monkeypatch.setattr(cli_mod, "time_index_table_description_search", _description)
+    monkeypatch.setattr(cli_mod, "time_index_table_column_search", lambda q, *, filters=None: [])
 
     result = runner.invoke(
         cli_mod.app,
         [
-            "data_node",
+            "time-index-table",
             "search",
             "close price",
             "--mode",
@@ -7873,7 +7903,7 @@ def test_data_node_storage_search_supports_data_source_uid_option(cli_mod, runne
     assert captured["filters"] == {"data_source__uid": "data-source-uid-2"}
 
 
-def test_data_node_storage_search_rejects_conflicting_data_source_filters(
+def test_time_index_table_search_rejects_conflicting_data_source_filters(
     cli_mod, runner, monkeypatch
 ):
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
@@ -7886,7 +7916,7 @@ def test_data_node_storage_search_rejects_conflicting_data_source_filters(
     result = runner.invoke(
         cli_mod.app,
         [
-            "data-node",
+            "time-index-table",
             "search",
             "close price",
             "--data-source-uid",
@@ -7901,7 +7931,7 @@ def test_data_node_storage_search_rejects_conflicting_data_source_filters(
     )
 
 
-def test_data_node_storage_description_search(cli_mod, runner, monkeypatch):
+def test_time_index_table_description_search(cli_mod, runner, monkeypatch):
     captured = {}
 
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
@@ -7937,9 +7967,9 @@ def test_data_node_storage_description_search(cli_mod, runner, monkeypatch):
             "previous": None,
             "results": [
                 {
-                    "uid": "data-node-storage-42",
+                    "uid": "time-index-table-storage-42",
                     "physical_table_name": "weights_daily_physical",
-                    "source_class_name": "NodeWeights",
+                    "source_class_name": "WeightsUpdater",
                     "identifier": "weights_daily",
                     "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},
                 }
@@ -7947,12 +7977,12 @@ def test_data_node_storage_description_search(cli_mod, runner, monkeypatch):
         }
 
     monkeypatch.setattr(cli_mod, "parse_cli_model_filters", _parse)
-    monkeypatch.setattr(cli_mod, "data_node_storage_description_search", _search)
+    monkeypatch.setattr(cli_mod, "time_index_table_description_search", _search)
 
     result = runner.invoke(
         cli_mod.app,
         [
-            "data-node",
+            "time-index-table",
             "description-search",
             "node weights",
             "--data-source-uid",
@@ -7989,7 +8019,7 @@ def test_data_node_storage_description_search(cli_mod, runner, monkeypatch):
     assert "Count" in result.output
 
 
-def test_data_node_storage_column_search(cli_mod, runner, monkeypatch):
+def test_time_index_table_column_search(cli_mod, runner, monkeypatch):
     captured = {}
 
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
@@ -8002,7 +8032,7 @@ def test_data_node_storage_column_search(cli_mod, runner, monkeypatch):
         captured["search"] = {"q": q, "filters": filters}
         return [
             {
-                "uid": "data-node-storage-43",
+                "uid": "time-index-table-storage-43",
                 "physical_table_name": "prices_daily_physical",
                 "source_class_name": "PriceBars",
                 "identifier": "prices_daily",
@@ -8011,12 +8041,12 @@ def test_data_node_storage_column_search(cli_mod, runner, monkeypatch):
         ]
 
     monkeypatch.setattr(cli_mod, "parse_cli_model_filters", _parse)
-    monkeypatch.setattr(cli_mod, "data_node_storage_column_search", _search)
+    monkeypatch.setattr(cli_mod, "time_index_table_column_search", _search)
 
     result = runner.invoke(
         cli_mod.app,
         [
-            "data-node",
+            "time-index-table",
             "column-search",
             "close",
             "--filter",
@@ -8034,7 +8064,7 @@ def test_data_node_storage_column_search(cli_mod, runner, monkeypatch):
     assert 'Column Matches: 1 match(es) for "close"' in result.output
 
 
-def test_data_node_storage_search_defaults_to_description(cli_mod, runner, monkeypatch):
+def test_time_index_table_search_defaults_to_description(cli_mod, runner, monkeypatch):
     captured = {}
 
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
@@ -8070,9 +8100,9 @@ def test_data_node_storage_search_defaults_to_description(cli_mod, runner, monke
             "previous": None,
             "results": [
                 {
-                    "uid": "data-node-storage-42",
+                    "uid": "time-index-table-storage-42",
                     "physical_table_name": "weights_daily_physical",
-                    "source_class_name": "NodeWeights",
+                    "source_class_name": "WeightsUpdater",
                     "identifier": "weights_daily",
                     "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},
                 }
@@ -8080,10 +8110,10 @@ def test_data_node_storage_search_defaults_to_description(cli_mod, runner, monke
         }
 
     monkeypatch.setattr(cli_mod, "parse_cli_model_filters", _parse)
-    monkeypatch.setattr(cli_mod, "data_node_storage_description_search", _description)
+    monkeypatch.setattr(cli_mod, "time_index_table_description_search", _description)
     monkeypatch.setattr(
         cli_mod,
-        "data_node_storage_column_search",
+        "time_index_table_column_search",
         lambda *args, **kwargs: (_ for _ in ()).throw(
             AssertionError("column search should not run by default")
         ),
@@ -8092,7 +8122,7 @@ def test_data_node_storage_search_defaults_to_description(cli_mod, runner, monke
     result = runner.invoke(
         cli_mod.app,
         [
-            "data_node",
+            "time-index-table",
             "search",
             "close price",
             "--data-source-uid",
@@ -8111,7 +8141,7 @@ def test_data_node_storage_search_defaults_to_description(cli_mod, runner, monke
     assert 'Total search matches for "close price": 1' in result.output
 
 
-def test_data_node_storage_search_both_mode_combines_description_and_column(
+def test_time_index_table_search_both_mode_combines_description_and_column(
     cli_mod, runner, monkeypatch
 ):
     captured = {}
@@ -8144,7 +8174,7 @@ def test_data_node_storage_search_both_mode_combines_description_and_column(
             "previous": None,
             "results": [
                 {
-                    "uid": "data-node-storage-42",
+                    "uid": "time-index-table-storage-42",
                     "physical_table_name": "weights_daily_physical",
                     "identifier": "weights_daily",
                 }
@@ -8155,20 +8185,20 @@ def test_data_node_storage_search_both_mode_combines_description_and_column(
         captured["column"] = {"q": q, "filters": filters}
         return [
             {
-                "uid": "data-node-storage-43",
+                "uid": "time-index-table-storage-43",
                 "physical_table_name": "prices_daily_physical",
                 "identifier": "prices_daily",
             }
         ]
 
     monkeypatch.setattr(cli_mod, "parse_cli_model_filters", _parse)
-    monkeypatch.setattr(cli_mod, "data_node_storage_description_search", _description)
-    monkeypatch.setattr(cli_mod, "data_node_storage_column_search", _column)
+    monkeypatch.setattr(cli_mod, "time_index_table_description_search", _description)
+    monkeypatch.setattr(cli_mod, "time_index_table_column_search", _column)
 
     result = runner.invoke(
         cli_mod.app,
         [
-            "data_node",
+            "time-index-table",
             "search",
             "close price",
             "--mode",
@@ -8195,14 +8225,14 @@ def test_data_node_storage_search_both_mode_combines_description_and_column(
     assert 'Total search matches for "close price": 2' in result.output
 
 
-def test_data_node_storage_search_column_mode_only(cli_mod, runner, monkeypatch):
+def test_time_index_table_search_column_mode_only(cli_mod, runner, monkeypatch):
     captured = {}
 
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(cli_mod, "parse_cli_model_filters", lambda model_ref, entries: {})
     monkeypatch.setattr(
         cli_mod,
-        "data_node_storage_description_search",
+        "time_index_table_description_search",
         lambda *args, **kwargs: (_ for _ in ()).throw(
             AssertionError("description search should not run")
         ),
@@ -8212,30 +8242,30 @@ def test_data_node_storage_search_column_mode_only(cli_mod, runner, monkeypatch)
         captured["column"] = {"q": q, "filters": filters}
         return []
 
-    monkeypatch.setattr(cli_mod, "data_node_storage_column_search", _column)
+    monkeypatch.setattr(cli_mod, "time_index_table_column_search", _column)
 
-    result = runner.invoke(cli_mod.app, ["data-node", "search", "close", "--mode", "column"])
+    result = runner.invoke(cli_mod.app, ["time-index-table", "search", "close", "--mode", "column"])
     assert result.exit_code == 0
     assert captured["column"] == {"q": "close", "filters": {}}
     assert 'Column Matches: 0 match(es) for "close"' in result.output
 
 
-def test_data_node_storage_detail(cli_mod, runner, monkeypatch):
+def test_time_index_table_detail(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(
         cli_mod,
-        "get_data_node_storage",
+        "get_time_index_table",
         lambda storage_uid, timeout=None: {
             "uid": storage_uid,
             "physical_table_name": "weights_daily_physical",
             "identifier": "weights_daily",
-            "source_class_name": "NodeWeights",
+            "source_class_name": "WeightsUpdater",
             "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},
             "protect_from_deletion": True,
             "creation_date": "2026-03-16T10:00:00Z",
             "created_by_user": 7,
             "organization_owner": 2,
-            "description": "Daily node weights",
+            "description": "Daily portfolio weights",
             "time_indexed_profile": {
                 "time_index_name": "time_index",
                 "storage_layout": {
@@ -8252,12 +8282,14 @@ def test_data_node_storage_detail(cli_mod, runner, monkeypatch):
         },
     )
 
-    result = runner.invoke(cli_mod.app, ["data-node", "detail", "data-node-storage-42"])
+    result = runner.invoke(
+        cli_mod.app, ["time-index-table", "detail", "time-index-table-storage-42"]
+    )
     assert result.exit_code == 0
-    assert "Data Node Storage" in result.output
+    assert "Time-Index Table" in result.output
     assert "weights_daily" in result.output
     assert "weights_daily_physical" in result.output
-    assert "Daily node weights" in result.output
+    assert "Daily portfolio weights" in result.output
     assert "Build Configuration" not in result.output
     assert "time_index_name" in result.output
     assert "Storage Layout" in result.output
@@ -8267,7 +8299,7 @@ def test_data_node_storage_detail(cli_mod, runner, monkeypatch):
     assert "90 days" in result.output
 
 
-def test_run_data_node_storage_query_uses_client_model(cli_mod, monkeypatch):
+def test_run_time_index_table_query_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
 
@@ -8275,7 +8307,7 @@ def test_run_data_node_storage_query_uses_client_model(cli_mod, monkeypatch):
         captured["module_name"] = module_name
         captured["class_name"] = class_name
 
-        class _ClientDataNodeStorage:
+        class _ClientTimeIndexTable:
             @classmethod
             def get(cls, uid, timeout=None):
                 captured["uid"] = uid
@@ -8298,23 +8330,23 @@ def test_run_data_node_storage_query_uses_client_model(cli_mod, monkeypatch):
 
                 return _Storage()
 
-        return operation(_ClientDataNodeStorage)
+        return operation(_ClientTimeIndexTable)
 
     monkeypatch.setattr(api_mod, "_run_sdk_model_operation", _run_sdk_model_operation)
 
-    out = api_mod.run_data_node_storage_query(
-        "data-node-storage-42", "SELECT 1 AS value", timeout=14
+    out = api_mod.run_time_index_table_query(
+        "time-index-table-storage-42", "SELECT 1 AS value", timeout=14
     )
     assert captured == {
         "module_name": "mainsequence.client.metatables",
         "class_name": "TimeIndexMetaTable",
-        "uid": "data-node-storage-42",
+        "uid": "time-index-table-storage-42",
         "timeout": 14,
         "sql": "SELECT 1 AS value",
         "query_timeout": 14,
     }
     assert out["ok"] is True
-    assert out["time_index_meta_table_uid"] == "data-node-storage-42"
+    assert out["time_index_meta_table_uid"] == "time-index-table-storage-42"
     assert out["results"] == [{"value": 1}]
 
 
@@ -8367,12 +8399,12 @@ def test_run_meta_table_query_uses_client_model(cli_mod, monkeypatch):
     assert out["results"] == [{"value": 2}]
 
 
-def test_data_node_storage_run_query(cli_mod, runner, monkeypatch):
+def test_time_index_table_run_query(cli_mod, runner, monkeypatch):
     captured = {}
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
 
     def _run_query(storage_uid, sql, *, timeout=None):
-        captured["storage_uid"] = storage_uid
+        captured["table_uid"] = storage_uid
         captured["sql"] = sql
         captured["timeout"] = timeout
         return {
@@ -8386,23 +8418,30 @@ def test_data_node_storage_run_query(cli_mod, runner, monkeypatch):
             "error": None,
         }
 
-    monkeypatch.setattr(cli_mod, "run_data_node_storage_query", _run_query)
+    monkeypatch.setattr(cli_mod, "run_time_index_table_query", _run_query)
 
     result = runner.invoke(
         cli_mod.app,
-        ["data-node", "run_query", "data-node-storage-42", "SELECT 1 AS value", "--timeout", "15"],
+        [
+            "time-index-table",
+            "run_query",
+            "time-index-table-storage-42",
+            "SELECT 1 AS value",
+            "--timeout",
+            "15",
+        ],
     )
     assert result.exit_code == 0
     assert captured == {
-        "storage_uid": "data-node-storage-42",
+        "table_uid": "time-index-table-storage-42",
         "sql": "SELECT 1 AS value",
         "timeout": 15,
     }
-    assert "Data node query completed: uid=data-node-storage-42" in result.output
-    assert "Data Node Query" in result.output
+    assert "Time-index table query completed: uid=time-index-table-storage-42" in result.output
+    assert "Time-Index Table Query" in result.output
     assert "query-456" in result.output
     assert "Time Index MetaTable UID" in result.output
-    assert "data-node-storage-42" in result.output
+    assert "time-index-table-storage-42" in result.output
     assert '"value": 1' in result.output
 
 
@@ -8443,13 +8482,13 @@ def test_meta_table_run_query(cli_mod, runner, monkeypatch):
     assert '"value": 2' in result.output
 
 
-def test_data_node_storage_refresh_search_index(cli_mod, runner, monkeypatch):
+def test_time_index_table_refresh_search_index(cli_mod, runner, monkeypatch):
     captured = {}
 
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
 
     def _refresh(storage_uid, timeout=None):
-        captured["storage_uid"] = storage_uid
+        captured["table_uid"] = storage_uid
         captured["timeout"] = timeout
         return {
             "uid": storage_uid,
@@ -8457,25 +8496,34 @@ def test_data_node_storage_refresh_search_index(cli_mod, runner, monkeypatch):
             "message": "refresh started",
         }
 
-    monkeypatch.setattr(cli_mod, "refresh_data_node_storage_search_index", _refresh)
+    monkeypatch.setattr(cli_mod, "refresh_time_index_table_search_index", _refresh)
 
     result = runner.invoke(
         cli_mod.app,
-        ["data-node", "refresh-search-index", "data-node-storage-42", "--timeout", "15"],
+        [
+            "time-index-table",
+            "refresh-search-index",
+            "time-index-table-storage-42",
+            "--timeout",
+            "15",
+        ],
     )
     assert result.exit_code == 0
-    assert captured == {"storage_uid": "data-node-storage-42", "timeout": 15}
-    assert "Data node search index refresh requested: uid=data-node-storage-42" in result.output
-    assert "Data Node Search Index Refresh" in result.output
+    assert captured == {"table_uid": "time-index-table-storage-42", "timeout": 15}
+    assert (
+        "Time-index table search index refresh requested: uid=time-index-table-storage-42"
+        in result.output
+    )
+    assert "Time-Index Table Search Index Refresh" in result.output
     assert "queued" in result.output
     assert "refresh started" in result.output
 
 
-def test_data_node_storage_can_view(cli_mod, runner, monkeypatch):
+def test_time_index_table_can_view(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(
         cli_mod,
-        "list_data_node_storage_users_can_view",
+        "list_time_index_table_users_can_view",
         lambda storage_uid, timeout=None: {
             "access_level": "view",
             "users": [
@@ -8491,46 +8539,48 @@ def test_data_node_storage_can_view(cli_mod, runner, monkeypatch):
         },
     )
 
-    result = runner.invoke(cli_mod.app, ["data-node", "can_view", "data-node-storage-42"])
+    result = runner.invoke(
+        cli_mod.app, ["time-index-table", "can_view", "time-index-table-storage-42"]
+    )
     assert result.exit_code == 0
-    assert "Data Node Users Who Can View" in result.output
+    assert "Time-Index Table Users Who Can View" in result.output
     assert "viewer@example.com" in result.output
     assert "Total users who can view: 1" in result.output
 
 
-def test_data_node_storage_add_label(cli_mod, runner, monkeypatch):
+def test_time_index_table_add_label(cli_mod, runner, monkeypatch):
     captured = {}
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
 
     def _add(storage_uid, labels, timeout=None):
-        captured["storage_uid"] = storage_uid
+        captured["table_uid"] = storage_uid
         captured["labels"] = labels
         captured["timeout"] = timeout
         return {"labels": [{"name": "curated"}]}
 
-    monkeypatch.setattr(cli_mod, "add_data_node_storage_labels", _add)
+    monkeypatch.setattr(cli_mod, "add_time_index_table_labels", _add)
 
     result = runner.invoke(
         cli_mod.app,
-        ["data-node", "add-label", "data-node-storage-42", "--label", "curated"],
+        ["time-index-table", "add-label", "time-index-table-storage-42", "--label", "curated"],
     )
     assert result.exit_code == 0
     assert captured == {
-        "storage_uid": "data-node-storage-42",
+        "table_uid": "time-index-table-storage-42",
         "labels": ["curated"],
         "timeout": None,
     }
-    assert "Data Node add-label completed." in result.output
+    assert "Time-Index Table add-label completed." in result.output
     assert "curated" in result.output
 
 
-def test_data_node_storage_add_to_edit(cli_mod, runner, monkeypatch):
+def test_time_index_table_add_to_edit(cli_mod, runner, monkeypatch):
     captured = {}
 
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
 
     def _add(storage_uid, user_uid, timeout=None):
-        captured["storage_uid"] = storage_uid
+        captured["table_uid"] = storage_uid
         captured["user_uid"] = user_uid
         captured["timeout"] = timeout
         return {
@@ -8538,7 +8588,7 @@ def test_data_node_storage_add_to_edit(cli_mod, runner, monkeypatch):
             "action": "add_to_edit",
             "detail": "User now has explicit edit access.",
             "object_uid": storage_uid,
-            "object_type": "tdag.datanodestorage",
+            "object_type": "tdag.timeindexmetatable",
             "user": {
                 "uid": user_uid,
                 "username": "editor",
@@ -8552,77 +8602,77 @@ def test_data_node_storage_add_to_edit(cli_mod, runner, monkeypatch):
             "explicit_can_edit_user_uids": [user_uid],
         }
 
-    monkeypatch.setattr(cli_mod, "add_data_node_storage_user_to_edit", _add)
+    monkeypatch.setattr(cli_mod, "add_time_index_table_user_to_edit", _add)
 
     result = runner.invoke(
         cli_mod.app,
-        ["data-node", "add_to_edit", "data-node-storage-42", USER_UID],
+        ["time-index-table", "add_to_edit", "time-index-table-storage-42", USER_UID],
     )
     assert result.exit_code == 0
     assert captured == {
-        "storage_uid": "data-node-storage-42",
+        "table_uid": "time-index-table-storage-42",
         "user_uid": USER_UID,
         "timeout": None,
     }
-    assert "Data Node add_to_edit completed." in result.output
-    assert "Data Node Sharing Update" in result.output
+    assert "Time-Index Table add_to_edit completed." in result.output
+    assert "Time-Index Table Sharing Update" in result.output
     assert "editor@example.com" in result.output
 
 
-def test_data_node_storage_delete_requires_typed_verification(cli_mod, runner, monkeypatch):
+def test_time_index_table_delete_requires_typed_verification(cli_mod, runner, monkeypatch):
     captured = {}
 
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(
         cli_mod,
-        "get_data_node_storage",
+        "get_time_index_table",
         lambda storage_uid, timeout=None: {
             "uid": storage_uid,
             "physical_table_name": "weights_daily_physical",
             "identifier": "weights_daily",
-            "source_class_name": "NodeWeights",
+            "source_class_name": "WeightsUpdater",
             "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},
             "protect_from_deletion": True,
         },
     )
 
     def _delete(storage_uid, **kwargs):
-        captured["storage_uid"] = storage_uid
+        captured["table_uid"] = storage_uid
         captured["kwargs"] = kwargs
         return {
             "uid": storage_uid,
             "physical_table_name": "weights_daily_physical",
             "identifier": "weights_daily",
-            "source_class_name": "NodeWeights",
+            "source_class_name": "WeightsUpdater",
             "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},
             "protect_from_deletion": True,
         }
 
-    monkeypatch.setattr(cli_mod, "delete_data_node_storage", _delete)
+    monkeypatch.setattr(cli_mod, "delete_time_index_table", _delete)
 
     result = runner.invoke(
         cli_mod.app,
-        ["data-node", "delete", "data-node-storage-42", "--full-delete-selected"],
+        ["time-index-table", "delete", "time-index-table-storage-42", "--full-delete-selected"],
         input="weights_daily_physical\n",
     )
     assert result.exit_code == 0
-    assert "Data Node Storage Delete Preview" in result.output
+    assert "Time-Index Table Delete Preview" in result.output
     assert "Type physical table name 'weights_daily_physical' to confirm deletion" in result.output
-    assert captured["storage_uid"] == "data-node-storage-42"
+    assert captured["table_uid"] == "time-index-table-storage-42"
     assert captured["kwargs"]["full_delete_selected"] is True
-    assert "Data node storage deleted: uid=data-node-storage-42" in result.output
+    assert "Time-index table deleted: uid=time-index-table-storage-42" in result.output
 
 
-def test_data_node_storage_delete_wrong_verification_cancels(cli_mod, runner, monkeypatch):
+def test_time_index_table_delete_wrong_verification_cancels(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(
         cli_mod,
-        "get_data_node_storage",
+        "get_time_index_table",
         lambda storage_uid, timeout=None: {
             "uid": storage_uid,
             "physical_table_name": "weights_daily_physical",
             "identifier": "weights_daily",
-            "source_class_name": "NodeWeights",
+            "source_class_name": "WeightsUpdater",
             "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},
             "protect_from_deletion": False,
         },
@@ -8634,11 +8684,11 @@ def test_data_node_storage_delete_wrong_verification_cancels(cli_mod, runner, mo
         called["value"] = True
         return {}
 
-    monkeypatch.setattr(cli_mod, "delete_data_node_storage", _delete)
+    monkeypatch.setattr(cli_mod, "delete_time_index_table", _delete)
 
     result = runner.invoke(
         cli_mod.app,
-        ["data-node", "delete", "data-node-storage-42"],
+        ["time-index-table", "delete", "time-index-table-storage-42"],
         input="wrong-value\n",
     )
     assert result.exit_code == 0

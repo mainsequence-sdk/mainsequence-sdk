@@ -10,29 +10,29 @@ from pydantic import BaseModel, Field
 os.environ.setdefault("MAINSEQUENCE_ACCESS_TOKEN", "test-access-token")
 os.environ.setdefault("MAINSEQUENCE_REFRESH_TOKEN", "test-refresh-token")
 
-import mainsequence.meta_tables.data_nodes.build_operations as build_operations
+import mainsequence.meta_tables.time_index_table_updates.configuration as configuration
 from mainsequence.client.metatables import TimeIndexMetaTable
 from mainsequence.meta_tables import (
-    DataNode,
-    DataNodeConfiguration,
     PlatformTimeIndexMetaTable,
+    TimeIndexTableUpdateConfig,
+    TimeIndexTableUpdater,
 )
 
 
 def _hashes(payload):
-    serialized_payload = build_operations.serialize_argument(payload)
-    return build_operations.hash_signature({"config": serialized_payload})
+    serialized_payload = configuration.serialize_argument(payload)
+    return configuration.hash_signature({"config": serialized_payload})
 
 
-class UUIDNodeConfig(BaseModel):
+class UUIDUpdateConfig(BaseModel):
     account_uid: uuid.UUID
 
 
 def test_create_config_crops_hash_prefix_to_postgres_identifier_limit(monkeypatch):
-    class_name = "VeryLongDataNodeClassNameThatWouldOverflowPostgresIdentifierLimit"
+    class_name = "VeryLongTimeIndexTableUpdaterClassNameThatWouldOverflowPostgresIdentifierLimit"
 
-    config = build_operations.create_config(
-        ts_class_name=class_name,
+    config = configuration.create_config(
+        updater_class_name=class_name,
         kwargs={"identifier": "prices"},
     )
 
@@ -52,11 +52,11 @@ def test_nested_pydantic_hash_excluded_fields_inside_lists_do_not_affect_hashes(
         label: str | None = Field(default=None, json_schema_extra={"hash_excluded": True})
         description: str | None = Field(default=None, json_schema_extra={"hash_excluded": True})
 
-    class NodeConfig(BaseModel):
+    class UpdateConfig(BaseModel):
         records: list[ColumnContract]
 
     hashes_a = _hashes(
-        NodeConfig(
+        UpdateConfig(
             records=[
                 ColumnContract(
                     column_name="close",
@@ -68,7 +68,7 @@ def test_nested_pydantic_hash_excluded_fields_inside_lists_do_not_affect_hashes(
         )
     )
     hashes_b = _hashes(
-        NodeConfig(
+        UpdateConfig(
             records=[
                 ColumnContract(
                     column_name="close",
@@ -84,24 +84,24 @@ def test_nested_pydantic_hash_excluded_fields_inside_lists_do_not_affect_hashes(
 
 
 def test_normal_config_value_changes_update_hash(monkeypatch):
-    class NodeConfig(BaseModel):
+    class UpdateConfig(BaseModel):
         shard_id: str
         identifier: str
 
-    update_hash_a, storage_hash_a = _hashes(NodeConfig(shard_id="A", identifier="prices"))
-    update_hash_b, storage_hash_b = _hashes(NodeConfig(shard_id="B", identifier="prices"))
+    update_hash_a, storage_hash_a = _hashes(UpdateConfig(shard_id="A", identifier="prices"))
+    update_hash_b, storage_hash_b = _hashes(UpdateConfig(shard_id="B", identifier="prices"))
 
     assert update_hash_a != update_hash_b
     assert storage_hash_a != storage_hash_b
 
 
 def test_hash_excluded_metadata_does_not_affect_hashes(monkeypatch):
-    class NodeConfig(BaseModel):
+    class UpdateConfig(BaseModel):
         identifier: str
         label: str = Field(..., json_schema_extra={"hash_excluded": True})
 
-    hashes_a = _hashes(NodeConfig(identifier="prices", label="Close"))
-    hashes_b = _hashes(NodeConfig(identifier="prices", label="Last"))
+    hashes_a = _hashes(UpdateConfig(identifier="prices", label="Close"))
+    hashes_b = _hashes(UpdateConfig(identifier="prices", label="Last"))
 
     assert hashes_a == hashes_b
 
@@ -115,16 +115,16 @@ def test_hash_excluded_nested_metadata_does_not_affect_hashes(monkeypatch):
             json_schema_extra={"hash_excluded": True},
         )
 
-    class NodeConfig(BaseModel):
+    class UpdateConfig(BaseModel):
         identifier: str
         published_metadata: PublishedMetadata | None = Field(
             default=None,
             json_schema_extra={"hash_excluded": True},
         )
 
-    hashes_a = _hashes(NodeConfig(identifier="prices"))
+    hashes_a = _hashes(UpdateConfig(identifier="prices"))
     hashes_b = _hashes(
-        NodeConfig(
+        UpdateConfig(
             identifier="prices",
             published_metadata=PublishedMetadata(
                 identifier="daily_prices",
@@ -139,10 +139,10 @@ def test_hash_excluded_nested_metadata_does_not_affect_hashes(monkeypatch):
 
 def test_offset_start_changes_update_hash(monkeypatch):
     update_hash_a, storage_hash_a = _hashes(
-        DataNodeConfiguration(offset_start=datetime.datetime(2024, 1, 1, tzinfo=datetime.UTC))
+        TimeIndexTableUpdateConfig(offset_start=datetime.datetime(2024, 1, 1, tzinfo=datetime.UTC))
     )
     update_hash_b, storage_hash_b = _hashes(
-        DataNodeConfiguration(offset_start=datetime.datetime(2025, 1, 1, tzinfo=datetime.UTC))
+        TimeIndexTableUpdateConfig(offset_start=datetime.datetime(2025, 1, 1, tzinfo=datetime.UTC))
     )
 
     assert update_hash_a != update_hash_b
@@ -169,19 +169,19 @@ def test_platform_time_index_meta_table_config_hashes_by_bound_metatable_uid(mon
         TimeIndexMetaTable.model_construct(uid="storage-uid-c", data_source_uid="data-source-uid")
     )
 
-    class NodeConfig(BaseModel):
+    class UpdateConfig(BaseModel):
         dependency_storage: type[PlatformTimeIndexMetaTable]
 
-    hashes_a = _hashes(NodeConfig(dependency_storage=StorageA))
-    hashes_b = _hashes(NodeConfig(dependency_storage=StorageB))
-    hashes_c = _hashes(NodeConfig(dependency_storage=StorageC))
+    hashes_a = _hashes(UpdateConfig(dependency_storage=StorageA))
+    hashes_b = _hashes(UpdateConfig(dependency_storage=StorageB))
+    hashes_c = _hashes(UpdateConfig(dependency_storage=StorageC))
 
     assert hashes_a == hashes_b
     assert hashes_a != hashes_c
 
-    config = build_operations.create_config(
-        ts_class_name="StorageConfigNode",
-        kwargs={"config": NodeConfig(dependency_storage=StorageA)},
+    config = configuration.create_config(
+        updater_class_name="StorageConfigUpdater",
+        kwargs={"config": UpdateConfig(dependency_storage=StorageA)},
     )
     assert (
         config.local_initial_configuration["config"]["serialized_model"]["dependency_storage"][
@@ -195,13 +195,13 @@ def test_platform_time_index_meta_table_config_requires_registered_before_hashin
     class AutoStorage(PlatformTimeIndexMetaTable):
         pass
 
-    class NodeConfig(BaseModel):
+    class UpdateConfig(BaseModel):
         dependency_storage: type[PlatformTimeIndexMetaTable]
 
     with pytest.raises(ValueError, match="migrations upgrade"):
-        build_operations.create_config(
-            ts_class_name="AutoStorageConfigNode",
-            kwargs={"config": NodeConfig(dependency_storage=AutoStorage)},
+        configuration.create_config(
+            updater_class_name="AutoStorageConfigUpdater",
+            kwargs={"config": UpdateConfig(dependency_storage=AutoStorage)},
         )
 
 
@@ -209,23 +209,23 @@ def test_uuid_config_values_serialize_hash_and_rebuild(monkeypatch):
     account_uid = uuid.UUID("00000000-0000-4000-8000-000000000001")
     other_account_uid = uuid.UUID("00000000-0000-4000-8000-000000000002")
 
-    serialized = build_operations.serialize_argument(UUIDNodeConfig(account_uid=account_uid))
+    serialized = configuration.serialize_argument(UUIDUpdateConfig(account_uid=account_uid))
     assert serialized["serialized_model"]["account_uid"] == str(account_uid)
 
-    hashes_a = _hashes(UUIDNodeConfig(account_uid=account_uid))
-    hashes_b = _hashes(UUIDNodeConfig(account_uid=account_uid))
-    hashes_c = _hashes(UUIDNodeConfig(account_uid=other_account_uid))
+    hashes_a = _hashes(UUIDUpdateConfig(account_uid=account_uid))
+    hashes_b = _hashes(UUIDUpdateConfig(account_uid=account_uid))
+    hashes_c = _hashes(UUIDUpdateConfig(account_uid=other_account_uid))
 
     assert hashes_a == hashes_b
     assert hashes_a != hashes_c
 
-    config = build_operations.create_config(
-        ts_class_name="UUIDConfigNode",
-        kwargs={"config": UUIDNodeConfig(account_uid=account_uid)},
+    config = configuration.create_config(
+        updater_class_name="UUIDConfigUpdater",
+        kwargs={"config": UUIDUpdateConfig(account_uid=account_uid)},
     )
-    rebuilt = build_operations.DeserializerManager().rebuild_serialized_config(
+    rebuilt = configuration.DeserializerManager().rebuild_serialized_config(
         config.local_initial_configuration,
-        time_serie_class_name="UUIDConfigNode",
+        updater_class_name="UUIDConfigUpdater",
     )
 
     assert rebuilt["config"].account_uid == account_uid
@@ -246,20 +246,20 @@ def test_plain_dict_with_pydantic_model_import_path_key_is_not_treated_as_wrappe
         }
     }
 
-    assert build_operations._is_serialized_pydantic_model(payload_a["config"]) is False
-    assert build_operations.hash_signature(payload_a) != build_operations.hash_signature(payload_b)
+    assert configuration._is_serialized_pydantic_model(payload_a["config"]) is False
+    assert configuration.hash_signature(payload_a) != configuration.hash_signature(payload_b)
 
 
-def test_data_node_configuration_overrides_offset_start():
-    class NodeConfig(DataNodeConfiguration):
+def test_time_index_table_configuration_overrides_offset_start():
+    class UpdateConfig(TimeIndexTableUpdateConfig):
         pass
 
-    class ConfigurableDataNode(DataNode):
+    class ConfigurableTimeIndexTableUpdater(TimeIndexTableUpdater):
         OFFSET_START = datetime.datetime(2018, 1, 1, tzinfo=datetime.UTC)
 
-        def __init__(self, node_config: NodeConfig, *args, **kwargs):
-            self.node_config = node_config
-            super().__init__(node_config, *args, **kwargs)
+        def __init__(self, update_config: UpdateConfig, *args, **kwargs):
+            self.update_config = update_config
+            super().__init__(update_config, *args, **kwargs)
 
         def dependencies(self):
             return {}
@@ -267,24 +267,24 @@ def test_data_node_configuration_overrides_offset_start():
         def update(self):
             return None
 
-    node = object.__new__(ConfigurableDataNode)
-    node.config = NodeConfig(
+    updater = object.__new__(ConfigurableTimeIndexTableUpdater)
+    updater.config = UpdateConfig(
         offset_start=datetime.datetime(2024, 1, 1, tzinfo=datetime.UTC),
     )
 
-    assert node.get_offset_start() == datetime.datetime(2024, 1, 1, tzinfo=datetime.UTC)
+    assert updater.get_offset_start() == datetime.datetime(2024, 1, 1, tzinfo=datetime.UTC)
 
-    node._hash_namespace = "test"
-    assert node.get_offset_start() == datetime.datetime(2024, 1, 1, tzinfo=datetime.UTC)
+    updater._hash_namespace = "test"
+    assert updater.get_offset_start() == datetime.datetime(2024, 1, 1, tzinfo=datetime.UTC)
 
 
 def test_subclass_missing_super_config_is_rejected():
-    class NodeConfig(DataNodeConfiguration):
+    class UpdateConfig(TimeIndexTableUpdateConfig):
         scope: str
 
-    class InvalidWrappedConfigNode(DataNode):
-        def __init__(self, node_config: NodeConfig, *args, **kwargs):
-            self.node_config = node_config
+    class InvalidWrappedConfigUpdater(TimeIndexTableUpdater):
+        def __init__(self, update_config: UpdateConfig, *args, **kwargs):
+            self.update_config = update_config
             super().__init__(*args, **kwargs)
 
         def dependencies(self):
@@ -294,4 +294,4 @@ def test_subclass_missing_super_config_is_rejected():
             return None
 
     with pytest.raises(TypeError, match="config"):
-        InvalidWrappedConfigNode(node_config=NodeConfig(scope="desk_a"))
+        InvalidWrappedConfigUpdater(update_config=UpdateConfig(scope="desk_a"))

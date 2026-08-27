@@ -49,8 +49,8 @@ This skill audits. It does not implement by default.
 
 - bootstrap, routing, and repo structure:
   `.agents/skills/mainsequence/project_design/SKILL.md`
-- DataNode implementation issues:
-  `.agents/skills/mainsequence/data_publishing/data_nodes/SKILL.md`
+- TimeIndexTableUpdater implementation issues:
+  `.agents/skills/mainsequence/data_publishing/time_index_table_updates/SKILL.md`
 - MetaTable implementation issues:
   `.agents/skills/mainsequence/data_publishing/meta_tables/SKILL.md`
 - Command Center FastAPI contract or release issues:

@@ -2112,14 +2112,14 @@ def remove_project_labels(
     )
 
 
-def get_project_data_node_updates(
+def get_project_time_index_table_updates(
     project_branch_uid: str, *, timeout: int | None = None
 ) -> list[dict[str, Any]]:
     """
-    Fetch ProjectBranch data-node updates via the branch custom action.
+    Fetch ProjectBranch time-index-table updates via the branch custom action.
 
     Single source of truth:
-      - delegates response parsing to `ProjectBranch.get_data_nodes_updates()`
+      - delegates response parsing to `ProjectBranch.get_time_index_table_updates()`
       - avoids duplicating payload-shape logic in the CLI API wrapper
     """
     tokens = get_tokens()
@@ -2170,7 +2170,7 @@ def get_project_data_node_updates(
         ClientProject.ROOT_URL = root_url
 
         project_branch = ClientProject.get(pk=resolved_branch_uid, timeout=timeout)
-        updates = project_branch.get_data_nodes_updates(timeout=timeout)
+        updates = project_branch.get_time_index_table_updates(timeout=timeout)
 
         out: list[dict[str, Any]] = []
         for u in updates:
@@ -2189,7 +2189,7 @@ def get_project_data_node_updates(
             raise NotLoggedIn(str(e) or "Not logged in.") from e
         if err_name == "NotFoundError":
             raise ApiError(f"ProjectBranch not found: {project_branch_uid}") from e
-        raise ApiError(f"Data node updates fetch failed: {e}") from e
+        raise ApiError(f"Time-index table updates fetch failed: {e}") from e
     finally:
         if client_utils is not None:
             try:
@@ -2963,13 +2963,13 @@ def create_project_resource_release(
                 os.environ[k] = v
 
 
-def list_data_node_storages(
+def list_time_index_tables(
     *,
     filters: dict[str, Any] | None = None,
     timeout: int | None = None,
 ) -> list[dict[str, Any]]:
     """
-    List data node storages via SDK client model.
+    List time-index tables via SDK client model.
 
     Single source of truth:
       - delegates filtering and payload parsing to `TimeIndexMetaTable.filter()`
@@ -2978,7 +2978,7 @@ def list_data_node_storages(
         storages = _run_sdk_model_operation(
             module_name="mainsequence.client.metatables",
             class_name="TimeIndexMetaTable",
-            operation=lambda ClientDataNodeStorage: ClientDataNodeStorage.filter(
+            operation=lambda ClientTimeIndexTable: ClientTimeIndexTable.filter(
                 timeout=timeout,
                 **dict(filters or {}),
             ),
@@ -2990,7 +2990,7 @@ def list_data_node_storages(
     except Exception as e:
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Data node storages fetch failed: {e}") from e
+        raise ApiError(f"Time-index tables fetch failed: {e}") from e
 
 
 def list_meta_tables(
@@ -3034,7 +3034,7 @@ def _serialize_sdk_search_response(payload: Any) -> dict[str, Any] | list[dict[s
     return _sdk_object_to_dict(payload)
 
 
-def data_node_storage_description_search(
+def time_index_table_description_search(
     q: str,
     *,
     q_embedding: list[float] | None = None,
@@ -3046,7 +3046,7 @@ def data_node_storage_description_search(
     filters: dict[str, Any] | None = None,
 ) -> dict[str, Any] | list[dict[str, Any]]:
     """
-    Search data node storages by description via SDK client model.
+    Search time-index tables by description via SDK client model.
 
     Single source of truth:
       - delegates search behavior and payload parsing to
@@ -3056,7 +3056,7 @@ def data_node_storage_description_search(
         payload = _run_sdk_model_operation(
             module_name="mainsequence.client.metatables",
             class_name="TimeIndexMetaTable",
-            operation=lambda ClientDataNodeStorage: ClientDataNodeStorage.description_search(
+            operation=lambda ClientTimeIndexTable: ClientTimeIndexTable.description_search(
                 q,
                 q_embedding=q_embedding,
                 trigram_k=trigram_k,
@@ -3071,16 +3071,16 @@ def data_node_storage_description_search(
     except Exception as e:
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Data node storage description search failed: {e}") from e
+        raise ApiError(f"Time-index table description search failed: {e}") from e
 
 
-def data_node_storage_column_search(
+def time_index_table_column_search(
     q: str,
     *,
     filters: dict[str, Any] | None = None,
 ) -> dict[str, Any] | list[dict[str, Any]]:
     """
-    Search data node storages by column metadata via SDK client model.
+    Search time-index tables by column metadata via SDK client model.
 
     Single source of truth:
       - delegates search behavior and payload parsing to
@@ -3090,7 +3090,7 @@ def data_node_storage_column_search(
         payload = _run_sdk_model_operation(
             module_name="mainsequence.client.metatables",
             class_name="TimeIndexMetaTable",
-            operation=lambda ClientDataNodeStorage: ClientDataNodeStorage.column_search(
+            operation=lambda ClientTimeIndexTable: ClientTimeIndexTable.column_search(
                 q,
                 **dict(filters or {}),
             ),
@@ -3099,7 +3099,7 @@ def data_node_storage_column_search(
     except Exception as e:
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Data node storage column search failed: {e}") from e
+        raise ApiError(f"Time-index table column search failed: {e}") from e
 
 
 def list_constants(
@@ -3835,13 +3835,13 @@ def remove_constant_team_from_edit(
     )
 
 
-def get_data_node_storage(
-    storage_uid: str,
+def get_time_index_table(
+    table_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
     """
-    Retrieve one data node storage via SDK client model.
+    Retrieve one time-index table via SDK client model.
 
     Single source of truth:
       - delegates detail fetching and payload parsing to `TimeIndexMetaTable.get()`
@@ -3850,8 +3850,8 @@ def get_data_node_storage(
         storage = _run_sdk_model_operation(
             module_name="mainsequence.client.metatables",
             class_name="TimeIndexMetaTable",
-            operation=lambda ClientDataNodeStorage: ClientDataNodeStorage.get(
-                uid=str(storage_uid),
+            operation=lambda ClientTimeIndexTable: ClientTimeIndexTable.get(
+                uid=str(table_uid),
                 timeout=timeout,
             ),
         )
@@ -3859,10 +3859,10 @@ def get_data_node_storage(
     except Exception as e:
         err_name = type(e).__name__
         if err_name == "NotFoundError":
-            raise ApiError(f"Data node storage not found: {storage_uid}") from e
+            raise ApiError(f"Time-index table not found: {table_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Data node storage fetch failed: {e}") from e
+        raise ApiError(f"Time-index table fetch failed: {e}") from e
 
 
 def get_meta_table(
@@ -3895,27 +3895,27 @@ def get_meta_table(
         raise ApiError(f"MetaTable fetch failed: {e}") from e
 
 
-def refresh_data_node_storage_search_index(
-    storage_uid: str,
+def refresh_time_index_table_search_index(
+    table_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
     """
-    Refresh one data node storage search index via SDK client model.
+    Refresh one time-index table search index via SDK client model.
 
     Single source of truth:
       - delegates the refresh call to `TimeIndexMetaTable.refresh_table_search_index()`
     """
     try:
 
-        def _refresh(ClientDataNodeStorage):
-            storage = ClientDataNodeStorage.get(uid=str(storage_uid), timeout=timeout)
+        def _refresh(ClientTimeIndexTable):
+            storage = ClientTimeIndexTable.get(uid=str(table_uid), timeout=timeout)
             payload = storage.refresh_table_search_index(timeout=timeout)
             if isinstance(payload, dict):
                 out = dict(payload)
-                out.setdefault("uid", str(storage_uid))
+                out.setdefault("uid", str(table_uid))
                 return out
-            return {"uid": str(storage_uid)}
+            return {"uid": str(table_uid)}
 
         return _run_sdk_model_operation(
             module_name="mainsequence.client.metatables",
@@ -3925,25 +3925,25 @@ def refresh_data_node_storage_search_index(
     except Exception as e:
         err_name = type(e).__name__
         if err_name == "NotFoundError":
-            raise ApiError(f"Data node storage not found: {storage_uid}") from e
+            raise ApiError(f"Time-index table not found: {table_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Data node storage search index refresh failed: {e}") from e
+        raise ApiError(f"Time-index table search index refresh failed: {e}") from e
 
 
-def run_data_node_storage_query(
-    storage_uid: str,
+def run_time_index_table_query(
+    table_uid: str,
     sql: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
     """
-    Run a raw SQL query against one data node storage via SDK client model.
+    Run a raw SQL query against one time-index table via SDK client model.
     """
     try:
 
-        def _run_query(ClientDataNodeStorage):
-            storage = ClientDataNodeStorage.get(uid=str(storage_uid), timeout=timeout)
+        def _run_query(ClientTimeIndexTable):
+            storage = ClientTimeIndexTable.get(uid=str(table_uid), timeout=timeout)
             payload = storage.run_query(sql, timeout=timeout)
             return dict(payload) if isinstance(payload, dict) else {"ok": True, "results": payload}
 
@@ -3955,10 +3955,10 @@ def run_data_node_storage_query(
     except Exception as e:
         err_name = type(e).__name__
         if err_name == "NotFoundError":
-            raise ApiError(f"Data node storage not found: {storage_uid}") from e
+            raise ApiError(f"Time-index table not found: {table_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Data node query failed: {e}") from e
+        raise ApiError(f"Time-index table query failed: {e}") from e
 
 
 def run_meta_table_query(
@@ -3991,8 +3991,8 @@ def run_meta_table_query(
         raise ApiError(f"MetaTable query failed: {e}") from e
 
 
-def delete_data_node_storage(
-    storage_uid: str,
+def delete_time_index_table(
+    table_uid: str,
     *,
     full_delete_selected: bool = False,
     full_delete_downstream_tables: bool = False,
@@ -4001,15 +4001,15 @@ def delete_data_node_storage(
     timeout: int | None = None,
 ) -> dict[str, Any]:
     """
-    Delete one data node storage via SDK client model.
+    Delete one time-index table via SDK client model.
 
     Single source of truth:
       - delegates deletion and destroy query params to `TimeIndexMetaTable.delete()`
     """
     try:
 
-        def _delete(ClientDataNodeStorage):
-            storage = ClientDataNodeStorage.get(uid=str(storage_uid), timeout=timeout)
+        def _delete(ClientTimeIndexTable):
+            storage = ClientTimeIndexTable.get(uid=str(table_uid), timeout=timeout)
             payload = _sdk_object_to_dict(storage)
             storage.delete(
                 full_delete_selected=full_delete_selected,
@@ -4028,10 +4028,10 @@ def delete_data_node_storage(
     except Exception as e:
         err_name = type(e).__name__
         if err_name == "NotFoundError":
-            raise ApiError(f"Data node storage not found: {storage_uid}") from e
+            raise ApiError(f"Time-index table not found: {table_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Data node storage deletion failed: {e}") from e
+        raise ApiError(f"Time-index table deletion failed: {e}") from e
 
 
 def delete_meta_table(
@@ -4067,18 +4067,18 @@ def delete_meta_table(
         raise ApiError(f"MetaTable deletion failed: {e}") from e
 
 
-def list_data_node_storage_users_can_view(
-    storage_uid: str,
+def list_time_index_table_users_can_view(
+    table_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
     """
-    Fetch the view-access state for a data node storage via `ShareableObjectMixin.can_view()`.
+    Fetch the view-access state for a time-index table via `ShareableObjectMixin.can_view()`.
     """
     return _get_shareable_object_access_state(
         module_name="mainsequence.client.metatables",
         class_name="TimeIndexMetaTable",
-        object_uid=storage_uid,
+        object_uid=table_uid,
         object_lookup_field="uid",
         accessor_name="can_view",
         timeout=timeout,
@@ -4103,18 +4103,18 @@ def list_meta_table_users_can_view(
     )
 
 
-def list_data_node_storage_users_can_edit(
-    storage_uid: str,
+def list_time_index_table_users_can_edit(
+    table_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
     """
-    Fetch the edit-access state for a data node storage via `ShareableObjectMixin.can_edit()`.
+    Fetch the edit-access state for a time-index table via `ShareableObjectMixin.can_edit()`.
     """
     return _get_shareable_object_access_state(
         module_name="mainsequence.client.metatables",
         class_name="TimeIndexMetaTable",
-        object_uid=storage_uid,
+        object_uid=table_uid,
         object_lookup_field="uid",
         accessor_name="can_edit",
         timeout=timeout,
@@ -4139,19 +4139,19 @@ def list_meta_table_users_can_edit(
     )
 
 
-def add_data_node_storage_user_to_view(
-    storage_uid: str,
+def add_time_index_table_user_to_view(
+    table_uid: str,
     user_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
     """
-    Grant explicit view access to one user for a data node storage.
+    Grant explicit view access to one user for a time-index table.
     """
     return _mutate_shareable_object_access(
         module_name="mainsequence.client.metatables",
         class_name="TimeIndexMetaTable",
-        object_uid=storage_uid,
+        object_uid=table_uid,
         object_lookup_field="uid",
         action_name="add_to_view",
         user_uid=user_uid,
@@ -4179,19 +4179,19 @@ def add_meta_table_user_to_view(
     )
 
 
-def add_data_node_storage_user_to_edit(
-    storage_uid: str,
+def add_time_index_table_user_to_edit(
+    table_uid: str,
     user_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
     """
-    Grant explicit edit access to one user for a data node storage.
+    Grant explicit edit access to one user for a time-index table.
     """
     return _mutate_shareable_object_access(
         module_name="mainsequence.client.metatables",
         class_name="TimeIndexMetaTable",
-        object_uid=storage_uid,
+        object_uid=table_uid,
         object_lookup_field="uid",
         action_name="add_to_edit",
         user_uid=user_uid,
@@ -4219,19 +4219,19 @@ def add_meta_table_user_to_edit(
     )
 
 
-def remove_data_node_storage_user_from_view(
-    storage_uid: str,
+def remove_time_index_table_user_from_view(
+    table_uid: str,
     user_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
     """
-    Remove explicit view access from one user for a data node storage.
+    Remove explicit view access from one user for a time-index table.
     """
     return _mutate_shareable_object_access(
         module_name="mainsequence.client.metatables",
         class_name="TimeIndexMetaTable",
-        object_uid=storage_uid,
+        object_uid=table_uid,
         object_lookup_field="uid",
         action_name="remove_from_view",
         user_uid=user_uid,
@@ -4259,19 +4259,19 @@ def remove_meta_table_user_from_view(
     )
 
 
-def remove_data_node_storage_user_from_edit(
-    storage_uid: str,
+def remove_time_index_table_user_from_edit(
+    table_uid: str,
     user_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
     """
-    Remove explicit edit access from one user for a data node storage.
+    Remove explicit edit access from one user for a time-index table.
     """
     return _mutate_shareable_object_access(
         module_name="mainsequence.client.metatables",
         class_name="TimeIndexMetaTable",
-        object_uid=storage_uid,
+        object_uid=table_uid,
         object_lookup_field="uid",
         action_name="remove_from_edit",
         user_uid=user_uid,
@@ -4299,8 +4299,8 @@ def remove_meta_table_user_from_edit(
     )
 
 
-def add_data_node_storage_team_to_view(
-    storage_uid: str,
+def add_time_index_table_team_to_view(
+    table_uid: str,
     team_uid: str,
     *,
     timeout: int | None = None,
@@ -4308,7 +4308,7 @@ def add_data_node_storage_team_to_view(
     return _mutate_shareable_object_team_access(
         module_name="mainsequence.client.metatables",
         class_name="TimeIndexMetaTable",
-        object_uid=storage_uid,
+        object_uid=table_uid,
         object_lookup_field="uid",
         action_name="add_team_to_view",
         team_uid=team_uid,
@@ -4333,8 +4333,8 @@ def add_meta_table_team_to_view(
     )
 
 
-def add_data_node_storage_team_to_edit(
-    storage_uid: str,
+def add_time_index_table_team_to_edit(
+    table_uid: str,
     team_uid: str,
     *,
     timeout: int | None = None,
@@ -4342,7 +4342,7 @@ def add_data_node_storage_team_to_edit(
     return _mutate_shareable_object_team_access(
         module_name="mainsequence.client.metatables",
         class_name="TimeIndexMetaTable",
-        object_uid=storage_uid,
+        object_uid=table_uid,
         object_lookup_field="uid",
         action_name="add_team_to_edit",
         team_uid=team_uid,
@@ -4367,8 +4367,8 @@ def add_meta_table_team_to_edit(
     )
 
 
-def remove_data_node_storage_team_from_view(
-    storage_uid: str,
+def remove_time_index_table_team_from_view(
+    table_uid: str,
     team_uid: str,
     *,
     timeout: int | None = None,
@@ -4376,7 +4376,7 @@ def remove_data_node_storage_team_from_view(
     return _mutate_shareable_object_team_access(
         module_name="mainsequence.client.metatables",
         class_name="TimeIndexMetaTable",
-        object_uid=storage_uid,
+        object_uid=table_uid,
         object_lookup_field="uid",
         action_name="remove_team_from_view",
         team_uid=team_uid,
@@ -4401,8 +4401,8 @@ def remove_meta_table_team_from_view(
     )
 
 
-def remove_data_node_storage_team_from_edit(
-    storage_uid: str,
+def remove_time_index_table_team_from_edit(
+    table_uid: str,
     team_uid: str,
     *,
     timeout: int | None = None,
@@ -4410,7 +4410,7 @@ def remove_data_node_storage_team_from_edit(
     return _mutate_shareable_object_team_access(
         module_name="mainsequence.client.metatables",
         class_name="TimeIndexMetaTable",
-        object_uid=storage_uid,
+        object_uid=table_uid,
         object_lookup_field="uid",
         action_name="remove_team_from_edit",
         team_uid=team_uid,
@@ -4435,18 +4435,18 @@ def remove_meta_table_team_from_edit(
     )
 
 
-def add_data_node_storage_labels(
-    storage_uid: str,
+def add_time_index_table_labels(
+    table_uid: str,
     labels: list[str],
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
-    """Attach one or more organizational labels to a data node storage."""
+    """Attach one or more organizational labels to a time-index table."""
 
     return _mutate_labelable_object_labels(
         module_name="mainsequence.client.metatables",
         class_name="TimeIndexMetaTable",
-        object_uid=storage_uid,
+        object_uid=table_uid,
         object_lookup_field="uid",
         action_name="add_label",
         labels=labels,
@@ -4473,18 +4473,18 @@ def add_meta_table_labels(
     )
 
 
-def remove_data_node_storage_labels(
-    storage_uid: str,
+def remove_time_index_table_labels(
+    table_uid: str,
     labels: list[str],
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
-    """Remove one or more organizational labels from a data node storage."""
+    """Remove one or more organizational labels from a time-index table."""
 
     return _mutate_labelable_object_labels(
         module_name="mainsequence.client.metatables",
         class_name="TimeIndexMetaTable",
-        object_uid=storage_uid,
+        object_uid=table_uid,
         object_lookup_field="uid",
         action_name="remove_label",
         labels=labels,

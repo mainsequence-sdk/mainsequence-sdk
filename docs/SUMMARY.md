@@ -1,14 +1,12 @@
 - [Home](index.md)
 - Knowledge
-    - [Data Nodes](knowledge/data_nodes.md)
+    - [Time-Index Table Updaters](knowledge/time_index_table_updates.md)
     - MetaTables
         - [Overview](knowledge/meta_tables/index.md)
         - [SDK API And Backend Contract](knowledge/meta_tables/api.md)
         - [Registering SQLAlchemy Tables](knowledge/meta_tables/sqlalchemy.md)
         - [Compiled SQL Execution](knowledge/meta_tables/compiled_sql.md)
         - [MetaTable Migrations](knowledge/meta_tables/migrations.md)
-    - Migrations
-        - [DataNodes To MetaTable-Driven Storage](migrations/datanode_metatable_storage_migration.md)
     - [CLI Deep Dive](knowledge/cli.md)
     - Dashboards
         - Streamlit
@@ -23,6 +21,8 @@
         - [Owner-Scoped Runtime Observability](knowledge/infrastructure/owner_observability.md)
         - [Artifacts](knowledge/infrastructure/artifacts.md)
         - [Constants and Secrets](knowledge/infrastructure/constants_and_secrets.md)
+- Migrations
+    - [6.x to 7.0: Time-Index Table Updater Hard Cut](migrations/v7-time-index-table-updater-hard-cut.md)
 - CLI
     - [Overview](cli/index.md)
 - [Reference](reference/index.md)
