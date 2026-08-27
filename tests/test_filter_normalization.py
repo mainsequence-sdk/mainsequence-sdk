@@ -2538,6 +2538,9 @@ def test_resource_release_model_supports_automatic_deployment_payloads():
                 "tag_regex": None,
                 "policy_revision": 3,
             },
+            "revision_retention_count": 3,
+            "active_revision": None,
+            "desired_revision": "2a9370a7-c07f-439c-bcd9-629e3e916699",
         }
     )
 
@@ -2547,6 +2550,45 @@ def test_resource_release_model_supports_automatic_deployment_payloads():
     assert release.automatic_redeployment_policy is not None
     assert release.automatic_redeployment_policy.tag_regex is None
     assert release.automatic_redeployment_policy.policy_revision == 3
+    assert release.revision_retention_count == 3
+    assert release.active_revision is None
+    assert release.desired_revision == "2a9370a7-c07f-439c-bcd9-629e3e916699"
+
+
+def test_resource_release_filter_accepts_canonical_revision_lifecycle_projection(monkeypatch):
+    release_uid = "2f4c4c3d-5669-4da5-9d86-b84633c1e6ed"
+    desired_revision_uid = "2a9370a7-c07f-439c-bcd9-629e3e916699"
+    response_payload = {
+        "uid": release_uid,
+        "project_branch_uid": PROJECT_BRANCH_UID,
+        "name": "Pricing API",
+        "release_kind": "fastapi",
+        "automatic_deployment": True,
+        "automatic_redeployment_policy": {
+            "tag_regex": None,
+            "policy_revision": 2,
+        },
+        "revision_retention_count": 3,
+        "active_revision": None,
+        "desired_revision": desired_revision_uid,
+    }
+
+    class FakeResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return [dict(response_payload)]
+
+    monkeypatch.setattr(base_mod, "make_request", lambda **kwargs: FakeResponse())
+
+    releases = models_helpers_mod.ResourceRelease.filter(project_branch_uid=PROJECT_BRANCH_UID)
+
+    assert len(releases) == 1
+    assert releases[0].uid == release_uid
+    assert releases[0].revision_retention_count == 3
+    assert releases[0].active_revision is None
+    assert releases[0].desired_revision == desired_revision_uid
 
 
 def test_legacy_resource_release_deployment_run_model_is_not_exported():
@@ -2582,6 +2624,9 @@ def test_resource_release_create_sends_automatic_deployment(monkeypatch):
                     "tag_regex": "^v[0-9]+\\.[0-9]+\\.[0-9]+$",
                     "policy_revision": 1,
                 },
+                "revision_retention_count": 5,
+                "active_revision": "19128ab6-d72f-460c-8525-d758fa92676a",
+                "desired_revision": "2a9370a7-c07f-439c-bcd9-629e3e916699",
             }
 
     def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
@@ -2600,6 +2645,7 @@ def test_resource_release_create_sends_automatic_deployment(monkeypatch):
         cpu_request="500m",
         memory_request="1Gi",
         automatic_deployment=True,
+        revision_retention_count=5,
         timeout=11,
     )
 
@@ -2607,12 +2653,40 @@ def test_resource_release_create_sends_automatic_deployment(monkeypatch):
     assert release.automatic_redeployment_policy is not None
     assert release.automatic_redeployment_policy.tag_regex == "^v[0-9]+\\.[0-9]+\\.[0-9]+$"
     assert release.automatic_redeployment_policy.policy_revision == 1
+    assert release.revision_retention_count == 5
+    assert release.active_revision == "19128ab6-d72f-460c-8525-d758fa92676a"
+    assert release.desired_revision == "2a9370a7-c07f-439c-bcd9-629e3e916699"
     assert captured["r_type"] == "POST"
     assert str(captured["url"]).endswith("/api/v1/resource-releases/")
     assert captured["payload"]["json"]["automatic_deployment"] is True
+    assert captured["payload"]["json"]["revision_retention_count"] == 5
     assert captured["payload"]["json"]["resource_uid"] == resource_uid
     assert captured["payload"]["json"]["related_image_uid"] == image_uid
     assert captured["timeout"] == 11
+
+
+@pytest.mark.parametrize("invalid_value", [0, -1, True, 1.5, "3"])
+def test_resource_release_create_rejects_invalid_revision_retention_count(
+    monkeypatch, invalid_value
+):
+    monkeypatch.setattr(
+        models_helpers_mod,
+        "make_request",
+        lambda **kwargs: pytest.fail("invalid retention must fail before the request"),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="revision_retention_count must be a positive integer",
+    ):
+        models_helpers_mod.ResourceRelease.create(
+            resource_uid="857bec7b-dd77-4272-aecd-13fc2138eacc",
+            related_image_uid="6cfdb152-923e-45b9-a150-c4541c68b0d1",
+            release_kind=models_helpers_mod.ResourceReleaseKind.FAST_API,
+            cpu_request="500m",
+            memory_request="1Gi",
+            revision_retention_count=invalid_value,
+        )
 
 
 def test_project_resource_create_release_uses_related_image_uid(monkeypatch):
@@ -2703,6 +2777,9 @@ def test_resource_release_get_accepts_fastapi_cors_allowed_origins(monkeypatch):
         "release_kind": "fastapi",
         "automatic_deployment": True,
         "automatic_redeployment_policy": None,
+        "revision_retention_count": 4,
+        "active_revision": "19128ab6-d72f-460c-8525-d758fa92676a",
+        "desired_revision": None,
         "cors_allowed_origins": [
             "https://app.example.com",
             "https://*.site-dev.main-sequence.app",
@@ -2732,10 +2809,68 @@ def test_resource_release_get_accepts_fastapi_cors_allowed_origins(monkeypatch):
     release = models_helpers_mod.ResourceRelease.get(pk=release_uid, timeout=13)
 
     assert release.release_kind == models_helpers_mod.ResourceReleaseKind.FAST_API
+    assert release.revision_retention_count == 4
+    assert release.active_revision == "19128ab6-d72f-460c-8525-d758fa92676a"
+    assert release.desired_revision is None
     assert release.cors_allowed_origins == response_payload["cors_allowed_origins"]
     assert captured["r_type"] == "GET"
     assert captured["url"].endswith(f"/resource-releases/{release_uid}/")
     assert captured["timeout"] == 13
+
+
+def test_resource_release_patch_supports_positive_revision_retention_count(monkeypatch):
+    captured = {}
+    release_uid = "2f4c4c3d-5669-4da5-9d86-b84633c1e6ed"
+    release = models_helpers_mod.ResourceRelease(
+        uid=release_uid,
+        release_kind="fastapi",
+        revision_retention_count=3,
+    )
+
+    class FakeResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {
+                "revision_retention_count": 6,
+                "active_revision": None,
+                "desired_revision": None,
+            }
+
+    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
+        captured.update({"r_type": r_type, "url": url, "payload": payload})
+        return FakeResponse()
+
+    monkeypatch.setattr(base_mod, "make_request", _fake_make_request)
+
+    patched = release.patch(revision_retention_count=6)
+
+    assert patched is release
+    assert patched.revision_retention_count == 6
+    assert captured["r_type"] == "PATCH"
+    assert captured["url"].endswith(f"/resource-releases/{release_uid}/")
+    assert captured["payload"]["json"] == {"revision_retention_count": 6}
+
+
+@pytest.mark.parametrize("invalid_value", [None, 0, -1, True, 1.5, "3"])
+def test_resource_release_patch_rejects_invalid_revision_retention_count(
+    monkeypatch, invalid_value
+):
+    monkeypatch.setattr(
+        base_mod,
+        "make_request",
+        lambda **kwargs: pytest.fail("invalid retention must fail before the request"),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="revision_retention_count must be a positive integer",
+    ):
+        models_helpers_mod.ResourceRelease.patch_by_uid(
+            "2f4c4c3d-5669-4da5-9d86-b84633c1e6ed",
+            revision_retention_count=invalid_value,
+        )
 
 
 def _resource_release_pipeline_payload(*, running_step: str | None = None):

@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [6.0.49] - 2026-08-27
+
+### Fixed
+
+- Aligned strict `ResourceRelease` list, detail, and create parsing with the
+  canonical revision lifecycle fields: positive `revision_retention_count` and
+  nullable public `active_revision` / `desired_revision` UIDs. Release create
+  and patch operations now validate and send positive retention settings.
+
 ## [6.0.48] - 2026-08-27
 
 ### Changed

@@ -302,6 +302,16 @@ The SDK surface also accepts:
 - `ResourceRelease.deploy_current_version()` for an SDK-triggered manual deployment run; it returns `DeploymentRun`
 - `DeploymentRun.filter(target_type="resource_release", target_uid=release.uid)` to inspect runs for one release
 
+Every release also exposes its immutable revision lifecycle:
+
+- `desired_revision` is the public UID of the accepted revision being materialized
+- `active_revision` is the public UID of the ready revision currently serving behind the stable release URL
+- the two UIDs may differ while a deployment is running or after a deployment fails
+- `revision_retention_count` is the positive release-owned retention setting; omission on create uses the backend default
+- configure retention with `ResourceRelease.create(..., revision_retention_count=3)` or `release.patch(revision_retention_count=5)`
+
+Treat `active_revision` and `desired_revision` as read-only public identities. Do not substitute provider revision names, deployment names, or internal database IDs.
+
 Do not claim there is a CLI command for `deploy_current_version` unless the local CLI actually exposes one. In this SDK, the manual detail action is available through the client model.
 
 Inspect the unified run's `state`, `phase`, `outcome`, `steps`, `logs`, and `error` fields. Do not use legacy resource-release deployment status fields or filters.

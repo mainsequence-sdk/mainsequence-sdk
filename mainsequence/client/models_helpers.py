@@ -1199,6 +1199,33 @@ class ResourceRelease(
             "The revision is returned by the API and is not part of create requests."
         ),
     )
+    revision_retention_count: PositiveInt = Field(
+        default=3,
+        title="Revision Retention Count",
+        description=(
+            "Number of immutable release revisions retained by the platform. "
+            "This positive release setting can be supplied on create or patch."
+        ),
+        examples=[3],
+    )
+    active_revision: str | None = Field(
+        default=None,
+        title="Active Revision UID",
+        description=(
+            "Public UID of the ready immutable revision currently serving behind "
+            "the stable release URL."
+        ),
+        examples=["19128ab6-d72f-460c-8525-d758fa92676a", None],
+    )
+    desired_revision: str | None = Field(
+        default=None,
+        title="Desired Revision UID",
+        description=(
+            "Public UID of the accepted immutable revision currently being "
+            "materialized. It may differ from the active revision during deployment."
+        ),
+        examples=["2a9370a7-c07f-439c-bcd9-629e3e916699", None],
+    )
     cors_allowed_origins: list[str] | None = Field(
         default=None,
         title="CORS Allowed Origins",
@@ -1222,6 +1249,7 @@ class ResourceRelease(
         gpu_type: str | None = None,
         spot: bool | None = None,
         automatic_deployment: bool | None = None,
+        revision_retention_count: int | None = None,
         timeout: int | None = None,
         files=None,
     ) -> ResourceRelease:
@@ -1268,6 +1296,10 @@ class ResourceRelease(
             payload["spot"] = bool(spot)
         if automatic_deployment is not None:
             payload["automatic_deployment"] = bool(automatic_deployment)
+        if revision_retention_count is not None:
+            payload["revision_retention_count"] = cls._normalize_revision_retention_count(
+                revision_retention_count
+            )
 
         request_payload = {"json": cls.serialize_for_json(payload)}
         if files:
@@ -1286,6 +1318,20 @@ class ResourceRelease(
             raise_for_response(r, payload=request_payload)
 
         return cls(**r.json())
+
+    @staticmethod
+    def _normalize_revision_retention_count(value: int) -> int:
+        if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+            raise ValueError("revision_retention_count must be a positive integer.")
+        return value
+
+    @classmethod
+    def patch_by_uid(cls, uid: str, *args, _into=None, **kwargs):
+        if "revision_retention_count" in kwargs:
+            kwargs["revision_retention_count"] = cls._normalize_revision_retention_count(
+                kwargs["revision_retention_count"]
+            )
+        return super().patch_by_uid(uid, *args, _into=_into, **kwargs)
 
     def deploy_current_version(
         self,
