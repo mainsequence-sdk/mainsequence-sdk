@@ -11163,6 +11163,82 @@ def test_project_current_json(cli_mod, runner, monkeypatch, tmp_path):
     assert payload["sdk_status"]["status"] == "match"
 
 
+def test_project_current_debug_reports_authenticated_runtime_git_context(
+    cli_mod,
+    runner,
+    monkeypatch,
+    tmp_path,
+):
+    from mainsequence.project_context import (
+        GitProjectSourceContext,
+        ProjectRuntimeContext,
+    )
+
+    project_path = tmp_path / "org" / "projects" / "demo-project-uid-123"
+    project_path.mkdir(parents=True, exist_ok=True)
+    project_info = types.SimpleNamespace(
+        path=str(project_path),
+        folder="demo-project-uid-123",
+        project_uid="project-uid-123",
+        project_id="123",
+        venv_path=None,
+        python_version="3.13.7",
+    )
+    source_context = GitProjectSourceContext(
+        repository_root=project_path,
+        canonical_repository_identity="github.com/org/demo",
+        repository_branch="development",
+        repository_ref="refs/heads/development",
+        commit_sha="b" * 40,
+    )
+    runtime_context = ProjectRuntimeContext(
+        source_context=source_context,
+        project_uid="project-uid-123",
+        project_branch_uid="project-branch-uid-123",
+        organization_environment_uid="environment-uid-123",
+        metatables_data_source=None,
+        status="resolved",
+        process_id=os.getpid(),
+        project_branch=types.SimpleNamespace(uid="project-branch-uid-123"),
+        context_source="authenticated_runtime",
+    )
+
+    monkeypatch.setattr(
+        cli_mod.cfg,
+        "get_config",
+        lambda: {"mainsequence_path": str(tmp_path)},
+    )
+    monkeypatch.setattr(
+        cli_mod,
+        "detect_current_project",
+        lambda workspaces, base: (
+            project_info,
+            types.SimpleNamespace(reason="detected", checks=[]),
+        ),
+    )
+    monkeypatch.setattr(cli_mod, "get_project_runtime_context", lambda **kwargs: runtime_context)
+    monkeypatch.setattr(cli_mod, "read_local_sdk_version", lambda req: "7.0.2")
+    monkeypatch.setattr(cli_mod, "fetch_latest_sdk_version", lambda: "7.0.2")
+
+    result = runner.invoke(cli_mod.app, ["project", "current", "--debug", "--json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["project"] == {
+        "path": str(project_path),
+        "folder": "demo-project-uid-123",
+        "project_uid": "project-uid-123",
+        "git_branch": "development",
+        "git_repository": "github.com/org/demo",
+        "git_commit": "b" * 40,
+        "project_branch_uid": "project-branch-uid-123",
+        "project_branch_status": "resolved",
+        "project_branch_error": None,
+        "venv_path": None,
+        "python_version": "3.13.7",
+    }
+
+
 def test_project_sdk_status(cli_mod, runner, monkeypatch, tmp_path):
     target = tmp_path / "project"
     target.mkdir(parents=True, exist_ok=True)

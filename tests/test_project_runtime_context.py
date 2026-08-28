@@ -101,6 +101,23 @@ def _resolve(
     )
 
 
+def _install_authenticated_runtime_context(
+    *,
+    project_uid: str = PROJECT_UID,
+    project_branch_uid: str = PROJECT_BRANCH_UID,
+    repository_branch: str = "main",
+    organization_environment_uid: str = ENVIRONMENT_UID,
+):
+    project_context._install_authenticated_runtime_project_context(
+        {
+            "project_uid": project_uid,
+            "project_branch_uid": project_branch_uid,
+            "repository_branch": repository_branch,
+            "organization_environment_uid": organization_environment_uid,
+        }
+    )
+
+
 def _git(repo: pathlib.Path, *args: str) -> str:
     result = subprocess.run(
         ["git", *args],
@@ -283,40 +300,22 @@ def test_identity_environment_variables_never_select_context(monkeypatch):
     assert context.organization_environment_uid == ENVIRONMENT_UID
 
 
-def test_authenticated_runtime_context_resolves_without_git(monkeypatch):
+def test_authenticated_runtime_context_requires_matching_git(monkeypatch):
     data_source = _data_source()
-    branch = _project_branch(data_source=data_source)
-    monkeypatch.setattr(
-        models_foundry.ProjectBranch,
-        "get_by_uid",
-        classmethod(lambda cls, uid: branch),
-    )
-    monkeypatch.setattr(
-        project_context,
-        "_resolve_git_source_context",
-        lambda path: pytest.fail("deployed runtime context must not inspect Git"),
-    )
-    project_context._install_authenticated_runtime_project_context(
-        {
-            "project_uid": PROJECT_UID,
-            "project_branch_uid": PROJECT_BRANCH_UID,
-            "repository_branch": "main",
-            "organization_environment_uid": ENVIRONMENT_UID,
-        }
-    )
+    _install_authenticated_runtime_context()
 
-    context = project_context.get_project_runtime_context()
+    context = _resolve(monkeypatch, data_source=data_source)
 
     assert context.is_authenticated_runtime is True
-    assert context.source_context is None
+    assert context.source_context == _source()
     assert context.project_uid == PROJECT_UID
     assert context.project_branch_uid == PROJECT_BRANCH_UID
     assert context.repository_branch == "main"
+    assert context.repository_ref == "refs/heads/main"
+    assert context.commit_sha == COMMIT_SHA
     assert context.organization_environment_uid == ENVIRONMENT_UID
     assert context.metatables_data_source is data_source
     assert project_context.validate_project_source_context(context=context) is context
-    with pytest.raises(project_context.ProjectRuntimeContextError, match="no local Git"):
-        _ = context.commit_sha
 
     assert models_metatables.MetaTable._sdk_owned_query_context("MetaTable.filter") == {}
     assert metatables_core._with_current_metatable_project_context(
@@ -327,59 +326,102 @@ def test_authenticated_runtime_context_resolves_without_git(monkeypatch):
     ) == {"management_mode": "external_registered"}
 
 
-def test_authenticated_runtime_context_rejects_backend_branch_mismatch(monkeypatch):
+def test_authenticated_runtime_context_has_no_missing_git_fallback(monkeypatch):
+    _install_authenticated_runtime_context()
+
+    def missing_git(path):
+        raise project_context.ProjectRuntimeContextError(
+            "missing deployed Git checkout"
+        )
+
     monkeypatch.setattr(
-        models_foundry.ProjectBranch,
-        "get_by_uid",
-        classmethod(lambda cls, uid: _project_branch(branch="development")),
-    )
-    project_context._install_authenticated_runtime_project_context(
-        {
-            "project_uid": PROJECT_UID,
-            "project_branch_uid": PROJECT_BRANCH_UID,
-            "repository_branch": "main",
-            "organization_environment_uid": ENVIRONMENT_UID,
-        }
+        project_context,
+        "_resolve_git_source_context",
+        missing_git,
     )
 
-    with pytest.raises(project_context.ProjectRuntimeContextError, match="repository_branch"):
+    with pytest.raises(project_context.ProjectRuntimeContextError, match="missing deployed Git"):
         project_context.get_project_runtime_context()
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("project_uid", "different-project"),
+        ("project_branch_uid", "different-project-branch"),
+        ("repository_branch", "development"),
+        ("organization_environment_uid", "different-environment"),
+    ],
+)
+def test_authenticated_runtime_context_rejects_git_resolved_target_mismatch(
+    monkeypatch,
+    field,
+    value,
+):
+    runtime_context = {
+        "project_uid": PROJECT_UID,
+        "project_branch_uid": PROJECT_BRANCH_UID,
+        "repository_branch": "main",
+        "organization_environment_uid": ENVIRONMENT_UID,
+    }
+    runtime_context[field] = value
+    _install_authenticated_runtime_context(**runtime_context)
+
+    with pytest.raises(project_context.ProjectRuntimeContextError, match=field):
+        _resolve(monkeypatch)
+
+
+def test_authenticated_runtime_context_detects_git_drift(monkeypatch):
+    _install_authenticated_runtime_context()
+    context = _resolve(monkeypatch)
+    monkeypatch.setattr(
+        project_context,
+        "_resolve_git_source_context",
+        lambda path: _source(branch="development", commit_sha="b" * 40),
+    )
+
+    with pytest.raises(project_context.ProjectSourceContextDriftError):
+        project_context.validate_project_source_context(context=context)
 
 
 def test_configured_runtime_credential_exchanges_context_before_resolution(monkeypatch):
     monkeypatch.setenv("MAINSEQUENCE_AUTH_MODE", "runtime_credential")
     monkeypatch.setenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_ID", "credential-id")
     monkeypatch.setenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET", "credential-secret")
-    monkeypatch.setattr(
-        models_foundry.ProjectBranch,
-        "get_by_uid",
-        classmethod(lambda cls, uid: _project_branch()),
-    )
+    events = []
     monkeypatch.setattr(
         project_context,
         "_resolve_git_source_context",
-        lambda path: pytest.fail("credential exchange must precede Git resolution"),
+        lambda path: events.append("git") or _source(),
     )
     exchange_calls = []
 
     def exchange(*, force=False, session=None):
+        events.append("exchange")
         exchange_calls.append((force, session))
-        project_context._install_authenticated_runtime_project_context(
-            {
-                "project_uid": PROJECT_UID,
-                "project_branch_uid": PROJECT_BRANCH_UID,
-                "repository_branch": "main",
-                "organization_environment_uid": ENVIRONMENT_UID,
-            }
-        )
+        _install_authenticated_runtime_context()
         return {"Authorization": "Bearer runtime-access"}
 
     monkeypatch.setattr(client_utils.loaders, "refresh_headers", exchange)
 
-    context = project_context.get_project_runtime_context()
+    def resolve_git_context(source):
+        events.append("backend")
+        return types.SimpleNamespace(
+            canonical_repository_identity=source.canonical_repository_identity,
+            repository_branch=source.repository_branch,
+            repository_ref=source.repository_ref,
+            commit_sha=source.commit_sha,
+            project_branch=_project_branch(branch=source.repository_branch),
+        )
+
+    context = project_context.get_project_runtime_context(
+        _project_branch_context_loader=resolve_git_context,
+    )
 
     assert context.is_authenticated_runtime is True
+    assert context.source_context == _source()
     assert exchange_calls == [(True, None)]
+    assert events == ["exchange", "git", "backend"]
 
 
 def test_unregistered_git_context_is_nonfatal_until_branch_context_is_required(monkeypatch):
@@ -532,20 +574,8 @@ class _ScopedCollection(CurrentProjectBranchCollectionMixin, BaseObjectOrm):
 
 
 def test_authenticated_runtime_collection_omits_project_branch_selector(monkeypatch):
-    branch = _project_branch()
-    monkeypatch.setattr(
-        models_foundry.ProjectBranch,
-        "get_by_uid",
-        classmethod(lambda cls, uid: branch),
-    )
-    project_context._install_authenticated_runtime_project_context(
-        {
-            "project_uid": PROJECT_UID,
-            "project_branch_uid": PROJECT_BRANCH_UID,
-            "repository_branch": "main",
-            "organization_environment_uid": ENVIRONMENT_UID,
-        }
-    )
+    _install_authenticated_runtime_context()
+    _resolve(monkeypatch)
     captured = {}
 
     class Response:

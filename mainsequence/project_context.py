@@ -6,7 +6,7 @@ import re
 import subprocess
 import threading
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Literal
 from urllib.parse import urlsplit
 
@@ -51,7 +51,7 @@ ProjectBranchContextLoader = Callable[[GitProjectSourceContext], Any]
 
 @dataclass(frozen=True, slots=True)
 class ProjectRuntimeContext:
-    source_context: GitProjectSourceContext | None
+    source_context: GitProjectSourceContext
     project_uid: str | None
     project_branch_uid: str | None
     organization_environment_uid: str | None
@@ -61,40 +61,30 @@ class ProjectRuntimeContext:
     project_branch: Any | None
     detail: str = ""
     context_source: ProjectRuntimeContextSource = "git"
-    runtime_repository_branch: str | None = None
 
     @property
     def is_authenticated_runtime(self) -> bool:
         return self.context_source == "authenticated_runtime"
 
-    def _require_git_source_context(self) -> GitProjectSourceContext:
-        if self.source_context is None:
-            raise ProjectRuntimeContextError(
-                "Authenticated deployed runtime context has no local Git source."
-            )
-        return self.source_context
-
     @property
     def repository_root(self) -> pathlib.Path:
-        return self._require_git_source_context().repository_root
+        return self.source_context.repository_root
 
     @property
     def canonical_repository_identity(self) -> str:
-        return self._require_git_source_context().canonical_repository_identity
+        return self.source_context.canonical_repository_identity
 
     @property
     def repository_branch(self) -> str:
-        if self.source_context is not None:
-            return self.source_context.repository_branch
-        return str(self.runtime_repository_branch or "")
+        return self.source_context.repository_branch
 
     @property
     def repository_ref(self) -> str:
-        return self._require_git_source_context().repository_ref
+        return self.source_context.repository_ref
 
     @property
     def commit_sha(self) -> str:
-        return self._require_git_source_context().commit_sha
+        return self.source_context.commit_sha
 
 
 @dataclass(frozen=True, slots=True)
@@ -436,12 +426,10 @@ def _build_project_runtime_context(
     )
 
 
-def _build_authenticated_runtime_project_context(
+def _verify_authenticated_runtime_project_context(
+    context: ProjectRuntimeContext,
     authenticated_context: Mapping[str, str],
 ) -> ProjectRuntimeContext:
-    from mainsequence.client.models_foundry import ProjectBranch
-
-    project_branch = ProjectBranch.get_by_uid(authenticated_context["project_branch_uid"])
     expected_fields = {
         "project_uid": authenticated_context["project_uid"],
         "project_branch_uid": authenticated_context["project_branch_uid"],
@@ -449,40 +437,25 @@ def _build_authenticated_runtime_project_context(
         "organization_environment_uid": authenticated_context["organization_environment_uid"],
     }
     observed_fields = {
-        "project_uid": _normalized_value(project_branch, "project_uid"),
-        "project_branch_uid": _normalized_value(project_branch, "uid"),
-        "repository_branch": _normalized_value(project_branch, "repository_branch"),
-        "organization_environment_uid": _normalized_value(
-            project_branch,
-            "organization_environment_uid",
-        ),
+        "project_uid": str(context.project_uid or "").strip(),
+        "project_branch_uid": str(context.project_branch_uid or "").strip(),
+        "repository_branch": context.repository_branch,
+        "organization_environment_uid": str(
+            context.organization_environment_uid or ""
+        ).strip(),
     }
     mismatched = sorted(
         field for field, expected in expected_fields.items() if observed_fields[field] != expected
     )
     if mismatched:
         raise ProjectRuntimeContextError(
-            "Authenticated runtime project context does not match the target "
-            "ProjectBranch: " + ", ".join(mismatched) + "."
+            "Git-resolved ProjectBranch does not match the authenticated runtime "
+            "target: " + ", ".join(mismatched) + "."
         )
 
-    return ProjectRuntimeContext(
-        source_context=None,
-        project_uid=expected_fields["project_uid"],
-        project_branch_uid=expected_fields["project_branch_uid"],
-        organization_environment_uid=expected_fields["organization_environment_uid"],
-        metatables_data_source=_object_value(
-            project_branch,
-            "metatables_data_source",
-        ),
-        status="resolved",
-        process_id=os.getpid(),
-        project_branch=project_branch,
+    return replace(
+        context,
         context_source="authenticated_runtime",
-        runtime_repository_branch=expected_fields["repository_branch"],
-        detail=(
-            "ProjectBranch context installed from an authenticated runtime credential exchange."
-        ),
     )
 
 
@@ -492,7 +465,7 @@ def get_project_runtime_context(
     project_uid: str | None = None,
     _project_branch_context_loader: ProjectBranchContextLoader | None = None,
 ) -> ProjectRuntimeContext:
-    """Resolve and freeze authenticated runtime or local Git context once per process."""
+    """Resolve and freeze Git-native context, then verify any runtime target."""
 
     global _STATE
 
@@ -518,14 +491,16 @@ def get_project_runtime_context(
 
     try:
         authenticated_context = _authenticated_runtime_context_for_process()
+        context = _build_project_runtime_context(
+            project_dir=normalized_project_dir,
+            project_branch_context_loader=(
+                _project_branch_context_loader or _default_project_branch_context_loader
+            ),
+        )
         if authenticated_context is not None:
-            context = _build_authenticated_runtime_project_context(authenticated_context)
-        else:
-            context = _build_project_runtime_context(
-                project_dir=normalized_project_dir,
-                project_branch_context_loader=(
-                    _project_branch_context_loader or _default_project_branch_context_loader
-                ),
+            context = _verify_authenticated_runtime_project_context(
+                context,
+                authenticated_context,
             )
         if project_uid and str(project_uid).strip() != context.project_uid:
             raise ProjectRuntimeContextError(
@@ -550,8 +525,6 @@ def validate_project_source_context(
     """Fail if the current worktree no longer matches the frozen source context."""
 
     resolved = context or get_project_runtime_context()
-    if resolved.is_authenticated_runtime:
-        return resolved
     observed = _resolve_git_source_context(resolved.repository_root)
     if observed != resolved.source_context:
         raise ProjectSourceContextDriftError(

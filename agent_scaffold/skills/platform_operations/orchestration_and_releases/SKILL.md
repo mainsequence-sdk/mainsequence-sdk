@@ -155,7 +155,10 @@ backend prepares the exact initial image and later qualifying immutable
 repository events may atomically promote another exact image. On an existing
 Job, enabling or disabling it retains the current exact image. The backend owns
 repository-event truth, policy evaluation, image preparation, and promotion;
-project code and the SDK must not inspect Git or choose a runtime branch.
+project code and the SDK must not choose a Job's deployment branch or image.
+This deployment-policy rule does not replace ADR-0037 runtime source discovery:
+code executing inside the resulting project image still resolves and validates
+its attached Git branch and exact commit.
 
 For direct creation use:
 

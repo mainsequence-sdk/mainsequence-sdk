@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [7.0.2] - 2026-08-28
+
+### Fixed
+
+- Restored the ADR-0037 Git-native source resolver for authenticated project
+  runtimes. Runtime credentials now verify the Git-resolved ProjectBranch
+  instead of replacing repository, branch, and commit context with a no-Git
+  projection; deployed source drift and missing Git fail closed
+  ([#100](https://github.com/mainsequence-sdk/mainsequence-sdk/issues/100)).
+
 ## [7.0.1] - 2026-08-28
 
 ### Fixed

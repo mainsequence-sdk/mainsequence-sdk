@@ -37,6 +37,10 @@ attached branch, and exact HEAD commit select the platform Project and
 ProjectBranch. Never ask the user for a ProjectBranch UID, persist Project or
 branch identity in `.env`, or use an environment variable as a branch selector.
 The CLI resolves platform UIDs internally when a branch-owned API requires them.
+The same rule applies inside deployed project-code runtimes: runtime credentials
+authorize the backend target but never replace Git source discovery. A missing,
+detached, or mismatched deployed checkout is a hard runtime-image error; do not
+fall back to credential claims or injected ProjectBranch values.
 
 ## Inspect Before Changing State
 
