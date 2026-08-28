@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [7.0.1] - 2026-08-28
+
+### Fixed
+
+- Added an explicit strict `ScheduledUpdateNode` response model so non-empty
+  Scheduler `pre_loads_in_tree`, `in_active_tree`, and `schedules_to`
+  projections accept the backend's canonical node discriminator and
+  output-table identity fields ([#99](https://github.com/mainsequence-sdk/mainsequence-sdk/issues/99)).
+
 ## [7.0.0] - 2026-08-27
 
 ### Changed

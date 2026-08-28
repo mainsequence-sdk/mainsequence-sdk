@@ -3843,6 +3843,49 @@ class TimeIndexMetaTable(MetaTable):
         )
 
 
+class ScheduledUpdateNode(BasePydanticModel):
+    """Strict read projection for an update node attached to a Scheduler.
+
+    Scheduler endpoints return a flattened polymorphic node projection with
+    output-table identity. This is intentionally separate from
+    :class:`TableUpdateNode`, which models the full update graph resource.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    uid: str = Field(..., description="Public uid of the scheduled update node")
+    node_type: str = Field(..., min_length=1, description="Scheduled-node discriminator")
+    update_hash: str | None = Field(
+        ...,
+        max_length=63,
+        description="Update identity when exposed by the concrete scheduled node",
+    )
+    build_configuration: dict[str, Any] | None = Field(
+        ...,
+        description="Serialized build configuration exposed by the concrete node",
+    )
+    output_table_uid: str | None = Field(
+        ...,
+        description="Canonical public uid of the scheduled node's output table",
+    )
+    output_table_type: str | None = Field(
+        ...,
+        description="Output-table discriminator exposed by the backend",
+    )
+    output_table_physical_table_name: str | None = Field(
+        ...,
+        description="Physical table name of the scheduled node's output",
+    )
+    output_table_identifier: str | None = Field(
+        ...,
+        description="Published identifier of the scheduled node's output table",
+    )
+    output_table_data_source_uid: str | None = Field(
+        ...,
+        description="Canonical data-source uid of the scheduled node's output table",
+    )
+
+
 class Scheduler(BasePydanticModel, BaseObjectOrm):
     uid: str | None = Field(None, description="Public uid of this scheduler")
     organization_environment_uid: str = Field(
@@ -3861,9 +3904,9 @@ class Scheduler(BasePydanticModel, BaseObjectOrm):
     api_address: str | None
     api_port: int | None
     last_heart_beat: datetime.datetime | None = None
-    pre_loads_in_tree: list[TableUpdateNode] | None = None
-    in_active_tree: list[TableUpdateNode] | None = None
-    schedules_to: list[TableUpdateNode] | None = None
+    pre_loads_in_tree: list[ScheduledUpdateNode] | None = None
+    in_active_tree: list[ScheduledUpdateNode] | None = None
+    schedules_to: list[ScheduledUpdateNode] | None = None
     # for heartbeat
     _stop_heart_beat: bool = False
     _executor: object | None = None
@@ -5121,6 +5164,7 @@ __all__ = [
     "MetaTableValidateContractRequest",
     "PodDataSource",
     "TimeIndexTableUpdateConfiguration",
+    "ScheduledUpdateNode",
     "Scheduler",
     "SchedulerDoesNotExist",
     "SessionDataSource",

@@ -6,6 +6,28 @@ import mainsequence.client.metatables.core as core_mod
 ENVIRONMENT_UID = "58218213-5e4e-43de-a5bd-6757f4e1c8f6"
 SCHEDULER_UID = "00000000-0000-4000-8000-000000000001"
 UPDATE_NODE_UID = "00000000-0000-4000-8000-000000000002"
+OUTPUT_TABLE_UID = "00000000-0000-4000-8000-000000000003"
+DATA_SOURCE_UID = "00000000-0000-4000-8000-000000000004"
+
+
+def _scheduled_node_payload():
+    return {
+        "uid": UPDATE_NODE_UID,
+        "node_type": "time_index_table_update",
+        "update_hash": "pricesupdater_0123456789abcdef0123456789abcdef",
+        "build_configuration": {
+            "configuration_schema_version": 2,
+            "table_updater_class_import_path": {
+                "module": "tutorial.prices",
+                "qualname": "PricesUpdater",
+            },
+        },
+        "output_table_uid": OUTPUT_TABLE_UID,
+        "output_table_type": "time_index_meta_table",
+        "output_table_physical_table_name": "prices",
+        "output_table_identifier": "prices",
+        "output_table_data_source_uid": DATA_SOURCE_UID,
+    }
 
 
 def _scheduler_payload():
@@ -21,9 +43,9 @@ def _scheduler_payload():
         "api_address": None,
         "api_port": None,
         "last_heart_beat": None,
-        "pre_loads_in_tree": [],
-        "in_active_tree": [],
-        "schedules_to": [],
+        "pre_loads_in_tree": [_scheduled_node_payload()],
+        "in_active_tree": [_scheduled_node_payload()],
+        "schedules_to": [_scheduled_node_payload()],
     }
 
 
@@ -49,6 +71,32 @@ def test_scheduler_strict_model_accepts_environment_projection():
         core_mod.Scheduler.model_validate(
             {**_scheduler_payload(), "unexpected_projection": "rejected"}
         )
+
+
+def test_scheduler_strict_model_accepts_canonical_scheduled_node_projection():
+    scheduler = core_mod.Scheduler.model_validate(_scheduler_payload())
+
+    for relation_name in ("pre_loads_in_tree", "in_active_tree", "schedules_to"):
+        scheduled_nodes = getattr(scheduler, relation_name)
+        assert scheduled_nodes is not None
+        assert len(scheduled_nodes) == 1
+        scheduled_node = scheduled_nodes[0]
+        assert isinstance(scheduled_node, core_mod.ScheduledUpdateNode)
+        assert scheduled_node.uid == UPDATE_NODE_UID
+        assert scheduled_node.node_type == "time_index_table_update"
+        assert scheduled_node.output_table_uid == OUTPUT_TABLE_UID
+        assert scheduled_node.output_table_type == "time_index_meta_table"
+        assert scheduled_node.output_table_physical_table_name == "prices"
+        assert scheduled_node.output_table_identifier == "prices"
+        assert scheduled_node.output_table_data_source_uid == DATA_SOURCE_UID
+
+
+def test_scheduler_strict_model_rejects_unknown_scheduled_node_projection():
+    payload = _scheduler_payload()
+    payload["schedules_to"][0]["unexpected_node_projection"] = "rejected"
+
+    with pytest.raises(ValidationError, match="unexpected_node_projection"):
+        core_mod.Scheduler.model_validate(payload)
 
 
 def test_scheduler_build_derives_environment_without_request_override(monkeypatch):
@@ -77,6 +125,8 @@ def test_scheduler_build_derives_environment_without_request_override(monkeypatc
     assert request_body["update_node_uids"] == [UPDATE_NODE_UID]
     assert captured["time_out"] == 11
     assert scheduler.organization_environment_uid == ENVIRONMENT_UID
+    assert scheduler.schedules_to is not None
+    assert scheduler.schedules_to[0].output_table_uid == OUTPUT_TABLE_UID
 
 
 def test_scheduler_get_for_update_node_accepts_environment_projection(monkeypatch):
