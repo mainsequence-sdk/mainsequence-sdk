@@ -6,7 +6,7 @@ import pytest
 
 import mainsequence.client.base as base_module
 import mainsequence.client.models_foundry as models_module
-import mainsequence.project_context as project_context
+import mainsequence.code_repository_context as code_repository_context
 
 ENVIRONMENT_UID = "58218213-5e4e-43de-a5bd-6757f4e1c8f6"
 
@@ -25,7 +25,7 @@ class _Response:
 @pytest.fixture(autouse=True)
 def _resolved_environment(monkeypatch):
     monkeypatch.setattr(
-        project_context,
+        code_repository_context,
         "resolve_organization_environment_uid",
         lambda operation: ENVIRONMENT_UID,
     )
@@ -140,7 +140,7 @@ def test_artifact_upload_uses_sdk_owned_environment(monkeypatch, tmp_path):
     }
 
 
-def test_environment_resource_models_accept_canonical_read_only_projections():
+def test_environment_resource_models_accept_canonical_read_only_code_repositoryions():
     bucket = models_module.Bucket(
         uid="33333333-3333-4333-8333-333333333333",
         name="default_bucket",

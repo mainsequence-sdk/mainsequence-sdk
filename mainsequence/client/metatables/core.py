@@ -27,19 +27,19 @@ from pydantic import (
     model_validator,
 )
 
-from mainsequence.logconf import logger
-from mainsequence.project_context import (
-    ProjectRuntimeContext,
-    get_project_runtime_context,
-    require_project_branch_context,
-    require_project_metatables_data_source,
+from mainsequence.code_repository_context import (
+    CodeRepositoryContext,
+    get_code_repository_context,
+    require_code_repository_branch_context,
+    require_code_repository_metatables_data_source,
     resolve_organization_environment_uid,
 )
+from mainsequence.logconf import logger
 
 from ..base import (
     BaseObjectOrm,
     BasePydanticModel,
-    CurrentProjectEnvironmentResourceMixin,
+    CurrentCodeRepositoryEnvironmentResourceMixin,
     LabelableObjectMixin,
     ShareableObjectMixin,
 )
@@ -546,10 +546,10 @@ class MetaTableOperationScope(BasePydanticModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
-class MetaTableProjectContextRequest(BaseModel):
+class MetaTableCodeRepositoryContextRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    project_branch_uid: str = Field(..., min_length=1)
+    code_repository_branch_uid: str = Field(..., min_length=1)
 
 
 DEFAULT_META_TABLE_OPERATION_MAX_ROWS = 1_000
@@ -1306,7 +1306,7 @@ class DataSource(BasePydanticModel, BaseObjectOrm):
 
 
 class MetaTable(
-    CurrentProjectEnvironmentResourceMixin,
+    CurrentCodeRepositoryEnvironmentResourceMixin,
     BasePydanticModel,
     LabelableObjectMixin,
     ShareableObjectMixin,
@@ -1405,7 +1405,7 @@ class MetaTable(
 
     @classmethod
     def _sdk_owned_create_context(cls, operation: str) -> dict[str, str]:
-        # MetaTable collection creation has its own managed project_context contract.
+        # MetaTable collection creation has its own managed code_repository_context contract.
         return {}
 
     @model_validator(mode="before")
@@ -1434,7 +1434,7 @@ class MetaTable(
         payload = request if request is not None else MetaTableMigrationConnectionRequest(**kwargs)
         if isinstance(payload, Mapping):
             payload = MetaTableMigrationConnectionRequest(**payload)
-        payload = _with_current_metatable_project_context(payload)
+        payload = _with_current_metatable_code_repository_context(payload)
         response = self._post_detail_action(
             "migration-connection",
             payload,
@@ -1684,9 +1684,9 @@ class MetaTable(
         if request is not None and kwargs:
             raise ValueError("Pass either request or keyword fields, not both.")
         unvalidated_payload = _payload_json(request) if request is not None else dict(kwargs)
-        if "project_context" in unvalidated_payload:
+        if "code_repository_context" in unvalidated_payload:
             raise ValueError(
-                "project_context is SDK-controlled and cannot be supplied by the caller."
+                "code_repository_context is SDK-controlled and cannot be supplied by the caller."
             )
         if "organization_environment_uid" in unvalidated_payload:
             raise ValueError(
@@ -1694,7 +1694,7 @@ class MetaTable(
                 "be supplied by the caller."
             )
         payload = MetaTableRegistrationRequest.model_validate(unvalidated_payload)
-        payload = _with_current_metatable_project_context(payload)
+        payload = _with_current_metatable_code_repository_context(payload)
         response_json = cls._post_action(
             "register",
             payload,
@@ -1716,7 +1716,7 @@ class MetaTable(
             on_status(f"Serializing POST {url} payload...")
         payload_json = _payload_json_sequence(rows)
         _ = [cls.COLLECTION_CREATE_ROW_MODEL.model_validate(row) for row in payload_json]
-        payload_json = _with_current_metatable_project_context_collection(payload_json)
+        payload_json = _with_current_metatable_code_repository_context_collection(payload_json)
         if on_status is not None:
             payload_size = len(json.dumps(payload_json, default=str))
             on_status(f"Serialized POST {url} payload bytes={payload_size}.")
@@ -1756,7 +1756,7 @@ class MetaTable(
         payload = request if request is not None else ManagedMetaTableFinalizeRequest(**kwargs)
         if isinstance(payload, Mapping):
             payload = ManagedMetaTableFinalizeRequest(**payload)
-        payload = _with_current_metatable_project_context(payload)
+        payload = _with_current_metatable_code_repository_context(payload)
         response_json = cls._post_action(
             "finalize-managed",
             payload,
@@ -2547,9 +2547,9 @@ class TimeIndexTableUpdate(TableUpdateNode, BaseObjectOrm):
 
     @classmethod
     def get_or_create(cls, **kwargs):
-        if "current_project_branch_uid" in kwargs:
+        if "current_code_repository_branch_uid" in kwargs:
             raise ValueError(
-                "current_project_branch_uid is SDK-controlled and cannot be supplied by the caller."
+                "current_code_repository_branch_uid is SDK-controlled and cannot be supplied by the caller."
             )
         from mainsequence.meta_tables.time_index_table_updates.configuration import (
             reject_legacy_configuration,
@@ -2577,8 +2577,8 @@ class TimeIndexTableUpdate(TableUpdateNode, BaseObjectOrm):
 
         url = cls.get_object_url() + "/get-or-create/"
         kwargs = serialize_to_json(kwargs)
-        context = require_project_branch_context("TimeIndexTableUpdate.get_or_create")
-        kwargs["current_project_branch_uid"] = context.project_branch_uid
+        context = require_code_repository_branch_context("TimeIndexTableUpdate.get_or_create")
+        kwargs["current_code_repository_branch_uid"] = context.code_repository_branch_uid
         payload = {"json": kwargs}
         s = cls.build_session()
         r = make_request(s=s, loaders=cls.LOADERS, r_type="POST", url=url, payload=payload)
@@ -3466,7 +3466,7 @@ class TimeIndexMetaTable(MetaTable):
 
     @classmethod
     def get_or_create(cls, **kwargs):
-        kwargs = _with_current_metatable_project_context(kwargs)
+        kwargs = _with_current_metatable_code_repository_context(kwargs)
         url = cls.get_object_url() + "/get-or-create/"
         payload = {"json": serialize_to_json(kwargs)}
         s = cls.build_session()
@@ -3488,9 +3488,9 @@ class TimeIndexMetaTable(MetaTable):
         if request is not None and kwargs:
             raise ValueError("Pass either request or keyword fields, not both.")
         unvalidated_payload = _payload_json(request) if request is not None else dict(kwargs)
-        if "project_context" in unvalidated_payload:
+        if "code_repository_context" in unvalidated_payload:
             raise ValueError(
-                "project_context is SDK-controlled and cannot be supplied by the caller."
+                "code_repository_context is SDK-controlled and cannot be supplied by the caller."
             )
         if "organization_environment_uid" in unvalidated_payload:
             raise ValueError(
@@ -3498,7 +3498,7 @@ class TimeIndexMetaTable(MetaTable):
                 "be supplied by the caller."
             )
         payload = TimeIndexMetaTableRegistrationRequest.model_validate(unvalidated_payload)
-        payload_json = _with_current_metatable_project_context(payload)
+        payload_json = _with_current_metatable_code_repository_context(payload)
         request_payload = {"json": serialize_to_json(payload_json)}
         response = make_request(
             s=cls.build_session(),
@@ -4906,56 +4906,56 @@ class UpdateBatchResponse[UpdateT, UpdateDetailsT, TimeIndexedProfileT](BaseMode
     table_updates: list[UpdateT]
 
 
-def _metatable_project_context_from_resolution(
-    resolution: ProjectRuntimeContext,
-) -> MetaTableProjectContextRequest:
-    context = require_project_branch_context(
+def _metatable_code_repository_context_from_resolution(
+    resolution: CodeRepositoryContext,
+) -> MetaTableCodeRepositoryContextRequest:
+    context = require_code_repository_branch_context(
         "Platform-managed MetaTable operations",
         context=resolution,
     )
-    return MetaTableProjectContextRequest(project_branch_uid=str(context.project_branch_uid))
+    return MetaTableCodeRepositoryContextRequest(code_repository_branch_uid=str(context.code_repository_branch_uid))
 
 
-def _current_metatable_project_context() -> MetaTableProjectContextRequest:
-    return _metatable_project_context_from_resolution(get_project_runtime_context())
+def _current_metatable_code_repository_context() -> MetaTableCodeRepositoryContextRequest:
+    return _metatable_code_repository_context_from_resolution(get_code_repository_context())
 
 
 def _current_metatable_environment_uid() -> str:
     return resolve_organization_environment_uid("External MetaTable registration")
 
 
-def _metatable_project_context_for_request() -> MetaTableProjectContextRequest | None:
-    if get_project_runtime_context().is_authenticated_runtime:
+def _metatable_code_repository_context_for_request() -> MetaTableCodeRepositoryContextRequest | None:
+    if get_code_repository_context().is_authenticated_runtime:
         return None
-    return _current_metatable_project_context()
+    return _current_metatable_code_repository_context()
 
 
-def _with_current_metatable_project_context(
+def _with_current_metatable_code_repository_context(
     payload: Mapping[str, Any] | BasePydanticModel,
 ) -> dict[str, Any]:
     payload_json = _payload_json(payload)
-    if "project_context" in payload_json:
-        raise ValueError("project_context is SDK-controlled and cannot be supplied by the caller.")
+    if "code_repository_context" in payload_json:
+        raise ValueError("code_repository_context is SDK-controlled and cannot be supplied by the caller.")
     if "organization_environment_uid" in payload_json:
         raise ValueError(
             "organization_environment_uid is SDK-controlled and cannot be supplied by the caller."
         )
     if payload_json.get("management_mode") == "external_registered":
-        if not get_project_runtime_context().is_authenticated_runtime:
+        if not get_code_repository_context().is_authenticated_runtime:
             payload_json["organization_environment_uid"] = _current_metatable_environment_uid()
         return payload_json
-    project_context = _metatable_project_context_for_request()
-    if project_context is not None:
-        payload_json["project_context"] = project_context.model_dump(mode="json")
+    code_repository_context = _metatable_code_repository_context_for_request()
+    if code_repository_context is not None:
+        payload_json["code_repository_context"] = code_repository_context.model_dump(mode="json")
     return payload_json
 
 
-def _with_current_metatable_project_context_collection(
+def _with_current_metatable_code_repository_context_collection(
     payloads: Sequence[Mapping[str, Any]],
 ) -> list[dict[str, Any]]:
     payload_rows = [dict(payload) for payload in payloads]
-    if any("project_context" in row for row in payload_rows):
-        raise ValueError("project_context is SDK-controlled and cannot be supplied by the caller.")
+    if any("code_repository_context" in row for row in payload_rows):
+        raise ValueError("code_repository_context is SDK-controlled and cannot be supplied by the caller.")
     if any("organization_environment_uid" in row for row in payload_rows):
         raise ValueError(
             "organization_environment_uid is SDK-controlled and cannot be supplied by the caller."
@@ -4967,37 +4967,37 @@ def _with_current_metatable_project_context_collection(
         row for row in payload_rows if row.get("management_mode") == "external_registered"
     ]
     if external_rows:
-        if not get_project_runtime_context().is_authenticated_runtime:
+        if not get_code_repository_context().is_authenticated_runtime:
             environment_uid = _current_metatable_environment_uid()
             for row in external_rows:
                 row["organization_environment_uid"] = environment_uid
 
-    project_context = _metatable_project_context_for_request() if managed_rows else None
-    if project_context is not None:
-        current_project_context = project_context.model_dump(mode="json")
+    code_repository_context = _metatable_code_repository_context_for_request() if managed_rows else None
+    if code_repository_context is not None:
+        current_code_repository_context = code_repository_context.model_dump(mode="json")
         for row in managed_rows:
-            row["project_context"] = current_project_context
+            row["code_repository_context"] = current_code_repository_context
     return payload_rows
 
 
 @dataclass
 class PodDataSource:
     data_source: DataSource | None = None
-    _project_context_process_id: int | None = field(
+    _code_repository_context_process_id: int | None = field(
         default=None,
         init=False,
         repr=False,
     )
 
-    def set_remote_db(self, *, resolution: ProjectRuntimeContext | None = None):
-        context = resolution or get_project_runtime_context()
-        data_source = require_project_metatables_data_source(
+    def set_remote_db(self, *, resolution: CodeRepositoryContext | None = None):
+        context = resolution or get_code_repository_context()
+        data_source = require_code_repository_metatables_data_source(
             "Project-derived session data access",
             context=context,
         )
         logger.debug(f"Set remote data source to {data_source}")
         self.data_source = data_source
-        self._project_context_process_id = context.process_id
+        self._code_repository_context_process_id = context.process_id
         return data_source
 
     @property
@@ -5057,7 +5057,7 @@ class PodDataSource:
                 registered_table.delete()
 
         self.data_source = data_source
-        self._project_context_process_id = None
+        self._code_repository_context_process_id = None
 
         physical_ds = self.data_source
         if class_type == DUCK_DB:
@@ -5089,7 +5089,7 @@ def get_session_data_source() -> DataSource:
     data_source = getattr(SessionDataSource, "data_source", None)
     context_process_id = getattr(
         SessionDataSource,
-        "_project_context_process_id",
+        "_code_repository_context_process_id",
         None,
     )
     if data_source is None or (

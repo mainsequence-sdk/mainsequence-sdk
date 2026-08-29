@@ -90,21 +90,21 @@ MCP.
 Check that you can see your projects:
 
 ```bash
-mainsequence project list
+mainsequence code-repository list
 ```
 
 Create a new project:
 
 ```bash
-mainsequence project create my-first-project
+mainsequence code-repository create my-first-project
 ```
 
 Set it up locally:
 
 ```bash
-mainsequence project set-up-locally <PROJECT_ID>
+mainsequence code-repository set-up-locally <PROJECT_ID>
 cd my-first-project
-mainsequence project build_local_venv --path .
+mainsequence code-repository build-local-venv --path .
 ```
 
 From there, the normal learning path is:

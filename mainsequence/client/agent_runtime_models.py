@@ -129,13 +129,13 @@ class AgentSemanticSearchResult(BasePydanticModel):
         description="Short description returned by semantic search for the matched agent.",
     )
     a2a_profile: AgentA2AProfile = Field(default_factory=AgentA2AProfile)
-    project_branch_uid: str = Field(
+    code_repository_branch_uid: str = Field(
         ...,
-        description="Public UID of the ProjectBranch that owns the matched Project Coding Agent.",
+        description="Public UID of the CodeRepositoryBranch that owns the matched CodeRepository Coding Agent.",
     )
     repository_branch: str = Field(
         ...,
-        description="Repository branch of the matched Project Coding Agent.",
+        description="Repository branch of the matched CodeRepository Coding Agent.",
     )
     organization_environment_uid: str = Field(
         ...,
@@ -398,33 +398,33 @@ class Agent(
         None,
         description="Service-level automatic deployment flag for the resolved typed coding-agent service.",
     )
-    project_branch_uid: str | None = Field(
+    code_repository_branch_uid: str | None = Field(
         None,
         description=(
-            "Public UID of the canonical ProjectBranch attached through the "
-            "typed Project Executor service, or null when the agent is not "
-            "ProjectBranch-scoped."
+            "Public UID of the canonical CodeRepositoryBranch attached through the "
+            "typed CodeRepository Executor service, or null when the agent is not "
+            "CodeRepositoryBranch-scoped."
         ),
     )
     repository_branch: str | None = Field(
         ...,
         description=(
-            "Read-only repository branch projected from the canonical ProjectBranch, "
-            "or null when the Agent is not ProjectBranch-scoped."
+            "Read-only repository branch projected from the canonical CodeRepositoryBranch, "
+            "or null when the Agent is not CodeRepositoryBranch-scoped."
         ),
     )
     organization_environment_uid: str | None = Field(
         ...,
         description=(
             "Read-only public UID of the Organization Environment derived from the "
-            "canonical ProjectBranch, or null when the Agent is not environment-scoped."
+            "canonical CodeRepositoryBranch, or null when the Agent is not environment-scoped."
         ),
     )
     organization_environment_name: str | None = Field(
         ...,
         description=(
             "Read-only name of the Organization Environment derived from the canonical "
-            "ProjectBranch, or null when the Agent is not environment-scoped."
+            "CodeRepositoryBranch, or null when the Agent is not environment-scoped."
         ),
     )
     observability: ObservabilityLinks | None = Field(
@@ -795,7 +795,7 @@ class CodingAgentService(BaseObjectOrm, BasePydanticModel):
         "agent_type": ["exact"],
         "scope_kind": ["exact"],
         "user_uid": ["exact"],
-        "project_branch_uid": ["exact"],
+        "code_repository_branch_uid": ["exact"],
         "automatic_deployment": ["exact"],
     }
     FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
@@ -805,7 +805,7 @@ class CodingAgentService(BaseObjectOrm, BasePydanticModel):
         "agent_type": "str",
         "scope_kind": "str",
         "user_uid": "uid",
-        "project_branch_uid": "uid",
+        "code_repository_branch_uid": "uid",
         "automatic_deployment": "bool",
     }
 
@@ -817,13 +817,13 @@ class CodingAgentService(BaseObjectOrm, BasePydanticModel):
     agent_uid: str | None = Field(None, description="Public UID of the owning Agent.")
     agent_type: str | None = Field(
         None,
-        description="Agent runtime type, such as astro-orchestrator or project-executor.",
+        description="Agent runtime type, such as astro-orchestrator or code-repository-executor.",
     )
     scope: dict[str, Any] = Field(
         default_factory=dict,
         description=(
             "Typed scope projection, for example {kind: user, user_uid} or "
-            "{kind: project_branch, project_branch_uid}."
+            "{kind: code_repository_branch, code_repository_branch_uid}."
         ),
     )
     is_ready: bool = Field(False, description="Whether the service runtime is routable.")
@@ -882,7 +882,7 @@ class CodingAgentService(BaseObjectOrm, BasePydanticModel):
     )
     automatic_redeployment_policy: AutomaticRedeploymentPolicy | None = Field(
         ...,
-        description="Automatic redeployment policy for a Project Executor service.",
+        description="Automatic redeployment policy for a CodeRepository Executor service.",
     )
     observability: ObservabilityLinks | None = Field(
         default=None,
@@ -918,22 +918,22 @@ class CodingAgentService(BaseObjectOrm, BasePydanticModel):
         *,
         agent_type: str,
         user_uid: str | None = None,
-        project_branch_uid: str | None = None,
+        code_repository_branch_uid: str | None = None,
         timeout=None,
     ) -> CodingAgentService:
         body: dict[str, Any] = {"agent_type": str(agent_type)}
         if user_uid is not None:
             body["user_uid"] = cls._coerce_filter_uid(user_uid, field_name="user_uid")
-        if str(agent_type) == "project-executor":
-            from mainsequence.project_context import resolve_project_branch_uid
+        if str(agent_type) == "code-repository-executor":
+            from mainsequence.code_repository_context import resolve_code_repository_branch_uid
 
-            body["project_branch_uid"] = resolve_project_branch_uid(
-                "CodingAgentService.resolve(project-executor)",
-                supplied_uid=project_branch_uid,
+            body["code_repository_branch_uid"] = resolve_code_repository_branch_uid(
+                "CodingAgentService.resolve(code-repository-executor)",
+                supplied_uid=code_repository_branch_uid,
             )
-        elif project_branch_uid is not None:
+        elif code_repository_branch_uid is not None:
             raise ValueError(
-                "project_branch_uid is only valid when resolving a project-executor service."
+                "code_repository_branch_uid is only valid when resolving a code-repository-executor service."
             )
         rows = cls.filter(timeout=timeout, **body)
         if len(rows) != 1:
@@ -956,23 +956,23 @@ class CodingAgentService(BaseObjectOrm, BasePydanticModel):
         )
 
     @classmethod
-    def resolve_project_executor(
+    def resolve_code_repository_executor(
         cls,
         *,
-        project_branch_uid: str | None = None,
+        code_repository_branch_uid: str | None = None,
         timeout=None,
     ) -> CodingAgentService:
         return cls.resolve(
-            agent_type="project-executor",
-            project_branch_uid=project_branch_uid,
+            agent_type="code-repository-executor",
+            code_repository_branch_uid=code_repository_branch_uid,
             timeout=timeout,
         )
 
     @classmethod
-    def deploy_project(
+    def deploy_code_repository(
         cls,
         *,
-        project_branch_uid: str | None = None,
+        code_repository_branch_uid: str | None = None,
         llm_provider: str | None = None,
         llm_model: str | None = None,
         llm_thinking: str | None = None,
@@ -987,11 +987,11 @@ class CodingAgentService(BaseObjectOrm, BasePydanticModel):
         timeout=None,
         **extra: Any,
     ) -> dict[str, Any]:
-        from mainsequence.project_context import resolve_project_branch_uid
+        from mainsequence.code_repository_context import resolve_code_repository_branch_uid
 
-        resolved_project_branch_uid = resolve_project_branch_uid(
+        resolved_code_repository_branch_uid = resolve_code_repository_branch_uid(
             "CodingAgentService.deploy_project",
-            supplied_uid=project_branch_uid,
+            supplied_uid=code_repository_branch_uid,
         )
         body: dict[str, Any] = {
             key: value
@@ -1011,10 +1011,10 @@ class CodingAgentService(BaseObjectOrm, BasePydanticModel):
             }.items()
             if value is not None
         }
-        body["agent_type"] = "project-executor"
+        body["agent_type"] = "code-repository-executor"
         body["scope"] = {
-            "kind": "project_branch",
-            "project_branch_uid": resolved_project_branch_uid,
+            "kind": "code_repository_branch",
+            "code_repository_branch_uid": resolved_code_repository_branch_uid,
         }
         return cls._post_collection_action(
             "deploy",

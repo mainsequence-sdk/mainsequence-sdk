@@ -47,14 +47,14 @@ from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.version import InvalidVersion, Version
 
 from ..client.compute_validation import decimal_to_storage, parse_cpu_request, parse_memory_request
-from ..project_context import (
-    ProjectRuntimeContextError,
-    get_project_runtime_context,
-    require_project_branch_context,
+from ..code_repository_context import (
+    CodeRepositoryContextError,
+    get_code_repository_context,
+    require_code_repository_branch_context,
 )
-from ..project_skills import (
-    ProjectSkillAssemblyError,
-    install_dual_source_project_skills,
+from ..code_repository_skills import (
+    CodeRepositorySkillAssemblyError,
+    install_dual_source_code_repository_skills,
 )
 from . import config as cfg
 from .api import (
@@ -64,6 +64,11 @@ from .api import (
     add_agent_team_to_view,
     add_agent_user_to_edit,
     add_agent_user_to_view,
+    add_code_repository_labels,
+    add_code_repository_team_to_edit,
+    add_code_repository_team_to_view,
+    add_code_repository_user_to_edit,
+    add_code_repository_user_to_view,
     add_constant_team_to_edit,
     add_constant_team_to_view,
     add_constant_user_to_edit,
@@ -74,11 +79,6 @@ from .api import (
     add_meta_table_team_to_view,
     add_meta_table_user_to_edit,
     add_meta_table_user_to_view,
-    add_project_labels,
-    add_project_team_to_edit,
-    add_project_team_to_view,
-    add_project_user_to_edit,
-    add_project_user_to_view,
     add_secret_team_to_edit,
     add_secret_team_to_view,
     add_secret_user_to_edit,
@@ -90,43 +90,43 @@ from .api import (
     add_time_index_table_team_to_view,
     add_time_index_table_user_to_edit,
     add_time_index_table_user_to_view,
-    bulk_delete_projects,
+    bulk_delete_code_repositories,
     create_agent,
+    create_code_repository,
+    create_code_repository_image,
+    create_code_repository_job,
+    create_code_repository_resource_release,
     create_constant,
     create_organization_team,
-    create_project,
-    create_project_image,
-    create_project_job,
-    create_project_resource_release,
     create_secret,
     delete_agent,
+    delete_code_repository_image,
     delete_constant,
     delete_meta_table,
     delete_organization_team,
-    delete_project_image,
     delete_resource_release,
     delete_secret,
     delete_time_index_table,
-    fetch_platform_project_skill_catalog,
+    fetch_platform_code_repository_skill_catalog,
     get_agent,
     get_agent_logs,
     get_agent_resource_usage,
     get_agent_session,
     get_agent_session_logs,
+    get_code_repositories,
+    get_code_repository_branch,
+    get_code_repository_image,
+    get_code_repository_job,
+    get_code_repository_job_run_logs,
+    get_code_repository_job_run_resource_usage,
+    get_code_repository_repository,
+    get_code_repository_time_index_table_updates,
     get_constant,
     get_current_user_profile,
     get_logged_user_details,
     get_meta_table,
     get_or_create_agent_session,
     get_organization_team,
-    get_project_branch,
-    get_project_image,
-    get_project_job,
-    get_project_job_run_logs,
-    get_project_job_run_resource_usage,
-    get_project_repository,
-    get_project_time_index_table_updates,
-    get_projects,
     get_resource_release,
     get_resource_release_logs,
     get_resource_release_resource_usage,
@@ -136,6 +136,13 @@ from .api import (
     list_agent_users_can_edit,
     list_agent_users_can_view,
     list_agents,
+    list_code_repository_base_images,
+    list_code_repository_images,
+    list_code_repository_job_runs,
+    list_code_repository_jobs,
+    list_code_repository_resources,
+    list_code_repository_users_can_edit,
+    list_code_repository_users_can_view,
     list_constant_users_can_edit,
     list_constant_users_can_view,
     list_constants,
@@ -144,13 +151,6 @@ from .api import (
     list_meta_table_users_can_view,
     list_meta_tables,
     list_organization_teams,
-    list_project_base_images,
-    list_project_images,
-    list_project_job_runs,
-    list_project_jobs,
-    list_project_resources,
-    list_project_users_can_edit,
-    list_project_users_can_view,
     list_secret_users_can_edit,
     list_secret_users_can_view,
     list_secrets,
@@ -165,6 +165,11 @@ from .api import (
     remove_agent_team_from_view,
     remove_agent_user_from_edit,
     remove_agent_user_from_view,
+    remove_code_repository_labels,
+    remove_code_repository_team_from_edit,
+    remove_code_repository_team_from_view,
+    remove_code_repository_user_from_edit,
+    remove_code_repository_user_from_view,
     remove_constant_team_from_edit,
     remove_constant_team_from_view,
     remove_constant_user_from_edit,
@@ -174,11 +179,6 @@ from .api import (
     remove_meta_table_team_from_view,
     remove_meta_table_user_from_edit,
     remove_meta_table_user_from_view,
-    remove_project_labels,
-    remove_project_team_from_edit,
-    remove_project_team_from_view,
-    remove_project_user_from_edit,
-    remove_project_user_from_view,
     remove_secret_team_from_edit,
     remove_secret_team_from_view,
     remove_secret_user_from_edit,
@@ -190,26 +190,27 @@ from .api import (
     remove_time_index_table_team_from_view,
     remove_time_index_table_user_from_edit,
     remove_time_index_table_user_from_view,
-    render_project_branch_default_redeployment_tag,
+    render_code_repository_branch_default_redeployment_tag,
     repo_name_from_git_url,
-    resolve_project,
+    resolve_code_repository,
+    run_code_repository_job,
     run_meta_table_query,
-    run_project_job,
     run_time_index_table_query,
     safe_slug,
-    search_projects,
+    search_code_repositories,
     semantic_search_agents,
     send_agent_session_a2a_message,
     time_index_table_column_search,
     time_index_table_description_search,
     update_organization_team,
-    validate_project_name,
+    validate_code_repository_name,
 )
 from .browser_auth import (
     BrowserAuthError,
     login_via_browser,
     login_via_mcp_handoff,
 )
+from .code_repository_status import detect_current_code_repository
 from .docker_utils import (
     build_docker_environment,
     compute_docker_image_ref,
@@ -229,7 +230,6 @@ from .local_ops import (
 )
 from .migrations import migrations as migrations_group
 from .model_filters import build_cli_model_filter_rows, parse_cli_model_filters
-from .project_status import detect_current_project
 from .pydantic_cli import (
     get_cli_field_metadata,
     pydantic_argument,
@@ -337,7 +337,7 @@ def _emit_json(payload, *, force: bool = False) -> bool:
 
 
 app = typer.Typer(
-    help="MainSequence CLI (login + project operations)",
+    help="MainSequence CLI (login + code-repository operations)",
     cls=MainSequenceGroup,
     invoke_without_command=True,
 )
@@ -351,15 +351,15 @@ organization = typer.Typer(help="Organization commands")
 organization_teams_group = typer.Typer(help="Organization team commands")
 meta_table_group = typer.Typer(help="MetaTable table-storage commands")
 time_index_table_group = typer.Typer(help="Time-index table discovery and access commands")
-project = typer.Typer(help="Project commands (remote + local operations)")
-project_list_group = typer.Typer(help="List-related project commands")
-project_project_resource_group = typer.Typer(help="Project resource commands")
-project_time_index_table_updates_group = typer.Typer(
-    help="Project time-index table update commands"
+code_repository = typer.Typer(help="CodeRepository commands (remote + local operations)")
+code_repository_list_group = typer.Typer(help="List-related project commands")
+code_repository_resources_group = typer.Typer(help="CodeRepository resource commands")
+code_repository_time_index_table_updates_group = typer.Typer(
+    help="CodeRepository time-index table update commands"
 )
-project_images_group = typer.Typer(help="Project image commands")
-project_jobs_group = typer.Typer(help="Project job commands")
-project_job_runs_group = typer.Typer(help="Project job run commands")
+code_repository_images_group = typer.Typer(help="CodeRepository image commands")
+code_repository_jobs_group = typer.Typer(help="CodeRepository job commands")
+code_repository_job_runs_group = typer.Typer(help="CodeRepository job run commands")
 settings = typer.Typer(help="Settings (base folder, backend, etc.)")
 sdk = typer.Typer(help="SDK utilities (latest version, status)")
 skills = typer.Typer(help="Installed scaffold skill commands")
@@ -374,13 +374,13 @@ app.add_typer(skills, name="skills")
 app.add_typer(meta_table_group, name="meta-table")
 app.add_typer(meta_table_group, name="meta_table")
 app.add_typer(time_index_table_group, name="time-index-table")
-app.add_typer(project, name="project")
-project.add_typer(project_list_group, name="list")
-project.add_typer(project_project_resource_group, name="project_resource")
-project.add_typer(project_time_index_table_updates_group, name="time-index-table-updates")
-project.add_typer(project_images_group, name="images")
-project.add_typer(project_jobs_group, name="jobs")
-project_jobs_group.add_typer(project_job_runs_group, name="runs")
+app.add_typer(code_repository, name="code-repository")
+code_repository.add_typer(code_repository_list_group, name="list")
+code_repository.add_typer(code_repository_resources_group, name="resources")
+code_repository.add_typer(code_repository_time_index_table_updates_group, name="time-index-table-updates")
+code_repository.add_typer(code_repository_images_group, name="images")
+code_repository.add_typer(code_repository_jobs_group, name="jobs")
+code_repository_jobs_group.add_typer(code_repository_job_runs_group, name="runs")
 app.add_typer(settings, name="settings")
 app.add_typer(sdk, name="sdk")
 app.add_typer(migrations_group, name="migrations")
@@ -414,8 +414,8 @@ JOB_MODEL_REF = "mainsequence.client.models_helpers.Job"
 INTERVAL_SCHEDULE_MODEL_REF = "mainsequence.client.models_helpers.IntervalSchedule"
 CRONTAB_SCHEDULE_MODEL_REF = "mainsequence.client.models_helpers.CrontabSchedule"
 JOB_RUN_MODEL_REF = "mainsequence.client.models_helpers.JobRun"
-PROJECT_IMAGE_MODEL_REF = "mainsequence.client.models_foundry.ProjectImage"
-PROJECT_RESOURCE_MODEL_REF = "mainsequence.client.models_helpers.ProjectResource"
+CODE_REPOSITORY_IMAGE_MODEL_REF = "mainsequence.client.models_foundry.CodeRepositoryImage"
+CODE_REPOSITORY_RESOURCE_MODEL_REF = "mainsequence.client.models_helpers.CodeRepositoryResource"
 RESOURCE_RELEASE_MODEL_REF = "mainsequence.client.models_helpers.ResourceRelease"
 TIME_INDEX_TABLE_MODEL_REF = "mainsequence.client.metatables.TimeIndexMetaTable"
 META_TABLE_MODEL_REF = "mainsequence.client.metatables.MetaTable"
@@ -664,7 +664,7 @@ def copy_instructions_to_clipboard(
 # ---------- helpers ----------
 
 
-def _projects_root(base_dir: str, org_slug: str) -> pathlib.Path:
+def _code_repositories_root(base_dir: str, org_slug: str) -> pathlib.Path:
     p = pathlib.Path(base_dir).expanduser()
     return p / org_slug / "projects"
 
@@ -679,22 +679,22 @@ def _org_slug_from_profile() -> str:
     return re.sub(r"[^a-z0-9-_]+", "-", name.lower()).strip("-") or "default"
 
 
-def _resolve_project_repository_ssh_url(project: dict) -> str:
-    repository_uid = str(project.get("git_repository_uid") or "").strip()
+def _resolve_code_repository_repository_ssh_url(code_repository: dict) -> str:
+    repository_uid = str(code_repository.get("github_repository_binding_uid") or "").strip()
     if not repository_uid:
-        raise ApiError("The Project has no linked GitRepository.")
+        raise ApiError("The CodeRepository has no linked GitHubRepositoryBinding.")
 
-    repository = get_project_repository(repository_uid)
+    repository = get_code_repository_repository(repository_uid)
     repository_ssh_url = str(repository.get("git_ssh_url") or "").strip()
     if not repository_ssh_url:
-        raise ApiError(f"GitRepository {repository_uid} has no SSH clone URL.")
+        raise ApiError(f"GitHubRepositoryBinding {repository_uid} has no SSH clone URL.")
     return repository_ssh_url
 
 
-def _ensure_project_repository_ssh_access(
+def _ensure_code_repository_repository_ssh_access(
     *,
     origin: str,
-    project_ref: str | None,
+    code_repository_ref: str | None,
     verify_access,
 ) -> tuple[pathlib.Path, str, dict[str, str]]:
     expected_key_path, expected_public_key_path = repository_ssh_key_paths(origin)
@@ -703,19 +703,19 @@ def _ensure_project_repository_ssh_access(
     env = git_ssh_environment(key_path)
 
     def register_key() -> None:
-        normalized_project_ref = str(project_ref or "").strip()
-        if not normalized_project_ref:
+        normalized_code_repository_ref = str(code_repository_ref or "").strip()
+        if not normalized_code_repository_ref:
             raise ApiError(
                 "The repository SSH key is not authorized and the current Git repository "
-                "could not be resolved to a platform Project for deploy-key registration."
+                "could not be resolved to a platform CodeRepository for deploy-key registration."
             )
         key_title = str(platform.node() or "").strip()
         if not key_title or "\n" in key_title or "\r" in key_title:
             raise ApiError("Local hostname must contain one non-empty line.")
         try:
-            add_deploy_key(normalized_project_ref, key_title, public_key)
+            add_deploy_key(normalized_code_repository_ref, key_title, public_key)
         except Exception as exc:
-            raise ApiError(f"Project deploy-key registration failed: {exc}") from exc
+            raise ApiError(f"CodeRepository deploy-key registration failed: {exc}") from exc
 
     if not keypair_existed:
         register_key()
@@ -733,18 +733,18 @@ def _ensure_project_repository_ssh_access(
     return key_path, public_key, env
 
 
-def _project_identity_value(project: dict) -> str:
-    """Return the logical Project public UID."""
-    return str(project.get("uid") or "").strip()
+def _code_repository_identity_value(code_repository: dict) -> str:
+    """Return the logical CodeRepository public UID."""
+    return str(code_repository.get("uid") or "").strip()
 
 
-def _render_projects_table(items: list[dict]) -> str:
+def _render_code_repositories_table(items: list[dict]) -> str:
     """Return an aligned table with platform project and branch identity."""
 
     rows = []
     for p in items:
-        public_id = _project_identity_value(p)
-        name = p.get("project_name") or "(unnamed)"
+        public_id = _code_repository_identity_value(p)
+        name = p.get("code_repository_name") or "(unnamed)"
         branches = (
             ", ".join(
                 str(branch.get("repository_branch") or "-")
@@ -756,7 +756,7 @@ def _render_projects_table(items: list[dict]) -> str:
 
         rows.append((public_id or "-", name, branches))
 
-    header = ["UID", "Project", "Branches"]
+    header = ["UID", "CodeRepository", "Branches"]
     if not rows:
         return "No projects."
 
@@ -812,7 +812,7 @@ def _exchange_runtime_credential_for_cli_login(backend_url: str) -> str:
     return access
 
 
-def _resolve_project_dir(project_id: str | None, path: str | None) -> pathlib.Path:
+def _resolve_code_repository_dir(code_repository_id: str | None, path: str | None) -> pathlib.Path:
     """
     Resolve the containing Git worktree from an explicit path or the current directory.
 
@@ -846,24 +846,24 @@ def _resolve_project_dir(project_id: str | None, path: str | None) -> pathlib.Pa
     if not p.is_dir():
         error(f"Git project root is missing: {p}")
         raise typer.Exit(1)
-    if project_id:
+    if code_repository_id:
         try:
-            get_project_runtime_context(project_uid=project_id, project_dir=p)
-        except ProjectRuntimeContextError as exc:
-            error(f"Project UID assertion failed: {exc}")
+            get_code_repository_context(code_repository_uid=code_repository_id, code_repository_dir=p)
+        except CodeRepositoryContextError as exc:
+            error(f"CodeRepository UID assertion failed: {exc}")
             raise typer.Exit(1) from exc
     return p
 
 
-def _resolve_project_branch(
-    project: dict,
+def _resolve_code_repository_branch(
+    code_repository: dict,
     *,
     repository_branch: str | None = None,
     prompt_if_ambiguous: bool = False,
 ) -> dict:
-    branches = [item for item in list(project.get("branches") or []) if isinstance(item, dict)]
+    branches = [item for item in list(code_repository.get("branches") or []) if isinstance(item, dict)]
     if not branches:
-        raise ApiError("This Project has no ProjectBranches.")
+        raise ApiError("This CodeRepository has no CodeRepositoryBranches.")
 
     branch_name = (repository_branch or "").strip()
     if branch_name:
@@ -871,9 +871,9 @@ def _resolve_project_branch(
             item for item in branches if str(item.get("repository_branch") or "") == branch_name
         ]
         if len(matches) == 1:
-            return get_project_branch(str(matches[0]["uid"]))
+            return get_code_repository_branch(str(matches[0]["uid"]))
         raise ApiError(
-            f"Git branch {branch_name!r} is not registered as a ProjectBranch for this Project."
+            f"Git branch {branch_name!r} is not registered as a CodeRepositoryBranch for this CodeRepository."
         )
 
     if prompt_if_ambiguous:
@@ -883,52 +883,52 @@ def _resolve_project_branch(
             type=click.Choice(names, case_sensitive=True),
         )
         match = next(item for item in branches if item.get("repository_branch") == selected)
-        return get_project_branch(str(match["uid"]))
+        return get_code_repository_branch(str(match["uid"]))
 
     raise ApiError(
-        "No repository branch was selected. Run the command from the Project Git checkout "
+        "No repository branch was selected. Run the command from the CodeRepository Git checkout "
         "or pass an explicit repository branch."
     )
 
 
-def _resolve_git_project_branch_context(
-    project_ref: str | None = None,
+def _resolve_git_code_repository_branch_context(
+    code_repository_ref: str | None = None,
     *,
-    project_dir: pathlib.Path | None = None,
+    code_repository_dir: pathlib.Path | None = None,
 ) -> tuple[str, str]:
     """Read the process-lifetime context for a current-project CLI workflow."""
     try:
-        context = get_project_runtime_context(
-            project_uid=project_ref,
-            project_dir=project_dir,
+        context = get_code_repository_context(
+            code_repository_uid=code_repository_ref,
+            code_repository_dir=code_repository_dir,
         )
-        context = require_project_branch_context(
+        context = require_code_repository_branch_context(
             "This current-project CLI operation",
             context=context,
         )
-    except ProjectRuntimeContextError as exc:
+    except CodeRepositoryContextError as exc:
         raise ApiError(str(exc)) from exc
-    return context.repository_branch, str(context.project_branch_uid)
+    return context.repository_branch, str(context.code_repository_branch_uid)
 
 
-def _resolve_project_branch_uid_for_command(
-    project_ref: str | None = None,
+def _resolve_code_repository_branch_uid_for_command(
+    code_repository_ref: str | None = None,
     *,
-    project_dir: pathlib.Path | None = None,
+    code_repository_dir: pathlib.Path | None = None,
 ) -> str:
-    _, uid = _resolve_git_project_branch_context(
-        project_ref,
-        project_dir=project_dir,
+    _, uid = _resolve_git_code_repository_branch_context(
+        code_repository_ref,
+        code_repository_dir=code_repository_dir,
     )
     return uid
 
 
-def _project_agent_scaffold_bundle_dir(project_dir: pathlib.Path) -> pathlib.Path:
+def _code_repository_agent_scaffold_bundle_dir(code_repository_dir: pathlib.Path) -> pathlib.Path:
     """
     Resolve the `agent_scaffold` bundle from the target project's local `.venv`.
     """
     try:
-        vp = ensure_venv(project_dir)
+        vp = ensure_venv(code_repository_dir)
     except Exception as exc:
         error(f"Could not access the target project's .venv: {exc}")
         raise typer.Exit(1) from exc
@@ -943,7 +943,7 @@ def _project_agent_scaffold_bundle_dir(project_dir: pathlib.Path) -> pathlib.Pat
                 "sys.stdout.write(paths[0] if paths else '')"
             ),
         ],
-        cwd=str(project_dir),
+        cwd=str(code_repository_dir),
         capture_output=True,
         text=True,
     )
@@ -951,8 +951,8 @@ def _project_agent_scaffold_bundle_dir(project_dir: pathlib.Path) -> pathlib.Pat
         detail = (lookup.stderr or lookup.stdout or "").strip()
         message = (
             "Could not locate agent_scaffold in the target project's .venv. "
-            "Run `mainsequence project build_local_venv` or "
-            "`mainsequence project update-sdk --path .` first."
+            "Run `mainsequence code-repository build-local-venv` or "
+            "`mainsequence code-repository update-sdk --path .` first."
         )
         if detail:
             message = f"{message} ({detail})"
@@ -966,12 +966,12 @@ def _project_agent_scaffold_bundle_dir(project_dir: pathlib.Path) -> pathlib.Pat
     return bundle_dir
 
 
-def _project_installed_package_version(project_dir: pathlib.Path, package_name: str) -> str:
+def _code_repository_installed_package_version(code_repository_dir: pathlib.Path, package_name: str) -> str:
     """
     Resolve an installed package version from the target project's local `.venv`.
     """
     try:
-        vp = ensure_venv(project_dir)
+        vp = ensure_venv(code_repository_dir)
     except Exception as exc:
         error(f"Could not access the target project's .venv: {exc}")
         raise typer.Exit(1) from exc
@@ -986,7 +986,7 @@ def _project_installed_package_version(project_dir: pathlib.Path, package_name: 
             ),
             package_name,
         ],
-        cwd=str(project_dir),
+        cwd=str(code_repository_dir),
         capture_output=True,
         text=True,
     )
@@ -994,7 +994,7 @@ def _project_installed_package_version(project_dir: pathlib.Path, package_name: 
         detail = (lookup.stderr or lookup.stdout or "").strip()
         message = (
             f"Could not resolve installed {package_name!r} version from the target "
-            "project's .venv. Run `mainsequence project update-sdk --path .` first."
+            "project's .venv. Run `mainsequence code-repository update-sdk --path .` first."
         )
         if detail:
             message = f"{message} ({detail})"
@@ -1405,10 +1405,10 @@ def _format_meta_table_delete_preview(meta_table: dict[str, object]) -> list[tup
     ]
 
 
-def _format_project_image_delete_preview(image: dict[str, object]) -> list[tuple[str, str]]:
+def _format_code_repository_image_delete_preview(image: dict[str, object]) -> list[tuple[str, str]]:
     return [
         ("UID", str(image.get("uid") or "-")),
-        ("Project Repo Hash", str(image.get("project_repo_hash") or "-")),
+        ("CodeRepository Repo Hash", str(image.get("code_repository_commit_hash") or "-")),
         ("Base Image", _format_base_image_label(image.get("base_image"))),
         ("Is Ready", str(image.get("is_ready")) if image.get("is_ready") is not None else "-"),
     ]
@@ -1423,17 +1423,17 @@ def _format_resource_release_delete_preview(release: dict[str, object]) -> list[
     ]
 
 
-def _git_run(project_dir: pathlib.Path, args: list[str]) -> subprocess.CompletedProcess[str]:
+def _git_run(code_repository_dir: pathlib.Path, args: list[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["git", "-C", str(project_dir), *args],
+        ["git", "-C", str(code_repository_dir), *args],
         capture_output=True,
         text=True,
     )
 
 
-def _git_upstream_ref(project_dir: pathlib.Path) -> str | None:
+def _git_upstream_ref(code_repository_dir: pathlib.Path) -> str | None:
     result = _git_run(
-        project_dir, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"]
+        code_repository_dir, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"]
     )
     if result.returncode != 0:
         return None
@@ -1441,14 +1441,14 @@ def _git_upstream_ref(project_dir: pathlib.Path) -> str | None:
     return upstream or None
 
 
-def _get_remote_branch_head_commit(project_dir: pathlib.Path) -> tuple[str, str]:
-    upstream = _git_upstream_ref(project_dir)
+def _get_remote_branch_head_commit(code_repository_dir: pathlib.Path) -> tuple[str, str]:
+    upstream = _git_upstream_ref(code_repository_dir)
     if not upstream:
         raise RuntimeError(
             "Current branch has no upstream remote branch. Push with --set-upstream before listing project resources."
         )
 
-    result = _git_run(project_dir, ["rev-parse", upstream])
+    result = _git_run(code_repository_dir, ["rev-parse", upstream])
     if result.returncode != 0:
         reason = (result.stderr or result.stdout or "").strip() or "git rev-parse failed"
         raise RuntimeError(f"Could not resolve remote branch head commit: {reason}")
@@ -1479,7 +1479,7 @@ def _parse_git_log_rows(stdout: str) -> list[dict[str, str]]:
     return commits
 
 
-def _list_pushed_commits(project_dir: pathlib.Path, limit: int = 20) -> list[dict[str, str]]:
+def _list_pushed_commits(code_repository_dir: pathlib.Path, limit: int = 20) -> list[dict[str, str]]:
     """
     List commits already present on the remote-tracking branch.
 
@@ -1488,12 +1488,12 @@ def _list_pushed_commits(project_dir: pathlib.Path, limit: int = 20) -> list[dic
       2. all remote refs
     """
     refs: list[str] = []
-    upstream = _git_upstream_ref(project_dir)
+    upstream = _git_upstream_ref(code_repository_dir)
     if upstream:
         refs = [upstream]
     else:
         refs_result = _git_run(
-            project_dir, ["for-each-ref", "--format=%(refname:short)", "refs/remotes"]
+            code_repository_dir, ["for-each-ref", "--format=%(refname:short)", "refs/remotes"]
         )
         if refs_result.returncode == 0:
             refs = [
@@ -1508,7 +1508,7 @@ def _list_pushed_commits(project_dir: pathlib.Path, limit: int = 20) -> list[dic
         )
 
     result = _git_run(
-        project_dir,
+        code_repository_dir,
         [
             "log",
             f"--max-count={max(int(limit), 1)}",
@@ -1529,12 +1529,12 @@ def _list_pushed_commits(project_dir: pathlib.Path, limit: int = 20) -> list[dic
     return commits
 
 
-def _list_unpushed_commits(project_dir: pathlib.Path, limit: int = 10) -> list[dict[str, str]]:
+def _list_unpushed_commits(code_repository_dir: pathlib.Path, limit: int = 10) -> list[dict[str, str]]:
     """
     List local commits reachable from HEAD that are not present on any remote ref.
     """
     result = _git_run(
-        project_dir,
+        code_repository_dir,
         [
             "log",
             f"--max-count={max(int(limit), 1)}",
@@ -1550,8 +1550,8 @@ def _list_unpushed_commits(project_dir: pathlib.Path, limit: int = 10) -> list[d
     return _parse_git_log_rows(result.stdout or "")
 
 
-def _is_pushed_commit(project_dir: pathlib.Path, commit_hash: str) -> bool:
-    result = _git_run(project_dir, ["branch", "-r", "--contains", commit_hash])
+def _is_pushed_commit(code_repository_dir: pathlib.Path, commit_hash: str) -> bool:
+    result = _git_run(code_repository_dir, ["branch", "-r", "--contains", commit_hash])
     if result.returncode != 0:
         return False
     refs = [
@@ -1562,27 +1562,27 @@ def _is_pushed_commit(project_dir: pathlib.Path, commit_hash: str) -> bool:
     return bool(refs)
 
 
-def _resolve_full_commit_hash(project_dir: pathlib.Path, commit_hash: str) -> str:
+def _resolve_full_commit_hash(code_repository_dir: pathlib.Path, commit_hash: str) -> str:
     normalized = str(commit_hash or "").strip()
     if not normalized:
-        raise RuntimeError("project_repo_hash is required.")
+        raise RuntimeError("code_repository_commit_hash is required.")
 
-    result = _git_run(project_dir, ["rev-parse", "--verify", f"{normalized}^{{commit}}"])
+    result = _git_run(code_repository_dir, ["rev-parse", "--verify", f"{normalized}^{{commit}}"])
     if result.returncode != 0:
         reason = (result.stderr or result.stdout or "").strip() or "git rev-parse failed"
-        raise RuntimeError(f"Could not resolve project_repo_hash to a full commit SHA: {reason}")
+        raise RuntimeError(f"Could not resolve code_repository_commit_hash to a full commit SHA: {reason}")
 
     full_hash = (result.stdout or "").strip()
     if not re.fullmatch(r"[0-9a-fA-F]{40}", full_hash):
-        raise RuntimeError("Resolved project_repo_hash is not a full 40-character commit SHA.")
+        raise RuntimeError("Resolved code_repository_commit_hash is not a full 40-character commit SHA.")
 
     return full_hash.lower()
 
 
-def _group_project_images_by_hash(images: list[dict]) -> dict[str, list[dict]]:
+def _group_code_repository_images_by_hash(images: list[dict]) -> dict[str, list[dict]]:
     grouped: dict[str, list[dict]] = {}
     for image in images:
-        commit_hash = str(image.get("project_repo_hash") or "").strip()
+        commit_hash = str(image.get("code_repository_commit_hash") or "").strip()
         if not commit_hash:
             continue
         grouped.setdefault(commit_hash, []).append(image)
@@ -1955,9 +1955,9 @@ def _extract_python_request_from_pyproject_text(pyproject_text: str) -> str | No
 
     candidates: list[str] = []
     if isinstance(data, dict):
-        project_data = data.get("project") or {}
-        if isinstance(project_data, dict):
-            req = project_data.get("requires-python")
+        code_repository_data = data.get("project") or {}
+        if isinstance(code_repository_data, dict):
+            req = code_repository_data.get("requires-python")
             if req:
                 candidates.append(str(req))
 
@@ -2079,7 +2079,7 @@ def _current_session_jwt_tokens() -> tuple[str, str]:
     return access_token, refresh_token
 
 
-def _current_project_runtime_auth_env(backend_url: str) -> dict[str, str]:
+def _current_code_repository_runtime_auth_env(backend_url: str) -> dict[str, str]:
     """
     Return auth environment entries for local project `.env` provisioning.
 
@@ -2112,7 +2112,7 @@ def _current_project_runtime_auth_env(backend_url: str) -> dict[str, str]:
     }
 
 
-def _render_project_runtime_env_text(
+def _render_code_repository_runtime_env_text(
     env_text: str,
     *,
     auth_env: dict[str, str],
@@ -2131,6 +2131,7 @@ def _render_project_runtime_env_text(
         "MAINSEQUENCE_RUNTIME_CREDENTIAL_ID=",
         "MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET=",
         "MAINSEQUENCE_ENDPOINT=",
+        # Purge removed identity inputs; they are never read or emitted.
         "MAIN_SEQUENCE_PROJECT_UID=",
         "MAIN_SEQUENCE_PROJECT_BRANCH_UID=",
         "MAINSEQUENCE_REPOSITORY_BRANCH=",
@@ -2316,7 +2317,7 @@ def login(
                 "Pass projects base either positionally or with --projects-base/--base-folder, not both."
             )
             raise typer.Exit(1)
-    effective_projects_base_input = (
+    effective_code_repositories_base_input = (
         projects_base_option if projects_base_option is not None else projects_base
     )
 
@@ -2331,7 +2332,7 @@ def login(
     normalized_backend = cfg.normalize_backend_url(effective_backend_input)
 
     if explicit_backend_input is not None and normalized_backend != current_backend:
-        if not effective_projects_base_input:
+        if not effective_code_repositories_base_input:
             error("When using a different backend, you must also specify a projects base folder.")
             raise typer.Exit(1)
 
@@ -2448,7 +2449,7 @@ def login(
 
     cfg.set_session_overrides(
         backend_url=normalized_backend,
-        mainsequence_path=effective_projects_base_input,
+        mainsequence_path=effective_code_repositories_base_input,
     )
 
     if export:
@@ -7151,8 +7152,8 @@ def time_index_table_remove_team_from_edit_cmd(
 # ---------- project group ----------
 
 
-@project_list_group.callback(invoke_without_command=True)
-def project_list(
+@code_repository_list_group.callback(invoke_without_command=True)
+def code_repository_list(
     ctx: typer.Context,
     filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
     show_filters: bool = typer.Option(
@@ -7162,12 +7163,12 @@ def project_list(
     """
     List projects visible to the authenticated user.
 
-    The output includes platform Project identity and registered branches.
+    The output includes platform CodeRepository identity and registered branches.
 
     Examples
     --------
     ```bash
-    mainsequence project list
+    mainsequence code-repository list
     ```
     """
     if ctx.invoked_subcommand is not None:
@@ -7181,14 +7182,14 @@ def project_list(
     )
 
     _require_login()
-    items = get_projects()
+    items = get_code_repositories()
     if _emit_json(items):
         return
-    typer.echo(_render_projects_table(items))
+    typer.echo(_render_code_repositories_table(items))
 
 
-def _print_project_time_index_table_updates(
-    project_id: str | None = typer.Argument(None, help="Project UID"),
+def _print_code_repository_time_index_table_updates(
+    code_repository_id: str | None = typer.Argument(None, help="CodeRepository UID"),
     filter_entries: list[str] | None = None,
     show_filters: bool = False,
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
@@ -7196,36 +7197,36 @@ def _print_project_time_index_table_updates(
     """
     List time-index table updates for a project.
 
-    Uses SDK client `ProjectBranch.get_time_index_table_updates()` as the single source of truth
+    Uses SDK client `CodeRepositoryBranch.get_time_index_table_updates()` as the single source of truth
     for payload parsing and shape handling.
 
     Parameters
     ----------
     project_id:
-        Optional Project UID assertion. Git repository identity remains authoritative.
+        Optional CodeRepository UID assertion. Git repository identity remains authoritative.
     timeout:
         Optional request timeout in seconds.
 
     Examples
     --------
     ```bash
-    mainsequence project time-index-table-updates list
-    mainsequence project time-index-table-updates list project-uid-123
-    mainsequence project time-index-table-updates list project-uid-123 --timeout 60
+    mainsequence code-repository time-index-table-updates list
+    mainsequence code-repository time-index-table-updates list project-uid-123
+    mainsequence code-repository time-index-table-updates list project-uid-123 --timeout 60
     ```
     """
     _resolve_cli_list_filters(
         model_ref=None,
         filter_entries=filter_entries,
         show_filters=show_filters,
-        command_label="Project Time-Index Table Updates",
+        command_label="CodeRepository Time-Index Table Updates",
         reserved_filter_descriptions={"project_id": "resolved from the current Git repository"},
     )
 
     _require_login()
     try:
-        project_branch_uid = _resolve_project_branch_uid_for_command(project_id)
-        updates = get_project_time_index_table_updates(project_branch_uid, timeout=timeout)
+        code_repository_branch_uid = _resolve_code_repository_branch_uid_for_command(code_repository_id)
+        updates = get_code_repository_time_index_table_updates(code_repository_branch_uid, timeout=timeout)
     except NotLoggedIn as e:
         error("Not logged in. Run: mainsequence login")
         raise typer.Exit(1) from e
@@ -7266,16 +7267,16 @@ def _print_project_time_index_table_updates(
         )
 
     print_table(
-        "Project Time-Index Table Updates",
+        "CodeRepository Time-Index Table Updates",
         ["UID", "Update Hash", "Output Table", "Update Details"],
         rows,
     )
     info(f"Total updates: {len(rows)}")
 
 
-@project_time_index_table_updates_group.command("list")
-def project_time_index_table_updates_list_cmd(
-    project_id: str | None = typer.Argument(None, help="Project UID"),
+@code_repository_time_index_table_updates_group.command("list")
+def code_repository_time_index_table_updates_list_cmd(
+    code_repository_id: str | None = typer.Argument(None, help="CodeRepository UID"),
     filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
     show_filters: bool = typer.Option(
         False, "--show-filters", help="Show the filters supported by this list command and exit."
@@ -7288,22 +7289,22 @@ def project_time_index_table_updates_list_cmd(
     Examples
     --------
     ```bash
-    mainsequence project time-index-table-updates list
-    mainsequence project time-index-table-updates list project-uid-123
-    mainsequence project time-index-table-updates list project-uid-123 --timeout 60
+    mainsequence code-repository time-index-table-updates list
+    mainsequence code-repository time-index-table-updates list project-uid-123
+    mainsequence code-repository time-index-table-updates list project-uid-123 --timeout 60
     ```
     """
-    _print_project_time_index_table_updates(
-        project_id=project_id,
+    _print_code_repository_time_index_table_updates(
+        code_repository_id=code_repository_id,
         filter_entries=filter_entries,
         show_filters=show_filters,
         timeout=timeout,
     )
 
 
-@project.command("validate-name")
-def project_validate_name_cmd(
-    project_name: str = typer.Argument(..., help="Project name to validate."),
+@code_repository.command("validate-name")
+def code_repository_validate_name_cmd(
+    code_repository_name: str = typer.Argument(..., help="CodeRepository name to validate."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
@@ -7312,21 +7313,21 @@ def project_validate_name_cmd(
     Examples
     --------
     ```bash
-    mainsequence project validate-name "Rates Platform"
-    mainsequence project validate-name tutorial-project --timeout 60
+    mainsequence code-repository validate-name "Rates Platform"
+    mainsequence code-repository validate-name tutorial-project --timeout 60
     ```
     """
     _require_login()
 
-    normalized_project_name = (project_name or "").strip()
-    if not normalized_project_name:
-        error("Project name is required.")
+    normalized_code_repository_name = (code_repository_name or "").strip()
+    if not normalized_code_repository_name:
+        error("CodeRepository name is required.")
         raise typer.Exit(1)
 
     try:
-        payload = validate_project_name(project_name=normalized_project_name, timeout=timeout)
+        payload = validate_code_repository_name(code_repository_name=normalized_code_repository_name, timeout=timeout)
     except ApiError as e:
-        error(f"Project name validation failed: {e}")
+        error(f"CodeRepository name validation failed: {e}")
         raise typer.Exit(1) from e
 
     if _emit_json(payload):
@@ -7334,31 +7335,31 @@ def project_validate_name_cmd(
 
     normalized = payload.get("normalized") or {}
     print_kv(
-        "Project Name Validation",
+        "CodeRepository Name Validation",
         [
-            ("Project Name", str(payload.get("project_name") or normalized_project_name)),
+            ("CodeRepository Name", str(payload.get("code_repository_name") or normalized_code_repository_name)),
             ("Available", "yes" if payload.get("available") else "no"),
             ("Reason", str(payload.get("reason") or "-")),
-            ("Slugified Project Name", str(normalized.get("slugified_project_name") or "-")),
-            ("Project Library Name", str(normalized.get("project_library_name") or "-")),
+            ("Slugified CodeRepository Name", str(normalized.get("slugified_code_repository_name") or "-")),
+            ("CodeRepository Library Name", str(normalized.get("repository_library_name") or "-")),
         ],
     )
 
     suggestions = [str(item) for item in list(payload.get("suggestions") or []) if item is not None]
     if suggestions:
-        print_table("Suggested Project Names", ["Project Name"], [[item] for item in suggestions])
+        print_table("Suggested CodeRepository Names", ["CodeRepository Name"], [[item] for item in suggestions])
 
     if payload.get("available"):
-        success(f"Project name is available: {normalized_project_name}")
+        success(f"CodeRepository name is available: {normalized_code_repository_name}")
         return
 
-    warn(f"Project name is not available: {normalized_project_name}")
+    warn(f"CodeRepository name is not available: {normalized_code_repository_name}")
     raise typer.Exit(1)
 
 
-@project.command("search")
-def project_search_cmd(
-    q: str = typer.Argument(..., help="Project search query. Minimum 3 characters."),
+@code_repository.command("search")
+def code_repository_search_cmd(
+    q: str = typer.Argument(..., help="CodeRepository search query. Minimum 3 characters."),
     limit: int = typer.Option(
         20, "--limit", min=1, max=100, help="Maximum number of matches to return."
     ),
@@ -7367,64 +7368,53 @@ def project_search_cmd(
     """
     Search projects visible to the authenticated user.
 
-    Uses SDK client `Project.quick_search()` as the single source of truth.
+    Uses SDK client `CodeRepository.quick_search()` as the single source of truth.
 
     Examples
     --------
     ```bash
-    mainsequence project search "tutorial"
-    mainsequence project search "rates" --limit 10
-    mainsequence project search "161"
+    mainsequence code-repository search "tutorial"
+    mainsequence code-repository search "rates" --limit 10
+    mainsequence code-repository search "161"
     ```
     """
     _require_login()
 
     normalized_query = (q or "").strip()
     if len(normalized_query) < 3:
-        error("Project search failed: Query must contain at least 3 characters.")
+        error("CodeRepository search failed: Query must contain at least 3 characters.")
         raise typer.Exit(1)
 
     try:
-        projects = search_projects(normalized_query, limit=limit, timeout=timeout)
+        code_repositories = search_code_repositories(normalized_query, limit=limit, timeout=timeout)
     except ApiError as e:
-        error(f"Project search failed: {e}")
+        error(f"CodeRepository search failed: {e}")
         raise typer.Exit(1) from e
 
-    if _emit_json(projects):
+    if _emit_json(code_repositories):
         return
 
-    if projects:
+    if code_repositories:
         print_table(
-            "Project Search Results",
-            ["UID", "Project Name"],
+            "CodeRepository Search Results",
+            ["UID", "CodeRepository Name"],
             [
                 [
-                    _project_identity_value(project) or "-",
-                    str(project.get("project_name") or "-"),
+                    _code_repository_identity_value(code_repository) or "-",
+                    str(code_repository.get("code_repository_name") or "-"),
                 ]
-                for project in projects
+                for code_repository in code_repositories
             ],
         )
     else:
         info("No projects matched the search.")
-    info(f'Project search matches for "{normalized_query}": {len(projects)}')
+    info(f'CodeRepository search matches for "{normalized_query}": {len(code_repositories)}')
 
 
-@project.command("validate_name", hidden=True)
-def project_validate_name_alias_cmd(
-    project_name: str = typer.Argument(..., help="Project name to validate."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    """
-    Backward-compatible alias for `mainsequence project validate-name`.
-    """
-    project_validate_name_cmd(project_name=project_name, timeout=timeout)
-
-
-@project.command("create")
-def project_create_cmd(
-    project_name: str | None = typer.Argument(None, help="Project name"),
-    project_type: str = typer.Option("python", "--project-type", help="Project type"),
+@code_repository.command("create")
+def code_repository_create_cmd(
+    code_repository_name: str | None = typer.Argument(None, help="CodeRepository name"),
+    code_repository_type: str = typer.Option("python", "--code-repository-type", help="CodeRepository type"),
     default_base_image_uid: str | None = typer.Option(
         None, "--default-base-image-uid", help="Default base image UID"
     ),
@@ -7441,14 +7431,14 @@ def project_create_cmd(
     Create a project on the platform.
 
     If required values are omitted, the command prompts interactively and applies defaults.
-    Project creation creates the logical Project and its initial `main` ProjectBranch.
+    CodeRepository creation creates the logical CodeRepository and its initial `main` CodeRepositoryBranch.
 
     Parameters
     ----------
-    project_name:
-        Project name. If omitted, prompt is shown.
-    project_type:
-        Immutable type of the logical Project, shared by every ProjectBranch.
+    code_repository_name:
+        CodeRepository name. If omitted, prompt is shown.
+    code_repository_type:
+        Immutable type of the logical CodeRepository, shared by every CodeRepositoryBranch.
     default_base_image_uid:
         Default base image UID.
     github_org_uid:
@@ -7459,38 +7449,38 @@ def project_create_cmd(
     Examples
     --------
     ```bash
-    mainsequence project create
-    mainsequence project create tutorial-project
-    mainsequence project create tutorial-project --default-base-image-uid <base_image_uid> --github-org-uid <github_org_uid>
-    mainsequence project create tutorial-project --env FOO=bar --env BAZ=qux
+    mainsequence code-repository create
+    mainsequence code-repository create tutorial-project
+    mainsequence code-repository create tutorial-project --default-base-image-uid <base_image_uid> --github-org-uid <github_org_uid>
+    mainsequence code-repository create tutorial-project --env FOO=bar --env BAZ=qux
     ```
     """
     _require_login()
 
     try:
-        if not project_name:
-            project_name = typer.prompt("Project name").strip()
-        project_name = (project_name or "").strip()
-        if not project_name:
-            error("Project name is required.")
+        if not code_repository_name:
+            code_repository_name = typer.prompt("CodeRepository name").strip()
+        code_repository_name = (code_repository_name or "").strip()
+        if not code_repository_name:
+            error("CodeRepository name is required.")
             raise typer.Exit(1)
 
-        name_validation = validate_project_name(project_name=project_name)
+        name_validation = validate_code_repository_name(code_repository_name=code_repository_name)
         if not name_validation.get("available"):
             normalized = name_validation.get("normalized") or {}
-            reason = str(name_validation.get("reason") or "Project name is not available.")
+            reason = str(name_validation.get("reason") or "CodeRepository name is not available.")
             error(reason)
             print_kv(
-                "Project Name Validation",
+                "CodeRepository Name Validation",
                 [
-                    ("Project Name", str(name_validation.get("project_name") or project_name)),
+                    ("CodeRepository Name", str(name_validation.get("code_repository_name") or code_repository_name)),
                     ("Available", "no"),
                     ("Reason", reason),
                     (
-                        "Slugified Project Name",
-                        str(normalized.get("slugified_project_name") or "-"),
+                        "Slugified CodeRepository Name",
+                        str(normalized.get("slugified_code_repository_name") or "-"),
                     ),
-                    ("Project Library Name", str(normalized.get("project_library_name") or "-")),
+                    ("CodeRepository Library Name", str(normalized.get("repository_library_name") or "-")),
                 ],
             )
             suggestions = [
@@ -7500,12 +7490,12 @@ def project_create_cmd(
             ]
             if suggestions:
                 print_table(
-                    "Suggested Project Names", ["Project Name"], [[item] for item in suggestions]
+                    "Suggested CodeRepository Names", ["CodeRepository Name"], [[item] for item in suggestions]
                 )
             raise typer.Exit(1)
 
         if default_base_image_uid is None:
-            img_items = list_project_base_images()
+            img_items = list_code_repository_base_images()
             img_rows: list[list[str]] = []
             for item in img_items:
                 uid = _require_item_uid(item, prompt_label="default base image uid")
@@ -7536,7 +7526,7 @@ def project_create_cmd(
                 )
             else:
                 warn(
-                    "No GitHub organizations available. Project will be created without github_org_uid."
+                    "No GitHub organizations available. CodeRepository will be created without github_org_uid."
                 )
 
         env_entries = list(env or [])
@@ -7556,26 +7546,26 @@ def project_create_cmd(
                 error(str(e))
                 raise typer.Exit(1) from e
 
-        created = create_project(
-            project_name=project_name,
-            project_type=project_type,
+        created = create_code_repository(
+            code_repository_name=code_repository_name,
+            code_repository_type=code_repository_type,
             default_base_image_uid=default_base_image_uid,
             github_org_uid=github_org_uid,
             env_vars=env_vars,
         )
     except ApiError as e:
-        error(f"Project creation failed: {e}")
+        error(f"CodeRepository creation failed: {e}")
         raise typer.Exit(1) from e
     except RuntimeError as e:
         error(str(e))
         raise typer.Exit(1) from e
 
-    project_uid = _project_identity_value(created)
+    code_repository_uid = _code_repository_identity_value(created)
     if _emit_json(created):
         return
 
     success(
-        f"Project created: {created.get('project_name') or project_name} (uid={project_uid or '-'})"
+        f"CodeRepository created: {created.get('code_repository_name') or code_repository_name} (uid={code_repository_uid or '-'})"
     )
 
     branch_names = ", ".join(
@@ -7584,20 +7574,20 @@ def project_create_cmd(
         if isinstance(item, dict)
     )
     print_kv(
-        "Project",
+        "CodeRepository",
         [
-            ("UID", project_uid or "-"),
-            ("Project Name", str(created.get("project_name") or project_name)),
+            ("UID", code_repository_uid or "-"),
+            ("CodeRepository Name", str(created.get("code_repository_name") or code_repository_name)),
             ("Branches", branch_names or "-"),
         ],
     )
-    if project_uid:
-        info(f"Next: mainsequence project set-up-locally {project_uid}")
+    if code_repository_uid:
+        info(f"Next: mainsequence code-repository set-up-locally {code_repository_uid}")
 
 
-@project.command("delete")
-def project_delete_remote_cmd(
-    project_id: str = typer.Argument(..., help="Project UID"),
+@code_repository.command("delete")
+def code_repository_delete_remote_cmd(
+    code_repository_id: str = typer.Argument(..., help="CodeRepository UID"),
     delete_repositories: bool = typer.Option(
         False,
         "--delete-repositories/--no-delete-repositories",
@@ -7622,27 +7612,27 @@ def project_delete_remote_cmd(
     Examples
     --------
     ```bash
-    mainsequence project delete project-uid-123
-    mainsequence project delete project-uid-123 --yes
-    mainsequence project delete project-uid-123 --delete-repositories --yes
+    mainsequence code-repository delete project-uid-123
+    mainsequence code-repository delete project-uid-123 --yes
+    mainsequence code-repository delete project-uid-123 --delete-repositories --yes
     ```
     """
     _require_login()
 
-    project_name = f"project-{project_id}"
-    project_uid = str(project_id)
+    code_repository_name = f"project-{code_repository_id}"
+    code_repository_uid = str(code_repository_id)
     try:
-        found = resolve_project(project_id)
-        if found and found.get("project_name"):
-            project_name = str(found.get("project_name"))
-            project_uid = _project_identity_value(found) or project_uid
+        found = resolve_code_repository(code_repository_id)
+        if found and found.get("code_repository_name"):
+            code_repository_name = str(found.get("code_repository_name"))
+            code_repository_uid = _code_repository_identity_value(found) or code_repository_uid
     except Exception:
         # Best-effort metadata lookup only.
         pass
 
     if not yes:
         warning = (
-            f"This will permanently delete project '{project_name}' (uid={project_uid}) from the platform.\n"
+            f"This will permanently delete project '{code_repository_name}' (uid={code_repository_uid}) from the platform.\n"
             "This action cannot be undone."
         )
         if delete_repositories:
@@ -7652,22 +7642,22 @@ def project_delete_remote_cmd(
             raise typer.Exit(0)
 
     try:
-        resp = bulk_delete_projects(
-            uids=[project_uid],
+        resp = bulk_delete_code_repositories(
+            uids=[code_repository_uid],
             delete_repositories=delete_repositories,
         )
     except NotLoggedIn as e:
         error("Not logged in. Run: mainsequence login")
         raise typer.Exit(1) from e
     except ApiError as e:
-        error(f"Project deletion failed: {e}")
+        error(f"CodeRepository deletion failed: {e}")
         raise typer.Exit(1) from e
 
     if _emit_json(resp):
         return
 
     success(
-        f"Project deleted: {project_name} (uid={project_uid}; "
+        f"CodeRepository deleted: {code_repository_name} (uid={code_repository_uid}; "
         f"deleted={resp.get('deleted_count', 0)})"
     )
     if isinstance(resp, dict) and resp:
@@ -7676,59 +7666,59 @@ def project_delete_remote_cmd(
             info(str(detail))
 
 
-@project.command("can_view")
-def project_can_view_cmd(
-    project_id: str = typer.Argument(..., help="Project UID."),
+@code_repository.command("can_view")
+def code_repository_can_view_cmd(
+    code_repository_id: str = typer.Argument(..., help="CodeRepository UID."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
     List users who can view one project.
 
-    Uses the SDK `ShareableObjectMixin.users_can_view()` path through the `Project` model.
+    Uses the SDK `ShareableObjectMixin.users_can_view()` path through the `CodeRepository` model.
 
     Examples
     --------
     ```bash
-    mainsequence project can_view 42
+    mainsequence code-repository can_view 42
     ```
     """
     _shareable_user_list_impl(
-        fetch_fn=list_project_users_can_view,
-        object_label="Project",
+        fetch_fn=list_code_repository_users_can_view,
+        object_label="CodeRepository",
         access_label="view",
-        object_uid=project_id,
+        object_uid=code_repository_id,
         timeout=timeout,
     )
 
 
-@project.command("can_edit")
-def project_can_edit_cmd(
-    project_id: str = typer.Argument(..., help="Project UID."),
+@code_repository.command("can_edit")
+def code_repository_can_edit_cmd(
+    code_repository_id: str = typer.Argument(..., help="CodeRepository UID."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
     List users who can edit one project.
 
-    Uses the SDK `ShareableObjectMixin.users_can_edit()` path through the `Project` model.
+    Uses the SDK `ShareableObjectMixin.users_can_edit()` path through the `CodeRepository` model.
 
     Examples
     --------
     ```bash
-    mainsequence project can_edit 42
+    mainsequence code-repository can_edit 42
     ```
     """
     _shareable_user_list_impl(
-        fetch_fn=list_project_users_can_edit,
-        object_label="Project",
+        fetch_fn=list_code_repository_users_can_edit,
+        object_label="CodeRepository",
         access_label="edit",
-        object_uid=project_id,
+        object_uid=code_repository_id,
         timeout=timeout,
     )
 
 
-@project.command("add-label")
-def project_add_label_cmd(
-    project_id: str = typer.Argument(..., help="Project UID."),
+@code_repository.command("add-label")
+def code_repository_add_label_cmd(
+    code_repository_id: str = typer.Argument(..., help="CodeRepository UID."),
     labels: list[str] | None = typer.Option(
         None,
         "--label",
@@ -7742,28 +7732,18 @@ def project_add_label_cmd(
     Labels are helpers for grouping and discovery only. They do not affect runtime behavior or functionality.
     """
     _labelable_object_labels_update_impl(
-        action_fn=add_project_labels,
-        object_label="Project",
+        action_fn=add_code_repository_labels,
+        object_label="CodeRepository",
         action_label="add-label",
-        object_uid=project_id,
+        object_uid=code_repository_id,
         labels=labels,
         timeout=timeout,
     )
 
 
-@project.command("add_label", hidden=True)
-def project_add_label_alias_cmd(
-    project_id: str = typer.Argument(..., help="Project UID."),
-    labels: list[str] | None = typer.Option(None, "--label", help="Organizational label to add."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    """Backward-compatible alias for `mainsequence project add-label`."""
-    project_add_label_cmd(project_id=project_id, labels=labels, timeout=timeout)
-
-
-@project.command("remove-label")
-def project_remove_label_cmd(
-    project_id: str = typer.Argument(..., help="Project UID."),
+@code_repository.command("remove-label")
+def code_repository_remove_label_cmd(
+    code_repository_id: str = typer.Argument(..., help="CodeRepository UID."),
     labels: list[str] | None = typer.Option(
         None,
         "--label",
@@ -7777,30 +7757,18 @@ def project_remove_label_cmd(
     Labels are helpers for grouping and discovery only. They do not affect runtime behavior or functionality.
     """
     _labelable_object_labels_update_impl(
-        action_fn=remove_project_labels,
-        object_label="Project",
+        action_fn=remove_code_repository_labels,
+        object_label="CodeRepository",
         action_label="remove-label",
-        object_uid=project_id,
+        object_uid=code_repository_id,
         labels=labels,
         timeout=timeout,
     )
 
 
-@project.command("remove_label", hidden=True)
-def project_remove_label_alias_cmd(
-    project_id: str = typer.Argument(..., help="Project UID."),
-    labels: list[str] | None = typer.Option(
-        None, "--label", help="Organizational label to remove."
-    ),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    """Backward-compatible alias for `mainsequence project remove-label`."""
-    project_remove_label_cmd(project_id=project_id, labels=labels, timeout=timeout)
-
-
-@project.command("add_to_view")
-def project_add_to_view_cmd(
-    project_id: str = typer.Argument(..., help="Project UID."),
+@code_repository.command("add_to_view")
+def code_repository_add_to_view_cmd(
+    code_repository_id: str = typer.Argument(..., help="CodeRepository UID."),
     user_uid: uuid.UUID = typer.Argument(..., help="User UID to grant view access."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
@@ -7810,22 +7778,22 @@ def project_add_to_view_cmd(
     Examples
     --------
     ```bash
-    mainsequence project add_to_view <PROJECT_UID> <USER_UID>
+    mainsequence code-repository add_to_view <PROJECT_UID> <USER_UID>
     ```
     """
     _shareable_user_access_update_impl(
-        action_fn=add_project_user_to_view,
-        object_label="Project",
+        action_fn=add_code_repository_user_to_view,
+        object_label="CodeRepository",
         action_label="add_to_view",
-        object_uid=project_id,
+        object_uid=code_repository_id,
         user_uid=user_uid,
         timeout=timeout,
     )
 
 
-@project.command("add_to_edit")
-def project_add_to_edit_cmd(
-    project_id: str = typer.Argument(..., help="Project UID."),
+@code_repository.command("add_to_edit")
+def code_repository_add_to_edit_cmd(
+    code_repository_id: str = typer.Argument(..., help="CodeRepository UID."),
     user_uid: uuid.UUID = typer.Argument(..., help="User UID to grant edit access."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
@@ -7835,22 +7803,22 @@ def project_add_to_edit_cmd(
     Examples
     --------
     ```bash
-    mainsequence project add_to_edit <PROJECT_UID> <USER_UID>
+    mainsequence code-repository add_to_edit <PROJECT_UID> <USER_UID>
     ```
     """
     _shareable_user_access_update_impl(
-        action_fn=add_project_user_to_edit,
-        object_label="Project",
+        action_fn=add_code_repository_user_to_edit,
+        object_label="CodeRepository",
         action_label="add_to_edit",
-        object_uid=project_id,
+        object_uid=code_repository_id,
         user_uid=user_uid,
         timeout=timeout,
     )
 
 
-@project.command("remove_from_view")
-def project_remove_from_view_cmd(
-    project_id: str = typer.Argument(..., help="Project UID."),
+@code_repository.command("remove_from_view")
+def code_repository_remove_from_view_cmd(
+    code_repository_id: str = typer.Argument(..., help="CodeRepository UID."),
     user_uid: uuid.UUID = typer.Argument(..., help="User UID to remove explicit view access from."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
@@ -7860,22 +7828,22 @@ def project_remove_from_view_cmd(
     Examples
     --------
     ```bash
-    mainsequence project remove_from_view <PROJECT_UID> <USER_UID>
+    mainsequence code-repository remove_from_view <PROJECT_UID> <USER_UID>
     ```
     """
     _shareable_user_access_update_impl(
-        action_fn=remove_project_user_from_view,
-        object_label="Project",
+        action_fn=remove_code_repository_user_from_view,
+        object_label="CodeRepository",
         action_label="remove_from_view",
-        object_uid=project_id,
+        object_uid=code_repository_id,
         user_uid=user_uid,
         timeout=timeout,
     )
 
 
-@project.command("remove_from_edit")
-def project_remove_from_edit_cmd(
-    project_id: str = typer.Argument(..., help="Project UID."),
+@code_repository.command("remove_from_edit")
+def code_repository_remove_from_edit_cmd(
+    code_repository_id: str = typer.Argument(..., help="CodeRepository UID."),
     user_uid: uuid.UUID = typer.Argument(..., help="User UID to remove explicit edit access from."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
@@ -7885,123 +7853,123 @@ def project_remove_from_edit_cmd(
     Examples
     --------
     ```bash
-    mainsequence project remove_from_edit <PROJECT_UID> <USER_UID>
+    mainsequence code-repository remove_from_edit <PROJECT_UID> <USER_UID>
     ```
     """
     _shareable_user_access_update_impl(
-        action_fn=remove_project_user_from_edit,
-        object_label="Project",
+        action_fn=remove_code_repository_user_from_edit,
+        object_label="CodeRepository",
         action_label="remove_from_edit",
-        object_uid=project_id,
+        object_uid=code_repository_id,
         user_uid=user_uid,
         timeout=timeout,
     )
 
 
-@project.command("add_team_to_view")
-def project_add_team_to_view_cmd(
-    project_id: str = typer.Argument(..., help="Project UID."),
+@code_repository.command("add_team_to_view")
+def code_repository_add_team_to_view_cmd(
+    code_repository_id: str = typer.Argument(..., help="CodeRepository UID."),
     team_uid: uuid.UUID = typer.Argument(..., help="Team UID to grant view access."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     _shareable_team_access_update_impl(
-        action_fn=add_project_team_to_view,
-        object_label="Project",
+        action_fn=add_code_repository_team_to_view,
+        object_label="CodeRepository",
         action_label="add_team_to_view",
-        object_uid=project_id,
+        object_uid=code_repository_id,
         team_uid=team_uid,
         timeout=timeout,
     )
 
 
-@project.command("add_team_to_edit")
-def project_add_team_to_edit_cmd(
-    project_id: str = typer.Argument(..., help="Project UID."),
+@code_repository.command("add_team_to_edit")
+def code_repository_add_team_to_edit_cmd(
+    code_repository_id: str = typer.Argument(..., help="CodeRepository UID."),
     team_uid: uuid.UUID = typer.Argument(..., help="Team UID to grant edit access."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     _shareable_team_access_update_impl(
-        action_fn=add_project_team_to_edit,
-        object_label="Project",
+        action_fn=add_code_repository_team_to_edit,
+        object_label="CodeRepository",
         action_label="add_team_to_edit",
-        object_uid=project_id,
+        object_uid=code_repository_id,
         team_uid=team_uid,
         timeout=timeout,
     )
 
 
-@project.command("remove_team_from_view")
-def project_remove_team_from_view_cmd(
-    project_id: str = typer.Argument(..., help="Project UID."),
+@code_repository.command("remove_team_from_view")
+def code_repository_remove_team_from_view_cmd(
+    code_repository_id: str = typer.Argument(..., help="CodeRepository UID."),
     team_uid: uuid.UUID = typer.Argument(..., help="Team UID to remove explicit view access from."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     _shareable_team_access_update_impl(
-        action_fn=remove_project_team_from_view,
-        object_label="Project",
+        action_fn=remove_code_repository_team_from_view,
+        object_label="CodeRepository",
         action_label="remove_team_from_view",
-        object_uid=project_id,
+        object_uid=code_repository_id,
         team_uid=team_uid,
         timeout=timeout,
     )
 
 
-@project.command("remove_team_from_edit")
-def project_remove_team_from_edit_cmd(
-    project_id: str = typer.Argument(..., help="Project UID."),
+@code_repository.command("remove_team_from_edit")
+def code_repository_remove_team_from_edit_cmd(
+    code_repository_id: str = typer.Argument(..., help="CodeRepository UID."),
     team_uid: uuid.UUID = typer.Argument(..., help="Team UID to remove explicit edit access from."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     _shareable_team_access_update_impl(
-        action_fn=remove_project_team_from_edit,
-        object_label="Project",
+        action_fn=remove_code_repository_team_from_edit,
+        object_label="CodeRepository",
         action_label="remove_team_from_edit",
-        object_uid=project_id,
+        object_uid=code_repository_id,
         team_uid=team_uid,
         timeout=timeout,
     )
 
 
-def _project_resources_list_impl(
-    project_id: str | None,
+def _code_repository_resources_list_impl(
+    code_repository_id: str | None,
     path: str | None,
     filter_entries: list[str] | None,
     show_filters: bool,
     timeout: int | None,
 ) -> None:
     filters = _resolve_cli_list_filters(
-        model_ref=PROJECT_RESOURCE_MODEL_REF,
+        model_ref=CODE_REPOSITORY_RESOURCE_MODEL_REF,
         filter_entries=filter_entries,
         show_filters=show_filters,
-        command_label="Project Resources",
+        command_label="CodeRepository Resources",
         reserved_filter_descriptions={
-            "project__uid": "always set from the selected ProjectBranch",
+            "project__uid": "always set from the selected CodeRepositoryBranch",
             "repo_commit_sha": "always set from the upstream remote branch head commit",
         },
     )
 
     _require_login()
 
-    project_dir = _resolve_project_dir(project_id, path)
+    code_repository_dir = _resolve_code_repository_dir(code_repository_id, path)
     try:
-        upstream, repo_commit_sha = _get_remote_branch_head_commit(project_dir)
+        upstream, repo_commit_sha = _get_remote_branch_head_commit(code_repository_dir)
     except RuntimeError as e:
         error(str(e))
         raise typer.Exit(1) from e
 
     try:
-        project_branch_uid = _resolve_project_branch_uid_for_command(
-            project_id,
-            project_dir=project_dir,
+        code_repository_branch_uid = _resolve_code_repository_branch_uid_for_command(
+            code_repository_id,
+            code_repository_dir=code_repository_dir,
         )
-        resources = list_project_resources(
-            project_branch_uid=project_branch_uid,
+        resources = list_code_repository_resources(
+            code_repository_branch_uid=code_repository_branch_uid,
             repo_commit_sha=repo_commit_sha,
             filters=filters,
             timeout=timeout,
         )
     except ApiError as e:
-        error(f"Project resources fetch failed: {e}")
+        error(f"CodeRepository resources fetch failed: {e}")
         raise typer.Exit(1) from e
 
     if _emit_json(resources):
@@ -8024,7 +7992,7 @@ def _project_resources_list_impl(
 
     if rows:
         print_table(
-            "Project Resources",
+            "CodeRepository Resources",
             ["UID", "Name", "Type", "Path", "File Size", "Last Modified"],
             rows,
         )
@@ -8033,13 +8001,13 @@ def _project_resources_list_impl(
     info(f"Total project resources: {len(resources)}")
 
 
-@project_project_resource_group.command("list")
-def project_project_resource_list_cmd(
-    project_id: str | None = typer.Argument(
-        None, help="Optional Project UID assertion; Git repository identity is authoritative."
+@code_repository_resources_group.command("list")
+def code_repository_code_repository_resource_list_cmd(
+    code_repository_id: str | None = typer.Argument(
+        None, help="Optional CodeRepository UID assertion; Git repository identity is authoritative."
     ),
     path: str | None = typer.Option(
-        None, "--path", help="Project repository path (default: current project)"
+        None, "--path", help="CodeRepository repository path (default: current project)"
     ),
     filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
     show_filters: bool = typer.Option(
@@ -8050,13 +8018,13 @@ def project_project_resource_list_cmd(
     """
     List project resources for the current project at the head commit of the remote branch.
 
-    Uses SDK client `ProjectResource.filter()` as the single source of truth and always applies
+    Uses SDK client `CodeRepositoryResource.filter()` as the single source of truth and always applies
     the standard `repo_commit_sha` filter resolved from the current upstream branch head.
 
     Parameters
     ----------
     project_id:
-        Optional Project UID assertion.
+        Optional CodeRepository UID assertion.
     path:
         Local repository path used for Git context and remote branch head resolution.
     timeout:
@@ -8065,13 +8033,13 @@ def project_project_resource_list_cmd(
     Examples
     --------
     ```bash
-    mainsequence project project_resource list
-    mainsequence project project_resource list project-uid-123
-    mainsequence project project_resource list --path .
+    mainsequence code-repository resources list
+    mainsequence code-repository resources list project-uid-123
+    mainsequence code-repository resources list --path .
     ```
     """
-    _project_resources_list_impl(
-        project_id=project_id,
+    _code_repository_resources_list_impl(
+        code_repository_id=code_repository_id,
         path=path,
         filter_entries=filter_entries,
         show_filters=show_filters,
@@ -8079,10 +8047,10 @@ def project_project_resource_list_cmd(
     )
 
 
-def _project_resource_release_create_impl(
+def _code_repository_resource_release_create_impl(
     *,
     release_kind: str,
-    project_id: str | None,
+    code_repository_id: str | None,
     resource_uid: str | None,
     path: str | None,
     related_image_uid: str | None,
@@ -8096,49 +8064,49 @@ def _project_resource_release_create_impl(
 ) -> None:
     _require_login()
 
-    project_dir = _resolve_project_dir(project_id, path)
+    code_repository_dir = _resolve_code_repository_dir(code_repository_id, path)
     try:
-        project_branch_uid = _resolve_project_branch_uid_for_command(
-            project_id,
-            project_dir=project_dir,
+        code_repository_branch_uid = _resolve_code_repository_branch_uid_for_command(
+            code_repository_id,
+            code_repository_dir=code_repository_dir,
         )
-        project_images = list_project_images(
-            related_project_branch_uid=project_branch_uid,
+        code_repository_images = list_code_repository_images(
+            related_code_repository_branch_uid=code_repository_branch_uid,
             timeout=timeout,
         )
     except ApiError as e:
-        error(f"Project images fetch failed: {e}")
+        error(f"CodeRepository images fetch failed: {e}")
         raise typer.Exit(1) from e
 
-    if not project_images:
+    if not code_repository_images:
         error("No project images are available. Create an image first.")
         raise typer.Exit(1)
 
     if related_image_uid is None:
         image_rows: list[list[str]] = []
-        for image in project_images:
+        for image in code_repository_images:
             image_rows.append(
                 [
                     str(image.get("uid") or ""),
-                    str(image.get("project_repo_hash") or "-"),
+                    str(image.get("code_repository_commit_hash") or "-"),
                     _format_base_image_label(image.get("base_image")),
                 ]
             )
         related_image_uid = _prompt_select_uid(
-            title="Available Project Images",
+            title="Available CodeRepository Images",
             prompt_label="Related image UID",
-            items=project_images,
+            items=code_repository_images,
             rows=image_rows,
         )
 
-    selected_image = _find_image_by_uid(project_images, related_image_uid)
+    selected_image = _find_image_by_uid(code_repository_images, related_image_uid)
     if not selected_image:
         error(f"Related image not found: {related_image_uid}")
         raise typer.Exit(1)
 
-    repo_commit_sha = str(selected_image.get("project_repo_hash") or "").strip()
+    repo_commit_sha = str(selected_image.get("code_repository_commit_hash") or "").strip()
     if not repo_commit_sha:
-        error("The selected image does not expose project_repo_hash.")
+        error("The selected image does not expose code_repository_commit_hash.")
         raise typer.Exit(1)
 
     resource_type = RESOURCE_RELEASE_RESOURCE_TYPE_MAP.get(release_kind)
@@ -8147,14 +8115,14 @@ def _project_resource_release_create_impl(
         raise typer.Exit(1)
 
     try:
-        resources = list_project_resources(
-            project_branch_uid=project_branch_uid,
+        resources = list_code_repository_resources(
+            code_repository_branch_uid=code_repository_branch_uid,
             repo_commit_sha=repo_commit_sha,
             resource_type=resource_type,
             timeout=timeout,
         )
     except ApiError as e:
-        error(f"Project resources fetch failed: {e}")
+        error(f"CodeRepository resources fetch failed: {e}")
         raise typer.Exit(1) from e
 
     if not resources:
@@ -8175,7 +8143,7 @@ def _project_resource_release_create_impl(
                 ]
             )
         resource_uid = _prompt_select_uid(
-            title="Project Resources Matching Selected Image and Release Type",
+            title="CodeRepository Resources Matching Selected Image and Release Type",
             prompt_label="Resource UID",
             items=resources,
             rows=resource_rows,
@@ -8209,7 +8177,7 @@ def _project_resource_release_create_impl(
         info("Using defaults: " + ", ".join(default_parts) + ".")
 
     try:
-        created = create_project_resource_release(
+        created = create_code_repository_resource_release(
             release_kind=release_kind,
             resource_uid=resource_uid,
             related_image_uid=related_image_uid,
@@ -8222,15 +8190,15 @@ def _project_resource_release_create_impl(
             timeout=timeout,
         )
     except ApiError as e:
-        error(f"Project resource release creation failed: {e}")
+        error(f"CodeRepository resource release creation failed: {e}")
         raise typer.Exit(1) from e
 
     if _emit_json(created):
         return
 
-    success(f"Project resource release created: uid={created.get('uid') or '-'}")
+    success(f"CodeRepository resource release created: uid={created.get('uid') or '-'}")
     print_kv(
-        "Project Resource Release",
+        "CodeRepository Resource Release",
         [
             ("UID", str(created.get("uid") or "-")),
             ("Release Kind", release_kind),
@@ -8256,17 +8224,17 @@ def _project_resource_release_create_impl(
     )
 
 
-@project_project_resource_group.command("create_dashboard")
-def project_project_resource_create_dashboard_cmd(
-    project_id: str | None = typer.Argument(
-        None, help="Optional Project UID assertion; Git repository identity is authoritative."
+@code_repository_resources_group.command("create_dashboard")
+def code_repository_code_repository_resource_create_dashboard_cmd(
+    code_repository_id: str | None = typer.Argument(
+        None, help="Optional CodeRepository UID assertion; Git repository identity is authoritative."
     ),
-    resource_uid: str | None = typer.Option(None, "--resource-uid", help="Project resource UID."),
+    resource_uid: str | None = typer.Option(None, "--resource-uid", help="CodeRepository resource UID."),
     path: str | None = typer.Option(
-        None, "--path", help="Project repository path (default: current project)"
+        None, "--path", help="CodeRepository repository path (default: current project)"
     ),
     related_image_uid: str | None = typer.Option(
-        None, "--related-image-uid", help="Project image UID."
+        None, "--related-image-uid", help="CodeRepository image UID."
     ),
     cpu_request: str | None = typer.Option(
         None, "--cpu-request", help="CPU request (accepts 0.5 or 500m; default: 0.25)."
@@ -8290,11 +8258,11 @@ def project_project_resource_create_dashboard_cmd(
     Create a Streamlit dashboard release from a project resource.
 
     The command first lets the user select a project image and then filters resources so
-    only resources with `repo_commit_sha == related_image.project_repo_hash` are eligible.
+    only resources with `repo_commit_sha == related_image.code_repository_commit_hash` are eligible.
     """
-    _project_resource_release_create_impl(
+    _code_repository_resource_release_create_impl(
         release_kind="streamlit_dashboard",
-        project_id=project_id,
+        code_repository_id=code_repository_id,
         resource_uid=resource_uid,
         path=path,
         related_image_uid=related_image_uid,
@@ -8308,17 +8276,17 @@ def project_project_resource_create_dashboard_cmd(
     )
 
 
-@project_project_resource_group.command("create_fastapi")
-def project_project_resource_create_fastapi_cmd(
-    project_id: str | None = typer.Argument(
-        None, help="Optional Project UID assertion; Git repository identity is authoritative."
+@code_repository_resources_group.command("create_fastapi")
+def code_repository_code_repository_resource_create_fastapi_cmd(
+    code_repository_id: str | None = typer.Argument(
+        None, help="Optional CodeRepository UID assertion; Git repository identity is authoritative."
     ),
-    resource_uid: str | None = typer.Option(None, "--resource-uid", help="Project resource UID."),
+    resource_uid: str | None = typer.Option(None, "--resource-uid", help="CodeRepository resource UID."),
     path: str | None = typer.Option(
-        None, "--path", help="Project repository path (default: current project)"
+        None, "--path", help="CodeRepository repository path (default: current project)"
     ),
     related_image_uid: str | None = typer.Option(
-        None, "--related-image-uid", help="Project image UID."
+        None, "--related-image-uid", help="CodeRepository image UID."
     ),
     cpu_request: str | None = typer.Option(
         None, "--cpu-request", help="CPU request (accepts 0.5 or 500m; default: 0.25)."
@@ -8342,11 +8310,11 @@ def project_project_resource_create_fastapi_cmd(
     Create a FastAPI release from a project resource.
 
     The command first lets the user select a project image and then filters resources so
-    only resources with `repo_commit_sha == related_image.project_repo_hash` are eligible.
+    only resources with `repo_commit_sha == related_image.code_repository_commit_hash` are eligible.
     """
-    _project_resource_release_create_impl(
+    _code_repository_resource_release_create_impl(
         release_kind="fastapi",
-        project_id=project_id,
+        code_repository_id=code_repository_id,
         resource_uid=resource_uid,
         path=path,
         related_image_uid=related_image_uid,
@@ -8360,7 +8328,7 @@ def project_project_resource_create_fastapi_cmd(
     )
 
 
-def _project_resource_release_delete_impl(
+def _code_repository_resource_release_delete_impl(
     *,
     release_uid: str,
     expected_release_kind: str,
@@ -8376,7 +8344,7 @@ def _project_resource_release_delete_impl(
             timeout=timeout,
         )
     except ApiError as e:
-        error(f"Project resource release fetch failed: {e}")
+        error(f"CodeRepository resource release fetch failed: {e}")
         raise typer.Exit(1) from e
 
     release_label = RESOURCE_RELEASE_LABEL_MAP.get(
@@ -8384,7 +8352,7 @@ def _project_resource_release_delete_impl(
         f"{expected_release_kind} release",
     )
     _confirm_delete_action(
-        preview_title="Project Resource Release Delete Preview",
+        preview_title="CodeRepository Resource Release Delete Preview",
         preview_items=_format_resource_release_delete_preview(release),
         prompt_text=f"Delete {release_label} {release_uid}?",
         yes=yes,
@@ -8397,18 +8365,18 @@ def _project_resource_release_delete_impl(
             timeout=timeout,
         )
     except ApiError as e:
-        error(f"Project resource release deletion failed: {e}")
+        error(f"CodeRepository resource release deletion failed: {e}")
         raise typer.Exit(1) from e
 
     if _emit_json(deleted):
         return
 
-    success(f"Project resource release deleted: uid={release_uid}")
-    print_kv("Deleted Project Resource Release", _format_resource_release_delete_preview(deleted))
+    success(f"CodeRepository resource release deleted: uid={release_uid}")
+    print_kv("Deleted CodeRepository Resource Release", _format_resource_release_delete_preview(deleted))
 
 
-@project_project_resource_group.command("delete_dashboard")
-def project_project_resource_delete_dashboard_cmd(
+@code_repository_resources_group.command("delete_dashboard")
+def code_repository_code_repository_resource_delete_dashboard_cmd(
     release_uid: str = pydantic_argument(
         RESOURCE_RELEASE_MODEL_REF, "uid", ..., help="Dashboard resource release UID."
     ),
@@ -8421,11 +8389,11 @@ def project_project_resource_delete_dashboard_cmd(
     Examples
     --------
     ```bash
-    mainsequence project project_resource delete_dashboard <RELEASE_UID>
-    mainsequence project project_resource delete_dashboard <RELEASE_UID> --yes
+    mainsequence code-repository resources delete_dashboard <RELEASE_UID>
+    mainsequence code-repository resources delete_dashboard <RELEASE_UID> --yes
     ```
     """
-    _project_resource_release_delete_impl(
+    _code_repository_resource_release_delete_impl(
         release_uid=release_uid,
         expected_release_kind="streamlit_dashboard",
         yes=yes,
@@ -8433,8 +8401,8 @@ def project_project_resource_delete_dashboard_cmd(
     )
 
 
-@project_project_resource_group.command("delete_fastapi")
-def project_project_resource_delete_fastapi_cmd(
+@code_repository_resources_group.command("delete_fastapi")
+def code_repository_code_repository_resource_delete_fastapi_cmd(
     release_uid: str = pydantic_argument(
         RESOURCE_RELEASE_MODEL_REF, "uid", ..., help="FastAPI resource release UID."
     ),
@@ -8447,11 +8415,11 @@ def project_project_resource_delete_fastapi_cmd(
     Examples
     --------
     ```bash
-    mainsequence project project_resource delete_fastapi <RELEASE_UID>
-    mainsequence project project_resource delete_fastapi <RELEASE_UID> --yes
+    mainsequence code-repository resources delete_fastapi <RELEASE_UID>
+    mainsequence code-repository resources delete_fastapi <RELEASE_UID> --yes
     ```
     """
-    _project_resource_release_delete_impl(
+    _code_repository_resource_release_delete_impl(
         release_uid=release_uid,
         expected_release_kind="fastapi",
         yes=yes,
@@ -8459,8 +8427,8 @@ def project_project_resource_delete_fastapi_cmd(
     )
 
 
-@project_project_resource_group.command("logs")
-def project_resource_logs_cmd(
+@code_repository_resources_group.command("logs")
+def code_repository_resource_logs_cmd(
     release_uid: str = typer.Argument(..., help="ResourceRelease UID."),
     start: float | None = typer.Option(
         None, "--start", help="Window start as epoch seconds or milliseconds."
@@ -8497,8 +8465,8 @@ def project_resource_logs_cmd(
     _render_owner_logs(payload, title="Resource Release Logs")
 
 
-@project_project_resource_group.command("resource-usage")
-def project_resource_usage_cmd(
+@code_repository_resources_group.command("resource-usage")
+def code_repository_resource_usage_cmd(
     release_uid: str = typer.Argument(..., help="ResourceRelease UID."),
     start: float | None = typer.Option(
         None, "--start", help="Window start as epoch seconds or milliseconds."
@@ -8523,38 +8491,38 @@ def project_resource_usage_cmd(
     _render_owner_resource_usage(payload, title="Resource Release Resource Usage")
 
 
-def _project_images_list_impl(
-    project_id: str | None,
+def _code_repository_images_list_impl(
+    code_repository_id: str | None,
     path: str | None,
     filter_entries: list[str] | None,
     show_filters: bool,
     timeout: int | None,
 ) -> None:
     filters = _resolve_cli_list_filters(
-        model_ref=PROJECT_IMAGE_MODEL_REF,
+        model_ref=CODE_REPOSITORY_IMAGE_MODEL_REF,
         filter_entries=filter_entries,
         show_filters=show_filters,
-        command_label="Project Images",
+        command_label="CodeRepository Images",
         reserved_filter_descriptions={
-            "related_project_branch_uid": "always set from the selected ProjectBranch",
+            "related_code_repository_branch_uid": "always set from the selected CodeRepositoryBranch",
         },
     )
 
     _require_login()
 
-    project_dir = _resolve_project_dir(project_id, path)
+    code_repository_dir = _resolve_code_repository_dir(code_repository_id, path)
     try:
-        project_branch_uid = _resolve_project_branch_uid_for_command(
-            project_id,
-            project_dir=project_dir,
+        code_repository_branch_uid = _resolve_code_repository_branch_uid_for_command(
+            code_repository_id,
+            code_repository_dir=code_repository_dir,
         )
-        images = list_project_images(
-            related_project_branch_uid=project_branch_uid,
+        images = list_code_repository_images(
+            related_code_repository_branch_uid=code_repository_branch_uid,
             filters=filters,
             timeout=timeout,
         )
     except ApiError as e:
-        error(f"Project images fetch failed: {e}")
+        error(f"CodeRepository images fetch failed: {e}")
         raise typer.Exit(1) from e
 
     if _emit_json(images):
@@ -8565,25 +8533,25 @@ def _project_images_list_impl(
         rows.append(
             [
                 str(image.get("uid") or "-"),
-                str(image.get("project_repo_hash") or "-"),
+                str(image.get("code_repository_commit_hash") or "-"),
                 _format_base_image_label(image.get("base_image")),
             ]
         )
 
     if rows:
-        print_table("Project Images", ["UID", "Project Repo Hash", "Base Image"], rows)
+        print_table("CodeRepository Images", ["UID", "CodeRepository Repo Hash", "Base Image"], rows)
     else:
         info("No project images.")
     info(f"Total images: {len(images)}")
 
 
-@project_images_group.command("list")
-def project_images_list_cmd(
-    project_id: str | None = typer.Argument(
-        None, help="Optional Project UID assertion; Git repository identity is authoritative."
+@code_repository_images_group.command("list")
+def code_repository_images_list_cmd(
+    code_repository_id: str | None = typer.Argument(
+        None, help="Optional CodeRepository UID assertion; Git repository identity is authoritative."
     ),
     path: str | None = typer.Option(
-        None, "--path", help="Project repository path (default: current project)"
+        None, "--path", help="CodeRepository repository path (default: current project)"
     ),
     filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
     show_filters: bool = typer.Option(
@@ -8594,12 +8562,12 @@ def project_images_list_cmd(
     """
     List project images for a project.
 
-    Uses SDK client `ProjectImage.filter()` as the single source of truth.
+    Uses SDK client `CodeRepositoryImage.filter()` as the single source of truth.
 
     Parameters
     ----------
     project_id:
-        Optional Project UID assertion.
+        Optional CodeRepository UID assertion.
     path:
         Local repository path used for Git-native context resolution.
     timeout:
@@ -8608,13 +8576,13 @@ def project_images_list_cmd(
     Examples
     --------
     ```bash
-    mainsequence project images list
-    mainsequence project images list project-uid-123
-    mainsequence project images list project-uid-123 --path .
+    mainsequence code-repository images list
+    mainsequence code-repository images list project-uid-123
+    mainsequence code-repository images list project-uid-123 --path .
     ```
     """
-    _project_images_list_impl(
-        project_id=project_id,
+    _code_repository_images_list_impl(
+        code_repository_id=code_repository_id,
         path=path,
         filter_entries=filter_entries,
         show_filters=show_filters,
@@ -8622,7 +8590,7 @@ def project_images_list_cmd(
     )
 
 
-def _project_images_delete_impl(
+def _code_repository_images_delete_impl(
     *,
     image_uid: str,
     yes: bool,
@@ -8631,34 +8599,34 @@ def _project_images_delete_impl(
     _require_login()
 
     try:
-        image = get_project_image(image_uid=image_uid, timeout=timeout)
+        image = get_code_repository_image(image_uid=image_uid, timeout=timeout)
     except ApiError as e:
-        error(f"Project image fetch failed: {e}")
+        error(f"CodeRepository image fetch failed: {e}")
         raise typer.Exit(1) from e
 
     _confirm_delete_action(
-        preview_title="Project Image Delete Preview",
-        preview_items=_format_project_image_delete_preview(image),
+        preview_title="CodeRepository Image Delete Preview",
+        preview_items=_format_code_repository_image_delete_preview(image),
         prompt_text=f"Delete project image {image_uid}?",
         yes=yes,
     )
 
     try:
-        deleted = delete_project_image(image_uid=image_uid, timeout=timeout)
+        deleted = delete_code_repository_image(image_uid=image_uid, timeout=timeout)
     except ApiError as e:
-        error(f"Project image deletion failed: {e}")
+        error(f"CodeRepository image deletion failed: {e}")
         raise typer.Exit(1) from e
 
     if _emit_json(deleted):
         return
 
-    success(f"Project image deleted: uid={image_uid}")
-    print_kv("Deleted Project Image", _format_project_image_delete_preview(deleted))
+    success(f"CodeRepository image deleted: uid={image_uid}")
+    print_kv("Deleted CodeRepository Image", _format_code_repository_image_delete_preview(deleted))
 
 
-@project_images_group.command("delete")
-def project_images_delete_cmd(
-    image_uid: str = typer.Argument(..., help="Project image UID."),
+@code_repository_images_group.command("delete")
+def code_repository_images_delete_cmd(
+    image_uid: str = typer.Argument(..., help="CodeRepository image UID."),
     yes: bool = typer.Option(False, "--yes", help="Delete without confirmation."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
@@ -8668,16 +8636,16 @@ def project_images_delete_cmd(
     Examples
     --------
     ```bash
-    mainsequence project images delete <IMAGE_UID>
-    mainsequence project images delete <IMAGE_UID> --yes
+    mainsequence code-repository images delete <IMAGE_UID>
+    mainsequence code-repository images delete <IMAGE_UID> --yes
     ```
     """
-    _project_images_delete_impl(image_uid=image_uid, yes=yes, timeout=timeout)
+    _code_repository_images_delete_impl(image_uid=image_uid, yes=yes, timeout=timeout)
 
 
-def _project_images_create_impl(
-    project_id: str | None,
-    project_repo_hash: str | None,
+def _code_repository_images_create_impl(
+    code_repository_id: str | None,
+    code_repository_commit_hash: str | None,
     path: str | None,
     base_image_uid: str | None,
     timeout: int,
@@ -8685,25 +8653,25 @@ def _project_images_create_impl(
 ) -> None:
     _require_login()
 
-    project_dir = _resolve_project_dir(project_id, path)
+    code_repository_dir = _resolve_code_repository_dir(code_repository_id, path)
 
     try:
-        project_branch_uid = _resolve_project_branch_uid_for_command(
-            project_id,
-            project_dir=project_dir,
+        code_repository_branch_uid = _resolve_code_repository_branch_uid_for_command(
+            code_repository_id,
+            code_repository_dir=code_repository_dir,
         )
-        existing_images = list_project_images(
-            related_project_branch_uid=project_branch_uid,
+        existing_images = list_code_repository_images(
+            related_code_repository_branch_uid=code_repository_branch_uid,
             timeout=timeout,
         )
     except ApiError as e:
-        error(f"Project images fetch failed: {e}")
+        error(f"CodeRepository images fetch failed: {e}")
         raise typer.Exit(1) from e
-    images_by_hash = _group_project_images_by_hash(existing_images)
+    images_by_hash = _group_code_repository_images_by_hash(existing_images)
 
     emit_json = _json_output_enabled()
 
-    pending_commits = _list_unpushed_commits(project_dir)
+    pending_commits = _list_unpushed_commits(code_repository_dir)
     if pending_commits:
         pending_hashes = ", ".join(
             c["short_hash"] for c in pending_commits[:3] if c.get("short_hash")
@@ -8711,14 +8679,14 @@ def _project_images_create_impl(
         suffix = f" Pending: {pending_hashes}." if pending_hashes else ""
         warn(
             f"{len(pending_commits)} local commit(s) have not been pushed yet. "
-            "Only pushed commits can be used for project_repo_hash."
+            "Only pushed commits can be used for code_repository_commit_hash."
             f"{suffix}"
         )
 
-    project_repo_hash = (project_repo_hash or "").strip()
-    if not project_repo_hash:
+    code_repository_commit_hash = (code_repository_commit_hash or "").strip()
+    if not code_repository_commit_hash:
         try:
-            commits = _list_pushed_commits(project_dir)
+            commits = _list_pushed_commits(code_repository_dir)
         except RuntimeError as e:
             error(str(e))
             raise typer.Exit(1) from e
@@ -8733,31 +8701,31 @@ def _project_images_create_impl(
             for c in commits
         ]
         print_table("Pushed Commits", ["Hash", "Date/Time", "Subject", "Image UIDs"], rows)
-        project_repo_hash = typer.prompt("project_repo_hash", default=commits[0]["hash"]).strip()
+        code_repository_commit_hash = typer.prompt("code_repository_commit_hash", default=commits[0]["hash"]).strip()
 
-    if not project_repo_hash:
-        error("project_repo_hash is required.")
+    if not code_repository_commit_hash:
+        error("code_repository_commit_hash is required.")
         raise typer.Exit(1)
 
     try:
-        project_repo_hash = _resolve_full_commit_hash(project_dir, project_repo_hash)
+        code_repository_commit_hash = _resolve_full_commit_hash(code_repository_dir, code_repository_commit_hash)
     except RuntimeError as e:
         error(str(e))
         raise typer.Exit(1) from e
 
-    if not _is_pushed_commit(project_dir, project_repo_hash):
+    if not _is_pushed_commit(code_repository_dir, code_repository_commit_hash):
         error(
-            "project_repo_hash must reference a commit that has already been pushed to the remote."
+            "code_repository_commit_hash must reference a commit that has already been pushed to the remote."
         )
         raise typer.Exit(1)
 
-    existing_for_hash = images_by_hash.get(project_repo_hash, [])
+    existing_for_hash = images_by_hash.get(code_repository_commit_hash, [])
     if existing_for_hash:
         warn("This commit already has project image(s): " + _format_image_uids(existing_for_hash))
 
     try:
         if base_image_uid is None:
-            img_items = list_project_base_images()
+            img_items = list_code_repository_base_images()
             img_rows: list[list[str]] = []
             for item in img_items:
                 name = item.get("title") or f"image-{item.get('uid')}"
@@ -8770,28 +8738,28 @@ def _project_images_create_impl(
                 rows=img_rows,
             )
 
-        created = create_project_image(
-            project_repo_hash=project_repo_hash,
-            related_project_branch_uid=project_branch_uid,
+        created = create_code_repository_image(
+            code_repository_commit_hash=code_repository_commit_hash,
+            related_code_repository_branch_uid=code_repository_branch_uid,
             base_image_uid=base_image_uid,
             timeout=timeout,
         )
     except ApiError as e:
-        error(f"Project image creation failed: {e}")
+        error(f"CodeRepository image creation failed: {e}")
         raise typer.Exit(1) from e
     except RuntimeError as e:
         error(str(e))
         raise typer.Exit(1) from e
 
     if not emit_json:
-        success(f"Project image created: uid={created.get('uid') or '-'}")
+        success(f"CodeRepository image created: uid={created.get('uid') or '-'}")
 
     image_uid = created.get("uid")
     if image_uid is not None and created.get("is_ready") is False:
         wait_deadline = time.monotonic() + max(int(timeout), 0)
         attempt = 0
         info(
-            "Project image is still building. "
+            "CodeRepository image is still building. "
             f"Waiting until is_ready=true (poll every {poll_interval}s, timeout {timeout}s)."
         )
         while time.monotonic() < wait_deadline:
@@ -8800,33 +8768,33 @@ def _project_images_create_impl(
             sleep_for = min(max(int(poll_interval), 1), remaining)
             if sleep_for > 0:
                 with status(
-                    f"Project image not ready yet (attempt {attempt}). Next check in {int(sleep_for)}s..."
+                    f"CodeRepository image not ready yet (attempt {attempt}). Next check in {int(sleep_for)}s..."
                 ):
                     time.sleep(sleep_for)
 
             try:
-                polled_images = list_project_images(
-                    related_project_branch_uid=project_branch_uid,
+                polled_images = list_code_repository_images(
+                    related_code_repository_branch_uid=code_repository_branch_uid,
                     timeout=timeout,
                 )
             except ApiError as e:
-                warn(f"Project image status poll failed (attempt {attempt}): {e}")
+                warn(f"CodeRepository image status poll failed (attempt {attempt}): {e}")
                 continue
 
             latest = next(
                 (img for img in polled_images if str(img.get("uid")) == str(image_uid)), None
             )
             if latest is None:
-                warn(f"Project image {image_uid} was not visible yet on poll attempt {attempt}.")
+                warn(f"CodeRepository image {image_uid} was not visible yet on poll attempt {attempt}.")
                 continue
 
             created = latest
             if created.get("is_ready") is True:
                 if not emit_json:
-                    success("Project image is ready.")
+                    success("CodeRepository image is ready.")
                 break
             if not emit_json:
-                info("Project image still building. Continuing to poll...")
+                info("CodeRepository image still building. Continuing to poll...")
         else:
             if not emit_json:
                 warn(
@@ -8842,11 +8810,11 @@ def _project_images_create_impl(
         base_image_value = base_image_value.get("uid") or base_image_value.get("title") or "-"
 
     print_kv(
-        "Project Image",
+        "CodeRepository Image",
         [
             ("UID", str(created.get("uid") or "-")),
-            ("Project UID", str(project_id)),
-            ("Project Repo Hash", project_repo_hash),
+            ("CodeRepository UID", str(code_repository_id)),
+            ("CodeRepository Repo Hash", code_repository_commit_hash),
             ("Base Image", str(base_image_value or base_image_uid or "-")),
             (
                 "Is Ready",
@@ -8856,20 +8824,20 @@ def _project_images_create_impl(
     )
 
 
-@project_images_group.command("create")
-def project_images_create_cmd(
-    project_id: str | None = typer.Argument(
-        None, help="Optional Project UID assertion; Git repository identity is authoritative."
+@code_repository_images_group.command("create")
+def code_repository_images_create_cmd(
+    code_repository_id: str | None = typer.Argument(
+        None, help="Optional CodeRepository UID assertion; Git repository identity is authoritative."
     ),
-    project_repo_hash: str | None = typer.Argument(
+    code_repository_commit_hash: str | None = typer.Argument(
         None,
         help="Git commit hash for the image build. Must already be pushed to the remote.",
     ),
     path: str | None = typer.Option(
-        None, "--path", help="Project repository path (default: current project)"
+        None, "--path", help="CodeRepository repository path (default: current project)"
     ),
     base_image_uid: str | None = typer.Option(
-        None, "--base-image-uid", help="Project base image UID"
+        None, "--base-image-uid", help="CodeRepository base image UID"
     ),
     timeout: int = typer.Option(
         300, "--timeout", help="Maximum wait time in seconds for the image to become ready."
@@ -8881,20 +8849,20 @@ def project_images_create_cmd(
     """
     Create a project image from a pushed git commit.
 
-    The current Git repository and attached branch select the ProjectBranch.
-    If `project_repo_hash` is omitted, the command shows
+    The current Git repository and attached branch select the CodeRepositoryBranch.
+    If `code_repository_commit_hash` is omitted, the command shows
     only commits already present on the remote and prompts for a selection.
 
     Parameters
     ----------
     project_id:
-        Optional Project UID assertion.
-    project_repo_hash:
+        Optional CodeRepository UID assertion.
+    code_repository_commit_hash:
         Git commit hash already pushed to remote.
     path:
         Local repository path. Defaults to current project folder.
     base_image_uid:
-        Project base image UID. If omitted, prompt from available base images.
+        CodeRepository base image UID. If omitted, prompt from available base images.
     timeout:
         Maximum wait time in seconds for the image to become ready.
     poll_interval:
@@ -8903,16 +8871,16 @@ def project_images_create_cmd(
     Examples
     --------
     ```bash
-    mainsequence project images create
-    mainsequence project images create project-uid-123
-    mainsequence project images create project-uid-123 4a1b2c3d
-    mainsequence project images create project-uid-123 --path .
-    mainsequence project images create project-uid-123 --timeout 600 --poll-interval 15
+    mainsequence code-repository images create
+    mainsequence code-repository images create project-uid-123
+    mainsequence code-repository images create project-uid-123 4a1b2c3d
+    mainsequence code-repository images create project-uid-123 --path .
+    mainsequence code-repository images create project-uid-123 --timeout 600 --poll-interval 15
     ```
     """
-    _project_images_create_impl(
-        project_id=project_id,
-        project_repo_hash=project_repo_hash,
+    _code_repository_images_create_impl(
+        code_repository_id=code_repository_id,
+        code_repository_commit_hash=code_repository_commit_hash,
         path=path,
         base_image_uid=base_image_uid,
         timeout=timeout,
@@ -8920,43 +8888,8 @@ def project_images_create_cmd(
     )
 
 
-@project.command("create_image", hidden=True)
-def project_create_image_cmd(
-    project_id: str | None = typer.Argument(
-        None, help="Optional Project UID assertion; Git repository identity is authoritative."
-    ),
-    project_repo_hash: str | None = typer.Argument(
-        None,
-        help="Git commit hash for the image build. Must already be pushed to the remote.",
-    ),
-    path: str | None = typer.Option(
-        None, "--path", help="Project repository path (default: current project)"
-    ),
-    base_image_uid: str | None = typer.Option(
-        None, "--base-image-uid", help="Project base image UID"
-    ),
-    timeout: int = typer.Option(
-        300, "--timeout", help="Maximum wait time in seconds for the image to become ready."
-    ),
-    poll_interval: int = typer.Option(
-        30, "--poll-interval", help="Polling interval in seconds while waiting for is_ready=true."
-    ),
-):
-    """
-    Backward-compatible alias for `mainsequence project images create`.
-    """
-    _project_images_create_impl(
-        project_id=project_id,
-        project_repo_hash=project_repo_hash,
-        path=path,
-        base_image_uid=base_image_uid,
-        timeout=timeout,
-        poll_interval=poll_interval,
-    )
-
-
-def _project_jobs_list_impl(
-    project_id: str | None,
+def _code_repository_jobs_list_impl(
+    code_repository_id: str | None,
     path: str | None,
     filter_entries: list[str] | None,
     show_filters: bool,
@@ -8966,27 +8899,27 @@ def _project_jobs_list_impl(
         model_ref=JOB_MODEL_REF,
         filter_entries=filter_entries,
         show_filters=show_filters,
-        command_label="Project Jobs",
+        command_label="CodeRepository Jobs",
         reserved_filter_descriptions={
-            "project_branch_uid": "always scoped to the selected ProjectBranch",
+            "code_repository_branch_uid": "always scoped to the selected CodeRepositoryBranch",
         },
     )
 
     _require_login()
 
-    project_dir = _resolve_project_dir(project_id, path)
+    code_repository_dir = _resolve_code_repository_dir(code_repository_id, path)
     try:
-        project_branch_uid = _resolve_project_branch_uid_for_command(
-            project_id,
-            project_dir=project_dir,
+        code_repository_branch_uid = _resolve_code_repository_branch_uid_for_command(
+            code_repository_id,
+            code_repository_dir=code_repository_dir,
         )
-        jobs = list_project_jobs(
-            project_branch_uid=project_branch_uid,
+        jobs = list_code_repository_jobs(
+            code_repository_branch_uid=code_repository_branch_uid,
             filters=filters,
             timeout=timeout,
         )
     except ApiError as e:
-        error(f"Project jobs fetch failed: {e}")
+        error(f"CodeRepository jobs fetch failed: {e}")
         raise typer.Exit(1) from e
 
     if _emit_json(jobs):
@@ -8998,7 +8931,7 @@ def _project_jobs_list_impl(
             [
                 str(job.get("uid") or "-"),
                 str(job.get("name") or "-"),
-                str(job.get("project_repo_hash") or "-"),
+                str(job.get("code_repository_commit_hash") or "-"),
                 str(job.get("execution_path") or "-"),
                 str(job.get("app_name") or "-"),
                 _format_job_schedule_summary(job.get("task_schedule")),
@@ -9008,7 +8941,7 @@ def _project_jobs_list_impl(
 
     if rows:
         print_table(
-            "Project Jobs",
+            "CodeRepository Jobs",
             [
                 "UID",
                 "Name",
@@ -9024,7 +8957,7 @@ def _project_jobs_list_impl(
         deployment_rows = [
             [
                 str(job.get("uid") or "-"),
-                str(job.get("project_repo_hash") or "-"),
+                str(job.get("code_repository_commit_hash") or "-"),
                 str(job.get("related_image_uid") or job.get("related_image") or "-"),
                 str(job.get("image_status") or "-"),
                 str(bool(job.get("automatic_deployment"))).lower(),
@@ -9036,7 +8969,7 @@ def _project_jobs_list_impl(
             for job in jobs
         ]
         print_table(
-            "Project Job Image And Promotion State",
+            "CodeRepository Job Image And Promotion State",
             [
                 "Job UID",
                 "Exact Commit",
@@ -9052,7 +8985,7 @@ def _project_jobs_list_impl(
     info(f"Total jobs: {len(jobs)}")
 
 
-def _project_job_runs_list_impl(
+def _code_repository_job_runs_list_impl(
     job_uid: str,
     filter_entries: list[str] | None,
     show_filters: bool,
@@ -9062,16 +8995,16 @@ def _project_job_runs_list_impl(
         model_ref=JOB_RUN_MODEL_REF,
         filter_entries=filter_entries,
         show_filters=show_filters,
-        command_label="Project Job Runs",
+        command_label="CodeRepository Job Runs",
         reserved_filter_descriptions={"job__uid": "always set from JOB_UID"},
     )
 
     _require_login()
 
     try:
-        runs = list_project_job_runs(job_uid=job_uid, filters=filters, timeout=timeout)
+        runs = list_code_repository_job_runs(job_uid=job_uid, filters=filters, timeout=timeout)
     except ApiError as e:
-        error(f"Project job runs fetch failed: {e}")
+        error(f"CodeRepository job runs fetch failed: {e}")
         raise typer.Exit(1) from e
 
     if _emit_json(runs):
@@ -9093,7 +9026,7 @@ def _project_job_runs_list_impl(
 
     if rows:
         print_table(
-            "Project Job Runs",
+            "CodeRepository Job Runs",
             [
                 "UID",
                 "Name",
@@ -9153,13 +9086,13 @@ def _print_job_run_logs_rows(rows, *, start_index: int = 0) -> int:
     return len(rows)
 
 
-@project_jobs_group.command("list")
-def project_jobs_list_cmd(
-    project_id: str | None = typer.Argument(
-        None, help="Optional Project UID assertion; Git repository identity is authoritative."
+@code_repository_jobs_group.command("list")
+def code_repository_jobs_list_cmd(
+    code_repository_id: str | None = typer.Argument(
+        None, help="Optional CodeRepository UID assertion; Git repository identity is authoritative."
     ),
     path: str | None = typer.Option(
-        None, "--path", help="Project repository path (default: current project)"
+        None, "--path", help="CodeRepository repository path (default: current project)"
     ),
     filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
     show_filters: bool = typer.Option(
@@ -9175,13 +9108,13 @@ def project_jobs_list_cmd(
     Examples
     --------
     ```bash
-    mainsequence project jobs list
-    mainsequence project jobs list project-uid-123
-    mainsequence project jobs list project-uid-123 --path .
+    mainsequence code-repository jobs list
+    mainsequence code-repository jobs list project-uid-123
+    mainsequence code-repository jobs list project-uid-123 --path .
     ```
     """
-    _project_jobs_list_impl(
-        project_id=project_id,
+    _code_repository_jobs_list_impl(
+        code_repository_id=code_repository_id,
         path=path,
         filter_entries=filter_entries,
         show_filters=show_filters,
@@ -9189,12 +9122,12 @@ def project_jobs_list_cmd(
     )
 
 
-@project_jobs_group.command("run")
-def project_jobs_run_cmd(
+@code_repository_jobs_group.command("run")
+def code_repository_jobs_run_cmd(
     job_uid: str = pydantic_argument(JOB_MODEL_REF, "uid", ..., help="Job UID to run."),
     passthrough_args: list[str] | None = typer.Argument(
         None,
-        help="Additional per-run args after `--`, for example `mainsequence project jobs run <JOB_UID> -- --name demo`.",
+        help="Additional per-run args after `--`, for example `mainsequence code-repository jobs run <JOB_UID> -- --name demo`.",
     ),
     command_args: list[str] | None = typer.Option(
         None,
@@ -9212,10 +9145,10 @@ def project_jobs_run_cmd(
     Examples
     --------
     ```bash
-    mainsequence project jobs run <JOB_UID>
-    mainsequence project jobs run <JOB_UID> --arg demo-from-cli
-    mainsequence project jobs run <JOB_UID> -- --name demo-from-cli
-    mainsequence project jobs run <JOB_UID> --timeout 60
+    mainsequence code-repository jobs run <JOB_UID>
+    mainsequence code-repository jobs run <JOB_UID> --arg demo-from-cli
+    mainsequence code-repository jobs run <JOB_UID> -- --name demo-from-cli
+    mainsequence code-repository jobs run <JOB_UID> --timeout 60
     ```
     """
     _require_login()
@@ -9225,9 +9158,9 @@ def project_jobs_run_cmd(
         merged_command_args.extend(str(arg) for arg in passthrough_args)
 
     try:
-        job_payload = get_project_job(job_uid, timeout=timeout)
+        job_payload = get_code_repository_job(job_uid, timeout=timeout)
     except ApiError as e:
-        error(f"Project job fetch failed: {e}")
+        error(f"CodeRepository job fetch failed: {e}")
         raise typer.Exit(1) from e
 
     entrypoint = str(job_payload.get("execution_path") or "").strip()
@@ -9241,19 +9174,19 @@ def project_jobs_run_cmd(
         info(f"Effective run: {shlex.join(effective_tokens)}")
 
     try:
-        payload = run_project_job(
+        payload = run_code_repository_job(
             job_uid=job_uid,
             command_args=merged_command_args or None,
             timeout=timeout,
         )
     except ApiError as e:
-        error(f"Project job run failed: {e}")
+        error(f"CodeRepository job run failed: {e}")
         raise typer.Exit(1) from e
 
     if _emit_json(payload):
         return
 
-    success(f"Project job run requested: job_uid={job_uid}")
+    success(f"CodeRepository job run requested: job_uid={job_uid}")
 
     if payload:
         preferred_keys = [
@@ -9284,8 +9217,8 @@ def project_jobs_run_cmd(
         print_kv("Job Run", rows + remaining)
 
 
-@project_job_runs_group.command("list")
-def project_job_runs_list_cmd(
+@code_repository_job_runs_group.command("list")
+def code_repository_job_runs_list_cmd(
     job_uid: str = pydantic_argument(
         JOB_MODEL_REF, "uid", ..., help="Job UID whose runs will be listed."
     ),
@@ -9303,11 +9236,11 @@ def project_job_runs_list_cmd(
     Examples
     --------
     ```bash
-    mainsequence project jobs runs list <JOB_UID>
-    mainsequence project jobs runs list <JOB_UID> --timeout 60
+    mainsequence code-repository jobs runs list <JOB_UID>
+    mainsequence code-repository jobs runs list <JOB_UID> --timeout 60
     ```
     """
-    _project_job_runs_list_impl(
+    _code_repository_job_runs_list_impl(
         job_uid=job_uid,
         filter_entries=filter_entries,
         show_filters=show_filters,
@@ -9315,8 +9248,8 @@ def project_job_runs_list_cmd(
     )
 
 
-@project_job_runs_group.command("logs")
-def project_job_runs_logs_cmd(
+@code_repository_job_runs_group.command("logs")
+def code_repository_job_runs_logs_cmd(
     job_run_uid: str = pydantic_argument(
         JOB_RUN_MODEL_REF, "uid", ..., help="Job run UID whose logs will be shown."
     ),
@@ -9354,10 +9287,10 @@ def project_job_runs_logs_cmd(
     Examples
     --------
     ```bash
-    mainsequence project jobs runs logs 4c1d77c8-8a42-42b8-a9c1-06be9a336e5d
-    mainsequence project jobs runs logs 4c1d77c8-8a42-42b8-a9c1-06be9a336e5d --poll-interval 10
-    mainsequence project jobs runs logs 4c1d77c8-8a42-42b8-a9c1-06be9a336e5d --max-wait-seconds 900
-    mainsequence project jobs runs logs 4c1d77c8-8a42-42b8-a9c1-06be9a336e5d --poll-interval 0
+    mainsequence code-repository jobs runs logs 4c1d77c8-8a42-42b8-a9c1-06be9a336e5d
+    mainsequence code-repository jobs runs logs 4c1d77c8-8a42-42b8-a9c1-06be9a336e5d --poll-interval 10
+    mainsequence code-repository jobs runs logs 4c1d77c8-8a42-42b8-a9c1-06be9a336e5d --max-wait-seconds 900
+    mainsequence code-repository jobs runs logs 4c1d77c8-8a42-42b8-a9c1-06be9a336e5d --poll-interval 0
     ```
     """
     _require_login()
@@ -9373,7 +9306,7 @@ def project_job_runs_logs_cmd(
 
     while True:
         try:
-            payload = get_project_job_run_logs(
+            payload = get_code_repository_job_run_logs(
                 job_run_uid=job_run_uid,
                 start=start,
                 end=end,
@@ -9386,7 +9319,7 @@ def project_job_runs_logs_cmd(
                 timeout=timeout,
             )
         except ApiError as e:
-            error(f"Project job run logs fetch failed: {e}")
+            error(f"CodeRepository job run logs fetch failed: {e}")
             raise typer.Exit(1) from e
 
         if _emit_json(payload):
@@ -9449,8 +9382,8 @@ def project_job_runs_logs_cmd(
         time.sleep(sleep_for)
 
 
-@project_job_runs_group.command("resource-usage")
-def project_job_runs_resource_usage_cmd(
+@code_repository_job_runs_group.command("resource-usage")
+def code_repository_job_runs_resource_usage_cmd(
     job_run_uid: str = pydantic_argument(
         JOB_RUN_MODEL_REF,
         "uid",
@@ -9468,20 +9401,20 @@ def project_job_runs_resource_usage_cmd(
     """Read aggregate CPU, memory, and disk usage owned by a JobRun."""
     _require_login()
     try:
-        payload = get_project_job_run_resource_usage(
+        payload = get_code_repository_job_run_resource_usage(
             job_run_uid,
             start=start,
             end=end,
             timeout=timeout,
         )
     except ApiError as e:
-        error(f"Project job run resource usage fetch failed: {e}")
+        error(f"CodeRepository job run resource usage fetch failed: {e}")
         raise typer.Exit(1) from e
     _render_owner_resource_usage(payload, title="Job Run Resource Usage")
 
 
-def _project_jobs_create_impl(
-    project_id: str | None,
+def _code_repository_jobs_create_impl(
+    code_repository_id: str | None,
     name: str | None,
     path: str | None,
     execution_path: str | None,
@@ -9505,12 +9438,12 @@ def _project_jobs_create_impl(
 ) -> None:
     _require_login()
 
-    project_dir = _resolve_project_dir(project_id, path)
+    code_repository_dir = _resolve_code_repository_dir(code_repository_id, path)
 
     try:
-        project_branch_uid = _resolve_project_branch_uid_for_command(
-            project_id,
-            project_dir=project_dir,
+        code_repository_branch_uid = _resolve_code_repository_branch_uid_for_command(
+            code_repository_id,
+            code_repository_dir=code_repository_dir,
         )
     except ApiError as e:
         error(str(e))
@@ -9530,31 +9463,31 @@ def _project_jobs_create_impl(
             raise typer.Exit(1)
         info(
             "Automatic deployment: the backend will derive the initial exact image "
-            "from the ProjectBranch synchronized commit."
+            "from the CodeRepositoryBranch synchronized commit."
         )
     else:
         try:
-            project_images = list_project_images(
-                related_project_branch_uid=project_branch_uid,
+            code_repository_images = list_code_repository_images(
+                related_code_repository_branch_uid=code_repository_branch_uid,
                 timeout=timeout,
             )
         except ApiError as e:
-            error(f"Project images fetch failed: {e}")
+            error(f"CodeRepository images fetch failed: {e}")
             raise typer.Exit(1) from e
 
-        if related_image_uid is None and project_images:
+        if related_image_uid is None and code_repository_images:
             image_rows = [
                 [
                     str(img.get("uid") or "-"),
-                    str(img.get("project_repo_hash") or "-"),
+                    str(img.get("code_repository_commit_hash") or "-"),
                     _format_base_image_label(img.get("base_image")),
                 ]
-                for img in project_images
+                for img in code_repository_images
             ]
             related_image_uid = _prompt_select_uid(
-                title="Available Project Images",
+                title="Available CodeRepository Images",
                 prompt_label="Related image UID",
-                items=project_images,
+                items=code_repository_images,
                 rows=image_rows,
             )
 
@@ -9623,9 +9556,9 @@ def _project_jobs_create_impl(
         info("Using defaults: " + ", ".join(default_parts) + ".")
 
     try:
-        created = create_project_job(
+        created = create_code_repository_job(
             name=name,
-            project_branch_uid=project_branch_uid,
+            code_repository_branch_uid=code_repository_branch_uid,
             execution_path=execution_path,
             app_name=app_name,
             task_schedule=task_schedule,
@@ -9641,7 +9574,7 @@ def _project_jobs_create_impl(
             timeout=timeout,
         )
     except ApiError as e:
-        error(f"Project job creation failed: {e}")
+        error(f"CodeRepository job creation failed: {e}")
         raise typer.Exit(1) from e
     except RuntimeError as e:
         error(str(e))
@@ -9650,13 +9583,13 @@ def _project_jobs_create_impl(
     if _emit_json(created):
         return
 
-    success(f"Project job created: uid={created.get('uid') or '-'}")
+    success(f"CodeRepository job created: uid={created.get('uid') or '-'}")
     print_kv(
-        "Project Job",
+        "CodeRepository Job",
         [
             ("UID", str(created.get("uid") or "-")),
             ("Name", str(created.get("name") or name)),
-            ("Project UID", str(project_id)),
+            ("CodeRepository UID", str(code_repository_id)),
             ("Execution Path", str(created.get("execution_path") or execution_path or "-")),
             ("App Name", str(created.get("app_name") or app_name or "-")),
             (
@@ -9675,7 +9608,7 @@ def _project_jobs_create_impl(
                 str(created.get("max_runtime_seconds") or max_runtime_seconds),
             ),
             ("Image Status", str(created.get("image_status") or "-")),
-            ("Exact Commit", str(created.get("project_repo_hash") or "-")),
+            ("Exact Commit", str(created.get("code_repository_commit_hash") or "-")),
             (
                 "Automatic Deployment",
                 str(created.get("automatic_deployment", automatic_deployment)).lower(),
@@ -9691,14 +9624,14 @@ def _project_jobs_create_impl(
     )
 
 
-@project_jobs_group.command("create")
-def project_jobs_create_cmd(
-    project_id: str | None = typer.Argument(
-        None, help="Optional Project UID assertion; Git repository identity is authoritative."
+@code_repository_jobs_group.command("create")
+def code_repository_jobs_create_cmd(
+    code_repository_id: str | None = typer.Argument(
+        None, help="Optional CodeRepository UID assertion; Git repository identity is authoritative."
     ),
     name: str | None = pydantic_option(JOB_MODEL_REF, "name", None, "--name"),
     path: str | None = typer.Option(
-        None, "--path", help="Project repository path (default: current project)"
+        None, "--path", help="CodeRepository repository path (default: current project)"
     ),
     execution_path: str | None = pydantic_option(
         JOB_MODEL_REF,
@@ -9792,7 +9725,7 @@ def project_jobs_create_cmd(
         "--automatic-deployment/--no-automatic-deployment",
         help=(
             "Let the backend derive and prepare the initial exact image from the "
-            "synchronized ProjectBranch commit, then promote future qualifying exact events."
+            "synchronized CodeRepositoryBranch commit, then promote future qualifying exact events."
         ),
     ),
     automatic_redeployment_tag_regex: str | None = typer.Option(
@@ -9818,13 +9751,13 @@ def project_jobs_create_cmd(
     Examples
     --------
     ```bash
-    mainsequence project jobs create
-    mainsequence project jobs create project-uid-123 --name daily-run --execution-path scripts/test.py --related-image-uid <uid>
-    mainsequence project jobs create project-uid-123 --name dashboard --app-name dashboard-api --related-image-uid <uid>
+    mainsequence code-repository jobs create
+    mainsequence code-repository jobs create project-uid-123 --name daily-run --execution-path scripts/test.py --related-image-uid <uid>
+    mainsequence code-repository jobs create project-uid-123 --name dashboard --app-name dashboard-api --related-image-uid <uid>
     ```
     """
-    _project_jobs_create_impl(
-        project_id=project_id,
+    _code_repository_jobs_create_impl(
+        code_repository_id=code_repository_id,
         name=name,
         path=path,
         execution_path=execution_path,
@@ -9848,9 +9781,9 @@ def project_jobs_create_cmd(
     )
 
 
-@project.command("set-up-locally")
-def project_set_up_locally(
-    project_id: str = typer.Argument(..., help="Project UID from the platform"),
+@code_repository.command("set-up-locally")
+def code_repository_set_up_locally(
+    code_repository_id: str = typer.Argument(..., help="CodeRepository UID from the platform"),
     branch: str | None = typer.Option(
         None,
         "--branch",
@@ -9886,9 +9819,9 @@ def project_set_up_locally(
     Examples
     --------
     ```bash
-    mainsequence project set-up-locally project-uid-123
-    mainsequence project set-up-locally project-uid-123 --base-dir ~/mainsequence
-    mainsequence project set-up-locally project-uid-123 --no-scaffold-docker
+    mainsequence code-repository set-up-locally project-uid-123
+    mainsequence code-repository set-up-locally project-uid-123 --base-dir ~/mainsequence
+    mainsequence code-repository set-up-locally project-uid-123 --no-scaffold-docker
     ```
     """
     _require_login()
@@ -9898,14 +9831,14 @@ def project_set_up_locally(
     org_slug = _org_slug_from_profile()
 
     try:
-        p = resolve_project(project_id)
+        p = resolve_code_repository(code_repository_id)
     except ApiError as e:
-        error(f"Project not found/visible: {e}")
+        error(f"CodeRepository not found/visible: {e}")
         raise typer.Exit(1) from e
 
-    project_uid = _project_identity_value(p) or str(project_id).strip()
+    code_repository_uid = _code_repository_identity_value(p) or str(code_repository_id).strip()
     try:
-        project_branch = _resolve_project_branch(
+        code_repository_branch = _resolve_code_repository_branch(
             p,
             repository_branch=branch,
             prompt_if_ambiguous=True,
@@ -9914,25 +9847,25 @@ def project_set_up_locally(
         error(str(e))
         raise typer.Exit(1) from e
 
-    repository_branch = str(project_branch.get("repository_branch") or "").strip()
-    is_initialized = project_branch.get("is_initialized")
+    repository_branch = str(code_repository_branch.get("repository_branch") or "").strip()
+    is_initialized = code_repository_branch.get("is_initialized")
 
     if is_initialized is not True:
         error(
-            "Project has not finished initializing yet. "
+            "CodeRepository has not finished initializing yet. "
             "Wait until is_initialized=true and try again."
         )
         raise typer.Exit(1)
 
     try:
-        repo = _resolve_project_repository_ssh_url(p)
+        repo = _resolve_code_repository_repository_ssh_url(p)
     except ApiError as e:
         error(str(e))
         raise typer.Exit(1) from e
 
-    name = safe_slug(p.get("project_name") or f"project-{project_uid}")
-    projects_root = _projects_root(base, org_slug)
-    target_dir = projects_root / f"{name}-{project_uid}"
+    name = safe_slug(p.get("code_repository_name") or f"project-{code_repository_uid}")
+    projects_root = _code_repositories_root(base, org_slug)
+    target_dir = projects_root / f"{name}-{code_repository_uid}"
     projects_root.mkdir(parents=True, exist_ok=True)
 
     if target_dir.exists():
@@ -9940,9 +9873,9 @@ def project_set_up_locally(
         raise typer.Exit(2)
 
     try:
-        key_path, pub, _git_env = _ensure_project_repository_ssh_access(
+        key_path, pub, _git_env = _ensure_code_repository_repository_ssh_access(
             origin=repo,
-            project_ref=project_uid,
+            code_repository_ref=code_repository_uid,
             verify_access=lambda env: verify_git_remote_access(repo, env),
         )
     except (ApiError, RuntimeError, ValueError) as exc:
@@ -9973,7 +9906,7 @@ def project_set_up_locally(
 
     backend_url = cfg.backend_url()
     try:
-        auth_env = _current_project_runtime_auth_env(backend_url)
+        auth_env = _current_code_repository_runtime_auth_env(backend_url)
     except RuntimeError as e:
         error(str(e))
         raise typer.Exit(1) from e
@@ -9981,7 +9914,7 @@ def project_set_up_locally(
         error(str(e))
         raise typer.Exit(1) from e
 
-    final_env = _render_project_runtime_env_text(
+    final_env = _render_code_repository_runtime_env_text(
         "",
         auth_env=auth_env,
         backend_url=backend_url,
@@ -9995,10 +9928,10 @@ def project_set_up_locally(
         info("Public key copied to clipboard.")
 
 
-@project.command("open")
-def project_open(
-    project_id: str | None = typer.Argument(
-        None, help="Optional Project UID assertion against the current Git worktree"
+@code_repository.command("open")
+def code_repository_open(
+    code_repository_id: str | None = typer.Argument(
+        None, help="Optional CodeRepository UID assertion against the current Git worktree"
     ),
     path: str | None = typer.Option(
         None, "--path", help="Open an explicit path instead of resolving by id"
@@ -10010,26 +9943,26 @@ def project_open(
     Parameters
     ----------
     project_id:
-        Optional Project UID assertion against the current Git worktree.
+        Optional CodeRepository UID assertion against the current Git worktree.
     path:
         Explicit local path to open.
 
     Examples
     --------
     ```bash
-    mainsequence project open project-uid-123
-    mainsequence project open --path .
+    mainsequence code-repository open project-uid-123
+    mainsequence code-repository open --path .
     ```
     """
-    p = _resolve_project_dir(project_id, path)
+    p = _resolve_code_repository_dir(code_repository_id, path)
     open_folder(str(p))
     success(f"Opened: {p}")
 
 
-@project.command("delete-local")
-def project_delete_local(
-    project_id: str | None = typer.Argument(
-        None, help="Optional Project UID assertion against the current Git worktree"
+@code_repository.command("delete-local")
+def code_repository_delete_local(
+    code_repository_id: str | None = typer.Argument(
+        None, help="Optional CodeRepository UID assertion against the current Git worktree"
     ),
     path: str | None = typer.Option(
         None, "--path", help="Delete an explicit path instead of resolving by id"
@@ -10044,7 +9977,7 @@ def project_delete_local(
     Parameters
     ----------
     project_id:
-        Optional Project UID assertion against the current Git worktree.
+        Optional CodeRepository UID assertion against the current Git worktree.
     path:
         Explicit local path to delete.
     yes:
@@ -10053,11 +9986,11 @@ def project_delete_local(
     Examples
     --------
     ```bash
-    mainsequence project delete-local project-uid-123
-    mainsequence project delete-local --path ./my-project --yes
+    mainsequence code-repository delete-local project-uid-123
+    mainsequence code-repository delete-local --path ./my-project --yes
     ```
     """
-    p = _resolve_project_dir(project_id, path)
+    p = _resolve_code_repository_dir(code_repository_id, path)
 
     # Determine projects root for safety check
     cfg_obj = cfg.get_config()
@@ -10070,7 +10003,7 @@ def project_delete_local(
     except Exception:
         pass
 
-    projects_root = _projects_root(base, org_slug).resolve()
+    projects_root = _code_repositories_root(base, org_slug).resolve()
     try:
         p.resolve().relative_to(projects_root)
     except Exception as e:
@@ -10092,10 +10025,10 @@ def project_delete_local(
     warn(f"Deleted: {p}")
 
 
-@project.command("open-signed-terminal")
-def project_open_signed_terminal(
-    project_id: str | None = typer.Argument(
-        None, help="Optional Project UID assertion against the current Git worktree"
+@code_repository.command("open-signed-terminal")
+def code_repository_open_signed_terminal(
+    code_repository_id: str | None = typer.Argument(
+        None, help="Optional CodeRepository UID assertion against the current Git worktree"
     ),
     path: str | None = typer.Option(None, "--path", help="Open in a specific project directory"),
 ):
@@ -10105,41 +10038,41 @@ def project_open_signed_terminal(
     Parameters
     ----------
     project_id:
-        Optional Project UID assertion against the current Git worktree.
+        Optional CodeRepository UID assertion against the current Git worktree.
     path:
         Explicit local path.
 
     Examples
     --------
     ```bash
-    mainsequence project open-signed-terminal project-uid-123
-    mainsequence project open-signed-terminal --path .
+    mainsequence code-repository open-signed-terminal project-uid-123
+    mainsequence code-repository open-signed-terminal --path .
     ```
     """
-    project_dir = _resolve_project_dir(project_id, path)
+    code_repository_dir = _resolve_code_repository_dir(code_repository_id, path)
 
-    origin = git_origin(project_dir)
-    name = repo_name_from_git_url(origin) or project_dir.name
+    origin = git_origin(code_repository_dir)
+    name = repo_name_from_git_url(origin) or code_repository_dir.name
     try:
-        context = get_project_runtime_context(project_uid=project_id, project_dir=project_dir)
-        project_ref = str(context.project_uid or "").strip()
-        key_path, _public_key, _git_env = _ensure_project_repository_ssh_access(
+        context = get_code_repository_context(code_repository_uid=code_repository_id, code_repository_dir=code_repository_dir)
+        code_repository_ref = str(context.code_repository_uid or "").strip()
+        key_path, _public_key, _git_env = _ensure_code_repository_repository_ssh_access(
             origin=origin,
-            project_ref=project_ref or None,
+            code_repository_ref=code_repository_ref or None,
             verify_access=lambda env: verify_git_remote_access(origin, env),
         )
     except (ApiError, RuntimeError, ValueError) as exc:
         error(f"Repository SSH key setup failed: {exc}")
         raise typer.Exit(1) from exc
-    open_signed_terminal(str(project_dir), key_path, name)
+    open_signed_terminal(str(code_repository_dir), key_path, name)
 
 
-@project.command("build_local_venv")
-def project_build_local_venv(
-    project_id: str | None = typer.Argument(
-        None, help="Optional Project UID assertion against the current Git worktree"
+@code_repository.command("build-local-venv")
+def code_repository_build_local_venv(
+    code_repository_id: str | None = typer.Argument(
+        None, help="Optional CodeRepository UID assertion against the current Git worktree"
     ),
-    path: str | None = typer.Option(None, "--path", help="Project directory"),
+    path: str | None = typer.Option(None, "--path", help="CodeRepository directory"),
     recreate: bool = typer.Option(
         False,
         "--recreate",
@@ -10154,21 +10087,21 @@ def project_build_local_venv(
     Parameters
     ----------
     project_id:
-        Optional Project UID assertion. The current Git worktree selects the folder.
+        Optional CodeRepository UID assertion. The current Git worktree selects the folder.
     path:
         Explicit local path.
 
     Examples
     --------
     ```bash
-    mainsequence project build_local_venv
-    mainsequence project build_local_venv project-uid-123
-    mainsequence project build_local_venv --path .
-    mainsequence project build_local_venv --path . --recreate
+    mainsequence code-repository build-local-venv
+    mainsequence code-repository build-local-venv project-uid-123
+    mainsequence code-repository build-local-venv --path .
+    mainsequence code-repository build-local-venv --path . --recreate
     ```
     """
-    project_dir = _resolve_project_dir(project_id, path)
-    pyproject_path = project_dir / "pyproject.toml"
+    code_repository_dir = _resolve_code_repository_dir(code_repository_id, path)
+    pyproject_path = code_repository_dir / "pyproject.toml"
     if not pyproject_path.is_file():
         error("pyproject.toml not found in the project root.")
         raise typer.Exit(1)
@@ -10187,7 +10120,7 @@ def project_build_local_venv(
         )
         raise typer.Exit(1)
 
-    venv_path = project_dir / ".venv"
+    venv_path = code_repository_dir / ".venv"
     replace_existing_venv = False
     if venv_path.exists():
         existing_version = _read_venv_python_version(venv_path)
@@ -10239,7 +10172,7 @@ def project_build_local_venv(
         info(f"Creating .venv with Python requirement {python_request}...")
         venv_result = subprocess.run(
             [*uv_cmd, "venv", ".venv", "--python", python_request],
-            cwd=str(project_dir),
+            cwd=str(code_repository_dir),
             env=os.environ.copy(),
             capture_output=True,
             text=True,
@@ -10256,7 +10189,7 @@ def project_build_local_venv(
         sync_env["UV_PROJECT_ENVIRONMENT"] = ".venv"
         sync_result = subprocess.run(
             [*uv_cmd, "sync"],
-            cwd=str(project_dir),
+            cwd=str(code_repository_dir),
             env=sync_env,
             capture_output=True,
             text=True,
@@ -10271,12 +10204,12 @@ def project_build_local_venv(
     success(f"Local .venv built for Python requirement {python_request}.")
 
 
-@project.command("refresh_token")
-def project_refresh_token(
-    project_id: str | None = typer.Argument(
-        None, help="Optional Project UID assertion against the current Git worktree"
+@code_repository.command("refresh-token")
+def code_repository_refresh_token(
+    code_repository_id: str | None = typer.Argument(
+        None, help="Optional CodeRepository UID assertion against the current Git worktree"
     ),
-    path: str | None = typer.Option(None, "--path", help="Project directory"),
+    path: str | None = typer.Option(None, "--path", help="CodeRepository directory"),
 ):
     """
     Refresh local project auth entries in `.env` from the active auth mode.
@@ -10288,31 +10221,31 @@ def project_refresh_token(
     Parameters
     ----------
     project_id:
-        Optional Project UID assertion against the current Git worktree.
+        Optional CodeRepository UID assertion against the current Git worktree.
     path:
         Explicit local path. If omitted, the current directory is used.
 
     Examples
     --------
     ```bash
-    mainsequence project refresh_token
-    mainsequence project refresh_token project-uid-123
-    mainsequence project refresh_token --path .
+    mainsequence code-repository refresh-token
+    mainsequence code-repository refresh-token project-uid-123
+    mainsequence code-repository refresh-token --path .
     ```
     """
     _require_login()
-    project_dir = _resolve_project_dir(project_id, path)
-    env_path = project_dir / ".env"
+    code_repository_dir = _resolve_code_repository_dir(code_repository_id, path)
+    env_path = code_repository_dir / ".env"
     if not env_path.is_file():
         error(f".env not found in project root: {env_path}")
         info(
-            "Run: mainsequence project set-up-locally <project_uid> to provision the local runtime first."
+            "Run: mainsequence code-repository set-up-locally <code_repository_uid> to provision the local runtime first."
         )
         raise typer.Exit(1)
 
     backend_url = cfg.backend_url()
     try:
-        auth_env = _current_project_runtime_auth_env(backend_url)
+        auth_env = _current_code_repository_runtime_auth_env(backend_url)
     except RuntimeError as e:
         error(str(e))
         raise typer.Exit(1) from e
@@ -10326,7 +10259,7 @@ def project_refresh_token(
         error(f"Could not read .env: {e}")
         raise typer.Exit(1) from e
 
-    final_env = _render_project_runtime_env_text(
+    final_env = _render_code_repository_runtime_env_text(
         env_text,
         auth_env=auth_env,
         backend_url=backend_url,
@@ -10335,12 +10268,12 @@ def project_refresh_token(
     success(f"Refreshed auth entries in: {env_path}")
 
 
-@project.command("freeze-env")
-def project_freeze_env(
-    project_id: str | None = typer.Argument(
-        None, help="Optional Project UID assertion against the current Git worktree"
+@code_repository.command("freeze-env")
+def code_repository_freeze_env(
+    code_repository_id: str | None = typer.Argument(
+        None, help="Optional CodeRepository UID assertion against the current Git worktree"
     ),
-    path: str | None = typer.Option(None, "--path", help="Project directory"),
+    path: str | None = typer.Option(None, "--path", help="CodeRepository directory"),
     ensure_uv: bool = typer.Option(
         True,
         "--ensure-uv/--no-ensure-uv",
@@ -10353,7 +10286,7 @@ def project_freeze_env(
     Parameters
     ----------
     project_id:
-        Optional Project UID assertion against the current Git worktree.
+        Optional CodeRepository UID assertion against the current Git worktree.
     path:
         Explicit local path.
     ensure_uv:
@@ -10362,34 +10295,34 @@ def project_freeze_env(
     Examples
     --------
     ```bash
-    mainsequence project freeze-env project-uid-123
-    mainsequence project freeze-env --path .
-    mainsequence project freeze-env --path . --no-ensure-uv
+    mainsequence code-repository freeze-env project-uid-123
+    mainsequence code-repository freeze-env --path .
+    mainsequence code-repository freeze-env --path . --no-ensure-uv
     ```
     """
-    project_dir = _resolve_project_dir(project_id, path)
-    ensure_venv(project_dir)
+    code_repository_dir = _resolve_code_repository_dir(code_repository_id, path)
+    ensure_venv(code_repository_dir)
 
-    uv = ensure_uv_installed(project_dir) if ensure_uv else (ensure_venv(project_dir).uv or None)
+    uv = ensure_uv_installed(code_repository_dir) if ensure_uv else (ensure_venv(code_repository_dir).uv or None)
     if not uv:
         error("uv not found in .venv and --no-ensure-uv was used.")
         raise typer.Exit(1)
 
     with status("Exporting requirements.txt via uv..."):
         uv_export_requirements(
-            uv, cwd=project_dir, locked=False, no_dev=False, output_file="requirements.txt"
+            uv, cwd=code_repository_dir, locked=False, no_dev=False, output_file="requirements.txt"
         )
 
-    success(f"Wrote: {project_dir / 'requirements.txt'}")
+    success(f"Wrote: {code_repository_dir / 'requirements.txt'}")
 
 
-@project.command("sync")
-def project_sync(
+@code_repository.command("sync")
+def code_repository_sync(
     message: str | None = typer.Argument(None, help="Git commit message"),
-    project_id: str | None = typer.Argument(
-        None, help="Optional Project UID assertion against the current Git worktree"
+    code_repository_id: str | None = typer.Argument(
+        None, help="Optional CodeRepository UID assertion against the current Git worktree"
     ),
-    path: str | None = typer.Option(None, "--path", help="Project directory"),
+    path: str | None = typer.Option(None, "--path", help="CodeRepository directory"),
     message_opt: str | None = typer.Option(None, "--message", "-m", help="Git commit message"),
     dry_run: bool = typer.Option(
         False,
@@ -10401,7 +10334,7 @@ def project_sync(
     Run end-to-end sync workflow for project dependencies and git state.
 
     Workflow:
-    1. preview the patch version and backend-owned ProjectBranch tag,
+    1. preview the patch version and backend-owned CodeRepositoryBranch tag,
     2. reject local and remote collisions before mutating the project,
     3. apply and verify the patch version via `uv version`,
     4. run `uv lock` + `uv sync`,
@@ -10414,7 +10347,7 @@ def project_sync(
     message:
         Commit message. Can be passed positionally or via `--message`.
     project_id:
-        Optional Project UID assertion against the current Git worktree.
+        Optional CodeRepository UID assertion against the current Git worktree.
     path:
         Explicit local path.
     dry_run:
@@ -10424,9 +10357,9 @@ def project_sync(
     Examples
     --------
     ```bash
-    mainsequence project sync "Update environment"
-    mainsequence project sync -m "Update environment" --path .
-    mainsequence project sync -m "Preview only" --path . --dry-run
+    mainsequence code-repository sync "Update environment"
+    mainsequence code-repository sync -m "Update environment" --path .
+    mainsequence code-repository sync -m "Preview only" --path . --dry-run
     ```
     """
     if message is not None and message_opt is not None:
@@ -10434,7 +10367,7 @@ def project_sync(
         raise typer.Exit(2)
 
     message = message if message is not None else message_opt
-    project_dir = _resolve_project_dir(project_id, path)
+    code_repository_dir = _resolve_code_repository_dir(code_repository_id, path)
 
     safe_message = (
         str(message or "").replace("\r", " ").replace("\n", " ").replace('"', "'").strip()
@@ -10444,40 +10377,40 @@ def project_sync(
         raise typer.Exit(1)
 
     try:
-        git_branch, project_branch_uid = _resolve_git_project_branch_context(
-            project_id,
-            project_dir=project_dir,
+        git_branch, code_repository_branch_uid = _resolve_git_code_repository_branch_context(
+            code_repository_id,
+            code_repository_dir=code_repository_dir,
         )
-        project_ref = str(get_project_runtime_context().project_uid or "").strip()
+        code_repository_ref = str(get_code_repository_context().code_repository_uid or "").strip()
     except ApiError as exc:
-        error(f"Project sync preflight failed: {exc}")
+        error(f"CodeRepository sync preflight failed: {exc}")
         raise typer.Exit(1) from exc
 
     info(
-        "Project sync preflight resolved "
-        f"Git branch {git_branch!r} to ProjectBranch {project_branch_uid}."
+        "CodeRepository sync preflight resolved "
+        f"Git branch {git_branch!r} to CodeRepositoryBranch {code_repository_branch_uid}."
     )
 
-    origin = git_origin(project_dir)
-    repo_name = repo_name_from_git_url(origin) or project_dir.name
+    origin = git_origin(code_repository_dir)
+    repo_name = repo_name_from_git_url(origin) or code_repository_dir.name
     try:
         require_ssh_git_origin(origin)
     except ValueError as exc:
-        error(f"Project sync preflight failed: {exc}")
+        error(f"CodeRepository sync preflight failed: {exc}")
         raise typer.Exit(1) from exc
 
     try:
-        ensure_venv(project_dir)
-        uv = ensure_uv_installed(project_dir)
-        current_version = uv_project_version(uv, cwd=project_dir)
-        next_version = uv_preview_patch_version(uv, cwd=project_dir)
-        tag = render_project_branch_default_redeployment_tag(
-            project_branch_uid,
+        ensure_venv(code_repository_dir)
+        uv = ensure_uv_installed(code_repository_dir)
+        current_version = uv_project_version(uv, cwd=code_repository_dir)
+        next_version = uv_preview_patch_version(uv, cwd=code_repository_dir)
+        tag = render_code_repository_branch_default_redeployment_tag(
+            code_repository_branch_uid,
             version=next_version,
         )
-        verify_git_tag_absent(project_dir, tag)
+        verify_git_tag_absent(code_repository_dir, tag)
     except (ApiError, RuntimeError) as exc:
-        error(f"Project sync tag preflight failed: {exc}")
+        error(f"CodeRepository sync tag preflight failed: {exc}")
         raise typer.Exit(1) from exc
 
     steps = [
@@ -10485,7 +10418,7 @@ def project_sync(
         "request backend default redeployment tag",
         "verify backend tag does not exist locally",
         "ensure repository SSH key",
-        "register a new or inaccessible SSH key through the owning Project",
+        "register a new or inaccessible SSH key through the owning CodeRepository",
         "git push --dry-run --follow-tags origin HEAD:refs/heads/<branch>",
         "verify exact backend tag does not exist remotely",
         "uv version --bump patch",
@@ -10514,51 +10447,51 @@ def project_sync(
         return
 
     try:
-        _key_path, _public_key, env = _ensure_project_repository_ssh_access(
+        _key_path, _public_key, env = _ensure_code_repository_repository_ssh_access(
             origin=origin,
-            project_ref=project_ref,
+            code_repository_ref=code_repository_ref,
             verify_access=lambda ssh_env: verify_git_push_access(
-                project_dir,
+                code_repository_dir,
                 git_branch,
                 ssh_env,
             ),
         )
     except (ApiError, RuntimeError, ValueError) as exc:
-        error(f"Project sync SSH preflight failed: {exc}")
+        error(f"CodeRepository sync SSH preflight failed: {exc}")
         raise typer.Exit(1) from exc
 
     try:
-        verify_git_remote_tag_absent(project_dir, tag, env)
+        verify_git_remote_tag_absent(code_repository_dir, tag, env)
     except RuntimeError as exc:
-        error(f"Project sync remote tag preflight failed: {exc}")
+        error(f"CodeRepository sync remote tag preflight failed: {exc}")
         raise typer.Exit(1) from exc
 
     with status("Running uv + git sync steps..."):
-        run_uv(uv, ["version", "--bump", "patch"], cwd=project_dir, env=env)
-        version = uv_project_version(uv, cwd=project_dir, env=env)
+        run_uv(uv, ["version", "--bump", "patch"], cwd=code_repository_dir, env=env)
+        version = uv_project_version(uv, cwd=code_repository_dir, env=env)
         if version != next_version:
             error(
-                f"Project sync version verification failed: uv produced {version}; "
+                f"CodeRepository sync version verification failed: uv produced {version}; "
                 f"preflight expected {next_version}."
             )
             raise typer.Exit(1)
-        run_uv(uv, ["lock"], cwd=project_dir, env=env)
-        run_uv(uv, ["sync"], cwd=project_dir, env=env)
+        run_uv(uv, ["lock"], cwd=code_repository_dir, env=env)
+        run_uv(uv, ["sync"], cwd=code_repository_dir, env=env)
         # `uv sync` can prune ad hoc packages from `.venv`, including a `uv`
         # executable that was installed there just for this workflow.
-        uv = ensure_uv_installed(project_dir)
+        uv = ensure_uv_installed(code_repository_dir)
         uv_export_requirements(
             uv,
-            cwd=project_dir,
+            cwd=code_repository_dir,
             locked=True,
             no_dev=True,
             no_hashes=True,
             output_file="requirements.txt",
         )
 
-        run_cmd(["git", "add", "-A"], cwd=project_dir, env=env)
-        run_cmd(["git", "commit", "-m", safe_message], cwd=project_dir, env=env)
-        run_cmd(["git", "tag", "-a", tag, "-m", tag], cwd=project_dir, env=env)
+        run_cmd(["git", "add", "-A"], cwd=code_repository_dir, env=env)
+        run_cmd(["git", "commit", "-m", safe_message], cwd=code_repository_dir, env=env)
+        run_cmd(["git", "tag", "-a", tag, "-m", tag], cwd=code_repository_dir, env=env)
         run_cmd(
             [
                 "git",
@@ -10569,37 +10502,19 @@ def project_sync(
                 f"HEAD:refs/heads/{git_branch}",
                 f"refs/tags/{tag}:refs/tags/{tag}",
             ],
-            cwd=project_dir,
+            cwd=code_repository_dir,
             env=env,
         )
 
     success(f"Synced: {repo_name}")
 
 
-@project.command("sync_project", hidden=True)
-def project_sync_project(
-    message: str = typer.Argument(..., help="Git commit message"),
-    project_id: str | None = typer.Argument(None, help="Project UID"),
-    path: str | None = typer.Option(None, "--path", help="Project directory"),
-):
-    """
-    Backward-compatible hidden alias for `mainsequence project sync`.
-    """
-    project_sync(
-        message=message,
-        project_id=project_id,
-        path=path,
-        message_opt=None,
-        dry_run=False,
-    )
-
-
-@project.command("build-docker-env")
-def project_build_docker_env(
-    project_id: str | None = typer.Argument(
-        None, help="Optional Project UID assertion against the current Git worktree"
+@code_repository.command("build-docker-env")
+def code_repository_build_docker_env(
+    code_repository_id: str | None = typer.Argument(
+        None, help="Optional CodeRepository UID assertion against the current Git worktree"
     ),
-    path: str | None = typer.Option(None, "--path", help="Project directory"),
+    path: str | None = typer.Option(None, "--path", help="CodeRepository directory"),
     image_ref: str | None = typer.Option(
         None, "--image-ref", help="Docker image ref to build (default: computed)"
     ),
@@ -10615,7 +10530,7 @@ def project_build_docker_env(
     Parameters
     ----------
     project_id:
-        Optional Project UID assertion against the current Git worktree.
+        Optional CodeRepository UID assertion against the current Git worktree.
     path:
         Explicit local path.
     image_ref:
@@ -10626,25 +10541,25 @@ def project_build_docker_env(
     Examples
     --------
     ```bash
-    mainsequence project build-docker-env project-uid-123
-    mainsequence project build-docker-env --path . --image-ref ghcr.io/acme/proj:dev
-    mainsequence project build-docker-env --path . --no-devcontainer
+    mainsequence code-repository build-docker-env project-uid-123
+    mainsequence code-repository build-docker-env --path . --image-ref ghcr.io/acme/proj:dev
+    mainsequence code-repository build-docker-env --path . --no-devcontainer
     ```
     """
-    project_dir = _resolve_project_dir(project_id, path)
-    dockerfile = project_dir / "Dockerfile"
+    code_repository_dir = _resolve_code_repository_dir(code_repository_id, path)
+    dockerfile = code_repository_dir / "Dockerfile"
     if not dockerfile.exists():
         error("Dockerfile not found in the project root.")
         raise typer.Exit(1)
 
-    ref = (image_ref or "").strip() or compute_docker_image_ref(project_dir)
+    ref = (image_ref or "").strip() or compute_docker_image_ref(code_repository_dir)
 
     if devcontainer:
-        dc_path = write_devcontainer_config(project_dir, ref)
+        dc_path = write_devcontainer_config(code_repository_dir, ref)
         info(f"Devcontainer updated: {dc_path}")
 
     with status(f"Building Docker image: {ref}"):
-        rc = build_docker_environment(project_dir, ref)
+        rc = build_docker_environment(code_repository_dir, ref)
 
     if rc != 0:
         error(f"Docker build failed (exit {rc}).")
@@ -10654,15 +10569,15 @@ def project_build_docker_env(
     info("Next step (VS Code): run 'Dev Containers: Reopen in Container'.")
 
 
-@project.command("current")
-def project_current(
+@code_repository.command("current")
+def code_repository_current(
     debug: bool = typer.Option(False, "--debug", help="Show detection debug details"),
 ):
     """
     Detect and display current project context from current directory.
 
-    Includes detected path, logical Project UID, current Git branch, resolved
-    ProjectBranch UID, virtual environment, Python version, and SDK status when
+    Includes detected path, logical CodeRepository UID, current Git branch, resolved
+    CodeRepositoryBranch UID, virtual environment, Python version, and SDK status when
     available.
 
     Parameters
@@ -10673,58 +10588,58 @@ def project_current(
     Examples
     --------
     ```bash
-    mainsequence project current
-    mainsequence project current --debug
+    mainsequence code-repository current
+    mainsequence code-repository current --debug
     ```
     """
     cfg_obj = cfg.get_config()
     base = cfg_obj["mainsequence_path"]
     cwd = str(pathlib.Path.cwd())
 
-    project_info, dbg = detect_current_project([cwd], base)
-    if not project_info:
+    code_repository_info, dbg = detect_current_code_repository([cwd], base)
+    if not code_repository_info:
         warn(f"No MainSequence project detected (reason: {dbg.reason}).")
         if debug and dbg.checks:
             print_kv("Debug", [("checks", json.dumps([c.__dict__ for c in dbg.checks], indent=2))])
         raise typer.Exit(1)
 
-    project_path = pathlib.Path(project_info.path)
-    project_uid = ""
+    code_repository_path = pathlib.Path(code_repository_info.path)
+    code_repository_uid = ""
     git_branch = None
-    project_branch_uid = None
+    code_repository_branch_uid = None
     repository_identity = None
     commit_sha = None
-    project_branch_status = "unresolved"
-    project_branch_error = None
+    code_repository_branch_status = "unresolved"
+    code_repository_branch_error = None
     try:
-        context = get_project_runtime_context(project_dir=project_path)
-    except ProjectRuntimeContextError as exc:
-        project_branch_error = str(exc)
+        context = get_code_repository_context(code_repository_dir=code_repository_path)
+    except CodeRepositoryContextError as exc:
+        code_repository_branch_error = str(exc)
     else:
-        project_uid = str(context.project_uid or "")
+        code_repository_uid = str(context.code_repository_uid or "")
         git_branch = context.repository_branch
-        project_branch_uid = context.project_branch_uid
+        code_repository_branch_uid = context.code_repository_branch_uid
         repository_identity = context.canonical_repository_identity
         commit_sha = context.commit_sha
-        project_branch_status = context.status
-        project_branch_error = context.detail or None
+        code_repository_branch_status = context.status
+        code_repository_branch_error = context.detail or None
 
-    current_project_payload = {
-        "path": project_info.path,
-        "folder": project_info.folder,
-        "project_uid": project_uid or None,
+    current_code_repository_payload = {
+        "path": code_repository_info.path,
+        "folder": code_repository_info.folder,
+        "code_repository_uid": code_repository_uid or None,
         "git_branch": git_branch,
-        "git_repository": repository_identity,
+        "github_repository_binding": repository_identity,
         "git_commit": commit_sha,
-        "project_branch_uid": project_branch_uid,
-        "project_branch_status": project_branch_status,
-        "project_branch_error": project_branch_error,
-        "venv_path": project_info.venv_path,
-        "python_version": project_info.python_version,
+        "code_repository_branch_uid": code_repository_branch_uid,
+        "code_repository_branch_status": code_repository_branch_status,
+        "code_repository_branch_error": code_repository_branch_error,
+        "venv_path": code_repository_info.venv_path,
+        "python_version": code_repository_info.python_version,
     }
 
     # SDK status (best-effort)
-    req = pathlib.Path(project_info.path) / "requirements.txt"
+    req = pathlib.Path(code_repository_info.path) / "requirements.txt"
     local = read_local_sdk_version(req)
     latest = None
     try:
@@ -10743,7 +10658,7 @@ def project_current(
             "latest_github": latest or "unavailable",
             "local_requirements_txt": local if local is not None else "not found",
             "status": status_label,
-            "hint": "Run: mainsequence project update-sdk --path .  (if differs)",
+            "hint": "Run: mainsequence code-repository update-sdk --path .  (if differs)",
         }
 
     debug_payload = None
@@ -10752,7 +10667,7 @@ def project_current(
 
     if _emit_json(
         {
-            "project": current_project_payload,
+            "code_repository": current_code_repository_payload,
             "sdk_status": sdk_status_payload,
             "debug": debug_payload,
         }
@@ -10760,20 +10675,20 @@ def project_current(
         return
 
     items = [
-        ("Path", project_info.path),
-        ("Folder", project_info.folder),
-        ("Project UID", project_uid or "-"),
+        ("Path", code_repository_info.path),
+        ("Folder", code_repository_info.folder),
+        ("CodeRepository UID", code_repository_uid or "-"),
         ("Git Branch", git_branch or "detached/unavailable"),
         ("Git Repository", repository_identity or "-"),
         ("Git Commit", commit_sha or "-"),
-        ("ProjectBranch UID", project_branch_uid or "-"),
-        ("Branch Status", project_branch_status),
-        ("Venv", project_info.venv_path or "not found"),
-        ("Python", project_info.python_version or "unknown"),
+        ("CodeRepositoryBranch UID", code_repository_branch_uid or "-"),
+        ("Branch Status", code_repository_branch_status),
+        ("Venv", code_repository_info.venv_path or "not found"),
+        ("Python", code_repository_info.python_version or "unknown"),
     ]
-    if project_branch_error:
-        items.append(("Branch Detail", project_branch_error))
-    print_kv("Current Project", items)
+    if code_repository_branch_error:
+        items.append(("Branch Detail", code_repository_branch_error))
+    print_kv("Current CodeRepository", items)
 
     if latest or local is not None:
         print_kv(
@@ -10792,12 +10707,12 @@ def project_current(
         )
 
 
-@project.command("sdk-status")
-def project_sdk_status(
-    project_id: str | None = typer.Argument(
-        None, help="Optional Project UID assertion against the current Git worktree"
+@code_repository.command("sdk-status")
+def code_repository_sdk_status(
+    code_repository_id: str | None = typer.Argument(
+        None, help="Optional CodeRepository UID assertion against the current Git worktree"
     ),
-    path: str | None = typer.Option(None, "--path", help="Project directory"),
+    path: str | None = typer.Option(None, "--path", help="CodeRepository directory"),
 ):
     """
     Show local project SDK version versus latest GitHub release.
@@ -10805,19 +10720,19 @@ def project_sdk_status(
     Parameters
     ----------
     project_id:
-        Optional Project UID assertion against the current Git worktree.
+        Optional CodeRepository UID assertion against the current Git worktree.
     path:
         Explicit local path.
 
     Examples
     --------
     ```bash
-    mainsequence project sdk-status project-uid-123
-    mainsequence project sdk-status --path .
+    mainsequence code-repository sdk-status project-uid-123
+    mainsequence code-repository sdk-status --path .
     ```
     """
-    project_dir = _resolve_project_dir(project_id, path)
-    req = project_dir / "requirements.txt"
+    code_repository_dir = _resolve_code_repository_dir(code_repository_id, path)
+    req = code_repository_dir / "requirements.txt"
     local = read_local_sdk_version(req)
     with status("Checking GitHub for latest SDK..."):
         latest = fetch_latest_sdk_version()
@@ -10829,7 +10744,7 @@ def project_sdk_status(
         )
 
     payload = {
-        "project": str(project_dir),
+        "code_repository": str(code_repository_dir),
         "latest_github": latest or "unavailable",
         "local_requirements_txt": local if local is not None else "not found",
         "status": status_label,
@@ -10841,7 +10756,7 @@ def project_sdk_status(
     print_kv(
         "SDK Status",
         [
-            ("Project", payload["project"]),
+            ("CodeRepository", payload["code_repository"]),
             ("Latest (GitHub)", payload["latest_github"]),
             ("Local (requirements.txt)", payload["local_requirements_txt"]),
             ("Status", payload["status"]),
@@ -10849,12 +10764,12 @@ def project_sdk_status(
     )
 
 
-@project.command("update-sdk")
-def project_update_sdk(
-    project_id: str | None = typer.Argument(
-        None, help="Optional Project UID assertion against the current Git worktree"
+@code_repository.command("update-sdk")
+def code_repository_update_sdk(
+    code_repository_id: str | None = typer.Argument(
+        None, help="Optional CodeRepository UID assertion against the current Git worktree"
     ),
-    path: str | None = typer.Option(None, "--path", help="Project directory"),
+    path: str | None = typer.Option(None, "--path", help="CodeRepository directory"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Print steps but do not execute"),
 ):
     """
@@ -10863,7 +10778,7 @@ def project_update_sdk(
     Parameters
     ----------
     project_id:
-        Optional Project UID assertion against the current Git worktree.
+        Optional CodeRepository UID assertion against the current Git worktree.
     path:
         Explicit local path.
     dry_run:
@@ -10872,13 +10787,13 @@ def project_update_sdk(
     Examples
     --------
     ```bash
-    mainsequence project update-sdk project-uid-123
-    mainsequence project update-sdk --path .
-    mainsequence project update-sdk --path . --dry-run
+    mainsequence code-repository update-sdk project-uid-123
+    mainsequence code-repository update-sdk --path .
+    mainsequence code-repository update-sdk --path . --dry-run
     ```
     """
-    project_dir = _resolve_project_dir(project_id, path)
-    ensure_venv(project_dir)
+    code_repository_dir = _resolve_code_repository_dir(code_repository_id, path)
+    ensure_venv(code_repository_dir)
 
     steps = [
         "resolve uv executable",
@@ -10891,26 +10806,25 @@ def project_update_sdk(
         warn("Dry run: no commands executed.")
         return
 
-    uv = ensure_uv_installed(project_dir)
+    uv = ensure_uv_installed(code_repository_dir)
     with status("Upgrading mainsequence SDK via uv..."):
-        run_uv(uv, ["lock", "--upgrade-package", "mainsequence"], cwd=project_dir)
-        run_uv(uv, ["sync"], cwd=project_dir)
+        run_uv(uv, ["lock", "--upgrade-package", "mainsequence"], cwd=code_repository_dir)
+        run_uv(uv, ["sync"], cwd=code_repository_dir)
 
     success("SDK update complete.")
 
 
-@project.command("update")
-def project_update_scaffold_target(
+@code_repository.command("update")
+def code_repository_update_scaffold_target(
     target: str = typer.Argument(
         ..., help="Scaffold target to update. Currently supported: AGENTS.md"
     ),
-    project_id: str | None = typer.Option(
+    code_repository_id: str | None = typer.Option(
         None,
-        "--project-uid",
-        "--project-id",
-        help="Optional Project UID assertion against the current Git worktree",
+        "--code-repository-uid",
+        help="Optional CodeRepository UID assertion against the current Git worktree",
     ),
-    path: str | None = typer.Option(None, "--path", help="Project directory"),
+    path: str | None = typer.Option(None, "--path", help="CodeRepository directory"),
 ):
     """
     Update a scaffold-managed file in the local project root.
@@ -10923,17 +10837,17 @@ def project_update_scaffold_target(
     Examples
     --------
     ```bash
-    mainsequence project update AGENTS.md
-    mainsequence project update AGENTS.md --path .
-    mainsequence project update AGENTS.md --project-uid project-uid-123
+    mainsequence code-repository update AGENTS.md
+    mainsequence code-repository update AGENTS.md --path .
+    mainsequence code-repository update AGENTS.md --project-uid project-uid-123
     ```
     """
     if target != "AGENTS.md":
         error(f"Unsupported scaffold update target: {target}. Supported target: AGENTS.md")
         raise typer.Exit(1)
 
-    project_dir = _resolve_project_dir(project_id, path)
-    destination = project_dir / "AGENTS.md"
+    code_repository_dir = _resolve_code_repository_dir(code_repository_id, path)
+    destination = code_repository_dir / "AGENTS.md"
 
     try:
         source, bootstrap_content, managed_block = _load_installed_agents_md_template()
@@ -10948,7 +10862,7 @@ def project_update_scaffold_target(
 
     payload = {
         "target": target,
-        "project": project_dir,
+        "code_repository": code_repository_dir,
         "source": source,
         "destination": destination,
         "action": update_result.action,
@@ -10971,23 +10885,21 @@ def project_update_scaffold_target(
         [
             ("Target", target),
             ("Action", update_result.action),
-            ("Project", str(project_dir)),
+            ("CodeRepository", str(code_repository_dir)),
             ("Source", str(source)),
             ("Destination", str(destination)),
         ],
     )
 
 
-@project.command("update_agent_skills")
-@project.command("update-agent-skills", hidden=True)
-def project_update_agent_skills(
-    project_id: str | None = typer.Option(
+@code_repository.command("update-agent-skills")
+def code_repository_update_agent_skills(
+    code_repository_id: str | None = typer.Option(
         None,
-        "--project-uid",
-        "--project-id",
-        help="Optional Project UID assertion against the current Git worktree",
+        "--code-repository-uid",
+        help="Optional CodeRepository UID assertion against the current Git worktree",
     ),
-    path: str | None = typer.Option(None, "--path", help="Project directory"),
+    path: str | None = typer.Option(None, "--path", help="CodeRepository directory"),
 ):
     """
     Update `.agents/skills/mainsequence` from installed SDK and platform sources.
@@ -11002,37 +10914,37 @@ def project_update_agent_skills(
     Examples
     --------
     ```bash
-    mainsequence project update_agent_skills
-    mainsequence project update_agent_skills --path .
-    mainsequence project update_agent_skills --project-uid project-uid-123
+    mainsequence code-repository update-agent-skills
+    mainsequence code-repository update-agent-skills --path .
+    mainsequence code-repository update-agent-skills --project-uid project-uid-123
     ```
     """
-    project_dir = _resolve_project_dir(project_id, path)
+    code_repository_dir = _resolve_code_repository_dir(code_repository_id, path)
 
-    scaffold_bundle_dir = _project_agent_scaffold_bundle_dir(project_dir)
+    scaffold_bundle_dir = _code_repository_agent_scaffold_bundle_dir(code_repository_dir)
     skills_dir = scaffold_bundle_dir / "skills"
     if not skills_dir.exists() or not skills_dir.is_dir():
-        error(f"Project-installed agent_scaffold bundle is missing skills/: {skills_dir}")
+        error(f"CodeRepository-installed agent_scaffold bundle is missing skills/: {skills_dir}")
         raise typer.Exit(1)
 
-    pinned_version = _project_installed_package_version(project_dir, "mainsequence")
+    pinned_version = _code_repository_installed_package_version(code_repository_dir, "mainsequence")
     source_checkout_root = _mainsequence_source_checkout_root()
-    protected_project_roots = (source_checkout_root,) if source_checkout_root is not None else ()
+    protected_code_repository_roots = (source_checkout_root,) if source_checkout_root is not None else ()
     try:
-        platform_catalog = fetch_platform_project_skill_catalog()
-        install_result = install_dual_source_project_skills(
-            project_dir=project_dir,
+        platform_catalog = fetch_platform_code_repository_skill_catalog()
+        install_result = install_dual_source_code_repository_skills(
+            code_repository_dir=code_repository_dir,
             sdk_library_name="mainsequence",
             namespace="mainsequence",
             sdk_skills_path=skills_dir,
             sdk_version=pinned_version,
             platform_catalog=platform_catalog,
-            command="mainsequence project update_agent_skills",
-            protected_project_roots=protected_project_roots,
+            command="mainsequence code-repository update-agent-skills",
+            protected_code_repository_roots=protected_code_repository_roots,
         )
     except (
         ApiError,
-        ProjectSkillAssemblyError,
+        CodeRepositorySkillAssemblyError,
         FileNotFoundError,
         OSError,
         ValueError,
@@ -11052,7 +10964,7 @@ def project_update_agent_skills(
     ]
 
     payload = {
-        "project": project_dir,
+        "code_repository": code_repository_dir,
         "library_name": install_result.sdk_library_name,
         "namespace": "mainsequence",
         "skills_path": install_result.sdk_skills_path,
@@ -11097,7 +11009,7 @@ def project_update_agent_skills(
 
     success("Updated .agents/skills/mainsequence from installed SDK and platform sources.")
     print_kv(
-        "Project Skill Provenance",
+        "CodeRepository Skill Provenance",
         [
             ("SDK Library", install_result.sdk_library_name),
             ("SDK Version", install_result.sdk_version),
@@ -11108,7 +11020,7 @@ def project_update_agent_skills(
         ],
     )
     print_table(
-        "Updated Project Skills",
+        "Updated CodeRepository Skills",
         ["Skill", "Owner", "Destination"],
         [[item["name"], item["owner"], str(item["destination"])] for item in updated],
     )
@@ -11149,7 +11061,7 @@ def skills_list_cmd():
 def skills_path_cmd(
     skill_name: str | None = typer.Argument(
         None,
-        help="Optional installed SDK skill name, for example sdk_project_execution or data_publishing/meta_tables",
+        help="Optional installed SDK skill name, for example sdk_code_repository_execution or data_publishing/meta_tables",
     ),
 ):
     """
@@ -11165,7 +11077,7 @@ def skills_path_cmd(
     --------
     ```bash
     mainsequence skills path
-    mainsequence skills path sdk_project_execution
+    mainsequence skills path sdk_code_repository_execution
     mainsequence skills path data_publishing/meta_tables
     mainsequence skills path builder
     ```

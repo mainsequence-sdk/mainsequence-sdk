@@ -8,8 +8,8 @@ from types import SimpleNamespace
 import pytest
 from sqlalchemy.orm import Mapped
 
+import mainsequence.code_repository_context as code_repository_context
 import mainsequence.meta_tables.sqlalchemy_contracts as sqlalchemy_contracts
-import mainsequence.project_context as project_context
 from mainsequence.client.metatables import (
     DataSource,
     MetaTable,
@@ -35,10 +35,10 @@ from mainsequence.meta_tables.time_index_table_updates.managers import (
 
 @pytest.fixture(autouse=True)
 def _clear_metatable_registration_registry(monkeypatch):
-    project_uid = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
-    project_branch_uid = "22222222-2222-4222-8222-222222222222"
-    project_context._reset_project_runtime_context()
-    source = project_context.GitProjectSourceContext(
+    code_repository_uid = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    code_repository_branch_uid = "22222222-2222-4222-8222-222222222222"
+    code_repository_context._reset_code_repository_context()
+    source = code_repository_context.GitCodeRepositorySourceContext(
         repository_root=pathlib.Path.cwd().resolve(),
         canonical_repository_identity="github.com/mainsequence-sdk/sqlalchemy-contracts",
         repository_branch="main",
@@ -46,19 +46,19 @@ def _clear_metatable_registration_registry(monkeypatch):
         commit_sha="a" * 40,
     )
     monkeypatch.setattr(
-        project_context,
+        code_repository_context,
         "_resolve_git_source_context",
-        lambda project_dir: source,
+        lambda code_repository_dir: source,
     )
-    project_context.get_project_runtime_context(
-        _project_branch_context_loader=lambda resolved_source: SimpleNamespace(
+    code_repository_context.get_code_repository_context(
+        _code_repository_branch_context_loader=lambda resolved_source: SimpleNamespace(
             canonical_repository_identity=(resolved_source.canonical_repository_identity),
             repository_branch=resolved_source.repository_branch,
             repository_ref=resolved_source.repository_ref,
             commit_sha=resolved_source.commit_sha,
-            project_branch=SimpleNamespace(
-                uid=project_branch_uid,
-                project_uid=project_uid,
+            code_repository_branch=SimpleNamespace(
+                uid=code_repository_branch_uid,
+                code_repository_uid=code_repository_uid,
                 repository_branch=resolved_source.repository_branch,
                 organization_environment_uid=None,
                 metatables_data_source=None,
@@ -76,7 +76,7 @@ def _clear_metatable_registration_registry(monkeypatch):
     sqlalchemy_contracts._METATABLE_REGISTRATION_REGISTRY.clear()
     yield
     sqlalchemy_contracts._METATABLE_REGISTRATION_REGISTRY.clear()
-    project_context._reset_project_runtime_context()
+    code_repository_context._reset_code_repository_context()
 
 
 class Uuid:
@@ -1520,9 +1520,9 @@ def test_time_index_meta_table_register_posts_to_canonical_endpoint(monkeypatch)
     monkeypatch.setattr(models_metatables, "make_request", fake_make_request)
     monkeypatch.setattr(
         models_metatables,
-        "_current_metatable_project_context",
-        lambda: models_metatables.MetaTableProjectContextRequest(
-            project_branch_uid="22222222-2222-4222-8222-222222222222",
+        "_current_metatable_code_repository_context",
+        lambda: models_metatables.MetaTableCodeRepositoryContextRequest(
+            code_repository_branch_uid="22222222-2222-4222-8222-222222222222",
         ),
     )
 

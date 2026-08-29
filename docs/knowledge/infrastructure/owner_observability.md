@@ -49,10 +49,10 @@ not provide it.
 The corresponding commands are:
 
 ```bash
-mainsequence project jobs runs logs <JOB_RUN_UID>
-mainsequence project jobs runs resource-usage <JOB_RUN_UID>
-mainsequence project project_resource logs <RESOURCE_RELEASE_UID>
-mainsequence project project_resource resource-usage <RESOURCE_RELEASE_UID>
+mainsequence code-repository jobs runs logs <JOB_RUN_UID>
+mainsequence code-repository jobs runs resource-usage <JOB_RUN_UID>
+mainsequence code-repository resources logs <RESOURCE_RELEASE_UID>
+mainsequence code-repository resources resource-usage <RESOURCE_RELEASE_UID>
 mainsequence agent logs <AGENT_UID>
 mainsequence agent resource-usage <AGENT_UID>
 mainsequence agent session logs <AGENT_SESSION_UID>

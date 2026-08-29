@@ -19,7 +19,7 @@ from mainsequence.client.metatables import (
     TimeIndexTableUpdateDetails,
 )
 from mainsequence.client.models_foundry import (
-    Project,
+    CodeRepository,
 )
 from mainsequence.meta_tables import (
     PlatformTimeIndexMetaTable,
@@ -724,11 +724,11 @@ def test_table_update_accepts_labels():
     assert update.labels == ["pricing", "daily"]
 
 
-def test_label_fields_exist_on_project_and_storage_models():
-    project = Project(
+def test_label_fields_exist_on_code_repository_and_storage_models():
+    code_repository = CodeRepository(
         uid="project-uid-1",
-        project_name="Project",
-        project_type="python",
+        code_repository_name="Project",
+        code_repository_type="python",
         primary_language="python",
         framework="mainsequence",
         labels=["research"],
@@ -747,7 +747,7 @@ def test_label_fields_exist_on_project_and_storage_models():
         creation_date="2026-04-13T00:00:00Z",
         labels=["vendor-data"],
     )
-    assert project.labels == ["research"]
+    assert code_repository.labels == ["research"]
     assert output_table.labels == ["vendor-data"]
 
 

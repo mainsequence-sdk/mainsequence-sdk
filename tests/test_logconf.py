@@ -93,7 +93,7 @@ def test_logconf_binds_sdk_version(monkeypatch):
     assert bound_context["sdk_version"] == logconf._get_sdk_version()
 
 
-def test_startup_additional_environment_cannot_inject_project_source_identity(monkeypatch):
+def test_startup_additional_environment_cannot_inject_code_repository_source_identity(monkeypatch):
     logconf = _load_mainsequence_submodule("mainsequence.logconf")
 
     logconf._apply_additional_environment(

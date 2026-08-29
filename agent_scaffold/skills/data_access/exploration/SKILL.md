@@ -156,8 +156,8 @@ field to filter by:
 
 Collection listing is scoped to one Organization Environment. Inside a
 registered project checkout, the CLI derives that scope from the process-frozen
-Git-resolved ProjectBranch. Do not pass an Environment UID or branch UID. On an
-unregistered branch, table operations fail when they require ProjectBranch
+Git-resolved CodeRepositoryBranch. Do not pass an Environment UID or branch UID. On an
+unregistered branch, table operations fail when they require CodeRepositoryBranch
 context while unrelated local development remains available.
 
 Column lookup is also a different path. Use it only for schema-name discovery,

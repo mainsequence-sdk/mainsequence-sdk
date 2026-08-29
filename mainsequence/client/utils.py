@@ -264,18 +264,18 @@ class RuntimeCredentialAuthProvider(BaseAuthProvider):
                     "Runtime credential exchange response did not include access token."
                 )
 
-            runtime_project_context = data.get("runtime_project_context")
-            if runtime_project_context is not None:
-                if not isinstance(runtime_project_context, dict):
+            runtime_code_repository_context = data.get("runtime_code_repository_context")
+            if runtime_code_repository_context is not None:
+                if not isinstance(runtime_code_repository_context, dict):
                     raise AuthError("Runtime credential exchange returned invalid project context.")
-                from mainsequence.project_context import (
-                    ProjectRuntimeContextError,
-                    _install_authenticated_runtime_project_context,
+                from mainsequence.code_repository_context import (
+                    CodeRepositoryContextError,
+                    _install_authenticated_runtime_code_repository_context,
                 )
 
                 try:
-                    _install_authenticated_runtime_project_context(runtime_project_context)
-                except ProjectRuntimeContextError as exc:
+                    _install_authenticated_runtime_code_repository_context(runtime_code_repository_context)
+                except CodeRepositoryContextError as exc:
                     raise AuthError(
                         "Runtime credential exchange returned unusable project context."
                     ) from exc

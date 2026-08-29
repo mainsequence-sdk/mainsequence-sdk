@@ -54,8 +54,8 @@ project.remove_label("archive")
 The CLI exposes the same verbs on the object groups that support labels:
 
 ```bash
-mainsequence project add-label <PROJECT_UID> --label rates --label research
-mainsequence project remove-label <PROJECT_UID> --label archive
+mainsequence code-repository add-label <PROJECT_UID> --label rates --label research
+mainsequence code-repository remove-label <PROJECT_UID> --label archive
 
 mainsequence time-index-table add-label <TIME_INDEX_META_TABLE_UID> --label curated
 mainsequence time-index-table remove-label <TIME_INDEX_META_TABLE_UID> --label archive

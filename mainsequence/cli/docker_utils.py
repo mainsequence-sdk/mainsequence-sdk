@@ -266,10 +266,10 @@ def ensure_docker_scaffold(target_dir: pathlib.Path, base_image: str) -> tuple[b
     return changed, msgs
 
 
-def _git_short_hash(project_dir: pathlib.Path) -> str | None:
+def _git_short_hash(code_repository_dir: pathlib.Path) -> str | None:
     try:
         r = subprocess.run(
-            ["git", "-C", str(project_dir), "rev-parse", "--short", "HEAD"],
+            ["git", "-C", str(code_repository_dir), "rev-parse", "--short", "HEAD"],
             capture_output=True,
             text=True,
         )
@@ -286,23 +286,23 @@ def _timestamp_tag() -> str:
     return now.strftime("%Y%m%d%H%M%S")
 
 
-def compute_docker_image_ref(project_dir: pathlib.Path) -> str:
+def compute_docker_image_ref(code_repository_dir: pathlib.Path) -> str:
     """
     Create an image ref similar to the extension:
       <safe-folder>-img:<git-short-hash-or-timestamp>
     """
-    base = project_dir.name
+    base = code_repository_dir.name
     safe = re.sub(r"[^a-z0-9_.-]+", "", base.lower())
     image_name = f"{safe or 'project'}-img"
-    tag = _git_short_hash(project_dir) or _timestamp_tag()
+    tag = _git_short_hash(code_repository_dir) or _timestamp_tag()
     return f"{image_name}:{tag}"
 
 
-def write_devcontainer_config(project_dir: pathlib.Path, image_ref: str) -> pathlib.Path:
+def write_devcontainer_config(code_repository_dir: pathlib.Path, image_ref: str) -> pathlib.Path:
     """
     Create/update .devcontainer/devcontainer.json with an image reference.
     """
-    dev_dir = project_dir / ".devcontainer"
+    dev_dir = code_repository_dir / ".devcontainer"
     path = dev_dir / "devcontainer.json"
     config: dict | None = None
 
@@ -313,7 +313,7 @@ def write_devcontainer_config(project_dir: pathlib.Path, image_ref: str) -> path
             raise RuntimeError(f"Failed to parse existing devcontainer.json: {e}") from e
 
     if not config:
-        name = project_dir.name
+        name = code_repository_dir.name
         config = {
             "name": f"{name} (MainSequence)" if name else "MainSequence Project",
             "image": image_ref,
@@ -333,14 +333,14 @@ def write_devcontainer_config(project_dir: pathlib.Path, image_ref: str) -> path
     return path
 
 
-def build_docker_environment(project_dir: pathlib.Path, image_ref: str) -> int:
+def build_docker_environment(code_repository_dir: pathlib.Path, image_ref: str) -> int:
     """
     Run docker buildx build, streaming output to the current terminal.
 
     Returns:
         int: process return code
     """
-    dockerfile = project_dir / "Dockerfile"
+    dockerfile = code_repository_dir / "Dockerfile"
     if not dockerfile.exists():
         raise RuntimeError("Dockerfile not found in the project root.")
 
@@ -357,5 +357,5 @@ def build_docker_environment(project_dir: pathlib.Path, image_ref: str) -> int:
         "Dockerfile",
         ".",
     ]
-    p = subprocess.run(cmd, cwd=str(project_dir))
+    p = subprocess.run(cmd, cwd=str(code_repository_dir))
     return p.returncode

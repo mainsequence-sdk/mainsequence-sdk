@@ -1,6 +1,6 @@
 """Dual-source Main Sequence project skill assembly.
 
-The existing ``mainsequence project update_agent_skills`` command has two
+The existing ``mainsequence code-repository update-agent-skills`` command has two
 canonical inputs:
 
 * SDK-owned execution skills from the target project's installed
@@ -47,12 +47,12 @@ _PLATFORM_ONTOLOGY_NAME = "Main Sequence platform ontology"
 _PLATFORM_ONTOLOGY_PATH = PurePosixPath("ontology/platform.json")
 
 
-class ProjectSkillAssemblyError(RuntimeError):
+class CodeRepositorySkillAssemblyError(RuntimeError):
     """The combined SDK/platform skill update cannot be completed safely."""
 
 
 @dataclass(frozen=True)
-class PlatformProjectSkillDeclaration:
+class PlatformCodeRepositorySkillDeclaration:
     """One platform skill identity declared by the platform ontology."""
 
     name: str
@@ -76,7 +76,7 @@ class _ValidatedPlatformResourcePayload:
 
 
 @dataclass(frozen=True)
-class PlatformProjectResource:
+class PlatformCodeRepositoryResource:
     """One validated server-owned platform resource returned by MCP."""
 
     name: str
@@ -89,21 +89,21 @@ class PlatformProjectResource:
 
 
 @dataclass(frozen=True)
-class PlatformProjectSkill(PlatformProjectResource):
+class PlatformCodeRepositorySkill(PlatformCodeRepositoryResource):
     """One platform resource that is installed as a project skill."""
 
     relative_path: PurePosixPath
 
 
 @dataclass(frozen=True)
-class PlatformProjectSkillCatalog:
+class PlatformCodeRepositorySkillCatalog:
     """One complete validated server-owned resource manifest revision."""
 
     source_url: str
     manifest_version: int
     manifest_sha256: str
-    ontology: PlatformProjectResource
-    skills: tuple[PlatformProjectSkill, ...]
+    ontology: PlatformCodeRepositoryResource
+    skills: tuple[PlatformCodeRepositorySkill, ...]
 
     @property
     def ontology_uri(self) -> str:
@@ -114,12 +114,12 @@ class PlatformProjectSkillCatalog:
         return self.ontology.content_sha256
 
     @property
-    def resources(self) -> tuple[PlatformProjectResource, ...]:
+    def resources(self) -> tuple[PlatformCodeRepositoryResource, ...]:
         return (self.ontology, *self.skills)
 
 
 @dataclass(frozen=True)
-class InstalledProjectSkill:
+class InstalledCodeRepositorySkill:
     """One skill written to the managed project namespace."""
 
     name: str
@@ -130,35 +130,35 @@ class InstalledProjectSkill:
 
 
 @dataclass(frozen=True)
-class DualSourceProjectSkillInstallResult:
+class DualSourceCodeRepositorySkillInstallResult:
     """Result of one completed dual-source project skill update."""
 
-    project_dir: Path
+    code_repository_dir: Path
     destination_root: Path
     sentinel_path: Path
     sdk_library_name: str
     sdk_version: str
     sdk_skills_path: Path
-    platform_catalog: PlatformProjectSkillCatalog
-    installed: tuple[InstalledProjectSkill, ...]
+    platform_catalog: PlatformCodeRepositorySkillCatalog
+    installed: tuple[InstalledCodeRepositorySkill, ...]
 
 
-def parse_platform_project_skill_catalog(
+def parse_platform_code_repository_skill_catalog(
     rows: Sequence[dict[str, Any]],
     *,
     source_url: str,
-) -> PlatformProjectSkillCatalog:
+) -> PlatformCodeRepositorySkillCatalog:
     """Validate one complete server-owned MCP project-skill catalog."""
 
     if not rows:
-        raise ProjectSkillAssemblyError("The platform returned no MCP project resources.")
+        raise CodeRepositorySkillAssemblyError("The platform returned no MCP project resources.")
 
     normalized_source_url = _single_line_text(
         source_url,
         label="platform source URL",
     )
     if not normalized_source_url:
-        raise ProjectSkillAssemblyError("platform source URL is required.")
+        raise CodeRepositorySkillAssemblyError("platform source URL is required.")
 
     raw_rows_by_uri: dict[str, dict[str, Any]] = {}
     for index, raw_row in enumerate(rows):
@@ -168,15 +168,15 @@ def parse_platform_project_skill_catalog(
             label=f"platform resource row {index} URI",
         )
         if uri in raw_rows_by_uri:
-            raise ProjectSkillAssemblyError(
+            raise CodeRepositorySkillAssemblyError(
                 f"The platform MCP resource catalog returned duplicate URI {uri!r}."
             )
         if uri != PLATFORM_ONTOLOGY_URI and not uri.startswith(PLATFORM_SKILL_URI_PREFIX):
-            raise ProjectSkillAssemblyError(f"Unsupported platform project resource URI {uri!r}.")
+            raise CodeRepositorySkillAssemblyError(f"Unsupported platform project resource URI {uri!r}.")
         raw_rows_by_uri[uri] = row
 
     if PLATFORM_ONTOLOGY_URI not in raw_rows_by_uri:
-        raise ProjectSkillAssemblyError(
+        raise CodeRepositorySkillAssemblyError(
             f"The platform MCP resource catalog is missing {PLATFORM_ONTOLOGY_URI!r}."
         )
 
@@ -186,17 +186,17 @@ def parse_platform_project_skill_catalog(
     }
     ontology_payload = validated_by_uri[PLATFORM_ONTOLOGY_URI]
     if ontology_payload.listed_name != _PLATFORM_ONTOLOGY_NAME:
-        raise ProjectSkillAssemblyError("The platform ontology resource has an unexpected name.")
+        raise CodeRepositorySkillAssemblyError("The platform ontology resource has an unexpected name.")
     if ontology_payload.resource_path != _PLATFORM_ONTOLOGY_PATH:
-        raise ProjectSkillAssemblyError(
+        raise CodeRepositorySkillAssemblyError(
             "The platform ontology resource has an unexpected resource path."
         )
     if ontology_payload.content_mime_type != "application/json":
-        raise ProjectSkillAssemblyError("The platform ontology resource must use application/json.")
+        raise CodeRepositorySkillAssemblyError("The platform ontology resource must use application/json.")
 
-    declarations = parse_platform_project_skill_declarations(ontology_payload.content)
+    declarations = parse_platform_code_repository_skill_declarations(ontology_payload.content)
     listed_skill_uris = set(validated_by_uri) - {PLATFORM_ONTOLOGY_URI}
-    validate_platform_project_skill_membership(
+    validate_platform_code_repository_skill_membership(
         declarations,
         listed_skill_uris=listed_skill_uris,
     )
@@ -207,11 +207,11 @@ def parse_platform_project_skill_catalog(
     )
     for uri, payload in validated_by_uri.items():
         if (payload.manifest_version, payload.manifest_sha256) != manifest_identity:
-            raise ProjectSkillAssemblyError(
+            raise CodeRepositorySkillAssemblyError(
                 f"Platform resource {uri!r} does not describe the ontology manifest revision."
             )
 
-    ontology = PlatformProjectResource(
+    ontology = PlatformCodeRepositoryResource(
         name="ontology",
         uri=ontology_payload.uri,
         resource_path=ontology_payload.resource_path,
@@ -220,17 +220,17 @@ def parse_platform_project_skill_catalog(
         content_mime_type=ontology_payload.content_mime_type,
         content_size=ontology_payload.content_size,
     )
-    skills: list[PlatformProjectSkill] = []
+    skills: list[PlatformCodeRepositorySkill] = []
     destination_paths: set[PurePosixPath] = set()
     for declaration in declarations:
         payload = validated_by_uri[declaration.uri]
         label = f"platform resource {declaration.uri!r}"
         if payload.listed_name != declaration.name:
-            raise ProjectSkillAssemblyError(
+            raise CodeRepositorySkillAssemblyError(
                 f"{label} listed name does not match ontology.skill_resources."
             )
         if payload.content_mime_type != "text/markdown":
-            raise ProjectSkillAssemblyError(f"{label} must use text/markdown.")
+            raise CodeRepositorySkillAssemblyError(f"{label} must use text/markdown.")
         _validate_platform_skill_path(
             payload.resource_path,
             label=label,
@@ -242,12 +242,12 @@ def parse_platform_project_skill_catalog(
         )
         relative_path = PurePosixPath(*payload.resource_path.parts[1:])
         if relative_path in destination_paths:
-            raise ProjectSkillAssemblyError(
+            raise CodeRepositorySkillAssemblyError(
                 f"{label} resolves to duplicate project destination {relative_path!s}."
             )
         destination_paths.add(relative_path)
         skills.append(
-            PlatformProjectSkill(
+            PlatformCodeRepositorySkill(
                 name=declaration.name,
                 uri=payload.uri,
                 resource_path=payload.resource_path,
@@ -259,7 +259,7 @@ def parse_platform_project_skill_catalog(
             )
         )
 
-    return PlatformProjectSkillCatalog(
+    return PlatformCodeRepositorySkillCatalog(
         source_url=normalized_source_url,
         manifest_version=ontology_payload.manifest_version,
         manifest_sha256=ontology_payload.manifest_sha256,
@@ -268,27 +268,27 @@ def parse_platform_project_skill_catalog(
     )
 
 
-def parse_platform_project_skill_declarations(
+def parse_platform_code_repository_skill_declarations(
     ontology_content: Any,
-) -> tuple[PlatformProjectSkillDeclaration, ...]:
+) -> tuple[PlatformCodeRepositorySkillDeclaration, ...]:
     """Return the validated, deterministic skill index from platform ontology JSON."""
 
     if not isinstance(ontology_content, str):
-        raise ProjectSkillAssemblyError("The platform ontology resource must contain UTF-8 text.")
+        raise CodeRepositorySkillAssemblyError("The platform ontology resource must contain UTF-8 text.")
     try:
         ontology = json.loads(ontology_content)
     except json.JSONDecodeError as exc:
-        raise ProjectSkillAssemblyError(
+        raise CodeRepositorySkillAssemblyError(
             "The platform ontology resource must contain valid JSON."
         ) from exc
     ontology = _mapping(ontology, label="platform ontology payload")
     raw_declarations = ontology.get("skill_resources")
     if not isinstance(raw_declarations, list):
-        raise ProjectSkillAssemblyError(
+        raise CodeRepositorySkillAssemblyError(
             "The platform ontology must contain a skill_resources array."
         )
 
-    declarations: list[PlatformProjectSkillDeclaration] = []
+    declarations: list[PlatformCodeRepositorySkillDeclaration] = []
     names: set[str] = set()
     uris: set[str] = set()
     for index, raw_declaration in enumerate(raw_declarations):
@@ -299,26 +299,26 @@ def parse_platform_project_skill_declarations(
             label=f"{label} name",
         )
         if not _PLATFORM_SKILL_NAME_RE.fullmatch(name):
-            raise ProjectSkillAssemblyError(f"{label} name must use safe lowercase snake case.")
+            raise CodeRepositorySkillAssemblyError(f"{label} name must use safe lowercase snake case.")
         uri = _single_line_text(
             declaration.get("uri"),
             label=f"{label} URI",
         )
         front_matter_name = _platform_skill_slug(uri, label=label)
         if name != front_matter_name.replace("-", "_"):
-            raise ProjectSkillAssemblyError(f"{label} name does not match its platform skill URI.")
+            raise CodeRepositorySkillAssemblyError(f"{label} name does not match its platform skill URI.")
         if name in names:
-            raise ProjectSkillAssemblyError(
+            raise CodeRepositorySkillAssemblyError(
                 f"The platform ontology declares duplicate skill name {name!r}."
             )
         if uri in uris:
-            raise ProjectSkillAssemblyError(
+            raise CodeRepositorySkillAssemblyError(
                 f"The platform ontology declares duplicate skill URI {uri!r}."
             )
         names.add(name)
         uris.add(uri)
         declarations.append(
-            PlatformProjectSkillDeclaration(
+            PlatformCodeRepositorySkillDeclaration(
                 name=name,
                 uri=uri,
                 front_matter_name=front_matter_name,
@@ -328,8 +328,8 @@ def parse_platform_project_skill_declarations(
     return tuple(sorted(declarations, key=lambda item: (item.name, item.uri)))
 
 
-def validate_platform_project_skill_membership(
-    declarations: Sequence[PlatformProjectSkillDeclaration],
+def validate_platform_code_repository_skill_membership(
+    declarations: Sequence[PlatformCodeRepositorySkillDeclaration],
     *,
     listed_skill_uris: Sequence[str] | set[str],
 ) -> None:
@@ -347,7 +347,7 @@ def validate_platform_project_skill_membership(
         details.append("missing declared skills: " + ", ".join(missing))
     if undeclared:
         details.append("undeclared listed skills: " + ", ".join(undeclared))
-    raise ProjectSkillAssemblyError(
+    raise CodeRepositorySkillAssemblyError(
         "The platform MCP skill resources do not match "
         "ontology.skill_resources (" + "; ".join(details) + ")."
     )
@@ -362,16 +362,16 @@ def _validate_platform_resource_payload(
     row = _mapping(raw_row, label=f"{label} list row")
     metadata = _mapping(row.get("_meta"), label=f"{label} list _meta")
     if metadata.get("owner_application") != "mcp_gateway":
-        raise ProjectSkillAssemblyError(f"{label} is not owned by mcp_gateway.")
+        raise CodeRepositorySkillAssemblyError(f"{label} is not owned by mcp_gateway.")
 
     manifest_version = metadata.get("manifest_version")
     if not isinstance(manifest_version, int) or isinstance(manifest_version, bool):
-        raise ProjectSkillAssemblyError(f"{label} has an invalid manifest version.")
+        raise CodeRepositorySkillAssemblyError(f"{label} has an invalid manifest version.")
     if manifest_version not in SUPPORTED_PLATFORM_MANIFEST_VERSIONS:
         supported = ", ".join(
             str(version) for version in sorted(SUPPORTED_PLATFORM_MANIFEST_VERSIONS)
         )
-        raise ProjectSkillAssemblyError(
+        raise CodeRepositorySkillAssemblyError(
             f"{label} uses unsupported platform manifest version {manifest_version}; "
             f"this SDK supports {supported}."
         )
@@ -393,7 +393,7 @@ def _validate_platform_resource_payload(
     )
     declared_size = row.get("size")
     if not isinstance(declared_size, int) or isinstance(declared_size, bool) or declared_size < 0:
-        raise ProjectSkillAssemblyError(f"{label} has an invalid content size.")
+        raise CodeRepositorySkillAssemblyError(f"{label} has an invalid content size.")
     declared_sha256 = _sha256(
         metadata.get("content_sha256"),
         label=f"{label} content hash",
@@ -404,12 +404,12 @@ def _validate_platform_resource_payload(
         label=f"{label} read response",
     )
     if content_response.get("uri") != uri:
-        raise ProjectSkillAssemblyError(f"{label} read response returned a different URI.")
+        raise CodeRepositorySkillAssemblyError(f"{label} read response returned a different URI.")
     if content_response.get("mimeType") != declared_mime_type:
-        raise ProjectSkillAssemblyError(f"{label} read response MIME type mismatch.")
+        raise CodeRepositorySkillAssemblyError(f"{label} read response MIME type mismatch.")
     content = content_response.get("text")
     if not isinstance(content, str):
-        raise ProjectSkillAssemblyError(f"{label} content must be UTF-8 text.")
+        raise CodeRepositorySkillAssemblyError(f"{label} content must be UTF-8 text.")
     content_bytes = content.encode("utf-8")
     actual_sha256 = hashlib.sha256(content_bytes).hexdigest()
     content_metadata = _mapping(
@@ -421,20 +421,20 @@ def _validate_platform_resource_payload(
         label=f"{label} read hash",
     )
     if actual_sha256 != declared_sha256 or response_sha256 != declared_sha256:
-        raise ProjectSkillAssemblyError(f"{label} content hash mismatch.")
+        raise CodeRepositorySkillAssemblyError(f"{label} content hash mismatch.")
     if content_metadata.get("owner_application") != "mcp_gateway":
-        raise ProjectSkillAssemblyError(f"{label} read response is not owned by mcp_gateway.")
+        raise CodeRepositorySkillAssemblyError(f"{label} read response is not owned by mcp_gateway.")
     if (
         content_metadata.get("manifest_version") != manifest_version
         or content_metadata.get("manifest_sha256") != manifest_sha256
     ):
-        raise ProjectSkillAssemblyError(f"{label} read response manifest identity mismatch.")
+        raise CodeRepositorySkillAssemblyError(f"{label} read response manifest identity mismatch.")
     if content_metadata.get("resource_path") != str(resource_path):
-        raise ProjectSkillAssemblyError(f"{label} read response resource path mismatch.")
+        raise CodeRepositorySkillAssemblyError(f"{label} read response resource path mismatch.")
     if content_metadata.get("resource_name") != listed_name:
-        raise ProjectSkillAssemblyError(f"{label} read response resource name mismatch.")
+        raise CodeRepositorySkillAssemblyError(f"{label} read response resource name mismatch.")
     if content_metadata.get("content_size") != declared_size or len(content_bytes) != declared_size:
-        raise ProjectSkillAssemblyError(f"{label} content byte-size mismatch.")
+        raise CodeRepositorySkillAssemblyError(f"{label} content byte-size mismatch.")
 
     return _ValidatedPlatformResourcePayload(
         listed_name=listed_name,
@@ -449,28 +449,28 @@ def _validate_platform_resource_payload(
     )
 
 
-def install_dual_source_project_skills(
+def install_dual_source_code_repository_skills(
     *,
-    project_dir: Path,
+    code_repository_dir: Path,
     sdk_library_name: str,
     sdk_skills_path: Path,
     sdk_version: str,
-    platform_catalog: PlatformProjectSkillCatalog,
+    platform_catalog: PlatformCodeRepositorySkillCatalog,
     namespace: str = "mainsequence",
-    command: str = "mainsequence project update_agent_skills",
-    protected_project_roots: Sequence[Path] = (),
-) -> DualSourceProjectSkillInstallResult:
+    command: str = "mainsequence code-repository update-agent-skills",
+    protected_code_repository_roots: Sequence[Path] = (),
+) -> DualSourceCodeRepositorySkillInstallResult:
     """Install SDK-owned and platform-owned skills as one validated project tree."""
 
     sdk_plan = copy_scaffold_skills(
-        project_dir=project_dir,
+        code_repository_dir=code_repository_dir,
         library_name=sdk_library_name,
         namespace=namespace,
         skills_path=sdk_skills_path,
         pinned_version=sdk_version,
         command=command,
         dry_run=True,
-        protected_project_roots=protected_project_roots,
+        protected_code_repository_roots=protected_code_repository_roots,
     )
     _validate_source_ownership(
         sdk_skills=sdk_plan.copied,
@@ -487,13 +487,13 @@ def install_dual_source_project_skills(
         )
     )
 
-    installed: list[InstalledProjectSkill] = []
+    installed: list[InstalledCodeRepositorySkill] = []
     try:
         for item in sdk_plan.copied:
             staged_destination = staging_root / item.name
             shutil.copytree(item.source, staged_destination)
             installed.append(
-                InstalledProjectSkill(
+                InstalledCodeRepositorySkill(
                     name=item.name,
                     owner="sdk",
                     source=str(item.source),
@@ -506,7 +506,7 @@ def install_dual_source_project_skills(
             staged_destination.parent.mkdir(parents=True, exist_ok=True)
             staged_destination.write_text(skill.content, encoding="utf-8")
             installed.append(
-                InstalledProjectSkill(
+                InstalledCodeRepositorySkill(
                     name=skill.name,
                     owner="platform",
                     source=skill.uri,
@@ -536,8 +536,8 @@ def install_dual_source_project_skills(
             shutil.rmtree(staging_root, ignore_errors=True)
         raise
 
-    return DualSourceProjectSkillInstallResult(
-        project_dir=sdk_plan.project_dir,
+    return DualSourceCodeRepositorySkillInstallResult(
+        code_repository_dir=sdk_plan.code_repository_dir,
         destination_root=destination_root,
         sentinel_path=destination_root / PINNED_FROM_FILENAME,
         sdk_library_name=sdk_library_name,
@@ -554,7 +554,7 @@ def render_dual_source_sentinel(
     namespace: str,
     sdk_version: str,
     sdk_skills_path: Path,
-    platform_catalog: PlatformProjectSkillCatalog,
+    platform_catalog: PlatformCodeRepositorySkillCatalog,
     command: str,
 ) -> str:
     """Render the schema-2 dual-source provenance record."""
@@ -601,7 +601,7 @@ def render_dual_source_sentinel(
 def _validate_source_ownership(
     *,
     sdk_skills: Sequence[CopiedScaffoldSkill],
-    platform_skills: Sequence[PlatformProjectSkill],
+    platform_skills: Sequence[PlatformCodeRepositorySkill],
 ) -> None:
     sdk_roots = {item.name for item in sdk_skills}
     collisions = sorted(
@@ -612,7 +612,7 @@ def _validate_source_ownership(
         }
     )
     if collisions:
-        raise ProjectSkillAssemblyError(
+        raise CodeRepositorySkillAssemblyError(
             "SDK/platform skill path ownership collision: "
             + ", ".join(collisions)
             + ". Refactor the SDK-owned skill path before updating the project."
@@ -631,8 +631,8 @@ def _replace_managed_tree(*, staging_root: Path, destination_root: Path) -> None
             if destination_existed and backup_root.exists():
                 os.replace(backup_root, destination_root)
         except Exception as rollback_exc:
-            raise ProjectSkillAssemblyError(
-                "Project skill installation failed and rollback also failed: "
+            raise CodeRepositorySkillAssemblyError(
+                "CodeRepository skill installation failed and rollback also failed: "
                 f"{rollback_exc}. The previous managed tree remains at "
                 f"{backup_root} for manual recovery."
             ) from install_exc
@@ -651,19 +651,19 @@ def _safe_platform_resource_path(
         label=f"{label} path",
     )
     if "\\" in raw_path:
-        raise ProjectSkillAssemblyError(f"{label} has an unsafe resource path.")
+        raise CodeRepositorySkillAssemblyError(f"{label} has an unsafe resource path.")
     path = PurePosixPath(raw_path)
     if path.is_absolute() or ".." in path.parts or raw_path != path.as_posix():
-        raise ProjectSkillAssemblyError(f"{label} has an unsafe resource path.")
+        raise CodeRepositorySkillAssemblyError(f"{label} has an unsafe resource path.")
     return path
 
 
 def _platform_skill_slug(uri: str, *, label: str) -> str:
     if not uri.startswith(PLATFORM_SKILL_URI_PREFIX):
-        raise ProjectSkillAssemblyError(f"{label} URI must use {PLATFORM_SKILL_URI_PREFIX}.")
+        raise CodeRepositorySkillAssemblyError(f"{label} URI must use {PLATFORM_SKILL_URI_PREFIX}.")
     slug = uri.removeprefix(PLATFORM_SKILL_URI_PREFIX)
     if not _PLATFORM_SKILL_SLUG_RE.fullmatch(slug):
-        raise ProjectSkillAssemblyError(
+        raise CodeRepositorySkillAssemblyError(
             f"{label} URI must end with a safe lowercase kebab-case skill name."
         )
     return slug
@@ -675,16 +675,16 @@ def _validate_platform_skill_path(
     label: str,
 ) -> None:
     if len(path.parts) < 3 or path.parts[0] != "skills":
-        raise ProjectSkillAssemblyError(
+        raise CodeRepositorySkillAssemblyError(
             f"{label} path must be rooted under skills/ and contain at least "
             "one skill directory."
         )
     if path.parts[-1] not in _PLATFORM_SKILL_FILENAMES:
-        raise ProjectSkillAssemblyError(
+        raise CodeRepositorySkillAssemblyError(
             f"{label} path must end with SKILL.md or SKILL.markdown."
         )
     if any(not _PLATFORM_SKILL_NAME_RE.fullmatch(part) for part in path.parts[1:-1]):
-        raise ProjectSkillAssemblyError(
+        raise CodeRepositorySkillAssemblyError(
             f"{label} path directories must use safe lowercase snake case."
         )
 
@@ -697,25 +697,25 @@ def _validate_skill_front_matter(
 ) -> None:
     lines = content.splitlines()
     if not lines or lines[0].strip() != "---":
-        raise ProjectSkillAssemblyError(f"{label} must start with YAML front matter.")
+        raise CodeRepositorySkillAssemblyError(f"{label} must start with YAML front matter.")
     try:
         closing_index = next(
             index for index, line in enumerate(lines[1:], start=1) if line.strip() == "---"
         )
     except StopIteration as exc:
-        raise ProjectSkillAssemblyError(f"{label} front matter is not closed.") from exc
+        raise CodeRepositorySkillAssemblyError(f"{label} front matter is not closed.") from exc
 
     try:
         front_matter = yaml.safe_load("\n".join(lines[1:closing_index]))
     except yaml.YAMLError as exc:
-        raise ProjectSkillAssemblyError(f"{label} front matter must contain valid YAML.") from exc
+        raise CodeRepositorySkillAssemblyError(f"{label} front matter must contain valid YAML.") from exc
     front_matter = _mapping(front_matter, label=f"{label} front matter")
     name = _single_line_text(
         front_matter.get("name"),
         label=f"{label} front matter name",
     )
     if name != expected_name:
-        raise ProjectSkillAssemblyError(f"{label} front matter name must be {expected_name!r}.")
+        raise CodeRepositorySkillAssemblyError(f"{label} front matter name must be {expected_name!r}.")
     _single_line_text(
         front_matter.get("description"),
         label=f"{label} front matter description",
@@ -724,23 +724,23 @@ def _validate_skill_front_matter(
 
 def _mapping(value: Any, *, label: str) -> dict[str, Any]:
     if not isinstance(value, dict):
-        raise ProjectSkillAssemblyError(f"{label} must be an object mapping.")
+        raise CodeRepositorySkillAssemblyError(f"{label} must be an object mapping.")
     return value
 
 
 def _sha256(value: Any, *, label: str) -> str:
     normalized = _single_line_text(value, label=label).lower()
     if not _SHA256_RE.fullmatch(normalized):
-        raise ProjectSkillAssemblyError(f"{label} must be a lowercase SHA-256.")
+        raise CodeRepositorySkillAssemblyError(f"{label} must be a lowercase SHA-256.")
     return normalized
 
 
 def _single_line_text(value: Any, *, label: str) -> str:
     if not isinstance(value, str):
-        raise ProjectSkillAssemblyError(f"{label} must be text.")
+        raise CodeRepositorySkillAssemblyError(f"{label} must be text.")
     normalized = value.strip()
     if not normalized or "\n" in normalized or "\r" in normalized:
-        raise ProjectSkillAssemblyError(f"{label} must be non-empty single-line text.")
+        raise CodeRepositorySkillAssemblyError(f"{label} must be non-empty single-line text.")
     return normalized
 
 

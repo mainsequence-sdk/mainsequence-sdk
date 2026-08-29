@@ -2,7 +2,9 @@
 
 Date: 2026-08-22
 
-Status: Accepted - SDK Environment-resource integration implemented
+Status: Superseded by platform ADR-046 (immediate CodeRepository cutover)
+
+> Historical record: the `Project`, `ProjectBranch`, and `GitRepository` names below describe the pre-cutover contract and MUST NOT be implemented or exposed by current SDK code.
 
 Platform decision: `tdag-django` ADR-0037, stable fingerprint
 `git-native-project-source-context-v1`

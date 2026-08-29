@@ -14,14 +14,14 @@ import mainsequence.client.metatables as models_metatables
 import mainsequence.client.metatables.core as metatables_core
 import mainsequence.client.models_foundry as models_foundry
 import mainsequence.client.utils as client_utils
-import mainsequence.project_context as project_context
+import mainsequence.code_repository_context as code_repository_context
 from mainsequence.client.base import (
     BaseObjectOrm,
-    CurrentProjectBranchCollectionMixin,
+    CurrentCodeRepositoryBranchCollectionMixin,
 )
 
-PROJECT_UID = "1d0530c0-65d1-4db0-856b-dc29d8260a09"
-PROJECT_BRANCH_UID = "5a28020a-0f1b-47ee-aab8-334286234bea"
+CODE_REPOSITORY_UID = "1d0530c0-65d1-4db0-856b-dc29d8260a09"
+CODE_REPOSITORY_BRANCH_UID = "5a28020a-0f1b-47ee-aab8-334286234bea"
 DATA_SOURCE_UID = "864e7c22-482a-464a-8758-0d3408abd77f"
 ENVIRONMENT_UID = "a5e95092-a77a-45a6-835c-46d327e8b5e7"
 COMMIT_SHA = "a" * 40
@@ -29,18 +29,18 @@ COMMIT_SHA = "a" * 40
 
 @pytest.fixture(autouse=True)
 def _reset_context(monkeypatch):
-    project_context._reset_project_runtime_context()
+    code_repository_context._reset_code_repository_context()
     monkeypatch.setattr(
         models_metatables,
         "SessionDataSource",
         models_metatables.PodDataSource(),
     )
     yield
-    project_context._reset_project_runtime_context()
+    code_repository_context._reset_code_repository_context()
 
 
 def _source(*, branch: str = "main", commit_sha: str = COMMIT_SHA):
-    return project_context.GitProjectSourceContext(
+    return code_repository_context.GitCodeRepositorySourceContext(
         repository_root=pathlib.Path.cwd().resolve(),
         canonical_repository_identity="github.com/mainsequence-sdk/example-project",
         repository_branch=branch,
@@ -59,10 +59,10 @@ def _data_source(*, status: str = "AVAILABLE"):
     )
 
 
-def _project_branch(*, branch: str = "main", data_source=None):
+def _code_repository_branch(*, branch: str = "main", data_source=None):
     return types.SimpleNamespace(
-        uid=PROJECT_BRANCH_UID,
-        project_uid=PROJECT_UID,
+        uid=CODE_REPOSITORY_BRANCH_UID,
+        code_repository_uid=CODE_REPOSITORY_UID,
         repository_branch=branch,
         organization_environment_uid=ENVIRONMENT_UID,
         metatables_data_source=data_source,
@@ -77,7 +77,7 @@ def _resolve(
     data_source=None,
 ):
     source = source or _source()
-    monkeypatch.setattr(project_context, "_resolve_git_source_context", lambda path: source)
+    monkeypatch.setattr(code_repository_context, "_resolve_git_source_context", lambda path: source)
 
     def load_context(resolved_source):
         if not registered:
@@ -89,29 +89,29 @@ def _resolve(
             repository_branch=resolved_source.repository_branch,
             repository_ref=resolved_source.repository_ref,
             commit_sha=resolved_source.commit_sha,
-            project_branch=_project_branch(
+            code_repository_branch=_code_repository_branch(
                 branch=resolved_source.repository_branch,
                 data_source=data_source,
             ),
         )
 
-    return project_context.get_project_runtime_context(
-        project_dir=source.repository_root,
-        _project_branch_context_loader=load_context,
+    return code_repository_context.get_code_repository_context(
+        code_repository_dir=source.repository_root,
+        _code_repository_branch_context_loader=load_context,
     )
 
 
 def _install_authenticated_runtime_context(
     *,
-    project_uid: str = PROJECT_UID,
-    project_branch_uid: str = PROJECT_BRANCH_UID,
+    code_repository_uid: str = CODE_REPOSITORY_UID,
+    code_repository_branch_uid: str = CODE_REPOSITORY_BRANCH_UID,
     repository_branch: str = "main",
     organization_environment_uid: str = ENVIRONMENT_UID,
 ):
-    project_context._install_authenticated_runtime_project_context(
+    code_repository_context._install_authenticated_runtime_code_repository_context(
         {
-            "project_uid": project_uid,
-            "project_branch_uid": project_branch_uid,
+            "code_repository_uid": code_repository_uid,
+            "code_repository_branch_uid": code_repository_branch_uid,
             "repository_branch": repository_branch,
             "organization_environment_uid": organization_environment_uid,
         }
@@ -140,7 +140,7 @@ def test_git_source_context_reads_attached_branch_remote_and_full_commit(tmp_pat
     _git(repo, "commit", "-m", "Initial")
     _git(repo, "remote", "add", "origin", "git@github.com:MainSequence-SDK/Example.git")
 
-    source = project_context._resolve_git_source_context(repo)
+    source = code_repository_context._resolve_git_source_context(repo)
 
     assert source.repository_root == repo.resolve()
     assert source.repository_branch == "development"
@@ -158,10 +158,10 @@ def test_git_source_context_reads_attached_branch_remote_and_full_commit(tmp_pat
     ],
 )
 def test_repository_identity_normalizes_transport_and_credentials(value, expected):
-    assert project_context.normalize_git_repository_identity(value) == expected
+    assert code_repository_context.normalize_github_repository_binding_identity(value) == expected
 
 
-def test_project_branch_git_context_uses_canonical_backend_action(monkeypatch):
+def test_code_repository_branch_git_context_uses_canonical_backend_action(monkeypatch):
     captured = {}
 
     class Response:
@@ -174,10 +174,10 @@ def test_project_branch_git_context_uses_canonical_backend_action(monkeypatch):
                 "repository_branch": "main",
                 "repository_ref": "refs/heads/main",
                 "commit_sha": COMMIT_SHA,
-                "project_branch": {
-                    "uid": PROJECT_BRANCH_UID,
-                    "project_uid": PROJECT_UID,
-                    "project_name": "Example Project",
+                "code_repository_branch": {
+                    "uid": CODE_REPOSITORY_BRANCH_UID,
+                    "code_repository_uid": CODE_REPOSITORY_UID,
+                    "code_repository_name": "Example Project",
                     "repository_branch": "main",
                     "metatables_data_source": None,
                     "metatables_data_source_uid": None,
@@ -185,7 +185,7 @@ def test_project_branch_git_context_uses_canonical_backend_action(monkeypatch):
                     "organization_environment_name": "Development",
                     "default_base_image": {"uid": "base-image-uid"},
                     "sdks": [],
-                    "git_repository_uid": "repository-uid",
+                    "github_repository_binding_uid": "repository-uid",
                     "latest_git_version": COMMIT_SHA,
                     "is_initialized": True,
                     "created_by": None,
@@ -193,7 +193,7 @@ def test_project_branch_git_context_uses_canonical_backend_action(monkeypatch):
             }
 
     monkeypatch.setattr(
-        models_foundry.ProjectBranch,
+        models_foundry.CodeRepositoryBranch,
         "build_session",
         classmethod(lambda cls: object()),
     )
@@ -203,19 +203,19 @@ def test_project_branch_git_context_uses_canonical_backend_action(monkeypatch):
         lambda **kwargs: captured.update(kwargs) or Response(),
     )
 
-    resolution = models_foundry.ProjectBranch.resolve_git_context(
+    resolution = models_foundry.CodeRepositoryBranch.resolve_git_context(
         repository_identity="github.com/mainsequence-sdk/example-project",
         repository_branch="main",
         commit_sha=COMMIT_SHA,
     )
 
-    assert captured["url"].endswith("/project-branches/resolve-git-context/")
+    assert captured["url"].endswith("/code-repository-branches/resolve-git-context/")
     assert captured["payload"]["json"] == {
         "repository_identity": "github.com/mainsequence-sdk/example-project",
         "repository_branch": "main",
         "commit_sha": COMMIT_SHA,
     }
-    assert resolution.project_branch.uid == PROJECT_BRANCH_UID
+    assert resolution.code_repository_branch.uid == CODE_REPOSITORY_BRANCH_UID
 
 
 def test_context_resolves_once_and_returns_identical_snapshot(monkeypatch):
@@ -225,7 +225,7 @@ def test_context_resolves_once_and_returns_identical_snapshot(monkeypatch):
         calls["source"] += 1
         return _source()
 
-    monkeypatch.setattr(project_context, "_resolve_git_source_context", load_source)
+    monkeypatch.setattr(code_repository_context, "_resolve_git_source_context", load_source)
 
     def load_context(source):
         calls["backend"] += 1
@@ -234,20 +234,20 @@ def test_context_resolves_once_and_returns_identical_snapshot(monkeypatch):
             repository_branch=source.repository_branch,
             repository_ref=source.repository_ref,
             commit_sha=source.commit_sha,
-            project_branch=_project_branch(
+            code_repository_branch=_code_repository_branch(
                 branch=source.repository_branch,
                 data_source=_data_source(),
             ),
         )
 
-    loaders = {"_project_branch_context_loader": load_context}
+    loaders = {"_code_repository_branch_context_loader": load_context}
 
-    first = project_context.get_project_runtime_context(**loaders)
-    second = project_context.get_project_runtime_context(**loaders)
+    first = code_repository_context.get_code_repository_context(**loaders)
+    second = code_repository_context.get_code_repository_context(**loaders)
 
     assert first is second
     assert first.status == "resolved"
-    assert first.project_branch_uid == PROJECT_BRANCH_UID
+    assert first.code_repository_branch_uid == CODE_REPOSITORY_BRANCH_UID
     assert calls == {"source": 1, "backend": 1}
 
 
@@ -262,16 +262,16 @@ def test_concurrent_first_call_performs_one_resolution(monkeypatch):
         time.sleep(0.03)
         return _source()
 
-    monkeypatch.setattr(project_context, "_resolve_git_source_context", load_source)
+    monkeypatch.setattr(code_repository_context, "_resolve_git_source_context", load_source)
 
     def resolve():
-        return project_context.get_project_runtime_context(
-            _project_branch_context_loader=lambda source: types.SimpleNamespace(
+        return code_repository_context.get_code_repository_context(
+            _code_repository_branch_context_loader=lambda source: types.SimpleNamespace(
                 canonical_repository_identity=source.canonical_repository_identity,
                 repository_branch=source.repository_branch,
                 repository_ref=source.repository_ref,
                 commit_sha=source.commit_sha,
-                project_branch=_project_branch(branch=source.repository_branch),
+                code_repository_branch=_code_repository_branch(branch=source.repository_branch),
             ),
         )
 
@@ -294,9 +294,9 @@ def test_identity_environment_variables_never_select_context(monkeypatch):
 
     context = _resolve(monkeypatch)
 
-    assert context.project_uid == PROJECT_UID
+    assert context.code_repository_uid == CODE_REPOSITORY_UID
     assert context.repository_branch == "main"
-    assert context.project_branch_uid == PROJECT_BRANCH_UID
+    assert context.code_repository_branch_uid == CODE_REPOSITORY_BRANCH_UID
     assert context.organization_environment_uid == ENVIRONMENT_UID
 
 
@@ -308,20 +308,20 @@ def test_authenticated_runtime_context_requires_matching_git(monkeypatch):
 
     assert context.is_authenticated_runtime is True
     assert context.source_context == _source()
-    assert context.project_uid == PROJECT_UID
-    assert context.project_branch_uid == PROJECT_BRANCH_UID
+    assert context.code_repository_uid == CODE_REPOSITORY_UID
+    assert context.code_repository_branch_uid == CODE_REPOSITORY_BRANCH_UID
     assert context.repository_branch == "main"
     assert context.repository_ref == "refs/heads/main"
     assert context.commit_sha == COMMIT_SHA
     assert context.organization_environment_uid == ENVIRONMENT_UID
     assert context.metatables_data_source is data_source
-    assert project_context.validate_project_source_context(context=context) is context
+    assert code_repository_context.validate_code_repository_source_context(context=context) is context
 
     assert models_metatables.MetaTable._sdk_owned_query_context("MetaTable.filter") == {}
-    assert metatables_core._with_current_metatable_project_context(
+    assert metatables_core._with_current_metatable_code_repository_context(
         {"management_mode": "platform_managed"}
     ) == {"management_mode": "platform_managed"}
-    assert metatables_core._with_current_metatable_project_context(
+    assert metatables_core._with_current_metatable_code_repository_context(
         {"management_mode": "external_registered"}
     ) == {"management_mode": "external_registered"}
 
@@ -330,25 +330,25 @@ def test_authenticated_runtime_context_has_no_missing_git_fallback(monkeypatch):
     _install_authenticated_runtime_context()
 
     def missing_git(path):
-        raise project_context.ProjectRuntimeContextError(
+        raise code_repository_context.CodeRepositoryContextError(
             "missing deployed Git checkout"
         )
 
     monkeypatch.setattr(
-        project_context,
+        code_repository_context,
         "_resolve_git_source_context",
         missing_git,
     )
 
-    with pytest.raises(project_context.ProjectRuntimeContextError, match="missing deployed Git"):
-        project_context.get_project_runtime_context()
+    with pytest.raises(code_repository_context.CodeRepositoryContextError, match="missing deployed Git"):
+        code_repository_context.get_code_repository_context()
 
 
 @pytest.mark.parametrize(
     ("field", "value"),
     [
-        ("project_uid", "different-project"),
-        ("project_branch_uid", "different-project-branch"),
+        ("code_repository_uid", "different-project"),
+        ("code_repository_branch_uid", "different-code-repository-branch"),
         ("repository_branch", "development"),
         ("organization_environment_uid", "different-environment"),
     ],
@@ -359,15 +359,15 @@ def test_authenticated_runtime_context_rejects_git_resolved_target_mismatch(
     value,
 ):
     runtime_context = {
-        "project_uid": PROJECT_UID,
-        "project_branch_uid": PROJECT_BRANCH_UID,
+        "code_repository_uid": CODE_REPOSITORY_UID,
+        "code_repository_branch_uid": CODE_REPOSITORY_BRANCH_UID,
         "repository_branch": "main",
         "organization_environment_uid": ENVIRONMENT_UID,
     }
     runtime_context[field] = value
     _install_authenticated_runtime_context(**runtime_context)
 
-    with pytest.raises(project_context.ProjectRuntimeContextError, match=field):
+    with pytest.raises(code_repository_context.CodeRepositoryContextError, match=field):
         _resolve(monkeypatch)
 
 
@@ -375,13 +375,13 @@ def test_authenticated_runtime_context_detects_git_drift(monkeypatch):
     _install_authenticated_runtime_context()
     context = _resolve(monkeypatch)
     monkeypatch.setattr(
-        project_context,
+        code_repository_context,
         "_resolve_git_source_context",
         lambda path: _source(branch="development", commit_sha="b" * 40),
     )
 
-    with pytest.raises(project_context.ProjectSourceContextDriftError):
-        project_context.validate_project_source_context(context=context)
+    with pytest.raises(code_repository_context.CodeRepositorySourceContextDriftError):
+        code_repository_context.validate_code_repository_source_context(context=context)
 
 
 def test_configured_runtime_credential_exchanges_context_before_resolution(monkeypatch):
@@ -390,7 +390,7 @@ def test_configured_runtime_credential_exchanges_context_before_resolution(monke
     monkeypatch.setenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET", "credential-secret")
     events = []
     monkeypatch.setattr(
-        project_context,
+        code_repository_context,
         "_resolve_git_source_context",
         lambda path: events.append("git") or _source(),
     )
@@ -411,11 +411,11 @@ def test_configured_runtime_credential_exchanges_context_before_resolution(monke
             repository_branch=source.repository_branch,
             repository_ref=source.repository_ref,
             commit_sha=source.commit_sha,
-            project_branch=_project_branch(branch=source.repository_branch),
+            code_repository_branch=_code_repository_branch(branch=source.repository_branch),
         )
 
-    context = project_context.get_project_runtime_context(
-        _project_branch_context_loader=resolve_git_context,
+    context = code_repository_context.get_code_repository_context(
+        _code_repository_branch_context_loader=resolve_git_context,
     )
 
     assert context.is_authenticated_runtime is True
@@ -427,9 +427,9 @@ def test_configured_runtime_credential_exchanges_context_before_resolution(monke
 def test_unregistered_git_context_is_nonfatal_until_branch_context_is_required(monkeypatch):
     context = _resolve(monkeypatch, registered=False)
 
-    assert context.status == "project_branch_not_registered"
-    with pytest.raises(project_context.ProjectBranchContextRequiredError):
-        project_context.require_project_branch_context("Create Job", context=context)
+    assert context.status == "code_repository_branch_not_registered"
+    with pytest.raises(code_repository_context.CodeRepositoryBranchContextRequiredError):
+        code_repository_context.require_code_repository_branch_context("Create Job", context=context)
 
 
 def test_unregistered_branch_is_nonfatal_until_branch_context_is_required(monkeypatch):
@@ -439,49 +439,49 @@ def test_unregistered_branch_is_nonfatal_until_branch_context_is_required(monkey
         registered=False,
     )
 
-    assert context.status == "project_branch_not_registered"
-    assert context.project_uid is None
-    assert context.project_branch_uid is None
-    with pytest.raises(project_context.ProjectBranchContextRequiredError):
-        project_context.require_project_branch_context("Create Job", context=context)
+    assert context.status == "code_repository_branch_not_registered"
+    assert context.code_repository_uid is None
+    assert context.code_repository_branch_uid is None
+    with pytest.raises(code_repository_context.CodeRepositoryBranchContextRequiredError):
+        code_repository_context.require_code_repository_branch_context("Create Job", context=context)
 
 
-def test_project_environment_uid_comes_from_frozen_branch_context(monkeypatch):
+def test_code_repository_environment_uid_comes_from_frozen_branch_context(monkeypatch):
     _resolve(monkeypatch)
 
-    assert project_context.resolve_organization_environment_uid("Create Secret") == ENVIRONMENT_UID
+    assert code_repository_context.resolve_organization_environment_uid("Create Secret") == ENVIRONMENT_UID
 
 
-def test_project_environment_operation_fails_when_branch_has_no_environment(monkeypatch):
+def test_code_repository_environment_operation_fails_when_branch_has_no_environment(monkeypatch):
     context = _resolve(monkeypatch)
-    missing_environment_context = project_context.ProjectRuntimeContext(
+    missing_environment_context = code_repository_context.CodeRepositoryContext(
         source_context=context.source_context,
-        project_uid=context.project_uid,
-        project_branch_uid=context.project_branch_uid,
+        code_repository_uid=context.code_repository_uid,
+        code_repository_branch_uid=context.code_repository_branch_uid,
         organization_environment_uid=None,
         metatables_data_source=context.metatables_data_source,
         status=context.status,
         process_id=context.process_id,
-        project_branch=context.project_branch,
+        code_repository_branch=context.code_repository_branch,
         detail=context.detail,
     )
     monkeypatch.setattr(
-        project_context,
-        "require_project_branch_context",
+        code_repository_context,
+        "require_code_repository_branch_context",
         lambda operation: missing_environment_context,
     )
 
     with pytest.raises(
-        project_context.ProjectEnvironmentContextRequiredError,
+        code_repository_context.CodeRepositoryEnvironmentContextRequiredError,
         match="none was returned",
     ):
-        project_context.resolve_organization_environment_uid("Create Secret")
+        code_repository_context.resolve_organization_environment_uid("Create Secret")
 
 
 def test_runtime_target_mismatch_is_not_treated_as_unregistered(monkeypatch):
     source = _source()
     monkeypatch.setattr(
-        project_context,
+        code_repository_context,
         "_resolve_git_source_context",
         lambda path: source,
     )
@@ -491,9 +491,9 @@ def test_runtime_target_mismatch_is_not_treated_as_unregistered(monkeypatch):
         error.status_code = 403
         raise error
 
-    with pytest.raises(project_context.ProjectRuntimeContextError, match="mismatch"):
-        project_context.get_project_runtime_context(
-            _project_branch_context_loader=forbidden,
+    with pytest.raises(code_repository_context.CodeRepositoryContextError, match="mismatch"):
+        code_repository_context.get_code_repository_context(
+            _code_repository_branch_context_loader=forbidden,
         )
 
 
@@ -501,33 +501,33 @@ def test_context_drift_is_rejected(monkeypatch):
     initial = _source(branch="main", commit_sha="a" * 40)
     context = _resolve(monkeypatch, source=initial)
     monkeypatch.setattr(
-        project_context,
+        code_repository_context,
         "_resolve_git_source_context",
         lambda path: _source(branch="development", commit_sha="b" * 40),
     )
 
-    with pytest.raises(project_context.ProjectSourceContextDriftError):
-        project_context.validate_project_source_context(context=context)
+    with pytest.raises(code_repository_context.CodeRepositorySourceContextDriftError):
+        code_repository_context.validate_code_repository_source_context(context=context)
 
 
 def test_forked_process_discards_inherited_snapshot(monkeypatch):
     process_id = 101
-    monkeypatch.setattr(project_context.os, "getpid", lambda: process_id)
+    monkeypatch.setattr(code_repository_context.os, "getpid", lambda: process_id)
     first = _resolve(monkeypatch, source=_source(branch="main"))
 
     process_id = 202
     monkeypatch.setattr(
-        project_context,
+        code_repository_context,
         "_resolve_git_source_context",
         lambda path: _source(branch="development", commit_sha="b" * 40),
     )
-    second = project_context.get_project_runtime_context(
-        _project_branch_context_loader=lambda source: types.SimpleNamespace(
+    second = code_repository_context.get_code_repository_context(
+        _code_repository_branch_context_loader=lambda source: types.SimpleNamespace(
             canonical_repository_identity=source.canonical_repository_identity,
             repository_branch=source.repository_branch,
             repository_ref=source.repository_ref,
             commit_sha=source.commit_sha,
-            project_branch=_project_branch(branch=source.repository_branch),
+            code_repository_branch=_code_repository_branch(branch=source.repository_branch),
         ),
     )
 
@@ -542,21 +542,21 @@ def test_failed_initialization_is_cached(monkeypatch):
     def fail(path):
         nonlocal calls
         calls += 1
-        raise project_context.ProjectRuntimeContextError("missing Git metadata")
+        raise code_repository_context.CodeRepositoryContextError("missing Git metadata")
 
-    monkeypatch.setattr(project_context, "_resolve_git_source_context", fail)
+    monkeypatch.setattr(code_repository_context, "_resolve_git_source_context", fail)
     for _ in range(2):
-        with pytest.raises(project_context.ProjectRuntimeContextError, match="missing Git"):
-            project_context.get_project_runtime_context()
+        with pytest.raises(code_repository_context.CodeRepositoryContextError, match="missing Git"):
+            code_repository_context.get_code_repository_context()
     assert calls == 1
 
 
-def test_project_data_source_requires_exact_registered_branch(monkeypatch):
+def test_code_repository_data_source_requires_exact_registered_branch(monkeypatch):
     data_source = _data_source()
     context = _resolve(monkeypatch, data_source=data_source)
 
     assert (
-        project_context.require_project_metatables_data_source(
+        code_repository_context.require_code_repository_metatables_data_source(
             "Project-derived data access",
             context=context,
         )
@@ -564,16 +564,16 @@ def test_project_data_source_requires_exact_registered_branch(monkeypatch):
     )
 
 
-class _ScopedCollection(CurrentProjectBranchCollectionMixin, BaseObjectOrm):
+class _ScopedCollection(CurrentCodeRepositoryBranchCollectionMixin, BaseObjectOrm):
     ENDPOINT = "scoped-collection"
-    FILTERSET_FIELDS = {"project_branch_uid": ["exact", "in"]}
+    FILTERSET_FIELDS = {"code_repository_branch_uid": ["exact", "in"]}
     FILTER_VALUE_NORMALIZERS = {
-        "project_branch_uid": "uid",
-        "project_branch_uid__in": "uid",
+        "code_repository_branch_uid": "uid",
+        "code_repository_branch_uid__in": "uid",
     }
 
 
-def test_authenticated_runtime_collection_omits_project_branch_selector(monkeypatch):
+def test_authenticated_runtime_collection_omits_code_repository_branch_selector(monkeypatch):
     _install_authenticated_runtime_context()
     _resolve(monkeypatch)
     captured = {}
@@ -600,8 +600,8 @@ def test_authenticated_runtime_collection_omits_project_branch_selector(monkeypa
 
     assert _ScopedCollection.filter() == []
     assert captured["payload"] == {}
-    with pytest.raises(project_context.ProjectBranchContextRequiredError):
-        _ScopedCollection.filter(project_branch_uid=PROJECT_BRANCH_UID)
+    with pytest.raises(code_repository_context.CodeRepositoryBranchContextRequiredError):
+        _ScopedCollection.filter(code_repository_branch_uid=CODE_REPOSITORY_BRANCH_UID)
 
 
 def test_current_branch_collection_is_scoped_and_admin_path_is_explicit(monkeypatch):
@@ -629,11 +629,11 @@ def test_current_branch_collection_is_scoped_and_admin_path_is_explicit(monkeypa
     )
 
     assert _ScopedCollection.filter() == []
-    assert captured[-1]["payload"]["params"] == {"project_branch_uid": PROJECT_BRANCH_UID}
+    assert captured[-1]["payload"]["params"] == {"code_repository_branch_uid": CODE_REPOSITORY_BRANCH_UID}
     assert _ScopedCollection.filter_admin() == []
     assert captured[-1]["payload"] == {}
-    with pytest.raises(project_context.ProjectBranchContextRequiredError):
-        _ScopedCollection.filter(project_branch_uid="other-branch")
+    with pytest.raises(code_repository_context.CodeRepositoryBranchContextRequiredError):
+        _ScopedCollection.filter(code_repository_branch_uid="other-branch")
 
 
 def test_table_update_always_submits_git_resolved_branch(monkeypatch):
@@ -652,7 +652,7 @@ def test_table_update_always_submits_git_resolved_branch(monkeypatch):
                 "build_configuration": {
                     "configuration_schema_version": 2,
                     "table_updater_class_import_path": {
-                        "module": "tests.test_project_runtime_context",
+                        "module": "tests.test_code_repository_context",
                         "qualname": "ExampleUpdater",
                     },
                 },
@@ -681,38 +681,38 @@ def test_table_update_always_submits_git_resolved_branch(monkeypatch):
         build_configuration={
             "configuration_schema_version": 2,
             "table_updater_class_import_path": {
-                "module": "tests.test_project_runtime_context",
+                "module": "tests.test_code_repository_context",
                 "qualname": "ExampleUpdater",
             },
         },
     )
 
-    assert captured["payload"]["json"]["current_project_branch_uid"] == PROJECT_BRANCH_UID
+    assert captured["payload"]["json"]["current_code_repository_branch_uid"] == CODE_REPOSITORY_BRANCH_UID
 
 
 def test_metatable_request_always_submits_git_resolved_context(monkeypatch):
     _resolve(monkeypatch)
 
-    payload = models_metatables._with_current_metatable_project_context(
+    payload = models_metatables._with_current_metatable_code_repository_context(
         {
             "management_mode": "platform_managed",
             "data_source_uid": DATA_SOURCE_UID,
         }
     )
 
-    assert payload["project_context"] == {
-        "project_branch_uid": PROJECT_BRANCH_UID,
+    assert payload["code_repository_context"] == {
+        "code_repository_branch_uid": CODE_REPOSITORY_BRANCH_UID,
     }
 
 
-def test_project_model_rejects_removed_default_data_source_fields():
+def test_code_repository_model_rejects_removed_default_data_source_fields():
     payload = {
-        "uid": PROJECT_UID,
-        "project_name": "Example Project",
-        "project_type": "python",
+        "uid": CODE_REPOSITORY_UID,
+        "code_repository_name": "Example Project",
+        "code_repository_type": "python",
         "primary_language": "python",
         "framework": "mainsequence",
-        "git_repository_uid": "3c2113e7-40ba-4d8c-ad65-51ca236c3b0c",
+        "github_repository_binding_uid": "3c2113e7-40ba-4d8c-ad65-51ca236c3b0c",
         "archived": False,
         "created_by": "user-4",
         "labels": [],
@@ -721,4 +721,4 @@ def test_project_model_rejects_removed_default_data_source_fields():
     }
 
     with pytest.raises(ValueError, match="default_metatables_data_source_uid"):
-        models_foundry.Project.model_validate(payload)
+        models_foundry.CodeRepository.model_validate(payload)

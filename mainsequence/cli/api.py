@@ -7,7 +7,7 @@ HTTP API wrapper for MainSequence CLI.
 This module is intentionally aligned with the VS Code extension implementation:
 - Browser-based code exchange + refresh
 - authed() retries after refresh on 401
-- Project helpers: list projects, get env text, deploy key
+- CodeRepository helpers: list projects, get env text, deploy key
 
 Any behavioral differences vs the VS Code extension should be considered bugs.
 """
@@ -25,14 +25,14 @@ from urllib.parse import urlencode
 
 import requests
 
-from ..project_skills import (
+from ..code_repository_skills import (
     PLATFORM_ONTOLOGY_URI,
     PLATFORM_SKILL_URI_PREFIX,
-    PlatformProjectSkillCatalog,
-    ProjectSkillAssemblyError,
-    parse_platform_project_skill_catalog,
-    parse_platform_project_skill_declarations,
-    validate_platform_project_skill_membership,
+    CodeRepositorySkillAssemblyError,
+    PlatformCodeRepositorySkillCatalog,
+    parse_platform_code_repository_skill_catalog,
+    parse_platform_code_repository_skill_declarations,
+    validate_platform_code_repository_skill_membership,
 )
 from .config import (
     backend_url,
@@ -822,7 +822,7 @@ def get_logged_user_details() -> dict[str, Any]:
                 os.environ[k] = v
 
 
-def get_projects() -> list[dict]:
+def get_code_repositories() -> list[dict]:
     """
     List projects visible to the current user.
 
@@ -832,7 +832,7 @@ def get_projects() -> list[dict]:
     Raises:
         ApiError: on non-200 response
     """
-    r = authed("GET", "/api/v1/projects/")
+    r = authed("GET", "/api/v1/code-repositories/")
     if not r.ok:
         raise ApiError(f"Projects fetch failed ({r.status_code}).")
     data = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
@@ -841,58 +841,58 @@ def get_projects() -> list[dict]:
     return data.get("results") or []
 
 
-def _normalize_project_reference(project_ref: int | str) -> str:
-    normalized = str(project_ref).strip()
+def _normalize_code_repository_reference(code_repository_ref: int | str) -> str:
+    normalized = str(code_repository_ref).strip()
     if not normalized:
-        raise ApiError("Project UID is required.")
+        raise ApiError("CodeRepository UID is required.")
     return normalized
 
 
-def _project_matches_reference(project_payload: dict[str, Any], project_ref: str) -> bool:
-    return str(project_payload.get("uid") or "").strip() == project_ref
+def _code_repository_matches_reference(code_repository_payload: dict[str, Any], code_repository_ref: str) -> bool:
+    return str(code_repository_payload.get("uid") or "").strip() == code_repository_ref
 
 
-def resolve_project(project_ref: int | str) -> dict[str, Any]:
-    normalized_ref = _normalize_project_reference(project_ref)
+def resolve_code_repository(code_repository_ref: int | str) -> dict[str, Any]:
+    normalized_ref = _normalize_code_repository_reference(code_repository_ref)
 
     try:
-        payload = get_project(normalized_ref)
+        payload = get_code_repository(normalized_ref)
         if isinstance(payload, dict) and payload:
             return payload
     except ApiError:
         pass
 
-    for project_payload in get_projects():
-        if isinstance(project_payload, dict) and _project_matches_reference(
-            project_payload, normalized_ref
+    for code_repository_payload in get_code_repositories():
+        if isinstance(code_repository_payload, dict) and _code_repository_matches_reference(
+            code_repository_payload, normalized_ref
         ):
-            return project_payload
+            return code_repository_payload
 
-    raise ApiError(f"Project not found: {normalized_ref}")
+    raise ApiError(f"CodeRepository not found: {normalized_ref}")
 
 
-def resolve_project_uid(project_ref: int | str) -> str:
-    payload = resolve_project(project_ref)
+def resolve_code_repository_uid(code_repository_ref: int | str) -> str:
+    payload = resolve_code_repository(code_repository_ref)
     normalized_uid = str(payload.get("uid") or "").strip()
     if normalized_uid:
         return normalized_uid
-    raise ApiError(f"Project UID is not available for project reference: {project_ref}")
+    raise ApiError(f"CodeRepository UID is not available for project reference: {code_repository_ref}")
 
 
-def get_project_branch(project_branch_uid: str) -> dict[str, Any]:
-    normalized_uid = str(project_branch_uid).strip()
+def get_code_repository_branch(code_repository_branch_uid: str) -> dict[str, Any]:
+    normalized_uid = str(code_repository_branch_uid).strip()
     if not normalized_uid:
-        raise ApiError("ProjectBranch UID is required.")
-    r = authed("GET", f"/api/v1/project-branches/{normalized_uid}/")
+        raise ApiError("CodeRepositoryBranch UID is required.")
+    r = authed("GET", f"/api/v1/code-repository-branches/{normalized_uid}/")
     if not r.ok:
-        raise ApiError(f"ProjectBranch fetch failed ({r.status_code}).")
+        raise ApiError(f"CodeRepositoryBranch fetch failed ({r.status_code}).")
     payload = r.json()
     if not isinstance(payload, dict):
-        raise ApiError("ProjectBranch fetch returned an unexpected payload.")
+        raise ApiError("CodeRepositoryBranch fetch returned an unexpected payload.")
     return payload
 
 
-def get_project_repository(
+def get_code_repository_repository(
     repository_uid: str,
     *,
     timeout: int | None = None,
@@ -900,13 +900,13 @@ def get_project_repository(
     """Fetch a Git repository aggregate through the public SDK model."""
     normalized_uid = str(repository_uid).strip()
     if not normalized_uid:
-        raise ApiError("GitRepository UID is required.")
+        raise ApiError("GitHubRepositoryBinding UID is required.")
 
     try:
         repository = _run_sdk_model_operation(
             module_name="mainsequence.client.models_foundry",
-            class_name="GitRepository",
-            operation=lambda ClientGitRepository: ClientGitRepository.get_by_uid(
+            class_name="GitHubRepositoryBinding",
+            operation=lambda ClientGitHubRepositoryBinding: ClientGitHubRepositoryBinding.get_by_uid(
                 normalized_uid,
                 timeout=timeout,
             ),
@@ -915,24 +915,24 @@ def get_project_repository(
     except Exception as e:
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"GitRepository fetch failed: {e}") from e
+        raise ApiError(f"GitHubRepositoryBinding fetch failed: {e}") from e
 
 
-def render_project_branch_default_redeployment_tag(
-    project_branch_uid: str,
+def render_code_repository_branch_default_redeployment_tag(
+    code_repository_branch_uid: str,
     *,
     version: str,
 ) -> str:
-    normalized_uid = str(project_branch_uid).strip()
+    normalized_uid = str(code_repository_branch_uid).strip()
     normalized_version = str(version).strip()
     if not normalized_uid:
-        raise ApiError("ProjectBranch UID is required.")
+        raise ApiError("CodeRepositoryBranch UID is required.")
     if not normalized_version:
-        raise ApiError("Project version is required.")
+        raise ApiError("CodeRepository version is required.")
 
     r = authed(
         "POST",
-        f"/api/v1/project-branches/{normalized_uid}/default-redeployment-tag/",
+        f"/api/v1/code-repository-branches/{normalized_uid}/default-redeployment-tag/",
         {"version": normalized_version},
     )
     if not r.ok:
@@ -948,15 +948,15 @@ def render_project_branch_default_redeployment_tag(
     return tag_name
 
 
-def resolve_project_branch_uid(project_branch_ref: str) -> str:
-    payload = get_project_branch(project_branch_ref)
+def resolve_code_repository_branch_uid(code_repository_branch_ref: str) -> str:
+    payload = get_code_repository_branch(code_repository_branch_ref)
     normalized_uid = str(payload.get("uid") or "").strip()
     if not normalized_uid:
-        raise ApiError(f"ProjectBranch UID is not available: {project_branch_ref}")
+        raise ApiError(f"CodeRepositoryBranch UID is not available: {code_repository_branch_ref}")
     return normalized_uid
 
 
-def search_projects(
+def search_code_repositories(
     q: str,
     *,
     limit: int = 20,
@@ -966,13 +966,13 @@ def search_projects(
     Search projects visible to the authenticated user via SDK client model.
 
     Single source of truth:
-      - delegates payload parsing to `Project.quick_search()`
+      - delegates payload parsing to `CodeRepository.quick_search()`
     """
     try:
         payload = _run_sdk_model_operation(
             module_name="mainsequence.client.models_foundry",
-            class_name="Project",
-            operation=lambda ClientProject: ClientProject.quick_search(
+            class_name="CodeRepository",
+            operation=lambda ClientCodeRepository: ClientCodeRepository.quick_search(
                 q=q,
                 limit=limit,
                 timeout=timeout,
@@ -982,26 +982,26 @@ def search_projects(
     except Exception as e:
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Project search failed: {e}") from e
+        raise ApiError(f"CodeRepository search failed: {e}") from e
 
 
-def validate_project_name(
+def validate_code_repository_name(
     *,
-    project_name: str,
+    code_repository_name: str,
     timeout: int | None = None,
 ) -> dict[str, Any]:
     """
     Validate whether a project name is available for creation.
 
     Single source of truth:
-      - delegates payload parsing to `Project.validate_name()`
+      - delegates payload parsing to `CodeRepository.validate_name()`
     """
     try:
         payload = _run_sdk_model_operation(
             module_name="mainsequence.client.models_foundry",
-            class_name="Project",
-            operation=lambda ClientProject: ClientProject.validate_name(
-                project_name=project_name,
+            class_name="CodeRepository",
+            operation=lambda ClientCodeRepository: ClientCodeRepository.validate_name(
+                code_repository_name=code_repository_name,
                 timeout=timeout,
             ),
         )
@@ -1009,7 +1009,7 @@ def validate_project_name(
     except Exception as e:
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Project name validation failed: {e}") from e
+        raise ApiError(f"CodeRepository name validation failed: {e}") from e
 
 
 def list_organization_teams(
@@ -1776,14 +1776,14 @@ def remove_agent_team_from_edit(
     )
 
 
-def get_project(project_uid: str) -> dict:
+def get_code_repository(code_repository_uid: str) -> dict:
     """
     Fetch a single project by public UID.
     """
-    normalized_uid = str(project_uid).strip()
+    normalized_uid = str(code_repository_uid).strip()
     if not normalized_uid:
-        raise ApiError("Project UID is required.")
-    r = authed("GET", f"/api/v1/projects/{normalized_uid}/")
+        raise ApiError("CodeRepository UID is required.")
+    r = authed("GET", f"/api/v1/code-repositories/{normalized_uid}/")
     if not r.ok:
         msg = r.text or ""
         try:
@@ -1792,20 +1792,20 @@ def get_project(project_uid: str) -> dict:
                 msg = data.get("detail") or data.get("message") or msg
         except Exception:
             pass
-        raise ApiError(f"Project fetch failed ({r.status_code}). {msg}".strip())
+        raise ApiError(f"CodeRepository fetch failed ({r.status_code}). {msg}".strip())
 
     if not r.headers.get("content-type", "").startswith("application/json"):
         raise ApiError(
-            f"Project fetch response was not JSON (content-type: {r.headers.get('content-type')})."
+            f"CodeRepository fetch response was not JSON (content-type: {r.headers.get('content-type')})."
         )
     data = r.json()
     if not isinstance(data, dict):
-        raise ApiError("Project fetch response had unexpected payload shape.")
+        raise ApiError("CodeRepository fetch response had unexpected payload shape.")
     return data
 
 
-def list_project_users_can_view(
-    project_id: int | str,
+def list_code_repository_users_can_view(
+    code_repository_id: int | str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -1814,15 +1814,15 @@ def list_project_users_can_view(
     """
     return _get_shareable_object_access_state(
         module_name="mainsequence.client.models_foundry",
-        class_name="Project",
-        object_uid=project_id,
+        class_name="CodeRepository",
+        object_uid=code_repository_id,
         accessor_name="can_view",
         timeout=timeout,
     )
 
 
-def list_project_users_can_edit(
-    project_id: int | str,
+def list_code_repository_users_can_edit(
+    code_repository_id: int | str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -1831,15 +1831,15 @@ def list_project_users_can_edit(
     """
     return _get_shareable_object_access_state(
         module_name="mainsequence.client.models_foundry",
-        class_name="Project",
-        object_uid=project_id,
+        class_name="CodeRepository",
+        object_uid=code_repository_id,
         accessor_name="can_edit",
         timeout=timeout,
     )
 
 
-def add_project_user_to_view(
-    project_id: int | str,
+def add_code_repository_user_to_view(
+    code_repository_id: int | str,
     user_uid: str,
     *,
     timeout: int | None = None,
@@ -1849,16 +1849,16 @@ def add_project_user_to_view(
     """
     return _mutate_shareable_object_access(
         module_name="mainsequence.client.models_foundry",
-        class_name="Project",
-        object_uid=project_id,
+        class_name="CodeRepository",
+        object_uid=code_repository_id,
         action_name="add_to_view",
         user_uid=user_uid,
         timeout=timeout,
     )
 
 
-def add_project_user_to_edit(
-    project_id: int | str,
+def add_code_repository_user_to_edit(
+    code_repository_id: int | str,
     user_uid: str,
     *,
     timeout: int | None = None,
@@ -1868,16 +1868,16 @@ def add_project_user_to_edit(
     """
     return _mutate_shareable_object_access(
         module_name="mainsequence.client.models_foundry",
-        class_name="Project",
-        object_uid=project_id,
+        class_name="CodeRepository",
+        object_uid=code_repository_id,
         action_name="add_to_edit",
         user_uid=user_uid,
         timeout=timeout,
     )
 
 
-def remove_project_user_from_view(
-    project_id: int | str,
+def remove_code_repository_user_from_view(
+    code_repository_id: int | str,
     user_uid: str,
     *,
     timeout: int | None = None,
@@ -1887,16 +1887,16 @@ def remove_project_user_from_view(
     """
     return _mutate_shareable_object_access(
         module_name="mainsequence.client.models_foundry",
-        class_name="Project",
-        object_uid=project_id,
+        class_name="CodeRepository",
+        object_uid=code_repository_id,
         action_name="remove_from_view",
         user_uid=user_uid,
         timeout=timeout,
     )
 
 
-def remove_project_user_from_edit(
-    project_id: int | str,
+def remove_code_repository_user_from_edit(
+    code_repository_id: int | str,
     user_uid: str,
     *,
     timeout: int | None = None,
@@ -1906,8 +1906,8 @@ def remove_project_user_from_edit(
     """
     return _mutate_shareable_object_access(
         module_name="mainsequence.client.models_foundry",
-        class_name="Project",
-        object_uid=project_id,
+        class_name="CodeRepository",
+        object_uid=code_repository_id,
         action_name="remove_from_edit",
         user_uid=user_uid,
         timeout=timeout,
@@ -2012,72 +2012,72 @@ def remove_team_user_from_edit(
     )
 
 
-def add_project_team_to_view(
-    project_id: int | str,
+def add_code_repository_team_to_view(
+    code_repository_id: int | str,
     team_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
     return _mutate_shareable_object_team_access(
         module_name="mainsequence.client.models_foundry",
-        class_name="Project",
-        object_uid=project_id,
+        class_name="CodeRepository",
+        object_uid=code_repository_id,
         action_name="add_team_to_view",
         team_uid=team_uid,
         timeout=timeout,
     )
 
 
-def add_project_team_to_edit(
-    project_id: int | str,
+def add_code_repository_team_to_edit(
+    code_repository_id: int | str,
     team_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
     return _mutate_shareable_object_team_access(
         module_name="mainsequence.client.models_foundry",
-        class_name="Project",
-        object_uid=project_id,
+        class_name="CodeRepository",
+        object_uid=code_repository_id,
         action_name="add_team_to_edit",
         team_uid=team_uid,
         timeout=timeout,
     )
 
 
-def remove_project_team_from_view(
-    project_id: int | str,
+def remove_code_repository_team_from_view(
+    code_repository_id: int | str,
     team_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
     return _mutate_shareable_object_team_access(
         module_name="mainsequence.client.models_foundry",
-        class_name="Project",
-        object_uid=project_id,
+        class_name="CodeRepository",
+        object_uid=code_repository_id,
         action_name="remove_team_from_view",
         team_uid=team_uid,
         timeout=timeout,
     )
 
 
-def remove_project_team_from_edit(
-    project_id: int | str,
+def remove_code_repository_team_from_edit(
+    code_repository_id: int | str,
     team_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
     return _mutate_shareable_object_team_access(
         module_name="mainsequence.client.models_foundry",
-        class_name="Project",
-        object_uid=project_id,
+        class_name="CodeRepository",
+        object_uid=code_repository_id,
         action_name="remove_team_from_edit",
         team_uid=team_uid,
         timeout=timeout,
     )
 
 
-def add_project_labels(
-    project_id: int | str,
+def add_code_repository_labels(
+    code_repository_id: int | str,
     labels: list[str],
     *,
     timeout: int | None = None,
@@ -2086,16 +2086,16 @@ def add_project_labels(
 
     return _mutate_labelable_object_labels(
         module_name="mainsequence.client.models_foundry",
-        class_name="Project",
-        object_uid=project_id,
+        class_name="CodeRepository",
+        object_uid=code_repository_id,
         action_name="add_label",
         labels=labels,
         timeout=timeout,
     )
 
 
-def remove_project_labels(
-    project_id: int | str,
+def remove_code_repository_labels(
+    code_repository_id: int | str,
     labels: list[str],
     *,
     timeout: int | None = None,
@@ -2104,22 +2104,22 @@ def remove_project_labels(
 
     return _mutate_labelable_object_labels(
         module_name="mainsequence.client.models_foundry",
-        class_name="Project",
-        object_uid=project_id,
+        class_name="CodeRepository",
+        object_uid=code_repository_id,
         action_name="remove_label",
         labels=labels,
         timeout=timeout,
     )
 
 
-def get_project_time_index_table_updates(
-    project_branch_uid: str, *, timeout: int | None = None
+def get_code_repository_time_index_table_updates(
+    code_repository_branch_uid: str, *, timeout: int | None = None
 ) -> list[dict[str, Any]]:
     """
-    Fetch ProjectBranch time-index-table updates via the branch custom action.
+    Fetch CodeRepositoryBranch time-index-table updates via the branch custom action.
 
     Single source of truth:
-      - delegates response parsing to `ProjectBranch.get_time_index_table_updates()`
+      - delegates response parsing to `CodeRepositoryBranch.get_time_index_table_updates()`
       - avoids duplicating payload-shape logic in the CLI API wrapper
     """
     tokens = get_tokens()
@@ -2141,7 +2141,7 @@ def get_project_time_index_table_updates(
     client_utils = None
     old_provider = None
     old_base_root_url = None
-    old_project_root_url = None
+    old_code_repository_root_url = None
 
     try:
         # Configure client auth/runtime to use JWT credentials from CLI login.
@@ -2152,25 +2152,25 @@ def get_project_time_index_table_updates(
         else:
             os.environ.pop("MAINSEQUENCE_REFRESH_TOKEN", None)
         os.environ["MAINSEQUENCE_ENDPOINT"] = endpoint
-        resolved_branch_uid = resolve_project_branch_uid(project_branch_uid)
+        resolved_branch_uid = resolve_code_repository_branch_uid(code_repository_branch_uid)
 
         from mainsequence.client import utils as _client_utils
         from mainsequence.client.base import BaseObjectOrm
-        from mainsequence.client.models_foundry import ProjectBranch as ClientProject
+        from mainsequence.client.models_foundry import CodeRepositoryBranch as ClientCodeRepository
 
         client_utils = _client_utils
         old_provider = getattr(client_utils.loaders, "provider", None)
         old_base_root_url = BaseObjectOrm.ROOT_URL
-        old_project_root_url = getattr(ClientProject, "ROOT_URL", None)
+        old_code_repository_root_url = getattr(ClientCodeRepository, "ROOT_URL", None)
 
         _set_client_utils_endpoint(client_utils, endpoint)
         client_utils.loaders.use_jwt(access=access, refresh=refresh or None)
 
         BaseObjectOrm.ROOT_URL = root_url
-        ClientProject.ROOT_URL = root_url
+        ClientCodeRepository.ROOT_URL = root_url
 
-        project_branch = ClientProject.get(pk=resolved_branch_uid, timeout=timeout)
-        updates = project_branch.get_time_index_table_updates(timeout=timeout)
+        code_repository_branch = ClientCodeRepository.get(pk=resolved_branch_uid, timeout=timeout)
+        updates = code_repository_branch.get_time_index_table_updates(timeout=timeout)
 
         out: list[dict[str, Any]] = []
         for u in updates:
@@ -2188,7 +2188,7 @@ def get_project_time_index_table_updates(
         if err_name in {"AuthenticationError", "PermissionDeniedError"}:
             raise NotLoggedIn(str(e) or "Not logged in.") from e
         if err_name == "NotFoundError":
-            raise ApiError(f"ProjectBranch not found: {project_branch_uid}") from e
+            raise ApiError(f"CodeRepositoryBranch not found: {code_repository_branch_uid}") from e
         raise ApiError(f"Time-index table updates fetch failed: {e}") from e
     finally:
         if client_utils is not None:
@@ -2203,11 +2203,13 @@ def get_project_time_index_table_updates(
                 BaseObjectOrm.ROOT_URL = old_base_root_url
             except Exception:
                 pass
-        if old_project_root_url is not None:
+        if old_code_repository_root_url is not None:
             try:
-                from mainsequence.client.models_foundry import ProjectBranch as ClientProject
+                from mainsequence.client.models_foundry import (
+                    CodeRepositoryBranch as ClientCodeRepository,
+                )
 
-                ClientProject.ROOT_URL = old_project_root_url
+                ClientCodeRepository.ROOT_URL = old_code_repository_root_url
             except Exception:
                 pass
 
@@ -2218,10 +2220,10 @@ def get_project_time_index_table_updates(
                 os.environ[k] = v
 
 
-def create_project_image(
+def create_code_repository_image(
     *,
-    project_repo_hash: str,
-    related_project_branch_uid: str,
+    code_repository_commit_hash: str,
+    related_code_repository_branch_uid: str,
     base_image_uid: str | None = None,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -2229,7 +2231,7 @@ def create_project_image(
     Create a project image via SDK client model.
 
     Single source of truth:
-      - delegates payload construction and request behavior to `ProjectImage.create()`
+      - delegates payload construction and request behavior to `CodeRepositoryImage.create()`
       - avoids duplicating the endpoint contract in the CLI API wrapper
     """
     tokens = get_tokens()
@@ -2261,26 +2263,28 @@ def create_project_image(
         else:
             os.environ.pop("MAINSEQUENCE_REFRESH_TOKEN", None)
         os.environ["MAINSEQUENCE_ENDPOINT"] = endpoint
-        resolved_branch_uid = resolve_project_branch_uid(related_project_branch_uid)
+        resolved_branch_uid = resolve_code_repository_branch_uid(related_code_repository_branch_uid)
 
         from mainsequence.client import utils as _client_utils
         from mainsequence.client.base import BaseObjectOrm
-        from mainsequence.client.models_foundry import ProjectImage as ClientProjectImage
+        from mainsequence.client.models_foundry import (
+            CodeRepositoryImage as ClientCodeRepositoryImage,
+        )
 
         client_utils = _client_utils
         old_provider = getattr(client_utils.loaders, "provider", None)
         old_base_root_url = BaseObjectOrm.ROOT_URL
-        old_image_root_url = getattr(ClientProjectImage, "ROOT_URL", None)
+        old_image_root_url = getattr(ClientCodeRepositoryImage, "ROOT_URL", None)
 
         _set_client_utils_endpoint(client_utils, endpoint)
         client_utils.loaders.use_jwt(access=access, refresh=refresh or None)
 
         BaseObjectOrm.ROOT_URL = root_url
-        ClientProjectImage.ROOT_URL = root_url
+        ClientCodeRepositoryImage.ROOT_URL = root_url
 
-        created = ClientProjectImage.create(
-            project_repo_hash=project_repo_hash,
-            related_project_branch_uid=resolved_branch_uid,
+        created = ClientCodeRepositoryImage.create(
+            code_repository_commit_hash=code_repository_commit_hash,
+            related_code_repository_branch_uid=resolved_branch_uid,
             base_image_uid=base_image_uid,
             timeout=timeout,
         )
@@ -2295,8 +2299,8 @@ def create_project_image(
         if err_name in {"AuthenticationError", "PermissionDeniedError"}:
             raise NotLoggedIn(str(e) or "Not logged in.") from e
         if err_name == "NotFoundError":
-            raise ApiError(f"ProjectBranch not found: {related_project_branch_uid}") from e
-        raise ApiError(f"Project image create failed: {e}") from e
+            raise ApiError(f"CodeRepositoryBranch not found: {related_code_repository_branch_uid}") from e
+        raise ApiError(f"CodeRepository image create failed: {e}") from e
     finally:
         if client_utils is not None:
             try:
@@ -2312,9 +2316,11 @@ def create_project_image(
                 pass
         if old_image_root_url is not None:
             try:
-                from mainsequence.client.models_foundry import ProjectImage as ClientProjectImage
+                from mainsequence.client.models_foundry import (
+                    CodeRepositoryImage as ClientCodeRepositoryImage,
+                )
 
-                ClientProjectImage.ROOT_URL = old_image_root_url
+                ClientCodeRepositoryImage.ROOT_URL = old_image_root_url
             except Exception:
                 pass
 
@@ -2325,9 +2331,9 @@ def create_project_image(
                 os.environ[k] = v
 
 
-def list_project_images(
+def list_code_repository_images(
     *,
-    related_project_branch_uid: str,
+    related_code_repository_branch_uid: str,
     filters: dict[str, Any] | None = None,
     timeout: int | None = None,
 ) -> list[dict[str, Any]]:
@@ -2335,7 +2341,7 @@ def list_project_images(
     List project images for a project via SDK client model.
 
     Single source of truth:
-      - delegates filtering and payload parsing to `ProjectImage.filter()`
+      - delegates filtering and payload parsing to `CodeRepositoryImage.filter()`
       - avoids duplicating filter endpoint behavior in the CLI API wrapper
     """
     tokens = get_tokens()
@@ -2367,26 +2373,28 @@ def list_project_images(
         else:
             os.environ.pop("MAINSEQUENCE_REFRESH_TOKEN", None)
         os.environ["MAINSEQUENCE_ENDPOINT"] = endpoint
-        resolved_branch_uid = resolve_project_branch_uid(related_project_branch_uid)
+        resolved_branch_uid = resolve_code_repository_branch_uid(related_code_repository_branch_uid)
 
         from mainsequence.client import utils as _client_utils
         from mainsequence.client.base import BaseObjectOrm
-        from mainsequence.client.models_foundry import ProjectImage as ClientProjectImage
+        from mainsequence.client.models_foundry import (
+            CodeRepositoryImage as ClientCodeRepositoryImage,
+        )
 
         client_utils = _client_utils
         old_provider = getattr(client_utils.loaders, "provider", None)
         old_base_root_url = BaseObjectOrm.ROOT_URL
-        old_image_root_url = getattr(ClientProjectImage, "ROOT_URL", None)
+        old_image_root_url = getattr(ClientCodeRepositoryImage, "ROOT_URL", None)
 
         _set_client_utils_endpoint(client_utils, endpoint)
         client_utils.loaders.use_jwt(access=access, refresh=refresh or None)
 
         BaseObjectOrm.ROOT_URL = root_url
-        ClientProjectImage.ROOT_URL = root_url
+        ClientCodeRepositoryImage.ROOT_URL = root_url
 
         merged_filters = dict(filters or {})
-        merged_filters["related_project_branch_uid"] = resolved_branch_uid
-        images = ClientProjectImage.filter(timeout=timeout, **merged_filters)
+        merged_filters["related_code_repository_branch_uid"] = resolved_branch_uid
+        images = ClientCodeRepositoryImage.filter(timeout=timeout, **merged_filters)
 
         out: list[dict[str, Any]] = []
         for image in images:
@@ -2403,8 +2411,8 @@ def list_project_images(
         if err_name in {"AuthenticationError", "PermissionDeniedError"}:
             raise NotLoggedIn(str(e) or "Not logged in.") from e
         if err_name == "NotFoundError":
-            raise ApiError(f"ProjectBranch not found: {related_project_branch_uid}") from e
-        raise ApiError(f"Project images fetch failed: {e}") from e
+            raise ApiError(f"CodeRepositoryBranch not found: {related_code_repository_branch_uid}") from e
+        raise ApiError(f"CodeRepository images fetch failed: {e}") from e
     finally:
         if client_utils is not None:
             try:
@@ -2420,9 +2428,11 @@ def list_project_images(
                 pass
         if old_image_root_url is not None:
             try:
-                from mainsequence.client.models_foundry import ProjectImage as ClientProjectImage
+                from mainsequence.client.models_foundry import (
+                    CodeRepositoryImage as ClientCodeRepositoryImage,
+                )
 
-                ClientProjectImage.ROOT_URL = old_image_root_url
+                ClientCodeRepositoryImage.ROOT_URL = old_image_root_url
             except Exception:
                 pass
 
@@ -2433,7 +2443,7 @@ def list_project_images(
                 os.environ[k] = v
 
 
-def get_project_image(
+def get_code_repository_image(
     *,
     image_uid: str,
     timeout: int | None = None,
@@ -2441,8 +2451,8 @@ def get_project_image(
     try:
         image = _run_sdk_model_operation(
             module_name="mainsequence.client.models_foundry",
-            class_name="ProjectImage",
-            operation=lambda ClientProjectImage: ClientProjectImage.get(
+            class_name="CodeRepositoryImage",
+            operation=lambda ClientCodeRepositoryImage: ClientCodeRepositoryImage.get(
                 pk=image_uid,
                 timeout=timeout,
             ),
@@ -2451,37 +2461,37 @@ def get_project_image(
     except Exception as e:
         err_name = type(e).__name__
         if err_name == "NotFoundError":
-            raise ApiError(f"Project image not found: {image_uid}") from e
+            raise ApiError(f"CodeRepository image not found: {image_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Project image fetch failed: {e}") from e
+        raise ApiError(f"CodeRepository image fetch failed: {e}") from e
 
 
-def delete_project_image(
+def delete_code_repository_image(
     *,
     image_uid: str,
     timeout: int | None = None,
 ) -> dict[str, Any]:
     try:
 
-        def _delete(ClientProjectImage):
-            image = ClientProjectImage.get(pk=image_uid, timeout=timeout)
+        def _delete(ClientCodeRepositoryImage):
+            image = ClientCodeRepositoryImage.get(pk=image_uid, timeout=timeout)
             payload = _sdk_object_to_dict(image)
             image.delete()
             return payload
 
         return _run_sdk_model_operation(
             module_name="mainsequence.client.models_foundry",
-            class_name="ProjectImage",
+            class_name="CodeRepositoryImage",
             operation=_delete,
         )
     except Exception as e:
         err_name = type(e).__name__
         if err_name == "NotFoundError":
-            raise ApiError(f"Project image not found: {image_uid}") from e
+            raise ApiError(f"CodeRepository image not found: {image_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Project image deletion failed: {e}") from e
+        raise ApiError(f"CodeRepository image deletion failed: {e}") from e
 
 
 def _normalize_release_kind_value(value: Any) -> str | None:
@@ -2601,9 +2611,9 @@ def delete_resource_release(
         raise ApiError(f"Resource release deletion failed: {e}") from e
 
 
-def list_project_jobs(
+def list_code_repository_jobs(
     *,
-    project_branch_uid: str,
+    code_repository_branch_uid: str,
     filters: dict[str, Any] | None = None,
     timeout: int | None = None,
 ) -> list[dict[str, Any]]:
@@ -2642,7 +2652,7 @@ def list_project_jobs(
         else:
             os.environ.pop("MAINSEQUENCE_REFRESH_TOKEN", None)
         os.environ["MAINSEQUENCE_ENDPOINT"] = endpoint
-        resolved_branch_uid = resolve_project_branch_uid(project_branch_uid)
+        resolved_branch_uid = resolve_code_repository_branch_uid(code_repository_branch_uid)
 
         from mainsequence.client import utils as _client_utils
         from mainsequence.client.base import BaseObjectOrm
@@ -2662,7 +2672,7 @@ def list_project_jobs(
         extra_filters = dict(filters or {})
         jobs = ClientJob.filter(
             timeout=timeout,
-            **{**extra_filters, "project_branch_uid": resolved_branch_uid},
+            **{**extra_filters, "code_repository_branch_uid": resolved_branch_uid},
         )
 
         out: list[dict[str, Any]] = []
@@ -2680,8 +2690,8 @@ def list_project_jobs(
         if err_name in {"AuthenticationError", "PermissionDeniedError"}:
             raise NotLoggedIn(str(e) or "Not logged in.") from e
         if err_name == "NotFoundError":
-            raise ApiError(f"ProjectBranch not found: {project_branch_uid}") from e
-        raise ApiError(f"Project jobs fetch failed: {e}") from e
+            raise ApiError(f"CodeRepositoryBranch not found: {code_repository_branch_uid}") from e
+        raise ApiError(f"CodeRepository jobs fetch failed: {e}") from e
     finally:
         if client_utils is not None:
             try:
@@ -2710,9 +2720,9 @@ def list_project_jobs(
                 os.environ[k] = v
 
 
-def list_project_resources(
+def list_code_repository_resources(
     *,
-    project_branch_uid: str,
+    code_repository_branch_uid: str,
     repo_commit_sha: str,
     resource_type: str | None = None,
     filters: dict[str, Any] | None = None,
@@ -2722,7 +2732,7 @@ def list_project_resources(
     List project resources for a project and repository commit via SDK client model.
 
     Single source of truth:
-      - delegates filtering and payload parsing to `ProjectResource.filter()`
+      - delegates filtering and payload parsing to `CodeRepositoryResource.filter()`
     """
     tokens = get_tokens()
     access = (tokens.get("access") or "").strip()
@@ -2753,22 +2763,24 @@ def list_project_resources(
         else:
             os.environ.pop("MAINSEQUENCE_REFRESH_TOKEN", None)
         os.environ["MAINSEQUENCE_ENDPOINT"] = endpoint
-        resolved_branch_uid = resolve_project_branch_uid(project_branch_uid)
+        resolved_branch_uid = resolve_code_repository_branch_uid(code_repository_branch_uid)
 
         from mainsequence.client import utils as _client_utils
         from mainsequence.client.base import BaseObjectOrm
-        from mainsequence.client.models_helpers import ProjectResource as ClientProjectResource
+        from mainsequence.client.models_helpers import (
+            CodeRepositoryResource as ClientCodeRepositoryResource,
+        )
 
         client_utils = _client_utils
         old_provider = getattr(client_utils.loaders, "provider", None)
         old_base_root_url = BaseObjectOrm.ROOT_URL
-        old_resource_root_url = getattr(ClientProjectResource, "ROOT_URL", None)
+        old_resource_root_url = getattr(ClientCodeRepositoryResource, "ROOT_URL", None)
 
         _set_client_utils_endpoint(client_utils, endpoint)
         client_utils.loaders.use_jwt(access=access, refresh=refresh or None)
 
         BaseObjectOrm.ROOT_URL = root_url
-        ClientProjectResource.ROOT_URL = root_url
+        ClientCodeRepositoryResource.ROOT_URL = root_url
 
         merged_filters: dict[str, Any] = dict(filters or {})
         merged_filters.update(
@@ -2781,7 +2793,7 @@ def list_project_resources(
         if normalized_resource_type:
             merged_filters["resource_type"] = normalized_resource_type
 
-        resources = ClientProjectResource.filter(timeout=timeout, **merged_filters)
+        resources = ClientCodeRepositoryResource.filter(timeout=timeout, **merged_filters)
 
         out: list[dict[str, Any]] = []
         for resource in resources:
@@ -2798,8 +2810,8 @@ def list_project_resources(
         if err_name in {"AuthenticationError", "PermissionDeniedError"}:
             raise NotLoggedIn(str(e) or "Not logged in.") from e
         if err_name == "NotFoundError":
-            raise ApiError(f"ProjectBranch not found: {project_branch_uid}") from e
-        raise ApiError(f"Project resources fetch failed: {e}") from e
+            raise ApiError(f"CodeRepositoryBranch not found: {code_repository_branch_uid}") from e
+        raise ApiError(f"CodeRepository resources fetch failed: {e}") from e
     finally:
         if client_utils is not None:
             try:
@@ -2816,10 +2828,10 @@ def list_project_resources(
         if old_resource_root_url is not None:
             try:
                 from mainsequence.client.models_helpers import (
-                    ProjectResource as ClientProjectResource,
+                    CodeRepositoryResource as ClientCodeRepositoryResource,
                 )
 
-                ClientProjectResource.ROOT_URL = old_resource_root_url
+                ClientCodeRepositoryResource.ROOT_URL = old_resource_root_url
             except Exception:
                 pass
 
@@ -2830,7 +2842,7 @@ def list_project_resources(
                 os.environ[k] = v
 
 
-def create_project_resource_release(
+def create_code_repository_resource_release(
     *,
     release_kind: str,
     resource_uid: str,
@@ -2847,8 +2859,8 @@ def create_project_resource_release(
     Create a resource release via SDK client model.
 
     Single source of truth:
-      - delegates to `ProjectResource.create_dashboard()` or
-        `ProjectResource.create_fastapi()`
+      - delegates to `CodeRepositoryResource.create_dashboard()` or
+        `CodeRepositoryResource.create_fastapi()`
       - which in turn use `ResourceRelease.create()`
     """
     tokens = get_tokens()
@@ -2883,20 +2895,22 @@ def create_project_resource_release(
 
         from mainsequence.client import utils as _client_utils
         from mainsequence.client.base import BaseObjectOrm
-        from mainsequence.client.models_helpers import ProjectResource as ClientProjectResource
+        from mainsequence.client.models_helpers import (
+            CodeRepositoryResource as ClientCodeRepositoryResource,
+        )
 
         client_utils = _client_utils
         old_provider = getattr(client_utils.loaders, "provider", None)
         old_base_root_url = BaseObjectOrm.ROOT_URL
-        old_resource_root_url = getattr(ClientProjectResource, "ROOT_URL", None)
+        old_resource_root_url = getattr(ClientCodeRepositoryResource, "ROOT_URL", None)
 
         _set_client_utils_endpoint(client_utils, endpoint)
         client_utils.loaders.use_jwt(access=access, refresh=refresh or None)
 
         BaseObjectOrm.ROOT_URL = root_url
-        ClientProjectResource.ROOT_URL = root_url
+        ClientCodeRepositoryResource.ROOT_URL = root_url
 
-        resource = ClientProjectResource.get(pk=resource_uid, timeout=timeout)
+        resource = ClientCodeRepositoryResource.get(pk=resource_uid, timeout=timeout)
         create_kwargs: dict[str, Any] = {
             "related_image_uid": related_image_uid,
             "cpu_request": cpu_request,
@@ -2917,7 +2931,7 @@ def create_project_resource_release(
 
         create_method = getattr(resource, create_method_name, None)
         if not callable(create_method):
-            raise ApiError(f"ProjectResource does not implement {create_method_name}().")
+            raise ApiError(f"CodeRepositoryResource does not implement {create_method_name}().")
         created = create_method(**create_kwargs)
 
         if isinstance(created, dict):
@@ -2931,8 +2945,8 @@ def create_project_resource_release(
         if err_name in {"AuthenticationError", "PermissionDeniedError"}:
             raise NotLoggedIn(str(e) or "Not logged in.") from e
         if err_name == "NotFoundError":
-            raise ApiError(f"Project resource not found: {resource_uid}") from e
-        raise ApiError(f"Project resource release create failed: {e}") from e
+            raise ApiError(f"CodeRepository resource not found: {resource_uid}") from e
+        raise ApiError(f"CodeRepository resource release create failed: {e}") from e
     finally:
         if client_utils is not None:
             try:
@@ -2949,10 +2963,10 @@ def create_project_resource_release(
         if old_resource_root_url is not None:
             try:
                 from mainsequence.client.models_helpers import (
-                    ProjectResource as ClientProjectResource,
+                    CodeRepositoryResource as ClientCodeRepositoryResource,
                 )
 
-                ClientProjectResource.ROOT_URL = old_resource_root_url
+                ClientCodeRepositoryResource.ROOT_URL = old_resource_root_url
             except Exception:
                 pass
 
@@ -4511,10 +4525,10 @@ def remove_meta_table_labels(
     )
 
 
-def create_project_job(
+def create_code_repository_job(
     *,
     name: str,
-    project_branch_uid: str,
+    code_repository_branch_uid: str,
     execution_path: str | None = None,
     app_name: str | None = None,
     task_schedule: dict[str, Any] | str | None = None,
@@ -4564,7 +4578,7 @@ def create_project_job(
         else:
             os.environ.pop("MAINSEQUENCE_REFRESH_TOKEN", None)
         os.environ["MAINSEQUENCE_ENDPOINT"] = endpoint
-        resolved_branch_uid = resolve_project_branch_uid(project_branch_uid)
+        resolved_branch_uid = resolve_code_repository_branch_uid(code_repository_branch_uid)
 
         from mainsequence.client import utils as _client_utils
         from mainsequence.client.base import BaseObjectOrm
@@ -4583,7 +4597,7 @@ def create_project_job(
 
         created = ClientJob.create(
             name=name,
-            project_branch_uid=resolved_branch_uid,
+            code_repository_branch_uid=resolved_branch_uid,
             execution_path=execution_path,
             app_name=app_name,
             task_schedule=task_schedule,
@@ -4611,8 +4625,8 @@ def create_project_job(
         if err_name in {"AuthenticationError", "PermissionDeniedError"}:
             raise NotLoggedIn(str(e) or "Not logged in.") from e
         if err_name == "NotFoundError":
-            raise ApiError(f"ProjectBranch not found: {project_branch_uid}") from e
-        raise ApiError(f"Project job create failed: {e}") from e
+            raise ApiError(f"CodeRepositoryBranch not found: {code_repository_branch_uid}") from e
+        raise ApiError(f"CodeRepository job create failed: {e}") from e
     finally:
         if client_utils is not None:
             try:
@@ -4641,7 +4655,7 @@ def create_project_job(
                 os.environ[k] = v
 
 
-def get_project_job(
+def get_code_repository_job(
     job_uid: str,
     *,
     timeout: int | None = None,
@@ -4662,10 +4676,10 @@ def get_project_job(
             raise ApiError(f"Job not found: {job_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Project job fetch failed: {e}") from e
+        raise ApiError(f"CodeRepository job fetch failed: {e}") from e
 
 
-def run_project_job(
+def run_code_repository_job(
     job_uid: str,
     *,
     command_args: list[str] | None = None,
@@ -4760,7 +4774,7 @@ def run_project_job(
             raise NotLoggedIn(str(e) or "Not logged in.") from e
         if err_name == "NotFoundError":
             raise ApiError(f"Job not found: {job_uid}") from e
-        raise ApiError(f"Project job run failed: {e}") from e
+        raise ApiError(f"CodeRepository job run failed: {e}") from e
     finally:
         if client_utils is not None:
             try:
@@ -4789,7 +4803,7 @@ def run_project_job(
                 os.environ[k] = v
 
 
-def list_project_job_runs(
+def list_code_repository_job_runs(
     *,
     job_uid: str,
     filters: dict[str, Any] | None = None,
@@ -4865,7 +4879,7 @@ def list_project_job_runs(
             raise NotLoggedIn(str(e) or "Not logged in.") from e
         if err_name == "NotFoundError":
             raise ApiError(f"Job not found: {job_uid}") from e
-        raise ApiError(f"Project job runs fetch failed: {e}") from e
+        raise ApiError(f"CodeRepository job runs fetch failed: {e}") from e
     finally:
         if client_utils is not None:
             try:
@@ -4894,7 +4908,7 @@ def list_project_job_runs(
                 os.environ[k] = v
 
 
-def get_project_job_run_logs(
+def get_code_repository_job_run_logs(
     job_run_uid: str,
     *,
     start: int | float | None = None,
@@ -4981,7 +4995,7 @@ def get_project_job_run_logs(
             raise NotLoggedIn(str(e) or "Not logged in.") from e
         if err_name == "NotFoundError":
             raise ApiError(f"Job run not found: {job_run_uid}") from e
-        raise ApiError(f"Project job run logs fetch failed: {e}") from e
+        raise ApiError(f"CodeRepository job run logs fetch failed: {e}") from e
     finally:
         if client_utils is not None:
             try:
@@ -5010,7 +5024,7 @@ def get_project_job_run_logs(
                 os.environ[k] = v
 
 
-def get_project_job_run_resource_usage(
+def get_code_repository_job_run_resource_usage(
     job_run_uid: str,
     *,
     start: int | float | None = None,
@@ -5048,7 +5062,7 @@ def _mcp_client_version() -> str:
         return "unknown"
 
 
-def fetch_platform_project_skill_catalog() -> PlatformProjectSkillCatalog:
+def fetch_platform_code_repository_skill_catalog() -> PlatformCodeRepositorySkillCatalog:
     """Fetch and validate the server-owned platform skills through authenticated MCP."""
 
     initialize_result = _mcp_json_rpc(
@@ -5146,13 +5160,13 @@ def fetch_platform_project_skill_catalog() -> PlatformProjectSkillCatalog:
 
     ontology_row = _read_resource(PLATFORM_ONTOLOGY_URI, ontology_list_row)
     try:
-        declarations = parse_platform_project_skill_declarations(
+        declarations = parse_platform_code_repository_skill_declarations(
             ontology_row["_content"].get("text")
         )
         listed_skill_uris = {
             uri for uri in resources_by_uri if uri.startswith(PLATFORM_SKILL_URI_PREFIX)
         }
-        validate_platform_project_skill_membership(
+        validate_platform_code_repository_skill_membership(
             declarations,
             listed_skill_uris=listed_skill_uris,
         )
@@ -5162,11 +5176,11 @@ def fetch_platform_project_skill_catalog() -> PlatformProjectSkillCatalog:
             _read_resource(declaration.uri, resources_by_uri[declaration.uri])
             for declaration in declarations
         )
-        return parse_platform_project_skill_catalog(
+        return parse_platform_code_repository_skill_catalog(
             platform_rows,
             source_url=_full(MCP_RESOURCE_PATH),
         )
-    except ProjectSkillAssemblyError as exc:
+    except CodeRepositorySkillAssemblyError as exc:
         raise ApiError(f"Platform MCP resource catalog is invalid: {exc}") from exc
 
 
@@ -5183,13 +5197,13 @@ def list_data_sources(status: str | None = "AVAILABLE") -> list[dict]:
     return _json_results(r)
 
 
-def list_project_base_images() -> list[dict]:
+def list_code_repository_base_images() -> list[dict]:
     """
-    List available ProjectBaseImage rows.
+    List available CodeRepositoryBaseImage rows.
     """
-    r = authed("GET", "/api/v1/project-base-images/")
+    r = authed("GET", "/api/v1/code-repository-base-images/")
     if not r.ok:
-        raise ApiError(f"Project base images fetch failed ({r.status_code}).")
+        raise ApiError(f"CodeRepository base images fetch failed ({r.status_code}).")
     return _json_results(r)
 
 
@@ -5203,10 +5217,10 @@ def list_github_organizations() -> list[dict]:
     return _json_results(r)
 
 
-def create_project(
+def create_code_repository(
     *,
-    project_name: str,
-    project_type: str = "python",
+    code_repository_name: str,
+    code_repository_type: str = "python",
     default_base_image_uid: str | None = None,
     github_org_uid: str | None = None,
     env_vars: dict[str, str] | None = None,
@@ -5216,8 +5230,8 @@ def create_project(
     Create a new project.
     """
     payload: dict[str, Any] = {
-        "project_name": project_name,
-        "project_type": project_type,
+        "code_repository_name": code_repository_name,
+        "code_repository_type": code_repository_type,
     }
 
     if default_base_image_uid not in (None, ""):
@@ -5229,7 +5243,7 @@ def create_project(
     if labels is not None:
         payload["labels"] = list(labels)
 
-    r = authed("POST", "/api/v1/projects/", payload)
+    r = authed("POST", "/api/v1/code-repositories/", payload)
     if not r.ok:
         msg = r.text or ""
         try:
@@ -5238,27 +5252,27 @@ def create_project(
                 msg = data.get("detail") or data.get("message") or msg
         except Exception:
             pass
-        raise ApiError(f"Project create failed ({r.status_code}). {msg}".strip())
+        raise ApiError(f"CodeRepository create failed ({r.status_code}). {msg}".strip())
 
     if not r.headers.get("content-type", "").startswith("application/json"):
         raise ApiError(
-            f"Project create response was not JSON (content-type: {r.headers.get('content-type')})."
+            f"CodeRepository create response was not JSON (content-type: {r.headers.get('content-type')})."
         )
     data = r.json()
     if not isinstance(data, dict):
-        raise ApiError("Project create response had unexpected payload shape.")
+        raise ApiError("CodeRepository create response had unexpected payload shape.")
     return data
 
 
-def delete_project(project_uid: str) -> dict[str, Any] | None:
+def delete_code_repository(code_repository_uid: str) -> dict[str, Any] | None:
     """
     Delete a project by public UID.
 
     Mirrors backend behavior:
-      - DELETE /api/v1/projects/{uid}/
+      - DELETE /api/v1/code-repositories/{uid}/
     """
-    normalized_uid = resolve_project_uid(project_uid)
-    path = f"/api/v1/projects/{normalized_uid}/"
+    normalized_uid = resolve_code_repository_uid(code_repository_uid)
+    path = f"/api/v1/code-repositories/{normalized_uid}/"
 
     r = authed("DELETE", path)
     if not r.ok:
@@ -5269,7 +5283,7 @@ def delete_project(project_uid: str) -> dict[str, Any] | None:
                 msg = data.get("detail") or data.get("message") or msg
         except Exception:
             pass
-        raise ApiError(f"Project delete failed ({r.status_code}). {msg}".strip())
+        raise ApiError(f"CodeRepository delete failed ({r.status_code}). {msg}".strip())
 
     if r.content:
         try:
@@ -5279,7 +5293,7 @@ def delete_project(project_uid: str) -> dict[str, Any] | None:
     return None
 
 
-def bulk_delete_projects(
+def bulk_delete_code_repositories(
     *,
     uids: list[str],
     delete_repositories: bool = False,
@@ -5288,16 +5302,16 @@ def bulk_delete_projects(
         "selection": {"mode": "explicit", "uids": list(uids)},
         "options": {"delete_repositories": delete_repositories},
     }
-    r = authed("POST", "/api/v1/projects/bulk-delete/", payload)
+    r = authed("POST", "/api/v1/code-repositories/bulk-delete/", payload)
     if not r.ok:
-        raise ApiError(f"Project bulk delete failed ({r.status_code}). {(r.text or '').strip()}")
+        raise ApiError(f"CodeRepository bulk delete failed ({r.status_code}). {(r.text or '').strip()}")
     data = r.json()
     if not isinstance(data, dict):
-        raise ApiError("Project bulk delete returned an unexpected payload.")
+        raise ApiError("CodeRepository bulk delete returned an unexpected payload.")
     return data
 
 
-def add_deploy_key(project_uid: str, key_title: str, public_key: str) -> None:
+def add_deploy_key(code_repository_uid: str, key_title: str, public_key: str) -> None:
     """
     Add a deploy key for the project.
 
@@ -5306,7 +5320,7 @@ def add_deploy_key(project_uid: str, key_title: str, public_key: str) -> None:
     """
     r = authed(
         "POST",
-        f"/api/v1/projects/{resolve_project_uid(project_uid)}/add-deploy-key/",
+        f"/api/v1/code-repositories/{resolve_code_repository_uid(code_repository_uid)}/add-deploy-key/",
         {"key_title": key_title, "public_key": public_key},
     )
     r.raise_for_status()

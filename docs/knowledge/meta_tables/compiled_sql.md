@@ -90,7 +90,7 @@ The return value is a `MetaTableCompiledSQLOperation` Pydantic object.
 If `scope.data_source_uid` is omitted or `None`, the SDK leaves it out of the
 request. The backend derives the execution connection from the declared
 MetaTables and rejects a scope that spans multiple data sources. This keeps
-deployed runtime code on the backend-derived ProjectBranch/environment path and
+deployed runtime code on the backend-derived CodeRepositoryBranch/environment path and
 avoids a separate Project lookup.
 
 The SDK validates:

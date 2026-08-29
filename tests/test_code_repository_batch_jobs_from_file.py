@@ -99,8 +99,10 @@ def test_job_run_job_posts_to_canonical_action(monkeypatch):
     job = Job(
         uid="7d0ab07c-d1c0-4b7f-9c69-3c1a41c0a4da",
         name="Simulated Prices",
-        project_branch_uid="5a28020a-0f1b-47ee-aab8-334286234bea",
+        code_repository_branch_uid="5a28020a-0f1b-47ee-aab8-334286234bea",
         execution_path="scripts/simulated_prices_launcher.py",
+        related_image_uid="f3cb8477-df47-49cb-a151-80b746fb1243",
+        image_status="ready",
     )
     out = job.run_job(timeout=30, command_args=["--name", "demo-from-cli"])
 

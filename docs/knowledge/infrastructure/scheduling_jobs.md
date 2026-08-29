@@ -44,7 +44,7 @@ For shared projects, treat recurring schedules as part of the repository.
 That means:
 
 - define recurring Jobs and ResourceReleases under `.mainsequence/workflows/`
-- validate each document against the current backend ProjectBranch workflow contract
+- validate each document against the current backend CodeRepositoryBranch workflow contract
 - commit and push the validated file so repository events apply it
 - use direct CLI or client-created jobs mainly for experiments, backfills, or one-off operational tasks
 
@@ -63,9 +63,9 @@ There are two valid workflows, and they serve different purposes.
 This is the best option for long-lived schedules used by a team.
 
 Retrieve the current YAML from
-`GET /api/v1/project-branches/{uid}/workflow-template/`. Validate the proposed
+`GET /api/v1/code-repository-branches/{uid}/workflow-template/`. Validate the proposed
 repository `path` and `content` with
-`POST /api/v1/project-branches/{uid}/validate-workflow/`, save the result as a
+`POST /api/v1/code-repository-branches/{uid}/validate-workflow/`, save the result as a
 direct `.yaml` or `.yml` child of `.mainsequence/workflows/`, then commit it.
 
 The backend owns the parser, accepted `api_version`, resource kinds, defaults,
@@ -96,7 +96,7 @@ The CLI is the fastest operational tool once the project already exists locally.
 Before creating or updating scheduled jobs, make sure the project state is consistent:
 
 ```bash
-mainsequence project sync -m "Prepare scheduling changes"
+mainsequence code-repository sync -m "Prepare scheduling changes"
 ```
 
 That command is more than a `git push`. It updates the local environment, exports `requirements.txt`, creates a commit, and pushes the result in the platform-compatible flow.
@@ -106,7 +106,7 @@ That command is more than a `git push`. It updates the local environment, export
 After backend validation, commit the workflow through the standard sync:
 
 ```bash
-mainsequence project sync -m "Update project workflow"
+mainsequence code-repository sync -m "Update project workflow"
 ```
 
 The push triggers backend repository processing. Inspect the repository-event
@@ -119,12 +119,12 @@ success. For reviewed job declarations, make compute intent explicit:
 If you want to validate one of the synchronized jobs immediately instead of waiting for the scheduler, use the same CLI loop:
 
 ```bash
-mainsequence project jobs list
-mainsequence project jobs run <JOB_UID>
-mainsequence project jobs run <JOB_UID> --arg demo-from-cli
-mainsequence project jobs run <JOB_UID> -- --name demo-from-cli
-mainsequence project jobs runs list <JOB_UID>
-mainsequence project jobs runs logs <JOB_RUN_UID> --max-wait-seconds 900
+mainsequence code-repository jobs list
+mainsequence code-repository jobs run <JOB_UID>
+mainsequence code-repository jobs run <JOB_UID> --arg demo-from-cli
+mainsequence code-repository jobs run <JOB_UID> -- --name demo-from-cli
+mainsequence code-repository jobs runs list <JOB_UID>
+mainsequence code-repository jobs runs logs <JOB_RUN_UID> --max-wait-seconds 900
 ```
 
 ### Create a manual job
@@ -132,7 +132,7 @@ mainsequence project jobs runs logs <JOB_RUN_UID> --max-wait-seconds 900
 Use this when you want a job that only runs when someone triggers it:
 
 ```bash
-mainsequence project jobs create \
+mainsequence code-repository jobs create \
   --name "Simulated Prices - Manual" \
   --execution-path scripts/simulated_prices_launcher.py \
   --related-image-uid <IMAGE_UID>
@@ -141,12 +141,12 @@ mainsequence project jobs create \
 Every persisted job is exact-image backed, but creation has one image owner.
 For a manually pinned job, you select the exact ready image. For an
 automatically deployed job, you omit the image and the backend derives the
-initial exact image from the ProjectBranch's persisted synchronized commit.
+initial exact image from the CodeRepositoryBranch's persisted synchronized commit.
 
 To opt a standalone job into future exact-image promotion:
 
 ```bash
-mainsequence project jobs create \
+mainsequence code-repository jobs create \
   --name "Simulated Prices - Promoted" \
   --execution-path scripts/simulated_prices_launcher.py \
   --automatic-deployment \
@@ -162,12 +162,12 @@ select a branch tip.
 Then run it:
 
 ```bash
-mainsequence project jobs list
-mainsequence project jobs run <JOB_UID>
-mainsequence project jobs run <JOB_UID> --arg demo-from-cli
-mainsequence project jobs run <JOB_UID> -- --name demo-from-cli
-mainsequence project jobs runs list <JOB_UID>
-mainsequence project jobs runs logs <JOB_RUN_UID> --max-wait-seconds 900
+mainsequence code-repository jobs list
+mainsequence code-repository jobs run <JOB_UID>
+mainsequence code-repository jobs run <JOB_UID> --arg demo-from-cli
+mainsequence code-repository jobs run <JOB_UID> -- --name demo-from-cli
+mainsequence code-repository jobs runs list <JOB_UID>
+mainsequence code-repository jobs runs logs <JOB_RUN_UID> --max-wait-seconds 900
 ```
 
 ### Create an interval schedule
@@ -175,7 +175,7 @@ mainsequence project jobs runs logs <JOB_RUN_UID> --max-wait-seconds 900
 Use interval schedules when the cadence is simple, for example every hour:
 
 ```bash
-mainsequence project jobs create \
+mainsequence code-repository jobs create \
   --name "Simulated Prices - Hourly" \
   --execution-path scripts/simulated_prices_launcher.py \
   --related-image-uid <IMAGE_UID> \
@@ -189,7 +189,7 @@ mainsequence project jobs create \
 Use crontab when you want calendar-based timing such as nightly runs:
 
 ```bash
-mainsequence project jobs create \
+mainsequence code-repository jobs create \
   --name "Simulated Prices - Nightly" \
   --execution-path scripts/simulated_prices_launcher.py \
   --related-image-uid <IMAGE_UID> \
@@ -200,7 +200,7 @@ mainsequence project jobs create \
 You can also add a start time or mark the schedule as one-off:
 
 ```bash
-mainsequence project jobs create \
+mainsequence code-repository jobs create \
   --name "One-time Backfill" \
   --execution-path scripts/simulated_prices_launcher.py \
   --related-image-uid <IMAGE_UID> \
@@ -215,9 +215,9 @@ mainsequence project jobs create \
 Once the job exists, the basic operational loop is:
 
 ```bash
-mainsequence project jobs list
-mainsequence project jobs runs list <JOB_UID>
-mainsequence project jobs runs logs <JOB_RUN_UID> --max-wait-seconds 900
+mainsequence code-repository jobs list
+mainsequence code-repository jobs runs list <JOB_UID>
+mainsequence code-repository jobs runs logs <JOB_RUN_UID> --max-wait-seconds 900
 ```
 
 The logs command polls while the run is still `PENDING` or `RUNNING`, so it works well as a simple live tail for operational checks.
@@ -231,19 +231,19 @@ qualifying backend-owned promotion succeeds.
 List existing images:
 
 ```bash
-mainsequence project images list
+mainsequence code-repository images list
 ```
 
 Create a new image:
 
 ```bash
-mainsequence project images create
+mainsequence code-repository images create
 ```
 
 Then create the job against that image:
 
 ```bash
-mainsequence project jobs create \
+mainsequence code-repository jobs create \
   --name "Simulated Prices - Frozen" \
   --execution-path scripts/simulated_prices_launcher.py \
   --related-image-uid <IMAGE_UID>
@@ -261,8 +261,8 @@ The Python client is useful when job creation itself is part of your automation.
 
 Run this code from the intended Project checkout. The SDK resolves the canonical
 Git repository, attached branch, and exact HEAD commit once for the process,
-maps them to ProjectBranch, and uses that immutable context for every Job
-operation. Application code does not select a ProjectBranch UID.
+maps them to CodeRepositoryBranch, and uses that immutable context for every Job
+operation. Application code does not select a CodeRepositoryBranch UID.
 
 Examples below use the public client imports:
 
@@ -460,9 +460,9 @@ That gives you:
 Creating a schedule is only half of the work. Always verify:
 
 ```bash
-mainsequence project jobs list
-mainsequence project jobs runs list <JOB_UID>
-mainsequence project jobs runs logs <JOB_RUN_UID>
+mainsequence code-repository jobs list
+mainsequence code-repository jobs runs list <JOB_UID>
+mainsequence code-repository jobs runs logs <JOB_RUN_UID>
 ```
 
 That simple loop catches most configuration mistakes quickly.
@@ -480,7 +480,7 @@ Usually this means one of three things:
 ### "The client example fails, but the CLI worked"
 
 The most common reasons are missing compute values or a missing exact
-`related_image_uid` on a manually pinned Job, or a ProjectBranch without a
+`related_image_uid` on a manually pinned Job, or a CodeRepositoryBranch without a
 synchronized commit for an automatically deployed Job. The CLI supplies
 compute defaults and can interactively select a manual image. `Job.create()`
 does neither. Automatic creation must omit the image UID.
@@ -494,7 +494,7 @@ Make sure you are using five fields, not six.
 Use a larger wait window:
 
 ```bash
-mainsequence project jobs runs logs <JOB_RUN_UID> --max-wait-seconds 900
+mainsequence code-repository jobs runs logs <JOB_RUN_UID> --max-wait-seconds 900
 ```
 
 or disable polling control if you want to handle it yourself.

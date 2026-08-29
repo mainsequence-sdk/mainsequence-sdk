@@ -18,6 +18,7 @@ from mainsequence.client.metatables import (
     MetaTableMigrationConnectionRequest,
     TimeIndexMetaTable,
 )
+from mainsequence.code_repository_context import require_code_repository_branch_context
 from mainsequence.meta_tables.migrations import (
     AlembicMetaTableMigration,
     alembic_config_for_provider,
@@ -25,13 +26,12 @@ from mainsequence.meta_tables.migrations import (
     load_alembic_metatable_migration_provider,
     scaffold_migration_package,
 )
-from mainsequence.project_context import require_project_branch_context
 
 migrations = typer.Typer(help="Alembic-owned MetaTable migration commands")
 METATABLE_COLLECTION_ENDPOINT = "/api/v1/meta-tables/"
 TIME_INDEX_META_TABLE_COLLECTION_ENDPOINT = "/api/v1/time-index-meta-tables/"
 FINALIZE_MANAGED_ENDPOINT = "/api/v1/meta-tables/finalize-managed/"
-DEFAULT_SCAFFOLD_PROJECT_ROOT = pathlib.Path(".")
+DEFAULT_SCAFFOLD_CODE_REPOSITORY_ROOT = pathlib.Path(".")
 DEFAULT_SCAFFOLD_SOURCE_ROOT = pathlib.Path("src")
 
 
@@ -694,8 +694,8 @@ def scaffold(
         "--module",
         help="Python module to create, for example migrations or msm.migrations.",
     ),
-    project_root: pathlib.Path = typer.Option(  # noqa: B008
-        DEFAULT_SCAFFOLD_PROJECT_ROOT,
+    code_repository_root: pathlib.Path = typer.Option(  # noqa: B008
+        DEFAULT_SCAFFOLD_CODE_REPOSITORY_ROOT,
         "--project-root",
         help="Project root where the source tree lives.",
     ),
@@ -748,7 +748,7 @@ def scaffold(
         normalized_schema = None
     try:
         result = scaffold_migration_package(
-            project_root=project_root,
+            code_repository_root=code_repository_root,
             module=module,
             package=package,
             namespace=namespace,
@@ -789,7 +789,7 @@ def current(
 ) -> None:
     """Read current Alembic revision through a scoped migration credential."""
 
-    require_project_branch_context("mainsequence migrations current")
+    require_code_repository_branch_context("mainsequence migrations current")
     command = _load_alembic_command("current")
     migration = _load_migration(provider)
     alembic_output = _AlembicOutput()
@@ -853,7 +853,7 @@ def revision(
 ) -> None:
     """Create a normal Alembic revision for the selected provider."""
 
-    require_project_branch_context("mainsequence migrations revision")
+    require_code_repository_branch_context("mainsequence migrations revision")
     command = _load_alembic_command("revision")
     migration = _load_migration(provider)
     resolved_message = (message or "").strip() or "migration"
@@ -909,7 +909,7 @@ def upgrade(
 ) -> None:
     """Run Alembic upgrade directly and finalize reserved MetaTables."""
 
-    require_project_branch_context("mainsequence migrations upgrade")
+    require_code_repository_branch_context("mainsequence migrations upgrade")
     command = _load_alembic_command("upgrade")
     migration = _load_migration(provider)
     alembic_output = _AlembicOutput()
@@ -962,7 +962,7 @@ def downgrade(
 ) -> None:
     """Run Alembic downgrade directly and finalize reserved MetaTables."""
 
-    require_project_branch_context("mainsequence migrations downgrade")
+    require_code_repository_branch_context("mainsequence migrations downgrade")
     command = _load_alembic_command("downgrade")
     migration = _load_migration(provider)
     alembic_output = _AlembicOutput()

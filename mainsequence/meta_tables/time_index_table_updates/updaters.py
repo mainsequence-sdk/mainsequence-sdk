@@ -17,6 +17,7 @@ from mainsequence.client.metatables import (
     TimeIndexTableUpdate,
     UpdateStatistics,
 )
+from mainsequence.code_repository_context import require_code_repository_branch_context
 from mainsequence.instrumentation import tracer
 from mainsequence.logconf import logger
 from mainsequence.meta_tables import PlatformTimeIndexMetaTable
@@ -24,7 +25,6 @@ from mainsequence.meta_tables.time_index_table_refs import (
     TimeIndexTableAccessMixin,
     TimeIndexTableRef,
 )
-from mainsequence.project_context import require_project_branch_context
 
 from . import configuration, runner
 from .configuration import BaseConfiguration
@@ -656,7 +656,7 @@ class TimeIndexTableUpdater(TimeIndexTableAccessMixin, ABC):
             Result returned by ``UpdateRunner.run()``.
         """
 
-        require_project_branch_context("TimeIndexTableUpdater.run")
+        require_code_repository_branch_context("TimeIndexTableUpdater.run")
         # Execution remains sequential; distributed execution is not part of this contract.
         debug_mode = True
 

@@ -11,15 +11,15 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, PositiveInt
 
-from mainsequence.project_context import (
+from mainsequence.code_repository_context import (
+    resolve_code_repository_branch_uid,
     resolve_organization_environment_uid,
-    resolve_project_branch_uid,
 )
 
 from .base import (
     BaseObjectOrm,
     BasePydanticModel,
-    CurrentProjectBranchCollectionMixin,
+    CurrentCodeRepositoryBranchCollectionMixin,
     ShareableObjectMixin,
 )
 from .compute_validation import (
@@ -29,8 +29,8 @@ from .compute_validation import (
 )
 from .exceptions import raise_for_response
 from .models_foundry import (
-    ProjectBranch,
-    ProjectImage,
+    CodeRepositoryBranch,
+    CodeRepositoryImage,
 )
 from .observability import (
     ObservabilityLinks,
@@ -129,17 +129,17 @@ class AutomaticRedeploymentPolicy(BaseModel):
     )
 
 
-class Job(CurrentProjectBranchCollectionMixin, BaseObjectOrm, BasePydanticModel):
+class Job(CurrentCodeRepositoryBranchCollectionMixin, BaseObjectOrm, BasePydanticModel):
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
         "uid": ["in", "exact"],
-        "project_branch_uid": ["in", "exact"],
+        "code_repository_branch_uid": ["in", "exact"],
         "name": ["in", "exact", "contains"],
     }
     FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
         "uid": "uid",
         "uid__in": "uid",
-        "project_branch_uid": "uid",
-        "project_branch_uid__in": "uid",
+        "code_repository_branch_uid": "uid",
+        "code_repository_branch_uid__in": "uid",
         "name": "str",
         "name__in": "str",
         "name__contains": "str",
@@ -170,9 +170,9 @@ class Job(CurrentProjectBranchCollectionMixin, BaseObjectOrm, BasePydanticModel)
         examples=["Daily feature build"],
     )
 
-    project_branch_uid: str | None = Field(
+    code_repository_branch_uid: str | None = Field(
         default=None,
-        description="Public UID of the owning ProjectBranch.",
+        description="Public UID of the owning CodeRepositoryBranch.",
         examples=["5a28020a-0f1b-47ee-aab8-334286234bea"],
     )
 
@@ -180,12 +180,12 @@ class Job(CurrentProjectBranchCollectionMixin, BaseObjectOrm, BasePydanticModel)
         default=None,
         description=(
             "Read-only Organization Environment UID derived by the backend "
-            "from the owning ProjectBranch."
+            "from the owning CodeRepositoryBranch."
         ),
         examples=["58218213-5e4e-43de-a5bd-6757f4e1c8f6"],
     )
 
-    project_repo_hash: str | None = Field(
+    code_repository_commit_hash: str | None = Field(
         default=None,
         description=(
             "Exact full Git commit represented by the selected project image. "
@@ -322,13 +322,13 @@ class Job(CurrentProjectBranchCollectionMixin, BaseObjectOrm, BasePydanticModel)
         return decimal_to_storage(value)
 
     @classmethod
-    def _resolve_project_branch_uid(
+    def _resolve_code_repository_branch_uid(
         cls,
-        project_branch_uid: str | ProjectBranch | dict[str, Any] | None = None,
+        code_repository_branch_uid: str | CodeRepositoryBranch | dict[str, Any] | None = None,
     ) -> str:
-        return resolve_project_branch_uid(
+        return resolve_code_repository_branch_uid(
             "Job.create",
-            supplied_uid=project_branch_uid,
+            supplied_uid=code_repository_branch_uid,
         )
 
     @classmethod
@@ -524,7 +524,7 @@ class Job(CurrentProjectBranchCollectionMixin, BaseObjectOrm, BasePydanticModel)
         cls,
         *,
         name: str,
-        project_branch_uid: str | ProjectBranch | dict[str, Any] | None = None,
+        code_repository_branch_uid: str | CodeRepositoryBranch | dict[str, Any] | None = None,
         execution_path: str | None = None,
         app_name: str | None = None,
         task_schedule: PeriodicTask | Schedule | dict[str, Any] | str | None = None,
@@ -535,7 +535,7 @@ class Job(CurrentProjectBranchCollectionMixin, BaseObjectOrm, BasePydanticModel)
         gpu_type: str | None = None,
         spot: bool | None = None,
         max_runtime_seconds: int | None = None,
-        related_image_uid: str | ProjectImage | dict[str, Any] | None = None,
+        related_image_uid: str | CodeRepositoryImage | dict[str, Any] | None = None,
         automatic_deployment: bool = False,
         automatic_redeployment_policy: AutomaticRedeploymentPolicy | dict[str, Any] | None = None,
         allowed_execution_extensions: Collection[str] | str | None = None,
@@ -546,8 +546,8 @@ class Job(CurrentProjectBranchCollectionMixin, BaseObjectOrm, BasePydanticModel)
 
         payload: dict[str, Any] = {
             "name": normalized_name,
-            "project_branch_uid": cls._resolve_project_branch_uid(
-                project_branch_uid=project_branch_uid
+            "code_repository_branch_uid": cls._resolve_code_repository_branch_uid(
+                code_repository_branch_uid=code_repository_branch_uid
             ),
         }
 
@@ -625,7 +625,7 @@ class Job(CurrentProjectBranchCollectionMixin, BaseObjectOrm, BasePydanticModel)
         cls,
         *,
         name: str,
-        project_branch_uid: str | ProjectBranch | dict[str, Any] | None = None,
+        code_repository_branch_uid: str | CodeRepositoryBranch | dict[str, Any] | None = None,
         execution_path: str | None = None,
         app_name: str | None = None,
         task_schedule: PeriodicTask | Schedule | dict[str, Any] | str | None = None,
@@ -636,7 +636,7 @@ class Job(CurrentProjectBranchCollectionMixin, BaseObjectOrm, BasePydanticModel)
         gpu_type: str | None = None,
         spot: bool | None = None,
         max_runtime_seconds: int | None = None,
-        related_image_uid: str | ProjectImage | dict[str, Any] | None = None,
+        related_image_uid: str | CodeRepositoryImage | dict[str, Any] | None = None,
         automatic_deployment: bool = False,
         automatic_redeployment_policy: AutomaticRedeploymentPolicy | dict[str, Any] | None = None,
         allowed_execution_extensions: Collection[str] | str | None = None,
@@ -644,7 +644,7 @@ class Job(CurrentProjectBranchCollectionMixin, BaseObjectOrm, BasePydanticModel)
     ) -> Job:
         payload = cls._build_create_payload(
             name=name,
-            project_branch_uid=project_branch_uid,
+            code_repository_branch_uid=code_repository_branch_uid,
             execution_path=execution_path,
             app_name=app_name,
             task_schedule=task_schedule,
@@ -753,22 +753,22 @@ class JobRun(
         description="Read-only helper field containing the associated job name.",
         examples=["daily-training-job"],
     )
-    project_uid: str | None = Field(
+    code_repository_uid: str | None = Field(
         ...,
         description="Read-only public UID of the associated project, or null for a run outside project scope.",
         examples=["1d0530c0-65d1-4db0-856b-dc29d8260a09"],
     )
-    project_name: str | None = Field(
+    code_repository_name: str | None = Field(
         ...,
         description="Read-only name of the associated project, or null for a run outside project scope.",
         examples=["market-data-service"],
     )
-    project_branch_uid: str | None = Field(
+    code_repository_branch_uid: str | None = Field(
         ...,
         description="Read-only public UID of the associated project branch, or null for an unscoped run.",
         examples=["5a28020a-0f1b-47ee-aab8-334286234bea"],
     )
-    project_branch_name: str | None = Field(
+    code_repository_branch_name: str | None = Field(
         ...,
         description="Read-only repository branch name associated with the run, or null for an unscoped run.",
         examples=["main"],
@@ -924,7 +924,7 @@ class JobRun(
         return r.json()
 
 
-class ProjectResource(CurrentProjectBranchCollectionMixin, BaseObjectOrm, BasePydanticModel):
+class CodeRepositoryResource(CurrentCodeRepositoryBranchCollectionMixin, BaseObjectOrm, BasePydanticModel):
     SEARCH_FIELDS: ClassVar[list[str]] = [
         "project__uid",
         "uid",
@@ -941,18 +941,18 @@ class ProjectResource(CurrentProjectBranchCollectionMixin, BaseObjectOrm, BasePy
         "project__uid": "uid",
         "uid": "uid",
     }
-    PROJECT_BRANCH_FILTER_FIELD: ClassVar[str] = "project__uid"
+    CODE_REPOSITORY_BRANCH_FILTER_FIELD: ClassVar[str] = "project__uid"
 
     uid: str | None = Field(
         None,
-        title="Project Resource UID",
+        title="CodeRepository Resource UID",
         description="Public UID of the project resource.",
         examples=["857bec7b-dd77-4272-aecd-13fc2138eacc"],
     )
-    project_branch_uid: str | None = Field(
+    code_repository_branch_uid: str | None = Field(
         None,
-        title="ProjectBranch UID",
-        description="Public UID of the ProjectBranch this resource belongs to.",
+        title="CodeRepositoryBranch UID",
+        description="Public UID of the CodeRepositoryBranch this resource belongs to.",
         examples=["5a28020a-0f1b-47ee-aab8-334286234bea"],
     )
     name: str | None = Field(
@@ -969,7 +969,7 @@ class ProjectResource(CurrentProjectBranchCollectionMixin, BaseObjectOrm, BasePy
             "dashboard",
             "agent",
             "fastapi",
-            "project_agent_card",
+            "code_repository_agent_card",
             "markdown",
         ]
         | None
@@ -979,7 +979,7 @@ class ProjectResource(CurrentProjectBranchCollectionMixin, BaseObjectOrm, BasePy
         description=(
             "Canonical backend discriminator for the discovered project resource. "
             "Allowed values are `configuration`, `notebook`, `script`, `dashboard`, "
-            "`agent`, `fastapi`, `project_agent_card`, and `markdown`."
+            "`agent`, `fastapi`, `code_repository_agent_card`, and `markdown`."
         ),
         examples=[
             "configuration",
@@ -988,7 +988,7 @@ class ProjectResource(CurrentProjectBranchCollectionMixin, BaseObjectOrm, BasePy
             "dashboard",
             "agent",
             "fastapi",
-            "project_agent_card",
+            "code_repository_agent_card",
             "markdown",
         ],
     )
@@ -1084,7 +1084,7 @@ class ResourceReleaseKind(str, Enum):
 
 
 class ResourceRelease(
-    CurrentProjectBranchCollectionMixin,
+    CurrentCodeRepositoryBranchCollectionMixin,
     OwnerLogMixin,
     OwnerResourceUsageMixin,
     ShareableObjectMixin,
@@ -1093,14 +1093,14 @@ class ResourceRelease(
 ):
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
         "uid": ["exact", "in"],
-        "project_branch_uid": ["exact"],
+        "code_repository_branch_uid": ["exact"],
         "resource__uid": ["exact", "in"],
         "related_job__uid": ["exact", "in"],
         "release_kind": ["exact", "in"],
     }
     FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
         "uid": "uid",
-        "project_branch_uid": "uid",
+        "code_repository_branch_uid": "uid",
         "resource__uid": "uid",
         "related_job__uid": "uid",
         "release_kind": "str",
@@ -1112,10 +1112,10 @@ class ResourceRelease(
         description="Public UID of the resource release.",
         examples=["0ce33c15-e3b1-4677-a66e-70460b89198f"],
     )
-    project_branch_uid: str | None = Field(
+    code_repository_branch_uid: str | None = Field(
         None,
-        title="ProjectBranch UID",
-        description="Public UID of the ProjectBranch that owns this release.",
+        title="CodeRepositoryBranch UID",
+        description="Public UID of the CodeRepositoryBranch that owns this release.",
         examples=["9d81d63f-b8c9-404d-9f1a-5f2ad29dbf16"],
     )
     name: str | None = Field(
@@ -1240,9 +1240,9 @@ class ResourceRelease(
     def create(
         cls,
         *,
-        resource_uid: str | ProjectResource | dict[str, Any],
+        resource_uid: str | CodeRepositoryResource | dict[str, Any],
         release_kind: ResourceReleaseKind | str,
-        related_image_uid: str | ProjectImage | dict[str, Any],
+        related_image_uid: str | CodeRepositoryImage | dict[str, Any],
         cpu_request: str | int | float | Decimal | None = None,
         memory_request: str | int | float | Decimal | None = None,
         gpu_request: str | int | None = None,
@@ -1429,10 +1429,10 @@ class DeploymentRunLogPage(BaseModel):
     retention_expires_at: datetime.datetime | None = None
 
 
-class DeploymentRun(CurrentProjectBranchCollectionMixin, BaseObjectOrm, BasePydanticModel):
+class DeploymentRun(CurrentCodeRepositoryBranchCollectionMixin, BaseObjectOrm, BasePydanticModel):
     ENDPOINT: ClassVar[str] = "deployment-runs"
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
-        "project_branch_uid": ["exact", "in"],
+        "code_repository_branch_uid": ["exact", "in"],
         "target_type": ["exact", "in"],
         "target_uid": ["exact", "in"],
         "target_kind": ["exact", "in"],
@@ -1442,7 +1442,7 @@ class DeploymentRun(CurrentProjectBranchCollectionMixin, BaseObjectOrm, BasePyda
         "commit_sha": ["exact", "in"],
     }
     FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
-        "project_branch_uid": "uid",
+        "code_repository_branch_uid": "uid",
         "target_type": "str",
         "target_uid": "uid",
         "target_kind": "str",
@@ -1461,7 +1461,7 @@ class DeploymentRun(CurrentProjectBranchCollectionMixin, BaseObjectOrm, BasePyda
     uid: str
     target_type: str
     target: DeploymentRunTarget
-    project_branch_uid: str | None = None
+    code_repository_branch_uid: str | None = None
     operation: str
     source: str
     commit_sha: str = ""

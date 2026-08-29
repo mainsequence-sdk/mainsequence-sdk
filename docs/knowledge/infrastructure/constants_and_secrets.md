@@ -56,7 +56,7 @@ That keeps the repository cleaner and reduces the amount of environment-specific
 
 Constants and Secrets are owned by an Organization Environment. Project-facing
 SDK operations resolve that Environment from the process-frozen current Git
-branch and its registered `ProjectBranch`. Users do not pass an Environment UID
+branch and its registered `CodeRepositoryBranch`. Users do not pass an Environment UID
 or branch UID. Projects and branches mapped to the same Environment can use the
 same configuration identities.
 

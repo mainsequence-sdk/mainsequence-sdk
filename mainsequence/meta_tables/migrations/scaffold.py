@@ -21,7 +21,7 @@ class MigrationScaffoldResult:
 
 def scaffold_migration_package(
     *,
-    project_root: str | Path,
+    code_repository_root: str | Path,
     module: str,
     package: str,
     namespace: str,
@@ -44,8 +44,8 @@ def scaffold_migration_package(
     if not namespace:
         raise ValueError("Migration scaffold namespace cannot be empty.")
 
-    project_root_path = Path(project_root).expanduser().resolve()
-    package_root = project_root_path / source_root / Path(*module.split("."))
+    code_repository_root_path = Path(code_repository_root).expanduser().resolve()
+    package_root = code_repository_root_path / source_root / Path(*module.split("."))
     version_root = package_root / "versions"
     namespace_root = version_root / namespace_version_slug(namespace)
     for directory in (package_root, version_root, namespace_root):

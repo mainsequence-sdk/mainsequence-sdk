@@ -245,13 +245,13 @@ def test_cascade_response_rejects_removed_dynamic_table_fields() -> None:
         )
 
 
-def test_project_branch_rejects_removed_update_response_key() -> None:
+def test_code_repository_branch_rejects_removed_update_response_key() -> None:
     branch = SimpleNamespace(
         _get_action=lambda action, timeout=None: {"data_node_updates": []},
     )
 
     with pytest.raises(ValueError, match="time_index_table_updates or results"):
-        client.ProjectBranch.get_time_index_table_updates(branch)
+        client.CodeRepositoryBranch.get_time_index_table_updates(branch)
 
 
 def test_dependency_mutations_use_only_canonical_actions(monkeypatch: pytest.MonkeyPatch) -> None:

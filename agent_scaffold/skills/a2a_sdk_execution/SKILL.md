@@ -49,7 +49,7 @@ mainsequence agent search "<discoveryPrompt>" \
 ```
 
 Use the canonical Organization Environment UID associated with the target
-ProjectBranch. It scopes discovery only; it does not create, assign, or override an
+CodeRepositoryBranch. It scopes discovery only; it does not create, assign, or override an
 Agent's environment.
 
 4. Treat the CLI output as authoritative.

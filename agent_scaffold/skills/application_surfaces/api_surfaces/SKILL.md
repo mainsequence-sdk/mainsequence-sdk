@@ -179,16 +179,16 @@ Adapter From API schema and fixtures at the selected repository commit.
 Before release, verify local project resolution:
 
 ```bash
-mainsequence project current --debug --json
+mainsequence code-repository current --debug --json
 ```
 
 Then move the tested code through the canonical lifecycle:
 
 ```bash
-mainsequence project sync -m "Release Command Center API"
-mainsequence project images create
-mainsequence project project_resource list --filter resource_type=fastapi
-mainsequence project project_resource create_fastapi
+mainsequence code-repository sync -m "Release Command Center API"
+mainsequence code-repository images create
+mainsequence code-repository resources list --filter resource_type=fastapi
+mainsequence code-repository resources create_fastapi
 ```
 
 Verify that:

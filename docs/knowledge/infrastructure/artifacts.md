@@ -34,7 +34,7 @@ In practical terms:
 
 Buckets and Artifacts are owned by an Organization Environment. The SDK derives
 that Environment from the process-frozen current Git branch and registered
-`ProjectBranch`; callers do not provide an Environment UID or branch UID.
+`CodeRepositoryBranch`; callers do not provide an Environment UID or branch UID.
 
 ## When Artifacts are the right tool
 

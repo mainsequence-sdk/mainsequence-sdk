@@ -12,7 +12,7 @@ def _dt(hour: int) -> datetime.datetime:
     return datetime.datetime(2026, 5, 1, hour, tzinfo=datetime.UTC)
 
 
-def test_update_statistics_one_index_global_progress_projects_max_time():
+def test_update_statistics_one_index_global_progress_code_repositories_max_time():
     stats = UpdateStatistics(
         global_index_progress={
             "max": "2026-05-01T03:00:00Z",

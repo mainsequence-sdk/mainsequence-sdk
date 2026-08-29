@@ -1175,7 +1175,7 @@ def _bound_meta_table_for_model(model: type[Any]) -> MetaTable | None:
 
 def _conventional_provider_refs(*, cwd: str | pathlib.Path | None = None) -> list[str]:
     refs = [DEFAULT_ALEMBIC_PROVIDER_REFERENCE]
-    package_name = _project_package_name(cwd=cwd)
+    package_name = _code_repository_package_name(cwd=cwd)
     if package_name:
         refs.append(f"{package_name}.migrations:migration")
     return refs
@@ -1212,7 +1212,7 @@ def _parse_provider_reference(provider_ref: str) -> tuple[str, str]:
     return module_name, attr_name
 
 
-def _project_package_name(*, cwd: str | pathlib.Path | None = None) -> str | None:
+def _code_repository_package_name(*, cwd: str | pathlib.Path | None = None) -> str | None:
     pyproject_path = pathlib.Path(cwd or pathlib.Path.cwd()).resolve() / "pyproject.toml"
     if not pyproject_path.exists():
         return None
@@ -1222,10 +1222,10 @@ def _project_package_name(*, cwd: str | pathlib.Path | None = None) -> str | Non
         pyproject = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
     except Exception:
         return None
-    project_name = pyproject.get("project", {}).get("name")
-    if not project_name:
+    code_repository_name = pyproject.get("project", {}).get("name")
+    if not code_repository_name:
         return None
-    package_name = str(project_name).replace("-", "_")
+    package_name = str(code_repository_name).replace("-", "_")
     package_name = "".join(ch for ch in package_name if ch.isalnum() or ch == "_")
     return package_name or None
 

@@ -68,19 +68,21 @@ class BasePydanticModel(BaseModel):
         cls.orm_class = cls.__name__
 
 
-class CurrentProjectBranchCollectionMixin:
-    """Scope ordinary collection reads to the process ProjectBranch context."""
+class CurrentCodeRepositoryBranchCollectionMixin:
+    """Scope ordinary collection reads to the process CodeRepositoryBranch context."""
 
-    PROJECT_BRANCH_FILTER_FIELD: ClassVar[str] = "project_branch_uid"
+    CODE_REPOSITORY_BRANCH_FILTER_FIELD: ClassVar[str] = "code_repository_branch_uid"
 
     @classmethod
     def iter_filter(cls, timeout=None, **kwargs):
-        from mainsequence.project_context import scope_current_project_branch_filters
+        from mainsequence.code_repository_context import (
+            scope_current_code_repository_branch_filters,
+        )
 
-        scoped_filters = scope_current_project_branch_filters(
+        scoped_filters = scope_current_code_repository_branch_filters(
             f"{cls.__name__}.filter",
             kwargs,
-            field_name=cls.PROJECT_BRANCH_FILTER_FIELD,
+            field_name=cls.CODE_REPOSITORY_BRANCH_FILTER_FIELD,
         )
         return super().iter_filter(timeout=timeout, **scoped_filters)
 
@@ -97,20 +99,20 @@ class CurrentProjectBranchCollectionMixin:
         return list(cls.iter_filter_admin(timeout=timeout, **kwargs))
 
 
-class CurrentProjectEnvironmentResourceMixin:
+class CurrentCodeRepositoryEnvironmentResourceMixin:
     """Scope project-facing Environment resources to the frozen Git context."""
 
     SDK_OWNED_CONTEXT_FIELDS: ClassVar[frozenset[str]] = frozenset({"organization_environment_uid"})
 
     @classmethod
     def _sdk_owned_query_context(cls, operation: str) -> dict[str, str]:
-        from mainsequence.project_context import (
-            is_authenticated_runtime_project_context,
+        from mainsequence.code_repository_context import (
+            is_authenticated_runtime_code_repository_context,
             resolve_organization_environment_uid,
         )
 
         environment_uid = resolve_organization_environment_uid(operation)
-        if is_authenticated_runtime_project_context():
+        if is_authenticated_runtime_code_repository_context():
             return {}
         return {"organization_environment_uid": environment_uid}
 
@@ -138,18 +140,18 @@ class BaseObjectOrm:
         "TimeIndexTableUpdateDetails": "time-index-table-update-details",
         "TableUpdateRun": "table-update-runs",
         "DataSource": "data-sources",
-        "Project": "projects",
-        "ProjectBranch": "project-branches",
-        "GitRepository": "project-repositories",
+        "CodeRepository": "code-repositories",
+        "CodeRepositoryBranch": "code-repository-branches",
+        "GitHubRepositoryBinding": "github-repository-bindings",
         "Artifact": "artifacts",
         "Job": "jobs",
         "JobRun": "job-runs",
         "Constant": "constants",
         "Secret": "secrets",
-        "ProjectBaseImage": "project-base-images",
-        "ProjectImage": "project-images",
-        "GithubOrganization": "github-organizations",
-        "ProjectResource": "project-resources",
+        "CodeRepositoryBaseImage": "code-repository-base-images",
+        "CodeRepositoryImage": "code-repository-images",
+        "GitHubOrganization": "github-organizations",
+        "CodeRepositoryResource": "code-repository-resources",
         "ResourceRelease": "resource-releases",
         "DeploymentRun": "deployment-runs",
         "Bucket": "buckets",

@@ -37,10 +37,10 @@ ENVIRONMENT_NAME_FIELD = "organization_environment_name"
             id="job-run",
         ),
         pytest.param(
-            ("ProjectBranchSerializer",),
-            foundry_models.ProjectBranch,
+            ("CodeRepositoryBranchSerializer",),
+            foundry_models.CodeRepositoryBranch,
             {ENVIRONMENT_UID_FIELD, ENVIRONMENT_NAME_FIELD},
-            id="project-branch",
+            id="code-repository-branch",
         ),
         pytest.param(
             ("BucketSerializer",),
@@ -106,11 +106,11 @@ def test_backend_environment_response_contract_is_declared_by_strict_sdk_model(
         helper_models.ResourceRelease,
     ],
 )
-def test_owner_observability_projection_is_declared_by_strict_sdk_model(model):
+def test_owner_observability_code_repositoryion_is_declared_by_strict_sdk_model(model):
     assert model.model_config.get("extra") == "forbid"
     assert "observability" in model.model_fields
 
 
-def test_agent_session_runtime_capabilities_projection_is_declared_and_typed():
+def test_agent_session_runtime_capabilities_code_repositoryion_is_declared_and_typed():
     assert agent_models.AgentSession.model_config.get("extra") == "forbid"
     assert agent_models.AgentSession.model_fields["runtime_capabilities"].annotation == dict[str, str]

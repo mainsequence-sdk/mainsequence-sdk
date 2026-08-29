@@ -25,7 +25,7 @@ This skill is for:
 - create or review manual jobs
 - create or review scheduled jobs
 - author backend-managed declarations under `.mainsequence/workflows/`
-- validate workflow files through the ProjectBranch workflow endpoints
+- validate workflow files through the CodeRepositoryBranch workflow endpoints
 - create or select project images
 - bind every job to one exact project image
 - configure standalone Job automatic deployment as future exact-image promotion
@@ -123,9 +123,9 @@ supported input.
 
 The backend owns workflow parsing, validation, defaults, permissions, and
 application. Retrieve the current template from
-`GET /api/v1/project-branches/{uid}/workflow-template/`, validate the proposed
+`GET /api/v1/code-repository-branches/{uid}/workflow-template/`, validate the proposed
 `path` and `content` with
-`POST /api/v1/project-branches/{uid}/validate-workflow/`, then commit the file.
+`POST /api/v1/code-repository-branches/{uid}/validate-workflow/`, then commit the file.
 Do not reproduce the parser or construct an interpreted deployment payload in
 the SDK or project code.
 
@@ -148,7 +148,7 @@ Remember:
 - there is no dynamic, blank-image, branch-tip, or `latest` Job mode
 - a manual Job requires the caller to select `related_image_uid`
 - an automatic Job forbids caller image selection; the backend derives the
-  exact initial image from the ProjectBranch's persisted synchronized commit
+  exact initial image from the CodeRepositoryBranch's persisted synchronized commit
 
 When standalone Job automatic deployment is enabled during creation, the
 backend prepares the exact initial image and later qualifying immutable
@@ -177,10 +177,10 @@ Do not stop at creation.
 
 Use the standard CLI execution loop when execution success matters:
 
-- `mainsequence project jobs list`
-- `mainsequence project jobs run <JOB_UID>`
-- `mainsequence project jobs runs list <JOB_UID>`
-- `mainsequence project jobs runs logs <JOB_RUN_UID> --max-wait-seconds 900`
+- `mainsequence code-repository jobs list`
+- `mainsequence code-repository jobs run <JOB_UID>`
+- `mainsequence code-repository jobs runs list <JOB_UID>`
+- `mainsequence code-repository jobs runs logs <JOB_RUN_UID> --max-wait-seconds 900`
 
 Verify:
 
@@ -194,10 +194,10 @@ Use owner-scoped observability rather than infrastructure discovery:
 - `ResourceRelease.get_logs()` and `ResourceRelease.get_resource_usage()`
 - `Agent.get_logs()` and `Agent.get_resource_usage()`
 - `AgentSession.get_logs()` for one fixed session
-- `mainsequence project jobs runs logs <JOB_RUN_UID>`
-- `mainsequence project jobs runs resource-usage <JOB_RUN_UID>`
-- `mainsequence project project_resource logs <RESOURCE_RELEASE_UID>`
-- `mainsequence project project_resource resource-usage <RESOURCE_RELEASE_UID>`
+- `mainsequence code-repository jobs runs logs <JOB_RUN_UID>`
+- `mainsequence code-repository jobs runs resource-usage <JOB_RUN_UID>`
+- `mainsequence code-repository resources logs <RESOURCE_RELEASE_UID>`
+- `mainsequence code-repository resources resource-usage <RESOURCE_RELEASE_UID>`
 - `mainsequence agent logs <AGENT_UID>`
 - `mainsequence agent resource-usage <AGENT_UID>`
 - `mainsequence agent session logs <AGENT_SESSION_UID>`
@@ -221,7 +221,7 @@ push alone does not prove deployment success.
 Use `Artifact` when the operational unit is a file.
 
 Artifact and Bucket operations derive their Organization Environment from the
-process-frozen current Git branch and registered `ProjectBranch`. Do not ask the
+process-frozen current Git branch and registered `CodeRepositoryBranch`. Do not ask the
 user to select an Environment UID or branch UID.
 
 Examples:
@@ -252,8 +252,8 @@ For Streamlit dashboard deployment:
 - the dashboard `README.md` must exist next to `app.py`
 - both files must be committed and pushed
 - the project image must be built from the intended pushed commit
-- `mainsequence project project_resource list` must discover the dashboard app and README resources
-- create the release with `mainsequence project project_resource create_dashboard`
+- `mainsequence code-repository resources list` must discover the dashboard app and README resources
+- create the release with `mainsequence code-repository resources create_dashboard`
 - the dashboard release kind is `streamlit_dashboard`
 
 Do not prescribe Streamlit page layout, styling, sidebar/session patterns, or helper/component architecture. Those are application-owned implementation details.
@@ -293,14 +293,14 @@ Keep `automatic_deployment` disabled when:
 
 Create opted-in releases with the CLI flags that exist:
 
-- `mainsequence project project_resource create_dashboard --automatic-deployment`
-- `mainsequence project project_resource create_fastapi --automatic-deployment`
+- `mainsequence code-repository resources create_dashboard --automatic-deployment`
+- `mainsequence code-repository resources create_fastapi --automatic-deployment`
 - use `--no-automatic-deployment` when the decision is explicitly to keep the release pinned/manual
 
 The SDK surface also accepts:
 
-- `ProjectResource.create_dashboard(..., automatic_deployment=True)`
-- `ProjectResource.create_fastapi(..., automatic_deployment=True)`
+- `CodeRepositoryResource.create_dashboard(..., automatic_deployment=True)`
+- `CodeRepositoryResource.create_fastapi(..., automatic_deployment=True)`
 - `ResourceRelease.create(..., automatic_deployment=True)`
 - `ResourceRelease.deploy_current_version()` for an SDK-triggered manual deployment run; it returns `DeploymentRun`
 - `DeploymentRun.filter(target_type="resource_release", target_uid=release.uid)` to inspect runs for one release
@@ -378,7 +378,7 @@ If the workflow uses Artifacts, also check:
 - the image strategy is unclear but reproducibility matters
 - the backend rejects the workflow version, resource kind, or requested field
 - a manually pinned Job has no exact ready initial image
-- an automatically deployed Job has no persisted synchronized ProjectBranch commit
+- an automatically deployed Job has no persisted synchronized CodeRepositoryBranch commit
 - the workflow depends on local file paths that should be platform Artifacts
 - automatic deployment is requested but the deployment source branch/current synced project version is unclear
 - automatic deployment is requested but the resource path or required README is not stable

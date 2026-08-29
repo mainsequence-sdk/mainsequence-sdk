@@ -31,7 +31,7 @@ def run(cmd, *args, env=None, cwd=None) -> tuple[int, str, str]:
     return proc.returncode, out, err
 
 
-def _clean_git_repository_path(value: str) -> str:
+def _clean_github_repository_binding_path(value: str) -> str:
     if "\\" in value:
         raise ValueError("Git origin repository paths must use forward slashes.")
     path = re.sub(r"/+", "/", value).strip("/")
@@ -64,7 +64,7 @@ def repository_ssh_key_identity(repo_url: str) -> tuple[str, bool]:
         host = (parsed.hostname or "").lower().rstrip(".")
         if not host:
             raise ValueError("Git origin must include a hostname.")
-        path = _clean_git_repository_path(parsed.path)
+        path = _clean_github_repository_binding_path(parsed.path)
         default_port = _DEFAULT_GIT_ORIGIN_PORTS.get(scheme)
         host_identity = host if port in (None, default_port) else f"{host}:{port}"
         return f"{host_identity}/{path}", scheme in _SSH_GIT_ORIGIN_SCHEMES
@@ -73,7 +73,7 @@ def repository_ssh_key_identity(repo_url: str) -> tuple[str, bool]:
     if not scp_match:
         raise ValueError("Git origin must be an SSH, Git, HTTP, or HTTPS repository URL.")
     host = scp_match.group("host").lower().rstrip(".")
-    path = _clean_git_repository_path(scp_match.group("path"))
+    path = _clean_github_repository_binding_path(scp_match.group("path"))
     return f"{host}/{path}", True
 
 

@@ -42,7 +42,7 @@ There is no `request.state.user_id`. Request identity never uses a numeric
 database ID.
 
 The request-user projection describes the human making this request. It is not the
-release creator, deployment owner, runtime workload principal, ProjectBranch,
+release creator, deployment owner, runtime workload principal, CodeRepositoryBranch,
 ResourceRelease, or hostname-selected runtime target. It is intentionally not a
 full account profile and has no email, organization, plan, or permission fields.
 

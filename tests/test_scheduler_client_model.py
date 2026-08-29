@@ -62,7 +62,7 @@ class _SchedulerResponse:
         return None
 
 
-def test_scheduler_strict_model_accepts_environment_projection():
+def test_scheduler_strict_model_accepts_environment_code_repositoryion():
     scheduler = core_mod.Scheduler.model_validate(_scheduler_payload())
 
     assert scheduler.organization_environment_uid == ENVIRONMENT_UID
@@ -73,7 +73,7 @@ def test_scheduler_strict_model_accepts_environment_projection():
         )
 
 
-def test_scheduler_strict_model_accepts_canonical_scheduled_node_projection():
+def test_scheduler_strict_model_accepts_canonical_scheduled_node_code_repositoryion():
     scheduler = core_mod.Scheduler.model_validate(_scheduler_payload())
 
     for relation_name in ("pre_loads_in_tree", "in_active_tree", "schedules_to"):
@@ -91,7 +91,7 @@ def test_scheduler_strict_model_accepts_canonical_scheduled_node_projection():
         assert scheduled_node.output_table_data_source_uid == DATA_SOURCE_UID
 
 
-def test_scheduler_strict_model_rejects_unknown_scheduled_node_projection():
+def test_scheduler_strict_model_rejects_unknown_scheduled_node_code_repositoryion():
     payload = _scheduler_payload()
     payload["schedules_to"][0]["unexpected_node_projection"] = "rejected"
 
@@ -129,7 +129,7 @@ def test_scheduler_build_derives_environment_without_request_override(monkeypatc
     assert scheduler.schedules_to[0].output_table_uid == OUTPUT_TABLE_UID
 
 
-def test_scheduler_get_for_update_node_accepts_environment_projection(monkeypatch):
+def test_scheduler_get_for_update_node_accepts_environment_code_repositoryion(monkeypatch):
     captured = {}
 
     def _fake_make_request(**kwargs):
@@ -150,7 +150,7 @@ def test_scheduler_get_for_update_node_accepts_environment_projection(monkeypatc
     assert scheduler.organization_environment_uid == ENVIRONMENT_UID
 
 
-def test_scheduler_assign_accepts_environment_projection(monkeypatch):
+def test_scheduler_assign_accepts_environment_code_repositoryion(monkeypatch):
     captured = {}
     scheduler = core_mod.Scheduler.model_validate(_scheduler_payload())
 

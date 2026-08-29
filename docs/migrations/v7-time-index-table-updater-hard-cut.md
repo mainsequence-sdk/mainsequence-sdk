@@ -158,7 +158,7 @@ Important field and method changes include:
 | `related_table_uid` on update details/runs | `table_update_uid` |
 | `create_historical_update(...)` | `create_table_update_run(...)` |
 | `historical_update_uid` | `table_update_run_uid` |
-| `ProjectBranch.get_data_nodes_updates()` | `ProjectBranch.get_time_index_table_updates()` |
+| `CodeRepositoryBranch.get_data_nodes_updates()` | `CodeRepositoryBranch.get_time_index_table_updates()` |
 
 The canonical collections are:
 
@@ -185,7 +185,7 @@ The version 6 aliases are removed:
 | `mainsequence data_node ...` | `mainsequence time-index-table ...` |
 | `mainsequence data-node-storage ...` | `mainsequence time-index-table ...` |
 | `mainsequence data_node_storage ...` | `mainsequence time-index-table ...` |
-| `mainsequence project data-node-updates list` | `mainsequence project time-index-table-updates list` |
+| `mainsequence code-repository data-node-updates list` | `mainsequence code-repository time-index-table-updates list` |
 
 ## Expect configuration and hash rotation
 

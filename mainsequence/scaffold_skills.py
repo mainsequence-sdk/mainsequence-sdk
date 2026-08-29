@@ -40,7 +40,7 @@ class ScaffoldSkillCopyResult:
 
     library_name: str
     namespace: str
-    project_dir: Path
+    code_repository_dir: Path
     skills_path: Path
     destination_root: Path
     sentinel_path: Path
@@ -51,15 +51,15 @@ class ScaffoldSkillCopyResult:
 
 def copy_scaffold_skills(
     *,
-    project_dir: Path,
+    code_repository_dir: Path,
     library_name: str,
     skills_path: Path,
     pinned_version: str,
     command: str | None = None,
     namespace: str | None = None,
     dry_run: bool = False,
-    protected_project_roots: Sequence[Path] = (),
-    project_guard: Callable[[Path], str | None] | None = None,
+    protected_code_repository_roots: Sequence[Path] = (),
+    code_repository_guard: Callable[[Path], str | None] | None = None,
 ) -> ScaffoldSkillCopyResult:
     """Copy packaged scaffold skills into a managed project skill namespace.
 
@@ -81,20 +81,20 @@ def copy_scaffold_skills(
     resolved_library_name = _validate_library_name(library_name)
     resolved_namespace = normalize_scaffold_skill_namespace(namespace or resolved_library_name)
     resolved_pinned_version = _validate_pinned_version(pinned_version)
-    resolved_project_dir = project_dir.expanduser().resolve(strict=False)
+    resolved_code_repository_dir = code_repository_dir.expanduser().resolve(strict=False)
     resolved_skills_path = skills_path.expanduser().resolve(strict=False)
     if not resolved_skills_path.is_dir():
         raise FileNotFoundError(f"Scaffold skill source directory does not exist: {skills_path}")
 
     destination_root = (
-        resolved_project_dir / ".agents" / "skills" / resolved_namespace
+        resolved_code_repository_dir / ".agents" / "skills" / resolved_namespace
     ).resolve(strict=False)
     sentinel_path = destination_root / PINNED_FROM_FILENAME
 
-    _check_project_guards(
-        project_dir=resolved_project_dir,
-        protected_project_roots=protected_project_roots,
-        project_guard=project_guard,
+    _check_code_repository_guards(
+        code_repository_dir=resolved_code_repository_dir,
+        protected_code_repository_roots=protected_code_repository_roots,
+        code_repository_guard=code_repository_guard,
     )
     _check_path_overlap(
         source=resolved_skills_path,
@@ -122,7 +122,7 @@ def copy_scaffold_skills(
     result = ScaffoldSkillCopyResult(
         library_name=resolved_library_name,
         namespace=resolved_namespace,
-        project_dir=resolved_project_dir,
+        code_repository_dir=resolved_code_repository_dir,
         skills_path=resolved_skills_path,
         destination_root=destination_root,
         sentinel_path=sentinel_path,
@@ -216,23 +216,23 @@ def _utc_timestamp() -> str:
     return now.isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
-def _check_project_guards(
+def _check_code_repository_guards(
     *,
-    project_dir: Path,
-    protected_project_roots: Sequence[Path],
-    project_guard: Callable[[Path], str | None] | None,
+    code_repository_dir: Path,
+    protected_code_repository_roots: Sequence[Path],
+    code_repository_guard: Callable[[Path], str | None] | None,
 ) -> None:
-    for protected_root in protected_project_roots:
+    for protected_root in protected_code_repository_roots:
         resolved_root = protected_root.expanduser().resolve(strict=False)
-        if _same_or_inside(project_dir, resolved_root):
+        if _same_or_inside(code_repository_dir, resolved_root):
             raise ScaffoldSkillCopyBlocked(
                 "Blocked: target project is inside a protected library source checkout "
                 f"({resolved_root})."
             )
 
-    if project_guard is None:
+    if code_repository_guard is None:
         return
-    reason = project_guard(project_dir)
+    reason = code_repository_guard(code_repository_dir)
     if reason:
         raise ScaffoldSkillCopyBlocked(reason)
 

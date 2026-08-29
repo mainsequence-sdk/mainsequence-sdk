@@ -49,13 +49,13 @@ def cli_mod(monkeypatch):
     module = _load_cli_module()
     monkeypatch.setattr(
         module,
-        "get_project_runtime_context",
+        "get_code_repository_context",
         lambda *args, **kwargs: types.SimpleNamespace(
-            project_uid="project-uid-123",
+            code_repository_uid="project-uid-123",
             repository_branch="main",
             canonical_repository_identity=("github.com/mainsequence-sdk/cli-test-project"),
             commit_sha="a" * 40,
-            project_branch_uid="project-branch-uid-123",
+            code_repository_branch_uid="code-repository-branch-uid-123",
             organization_environment_uid="environment-uid-123",
             status="resolved",
             detail="",
@@ -86,7 +86,7 @@ def _print_cli_terminal(monkeypatch):
 
     def _ensure_test_git_checkout(args) -> None:
         values = [str(value) for value in (args or [])]
-        if not values or values[0] != "project":
+        if not values or values[0] != "code-repository":
             return
         if len(values) > 1 and values[1] in {"list", "create", "set-up-locally"}:
             return
@@ -260,75 +260,75 @@ def test_skills_path_unique_leaf_name(cli_mod, runner, monkeypatch, tmp_path):
     assert result.output.strip() == str(expected)
 
 
-def test_project_search(cli_mod, runner, monkeypatch):
+def test_code_repository_search(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(
         cli_mod,
-        "search_projects",
+        "search_code_repositories",
         lambda q, limit=20, timeout=None: [
             {
                 "uid": "project-uid-11",
-                "project_name": "alpha-research",
+                "code_repository_name": "alpha-research",
                 "repository_branch": "main",
                 "cluster_id": 7,
             },
             {
                 "uid": "project-uid-12",
-                "project_name": "data-live",
+                "code_repository_name": "data-live",
                 "repository_branch": "release",
                 "cluster_id": 9,
             },
         ],
     )
 
-    result = runner.invoke(cli_mod.app, ["project", "search", "alpha", "--limit", "10"])
+    result = runner.invoke(cli_mod.app, ["code-repository", "search", "alpha", "--limit", "10"])
     assert result.exit_code == 0
-    assert "Project Search Results" in result.output
+    assert "CodeRepository Search Results" in result.output
     assert "UID" in result.output
     assert "project-uid-11" in result.output
-    assert "Project Name" in result.output
+    assert "CodeRepository Name" in result.output
     assert "alpha-research" in result.output
     assert "data-live" in result.output
-    assert 'Project search matches for "alpha": 2' in result.output
+    assert 'CodeRepository search matches for "alpha": 2' in result.output
 
 
-def test_project_search_rejects_short_query(cli_mod, runner, monkeypatch):
+def test_code_repository_search_rejects_short_query(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(
         cli_mod,
-        "search_projects",
+        "search_code_repositories",
         lambda *args, **kwargs: (_ for _ in ()).throw(
-            AssertionError("search_projects should not be called")
+            AssertionError("search_code_repositories should not be called")
         ),
     )
 
-    result = runner.invoke(cli_mod.app, ["project", "search", ".."])
+    result = runner.invoke(cli_mod.app, ["code-repository", "search", ".."])
     assert result.exit_code == 1
-    assert "Project search failed: Query must contain at least 3 characters." in result.output
+    assert "CodeRepository search failed: Query must contain at least 3 characters." in result.output
 
 
-def test_project_search_json(cli_mod, runner, monkeypatch):
+def test_code_repository_search_json(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(
         cli_mod,
-        "search_projects",
+        "search_code_repositories",
         lambda q, limit=20, timeout=None: [
             {
                 "uid": "project-uid-11",
-                "project_name": "alpha-research",
+                "code_repository_name": "alpha-research",
                 "repository_branch": "main",
                 "cluster_id": 7,
             },
         ],
     )
 
-    result = runner.invoke(cli_mod.app, ["project", "search", "alpha", "--json"])
+    result = runner.invoke(cli_mod.app, ["code-repository", "search", "alpha", "--json"])
     assert result.exit_code == 0
     payload = json.loads(result.output)
     assert payload == [
         {
             "uid": "project-uid-11",
-            "project_name": "alpha-research",
+            "code_repository_name": "alpha-research",
             "repository_branch": "main",
             "cluster_id": 7,
         }
@@ -543,7 +543,7 @@ def test_list_organization_teams_uses_client_model(cli_mod, monkeypatch):
         def model_dump(self, mode="json"):
             return {"uid": self.uid, "name": self.name}
 
-    def _run_sdk_model_operation(*, module_name, class_name, operation, project_id_env=None):
+    def _run_sdk_model_operation(*, module_name, class_name, operation, code_repository_id_env=None):
         captured["module_name"] = module_name
         captured["class_name"] = class_name
 
@@ -581,7 +581,7 @@ def test_list_agents_uses_client_model(cli_mod, monkeypatch):
         def model_dump(self, mode="json"):
             return {"uid": self.uid, "name": self.name}
 
-    def _run_sdk_model_operation(*, module_name, class_name, operation, project_id_env=None):
+    def _run_sdk_model_operation(*, module_name, class_name, operation, code_repository_id_env=None):
         captured["module_name"] = module_name
         captured["class_name"] = class_name
 
@@ -618,7 +618,7 @@ def test_list_agents_uses_client_model(cli_mod, monkeypatch):
     ]
 
 
-def test_get_project_repository_uses_public_client_model(cli_mod, monkeypatch):
+def test_get_code_repository_repository_uses_public_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
     repository_uid = "2bcf47e3-3a79-4f1e-a428-176c0218a8d1"
@@ -635,22 +635,22 @@ def test_get_project_repository_uses_public_client_model(cli_mod, monkeypatch):
         captured["module_name"] = module_name
         captured["class_name"] = class_name
 
-        class ClientGitRepository:
+        class ClientGitHubRepositoryBinding:
             @classmethod
             def get_by_uid(cls, uid, timeout=None):
                 captured["uid"] = uid
                 captured["timeout"] = timeout
                 return FakeRepository()
 
-        return operation(ClientGitRepository)
+        return operation(ClientGitHubRepositoryBinding)
 
     monkeypatch.setattr(api_mod, "_run_sdk_model_operation", _run_sdk_model_operation)
 
-    result = api_mod.get_project_repository(repository_uid, timeout=12)
+    result = api_mod.get_code_repository_repository(repository_uid, timeout=12)
 
     assert captured == {
         "module_name": "mainsequence.client.models_foundry",
-        "class_name": "GitRepository",
+        "class_name": "GitHubRepositoryBinding",
         "uid": repository_uid,
         "timeout": 12,
     }
@@ -682,7 +682,7 @@ def test_semantic_search_agents_uses_client_model(cli_mod, monkeypatch):
                 "combined_score": self.combined_score,
             }
 
-    def _run_sdk_model_operation(*, module_name, class_name, operation, project_id_env=None):
+    def _run_sdk_model_operation(*, module_name, class_name, operation, code_repository_id_env=None):
         captured["module_name"] = module_name
         captured["class_name"] = class_name
 
@@ -744,7 +744,7 @@ def test_create_agent_uses_client_model(cli_mod, monkeypatch):
                 "name": "Research Copilot",
             }
 
-    def _run_sdk_model_operation(*, module_name, class_name, operation, project_id_env=None):
+    def _run_sdk_model_operation(*, module_name, class_name, operation, code_repository_id_env=None):
         captured["module_name"] = module_name
         captured["class_name"] = class_name
 
@@ -805,7 +805,7 @@ def test_get_agent_uses_agent_uid_detail_route(cli_mod, monkeypatch):
                 "name": "Research Copilot",
             }
 
-    def _run_sdk_model_operation(*, module_name, class_name, operation, project_id_env=None):
+    def _run_sdk_model_operation(*, module_name, class_name, operation, code_repository_id_env=None):
         captured["module_name"] = module_name
         captured["class_name"] = class_name
 
@@ -848,7 +848,7 @@ def test_list_agent_sessions_uses_client_model(cli_mod, monkeypatch):
                 "engine_name": "codex",
             }
 
-    def _run_sdk_model_operation(*, module_name, class_name, operation, project_id_env=None):
+    def _run_sdk_model_operation(*, module_name, class_name, operation, code_repository_id_env=None):
         captured["module_name"] = module_name
         captured["class_name"] = class_name
 
@@ -900,7 +900,7 @@ def test_get_or_create_agent_session_uses_client_model(cli_mod, monkeypatch):
                 "bound_handle": {"handle_unique_id": "portfolio-review-q2-2026"},
             }
 
-    def _run_sdk_model_operation(*, module_name, class_name, operation, project_id_env=None):
+    def _run_sdk_model_operation(*, module_name, class_name, operation, code_repository_id_env=None):
         captured["module_name"] = module_name
         captured["class_name"] = class_name
 
@@ -969,7 +969,7 @@ def test_get_agent_session_uses_client_model(cli_mod, monkeypatch):
                 "engine_name": "codex",
             }
 
-    def _run_sdk_model_operation(*, module_name, class_name, operation, project_id_env=None):
+    def _run_sdk_model_operation(*, module_name, class_name, operation, code_repository_id_env=None):
         captured["module_name"] = module_name
         captured["class_name"] = class_name
 
@@ -1019,7 +1019,7 @@ def test_send_agent_session_a2a_message_uses_client_model(cli_mod, monkeypatch):
 
     monkeypatch.setattr(api_mod, "save_runtime_access_cache", _save_cache)
 
-    def _run_sdk_model_operation(*, module_name, class_name, operation, project_id_env=None):
+    def _run_sdk_model_operation(*, module_name, class_name, operation, code_repository_id_env=None):
         captured["module_name"] = module_name
         captured["class_name"] = class_name
 
@@ -1091,7 +1091,7 @@ def test_list_agent_users_can_view_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
 
-    def _run_sdk_model_operation(*, module_name, class_name, operation, project_id_env=None):
+    def _run_sdk_model_operation(*, module_name, class_name, operation, code_repository_id_env=None):
         captured["module_name"] = module_name
         captured["class_name"] = class_name
 
@@ -1217,8 +1217,8 @@ def test_resolve_compute_defaults_accepts_k8s_quantities(cli_mod):
     assert used_defaults == []
 
 
-def test_project_jobs_create_help_uses_pydantic_metadata(cli_mod, runner):
-    result = runner.invoke(cli_mod.app, ["project", "jobs", "create", "--help"])
+def test_code_repository_jobs_create_help_uses_pydantic_metadata(cli_mod, runner):
+    result = runner.invoke(cli_mod.app, ["code-repository", "jobs", "create", "--help"])
     assert result.exit_code == 0
     assert "Human-readable job" in result.output
     assert "feature build" in result.output
@@ -1422,7 +1422,7 @@ def test_login_mocked(cli_mod, runner, monkeypatch):
     )
     monkeypatch.setattr(
         cli_mod,
-        "get_projects",
+        "get_code_repositories",
         lambda: (_ for _ in ()).throw(AssertionError("login should not fetch projects")),
     )
     monkeypatch.setenv("MAINSEQUENCE_ENDPOINT", configured_backend)
@@ -1676,7 +1676,7 @@ def test_login_with_backend_override(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(cli_mod.cfg, "auth_persistence_label", lambda: "secure OS storage")
     monkeypatch.setattr(
         cli_mod,
-        "get_projects",
+        "get_code_repositories",
         lambda: (_ for _ in ()).throw(AssertionError("login should not fetch projects")),
     )
     monkeypatch.delenv("MAINSEQUENCE_ENDPOINT", raising=False)
@@ -1694,7 +1694,7 @@ def test_login_with_backend_override(cli_mod, runner, monkeypatch):
     assert "MAINSEQUENCE_ENDPOINT" not in os.environ
 
 
-def test_login_with_different_backend_requires_projects_base(cli_mod, runner, monkeypatch):
+def test_login_with_different_backend_requires_code_repositories_base(cli_mod, runner, monkeypatch):
     called = {"browser": False}
 
     def _browser_login(no_open=False, on_authorize_url=None):
@@ -1721,7 +1721,7 @@ def test_login_with_different_backend_requires_projects_base(cli_mod, runner, mo
     assert called["browser"] is False
 
 
-def test_login_with_different_backend_allows_current_projects_base(cli_mod, runner, monkeypatch):
+def test_login_with_different_backend_allows_current_code_repositories_base(cli_mod, runner, monkeypatch):
     called = {"browser": False}
 
     def _browser_login(no_open=False, on_authorize_url=None):
@@ -1776,7 +1776,7 @@ def test_login_export_env(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(cli_mod.cfg, "set_session_overrides", lambda **kwargs: kwargs)
     monkeypatch.setattr(
         cli_mod,
-        "get_projects",
+        "get_code_repositories",
         lambda: (_ for _ in ()).throw(AssertionError("login should not fetch projects")),
     )
 
@@ -1816,7 +1816,7 @@ def test_login_with_jwt_tokens(cli_mod, runner, monkeypatch):
     )
     monkeypatch.setattr(
         cli_mod,
-        "get_projects",
+        "get_code_repositories",
         lambda: (_ for _ in ()).throw(AssertionError("login should not fetch projects")),
     )
     monkeypatch.setenv("MAINSEQUENCE_ENDPOINT", configured_backend)
@@ -2123,7 +2123,7 @@ def test_login_with_jwt_tokens_and_backend_override(cli_mod, runner, monkeypatch
     monkeypatch.setattr(cli_mod.cfg, "auth_persistence_label", lambda: "local CLI auth storage")
     monkeypatch.setattr(
         cli_mod,
-        "get_projects",
+        "get_code_repositories",
         lambda: (_ for _ in ()).throw(AssertionError("login should not fetch projects")),
     )
     monkeypatch.delenv("MAINSEQUENCE_ENDPOINT", raising=False)
@@ -2152,7 +2152,7 @@ def test_login_with_jwt_tokens_and_backend_override(cli_mod, runner, monkeypatch
     assert "MAINSEQUENCE_ENDPOINT" not in os.environ
 
 
-def test_login_with_jwt_tokens_and_different_backend_requires_projects_base(
+def test_login_with_jwt_tokens_and_different_backend_requires_code_repositories_base(
     cli_mod, runner, monkeypatch
 ):
     called = {"save_tokens": False}
@@ -2238,7 +2238,7 @@ def test_login_warns_when_secure_persist_fails(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(cli_mod.cfg, "set_session_overrides", lambda **kwargs: kwargs)
     monkeypatch.setattr(
         cli_mod,
-        "get_projects",
+        "get_code_repositories",
         lambda: (_ for _ in ()).throw(AssertionError("login should not fetch projects")),
     )
 
@@ -2250,7 +2250,7 @@ def test_login_warns_when_secure_persist_fails(cli_mod, runner, monkeypatch):
     assert "Could not persist auth tokens in secure OS storage" in result.output
 
 
-def test_login_does_not_fetch_projects_after_success(cli_mod, runner, monkeypatch):
+def test_login_does_not_fetch_code_repositories_after_success(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(
         cli_mod,
         "login_via_browser",
@@ -2273,7 +2273,7 @@ def test_login_does_not_fetch_projects_after_success(cli_mod, runner, monkeypatc
     monkeypatch.setattr(cli_mod.cfg, "set_session_overrides", lambda **kwargs: kwargs)
     monkeypatch.setattr(
         cli_mod,
-        "get_projects",
+        "get_code_repositories",
         lambda: (_ for _ in ()).throw(AssertionError("login should not fetch projects")),
     )
 
@@ -2286,7 +2286,7 @@ def test_login_does_not_fetch_projects_after_success(cli_mod, runner, monkeypatc
     assert "Projects:" not in result.output
 
 
-def test_jwt_login_does_not_fetch_projects_after_success(cli_mod, runner, monkeypatch):
+def test_jwt_login_does_not_fetch_code_repositories_after_success(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(cli_mod.cfg, "save_tokens", lambda username, access, refresh: True)
     monkeypatch.setattr(
         cli_mod.cfg,
@@ -2297,7 +2297,7 @@ def test_jwt_login_does_not_fetch_projects_after_success(cli_mod, runner, monkey
     monkeypatch.setattr(cli_mod.cfg, "set_session_overrides", lambda **kwargs: kwargs)
     monkeypatch.setattr(
         cli_mod,
-        "get_projects",
+        "get_code_repositories",
         lambda: (_ for _ in ()).throw(AssertionError("login should not fetch projects")),
     )
 
@@ -2529,19 +2529,19 @@ def test_config_get_tokens_prefers_env_over_local_store(cli_mod, monkeypatch, tm
     assert out["refresh"] == "env-ref"
 
 
-def test_prime_runtime_env_reads_endpoint_but_ignores_retired_project_identity(
+def test_prime_runtime_env_reads_endpoint_but_ignores_retired_code_repository_identity(
     cli_mod, monkeypatch, tmp_path
 ):
     bootstrap = importlib.import_module("mainsequence.bootstrap")
-    project_dir = tmp_path / "project"
-    project_dir.mkdir(parents=True, exist_ok=True)
-    (project_dir / ".env").write_text(
+    code_repository_dir = tmp_path / "code-repository"
+    code_repository_dir.mkdir(parents=True, exist_ok=True)
+    (code_repository_dir / ".env").write_text(
         "MAINSEQUENCE_ENDPOINT=https://project-backend.test\n"
         "MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n",
         encoding="utf-8",
     )
 
-    monkeypatch.chdir(project_dir)
+    monkeypatch.chdir(code_repository_dir)
     monkeypatch.setattr(cli_mod.cfg, "backend_url", lambda: "https://session-backend.test")
     monkeypatch.setattr(
         cli_mod.cfg,
@@ -2568,10 +2568,10 @@ def test_prime_runtime_env_reads_endpoint_but_ignores_retired_project_identity(
 
 def test_prime_runtime_env_falls_back_to_cli_login_context(cli_mod, monkeypatch, tmp_path):
     bootstrap = importlib.import_module("mainsequence.bootstrap")
-    project_dir = tmp_path / "project"
-    project_dir.mkdir(parents=True, exist_ok=True)
+    code_repository_dir = tmp_path / "code-repository"
+    code_repository_dir.mkdir(parents=True, exist_ok=True)
 
-    monkeypatch.chdir(project_dir)
+    monkeypatch.chdir(code_repository_dir)
     monkeypatch.setattr(cli_mod.cfg, "backend_url", lambda: "http://127.0.0.1:8000")
     monkeypatch.setattr(
         cli_mod.cfg,
@@ -2731,7 +2731,7 @@ def test_get_current_user_profile_accepts_top_level_organization_object(cli_mod,
     assert out == {"username": "jose@main-sequence.io", "organization": "Main Sequence Dev"}
 
 
-def test_add_deploy_key_uses_project_route(cli_mod, monkeypatch):
+def test_add_deploy_key_uses_code_repository_route(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
 
@@ -2744,19 +2744,19 @@ def test_add_deploy_key_uses_project_route(cli_mod, monkeypatch):
         captured.update(method=method, path=path, body=body)
         return _Response()
 
-    monkeypatch.setattr(api_mod, "resolve_project_uid", lambda project_ref: "project-uid-123")
+    monkeypatch.setattr(api_mod, "resolve_code_repository_uid", lambda code_repository_ref: "project-uid-123")
     monkeypatch.setattr(api_mod, "authed", _authed)
 
     api_mod.add_deploy_key("project-uid-123", "workstation", "ssh-ed25519 AAA test")
 
     assert captured == {
         "method": "POST",
-        "path": "/api/v1/projects/project-uid-123/add-deploy-key/",
+        "path": "/api/v1/code-repositories/project-uid-123/add-deploy-key/",
         "body": {"key_title": "workstation", "public_key": "ssh-ed25519 AAA test"},
     }
 
 
-def test_render_project_branch_default_redeployment_tag_uses_backend_contract(
+def test_render_code_repository_branch_default_redeployment_tag_uses_backend_contract(
     cli_mod,
     monkeypatch,
 ):
@@ -2777,15 +2777,15 @@ def test_render_project_branch_default_redeployment_tag_uses_backend_contract(
 
     monkeypatch.setattr(api_mod, "authed", _authed)
 
-    tag_name = api_mod.render_project_branch_default_redeployment_tag(
-        "project-branch-uid-123",
+    tag_name = api_mod.render_code_repository_branch_default_redeployment_tag(
+        "code-repository-branch-uid-123",
         version="1.2.3",
     )
 
     assert tag_name == "v1.2.3-dev.1"
     assert captured == {
         "method": "POST",
-        "path": ("/api/v1/project-branches/project-branch-uid-123/default-redeployment-tag/"),
+        "path": ("/api/v1/code-repository-branches/code-repository-branch-uid-123/default-redeployment-tag/"),
         "body": {"version": "1.2.3"},
     }
 
@@ -2841,7 +2841,7 @@ def test_sdk_latest_json(cli_mod, runner, monkeypatch):
     assert payload["latest"] == "v1.2.3"
 
 
-def test_project_list(cli_mod, runner, monkeypatch):
+def test_code_repository_list(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(
         cli_mod.cfg,
@@ -2851,16 +2851,16 @@ def test_project_list(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(cli_mod, "_org_slug_from_profile", lambda: "org")
     monkeypatch.setattr(
         cli_mod,
-        "get_projects",
+        "get_code_repositories",
         lambda: [
             {
                 "uid": "project-uid-1",
-                "project_name": "Demo",
+                "code_repository_name": "Demo",
                 "is_initialized": True,
             }
         ],
     )
-    result = runner.invoke(cli_mod.app, ["project", "list"])
+    result = runner.invoke(cli_mod.app, ["code-repository", "list"])
     assert result.exit_code == 0
     assert "UID" in result.output
     assert "project-uid-1" in result.output
@@ -2871,12 +2871,12 @@ def test_project_list(cli_mod, runner, monkeypatch):
     assert "Class" not in result.output
 
 
-def test_project_get_time_index_table_updates(cli_mod, runner, monkeypatch):
+def test_code_repository_get_time_index_table_updates(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(
         cli_mod,
-        "get_project_time_index_table_updates",
-        lambda project_branch_uid, timeout=None: [
+        "get_code_repository_time_index_table_updates",
+        lambda code_repository_branch_uid, timeout=None: [
             {
                 "uid": "time-index-table-update-uid-10",
                 "update_hash": "abc123",
@@ -2890,24 +2890,24 @@ def test_project_get_time_index_table_updates(cli_mod, runner, monkeypatch):
     )
     monkeypatch.setattr(
         cli_mod,
-        "_resolve_project_branch_uid_for_command",
-        lambda *args, **kwargs: "project-branch-uid-123",
+        "_resolve_code_repository_branch_uid_for_command",
+        lambda *args, **kwargs: "code-repository-branch-uid-123",
     )
 
-    result = runner.invoke(cli_mod.app, ["project", "time-index-table-updates", "list", "123"])
+    result = runner.invoke(cli_mod.app, ["code-repository", "time-index-table-updates", "list", "123"])
     assert result.exit_code == 0
-    assert "Project Time-Index Table Updates" in result.output
+    assert "CodeRepository Time-Index Table Updates" in result.output
     assert "abc123" in result.output
     assert "storage-xyz" in result.output
     assert "Total updates: 1" in result.output
 
 
-def test_project_can_view(cli_mod, runner, monkeypatch):
+def test_code_repository_can_view(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(
         cli_mod,
-        "list_project_users_can_view",
-        lambda project_id, timeout=None: [
+        "list_code_repository_users_can_view",
+        lambda code_repository_id, timeout=None: [
             {
                 "id": 12,
                 "username": "viewer",
@@ -2918,28 +2918,28 @@ def test_project_can_view(cli_mod, runner, monkeypatch):
         ],
     )
 
-    result = runner.invoke(cli_mod.app, ["project", "can_view", "4"])
+    result = runner.invoke(cli_mod.app, ["code-repository", "can_view", "4"])
     assert result.exit_code == 0
-    assert "Project Users Who Can View" in result.output
+    assert "CodeRepository Users Who Can View" in result.output
     assert "viewer@example.com" in result.output
     assert "Total users who can view: 1" in result.output
 
 
-def test_project_add_label(cli_mod, runner, monkeypatch):
+def test_code_repository_add_label(cli_mod, runner, monkeypatch):
     captured = {}
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
 
-    def _add(project_id, labels, timeout=None):
-        captured["project_id"] = project_id
+    def _add(code_repository_id, labels, timeout=None):
+        captured["project_id"] = code_repository_id
         captured["labels"] = labels
         captured["timeout"] = timeout
         return {"labels": [{"name": "rates"}, {"name": "research"}]}
 
-    monkeypatch.setattr(cli_mod, "add_project_labels", _add)
+    monkeypatch.setattr(cli_mod, "add_code_repository_labels", _add)
 
     result = runner.invoke(
         cli_mod.app,
-        ["project", "add-label", "project-uid-4", "--label", "rates,research"],
+        ["code-repository", "add-label", "project-uid-4", "--label", "rates,research"],
     )
     assert result.exit_code == 0
     assert captured == {
@@ -2947,24 +2947,24 @@ def test_project_add_label(cli_mod, runner, monkeypatch):
         "labels": ["rates", "research"],
         "timeout": None,
     }
-    assert "Project add-label completed." in result.output
+    assert "CodeRepository add-label completed." in result.output
     assert "rates, research" in result.output
 
 
-def test_project_add_to_edit(cli_mod, runner, monkeypatch):
+def test_code_repository_add_to_edit(cli_mod, runner, monkeypatch):
     captured = {}
 
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
 
-    def _add(project_id, user_uid, timeout=None):
-        captured["project_id"] = project_id
+    def _add(code_repository_id, user_uid, timeout=None):
+        captured["project_id"] = code_repository_id
         captured["user_uid"] = user_uid
         captured["timeout"] = timeout
         return {
             "ok": True,
             "action": "add_to_edit",
             "detail": "User now has explicit edit access.",
-            "object_uid": project_id,
+            "object_uid": code_repository_id,
             "object_type": "tdag.project",
             "user": {
                 "uid": user_uid,
@@ -2979,11 +2979,11 @@ def test_project_add_to_edit(cli_mod, runner, monkeypatch):
             "explicit_can_edit_user_uids": [user_uid],
         }
 
-    monkeypatch.setattr(cli_mod, "add_project_user_to_edit", _add)
+    monkeypatch.setattr(cli_mod, "add_code_repository_user_to_edit", _add)
 
     result = runner.invoke(
         cli_mod.app,
-        ["project", "add_to_edit", "project-uid-4", USER_UID],
+        ["code-repository", "add_to_edit", "project-uid-4", USER_UID],
     )
     assert result.exit_code == 0
     assert captured == {
@@ -2991,34 +2991,34 @@ def test_project_add_to_edit(cli_mod, runner, monkeypatch):
         "user_uid": USER_UID,
         "timeout": None,
     }
-    assert "Project add_to_edit completed." in result.output
-    assert "Project Sharing Update" in result.output
+    assert "CodeRepository add_to_edit completed." in result.output
+    assert "CodeRepository Sharing Update" in result.output
     assert "editor@example.com" in result.output
 
 
-def test_project_add_to_edit_rejects_numeric_user_identifier(cli_mod, runner):
+def test_code_repository_add_to_edit_rejects_numeric_user_identifier(cli_mod, runner):
     result = runner.invoke(
         cli_mod.app,
-        ["project", "add_to_edit", "project-uid-4", "12"],
+        ["code-repository", "add_to_edit", "project-uid-4", "12"],
     )
 
     assert result.exit_code == 2
     assert "invalid value" in result.output.lower()
 
 
-def test_project_add_team_to_view(cli_mod, runner, monkeypatch):
+def test_code_repository_add_team_to_view(cli_mod, runner, monkeypatch):
     captured = {}
 
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
 
-    def _add(project_id, team_uid, timeout=None):
-        captured["project_id"] = project_id
+    def _add(code_repository_id, team_uid, timeout=None):
+        captured["project_id"] = code_repository_id
         captured["team_uid"] = team_uid
         captured["timeout"] = timeout
         return {
             "action": "add_team_to_view",
             "detail": "Team now has explicit view access.",
-            "object_uid": project_id,
+            "object_uid": code_repository_id,
             "object_type": "tdag.project",
             "team": {
                 "uid": team_uid,
@@ -3031,11 +3031,11 @@ def test_project_add_team_to_view(cli_mod, runner, monkeypatch):
             "explicit_can_edit_team_uids": [],
         }
 
-    monkeypatch.setattr(cli_mod, "add_project_team_to_view", _add)
+    monkeypatch.setattr(cli_mod, "add_code_repository_team_to_view", _add)
 
     result = runner.invoke(
         cli_mod.app,
-        ["project", "add_team_to_view", "project-uid-4", TEAM_UID],
+        ["code-repository", "add_team_to_view", "project-uid-4", TEAM_UID],
     )
     assert result.exit_code == 0
     assert captured == {
@@ -3043,11 +3043,11 @@ def test_project_add_team_to_view(cli_mod, runner, monkeypatch):
         "team_uid": TEAM_UID,
         "timeout": None,
     }
-    assert "Project add_team_to_view completed." in result.output
+    assert "CodeRepository add_team_to_view completed." in result.output
     assert "Research" in result.output
 
 
-def test_get_project_time_index_table_updates_sets_project_env(cli_mod, monkeypatch):
+def test_get_code_repository_time_index_table_updates_sets_code_repository_env(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
 
@@ -3058,7 +3058,7 @@ def test_get_project_time_index_table_updates_sets_project_env(cli_mod, monkeypa
     monkeypatch.delenv("MAIN_SEQUENCE_PROJECT_UID", raising=False)
     monkeypatch.setattr(
         api_mod,
-        "resolve_project_branch_uid",
+        "resolve_code_repository_branch_uid",
         lambda value: str(value),
     )
 
@@ -3113,19 +3113,19 @@ def test_get_project_time_index_table_updates_sets_project_env(cli_mod, monkeypa
         def model_dump(self):
             return {"uid": "time-index-table-update-uid-10", "update_hash": "abc123"}
 
-    class FakeProjectBranch:
-        ROOT_URL = "https://old.test/api/v1/project-branches"
+    class FakeCodeRepositoryBranch:
+        ROOT_URL = "https://old.test/api/v1/code-repository-branches"
 
         @classmethod
         def get(cls, pk, timeout=None):
-            captured["project_branch_uid_arg"] = pk
-            captured["env_project_uid"] = os.environ.get("MAIN_SEQUENCE_PROJECT_UID")
+            captured["code_repository_branch_uid_arg"] = pk
+            captured["env_code_repository_uid"] = os.environ.get("MAIN_SEQUENCE_PROJECT_UID")
             return types.SimpleNamespace(
                 get_time_index_table_updates=lambda timeout=None: [FakeUpdate()]
             )
 
     fake_base.BaseObjectOrm = FakeBaseObjectOrm
-    fake_models.ProjectBranch = FakeProjectBranch
+    fake_models.CodeRepositoryBranch = FakeCodeRepositoryBranch
     fake_client_pkg.utils = fake_utils
 
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
@@ -3133,15 +3133,15 @@ def test_get_project_time_index_table_updates_sets_project_env(cli_mod, monkeypa
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
     monkeypatch.setitem(sys.modules, "mainsequence.client.models_foundry", fake_models)
 
-    out = api_mod.get_project_time_index_table_updates("5a28020a-0f1b-47ee-aab8-334286234bea")
-    assert captured["project_branch_uid_arg"] == "5a28020a-0f1b-47ee-aab8-334286234bea"
-    assert captured["env_project_uid"] is None
+    out = api_mod.get_code_repository_time_index_table_updates("5a28020a-0f1b-47ee-aab8-334286234bea")
+    assert captured["code_repository_branch_uid_arg"] == "5a28020a-0f1b-47ee-aab8-334286234bea"
+    assert captured["env_code_repository_uid"] is None
     assert captured["jwt"] == ("acc", "ref")
     assert out == [{"uid": "time-index-table-update-uid-10", "update_hash": "abc123"}]
     assert os.environ.get("MAIN_SEQUENCE_PROJECT_UID") is None
 
 
-def test_list_project_users_can_view_uses_client_model(cli_mod, monkeypatch):
+def test_list_code_repository_users_can_view_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
 
@@ -3179,7 +3179,7 @@ def test_list_project_users_can_view_uses_client_model(cli_mod, monkeypatch):
         ROOT_URL = "https://old.test/api/v1"
 
     class FakeProject:
-        ROOT_URL = "https://old.test/api/v1/projects"
+        ROOT_URL = "https://old.test/api/v1/code-repositories"
 
         @classmethod
         def get_by_uid(cls, uid, timeout=None):
@@ -3209,7 +3209,7 @@ def test_list_project_users_can_view_uses_client_model(cli_mod, monkeypatch):
             return _Project()
 
     fake_base.BaseObjectOrm = FakeBaseObjectOrm
-    fake_models.Project = FakeProject
+    fake_models.CodeRepository = FakeProject
     fake_client_pkg.utils = fake_utils
 
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
@@ -3217,14 +3217,14 @@ def test_list_project_users_can_view_uses_client_model(cli_mod, monkeypatch):
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
     monkeypatch.setitem(sys.modules, "mainsequence.client.models_foundry", fake_models)
 
-    out = api_mod.list_project_users_can_view("project-uid-4", timeout=9)
+    out = api_mod.list_code_repository_users_can_view("project-uid-4", timeout=9)
     assert captured["get_by_uid"] == {"uid": "project-uid-4", "timeout": 9}
     assert captured["can_view_timeout"] == 9
     assert captured["jwt"] == ("acc", "ref")
     assert out["users"][0]["username"] == "viewer"
 
 
-def test_add_project_user_to_edit_uses_client_model(cli_mod, monkeypatch):
+def test_add_code_repository_user_to_edit_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
 
@@ -3262,7 +3262,7 @@ def test_add_project_user_to_edit_uses_client_model(cli_mod, monkeypatch):
         ROOT_URL = "https://old.test/api/v1"
 
     class FakeProject:
-        ROOT_URL = "https://old.test/api/v1/projects"
+        ROOT_URL = "https://old.test/api/v1/code-repositories"
 
         @classmethod
         def get_by_uid(cls, uid, timeout=None):
@@ -3291,7 +3291,7 @@ def test_add_project_user_to_edit_uses_client_model(cli_mod, monkeypatch):
             return _Project()
 
     fake_base.BaseObjectOrm = FakeBaseObjectOrm
-    fake_models.Project = FakeProject
+    fake_models.CodeRepository = FakeProject
     fake_client_pkg.utils = fake_utils
 
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
@@ -3299,7 +3299,7 @@ def test_add_project_user_to_edit_uses_client_model(cli_mod, monkeypatch):
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
     monkeypatch.setitem(sys.modules, "mainsequence.client.models_foundry", fake_models)
 
-    out = api_mod.add_project_user_to_edit("project-uid-4", USER_UID, timeout=10)
+    out = api_mod.add_code_repository_user_to_edit("project-uid-4", USER_UID, timeout=10)
     assert captured["get_by_uid"] == {"uid": "project-uid-4", "timeout": 10}
     assert captured["add_to_edit"] == {"user_uid": USER_UID, "timeout": 10}
     assert captured["jwt"] == ("acc", "ref")
@@ -3961,7 +3961,7 @@ def test_delete_secret_uses_client_model(cli_mod, monkeypatch):
     assert out["name"] == "API_KEY"
 
 
-def test_create_project_image_uses_client_model(cli_mod, monkeypatch):
+def test_create_code_repository_image_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
 
@@ -3970,7 +3970,7 @@ def test_create_project_image_uses_client_model(cli_mod, monkeypatch):
     )
     monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
     monkeypatch.delenv("MAIN_SEQUENCE_PROJECT_UID", raising=False)
-    monkeypatch.setattr(api_mod, "resolve_project_branch_uid", lambda value: str(value))
+    monkeypatch.setattr(api_mod, "resolve_code_repository_branch_uid", lambda value: str(value))
 
     fake_client_pkg = types.ModuleType("mainsequence.client")
     fake_utils = types.ModuleType("mainsequence.client.utils")
@@ -3990,27 +3990,27 @@ def test_create_project_image_uses_client_model(cli_mod, monkeypatch):
     class FakeBaseObjectOrm:
         ROOT_URL = "https://old.test/api/v1"
 
-    class FakeProjectImage:
-        ROOT_URL = "https://old.test/api/v1/project-images"
+    class FakeCodeRepositoryImage:
+        ROOT_URL = "https://old.test/api/v1/code-repository-images"
 
         @classmethod
         def create(
             cls,
             *,
-            project_repo_hash,
-            related_project_branch_uid=None,
+            code_repository_commit_hash,
+            related_code_repository_branch_uid=None,
             base_image_uid=None,
             timeout=None,
         ):
-            captured["project_repo_hash"] = project_repo_hash
-            captured["related_project_branch_uid"] = related_project_branch_uid
+            captured["code_repository_commit_hash"] = code_repository_commit_hash
+            captured["related_code_repository_branch_uid"] = related_code_repository_branch_uid
             captured["base_image_uid"] = base_image_uid
-            captured["env_project_uid"] = os.environ.get("MAIN_SEQUENCE_PROJECT_UID")
+            captured["env_code_repository_uid"] = os.environ.get("MAIN_SEQUENCE_PROJECT_UID")
             return types.SimpleNamespace(
                 model_dump=lambda: {
                     "uid": "8b62d1dd-e146-44af-957c-38c5f5b1d8d5",
-                    "project_repo_hash": project_repo_hash,
-                    "related_project": related_project_branch_uid,
+                    "code_repository_commit_hash": code_repository_commit_hash,
+                    "related_project": related_code_repository_branch_uid,
                     "base_image": base_image_uid,
                     "build_error": False,
                     "is_ready": False,
@@ -4019,7 +4019,7 @@ def test_create_project_image_uses_client_model(cli_mod, monkeypatch):
             )
 
     fake_base.BaseObjectOrm = FakeBaseObjectOrm
-    fake_models.ProjectImage = FakeProjectImage
+    fake_models.CodeRepositoryImage = FakeCodeRepositoryImage
     fake_client_pkg.utils = fake_utils
 
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
@@ -4027,22 +4027,22 @@ def test_create_project_image_uses_client_model(cli_mod, monkeypatch):
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
     monkeypatch.setitem(sys.modules, "mainsequence.client.models_foundry", fake_models)
 
-    out = api_mod.create_project_image(
-        project_repo_hash="abc123",
-        related_project_branch_uid="5a28020a-0f1b-47ee-aab8-334286234bea",
+    out = api_mod.create_code_repository_image(
+        code_repository_commit_hash="abc123",
+        related_code_repository_branch_uid="5a28020a-0f1b-47ee-aab8-334286234bea",
         base_image_uid="22222222-2222-4222-8222-222222222222",
     )
-    assert captured["project_repo_hash"] == "abc123"
-    assert captured["related_project_branch_uid"] == "5a28020a-0f1b-47ee-aab8-334286234bea"
+    assert captured["code_repository_commit_hash"] == "abc123"
+    assert captured["related_code_repository_branch_uid"] == "5a28020a-0f1b-47ee-aab8-334286234bea"
     assert captured["base_image_uid"] == "22222222-2222-4222-8222-222222222222"
-    assert captured["env_project_uid"] is None
+    assert captured["env_code_repository_uid"] is None
     assert captured["jwt"] == ("acc", "ref")
     assert out["uid"] == "8b62d1dd-e146-44af-957c-38c5f5b1d8d5"
     assert out["build_error"] is False
     assert os.environ.get("MAIN_SEQUENCE_PROJECT_UID") is None
 
 
-def test_list_project_images_uses_client_model(cli_mod, monkeypatch):
+def test_list_code_repository_images_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {"filters": []}
 
@@ -4051,7 +4051,7 @@ def test_list_project_images_uses_client_model(cli_mod, monkeypatch):
     )
     monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
     monkeypatch.delenv("MAIN_SEQUENCE_PROJECT_UID", raising=False)
-    monkeypatch.setattr(api_mod, "resolve_project_branch_uid", lambda value: str(value))
+    monkeypatch.setattr(api_mod, "resolve_code_repository_branch_uid", lambda value: str(value))
 
     fake_client_pkg = types.ModuleType("mainsequence.client")
     fake_utils = types.ModuleType("mainsequence.client.utils")
@@ -4071,19 +4071,19 @@ def test_list_project_images_uses_client_model(cli_mod, monkeypatch):
     class FakeBaseObjectOrm:
         ROOT_URL = "https://old.test/api/v1"
 
-    class FakeProjectImage:
-        ROOT_URL = "https://old.test/api/v1/project-images"
+    class FakeCodeRepositoryImage:
+        ROOT_URL = "https://old.test/api/v1/code-repository-images"
 
         @classmethod
         def filter(cls, timeout=None, **kwargs):
             captured["filters"].append(kwargs)
-            captured["env_project_uid"] = os.environ.get("MAIN_SEQUENCE_PROJECT_UID")
-            if "related_project_branch_uid" in kwargs:
+            captured["env_code_repository_uid"] = os.environ.get("MAIN_SEQUENCE_PROJECT_UID")
+            if "related_code_repository_branch_uid" in kwargs:
                 return [
                     types.SimpleNamespace(
                         model_dump=lambda: {
                             "uid": "8b62d1dd-e146-44af-957c-38c5f5b1d8d5",
-                            "project_repo_hash": "abc123",
+                            "code_repository_commit_hash": "abc123",
                             "related_project": 123,
                             "base_image": {"id": 22, "title": "Python 3.12"},
                             "build_error": False,
@@ -4095,7 +4095,7 @@ def test_list_project_images_uses_client_model(cli_mod, monkeypatch):
             return []
 
     fake_base.BaseObjectOrm = FakeBaseObjectOrm
-    fake_models.ProjectImage = FakeProjectImage
+    fake_models.CodeRepositoryImage = FakeCodeRepositoryImage
     fake_client_pkg.utils = fake_utils
 
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
@@ -4103,20 +4103,20 @@ def test_list_project_images_uses_client_model(cli_mod, monkeypatch):
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
     monkeypatch.setitem(sys.modules, "mainsequence.client.models_foundry", fake_models)
 
-    out = api_mod.list_project_images(
-        related_project_branch_uid="5a28020a-0f1b-47ee-aab8-334286234bea",
-        filters={"project_repo_hash__in": ["abc123", "def456"]},
+    out = api_mod.list_code_repository_images(
+        related_code_repository_branch_uid="5a28020a-0f1b-47ee-aab8-334286234bea",
+        filters={"code_repository_commit_hash__in": ["abc123", "def456"]},
     )
     assert captured["filters"][0] == {
-        "project_repo_hash__in": ["abc123", "def456"],
-        "related_project_branch_uid": "5a28020a-0f1b-47ee-aab8-334286234bea",
+        "code_repository_commit_hash__in": ["abc123", "def456"],
+        "related_code_repository_branch_uid": "5a28020a-0f1b-47ee-aab8-334286234bea",
     }
-    assert captured["env_project_uid"] is None
+    assert captured["env_code_repository_uid"] is None
     assert captured["jwt"] == ("acc", "ref")
     assert out == [
         {
             "uid": "8b62d1dd-e146-44af-957c-38c5f5b1d8d5",
-            "project_repo_hash": "abc123",
+            "code_repository_commit_hash": "abc123",
             "related_project": 123,
             "base_image": {"id": 22, "title": "Python 3.12"},
             "build_error": False,
@@ -4127,7 +4127,7 @@ def test_list_project_images_uses_client_model(cli_mod, monkeypatch):
     assert os.environ.get("MAIN_SEQUENCE_PROJECT_UID") is None
 
 
-def test_delete_project_image_uses_client_model(cli_mod, monkeypatch):
+def test_delete_code_repository_image_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
 
@@ -4154,8 +4154,8 @@ def test_delete_project_image_uses_client_model(cli_mod, monkeypatch):
     class FakeBaseObjectOrm:
         ROOT_URL = "https://old.test/api/v1"
 
-    class FakeProjectImage:
-        ROOT_URL = "https://old.test/api/v1/project-images"
+    class FakeCodeRepositoryImage:
+        ROOT_URL = "https://old.test/api/v1/code-repository-images"
 
         @classmethod
         def get(cls, pk=None, timeout=None, **filters):
@@ -4167,7 +4167,7 @@ def test_delete_project_image_uses_client_model(cli_mod, monkeypatch):
                 def model_dump(self, mode="python"):
                     return {
                         "uid": pk,
-                        "project_repo_hash": "abc123",
+                        "code_repository_commit_hash": "abc123",
                         "base_image": {"id": 22, "title": "Python 3.12"},
                         "is_ready": True,
                     }
@@ -4178,7 +4178,7 @@ def test_delete_project_image_uses_client_model(cli_mod, monkeypatch):
             return _Image()
 
     fake_base.BaseObjectOrm = FakeBaseObjectOrm
-    fake_models.ProjectImage = FakeProjectImage
+    fake_models.CodeRepositoryImage = FakeCodeRepositoryImage
     fake_client_pkg.utils = fake_utils
 
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
@@ -4187,15 +4187,15 @@ def test_delete_project_image_uses_client_model(cli_mod, monkeypatch):
     monkeypatch.setitem(sys.modules, "mainsequence.client.models_foundry", fake_models)
 
     image_uid = "8b62d1dd-e146-44af-957c-38c5f5b1d8d5"
-    out = api_mod.delete_project_image(image_uid=image_uid)
+    out = api_mod.delete_code_repository_image(image_uid=image_uid)
     assert captured["get"] == {"pk": image_uid, "timeout": None, "filters": {}}
     assert captured["deleted"] == image_uid
     assert captured["jwt"] == ("acc", "ref")
     assert out["uid"] == image_uid
-    assert out["project_repo_hash"] == "abc123"
+    assert out["code_repository_commit_hash"] == "abc123"
 
 
-def test_list_project_jobs_uses_client_model(cli_mod, monkeypatch):
+def test_list_code_repository_jobs_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {"filters": []}
 
@@ -4204,7 +4204,7 @@ def test_list_project_jobs_uses_client_model(cli_mod, monkeypatch):
     )
     monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
     monkeypatch.delenv("MAIN_SEQUENCE_PROJECT_UID", raising=False)
-    monkeypatch.setattr(api_mod, "resolve_project_branch_uid", lambda value: str(value))
+    monkeypatch.setattr(api_mod, "resolve_code_repository_branch_uid", lambda value: str(value))
 
     fake_client_pkg = types.ModuleType("mainsequence.client")
     fake_utils = types.ModuleType("mainsequence.client.utils")
@@ -4229,8 +4229,8 @@ def test_list_project_jobs_uses_client_model(cli_mod, monkeypatch):
         @classmethod
         def filter(cls, timeout=None, **kwargs):
             captured["filters"].append(kwargs)
-            captured["env_project_uid"] = os.environ.get("MAIN_SEQUENCE_PROJECT_UID")
-            if "project_branch_uid" in kwargs:
+            captured["env_code_repository_uid"] = os.environ.get("MAIN_SEQUENCE_PROJECT_UID")
+            if "code_repository_branch_uid" in kwargs:
                 return [
                     types.SimpleNamespace(
                         model_dump=lambda: {
@@ -4239,7 +4239,7 @@ def test_list_project_jobs_uses_client_model(cli_mod, monkeypatch):
                             "organization_environment_uid": (
                                 "58218213-5e4e-43de-a5bd-6757f4e1c8f6"
                             ),
-                            "project_repo_hash": "abc123",
+                            "code_repository_commit_hash": "abc123",
                             "execution_path": "src.jobs.daily:main",
                             "app_name": None,
                             "task_schedule": {
@@ -4263,23 +4263,23 @@ def test_list_project_jobs_uses_client_model(cli_mod, monkeypatch):
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
     monkeypatch.setitem(sys.modules, "mainsequence.client.models_helpers", fake_helpers)
 
-    project_branch_uid = "5a28020a-0f1b-47ee-aab8-334286234bea"
-    out = api_mod.list_project_jobs(
-        project_branch_uid=project_branch_uid,
+    code_repository_branch_uid = "5a28020a-0f1b-47ee-aab8-334286234bea"
+    out = api_mod.list_code_repository_jobs(
+        code_repository_branch_uid=code_repository_branch_uid,
         filters={"name__contains": "daily"},
     )
     assert captured["filters"][0] == {
         "name__contains": "daily",
-        "project_branch_uid": project_branch_uid,
+        "code_repository_branch_uid": code_repository_branch_uid,
     }
-    assert captured["env_project_uid"] is None
+    assert captured["env_code_repository_uid"] is None
     assert captured["jwt"] == ("acc", "ref")
     assert out == [
         {
             "uid": "7d0ab07c-d1c0-4b7f-9c69-3c1a41c0a4da",
             "name": "daily-run",
             "organization_environment_uid": ("58218213-5e4e-43de-a5bd-6757f4e1c8f6"),
-            "project_repo_hash": "abc123",
+            "code_repository_commit_hash": "abc123",
             "execution_path": "src.jobs.daily:main",
             "app_name": None,
             "task_schedule": {
@@ -4293,7 +4293,7 @@ def test_list_project_jobs_uses_client_model(cli_mod, monkeypatch):
     assert os.environ.get("MAIN_SEQUENCE_PROJECT_UID") is None
 
 
-def test_list_project_resources_uses_client_model(cli_mod, monkeypatch):
+def test_list_code_repository_resources_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {"filters": []}
 
@@ -4302,7 +4302,7 @@ def test_list_project_resources_uses_client_model(cli_mod, monkeypatch):
     )
     monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
     monkeypatch.delenv("MAIN_SEQUENCE_PROJECT_UID", raising=False)
-    monkeypatch.setattr(api_mod, "resolve_project_branch_uid", lambda value: str(value))
+    monkeypatch.setattr(api_mod, "resolve_code_repository_branch_uid", lambda value: str(value))
 
     fake_client_pkg = types.ModuleType("mainsequence.client")
     fake_utils = types.ModuleType("mainsequence.client.utils")
@@ -4322,13 +4322,13 @@ def test_list_project_resources_uses_client_model(cli_mod, monkeypatch):
     class FakeBaseObjectOrm:
         ROOT_URL = "https://old.test/api/v1"
 
-    class FakeProjectResource:
-        ROOT_URL = "https://old.test/api/v1/project-resources"
+    class FakeCodeRepositoryResource:
+        ROOT_URL = "https://old.test/api/v1/code-repository-resources"
 
         @classmethod
         def filter(cls, timeout=None, **kwargs):
             captured["filters"].append(kwargs)
-            captured["env_project_uid"] = os.environ.get("MAIN_SEQUENCE_PROJECT_UID")
+            captured["env_code_repository_uid"] = os.environ.get("MAIN_SEQUENCE_PROJECT_UID")
             return [
                 types.SimpleNamespace(
                     model_dump=lambda: {
@@ -4344,8 +4344,8 @@ def test_list_project_resources_uses_client_model(cli_mod, monkeypatch):
                 types.SimpleNamespace(
                     model_dump=lambda: {
                         "uid": "12cc8937-2e90-45da-8326-9e09a46f32cb",
-                        "name": "Project Agent Card",
-                        "resource_type": "project_agent_card",
+                        "name": "CodeRepository Agent Card",
+                        "resource_type": "code_repository_agent_card",
                         "path": ".agents/agent_card.json",
                         "repo_commit_sha": "abc123",
                     }
@@ -4353,7 +4353,7 @@ def test_list_project_resources_uses_client_model(cli_mod, monkeypatch):
             ]
 
     fake_base.BaseObjectOrm = FakeBaseObjectOrm
-    fake_helpers.ProjectResource = FakeProjectResource
+    fake_helpers.CodeRepositoryResource = FakeCodeRepositoryResource
     fake_client_pkg.utils = fake_utils
 
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
@@ -4361,8 +4361,8 @@ def test_list_project_resources_uses_client_model(cli_mod, monkeypatch):
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
     monkeypatch.setitem(sys.modules, "mainsequence.client.models_helpers", fake_helpers)
 
-    out = api_mod.list_project_resources(
-        project_branch_uid="5a28020a-0f1b-47ee-aab8-334286234bea",
+    out = api_mod.list_code_repository_resources(
+        code_repository_branch_uid="5a28020a-0f1b-47ee-aab8-334286234bea",
         repo_commit_sha="abc123",
         resource_type="dashboard",
         filters={"uid__in": ["857bec7b-dd77-4272-aecd-13fc2138eacc"]},
@@ -4373,18 +4373,18 @@ def test_list_project_resources_uses_client_model(cli_mod, monkeypatch):
         "repo_commit_sha": "abc123",
         "resource_type": "dashboard",
     }
-    assert captured["env_project_uid"] is None
+    assert captured["env_code_repository_uid"] is None
     assert captured["jwt"] == ("acc", "ref")
     assert out[0]["name"] == "analytics_dashboard.py"
     assert [resource["resource_type"] for resource in out] == [
         "script",
-        "project_agent_card",
+        "code_repository_agent_card",
     ]
     assert out[1]["path"] == ".agents/agent_card.json"
     assert os.environ.get("MAIN_SEQUENCE_PROJECT_UID") is None
 
 
-def test_create_project_resource_release_uses_client_model(cli_mod, monkeypatch):
+def test_create_code_repository_resource_release_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
 
@@ -4411,8 +4411,8 @@ def test_create_project_resource_release_uses_client_model(cli_mod, monkeypatch)
     class FakeBaseObjectOrm:
         ROOT_URL = "https://old.test/api/v1"
 
-    class FakeProjectResource:
-        ROOT_URL = "https://old.test/api/v1/project-resources"
+    class FakeCodeRepositoryResource:
+        ROOT_URL = "https://old.test/api/v1/code-repository-resources"
 
         @classmethod
         def get(cls, pk=None, timeout=None, **filters):
@@ -4452,7 +4452,7 @@ def test_create_project_resource_release_uses_client_model(cli_mod, monkeypatch)
             return _Resource()
 
     fake_base.BaseObjectOrm = FakeBaseObjectOrm
-    fake_helpers.ProjectResource = FakeProjectResource
+    fake_helpers.CodeRepositoryResource = FakeCodeRepositoryResource
     fake_client_pkg.utils = fake_utils
 
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
@@ -4460,7 +4460,7 @@ def test_create_project_resource_release_uses_client_model(cli_mod, monkeypatch)
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
     monkeypatch.setitem(sys.modules, "mainsequence.client.models_helpers", fake_helpers)
 
-    out = api_mod.create_project_resource_release(
+    out = api_mod.create_code_repository_resource_release(
         release_kind="streamlit_dashboard",
         resource_uid="857bec7b-dd77-4272-aecd-13fc2138eacc",
         related_image_uid="8b62d1dd-e146-44af-957c-38c5f5b1d8d5",
@@ -4491,7 +4491,7 @@ def test_create_project_resource_release_uses_client_model(cli_mod, monkeypatch)
     }
 
 
-def test_create_project_resource_release_uses_client_model_for_fastapi(cli_mod, monkeypatch):
+def test_create_code_repository_resource_release_uses_client_model_for_fastapi(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
 
@@ -4518,8 +4518,8 @@ def test_create_project_resource_release_uses_client_model_for_fastapi(cli_mod, 
     class FakeBaseObjectOrm:
         ROOT_URL = "https://old.test/api/v1"
 
-    class FakeProjectResource:
-        ROOT_URL = "https://old.test/api/v1/project-resources"
+    class FakeCodeRepositoryResource:
+        ROOT_URL = "https://old.test/api/v1/code-repository-resources"
 
         @classmethod
         def get(cls, pk=None, timeout=None, **filters):
@@ -4539,7 +4539,7 @@ def test_create_project_resource_release_uses_client_model_for_fastapi(cli_mod, 
             return _Resource()
 
     fake_base.BaseObjectOrm = FakeBaseObjectOrm
-    fake_helpers.ProjectResource = FakeProjectResource
+    fake_helpers.CodeRepositoryResource = FakeCodeRepositoryResource
     fake_client_pkg.utils = fake_utils
 
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
@@ -4547,7 +4547,7 @@ def test_create_project_resource_release_uses_client_model_for_fastapi(cli_mod, 
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
     monkeypatch.setitem(sys.modules, "mainsequence.client.models_helpers", fake_helpers)
 
-    out = api_mod.create_project_resource_release(
+    out = api_mod.create_code_repository_resource_release(
         release_kind="fastapi",
         resource_uid="857bec7b-dd77-4272-aecd-13fc2138eacc",
         related_image_uid="8b62d1dd-e146-44af-957c-38c5f5b1d8d5",
@@ -4820,7 +4820,7 @@ def test_meta_table_api_uses_client_model(cli_mod, monkeypatch):
     assert deleted["uid"] == "meta-table-42"
 
 
-def test_validate_project_name_uses_client_model(cli_mod, monkeypatch):
+def test_validate_code_repository_name_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
 
@@ -4848,27 +4848,27 @@ def test_validate_project_name_uses_client_model(cli_mod, monkeypatch):
         ROOT_URL = "https://old.test/api/v1"
 
     class FakeProject:
-        ROOT_URL = "https://old.test/api/v1/projects"
+        ROOT_URL = "https://old.test/api/v1/code-repositories"
 
         @classmethod
-        def validate_name(cls, *, project_name, timeout=None):
-            captured["project_name"] = project_name
+        def validate_name(cls, *, code_repository_name, timeout=None):
+            captured["code_repository_name"] = code_repository_name
             captured["timeout"] = timeout
             return types.SimpleNamespace(
                 model_dump=lambda mode="json": {
-                    "project_name": project_name,
+                    "code_repository_name": code_repository_name,
                     "available": False,
                     "reason": "A project with this name already exists in your organization.",
                     "normalized": {
-                        "slugified_project_name": "rates-platform",
-                        "project_library_name": "rates_platform",
+                        "slugified_code_repository_name": "rates-platform",
+                        "repository_library_name": "rates_platform",
                     },
                     "suggestions": ["Rates Platform 2", "Rates Platform 3"],
                 }
             )
 
     fake_base.BaseObjectOrm = FakeBaseObjectOrm
-    fake_models.Project = FakeProject
+    fake_models.CodeRepository = FakeProject
     fake_client_pkg.utils = fake_utils
 
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
@@ -4876,13 +4876,13 @@ def test_validate_project_name_uses_client_model(cli_mod, monkeypatch):
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
     monkeypatch.setitem(sys.modules, "mainsequence.client.models_foundry", fake_models)
 
-    out = api_mod.validate_project_name(project_name="Rates Platform", timeout=25)
+    out = api_mod.validate_code_repository_name(code_repository_name="Rates Platform", timeout=25)
 
     assert captured["jwt"] == ("acc", "ref")
-    assert captured["project_name"] == "Rates Platform"
+    assert captured["code_repository_name"] == "Rates Platform"
     assert captured["timeout"] == 25
     assert out["available"] is False
-    assert out["normalized"]["project_library_name"] == "rates_platform"
+    assert out["normalized"]["repository_library_name"] == "rates_platform"
 
 
 def test_time_index_table_description_search_uses_client_model(cli_mod, monkeypatch):
@@ -5477,7 +5477,7 @@ def test_get_logged_user_details_uses_canonical_authenticated_user_method(cli_mo
     )
 
 
-def test_search_projects_uses_client_model(cli_mod, monkeypatch):
+def test_search_code_repositories_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
 
@@ -5505,7 +5505,7 @@ def test_search_projects_uses_client_model(cli_mod, monkeypatch):
         ROOT_URL = "https://old.test/api/v1"
 
     class FakeProject:
-        ROOT_URL = "https://old.test/api/v1/projects"
+        ROOT_URL = "https://old.test/api/v1/code-repositories"
 
         @classmethod
         def quick_search(cls, q, *, limit=20, timeout=None):
@@ -5516,23 +5516,23 @@ def test_search_projects_uses_client_model(cli_mod, monkeypatch):
                 types.SimpleNamespace(
                     model_dump=lambda mode="json": {
                         "uid": "project-uid-11",
-                        "project_name": "alpha-research",
-                        "project_type": "python",
+                        "code_repository_name": "alpha-research",
+                        "code_repository_type": "python",
                         "cluster_id": 7,
                     }
                 ),
                 types.SimpleNamespace(
                     model_dump=lambda mode="json": {
                         "uid": "project-uid-12",
-                        "project_name": "data-live",
-                        "project_type": "vite_react",
+                        "code_repository_name": "data-live",
+                        "code_repository_type": "vite_react",
                         "cluster_id": 9,
                     }
                 ),
             ]
 
     fake_base.BaseObjectOrm = FakeBaseObjectOrm
-    fake_models.Project = FakeProject
+    fake_models.CodeRepository = FakeProject
     fake_client_pkg.utils = fake_utils
 
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
@@ -5540,7 +5540,7 @@ def test_search_projects_uses_client_model(cli_mod, monkeypatch):
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
     monkeypatch.setitem(sys.modules, "mainsequence.client.models_foundry", fake_models)
 
-    out = api_mod.search_projects("alpha", limit=10, timeout=12)
+    out = api_mod.search_code_repositories("alpha", limit=10, timeout=12)
 
     assert captured["jwt"] == ("acc", "ref")
     assert captured["q"] == "alpha"
@@ -5549,20 +5549,20 @@ def test_search_projects_uses_client_model(cli_mod, monkeypatch):
     assert out == [
         {
             "uid": "project-uid-11",
-            "project_name": "alpha-research",
-            "project_type": "python",
+            "code_repository_name": "alpha-research",
+            "code_repository_type": "python",
             "cluster_id": 7,
         },
         {
             "uid": "project-uid-12",
-            "project_name": "data-live",
-            "project_type": "vite_react",
+            "code_repository_name": "data-live",
+            "code_repository_type": "vite_react",
             "cluster_id": 9,
         },
     ]
 
 
-def test_create_project_job_uses_client_model_task_schedule(cli_mod, monkeypatch):
+def test_create_code_repository_job_uses_client_model_task_schedule(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
 
@@ -5571,7 +5571,7 @@ def test_create_project_job_uses_client_model_task_schedule(cli_mod, monkeypatch
     )
     monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
     monkeypatch.delenv("MAIN_SEQUENCE_PROJECT_UID", raising=False)
-    monkeypatch.setattr(api_mod, "resolve_project_branch_uid", lambda value: str(value))
+    monkeypatch.setattr(api_mod, "resolve_code_repository_branch_uid", lambda value: str(value))
 
     fake_client_pkg = types.ModuleType("mainsequence.client")
     fake_utils = types.ModuleType("mainsequence.client.utils")
@@ -5599,7 +5599,7 @@ def test_create_project_job_uses_client_model_task_schedule(cli_mod, monkeypatch
             cls,
             *,
             name,
-            project_branch_uid,
+            code_repository_branch_uid,
             execution_path=None,
             app_name=None,
             task_schedule=None,
@@ -5616,7 +5616,7 @@ def test_create_project_job_uses_client_model_task_schedule(cli_mod, monkeypatch
         ):
             captured["payload"] = {
                 "name": name,
-                "project_branch_uid": project_branch_uid,
+                "code_repository_branch_uid": code_repository_branch_uid,
                 "execution_path": execution_path,
                 "app_name": app_name,
                 "task_schedule": task_schedule,
@@ -5631,7 +5631,7 @@ def test_create_project_job_uses_client_model_task_schedule(cli_mod, monkeypatch
                 "automatic_redeployment_policy": automatic_redeployment_policy,
                 "timeout": timeout,
             }
-            captured["env_project_uid"] = os.environ.get("MAIN_SEQUENCE_PROJECT_UID")
+            captured["env_code_repository_uid"] = os.environ.get("MAIN_SEQUENCE_PROJECT_UID")
             return types.SimpleNamespace(
                 model_dump=lambda: {
                     "uid": "7d0ab07c-d1c0-4b7f-9c69-3c1a41c0a4da",
@@ -5649,9 +5649,9 @@ def test_create_project_job_uses_client_model_task_schedule(cli_mod, monkeypatch
     monkeypatch.setitem(sys.modules, "mainsequence.client.models_helpers", fake_helpers)
 
     schedule = {"schedule": {"type": "interval", "every": 1, "period": "hours"}, "one_off": False}
-    out = api_mod.create_project_job(
+    out = api_mod.create_code_repository_job(
         name="demo-job",
-        project_branch_uid="5a28020a-0f1b-47ee-aab8-334286234bea",
+        code_repository_branch_uid="5a28020a-0f1b-47ee-aab8-334286234bea",
         execution_path="scripts/test.py",
         task_schedule=schedule,
         cpu_request="0.25",
@@ -5664,7 +5664,7 @@ def test_create_project_job_uses_client_model_task_schedule(cli_mod, monkeypatch
     assert captured["payload"]["related_image_uid"] == "6a28020a-0f1b-47ee-aab8-334286234bea"
     assert captured["payload"]["automatic_deployment"] is False
     assert captured["payload"]["automatic_redeployment_policy"] == {"tag_regex": None}
-    assert captured["env_project_uid"] is None
+    assert captured["env_code_repository_uid"] is None
     assert captured["jwt"] == ("acc", "ref")
     assert out == {
         "uid": "7d0ab07c-d1c0-4b7f-9c69-3c1a41c0a4da",
@@ -5673,7 +5673,7 @@ def test_create_project_job_uses_client_model_task_schedule(cli_mod, monkeypatch
     assert os.environ.get("MAIN_SEQUENCE_PROJECT_UID") is None
 
 
-def test_create_project_does_not_send_project_visible(cli_mod, monkeypatch):
+def test_create_code_repository_does_not_send_code_repository_visible(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
 
@@ -5683,7 +5683,7 @@ def test_create_project_does_not_send_project_visible(cli_mod, monkeypatch):
         headers = {"content-type": "application/json"}
 
         def json(self):
-            return {"id": 321, "project_name": "demo-project"}
+            return {"id": 321, "code_repository_name": "demo-project"}
 
     def _fake_authed(method, api_path, body=None):
         captured["method"] = method
@@ -5693,27 +5693,27 @@ def test_create_project_does_not_send_project_visible(cli_mod, monkeypatch):
 
     monkeypatch.setattr(api_mod, "authed", _fake_authed)
 
-    out = api_mod.create_project(
-        project_name="demo-project",
+    out = api_mod.create_code_repository(
+        code_repository_name="demo-project",
         default_base_image_uid="22222222-2222-4222-8222-222222222222",
         github_org_uid="33333333-3333-4333-8333-333333333333",
         env_vars={"FOO": "bar"},
     )
 
     assert captured["method"] == "POST"
-    assert captured["api_path"] == "/api/v1/projects/"
+    assert captured["api_path"] == "/api/v1/code-repositories/"
     assert captured["body"] == {
-        "project_name": "demo-project",
-        "project_type": "python",
+        "code_repository_name": "demo-project",
+        "code_repository_type": "python",
         "default_base_image_uid": "22222222-2222-4222-8222-222222222222",
         "github_org_uid": "33333333-3333-4333-8333-333333333333",
         "env_vars": [{"name": "FOO", "value": "bar"}],
     }
     assert "project_visible" not in captured["body"]
-    assert out == {"id": 321, "project_name": "demo-project"}
+    assert out == {"id": 321, "code_repository_name": "demo-project"}
 
 
-def test_run_project_job_uses_client_model(cli_mod, monkeypatch):
+def test_run_code_repository_job_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
 
@@ -5770,7 +5770,7 @@ def test_run_project_job_uses_client_model(cli_mod, monkeypatch):
     monkeypatch.setitem(sys.modules, "mainsequence.client.models_helpers", fake_helpers)
 
     job_uid = "7d0ab07c-d1c0-4b7f-9c69-3c1a41c0a4da"
-    out = api_mod.run_project_job(job_uid, command_args=["python", "-m", "jobs.daily"])
+    out = api_mod.run_code_repository_job(job_uid, command_args=["python", "-m", "jobs.daily"])
     assert captured["job_uid_arg"] == job_uid
     assert captured["command_args"] == ["python", "-m", "jobs.daily"]
     assert captured["jwt"] == ("acc", "ref")
@@ -5784,7 +5784,7 @@ def test_run_project_job_uses_client_model(cli_mod, monkeypatch):
     }
 
 
-def test_list_project_job_runs_uses_client_model(cli_mod, monkeypatch):
+def test_list_code_repository_job_runs_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {"filters": []}
 
@@ -5838,7 +5838,7 @@ def test_list_project_job_runs_uses_client_model(cli_mod, monkeypatch):
     monkeypatch.setitem(sys.modules, "mainsequence.client.models_helpers", fake_helpers)
 
     job_uid = "7d0ab07c-d1c0-4b7f-9c69-3c1a41c0a4da"
-    out = api_mod.list_project_job_runs(job_uid=job_uid, filters={"status": "COMPLETED"})
+    out = api_mod.list_code_repository_job_runs(job_uid=job_uid, filters={"status": "COMPLETED"})
     assert captured["filters"][0] == {"status": "COMPLETED", "job__uid": job_uid}
     assert captured["jwt"] == ("acc", "ref")
     assert out == [
@@ -5851,7 +5851,7 @@ def test_list_project_job_runs_uses_client_model(cli_mod, monkeypatch):
     ]
 
 
-def test_get_project_job_run_logs_uses_client_model(cli_mod, monkeypatch):
+def test_get_code_repository_job_run_logs_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     real_job_run = importlib.import_module("mainsequence.client.models_helpers").JobRun
     captured = {}
@@ -5890,10 +5890,10 @@ def test_get_project_job_run_logs_uses_client_model(cli_mod, monkeypatch):
                     "unique_identifier": "jobrun_abc123",
                     "job_uid": "7d0ab07c-d1c0-4b7f-9c69-3c1a41c0a4da",
                     "job_name": "daily-prices",
-                    "project_uid": "1d0530c0-65d1-4db0-856b-dc29d8260a09",
-                    "project_name": "market-data-service",
-                    "project_branch_uid": "5a28020a-0f1b-47ee-aab8-334286234bea",
-                    "project_branch_name": "main",
+                    "code_repository_uid": "1d0530c0-65d1-4db0-856b-dc29d8260a09",
+                    "code_repository_name": "market-data-service",
+                    "code_repository_branch_uid": "5a28020a-0f1b-47ee-aab8-334286234bea",
+                    "code_repository_branch_name": "main",
                     "organization_environment_uid": ("58218213-5e4e-43de-a5bd-6757f4e1c8f6"),
                     "status": "RUNNING",
                     "runtime_image_uid": "6cfdb152-923e-45b9-a150-c4541c68b0d1",
@@ -5920,7 +5920,7 @@ def test_get_project_job_run_logs_uses_client_model(cli_mod, monkeypatch):
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
     monkeypatch.setitem(sys.modules, "mainsequence.client.models_helpers", fake_helpers)
 
-    out = api_mod.get_project_job_run_logs("4c1d77c8-8a42-42b8-a9c1-06be9a336e5d")
+    out = api_mod.get_code_repository_job_run_logs("4c1d77c8-8a42-42b8-a9c1-06be9a336e5d")
     assert captured["job_run_uid_arg"] == "4c1d77c8-8a42-42b8-a9c1-06be9a336e5d"
     assert captured["get_logs_timeout"] is None
     assert captured["get_logs_filters"] == {
@@ -5942,7 +5942,7 @@ def test_get_project_job_run_logs_uses_client_model(cli_mod, monkeypatch):
     }
 
 
-def test_project_get_table_updates_defaults_to_env_project_uid(
+def test_code_repository_get_table_updates_defaults_to_env_code_repository_uid(
     cli_mod, runner, monkeypatch, tmp_path
 ):
     target = tmp_path / "demo-123"
@@ -5955,12 +5955,12 @@ def test_project_get_table_updates_defaults_to_env_project_uid(
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(
         cli_mod,
-        "_resolve_project_branch_uid_for_command",
-        lambda *args, **kwargs: "project-branch-uid-123",
+        "_resolve_code_repository_branch_uid_for_command",
+        lambda *args, **kwargs: "code-repository-branch-uid-123",
     )
 
-    def _get_updates(project_branch_uid, timeout=None):
-        captured["project_branch_uid"] = project_branch_uid
+    def _get_updates(code_repository_branch_uid, timeout=None):
+        captured["code_repository_branch_uid"] = code_repository_branch_uid
         return [
             {
                 "uid": "time-index-table-update-uid-10",
@@ -5973,16 +5973,16 @@ def test_project_get_table_updates_defaults_to_env_project_uid(
             }
         ]
 
-    monkeypatch.setattr(cli_mod, "get_project_time_index_table_updates", _get_updates)
+    monkeypatch.setattr(cli_mod, "get_code_repository_time_index_table_updates", _get_updates)
 
-    result = runner.invoke(cli_mod.app, ["project", "time-index-table-updates", "list"])
+    result = runner.invoke(cli_mod.app, ["code-repository", "time-index-table-updates", "list"])
     assert result.exit_code == 0
-    assert captured["project_branch_uid"] == "project-branch-uid-123"
+    assert captured["code_repository_branch_uid"] == "code-repository-branch-uid-123"
     assert "abc123" in result.output
     assert "storage-xyz" in result.output
 
 
-def test_project_images_defaults_to_env_project_id(cli_mod, runner, monkeypatch, tmp_path):
+def test_code_repository_images_defaults_to_env_code_repository_id(cli_mod, runner, monkeypatch, tmp_path):
     target = tmp_path / "demo-123"
     target.mkdir(parents=True, exist_ok=True)
     (target / ".env").write_text("", encoding="utf-8")
@@ -5991,30 +5991,30 @@ def test_project_images_defaults_to_env_project_id(cli_mod, runner, monkeypatch,
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(
         cli_mod,
-        "_resolve_project_branch_uid_for_command",
-        lambda *args, **kwargs: "project-branch-uid-123",
+        "_resolve_code_repository_branch_uid_for_command",
+        lambda *args, **kwargs: "code-repository-branch-uid-123",
     )
     monkeypatch.setattr(
         cli_mod,
-        "list_project_images",
-        lambda related_project_branch_uid, filters=None, timeout=None: [
+        "list_code_repository_images",
+        lambda related_code_repository_branch_uid, filters=None, timeout=None: [
             {
                 "uid": "8b62d1dd-e146-44af-957c-38c5f5b1d8d5",
-                "project_repo_hash": "abc123",
+                "code_repository_commit_hash": "abc123",
                 "base_image": {"id": 22, "title": "Python 3.12"},
             }
         ],
     )
 
-    result = runner.invoke(cli_mod.app, ["project", "images", "list"])
+    result = runner.invoke(cli_mod.app, ["code-repository", "images", "list"])
     assert result.exit_code == 0
-    assert "Project Images" in result.output
+    assert "CodeRepository Images" in result.output
     assert "abc123" in result.output
     assert "Python 3.12" in result.output
     assert "Total images: 1" in result.output
 
 
-def test_project_images_list_json(cli_mod, runner, monkeypatch, tmp_path):
+def test_code_repository_images_list_json(cli_mod, runner, monkeypatch, tmp_path):
     target = tmp_path / "demo-123"
     target.mkdir(parents=True, exist_ok=True)
     (target / ".env").write_text("", encoding="utf-8")
@@ -6023,87 +6023,87 @@ def test_project_images_list_json(cli_mod, runner, monkeypatch, tmp_path):
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(
         cli_mod,
-        "_resolve_project_branch_uid_for_command",
-        lambda *args, **kwargs: "project-branch-uid-123",
+        "_resolve_code_repository_branch_uid_for_command",
+        lambda *args, **kwargs: "code-repository-branch-uid-123",
     )
     monkeypatch.setattr(
         cli_mod,
-        "list_project_images",
-        lambda related_project_branch_uid, filters=None, timeout=None: [
+        "list_code_repository_images",
+        lambda related_code_repository_branch_uid, filters=None, timeout=None: [
             {
                 "uid": "8b62d1dd-e146-44af-957c-38c5f5b1d8d5",
-                "project_repo_hash": "abc123",
+                "code_repository_commit_hash": "abc123",
                 "base_image": {"id": 22, "title": "Python 3.12"},
                 "creation_date": "2026-04-10T12:00:00Z",
             }
         ],
     )
 
-    result = runner.invoke(cli_mod.app, ["project", "images", "list", "--json"])
+    result = runner.invoke(cli_mod.app, ["code-repository", "images", "list", "--json"])
     assert result.exit_code == 0
     payload = json.loads(result.output)
     assert payload[0]["uid"] == "8b62d1dd-e146-44af-957c-38c5f5b1d8d5"
-    assert payload[0]["project_repo_hash"] == "abc123"
+    assert payload[0]["code_repository_commit_hash"] == "abc123"
     assert payload[0]["creation_date"] == "2026-04-10T12:00:00Z"
 
 
-def test_project_images_list_rejects_reserved_filter(cli_mod, runner, monkeypatch):
+def test_code_repository_images_list_rejects_reserved_filter(cli_mod, runner, monkeypatch):
     def _parse(model_ref, entries):
-        return {"related_project_branch_uid": ["other-branch-uid"]}
+        return {"related_code_repository_branch_uid": ["other-branch-uid"]}
 
     monkeypatch.setattr(cli_mod, "parse_cli_model_filters", _parse)
 
     result = runner.invoke(
         cli_mod.app,
         [
-            "project",
+            "code-repository",
             "images",
             "list",
             "project-uid-123",
             "--filter",
-            "related_project_branch_uid=other-branch-uid",
+            "related_code_repository_branch_uid=other-branch-uid",
         ],
     )
     assert result.exit_code == 1
     assert "cannot be overridden" in result.output
 
 
-def test_project_images_delete_requires_confirmation(cli_mod, runner, monkeypatch):
+def test_code_repository_images_delete_requires_confirmation(cli_mod, runner, monkeypatch):
     captured = {}
     image_uid = "8b62d1dd-e146-44af-957c-38c5f5b1d8d5"
 
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(
         cli_mod,
-        "get_project_image",
+        "get_code_repository_image",
         lambda image_uid, timeout=None: {
             "uid": image_uid,
-            "project_repo_hash": "abc123",
+            "code_repository_commit_hash": "abc123",
             "base_image": {"id": 22, "title": "Python 3.12"},
             "is_ready": True,
         },
     )
 
-    def _delete_project_image(image_uid, timeout=None):
+    def _delete_code_repository_image(image_uid, timeout=None):
         captured["image_uid"] = image_uid
         return {
             "uid": image_uid,
-            "project_repo_hash": "abc123",
+            "code_repository_commit_hash": "abc123",
             "base_image": {"id": 22, "title": "Python 3.12"},
             "is_ready": True,
         }
 
-    monkeypatch.setattr(cli_mod, "delete_project_image", _delete_project_image)
+    monkeypatch.setattr(cli_mod, "delete_code_repository_image", _delete_code_repository_image)
 
-    result = runner.invoke(cli_mod.app, ["project", "images", "delete", image_uid], input="y\n")
+    result = runner.invoke(cli_mod.app, ["code-repository", "images", "delete", image_uid], input="y\n")
     assert result.exit_code == 0
     assert captured["image_uid"] == image_uid
-    assert "Project Image Delete Preview" in result.output
+    assert "CodeRepository Image Delete Preview" in result.output
     assert f"Delete project image {image_uid}?" in result.output
-    assert f"Project image deleted: uid={image_uid}" in result.output
+    assert f"CodeRepository image deleted: uid={image_uid}" in result.output
 
 
-def test_project_jobs_list_defaults_to_env_project_id(cli_mod, runner, monkeypatch, tmp_path):
+def test_code_repository_jobs_list_defaults_to_env_code_repository_id(cli_mod, runner, monkeypatch, tmp_path):
     target = tmp_path / "demo-123"
     target.mkdir(parents=True, exist_ok=True)
     (target / ".env").write_text("", encoding="utf-8")
@@ -6112,17 +6112,17 @@ def test_project_jobs_list_defaults_to_env_project_id(cli_mod, runner, monkeypat
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(
         cli_mod,
-        "_resolve_project_branch_uid_for_command",
-        lambda *args, **kwargs: "project-branch-uid-123",
+        "_resolve_code_repository_branch_uid_for_command",
+        lambda *args, **kwargs: "code-repository-branch-uid-123",
     )
     monkeypatch.setattr(
         cli_mod,
-        "list_project_jobs",
-        lambda project_branch_uid, filters=None, timeout=None: [
+        "list_code_repository_jobs",
+        lambda code_repository_branch_uid, filters=None, timeout=None: [
             {
                 "uid": "7d0ab07c-d1c0-4b7f-9c69-3c1a41c0a4da",
                 "name": "daily-run",
-                "project_repo_hash": "abc123",
+                "code_repository_commit_hash": "abc123",
                 "execution_path": "src.jobs.daily:main",
                 "app_name": None,
                 "task_schedule": {
@@ -6135,9 +6135,9 @@ def test_project_jobs_list_defaults_to_env_project_id(cli_mod, runner, monkeypat
         ],
     )
 
-    result = runner.invoke(cli_mod.app, ["project", "jobs", "list"])
+    result = runner.invoke(cli_mod.app, ["code-repository", "jobs", "list"])
     assert result.exit_code == 0
-    assert "Project Jobs" in result.output
+    assert "CodeRepository Jobs" in result.output
     assert "daily-ru" in result.output
     assert "abc123" in result.output
     assert "Every" in result.output
@@ -6147,17 +6147,17 @@ def test_project_jobs_list_defaults_to_env_project_id(cli_mod, runner, monkeypat
     assert "Total jobs: 1" in result.output
 
 
-def test_project_jobs_list_show_filters_mentions_project_scope(cli_mod, runner, monkeypatch):
+def test_code_repository_jobs_list_show_filters_mentions_code_repository_scope(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(cli_mod, "build_cli_model_filter_rows", lambda model_ref: [])
 
-    result = runner.invoke(cli_mod.app, ["project", "jobs", "list", "--show-filters"])
+    result = runner.invoke(cli_mod.app, ["code-repository", "jobs", "list", "--show-filters"])
     assert result.exit_code == 0
-    assert "No additional model filters exposed by Project Jobs." in result.output
+    assert "No additional model filters exposed by CodeRepository Jobs." in result.output
     assert "Always Applied Filters" in result.output
-    assert "project" in result.output
+    assert "code_repository" in result.output
 
 
-def test_project_project_resource_list_defaults_to_remote_branch_head(
+def test_code_repository_code_repository_resource_list_defaults_to_remote_branch_head(
     cli_mod, runner, monkeypatch, tmp_path
 ):
     target = tmp_path / "demo-123"
@@ -6169,19 +6169,19 @@ def test_project_project_resource_list_defaults_to_remote_branch_head(
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(
         cli_mod,
-        "_resolve_project_branch_uid_for_command",
-        lambda *args, **kwargs: "project-branch-uid-123",
+        "_resolve_code_repository_branch_uid_for_command",
+        lambda *args, **kwargs: "code-repository-branch-uid-123",
     )
     monkeypatch.setattr(
         cli_mod,
         "_get_remote_branch_head_commit",
-        lambda project_dir: ("origin/main", "abc123"),
+        lambda code_repository_dir: ("origin/main", "abc123"),
     )
 
-    def _list_project_resources(
-        project_branch_uid, repo_commit_sha, resource_type=None, filters=None, timeout=None
+    def _list_code_repository_resources(
+        code_repository_branch_uid, repo_commit_sha, resource_type=None, filters=None, timeout=None
     ):
-        captured["project_branch_uid"] = project_branch_uid
+        captured["code_repository_branch_uid"] = code_repository_branch_uid
         captured["repo_commit_sha"] = repo_commit_sha
         captured["resource_type"] = resource_type
         return [
@@ -6195,20 +6195,20 @@ def test_project_project_resource_list_defaults_to_remote_branch_head(
             }
         ]
 
-    monkeypatch.setattr(cli_mod, "list_project_resources", _list_project_resources)
+    monkeypatch.setattr(cli_mod, "list_code_repository_resources", _list_code_repository_resources)
 
-    result = runner.invoke(cli_mod.app, ["project", "project_resource", "list"])
+    result = runner.invoke(cli_mod.app, ["code-repository", "resources", "list"])
     assert result.exit_code == 0
-    assert captured["project_branch_uid"] == "project-branch-uid-123"
+    assert captured["code_repository_branch_uid"] == "code-repository-branch-uid-123"
     assert captured["repo_commit_sha"] == "abc123"
     assert "Using repo_commit_sha=abc123 from origin/main." in result.output
-    assert "Project Resources" in result.output
+    assert "CodeRepository Resources" in result.output
     assert "analytics_d" in result.output
     assert "board.py" in result.output
     assert "Total project resources: 1" in result.output
 
 
-def test_project_project_resource_list_passes_extra_filters(cli_mod, runner, monkeypatch, tmp_path):
+def test_code_repository_code_repository_resource_list_passes_extra_filters(cli_mod, runner, monkeypatch, tmp_path):
     target = tmp_path / "demo-123"
     target.mkdir(parents=True, exist_ok=True)
     (target / ".env").write_text("", encoding="utf-8")
@@ -6217,31 +6217,31 @@ def test_project_project_resource_list_passes_extra_filters(cli_mod, runner, mon
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(
         cli_mod,
-        "_resolve_project_branch_uid_for_command",
-        lambda *args, **kwargs: "project-branch-uid-123",
+        "_resolve_code_repository_branch_uid_for_command",
+        lambda *args, **kwargs: "code-repository-branch-uid-123",
     )
     monkeypatch.setattr(
-        cli_mod, "_get_remote_branch_head_commit", lambda project_dir: ("origin/main", "abc123")
+        cli_mod, "_get_remote_branch_head_commit", lambda code_repository_dir: ("origin/main", "abc123")
     )
 
     def _parse(model_ref, entries):
         captured["entries"] = list(entries or [])
         return {"uid__in": ["857bec7b-dd77-4272-aecd-13fc2138eacc"]}
 
-    def _list_project_resources(
-        project_branch_uid, repo_commit_sha, resource_type=None, filters=None, timeout=None
+    def _list_code_repository_resources(
+        code_repository_branch_uid, repo_commit_sha, resource_type=None, filters=None, timeout=None
     ):
         captured["filters"] = filters
         return []
 
     monkeypatch.setattr(cli_mod, "parse_cli_model_filters", _parse)
-    monkeypatch.setattr(cli_mod, "list_project_resources", _list_project_resources)
+    monkeypatch.setattr(cli_mod, "list_code_repository_resources", _list_code_repository_resources)
 
     result = runner.invoke(
         cli_mod.app,
         [
-            "project",
-            "project_resource",
+            "code-repository",
+            "resources",
             "list",
             "--path",
             str(target),
@@ -6254,7 +6254,7 @@ def test_project_project_resource_list_passes_extra_filters(cli_mod, runner, mon
     assert captured["filters"] == {"uid__in": ["857bec7b-dd77-4272-aecd-13fc2138eacc"]}
 
 
-def test_project_project_resource_create_dashboard_filters_resources_by_selected_image(
+def test_code_repository_code_repository_resource_create_dashboard_filters_resources_by_selected_image(
     cli_mod, runner, monkeypatch, tmp_path
 ):
     target = tmp_path / "demo-123"
@@ -6266,25 +6266,25 @@ def test_project_project_resource_create_dashboard_filters_resources_by_selected
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(
         cli_mod,
-        "_resolve_project_branch_uid_for_command",
-        lambda *args, **kwargs: "project-branch-uid-123",
+        "_resolve_code_repository_branch_uid_for_command",
+        lambda *args, **kwargs: "code-repository-branch-uid-123",
     )
     monkeypatch.setattr(
         cli_mod,
-        "list_project_images",
-        lambda related_project_branch_uid, timeout=None: [
+        "list_code_repository_images",
+        lambda related_code_repository_branch_uid, timeout=None: [
             {
                 "uid": "8b62d1dd-e146-44af-957c-38c5f5b1d8d5",
-                "project_repo_hash": "sha-94",
+                "code_repository_commit_hash": "sha-94",
                 "base_image": {"uid": "base-image-uid-1", "title": "py311"},
             },
         ],
     )
 
-    def _list_project_resources(
-        project_branch_uid, repo_commit_sha, resource_type=None, timeout=None
+    def _list_code_repository_resources(
+        code_repository_branch_uid, repo_commit_sha, resource_type=None, timeout=None
     ):
-        captured["project_branch_uid"] = project_branch_uid
+        captured["code_repository_branch_uid"] = code_repository_branch_uid
         captured["repo_commit_sha"] = repo_commit_sha
         captured["resource_type"] = resource_type
         return [
@@ -6298,7 +6298,7 @@ def test_project_project_resource_create_dashboard_filters_resources_by_selected
             }
         ]
 
-    monkeypatch.setattr(cli_mod, "list_project_resources", _list_project_resources)
+    monkeypatch.setattr(cli_mod, "list_code_repository_resources", _list_code_repository_resources)
 
     def _create_release(**kwargs):
         captured["create_release"] = kwargs
@@ -6311,15 +6311,15 @@ def test_project_project_resource_create_dashboard_filters_resources_by_selected
             "spot": kwargs["spot"],
         }
 
-    monkeypatch.setattr(cli_mod, "create_project_resource_release", _create_release)
+    monkeypatch.setattr(cli_mod, "create_code_repository_resource_release", _create_release)
 
     result = runner.invoke(
         cli_mod.app,
-        ["project", "project_resource", "create_dashboard", "--automatic-deployment"],
+        ["code-repository", "resources", "create_dashboard", "--automatic-deployment"],
         input=("8b62d1dd-e146-44af-957c-38c5f5b1d8d5\n857bec7b-dd77-4272-aecd-13fc2138eacc\n"),
     )
     assert result.exit_code == 0
-    assert captured["project_branch_uid"] == "project-branch-uid-123"
+    assert captured["code_repository_branch_uid"] == "code-repository-branch-uid-123"
     assert captured["repo_commit_sha"] == "sha-94"
     assert captured["resource_type"] == "dashboard"
     assert captured["create_release"]["release_kind"] == "streamlit_dashboard"
@@ -6333,7 +6333,7 @@ def test_project_project_resource_create_dashboard_filters_resources_by_selected
     assert "0ce33c15-e3b1-4677-a66e-70460b89198f" in result.output
 
 
-def test_project_project_resource_create_fastapi_filters_resources_by_selected_image(
+def test_code_repository_code_repository_resource_create_fastapi_filters_resources_by_selected_image(
     cli_mod, runner, monkeypatch, tmp_path
 ):
     target = tmp_path / "demo-123"
@@ -6345,25 +6345,25 @@ def test_project_project_resource_create_fastapi_filters_resources_by_selected_i
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(
         cli_mod,
-        "_resolve_project_branch_uid_for_command",
-        lambda *args, **kwargs: "project-branch-uid-123",
+        "_resolve_code_repository_branch_uid_for_command",
+        lambda *args, **kwargs: "code-repository-branch-uid-123",
     )
     monkeypatch.setattr(
         cli_mod,
-        "list_project_images",
-        lambda related_project_branch_uid, timeout=None: [
+        "list_code_repository_images",
+        lambda related_code_repository_branch_uid, timeout=None: [
             {
                 "uid": "8b62d1dd-e146-44af-957c-38c5f5b1d8d5",
-                "project_repo_hash": "sha-94",
+                "code_repository_commit_hash": "sha-94",
                 "base_image": {"uid": "base-image-uid-1", "title": "py311"},
             },
         ],
     )
 
-    def _list_project_resources(
-        project_branch_uid, repo_commit_sha, resource_type=None, timeout=None
+    def _list_code_repository_resources(
+        code_repository_branch_uid, repo_commit_sha, resource_type=None, timeout=None
     ):
-        captured["project_branch_uid"] = project_branch_uid
+        captured["code_repository_branch_uid"] = code_repository_branch_uid
         captured["repo_commit_sha"] = repo_commit_sha
         captured["resource_type"] = resource_type
         return [
@@ -6377,7 +6377,7 @@ def test_project_project_resource_create_fastapi_filters_resources_by_selected_i
             }
         ]
 
-    monkeypatch.setattr(cli_mod, "list_project_resources", _list_project_resources)
+    monkeypatch.setattr(cli_mod, "list_code_repository_resources", _list_code_repository_resources)
 
     def _create_release(**kwargs):
         captured["create_release"] = kwargs
@@ -6390,15 +6390,15 @@ def test_project_project_resource_create_fastapi_filters_resources_by_selected_i
             "spot": kwargs["spot"],
         }
 
-    monkeypatch.setattr(cli_mod, "create_project_resource_release", _create_release)
+    monkeypatch.setattr(cli_mod, "create_code_repository_resource_release", _create_release)
 
     result = runner.invoke(
         cli_mod.app,
-        ["project", "project_resource", "create_fastapi"],
+        ["code-repository", "resources", "create_fastapi"],
         input=("8b62d1dd-e146-44af-957c-38c5f5b1d8d5\n957bec7b-dd77-4272-aecd-13fc2138eacc\n"),
     )
     assert result.exit_code == 0
-    assert captured["project_branch_uid"] == "project-branch-uid-123"
+    assert captured["code_repository_branch_uid"] == "code-repository-branch-uid-123"
     assert captured["repo_commit_sha"] == "sha-94"
     assert captured["resource_type"] == "fastapi"
     assert captured["create_release"]["release_kind"] == "fastapi"
@@ -6412,7 +6412,7 @@ def test_project_project_resource_create_fastapi_filters_resources_by_selected_i
     assert "2ce33c15-e3b1-4677-a66e-70460b89198f" in result.output
 
 
-def test_project_project_resource_delete_dashboard_requires_confirmation(
+def test_code_repository_code_repository_resource_delete_dashboard_requires_confirmation(
     cli_mod, runner, monkeypatch
 ):
     captured = {}
@@ -6444,19 +6444,19 @@ def test_project_project_resource_delete_dashboard_requires_confirmation(
 
     result = runner.invoke(
         cli_mod.app,
-        ["project", "project_resource", "delete_dashboard", release_uid],
+        ["code-repository", "resources", "delete_dashboard", release_uid],
         input="y\n",
     )
     assert result.exit_code == 0
     assert captured["release_uid"] == release_uid
     assert captured["expected_release_kind"] == "streamlit_dashboard"
-    assert "Project Resource Release Delete Preview" in result.output
+    assert "CodeRepository Resource Release Delete Preview" in result.output
     assert "Subdomain" not in result.output
     assert f"Delete dashboard release {release_uid}?" in result.output
-    assert f"Project resource release deleted: uid={release_uid}" in result.output
+    assert f"CodeRepository resource release deleted: uid={release_uid}" in result.output
 
 
-def test_project_project_resource_delete_fastapi_requires_confirmation(
+def test_code_repository_code_repository_resource_delete_fastapi_requires_confirmation(
     cli_mod, runner, monkeypatch
 ):
     captured = {}
@@ -6488,7 +6488,7 @@ def test_project_project_resource_delete_fastapi_requires_confirmation(
 
     result = runner.invoke(
         cli_mod.app,
-        ["project", "project_resource", "delete_fastapi", release_uid],
+        ["code-repository", "resources", "delete_fastapi", release_uid],
         input="y\n",
     )
     assert result.exit_code == 0
@@ -6496,7 +6496,7 @@ def test_project_project_resource_delete_fastapi_requires_confirmation(
     assert captured["expected_release_kind"] == "fastapi"
     assert "Subdomain" not in result.output
     assert f"Delete FastAPI release {release_uid}?" in result.output
-    assert f"Project resource release deleted: uid={release_uid}" in result.output
+    assert f"CodeRepository resource release deleted: uid={release_uid}" in result.output
 
 
 def test_agent_list(cli_mod, runner, monkeypatch):
@@ -7653,9 +7653,9 @@ def test_time_index_table_list(cli_mod, runner, monkeypatch):
         ["data_node", "list"],
         ["data-node-storage", "list"],
         ["data_node_storage", "list"],
-        ["project", "data-node-updates", "list"],
-        ["project", "list", "data_nodes_updates"],
-        ["project", "get-data-node-updates"],
+        ["code-repository", "data-node-updates", "list"],
+        ["code-repository", "list", "data_nodes_updates"],
+        ["code-repository", "get-data-node-updates"],
     ],
 )
 def test_removed_data_node_commands_are_unknown(cli_mod, runner, arguments):
@@ -7804,26 +7804,26 @@ def test_time_index_table_list_forwards_namespace_filter(cli_mod, runner, monkey
     }
 
 
-def test_project_validate_name_cmd(cli_mod, runner, monkeypatch):
+def test_code_repository_validate_name_cmd(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(
         cli_mod,
-        "validate_project_name",
-        lambda project_name, timeout=None: {
-            "project_name": project_name,
+        "validate_code_repository_name",
+        lambda code_repository_name, timeout=None: {
+            "code_repository_name": code_repository_name,
             "available": False,
             "reason": "A project with this name already exists in your organization.",
             "normalized": {
-                "slugified_project_name": "rates-platform",
-                "project_library_name": "rates_platform",
+                "slugified_code_repository_name": "rates-platform",
+                "repository_library_name": "rates_platform",
             },
             "suggestions": ["Rates Platform 2", "Rates Platform 3"],
         },
     )
 
-    result = runner.invoke(cli_mod.app, ["project", "validate-name", "Rates Platform"])
+    result = runner.invoke(cli_mod.app, ["code-repository", "validate-name", "Rates Platform"])
     assert result.exit_code == 1
-    assert "Project Name Validation" in result.output
+    assert "CodeRepository Name Validation" in result.output
     assert "rates-platform" in result.output
     assert "rates_platform" in result.output
     assert "Rates Platform 2" in result.output
@@ -8303,7 +8303,7 @@ def test_run_time_index_table_query_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
 
-    def _run_sdk_model_operation(*, module_name, class_name, operation, project_id_env=None):
+    def _run_sdk_model_operation(*, module_name, class_name, operation, code_repository_id_env=None):
         captured["module_name"] = module_name
         captured["class_name"] = class_name
 
@@ -8354,7 +8354,7 @@ def test_run_meta_table_query_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
 
-    def _run_sdk_model_operation(*, module_name, class_name, operation, project_id_env=None):
+    def _run_sdk_model_operation(*, module_name, class_name, operation, code_repository_id_env=None):
         captured["module_name"] = module_name
         captured["class_name"] = class_name
 
@@ -8696,13 +8696,13 @@ def test_time_index_table_delete_wrong_verification_cancels(cli_mod, runner, mon
     assert "Cancelled." in result.output
 
 
-def test_project_jobs_run(cli_mod, runner, monkeypatch):
+def test_code_repository_jobs_run(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     captured = {}
     job_uid = "7d0ab07c-d1c0-4b7f-9c69-3c1a41c0a4da"
     monkeypatch.setattr(
         cli_mod,
-        "get_project_job",
+        "get_code_repository_job",
         lambda job_uid_arg, timeout=None: {
             "uid": job_uid_arg,
             "name": "daily-run",
@@ -8712,7 +8712,7 @@ def test_project_jobs_run(cli_mod, runner, monkeypatch):
     )
     monkeypatch.setattr(
         cli_mod,
-        "run_project_job",
+        "run_code_repository_job",
         lambda job_uid, command_args=None, timeout=None: captured.update(
             job_uid=job_uid,
             command_args=command_args,
@@ -8729,7 +8729,7 @@ def test_project_jobs_run(cli_mod, runner, monkeypatch):
 
     result = runner.invoke(
         cli_mod.app,
-        ["project", "jobs", "run", job_uid, "--", "--name", "demo-from-cli"],
+        ["code-repository", "jobs", "run", job_uid, "--", "--name", "demo-from-cli"],
     )
     assert result.exit_code == 0
     assert captured == {
@@ -8738,18 +8738,18 @@ def test_project_jobs_run(cli_mod, runner, monkeypatch):
         "timeout": None,
     }
     assert "Effective run: scripts/test.py --name demo-from-cli" in result.output
-    assert f"Project job run requested: job_uid={job_uid}" in result.output
+    assert f"CodeRepository job run requested: job_uid={job_uid}" in result.output
     assert "jobrun_abc123" in result.output
     assert "QUEUED" in result.output
 
 
-def test_project_jobs_run_with_arg_option(cli_mod, runner, monkeypatch):
+def test_code_repository_jobs_run_with_arg_option(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     captured = {}
     job_uid = "7d0ab07c-d1c0-4b7f-9c69-3c1a41c0a4da"
     monkeypatch.setattr(
         cli_mod,
-        "get_project_job",
+        "get_code_repository_job",
         lambda job_uid_arg, timeout=None: {
             "uid": job_uid_arg,
             "name": "daily-run",
@@ -8759,7 +8759,7 @@ def test_project_jobs_run_with_arg_option(cli_mod, runner, monkeypatch):
     )
     monkeypatch.setattr(
         cli_mod,
-        "run_project_job",
+        "run_code_repository_job",
         lambda job_uid, command_args=None, timeout=None: captured.update(
             job_uid=job_uid,
             command_args=command_args,
@@ -8776,7 +8776,7 @@ def test_project_jobs_run_with_arg_option(cli_mod, runner, monkeypatch):
 
     result = runner.invoke(
         cli_mod.app,
-        ["project", "jobs", "run", job_uid, "--arg", "demo-from-cli"],
+        ["code-repository", "jobs", "run", job_uid, "--arg", "demo-from-cli"],
     )
     assert result.exit_code == 0
     assert captured == {
@@ -8787,11 +8787,11 @@ def test_project_jobs_run_with_arg_option(cli_mod, runner, monkeypatch):
     assert "Effective run: scripts/test.py demo-from-cli" in result.output
 
 
-def test_project_job_runs_list(cli_mod, runner, monkeypatch):
+def test_code_repository_job_runs_list(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(
         cli_mod,
-        "list_project_job_runs",
+        "list_code_repository_job_runs",
         lambda job_uid, filters=None, timeout=None: [
             {
                 "uid": "4c1d77c8-8a42-42b8-a9c1-06be9a336e5d",
@@ -8808,7 +8808,7 @@ def test_project_job_runs_list(cli_mod, runner, monkeypatch):
     result = runner.invoke(
         cli_mod.app,
         [
-            "project",
+            "code-repository",
             "jobs",
             "runs",
             "list",
@@ -8816,13 +8816,13 @@ def test_project_job_runs_list(cli_mod, runner, monkeypatch):
         ],
     )
     assert result.exit_code == 0
-    assert "Project Job Runs" in result.output
+    assert "CodeRepository Job Runs" in result.output
     assert "daily-ru" in result.output
     assert "jobrun_ab" in result.output
     assert "Total job runs: 1" in result.output
 
 
-def test_project_job_runs_list_passes_cli_filters(cli_mod, runner, monkeypatch):
+def test_code_repository_job_runs_list_passes_cli_filters(cli_mod, runner, monkeypatch):
     captured = {}
 
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
@@ -8831,18 +8831,18 @@ def test_project_job_runs_list_passes_cli_filters(cli_mod, runner, monkeypatch):
         captured["entries"] = list(entries or [])
         return {"status": "COMPLETED"}
 
-    def _list_project_job_runs(job_uid, filters=None, timeout=None):
+    def _list_code_repository_job_runs(job_uid, filters=None, timeout=None):
         captured["job_uid"] = job_uid
         captured["filters"] = filters
         return []
 
     monkeypatch.setattr(cli_mod, "parse_cli_model_filters", _parse)
-    monkeypatch.setattr(cli_mod, "list_project_job_runs", _list_project_job_runs)
+    monkeypatch.setattr(cli_mod, "list_code_repository_job_runs", _list_code_repository_job_runs)
 
     result = runner.invoke(
         cli_mod.app,
         [
-            "project",
+            "code-repository",
             "jobs",
             "runs",
             "list",
@@ -8857,11 +8857,11 @@ def test_project_job_runs_list_passes_cli_filters(cli_mod, runner, monkeypatch):
     assert captured["filters"] == {"status": "COMPLETED"}
 
 
-def test_project_job_runs_logs(cli_mod, runner, monkeypatch):
+def test_code_repository_job_runs_logs(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(
         cli_mod,
-        "get_project_job_run_logs",
+        "get_code_repository_job_run_logs",
         lambda job_run_uid, timeout=None, **kwargs: {
             "job_run_uid": job_run_uid,
             "status": "COMPLETED",
@@ -8874,7 +8874,7 @@ def test_project_job_runs_logs(cli_mod, runner, monkeypatch):
 
     result = runner.invoke(
         cli_mod.app,
-        ["project", "jobs", "runs", "logs", "4c1d77c8-8a42-42b8-a9c1-06be9a336e5d"],
+        ["code-repository", "jobs", "runs", "logs", "4c1d77c8-8a42-42b8-a9c1-06be9a336e5d"],
     )
     assert result.exit_code == 0
     assert "Job Run Logs" in result.output
@@ -8883,7 +8883,7 @@ def test_project_job_runs_logs(cli_mod, runner, monkeypatch):
     assert "COMPLETED" in result.output
 
 
-def test_project_job_runs_logs_polls_and_prints_incrementally(cli_mod, runner, monkeypatch):
+def test_code_repository_job_runs_logs_polls_and_prints_incrementally(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     responses = iter(
         [
@@ -8908,7 +8908,7 @@ def test_project_job_runs_logs_polls_and_prints_incrementally(cli_mod, runner, m
 
     monkeypatch.setattr(
         cli_mod,
-        "get_project_job_run_logs",
+        "get_code_repository_job_run_logs",
         lambda job_run_uid, timeout=None, **kwargs: next(responses),
     )
     monkeypatch.setattr(cli_mod.time, "sleep", lambda seconds: sleeps.append(seconds))
@@ -8916,7 +8916,7 @@ def test_project_job_runs_logs_polls_and_prints_incrementally(cli_mod, runner, m
     result = runner.invoke(
         cli_mod.app,
         [
-            "project",
+            "code-repository",
             "jobs",
             "runs",
             "logs",
@@ -8933,7 +8933,7 @@ def test_project_job_runs_logs_polls_and_prints_incrementally(cli_mod, runner, m
     assert sleeps == [3, 3]
 
 
-def test_project_job_runs_logs_stops_after_max_wait(cli_mod, runner, monkeypatch):
+def test_code_repository_job_runs_logs_stops_after_max_wait(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     responses = iter(
         [
@@ -8954,7 +8954,7 @@ def test_project_job_runs_logs_stops_after_max_wait(cli_mod, runner, monkeypatch
 
     monkeypatch.setattr(
         cli_mod,
-        "get_project_job_run_logs",
+        "get_code_repository_job_run_logs",
         lambda job_run_uid, timeout=None, **kwargs: next(responses),
     )
     monkeypatch.setattr(cli_mod.time, "sleep", lambda seconds: sleeps.append(seconds))
@@ -8963,7 +8963,7 @@ def test_project_job_runs_logs_stops_after_max_wait(cli_mod, runner, monkeypatch
     result = runner.invoke(
         cli_mod.app,
         [
-            "project",
+            "code-repository",
             "jobs",
             "runs",
             "logs",
@@ -8981,7 +8981,7 @@ def test_project_job_runs_logs_stops_after_max_wait(cli_mod, runner, monkeypatch
     assert sleeps == [3]
 
 
-def test_project_jobs_create_interactive_defaults(cli_mod, runner, monkeypatch, tmp_path):
+def test_code_repository_jobs_create_interactive_defaults(cli_mod, runner, monkeypatch, tmp_path):
     target = tmp_path / "demo-123"
     target.mkdir(parents=True, exist_ok=True)
     (target / ".env").write_text("", encoding="utf-8")
@@ -8990,16 +8990,16 @@ def test_project_jobs_create_interactive_defaults(cli_mod, runner, monkeypatch, 
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(
         cli_mod,
-        "_resolve_project_branch_uid_for_command",
-        lambda *args, **kwargs: "project-branch-uid-123",
+        "_resolve_code_repository_branch_uid_for_command",
+        lambda *args, **kwargs: "code-repository-branch-uid-123",
     )
     monkeypatch.setattr(
         cli_mod,
-        "list_project_images",
-        lambda related_project_branch_uid, timeout=None: [
+        "list_code_repository_images",
+        lambda related_code_repository_branch_uid, timeout=None: [
             {
-                "uid": "project-image-uid-77",
-                "project_repo_hash": "abc123",
+                "uid": "code-repository-image-uid-77",
+                "code_repository_commit_hash": "abc123",
                 "base_image": {"uid": "base-image-uid-22", "title": "Python 3.12"},
             }
         ],
@@ -9007,12 +9007,12 @@ def test_project_jobs_create_interactive_defaults(cli_mod, runner, monkeypatch, 
     monkeypatch.setattr(
         cli_mod,
         "_prompt_select_uid",
-        lambda **kwargs: "project-image-uid-77",
+        lambda **kwargs: "code-repository-image-uid-77",
     )
 
     captured = {}
 
-    def _create_project_job(**kwargs):
+    def _create_code_repository_job(**kwargs):
         captured.update(kwargs)
         return {
             "uid": "7d0ab07c-d1c0-4b7f-9c69-3c1a41c0a4da",
@@ -9022,15 +9022,15 @@ def test_project_jobs_create_interactive_defaults(cli_mod, runner, monkeypatch, 
             "related_image": kwargs["related_image_uid"],
         }
 
-    monkeypatch.setattr(cli_mod, "create_project_job", _create_project_job)
+    monkeypatch.setattr(cli_mod, "create_code_repository_job", _create_code_repository_job)
 
     result = runner.invoke(
-        cli_mod.app, ["project", "jobs", "create"], input="demo-job\nscripts/test.py\n\n\n"
+        cli_mod.app, ["code-repository", "jobs", "create"], input="demo-job\nscripts/test.py\n\n\n"
     )
     assert result.exit_code == 0
-    assert captured["project_branch_uid"] == "project-branch-uid-123"
+    assert captured["code_repository_branch_uid"] == "code-repository-branch-uid-123"
     assert captured["name"] == "demo-job"
-    assert captured["related_image_uid"] == "project-image-uid-77"
+    assert captured["related_image_uid"] == "code-repository-image-uid-77"
     assert captured["execution_path"] == "scripts/test.py"
     assert captured["task_schedule"] is None
     assert captured["cpu_request"] == "0.25"
@@ -9046,7 +9046,7 @@ def test_project_jobs_create_interactive_defaults(cli_mod, runner, monkeypatch, 
     assert "7d0ab07c-d1c0-4b7f-9c69-3c1a41c0a4da" in result.output
 
 
-def test_project_jobs_create_delegates_initial_image_with_automatic_deployment(
+def test_code_repository_jobs_create_delegates_initial_image_with_automatic_deployment(
     cli_mod, runner, monkeypatch, tmp_path
 ):
     target = tmp_path / "demo-123"
@@ -9057,26 +9057,26 @@ def test_project_jobs_create_delegates_initial_image_with_automatic_deployment(
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(
         cli_mod,
-        "_resolve_project_branch_uid_for_command",
-        lambda *args, **kwargs: "project-branch-uid-123",
+        "_resolve_code_repository_branch_uid_for_command",
+        lambda *args, **kwargs: "code-repository-branch-uid-123",
     )
     monkeypatch.setattr(
         cli_mod,
-        "list_project_images",
+        "list_code_repository_images",
         lambda *args, **kwargs: (_ for _ in ()).throw(
             AssertionError("Automatic Job creation must not list caller-selectable images")
         ),
     )
     captured = {}
 
-    def _create_project_job(**kwargs):
+    def _create_code_repository_job(**kwargs):
         captured.update(kwargs)
         return {
             "uid": "7d0ab07c-d1c0-4b7f-9c69-3c1a41c0a4da",
             "name": kwargs["name"],
             "execution_path": kwargs["execution_path"],
             "related_image_uid": "backend-derived-image-uid",
-            "project_repo_hash": "a" * 40,
+            "code_repository_commit_hash": "a" * 40,
             "image_status": "ready",
             "automatic_deployment": kwargs["automatic_deployment"],
             "automatic_redeployment_policy": {
@@ -9085,12 +9085,12 @@ def test_project_jobs_create_delegates_initial_image_with_automatic_deployment(
             },
         }
 
-    monkeypatch.setattr(cli_mod, "create_project_job", _create_project_job)
+    monkeypatch.setattr(cli_mod, "create_code_repository_job", _create_code_repository_job)
 
     result = runner.invoke(
         cli_mod.app,
         [
-            "project",
+            "code-repository",
             "jobs",
             "create",
             "--name",
@@ -9112,7 +9112,7 @@ def test_project_jobs_create_delegates_initial_image_with_automatic_deployment(
     assert "aaaaaaaa" in result.output
 
 
-def test_project_jobs_create_rejects_image_with_automatic_deployment(
+def test_code_repository_jobs_create_rejects_image_with_automatic_deployment(
     cli_mod, runner, monkeypatch, tmp_path
 ):
     target = tmp_path / "demo-123"
@@ -9122,14 +9122,14 @@ def test_project_jobs_create_rejects_image_with_automatic_deployment(
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(
         cli_mod,
-        "_resolve_project_branch_uid_for_command",
-        lambda *args, **kwargs: "project-branch-uid-123",
+        "_resolve_code_repository_branch_uid_for_command",
+        lambda *args, **kwargs: "code-repository-branch-uid-123",
     )
 
     result = runner.invoke(
         cli_mod.app,
         [
-            "project",
+            "code-repository",
             "jobs",
             "create",
             "--name",
@@ -9138,7 +9138,7 @@ def test_project_jobs_create_rejects_image_with_automatic_deployment(
             "scripts/test.py",
             "--automatic-deployment",
             "--related-image-uid",
-            "project-image-uid-77",
+            "code-repository-image-uid-77",
         ],
     )
 
@@ -9146,7 +9146,7 @@ def test_project_jobs_create_rejects_image_with_automatic_deployment(
     assert "Do not provide --related-image-uid" in result.output
 
 
-def test_project_jobs_create_derives_memory_from_cpu(cli_mod, runner, monkeypatch, tmp_path):
+def test_code_repository_jobs_create_derives_memory_from_cpu(cli_mod, runner, monkeypatch, tmp_path):
     target = tmp_path / "demo-123"
     target.mkdir(parents=True, exist_ok=True)
     (target / ".env").write_text("", encoding="utf-8")
@@ -9155,16 +9155,16 @@ def test_project_jobs_create_derives_memory_from_cpu(cli_mod, runner, monkeypatc
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(
         cli_mod,
-        "_resolve_project_branch_uid_for_command",
-        lambda *args, **kwargs: "project-branch-uid-123",
+        "_resolve_code_repository_branch_uid_for_command",
+        lambda *args, **kwargs: "code-repository-branch-uid-123",
     )
     monkeypatch.setattr(
         cli_mod,
-        "list_project_images",
-        lambda related_project_branch_uid, timeout=None: [
+        "list_code_repository_images",
+        lambda related_code_repository_branch_uid, timeout=None: [
             {
-                "uid": "project-image-uid-77",
-                "project_repo_hash": "abc123",
+                "uid": "code-repository-image-uid-77",
+                "code_repository_commit_hash": "abc123",
                 "base_image": {"uid": "base-image-uid-22", "title": "Python 3.12"},
             }
         ],
@@ -9172,7 +9172,7 @@ def test_project_jobs_create_derives_memory_from_cpu(cli_mod, runner, monkeypatc
 
     captured = {}
 
-    def _create_project_job(**kwargs):
+    def _create_code_repository_job(**kwargs):
         captured.update(kwargs)
         return {
             "uid": "7d0ab07c-d1c0-4b7f-9c69-3c1a41c0a4da",
@@ -9181,12 +9181,12 @@ def test_project_jobs_create_derives_memory_from_cpu(cli_mod, runner, monkeypatc
             "related_image": kwargs["related_image_uid"],
         }
 
-    monkeypatch.setattr(cli_mod, "create_project_job", _create_project_job)
+    monkeypatch.setattr(cli_mod, "create_code_repository_job", _create_code_repository_job)
 
     result = runner.invoke(
         cli_mod.app,
         [
-            "project",
+            "code-repository",
             "jobs",
             "create",
             "--name",
@@ -9196,7 +9196,7 @@ def test_project_jobs_create_derives_memory_from_cpu(cli_mod, runner, monkeypatc
             "--execution-path",
             "scripts/test.py",
             "--related-image-uid",
-            "project-image-uid-77",
+            "code-repository-image-uid-77",
         ],
         input="\n",
     )
@@ -9211,7 +9211,7 @@ def test_project_jobs_create_derives_memory_from_cpu(cli_mod, runner, monkeypatc
     )
 
 
-def test_project_jobs_create_interactive_interval_schedule(cli_mod, runner, monkeypatch, tmp_path):
+def test_code_repository_jobs_create_interactive_interval_schedule(cli_mod, runner, monkeypatch, tmp_path):
     target = tmp_path / "demo-123"
     target.mkdir(parents=True, exist_ok=True)
     (target / ".env").write_text("", encoding="utf-8")
@@ -9220,16 +9220,16 @@ def test_project_jobs_create_interactive_interval_schedule(cli_mod, runner, monk
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(
         cli_mod,
-        "_resolve_project_branch_uid_for_command",
-        lambda *args, **kwargs: "project-branch-uid-123",
+        "_resolve_code_repository_branch_uid_for_command",
+        lambda *args, **kwargs: "code-repository-branch-uid-123",
     )
     monkeypatch.setattr(
         cli_mod,
-        "list_project_images",
-        lambda related_project_branch_uid, timeout=None: [
+        "list_code_repository_images",
+        lambda related_code_repository_branch_uid, timeout=None: [
             {
-                "uid": "project-image-uid-77",
-                "project_repo_hash": "abc123",
+                "uid": "code-repository-image-uid-77",
+                "code_repository_commit_hash": "abc123",
                 "base_image": {"uid": "base-image-uid-22", "title": "Python 3.12"},
             }
         ],
@@ -9237,7 +9237,7 @@ def test_project_jobs_create_interactive_interval_schedule(cli_mod, runner, monk
 
     captured = {}
 
-    def _create_project_job(**kwargs):
+    def _create_code_repository_job(**kwargs):
         captured.update(kwargs)
         return {
             "uid": "7d0ab07c-d1c0-4b7f-9c69-3c1a41c0a4da",
@@ -9247,11 +9247,11 @@ def test_project_jobs_create_interactive_interval_schedule(cli_mod, runner, monk
             "related_image": kwargs["related_image_uid"],
         }
 
-    monkeypatch.setattr(cli_mod, "create_project_job", _create_project_job)
+    monkeypatch.setattr(cli_mod, "create_code_repository_job", _create_code_repository_job)
 
     result = runner.invoke(
         cli_mod.app,
-        ["project", "jobs", "create"],
+        ["code-repository", "jobs", "create"],
         input="demo-job\n\nscripts/test.py\ny\n\n\n\n\nn\n",
     )
     assert result.exit_code == 0
@@ -9262,7 +9262,7 @@ def test_project_jobs_create_interactive_interval_schedule(cli_mod, runner, monk
     assert "every 1 hours" in result.output
 
 
-def test_project_create_image_interactive_defaults(cli_mod, runner, monkeypatch, tmp_path):
+def test_code_repository_create_image_interactive_defaults(cli_mod, runner, monkeypatch, tmp_path):
     target = tmp_path / "demo-123"
     target.mkdir(parents=True, exist_ok=True)
     (target / ".env").write_text("", encoding="utf-8")
@@ -9271,12 +9271,12 @@ def test_project_create_image_interactive_defaults(cli_mod, runner, monkeypatch,
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(
         cli_mod,
-        "_resolve_project_branch_uid_for_command",
-        lambda *args, **kwargs: "project-branch-uid-123",
+        "_resolve_code_repository_branch_uid_for_command",
+        lambda *args, **kwargs: "code-repository-branch-uid-123",
     )
     monkeypatch.setattr(
         cli_mod,
-        "list_project_base_images",
+        "list_code_repository_base_images",
         lambda: [
             {
                 "uid": "22222222-2222-4222-8222-222222222222",
@@ -9287,11 +9287,11 @@ def test_project_create_image_interactive_defaults(cli_mod, runner, monkeypatch,
     )
     monkeypatch.setattr(
         cli_mod,
-        "list_project_images",
-        lambda related_project_branch_uid, timeout=None: [
+        "list_code_repository_images",
+        lambda related_code_repository_branch_uid, timeout=None: [
             {
                 "uid": "66666666-6666-4666-8666-666666666666",
-                "project_repo_hash": "1111111111111111111111111111111111111111",
+                "code_repository_commit_hash": "1111111111111111111111111111111111111111",
             }
         ],
     )
@@ -9330,20 +9330,20 @@ def test_project_create_image_interactive_defaults(cli_mod, runner, monkeypatch,
 
     captured = {}
 
-    def _create_project_image(**kwargs):
+    def _create_code_repository_image(**kwargs):
         captured.update(kwargs)
         return {
             "uid": "8b62d1dd-e146-44af-957c-38c5f5b1d8d5",
-            "project_repo_hash": kwargs["project_repo_hash"],
+            "code_repository_commit_hash": kwargs["code_repository_commit_hash"],
             "base_image": kwargs["base_image_uid"],
         }
 
-    monkeypatch.setattr(cli_mod, "create_project_image", _create_project_image)
+    monkeypatch.setattr(cli_mod, "create_code_repository_image", _create_code_repository_image)
 
-    result = runner.invoke(cli_mod.app, ["project", "images", "create"], input="\n\n")
+    result = runner.invoke(cli_mod.app, ["code-repository", "images", "create"], input="\n\n")
     assert result.exit_code == 0
-    assert captured["related_project_branch_uid"] == "project-branch-uid-123"
-    assert captured["project_repo_hash"] == "1111111111111111111111111111111111111111"
+    assert captured["related_code_repository_branch_uid"] == "code-repository-branch-uid-123"
+    assert captured["code_repository_commit_hash"] == "1111111111111111111111111111111111111111"
     assert captured["base_image_uid"] == "22222222-2222-4222-8222-222222222222"
     assert "8b62d1dd-e146-44af-957c-38c5f5b1d8d5" in result.output
     assert "local commit(s) have not been pushed yet" in result.output
@@ -9353,7 +9353,7 @@ def test_project_create_image_interactive_defaults(cli_mod, runner, monkeypatch,
     assert "already has project image(s)" in result.output
 
 
-def test_project_create_image_rejects_unpushed_hash(cli_mod, runner, monkeypatch, tmp_path):
+def test_code_repository_create_image_rejects_unpushed_hash(cli_mod, runner, monkeypatch, tmp_path):
     target = tmp_path / "demo-123"
     target.mkdir(parents=True, exist_ok=True)
     (target / ".env").write_text("", encoding="utf-8")
@@ -9361,11 +9361,11 @@ def test_project_create_image_rejects_unpushed_hash(cli_mod, runner, monkeypatch
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(
         cli_mod,
-        "_resolve_project_branch_uid_for_command",
-        lambda *args, **kwargs: "project-branch-uid-123",
+        "_resolve_code_repository_branch_uid_for_command",
+        lambda *args, **kwargs: "code-repository-branch-uid-123",
     )
     monkeypatch.setattr(
-        cli_mod, "list_project_images", lambda related_project_branch_uid, timeout=None: []
+        cli_mod, "list_code_repository_images", lambda related_code_repository_branch_uid, timeout=None: []
     )
 
     def _git_run(cmd, capture_output=None, text=None, **kwargs):
@@ -9387,7 +9387,7 @@ def test_project_create_image_rejects_unpushed_hash(cli_mod, runner, monkeypatch
     result = runner.invoke(
         cli_mod.app,
         [
-            "project",
+            "code-repository",
             "images",
             "create",
             "project-uid-123",
@@ -9400,15 +9400,15 @@ def test_project_create_image_rejects_unpushed_hash(cli_mod, runner, monkeypatch
     assert "must reference a commit that has already been pushed" in result.output
 
 
-def test_project_create_image_polls_until_ready(cli_mod, runner, monkeypatch, tmp_path):
+def test_code_repository_create_image_polls_until_ready(cli_mod, runner, monkeypatch, tmp_path):
     target = tmp_path / "demo-123"
     target.mkdir(parents=True, exist_ok=True)
 
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(
         cli_mod,
-        "_resolve_project_branch_uid_for_command",
-        lambda *args, **kwargs: "project-branch-uid-123",
+        "_resolve_code_repository_branch_uid_for_command",
+        lambda *args, **kwargs: "code-repository-branch-uid-123",
     )
     monkeypatch.setattr(cli_mod, "_list_unpushed_commits", lambda *_: [])
     monkeypatch.setattr(
@@ -9420,7 +9420,7 @@ def test_project_create_image_polls_until_ready(cli_mod, runner, monkeypatch, tm
 
     list_calls = {"count": 0}
 
-    def _list_project_images(related_project_branch_uid, timeout=None):
+    def _list_code_repository_images(related_code_repository_branch_uid, timeout=None):
         list_calls["count"] += 1
         if list_calls["count"] == 1:
             return []
@@ -9428,7 +9428,7 @@ def test_project_create_image_polls_until_ready(cli_mod, runner, monkeypatch, tm
             return [
                 {
                     "uid": "8b62d1dd-e146-44af-957c-38c5f5b1d8d5",
-                    "project_repo_hash": "abc123abc123abc123abc123abc123abc123abcd",
+                    "code_repository_commit_hash": "abc123abc123abc123abc123abc123abc123abcd",
                     "base_image": 22,
                     "build_error": False,
                     "is_ready": False,
@@ -9437,20 +9437,20 @@ def test_project_create_image_polls_until_ready(cli_mod, runner, monkeypatch, tm
         return [
             {
                 "uid": "8b62d1dd-e146-44af-957c-38c5f5b1d8d5",
-                "project_repo_hash": "abc123abc123abc123abc123abc123abc123abcd",
+                "code_repository_commit_hash": "abc123abc123abc123abc123abc123abc123abcd",
                 "base_image": 22,
                 "build_error": False,
                 "is_ready": True,
             }
         ]
 
-    monkeypatch.setattr(cli_mod, "list_project_images", _list_project_images)
+    monkeypatch.setattr(cli_mod, "list_code_repository_images", _list_code_repository_images)
     monkeypatch.setattr(
         cli_mod,
-        "create_project_image",
+        "create_code_repository_image",
         lambda **kwargs: {
             "uid": "8b62d1dd-e146-44af-957c-38c5f5b1d8d5",
-            "project_repo_hash": kwargs["project_repo_hash"],
+            "code_repository_commit_hash": kwargs["code_repository_commit_hash"],
             "base_image": 22,
             "build_error": False,
             "is_ready": False,
@@ -9463,7 +9463,7 @@ def test_project_create_image_polls_until_ready(cli_mod, runner, monkeypatch, tm
     result = runner.invoke(
         cli_mod.app,
         [
-            "project",
+            "code-repository",
             "images",
             "create",
             "project-uid-123",
@@ -9476,13 +9476,13 @@ def test_project_create_image_polls_until_ready(cli_mod, runner, monkeypatch, tm
     )
     assert result.exit_code == 0
     assert sleep_calls == [30, 30]
-    assert "Project image is still building." in result.output
-    assert "Project image is ready." in result.output
+    assert "CodeRepository image is still building." in result.output
+    assert "CodeRepository image is ready." in result.output
     assert "Is Ready" in result.output
     assert "True" in result.output
 
 
-def test_project_create_image_normalizes_short_hash_to_full_sha(
+def test_code_repository_create_image_normalizes_short_hash_to_full_sha(
     cli_mod, runner, monkeypatch, tmp_path
 ):
     target = tmp_path / "demo-123"
@@ -9492,12 +9492,12 @@ def test_project_create_image_normalizes_short_hash_to_full_sha(
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(
         cli_mod,
-        "_resolve_project_branch_uid_for_command",
-        lambda *args, **kwargs: "project-branch-uid-123",
+        "_resolve_code_repository_branch_uid_for_command",
+        lambda *args, **kwargs: "code-repository-branch-uid-123",
     )
     monkeypatch.setattr(cli_mod, "_list_unpushed_commits", lambda *_: [])
     monkeypatch.setattr(
-        cli_mod, "list_project_images", lambda related_project_branch_uid, timeout=None: []
+        cli_mod, "list_code_repository_images", lambda related_code_repository_branch_uid, timeout=None: []
     )
 
     def _git_run(cmd, capture_output=None, text=None, **kwargs):
@@ -9517,21 +9517,21 @@ def test_project_create_image_normalizes_short_hash_to_full_sha(
 
     captured = {}
 
-    def _create_project_image(**kwargs):
+    def _create_code_repository_image(**kwargs):
         captured.update(kwargs)
         return {
             "uid": "8b62d1dd-e146-44af-957c-38c5f5b1d8d5",
-            "project_repo_hash": kwargs["project_repo_hash"],
+            "code_repository_commit_hash": kwargs["code_repository_commit_hash"],
             "base_image": kwargs["base_image_uid"],
             "is_ready": True,
         }
 
-    monkeypatch.setattr(cli_mod, "create_project_image", _create_project_image)
+    monkeypatch.setattr(cli_mod, "create_code_repository_image", _create_code_repository_image)
 
     result = runner.invoke(
         cli_mod.app,
         [
-            "project",
+            "code-repository",
             "images",
             "create",
             "project-uid-123",
@@ -9544,11 +9544,11 @@ def test_project_create_image_normalizes_short_hash_to_full_sha(
     )
 
     assert result.exit_code == 0
-    assert captured["project_repo_hash"] == full_hash
+    assert captured["code_repository_commit_hash"] == full_hash
     assert full_hash in result.output
 
 
-def test_project_create_image_rejects_unresolvable_short_hash(
+def test_code_repository_create_image_rejects_unresolvable_short_hash(
     cli_mod, runner, monkeypatch, tmp_path
 ):
     target = tmp_path / "demo-123"
@@ -9557,12 +9557,12 @@ def test_project_create_image_rejects_unresolvable_short_hash(
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(
         cli_mod,
-        "_resolve_project_branch_uid_for_command",
-        lambda *args, **kwargs: "project-branch-uid-123",
+        "_resolve_code_repository_branch_uid_for_command",
+        lambda *args, **kwargs: "code-repository-branch-uid-123",
     )
     monkeypatch.setattr(cli_mod, "_list_unpushed_commits", lambda *_: [])
     monkeypatch.setattr(
-        cli_mod, "list_project_images", lambda related_project_branch_uid, timeout=None: []
+        cli_mod, "list_code_repository_images", lambda related_code_repository_branch_uid, timeout=None: []
     )
 
     def _git_run(cmd, capture_output=None, text=None, **kwargs):
@@ -9580,7 +9580,7 @@ def test_project_create_image_rejects_unresolvable_short_hash(
     result = runner.invoke(
         cli_mod.app,
         [
-            "project",
+            "code-repository",
             "images",
             "create",
             "project-uid-123",
@@ -9593,35 +9593,35 @@ def test_project_create_image_rejects_unresolvable_short_hash(
     )
 
     assert result.exit_code == 1
-    assert "Could not resolve project_repo_hash to a full commit SHA" in result.output
+    assert "Could not resolve code_repository_commit_hash to a full commit SHA" in result.output
 
 
-def test_project_list_requires_shell_auth_hint(cli_mod, runner, monkeypatch):
+def test_code_repository_list_requires_shell_auth_hint(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(cli_mod, "get_current_user_profile", lambda: {})
-    result = runner.invoke(cli_mod.app, ["project", "list"])
+    result = runner.invoke(cli_mod.app, ["code-repository", "list"])
     assert result.exit_code == 1
     assert "Not logged in. Run: mainsequence login" in result.output
 
 
-def test_project_create_interactive_defaults(cli_mod, runner, monkeypatch):
+def test_code_repository_create_interactive_defaults(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(
         cli_mod,
-        "validate_project_name",
-        lambda project_name, timeout=None: {
-            "project_name": project_name,
+        "validate_code_repository_name",
+        lambda code_repository_name, timeout=None: {
+            "code_repository_name": code_repository_name,
             "available": True,
             "reason": None,
             "normalized": {
-                "slugified_project_name": "demo-project",
-                "project_library_name": "demo_project",
+                "slugified_code_repository_name": "demo-project",
+                "repository_library_name": "demo_project",
             },
             "suggestions": [],
         },
     )
     monkeypatch.setattr(
         cli_mod,
-        "list_project_base_images",
+        "list_code_repository_base_images",
         lambda: [
             {
                 "uid": "22222222-2222-4222-8222-222222222222",
@@ -9644,33 +9644,33 @@ def test_project_create_interactive_defaults(cli_mod, runner, monkeypatch):
 
     captured = {}
 
-    def _create_project(**kwargs):
+    def _create_code_repository(**kwargs):
         captured.update(kwargs)
         return {
             "uid": "project-uid-321",
-            "project_name": kwargs["project_name"],
+            "code_repository_name": kwargs["code_repository_name"],
         }
 
-    monkeypatch.setattr(cli_mod, "create_project", _create_project)
+    monkeypatch.setattr(cli_mod, "create_code_repository", _create_code_repository)
 
     # Prompts:
-    # 1) Project name
+    # 1) CodeRepository name
     # 2) Default base image uid
     # 3) GitHub organization uid
     # 4) Environment variables line
     user_input = "demo-project\n\n\nFOO=bar, BAZ=qux\n"
-    result = runner.invoke(cli_mod.app, ["project", "create"], input=user_input)
+    result = runner.invoke(cli_mod.app, ["code-repository", "create"], input=user_input)
 
     assert result.exit_code == 0
-    assert captured["project_name"] == "demo-project"
-    assert captured["project_type"] == "python"
+    assert captured["code_repository_name"] == "demo-project"
+    assert captured["code_repository_type"] == "python"
     assert captured["default_base_image_uid"] == "22222222-2222-4222-8222-222222222222"
     assert captured["github_org_uid"] == "33333333-3333-4333-8333-333333333333"
     assert captured["env_vars"] == {"FOO": "bar", "BAZ": "qux"}
-    assert "Project created: demo-project (uid=project-uid-321)" in result.output
+    assert "CodeRepository created: demo-project (uid=project-uid-321)" in result.output
 
 
-def test_project_create_with_explicit_options_returns_logical_project(
+def test_code_repository_create_with_explicit_options_returns_logical_code_repository(
     cli_mod,
     runner,
     monkeypatch,
@@ -9678,33 +9678,33 @@ def test_project_create_with_explicit_options_returns_logical_project(
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(
         cli_mod,
-        "validate_project_name",
-        lambda project_name, timeout=None: {
-            "project_name": project_name,
+        "validate_code_repository_name",
+        lambda code_repository_name, timeout=None: {
+            "code_repository_name": code_repository_name,
             "available": True,
             "reason": None,
             "normalized": {
-                "slugified_project_name": "demo-project",
-                "project_library_name": "demo_project",
+                "slugified_code_repository_name": "demo-project",
+                "repository_library_name": "demo_project",
             },
             "suggestions": [],
         },
     )
     captured = {}
 
-    def _create_project(**kwargs):
+    def _create_code_repository(**kwargs):
         captured.update(kwargs)
         return {
             "uid": "77777777-7777-4777-8777-777777777777",
-            "project_name": kwargs["project_name"],
+            "code_repository_name": kwargs["code_repository_name"],
         }
 
-    monkeypatch.setattr(cli_mod, "create_project", _create_project)
+    monkeypatch.setattr(cli_mod, "create_code_repository", _create_code_repository)
 
     result = runner.invoke(
         cli_mod.app,
         [
-            "project",
+            "code-repository",
             "create",
             "demo-project",
             "--default-base-image-uid",
@@ -9718,70 +9718,70 @@ def test_project_create_with_explicit_options_returns_logical_project(
 
     assert result.exit_code == 0
     assert "default_metatables_data_source_uid" not in captured
-    assert "Project created: demo-project" in result.output
+    assert "CodeRepository created: demo-project" in result.output
 
 
-def test_project_create_rejects_unavailable_name(cli_mod, runner, monkeypatch):
+def test_code_repository_create_rejects_unavailable_name(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(
         cli_mod,
-        "validate_project_name",
-        lambda project_name, timeout=None: {
-            "project_name": project_name,
+        "validate_code_repository_name",
+        lambda code_repository_name, timeout=None: {
+            "code_repository_name": code_repository_name,
             "available": False,
             "reason": "A project with this name already exists in your organization.",
             "normalized": {
-                "slugified_project_name": "demo-project",
-                "project_library_name": "demo_project",
+                "slugified_code_repository_name": "demo-project",
+                "repository_library_name": "demo_project",
             },
-            "suggestions": ["Demo Project 2", "Demo Project 3"],
+            "suggestions": ["Demo CodeRepository 2", "Demo CodeRepository 3"],
         },
     )
 
-    result = runner.invoke(cli_mod.app, ["project", "create", "Demo Project"])
+    result = runner.invoke(cli_mod.app, ["code-repository", "create", "Demo CodeRepository"])
 
     assert result.exit_code == 1
     assert "A project with this name already exists in your organization." in result.output
-    assert "Project Name Validation" in result.output
-    assert "Demo Project 2" in result.output
-    assert "Demo Project 3" in result.output
+    assert "CodeRepository Name Validation" in result.output
+    assert "Demo CodeRepository 2" in result.output
+    assert "Demo CodeRepository 3" in result.output
 
 
-def test_project_delete_remote_yes(cli_mod, runner, monkeypatch):
+def test_code_repository_delete_remote_yes(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(
         cli_mod,
-        "resolve_project",
-        lambda project_id: {"id": 321, "uid": "project-uid-321", "project_name": "Demo Project"},
+        "resolve_code_repository",
+        lambda code_repository_id: {"id": 321, "uid": "project-uid-321", "code_repository_name": "Demo CodeRepository"},
     )
 
     captured = {}
 
-    def _bulk_delete_projects(*, uids, delete_repositories=False):
+    def _bulk_delete_code_repositories(*, uids, delete_repositories=False):
         captured["uids"] = uids
         captured["delete_repositories"] = delete_repositories
         return {"detail": "deleted", "deleted_count": 1}
 
-    monkeypatch.setattr(cli_mod, "bulk_delete_projects", _bulk_delete_projects)
+    monkeypatch.setattr(cli_mod, "bulk_delete_code_repositories", _bulk_delete_code_repositories)
 
     result = runner.invoke(
         cli_mod.app,
-        ["project", "delete", "project-uid-321", "--yes", "--delete-repositories"],
+        ["code-repository", "delete", "project-uid-321", "--yes", "--delete-repositories"],
     )
     assert result.exit_code == 0
     assert captured["uids"] == ["project-uid-321"]
     assert captured["delete_repositories"] is True
-    assert "Project deleted: Demo Project (uid=project-uid-321; deleted=1)" in result.output
+    assert "CodeRepository deleted: Demo CodeRepository (uid=project-uid-321; deleted=1)" in result.output
 
 
-def test_resolve_project_repository_ssh_url_uses_canonical_repository(
+def test_resolve_code_repository_repository_ssh_url_uses_canonical_repository(
     cli_mod,
     monkeypatch,
 ):
     repository_uid = "2bcf47e3-3a79-4f1e-a428-176c0218a8d1"
     captured = {}
 
-    def _get_project_repository(uid):
+    def _get_code_repository_repository(uid):
         captured["uid"] = uid
         return {
             "uid": uid,
@@ -9789,30 +9789,30 @@ def test_resolve_project_repository_ssh_url_uses_canonical_repository(
             "git_repo_url": "https://github.com/mainsequence-projects/tutorial.git",
         }
 
-    monkeypatch.setattr(cli_mod, "get_project_repository", _get_project_repository)
+    monkeypatch.setattr(cli_mod, "get_code_repository_repository", _get_code_repository_repository)
 
-    result = cli_mod._resolve_project_repository_ssh_url({"git_repository_uid": repository_uid})
+    result = cli_mod._resolve_code_repository_repository_ssh_url({"github_repository_binding_uid": repository_uid})
 
     assert captured["uid"] == repository_uid
     assert result == "git@github.com:mainsequence-projects/tutorial.git"
 
 
-def test_resolve_project_repository_ssh_url_requires_linked_repository(cli_mod, monkeypatch):
+def test_resolve_code_repository_repository_ssh_url_requires_linked_repository(cli_mod, monkeypatch):
     monkeypatch.setattr(
         cli_mod,
-        "get_project_repository",
+        "get_code_repository_repository",
         lambda uid: (_ for _ in ()).throw(AssertionError("must not fetch")),
     )
 
-    with pytest.raises(cli_mod.ApiError, match="no linked GitRepository"):
-        cli_mod._resolve_project_repository_ssh_url({})
+    with pytest.raises(cli_mod.ApiError, match="no linked GitHubRepositoryBinding"):
+        cli_mod._resolve_code_repository_repository_ssh_url({})
 
 
-def test_resolve_project_repository_ssh_url_requires_ssh_url(cli_mod, monkeypatch):
+def test_resolve_code_repository_repository_ssh_url_requires_ssh_url(cli_mod, monkeypatch):
     repository_uid = "2bcf47e3-3a79-4f1e-a428-176c0218a8d1"
     monkeypatch.setattr(
         cli_mod,
-        "get_project_repository",
+        "get_code_repository_repository",
         lambda uid: {
             "uid": uid,
             "git_repo_url": "https://github.com/mainsequence-projects/tutorial.git",
@@ -9820,10 +9820,10 @@ def test_resolve_project_repository_ssh_url_requires_ssh_url(cli_mod, monkeypatc
     )
 
     with pytest.raises(cli_mod.ApiError, match="has no SSH clone URL"):
-        cli_mod._resolve_project_repository_ssh_url({"git_repository_uid": repository_uid})
+        cli_mod._resolve_code_repository_repository_ssh_url({"github_repository_binding_uid": repository_uid})
 
 
-def test_ensure_project_repository_ssh_access_registers_new_key_before_verification(
+def test_ensure_code_repository_repository_ssh_access_registers_new_key_before_verification(
     cli_mod, monkeypatch, tmp_path
 ):
     origin = "git@github.com:org/repo.git"
@@ -9841,14 +9841,14 @@ def test_ensure_project_repository_ssh_access_registers_new_key_before_verificat
     monkeypatch.setattr(
         cli_mod,
         "add_deploy_key",
-        lambda project_ref, title, public_key: events.append(
-            ("register", project_ref, title, public_key)
+        lambda code_repository_ref, title, public_key: events.append(
+            ("register", code_repository_ref, title, public_key)
         ),
     )
 
-    key_path, public_key, env = cli_mod._ensure_project_repository_ssh_access(
+    key_path, public_key, env = cli_mod._ensure_code_repository_repository_ssh_access(
         origin=origin,
-        project_ref="project-uid-123",
+        code_repository_ref="project-uid-123",
         verify_access=lambda ssh_env: events.append(("verify", ssh_env["GIT_SSH_COMMAND"])),
     )
 
@@ -9861,7 +9861,7 @@ def test_ensure_project_repository_ssh_access_registers_new_key_before_verificat
     ]
 
 
-def test_ensure_project_repository_ssh_access_registers_inaccessible_existing_key(
+def test_ensure_code_repository_repository_ssh_access_registers_inaccessible_existing_key(
     cli_mod, monkeypatch, tmp_path
 ):
     origin = "git@github.com:org/repo.git"
@@ -9881,7 +9881,7 @@ def test_ensure_project_repository_ssh_access_registers_inaccessible_existing_ke
     monkeypatch.setattr(
         cli_mod,
         "add_deploy_key",
-        lambda project_ref, title, public_key: events.append("register"),
+        lambda code_repository_ref, title, public_key: events.append("register"),
     )
 
     def verify_access(env):
@@ -9889,16 +9889,16 @@ def test_ensure_project_repository_ssh_access_registers_inaccessible_existing_ke
         if events == ["verify"]:
             raise RuntimeError("not registered")
 
-    cli_mod._ensure_project_repository_ssh_access(
+    cli_mod._ensure_code_repository_repository_ssh_access(
         origin=origin,
-        project_ref="project-uid-123",
+        code_repository_ref="project-uid-123",
         verify_access=verify_access,
     )
 
     assert events == ["verify", "register", "verify"]
 
 
-def test_project_set_up_locally(cli_mod, runner, monkeypatch, tmp_path):
+def test_code_repository_set_up_locally(cli_mod, runner, monkeypatch, tmp_path):
     base = tmp_path / "base"
     base.mkdir(parents=True, exist_ok=True)
     key = tmp_path / "id_ed25519"
@@ -9914,24 +9914,24 @@ def test_project_set_up_locally(cli_mod, runner, monkeypatch, tmp_path):
     monkeypatch.setattr(cli_mod, "_org_slug_from_profile", lambda: "org")
     monkeypatch.setattr(
         cli_mod,
-        "resolve_project",
-        lambda project_ref: {
+        "resolve_code_repository",
+        lambda code_repository_ref: {
             "uid": "project-uid-123",
-            "project_name": "Demo",
-            "git_repository_uid": "repository-uid-123",
+            "code_repository_name": "Demo",
+            "github_repository_binding_uid": "repository-uid-123",
             "archived": False,
             "created_by": "u",
             "labels": [],
-            "branches": [{"uid": "project-branch-uid-123", "repository_branch": "main"}],
+            "branches": [{"uid": "code-repository-branch-uid-123", "repository_branch": "main"}],
         },
     )
     monkeypatch.setattr(
         cli_mod,
-        "get_project_branch",
+        "get_code_repository_branch",
         lambda branch_uid: {
             "uid": branch_uid,
-            "project_uid": "project-uid-123",
-            "project_name": "Demo",
+            "code_repository_uid": "project-uid-123",
+            "code_repository_name": "Demo",
             "repository_branch": "main",
             "is_initialized": True,
         },
@@ -9939,7 +9939,7 @@ def test_project_set_up_locally(cli_mod, runner, monkeypatch, tmp_path):
     repository_requests = []
     monkeypatch.setattr(
         cli_mod,
-        "get_project_repository",
+        "get_code_repository_repository",
         lambda repository_uid: repository_requests.append(repository_uid)
         or {
             "uid": repository_uid,
@@ -9975,7 +9975,7 @@ def test_project_set_up_locally(cli_mod, runner, monkeypatch, tmp_path):
 
     result = runner.invoke(
         cli_mod.app,
-        ["project", "set-up-locally", "project-uid-123", "--branch", "main"],
+        ["code-repository", "set-up-locally", "project-uid-123", "--branch", "main"],
     )
     assert result.exit_code == 0
     assert repository_requests == ["repository-uid-123"]
@@ -9997,7 +9997,7 @@ def test_project_set_up_locally(cli_mod, runner, monkeypatch, tmp_path):
     assert "MAINSEQUENCE_TOKEN=legacy-token" not in env_text
 
 
-def test_project_set_up_locally_runtime_credential(cli_mod, runner, monkeypatch, tmp_path):
+def test_code_repository_set_up_locally_runtime_credential(cli_mod, runner, monkeypatch, tmp_path):
     base = tmp_path / "base"
     base.mkdir(parents=True, exist_ok=True)
     key = tmp_path / "id_ed25519"
@@ -10016,24 +10016,24 @@ def test_project_set_up_locally_runtime_credential(cli_mod, runner, monkeypatch,
     monkeypatch.setattr(cli_mod, "_org_slug_from_profile", lambda: "org")
     monkeypatch.setattr(
         cli_mod,
-        "resolve_project",
-        lambda project_ref: {
+        "resolve_code_repository",
+        lambda code_repository_ref: {
             "uid": "project-uid-123",
-            "project_name": "Demo",
-            "git_repository_uid": "repository-uid-123",
+            "code_repository_name": "Demo",
+            "github_repository_binding_uid": "repository-uid-123",
             "archived": False,
             "created_by": "u",
             "labels": [],
-            "branches": [{"uid": "project-branch-uid-123", "repository_branch": "main"}],
+            "branches": [{"uid": "code-repository-branch-uid-123", "repository_branch": "main"}],
         },
     )
     monkeypatch.setattr(
         cli_mod,
-        "get_project_branch",
+        "get_code_repository_branch",
         lambda branch_uid: {
             "uid": branch_uid,
-            "project_uid": "project-uid-123",
-            "project_name": "Demo",
+            "code_repository_uid": "project-uid-123",
+            "code_repository_name": "Demo",
             "repository_branch": "main",
             "is_initialized": True,
         },
@@ -10041,7 +10041,7 @@ def test_project_set_up_locally_runtime_credential(cli_mod, runner, monkeypatch,
     repository_requests = []
     monkeypatch.setattr(
         cli_mod,
-        "get_project_repository",
+        "get_code_repository_repository",
         lambda repository_uid: repository_requests.append(repository_uid)
         or {
             "uid": repository_uid,
@@ -10082,7 +10082,7 @@ def test_project_set_up_locally_runtime_credential(cli_mod, runner, monkeypatch,
 
     result = runner.invoke(
         cli_mod.app,
-        ["project", "set-up-locally", "project-uid-123", "--branch", "main"],
+        ["code-repository", "set-up-locally", "project-uid-123", "--branch", "main"],
     )
     assert result.exit_code == 0
     assert repository_requests == ["repository-uid-123"]
@@ -10107,7 +10107,7 @@ def test_project_set_up_locally_runtime_credential(cli_mod, runner, monkeypatch,
     assert "old-refresh" not in env_text
 
 
-def test_project_set_up_locally_rejects_uninitialized_project(
+def test_code_repository_set_up_locally_rejects_uninitialized_code_repository(
     cli_mod, runner, monkeypatch, tmp_path
 ):
     base = tmp_path / "base"
@@ -10122,24 +10122,24 @@ def test_project_set_up_locally_rejects_uninitialized_project(
     monkeypatch.setattr(cli_mod, "_org_slug_from_profile", lambda: "org")
     monkeypatch.setattr(
         cli_mod,
-        "resolve_project",
-        lambda project_ref: {
+        "resolve_code_repository",
+        lambda code_repository_ref: {
             "uid": "project-uid-123",
-            "project_name": "Demo",
-            "git_repository_uid": "repository-uid-123",
+            "code_repository_name": "Demo",
+            "github_repository_binding_uid": "repository-uid-123",
             "archived": False,
             "created_by": "u",
             "labels": [],
-            "branches": [{"uid": "project-branch-uid-123", "repository_branch": "main"}],
+            "branches": [{"uid": "code-repository-branch-uid-123", "repository_branch": "main"}],
         },
     )
     monkeypatch.setattr(
         cli_mod,
-        "get_project_branch",
+        "get_code_repository_branch",
         lambda branch_uid: {
             "uid": branch_uid,
-            "project_uid": "project-uid-123",
-            "project_name": "Demo",
+            "code_repository_uid": "project-uid-123",
+            "code_repository_name": "Demo",
             "repository_branch": "main",
             "is_initialized": False,
         },
@@ -10155,26 +10155,26 @@ def test_project_set_up_locally_rejects_uninitialized_project(
 
     result = runner.invoke(
         cli_mod.app,
-        ["project", "set-up-locally", "project-uid-123", "--branch", "main"],
+        ["code-repository", "set-up-locally", "project-uid-123", "--branch", "main"],
     )
 
     assert result.exit_code == 1
-    assert "Project has not finished initializing yet." in result.output
+    assert "CodeRepository has not finished initializing yet." in result.output
     assert clone_calls["count"] == 0
 
 
-def test_project_open(cli_mod, runner, monkeypatch, tmp_path):
-    target = tmp_path / "project"
+def test_code_repository_open(cli_mod, runner, monkeypatch, tmp_path):
+    target = tmp_path / "code-repository"
     target.mkdir(parents=True, exist_ok=True)
     opened = {"path": None}
 
     monkeypatch.setattr(cli_mod, "open_folder", lambda p: opened.update(path=p))
-    result = runner.invoke(cli_mod.app, ["project", "open", "--path", str(target)])
+    result = runner.invoke(cli_mod.app, ["code-repository", "open", "--path", str(target)])
     assert result.exit_code == 0
     assert opened["path"] == str(target.resolve())
 
 
-def test_project_refresh_token(cli_mod, runner, monkeypatch, tmp_path):
+def test_code_repository_refresh_token(cli_mod, runner, monkeypatch, tmp_path):
     target = tmp_path / "demo-project-uid-123"
     target.mkdir(parents=True, exist_ok=True)
     env_path = target / ".env"
@@ -10197,7 +10197,7 @@ def test_project_refresh_token(cli_mod, runner, monkeypatch, tmp_path):
     )
     monkeypatch.setattr(cli_mod.cfg, "backend_url", lambda: "https://backend.test")
 
-    result = runner.invoke(cli_mod.app, ["project", "refresh_token", "--path", str(target)])
+    result = runner.invoke(cli_mod.app, ["code-repository", "refresh-token", "--path", str(target)])
     assert result.exit_code == 0
 
     env_text = env_path.read_text(encoding="utf-8")
@@ -10212,7 +10212,7 @@ def test_project_refresh_token(cli_mod, runner, monkeypatch, tmp_path):
     assert "old-refresh" not in env_text
 
 
-def test_project_refresh_token_runtime_credential(cli_mod, runner, monkeypatch, tmp_path):
+def test_code_repository_refresh_token_runtime_credential(cli_mod, runner, monkeypatch, tmp_path):
     target = tmp_path / "demo-project-uid-123"
     target.mkdir(parents=True, exist_ok=True)
     env_path = target / ".env"
@@ -10243,7 +10243,7 @@ def test_project_refresh_token_runtime_credential(cli_mod, runner, monkeypatch, 
         lambda backend_url: "runtime-new-access",
     )
 
-    result = runner.invoke(cli_mod.app, ["project", "refresh_token", "--path", str(target)])
+    result = runner.invoke(cli_mod.app, ["code-repository", "refresh-token", "--path", str(target)])
     assert result.exit_code == 0
 
     env_text = env_path.read_text(encoding="utf-8")
@@ -10261,7 +10261,7 @@ def test_project_refresh_token_runtime_credential(cli_mod, runner, monkeypatch, 
     assert "old-refresh" not in env_text
 
 
-def test_project_refresh_token_defaults_to_cwd(cli_mod, runner, monkeypatch, tmp_path):
+def test_code_repository_refresh_token_defaults_to_cwd(cli_mod, runner, monkeypatch, tmp_path):
     target = tmp_path / "demo-project-uid-123"
     target.mkdir(parents=True, exist_ok=True)
     env_path = target / ".env"
@@ -10282,7 +10282,7 @@ def test_project_refresh_token_defaults_to_cwd(cli_mod, runner, monkeypatch, tmp
     )
     monkeypatch.setattr(cli_mod.cfg, "backend_url", lambda: "https://backend.test")
 
-    result = runner.invoke(cli_mod.app, ["project", "refresh_token"])
+    result = runner.invoke(cli_mod.app, ["code-repository", "refresh-token"])
     assert result.exit_code == 0
 
     env_text = env_path.read_text(encoding="utf-8")
@@ -10292,11 +10292,11 @@ def test_project_refresh_token_defaults_to_cwd(cli_mod, runner, monkeypatch, tmp
     assert "MAIN_SEQUENCE_PROJECT_UID" not in env_text
 
 
-def test_project_delete_local(cli_mod, runner, monkeypatch, tmp_path):
+def test_code_repository_delete_local(cli_mod, runner, monkeypatch, tmp_path):
     base = tmp_path / "base"
-    project_path = base / "org" / "projects" / "demo-123"
-    project_path.mkdir(parents=True, exist_ok=True)
-    (project_path / "x.txt").write_text("x", encoding="utf-8")
+    code_repository_path = base / "org" / "projects" / "demo-123"
+    code_repository_path.mkdir(parents=True, exist_ok=True)
+    (code_repository_path / "x.txt").write_text("x", encoding="utf-8")
 
     monkeypatch.setattr(
         cli_mod.cfg,
@@ -10308,14 +10308,14 @@ def test_project_delete_local(cli_mod, runner, monkeypatch, tmp_path):
 
     result = runner.invoke(
         cli_mod.app,
-        ["project", "delete-local", "--path", str(project_path), "--yes"],
+        ["code-repository", "delete-local", "--path", str(code_repository_path), "--yes"],
     )
     assert result.exit_code == 0
-    assert not project_path.exists()
+    assert not code_repository_path.exists()
 
 
-def test_project_open_signed_terminal(cli_mod, runner, monkeypatch, tmp_path):
-    target = tmp_path / "project"
+def test_code_repository_open_signed_terminal(cli_mod, runner, monkeypatch, tmp_path):
+    target = tmp_path / "code-repository"
     target.mkdir(parents=True, exist_ok=True)
     key = tmp_path / "id_ed25519"
     called = {"args": None}
@@ -10323,27 +10323,27 @@ def test_project_open_signed_terminal(cli_mod, runner, monkeypatch, tmp_path):
     monkeypatch.setattr(cli_mod, "git_origin", lambda _: "git@github.com:org/repo.git")
     monkeypatch.setattr(
         cli_mod,
-        "_ensure_project_repository_ssh_access",
+        "_ensure_code_repository_repository_ssh_access",
         lambda **kwargs: (key, "pub", {"GIT_SSH_COMMAND": "forced"}),
     )
     monkeypatch.setattr(
         cli_mod,
         "open_signed_terminal",
-        lambda project_dir, key_path, repo_name: called.update(
-            args=(project_dir, str(key_path), repo_name)
+        lambda code_repository_dir, key_path, repo_name: called.update(
+            args=(code_repository_dir, str(key_path), repo_name)
         ),
     )
 
     result = runner.invoke(
         cli_mod.app,
-        ["project", "open-signed-terminal", "--path", str(target)],
+        ["code-repository", "open-signed-terminal", "--path", str(target)],
     )
     assert result.exit_code == 0
     assert called["args"] is not None
 
 
-def test_project_build_local_venv(cli_mod, runner, monkeypatch, tmp_path):
-    target = tmp_path / "project"
+def test_code_repository_build_local_venv(cli_mod, runner, monkeypatch, tmp_path):
+    target = tmp_path / "code-repository"
     target.mkdir(parents=True, exist_ok=True)
     (target / "pyproject.toml").write_text(
         '[project]\nname = "demo"\nrequires-python = ">=3.13,<3.14"\n',
@@ -10361,7 +10361,7 @@ def test_project_build_local_venv(cli_mod, runner, monkeypatch, tmp_path):
 
     result = runner.invoke(
         cli_mod.app,
-        ["project", "build_local_venv", "--path", str(target)],
+        ["code-repository", "build-local-venv", "--path", str(target)],
     )
     assert result.exit_code == 0
     assert calls[0][0] == ["uv", "venv", ".venv", "--python", ">=3.13,<3.14"]
@@ -10371,7 +10371,7 @@ def test_project_build_local_venv(cli_mod, runner, monkeypatch, tmp_path):
     assert "Local .venv built for Python requirement >=3.13,<3.14." in result.output
 
 
-def test_project_build_local_venv_defaults_to_cwd_with_env_project_id(
+def test_code_repository_build_local_venv_defaults_to_cwd_with_env_code_repository_id(
     cli_mod, runner, monkeypatch, tmp_path
 ):
     target = tmp_path / "demo-project-uid-123"
@@ -10392,7 +10392,7 @@ def test_project_build_local_venv_defaults_to_cwd_with_env_project_id(
 
     monkeypatch.setattr(cli_mod.subprocess, "run", _run)
 
-    result = runner.invoke(cli_mod.app, ["project", "build_local_venv"])
+    result = runner.invoke(cli_mod.app, ["code-repository", "build-local-venv"])
     assert result.exit_code == 0
     assert calls[0][0] == ["uv", "venv", ".venv", "--python", ">=3.13,<3.14"]
     assert calls[0][1] == str(target.resolve())
@@ -10418,10 +10418,10 @@ def test_normalize_python_version_request_rejects_invalid_constraint(cli_mod):
     assert cli_mod._normalize_python_version_request("not-a-version") is None
 
 
-def test_project_build_local_venv_skips_compatible_existing_environment(
+def test_code_repository_build_local_venv_skips_compatible_existing_environment(
     cli_mod, runner, monkeypatch, tmp_path
 ):
-    target = tmp_path / "project"
+    target = tmp_path / "code-repository"
     target.mkdir(parents=True, exist_ok=True)
     (target / ".venv").mkdir(parents=True, exist_ok=True)
     (target / "pyproject.toml").write_text(
@@ -10436,16 +10436,16 @@ def test_project_build_local_venv_skips_compatible_existing_environment(
 
     result = runner.invoke(
         cli_mod.app,
-        ["project", "build_local_venv", "--path", str(target)],
+        ["code-repository", "build-local-venv", "--path", str(target)],
     )
     assert result.exit_code == 0
     assert "already uses compatible Python 3.13.7" in result.output
 
 
-def test_project_build_local_venv_rejects_incompatible_existing_environment(
+def test_code_repository_build_local_venv_rejects_incompatible_existing_environment(
     cli_mod, runner, monkeypatch, tmp_path
 ):
-    target = tmp_path / "project"
+    target = tmp_path / "code-repository"
     target.mkdir(parents=True, exist_ok=True)
     (target / ".venv").mkdir(parents=True, exist_ok=True)
     (target / "pyproject.toml").write_text(
@@ -10460,7 +10460,7 @@ def test_project_build_local_venv_rejects_incompatible_existing_environment(
 
     result = runner.invoke(
         cli_mod.app,
-        ["project", "build_local_venv", "--path", str(target)],
+        ["code-repository", "build-local-venv", "--path", str(target)],
     )
 
     assert result.exit_code == 1
@@ -10468,10 +10468,10 @@ def test_project_build_local_venv_rejects_incompatible_existing_environment(
     assert "Re-run with --recreate" in result.output
 
 
-def test_project_build_local_venv_recreates_incompatible_environment(
+def test_code_repository_build_local_venv_recreates_incompatible_environment(
     cli_mod, runner, monkeypatch, tmp_path
 ):
-    target = tmp_path / "project"
+    target = tmp_path / "code-repository"
     target.mkdir(parents=True, exist_ok=True)
     venv_path = target / ".venv"
     venv_path.mkdir(parents=True, exist_ok=True)
@@ -10491,7 +10491,7 @@ def test_project_build_local_venv_recreates_incompatible_environment(
 
     result = runner.invoke(
         cli_mod.app,
-        ["project", "build_local_venv", "--path", str(target), "--recreate"],
+        ["code-repository", "build-local-venv", "--path", str(target), "--recreate"],
     )
 
     assert result.exit_code == 0
@@ -10500,10 +10500,10 @@ def test_project_build_local_venv_recreates_incompatible_environment(
     assert "Replacing existing" in result.output
 
 
-def test_project_build_local_venv_preserves_existing_environment_when_uv_is_unavailable(
+def test_code_repository_build_local_venv_preserves_existing_environment_when_uv_is_unavailable(
     cli_mod, runner, monkeypatch, tmp_path
 ):
-    target = tmp_path / "project"
+    target = tmp_path / "code-repository"
     target.mkdir(parents=True, exist_ok=True)
     marker = target / ".venv" / "existing-environment"
     marker.parent.mkdir(parents=True, exist_ok=True)
@@ -10517,7 +10517,7 @@ def test_project_build_local_venv_preserves_existing_environment_when_uv_is_unav
 
     result = runner.invoke(
         cli_mod.app,
-        ["project", "build_local_venv", "--path", str(target), "--recreate"],
+        ["code-repository", "build-local-venv", "--path", str(target), "--recreate"],
     )
 
     assert result.exit_code == 1
@@ -10525,20 +10525,20 @@ def test_project_build_local_venv_preserves_existing_environment_when_uv_is_unav
     assert "automatic install failed: offline" in result.output
 
 
-def test_project_build_local_venv_requires_pyproject(cli_mod, runner, tmp_path):
-    target = tmp_path / "project"
+def test_code_repository_build_local_venv_requires_pyproject(cli_mod, runner, tmp_path):
+    target = tmp_path / "code-repository"
     target.mkdir(parents=True, exist_ok=True)
 
     result = runner.invoke(
         cli_mod.app,
-        ["project", "build_local_venv", "--path", str(target)],
+        ["code-repository", "build-local-venv", "--path", str(target)],
     )
     assert result.exit_code == 1
     assert "pyproject.toml not found in the project root." in result.output
 
 
-def test_project_freeze_env(cli_mod, runner, monkeypatch, tmp_path):
-    target = tmp_path / "project"
+def test_code_repository_freeze_env(cli_mod, runner, monkeypatch, tmp_path):
+    target = tmp_path / "code-repository"
     target.mkdir(parents=True, exist_ok=True)
     uv_path = target / ".venv" / "bin" / "uv"
     calls = []
@@ -10551,7 +10551,7 @@ def test_project_freeze_env(cli_mod, runner, monkeypatch, tmp_path):
         lambda uv, cwd, **kwargs: calls.append((uv, cwd, kwargs)),
     )
 
-    result = runner.invoke(cli_mod.app, ["project", "freeze-env", "--path", str(target)])
+    result = runner.invoke(cli_mod.app, ["code-repository", "freeze-env", "--path", str(target)])
     assert result.exit_code == 0
     assert len(calls) == 1
     assert calls[0][2]["output_file"] == "requirements.txt"
@@ -10565,7 +10565,7 @@ def test_project_freeze_env(cli_mod, runner, monkeypatch, tmp_path):
         ("feature/foo", "v1.2.4-feature-foo-12345678.1"),
     ],
 )
-def test_project_sync(
+def test_code_repository_sync(
     cli_mod,
     runner,
     monkeypatch,
@@ -10573,7 +10573,7 @@ def test_project_sync(
     git_branch,
     rendered_tag,
 ):
-    target = tmp_path / "project"
+    target = tmp_path / "code-repository"
     target.mkdir(parents=True, exist_ok=True)
     (target / ".env").write_text("", encoding="utf-8")
     key = tmp_path / "id_ed25519"
@@ -10585,13 +10585,13 @@ def test_project_sync(
     monkeypatch.setattr(cli_mod, "ensure_venv", lambda *_: None)
     monkeypatch.setattr(
         cli_mod,
-        "_resolve_git_project_branch_context",
-        lambda *args, **kwargs: (git_branch, "project-branch-uid-123"),
+        "_resolve_git_code_repository_branch_context",
+        lambda *args, **kwargs: (git_branch, "code-repository-branch-uid-123"),
     )
     monkeypatch.setattr(cli_mod, "git_origin", lambda *_: "git@github.com:org/repo.git")
     monkeypatch.setattr(
         cli_mod,
-        "_ensure_project_repository_ssh_access",
+        "_ensure_code_repository_repository_ssh_access",
         lambda **kwargs: (key, "pub", {"GIT_SSH_COMMAND": "forced"}),
     )
     monkeypatch.setattr(cli_mod, "ensure_uv_installed", lambda *_: uv_path)
@@ -10601,7 +10601,7 @@ def test_project_sync(
     monkeypatch.setattr(cli_mod, "verify_git_remote_tag_absent", lambda *_, **__: None)
     monkeypatch.setattr(
         cli_mod,
-        "render_project_branch_default_redeployment_tag",
+        "render_code_repository_branch_default_redeployment_tag",
         lambda uid, *, version: tag_requests.append((uid, version)) or rendered_tag,
     )
     monkeypatch.setattr(
@@ -10621,7 +10621,7 @@ def test_project_sync(
     )
     result = runner.invoke(
         cli_mod.app,
-        ["project", "sync", "--message", "Update deps", "--path", str(target)],
+        ["code-repository", "sync", "--message", "Update deps", "--path", str(target)],
     )
     assert result.exit_code == 0
     assert ["version", "--bump", "patch"] in uv_calls
@@ -10639,13 +10639,13 @@ def test_project_sync(
         f"HEAD:refs/heads/{git_branch}",
         f"refs/tags/{rendered_tag}:refs/tags/{rendered_tag}",
     ] in git_calls
-    assert tag_requests == [("project-branch-uid-123", "1.2.4")]
+    assert tag_requests == [("code-repository-branch-uid-123", "1.2.4")]
 
 
-def test_project_sync_defaults_to_cwd_with_positional_message(
+def test_code_repository_sync_defaults_to_cwd_with_positional_message(
     cli_mod, runner, monkeypatch, tmp_path
 ):
-    target = tmp_path / "project"
+    target = tmp_path / "code-repository"
     target.mkdir(parents=True, exist_ok=True)
     (target / ".env").write_text("", encoding="utf-8")
     key = tmp_path / "id_ed25519"
@@ -10656,13 +10656,13 @@ def test_project_sync_defaults_to_cwd_with_positional_message(
     monkeypatch.setattr(cli_mod, "ensure_venv", lambda *_: None)
     monkeypatch.setattr(
         cli_mod,
-        "_resolve_git_project_branch_context",
-        lambda *args, **kwargs: ("main", "project-branch-uid-123"),
+        "_resolve_git_code_repository_branch_context",
+        lambda *args, **kwargs: ("main", "code-repository-branch-uid-123"),
     )
     monkeypatch.setattr(cli_mod, "git_origin", lambda *_: "git@github.com:org/repo.git")
     monkeypatch.setattr(
         cli_mod,
-        "_ensure_project_repository_ssh_access",
+        "_ensure_code_repository_repository_ssh_access",
         lambda **kwargs: (key, "pub", {"GIT_SSH_COMMAND": "forced"}),
     )
     monkeypatch.setattr(cli_mod, "ensure_uv_installed", lambda *_: uv_path)
@@ -10672,7 +10672,7 @@ def test_project_sync_defaults_to_cwd_with_positional_message(
     monkeypatch.setattr(cli_mod, "verify_git_remote_tag_absent", lambda *_, **__: None)
     monkeypatch.setattr(
         cli_mod,
-        "render_project_branch_default_redeployment_tag",
+        "render_code_repository_branch_default_redeployment_tag",
         lambda uid, *, version: "v1.2.4",
     )
     monkeypatch.setattr(cli_mod, "run_uv", lambda uv, args, cwd, env=None: None)
@@ -10685,7 +10685,7 @@ def test_project_sync_defaults_to_cwd_with_positional_message(
 
     result = runner.invoke(
         cli_mod.app,
-        ["project", "sync", "Update deps"],
+        ["code-repository", "sync", "Update deps"],
     )
     assert result.exit_code == 0
     assert (["git", "commit", "-m", "Update deps"], target) in git_calls
@@ -10696,24 +10696,24 @@ def test_project_sync_defaults_to_cwd_with_positional_message(
     "preflight_error",
     [
         "Current Git checkout is detached or has no named branch.",
-        "Git branch 'feature/missing' is not registered as a ProjectBranch for this Project.",
+        "Git branch 'feature/missing' is not registered as a CodeRepositoryBranch for this CodeRepository.",
     ],
 )
-def test_project_sync_rejects_invalid_branch_before_local_mutation(
+def test_code_repository_sync_rejects_invalid_branch_before_local_mutation(
     cli_mod,
     runner,
     monkeypatch,
     tmp_path,
     preflight_error,
 ):
-    target = tmp_path / "project"
+    target = tmp_path / "code-repository"
     target.mkdir(parents=True, exist_ok=True)
     (target / ".env").write_text("", encoding="utf-8")
 
     def fail_preflight(*args, **kwargs):
         raise cli_mod.ApiError(preflight_error)
 
-    monkeypatch.setattr(cli_mod, "_resolve_git_project_branch_context", fail_preflight)
+    monkeypatch.setattr(cli_mod, "_resolve_git_code_repository_branch_context", fail_preflight)
     monkeypatch.setattr(
         cli_mod,
         "ensure_venv",
@@ -10723,7 +10723,7 @@ def test_project_sync_rejects_invalid_branch_before_local_mutation(
     result = runner.invoke(
         cli_mod.app,
         [
-            "project",
+            "code-repository",
             "sync",
             "--message",
             "Update deps",
@@ -10734,11 +10734,11 @@ def test_project_sync_rejects_invalid_branch_before_local_mutation(
     )
 
     assert result.exit_code == 1
-    assert f"Project sync preflight failed: {preflight_error}" in result.output
+    assert f"CodeRepository sync preflight failed: {preflight_error}" in result.output
 
 
-def test_project_sync_dry_run_does_not_mutate(cli_mod, runner, monkeypatch, tmp_path):
-    target = tmp_path / "project"
+def test_code_repository_sync_dry_run_does_not_mutate(cli_mod, runner, monkeypatch, tmp_path):
+    target = tmp_path / "code-repository"
     target.mkdir(parents=True, exist_ok=True)
     (target / ".env").write_text(
         "",
@@ -10747,8 +10747,8 @@ def test_project_sync_dry_run_does_not_mutate(cli_mod, runner, monkeypatch, tmp_
 
     monkeypatch.setattr(
         cli_mod,
-        "_resolve_git_project_branch_context",
-        lambda *args, **kwargs: ("main", "project-branch-uid-123"),
+        "_resolve_git_code_repository_branch_context",
+        lambda *args, **kwargs: ("main", "code-repository-branch-uid-123"),
     )
     monkeypatch.setattr(cli_mod, "ensure_venv", lambda *_: None)
     monkeypatch.setattr(cli_mod, "git_origin", lambda *_: "git@github.com:org/repo.git")
@@ -10757,7 +10757,7 @@ def test_project_sync_dry_run_does_not_mutate(cli_mod, runner, monkeypatch, tmp_
     monkeypatch.setattr(cli_mod, "uv_preview_patch_version", lambda *_, **__: "1.2.4")
     monkeypatch.setattr(
         cli_mod,
-        "render_project_branch_default_redeployment_tag",
+        "render_code_repository_branch_default_redeployment_tag",
         lambda uid, *, version: "v1.2.4",
     )
     monkeypatch.setattr(cli_mod, "verify_git_tag_absent", lambda *_, **__: None)
@@ -10766,7 +10766,7 @@ def test_project_sync_dry_run_does_not_mutate(cli_mod, runner, monkeypatch, tmp_
         pytest.fail("dry-run must not execute sync mutations")
 
     for name in (
-        "_ensure_project_repository_ssh_access",
+        "_ensure_code_repository_repository_ssh_access",
         "verify_git_remote_tag_absent",
         "run_uv",
         "uv_export_requirements",
@@ -10777,7 +10777,7 @@ def test_project_sync_dry_run_does_not_mutate(cli_mod, runner, monkeypatch, tmp_
     result = runner.invoke(
         cli_mod.app,
         [
-            "project",
+            "code-repository",
             "sync",
             "--message",
             "Preview release",
@@ -10795,10 +10795,10 @@ def test_project_sync_dry_run_does_not_mutate(cli_mod, runner, monkeypatch, tmp_
     assert "read-only preflight complete; no changes made" in result.output
 
 
-def test_project_sync_remote_tag_collision_stops_before_mutation(
+def test_code_repository_sync_remote_tag_collision_stops_before_mutation(
     cli_mod, runner, monkeypatch, tmp_path
 ):
-    target = tmp_path / "project"
+    target = tmp_path / "code-repository"
     target.mkdir(parents=True, exist_ok=True)
     (target / ".env").write_text(
         "",
@@ -10809,8 +10809,8 @@ def test_project_sync_remote_tag_collision_stops_before_mutation(
     monkeypatch.setattr(cli_mod, "ensure_venv", lambda *_: None)
     monkeypatch.setattr(
         cli_mod,
-        "_resolve_git_project_branch_context",
-        lambda *args, **kwargs: ("main", "project-branch-uid-123"),
+        "_resolve_git_code_repository_branch_context",
+        lambda *args, **kwargs: ("main", "code-repository-branch-uid-123"),
     )
     monkeypatch.setattr(cli_mod, "git_origin", lambda *_: "git@github.com:org/repo.git")
     monkeypatch.setattr(cli_mod, "ensure_uv_installed", lambda *_: uv_path)
@@ -10818,13 +10818,13 @@ def test_project_sync_remote_tag_collision_stops_before_mutation(
     monkeypatch.setattr(cli_mod, "uv_preview_patch_version", lambda *_, **__: "1.2.4")
     monkeypatch.setattr(
         cli_mod,
-        "render_project_branch_default_redeployment_tag",
+        "render_code_repository_branch_default_redeployment_tag",
         lambda uid, *, version: "v1.2.4",
     )
     monkeypatch.setattr(cli_mod, "verify_git_tag_absent", lambda *_, **__: None)
     monkeypatch.setattr(
         cli_mod,
-        "_ensure_project_repository_ssh_access",
+        "_ensure_code_repository_repository_ssh_access",
         lambda **kwargs: (tmp_path / "key", "pub", {"GIT_SSH_COMMAND": "forced"}),
     )
     monkeypatch.setattr(
@@ -10847,18 +10847,18 @@ def test_project_sync_remote_tag_collision_stops_before_mutation(
 
     result = runner.invoke(
         cli_mod.app,
-        ["project", "sync", "--message", "Update deps", "--path", str(target)],
+        ["code-repository", "sync", "--message", "Update deps", "--path", str(target)],
     )
 
     assert result.exit_code == 1
-    assert "Project sync remote tag preflight failed" in result.output
+    assert "CodeRepository sync remote tag preflight failed" in result.output
     assert "already exists remotely: v1.2.4" in result.output
 
 
-def test_project_sync_version_mismatch_stops_before_lock_or_git_mutation(
+def test_code_repository_sync_version_mismatch_stops_before_lock_or_git_mutation(
     cli_mod, runner, monkeypatch, tmp_path
 ):
-    target = tmp_path / "project"
+    target = tmp_path / "code-repository"
     target.mkdir(parents=True, exist_ok=True)
     (target / ".env").write_text(
         "",
@@ -10871,8 +10871,8 @@ def test_project_sync_version_mismatch_stops_before_lock_or_git_mutation(
     monkeypatch.setattr(cli_mod, "ensure_venv", lambda *_: None)
     monkeypatch.setattr(
         cli_mod,
-        "_resolve_git_project_branch_context",
-        lambda *args, **kwargs: ("main", "project-branch-uid-123"),
+        "_resolve_git_code_repository_branch_context",
+        lambda *args, **kwargs: ("main", "code-repository-branch-uid-123"),
     )
     monkeypatch.setattr(cli_mod, "git_origin", lambda *_: "git@github.com:org/repo.git")
     monkeypatch.setattr(cli_mod, "ensure_uv_installed", lambda *_: uv_path)
@@ -10880,14 +10880,14 @@ def test_project_sync_version_mismatch_stops_before_lock_or_git_mutation(
     monkeypatch.setattr(cli_mod, "uv_preview_patch_version", lambda *_, **__: "1.2.4")
     monkeypatch.setattr(
         cli_mod,
-        "render_project_branch_default_redeployment_tag",
+        "render_code_repository_branch_default_redeployment_tag",
         lambda uid, *, version: "v1.2.4",
     )
     monkeypatch.setattr(cli_mod, "verify_git_tag_absent", lambda *_, **__: None)
     monkeypatch.setattr(cli_mod, "verify_git_remote_tag_absent", lambda *_, **__: None)
     monkeypatch.setattr(
         cli_mod,
-        "_ensure_project_repository_ssh_access",
+        "_ensure_code_repository_repository_ssh_access",
         lambda **kwargs: (tmp_path / "key", "pub", {"GIT_SSH_COMMAND": "forced"}),
     )
     monkeypatch.setattr(
@@ -10903,7 +10903,7 @@ def test_project_sync_version_mismatch_stops_before_lock_or_git_mutation(
 
     result = runner.invoke(
         cli_mod.app,
-        ["project", "sync", "--message", "Update deps", "--path", str(target)],
+        ["code-repository", "sync", "--message", "Update deps", "--path", str(target)],
     )
 
     assert result.exit_code == 1
@@ -10911,15 +10911,15 @@ def test_project_sync_version_mismatch_stops_before_lock_or_git_mutation(
     assert uv_calls == [["version", "--bump", "patch"]]
 
 
-def test_project_schedule_batch_jobs_is_removed(cli_mod, runner):
-    result = runner.invoke(cli_mod.app, ["project", "schedule_batch_jobs"])
+def test_code_repository_schedule_batch_jobs_is_removed(cli_mod, runner):
+    result = runner.invoke(cli_mod.app, ["code-repository", "schedule_batch_jobs"])
 
     assert result.exit_code == 2
     assert "No such command" in result.output
 
 
-def test_project_sync_project(cli_mod, runner, monkeypatch, tmp_path):
-    target = tmp_path / "project"
+def test_code_repository_sync_code_repository(cli_mod, runner, monkeypatch, tmp_path):
+    target = tmp_path / "code-repository"
     target.mkdir(parents=True, exist_ok=True)
     (target / ".env").write_text("", encoding="utf-8")
     key = tmp_path / "id_ed25519"
@@ -10930,13 +10930,13 @@ def test_project_sync_project(cli_mod, runner, monkeypatch, tmp_path):
     monkeypatch.setattr(cli_mod, "ensure_venv", lambda *_: None)
     monkeypatch.setattr(
         cli_mod,
-        "_resolve_git_project_branch_context",
-        lambda *args, **kwargs: ("main", "project-branch-uid-123"),
+        "_resolve_git_code_repository_branch_context",
+        lambda *args, **kwargs: ("main", "code-repository-branch-uid-123"),
     )
     monkeypatch.setattr(cli_mod, "git_origin", lambda *_: "git@github.com:org/repo.git")
     monkeypatch.setattr(
         cli_mod,
-        "_ensure_project_repository_ssh_access",
+        "_ensure_code_repository_repository_ssh_access",
         lambda **kwargs: (key, "pub", {"GIT_SSH_COMMAND": "forced"}),
     )
     monkeypatch.setattr(cli_mod, "ensure_uv_installed", lambda *_: uv_path)
@@ -10946,7 +10946,7 @@ def test_project_sync_project(cli_mod, runner, monkeypatch, tmp_path):
     monkeypatch.setattr(cli_mod, "verify_git_remote_tag_absent", lambda *_, **__: None)
     monkeypatch.setattr(
         cli_mod,
-        "render_project_branch_default_redeployment_tag",
+        "render_code_repository_branch_default_redeployment_tag",
         lambda uid, *, version: "v1.2.4",
     )
     monkeypatch.setattr(
@@ -10966,7 +10966,7 @@ def test_project_sync_project(cli_mod, runner, monkeypatch, tmp_path):
     )
     result = runner.invoke(
         cli_mod.app,
-        ["project", "sync_project", "Update deps", "--path", str(target)],
+        ["code-repository", "sync", "Update deps", "--path", str(target)],
     )
     assert result.exit_code == 0
     assert uv_calls == [["version", "--bump", "patch"], ["lock"], ["sync"]]
@@ -10991,10 +10991,10 @@ def test_project_sync_project(cli_mod, runner, monkeypatch, tmp_path):
     ]
 
 
-def test_project_sync_project_defaults_to_current_project_dir(
+def test_code_repository_sync_code_repository_defaults_to_current_code_repository_dir(
     cli_mod, runner, monkeypatch, tmp_path
 ):
-    target = tmp_path / "project"
+    target = tmp_path / "code-repository"
     target.mkdir(parents=True, exist_ok=True)
     (target / ".env").write_text("", encoding="utf-8")
     key = tmp_path / "id_ed25519"
@@ -11005,13 +11005,13 @@ def test_project_sync_project_defaults_to_current_project_dir(
     monkeypatch.setattr(cli_mod, "ensure_venv", lambda *_: None)
     monkeypatch.setattr(
         cli_mod,
-        "_resolve_git_project_branch_context",
-        lambda *args, **kwargs: ("main", "project-branch-uid-123"),
+        "_resolve_git_code_repository_branch_context",
+        lambda *args, **kwargs: ("main", "code-repository-branch-uid-123"),
     )
     monkeypatch.setattr(cli_mod, "git_origin", lambda *_: "git@github.com:org/repo.git")
     monkeypatch.setattr(
         cli_mod,
-        "_ensure_project_repository_ssh_access",
+        "_ensure_code_repository_repository_ssh_access",
         lambda **kwargs: (key, "pub", {"GIT_SSH_COMMAND": "forced"}),
     )
     monkeypatch.setattr(cli_mod, "ensure_uv_installed", lambda *_: uv_path)
@@ -11021,7 +11021,7 @@ def test_project_sync_project_defaults_to_current_project_dir(
     monkeypatch.setattr(cli_mod, "verify_git_remote_tag_absent", lambda *_, **__: None)
     monkeypatch.setattr(
         cli_mod,
-        "render_project_branch_default_redeployment_tag",
+        "render_code_repository_branch_default_redeployment_tag",
         lambda uid, *, version: "v1.2.4",
     )
     monkeypatch.setattr(
@@ -11041,15 +11041,15 @@ def test_project_sync_project_defaults_to_current_project_dir(
     )
     result = runner.invoke(
         cli_mod.app,
-        ["project", "sync_project", "Update deps"],
+        ["code-repository", "sync", "Update deps"],
     )
     assert result.exit_code == 0
     assert seen["cwd"]
     assert all(pathlib.Path(cwd) == target for cwd in seen["cwd"])
 
 
-def test_project_build_docker_env(cli_mod, runner, monkeypatch, tmp_path):
-    target = tmp_path / "project"
+def test_code_repository_build_docker_env(cli_mod, runner, monkeypatch, tmp_path):
+    target = tmp_path / "code-repository"
     target.mkdir(parents=True, exist_ok=True)
     (target / "Dockerfile").write_text("FROM python:3.11\n", encoding="utf-8")
 
@@ -11057,27 +11057,27 @@ def test_project_build_docker_env(cli_mod, runner, monkeypatch, tmp_path):
     monkeypatch.setattr(
         cli_mod,
         "write_devcontainer_config",
-        lambda project_dir, image_ref: project_dir / ".devcontainer" / "devcontainer.json",
+        lambda code_repository_dir, image_ref: code_repository_dir / ".devcontainer" / "devcontainer.json",
     )
-    monkeypatch.setattr(cli_mod, "build_docker_environment", lambda project_dir, image_ref: 0)
+    monkeypatch.setattr(cli_mod, "build_docker_environment", lambda code_repository_dir, image_ref: 0)
 
     result = runner.invoke(
         cli_mod.app,
-        ["project", "build-docker-env", "--path", str(target)],
+        ["code-repository", "build-docker-env", "--path", str(target)],
     )
     assert result.exit_code == 0
     assert "Docker image built: demo-img:tag" in result.output
 
 
-def test_project_current(cli_mod, runner, monkeypatch, tmp_path):
-    project_path = tmp_path / "org" / "projects" / "demo-project-uid-123"
-    project_path.mkdir(parents=True, exist_ok=True)
+def test_code_repository_current(cli_mod, runner, monkeypatch, tmp_path):
+    code_repository_path = tmp_path / "org" / "projects" / "demo-project-uid-123"
+    code_repository_path.mkdir(parents=True, exist_ok=True)
 
-    project_info = types.SimpleNamespace(
-        path=str(project_path),
+    code_repository_info = types.SimpleNamespace(
+        path=str(code_repository_path),
         folder="demo-project-uid-123",
-        project_uid="project-uid-123",
-        project_id="123",
+        code_repository_uid="project-uid-123",
+        code_repository_id="123",
         venv_path=None,
         python_version=None,
     )
@@ -11089,40 +11089,40 @@ def test_project_current(cli_mod, runner, monkeypatch, tmp_path):
         lambda: {"mainsequence_path": str(tmp_path)},
     )
     monkeypatch.setattr(
-        cli_mod, "detect_current_project", lambda workspaces, base: (project_info, debug)
+        cli_mod, "detect_current_code_repository", lambda workspaces, base: (code_repository_info, debug)
     )
     monkeypatch.setattr(cli_mod, "read_local_sdk_version", lambda req: "1.2.3")
     monkeypatch.setattr(cli_mod, "fetch_latest_sdk_version", lambda: "1.2.3")
     monkeypatch.setattr(
         cli_mod,
-        "get_project_runtime_context",
+        "get_code_repository_context",
         lambda *args, **kwargs: types.SimpleNamespace(
-            project_uid="project-uid-123",
+            code_repository_uid="project-uid-123",
             repository_branch="main",
             canonical_repository_identity="github.com/org/demo",
             commit_sha="a" * 40,
-            project_branch_uid="project-branch-uid-123",
+            code_repository_branch_uid="code-repository-branch-uid-123",
             status="resolved",
             detail="",
         ),
     )
 
-    result = runner.invoke(cli_mod.app, ["project", "current"])
+    result = runner.invoke(cli_mod.app, ["code-repository", "current"])
     assert result.exit_code == 0
-    assert "Current Project" in result.output
+    assert "Current CodeRepository" in result.output
     assert "main" in result.output
-    assert "project-branch-uid-123" in result.output
+    assert "code-repository-branch-uid-123" in result.output
 
 
-def test_project_current_json(cli_mod, runner, monkeypatch, tmp_path):
-    project_path = tmp_path / "org" / "projects" / "demo-project-uid-123"
-    project_path.mkdir(parents=True, exist_ok=True)
+def test_code_repository_current_json(cli_mod, runner, monkeypatch, tmp_path):
+    code_repository_path = tmp_path / "org" / "projects" / "demo-project-uid-123"
+    code_repository_path.mkdir(parents=True, exist_ok=True)
 
-    project_info = types.SimpleNamespace(
-        path=str(project_path),
+    code_repository_info = types.SimpleNamespace(
+        path=str(code_repository_path),
         folder="demo-project-uid-123",
-        project_uid="project-uid-123",
-        project_id="123",
+        code_repository_uid="project-uid-123",
+        code_repository_id="123",
         venv_path=None,
         python_version=None,
     )
@@ -11134,72 +11134,72 @@ def test_project_current_json(cli_mod, runner, monkeypatch, tmp_path):
         lambda: {"mainsequence_path": str(tmp_path)},
     )
     monkeypatch.setattr(
-        cli_mod, "detect_current_project", lambda workspaces, base: (project_info, debug)
+        cli_mod, "detect_current_code_repository", lambda workspaces, base: (code_repository_info, debug)
     )
     monkeypatch.setattr(cli_mod, "read_local_sdk_version", lambda req: "1.2.3")
     monkeypatch.setattr(cli_mod, "fetch_latest_sdk_version", lambda: "1.2.3")
     monkeypatch.setattr(
         cli_mod,
-        "get_project_runtime_context",
+        "get_code_repository_context",
         lambda *args, **kwargs: types.SimpleNamespace(
-            project_uid="project-uid-123",
+            code_repository_uid="project-uid-123",
             repository_branch="main",
             canonical_repository_identity="github.com/org/demo",
             commit_sha="a" * 40,
-            project_branch_uid="project-branch-uid-123",
+            code_repository_branch_uid="code-repository-branch-uid-123",
             status="resolved",
             detail="",
         ),
     )
 
-    result = runner.invoke(cli_mod.app, ["project", "current", "--json"])
+    result = runner.invoke(cli_mod.app, ["code-repository", "current", "--json"])
     assert result.exit_code == 0
     payload = json.loads(result.output)
-    assert payload["project"]["project_uid"] == "project-uid-123"
-    assert payload["project"]["git_branch"] == "main"
-    assert payload["project"]["project_branch_uid"] == "project-branch-uid-123"
-    assert payload["project"]["project_branch_status"] == "resolved"
-    assert payload["project"]["project_branch_error"] is None
+    assert payload["code_repository"]["code_repository_uid"] == "project-uid-123"
+    assert payload["code_repository"]["git_branch"] == "main"
+    assert payload["code_repository"]["code_repository_branch_uid"] == "code-repository-branch-uid-123"
+    assert payload["code_repository"]["code_repository_branch_status"] == "resolved"
+    assert payload["code_repository"]["code_repository_branch_error"] is None
     assert payload["sdk_status"]["status"] == "match"
 
 
-def test_project_current_debug_reports_authenticated_runtime_git_context(
+def test_code_repository_current_debug_reports_authenticated_runtime_git_context(
     cli_mod,
     runner,
     monkeypatch,
     tmp_path,
 ):
-    from mainsequence.project_context import (
-        GitProjectSourceContext,
-        ProjectRuntimeContext,
+    from mainsequence.code_repository_context import (
+        CodeRepositoryContext,
+        GitCodeRepositorySourceContext,
     )
 
-    project_path = tmp_path / "org" / "projects" / "demo-project-uid-123"
-    project_path.mkdir(parents=True, exist_ok=True)
-    project_info = types.SimpleNamespace(
-        path=str(project_path),
+    code_repository_path = tmp_path / "org" / "projects" / "demo-project-uid-123"
+    code_repository_path.mkdir(parents=True, exist_ok=True)
+    code_repository_info = types.SimpleNamespace(
+        path=str(code_repository_path),
         folder="demo-project-uid-123",
-        project_uid="project-uid-123",
-        project_id="123",
+        code_repository_uid="project-uid-123",
+        code_repository_id="123",
         venv_path=None,
         python_version="3.13.7",
     )
-    source_context = GitProjectSourceContext(
-        repository_root=project_path,
+    source_context = GitCodeRepositorySourceContext(
+        repository_root=code_repository_path,
         canonical_repository_identity="github.com/org/demo",
         repository_branch="development",
         repository_ref="refs/heads/development",
         commit_sha="b" * 40,
     )
-    runtime_context = ProjectRuntimeContext(
+    runtime_context = CodeRepositoryContext(
         source_context=source_context,
-        project_uid="project-uid-123",
-        project_branch_uid="project-branch-uid-123",
+        code_repository_uid="project-uid-123",
+        code_repository_branch_uid="code-repository-branch-uid-123",
         organization_environment_uid="environment-uid-123",
         metatables_data_source=None,
         status="resolved",
         process_id=os.getpid(),
-        project_branch=types.SimpleNamespace(uid="project-branch-uid-123"),
+        code_repository_branch=types.SimpleNamespace(uid="code-repository-branch-uid-123"),
         context_source="authenticated_runtime",
     )
 
@@ -11210,68 +11210,68 @@ def test_project_current_debug_reports_authenticated_runtime_git_context(
     )
     monkeypatch.setattr(
         cli_mod,
-        "detect_current_project",
+        "detect_current_code_repository",
         lambda workspaces, base: (
-            project_info,
+            code_repository_info,
             types.SimpleNamespace(reason="detected", checks=[]),
         ),
     )
-    monkeypatch.setattr(cli_mod, "get_project_runtime_context", lambda **kwargs: runtime_context)
+    monkeypatch.setattr(cli_mod, "get_code_repository_context", lambda **kwargs: runtime_context)
     monkeypatch.setattr(cli_mod, "read_local_sdk_version", lambda req: "7.0.2")
     monkeypatch.setattr(cli_mod, "fetch_latest_sdk_version", lambda: "7.0.2")
 
-    result = runner.invoke(cli_mod.app, ["project", "current", "--debug", "--json"])
+    result = runner.invoke(cli_mod.app, ["code-repository", "current", "--debug", "--json"])
 
     assert result.exit_code == 0
     payload = json.loads(result.output)
-    assert payload["project"] == {
-        "path": str(project_path),
+    assert payload["code_repository"] == {
+        "path": str(code_repository_path),
         "folder": "demo-project-uid-123",
-        "project_uid": "project-uid-123",
+        "code_repository_uid": "project-uid-123",
         "git_branch": "development",
-        "git_repository": "github.com/org/demo",
+        "github_repository_binding": "github.com/org/demo",
         "git_commit": "b" * 40,
-        "project_branch_uid": "project-branch-uid-123",
-        "project_branch_status": "resolved",
-        "project_branch_error": None,
+        "code_repository_branch_uid": "code-repository-branch-uid-123",
+        "code_repository_branch_status": "resolved",
+        "code_repository_branch_error": None,
         "venv_path": None,
         "python_version": "3.13.7",
     }
 
 
-def test_project_sdk_status(cli_mod, runner, monkeypatch, tmp_path):
-    target = tmp_path / "project"
+def test_code_repository_sdk_status(cli_mod, runner, monkeypatch, tmp_path):
+    target = tmp_path / "code-repository"
     target.mkdir(parents=True, exist_ok=True)
     monkeypatch.setattr(cli_mod, "read_local_sdk_version", lambda req: "1.2.3")
     monkeypatch.setattr(cli_mod, "fetch_latest_sdk_version", lambda: "v1.2.3")
 
     result = runner.invoke(
         cli_mod.app,
-        ["project", "sdk-status", "--path", str(target)],
+        ["code-repository", "sdk-status", "--path", str(target)],
     )
     assert result.exit_code == 0
     assert "SDK Status" in result.output
 
 
-def test_project_sdk_status_json(cli_mod, runner, monkeypatch, tmp_path):
-    target = tmp_path / "project"
+def test_code_repository_sdk_status_json(cli_mod, runner, monkeypatch, tmp_path):
+    target = tmp_path / "code-repository"
     target.mkdir(parents=True, exist_ok=True)
     monkeypatch.setattr(cli_mod, "read_local_sdk_version", lambda req: "1.2.3")
     monkeypatch.setattr(cli_mod, "fetch_latest_sdk_version", lambda: "v1.2.3")
 
     result = runner.invoke(
         cli_mod.app,
-        ["project", "sdk-status", "--path", str(target), "--json"],
+        ["code-repository", "sdk-status", "--path", str(target), "--json"],
     )
     assert result.exit_code == 0
     payload = json.loads(result.output)
-    assert payload["project"] == str(target)
+    assert payload["code_repository"] == str(target)
     assert payload["latest_github"] == "v1.2.3"
     assert payload["local_requirements_txt"] == "1.2.3"
 
 
-def test_project_update_sdk(cli_mod, runner, monkeypatch, tmp_path):
-    target = tmp_path / "project"
+def test_code_repository_update_sdk(cli_mod, runner, monkeypatch, tmp_path):
+    target = tmp_path / "code-repository"
     target.mkdir(parents=True, exist_ok=True)
     uv_path = target / ".venv" / "bin" / "uv"
     calls = []
@@ -11282,7 +11282,7 @@ def test_project_update_sdk(cli_mod, runner, monkeypatch, tmp_path):
 
     result = runner.invoke(
         cli_mod.app,
-        ["project", "update-sdk", "--path", str(target)],
+        ["code-repository", "update-sdk", "--path", str(target)],
     )
     assert result.exit_code == 0
     assert ["lock", "--upgrade-package", "mainsequence"] in calls
@@ -11319,22 +11319,22 @@ def _write_installed_agent_scaffold_bundle(bundle_dir: pathlib.Path) -> pathlib.
     return agents_md
 
 
-def test_project_update_agents_md_replaces_custom_unmarked_file(
+def test_code_repository_update_agents_md_replaces_custom_unmarked_file(
     cli_mod,
     runner,
     monkeypatch,
     tmp_path,
 ):
     agents_md = _write_installed_agent_scaffold_bundle(tmp_path / "bundle")
-    target = tmp_path / "project"
+    target = tmp_path / "code-repository"
     target.mkdir()
-    original = "# Project Agents\n\nKeep this project-specific instruction.\n"
+    original = "# CodeRepository Agents\n\nKeep this project-specific instruction.\n"
     (target / "AGENTS.md").write_text(original, encoding="utf-8")
     monkeypatch.setattr(cli_mod, "_installed_agent_scaffold_bundle_dir", lambda: agents_md.parent)
 
     result = runner.invoke(
         cli_mod.app,
-        ["project", "update", "AGENTS.md", "--path", str(target)],
+        ["code-repository", "update", "AGENTS.md", "--path", str(target)],
     )
     assert result.exit_code == 0
     content = (target / "AGENTS.md").read_text(encoding="utf-8")
@@ -11346,20 +11346,20 @@ def test_project_update_agents_md_replaces_custom_unmarked_file(
     assert "replaced" in result.output
 
 
-def test_project_update_agents_md_creates_file_when_missing(
+def test_code_repository_update_agents_md_creates_file_when_missing(
     cli_mod,
     runner,
     monkeypatch,
     tmp_path,
 ):
     agents_md = _write_installed_agent_scaffold_bundle(tmp_path / "bundle")
-    target = tmp_path / "project"
+    target = tmp_path / "code-repository"
     target.mkdir()
     monkeypatch.setattr(cli_mod, "_installed_agent_scaffold_bundle_dir", lambda: agents_md.parent)
 
     result = runner.invoke(
         cli_mod.app,
-        ["project", "update", "AGENTS.md", "--path", str(target)],
+        ["code-repository", "update", "AGENTS.md", "--path", str(target)],
     )
     assert result.exit_code == 0
     content = (target / "AGENTS.md").read_text(encoding="utf-8")
@@ -11369,14 +11369,14 @@ def test_project_update_agents_md_creates_file_when_missing(
     assert "created" in result.output
 
 
-def test_project_update_agents_md_replaces_existing_managed_block(
+def test_code_repository_update_agents_md_replaces_existing_managed_block(
     cli_mod,
     runner,
     monkeypatch,
     tmp_path,
 ):
     agents_md = _write_installed_agent_scaffold_bundle(tmp_path / "bundle")
-    target = tmp_path / "project"
+    target = tmp_path / "code-repository"
     target.mkdir()
     old_block = "\n".join(
         [
@@ -11386,14 +11386,14 @@ def test_project_update_agents_md_replaces_existing_managed_block(
         ]
     )
     (target / "AGENTS.md").write_text(
-        f"# Project Agents\n\n{old_block}\n\nCustom tail.\n",
+        f"# CodeRepository Agents\n\n{old_block}\n\nCustom tail.\n",
         encoding="utf-8",
     )
     monkeypatch.setattr(cli_mod, "_installed_agent_scaffold_bundle_dir", lambda: agents_md.parent)
 
     result = runner.invoke(
         cli_mod.app,
-        ["project", "update", "AGENTS.md", "--path", str(target)],
+        ["code-repository", "update", "AGENTS.md", "--path", str(target)],
     )
     assert result.exit_code == 0
     content = (target / "AGENTS.md").read_text(encoding="utf-8")
@@ -11404,25 +11404,25 @@ def test_project_update_agents_md_replaces_existing_managed_block(
     assert "updated" in result.output
 
 
-def test_project_update_agents_md_json_reports_action(
+def test_code_repository_update_agents_md_json_reports_action(
     cli_mod,
     runner,
     monkeypatch,
     tmp_path,
 ):
     agents_md = _write_installed_agent_scaffold_bundle(tmp_path / "bundle")
-    target = tmp_path / "project"
+    target = tmp_path / "code-repository"
     target.mkdir()
     monkeypatch.setattr(cli_mod, "_installed_agent_scaffold_bundle_dir", lambda: agents_md.parent)
 
     result = runner.invoke(
         cli_mod.app,
-        ["project", "update", "AGENTS.md", "--path", str(target), "--json"],
+        ["code-repository", "update", "AGENTS.md", "--path", str(target), "--json"],
     )
     assert result.exit_code == 0
     payload = json.loads(result.output)
     assert payload["target"] == "AGENTS.md"
-    assert payload["project"] == str(target)
+    assert payload["code_repository"] == str(target)
     assert payload["source"] == str(agents_md)
     assert payload["destination"] == str(target / "AGENTS.md")
     assert payload["action"] == "created"
@@ -11430,21 +11430,21 @@ def test_project_update_agents_md_json_reports_action(
     assert payload["overwritten"] is False
 
 
-def test_project_update_agents_md_keeps_existing_scaffold_shaped_file_current(
+def test_code_repository_update_agents_md_keeps_existing_scaffold_shaped_file_current(
     cli_mod,
     runner,
     monkeypatch,
     tmp_path,
 ):
     agents_md = _write_installed_agent_scaffold_bundle(tmp_path / "bundle")
-    target = tmp_path / "project"
+    target = tmp_path / "code-repository"
     target.mkdir()
     (target / "AGENTS.md").write_text(agents_md.read_text(encoding="utf-8"), encoding="utf-8")
     monkeypatch.setattr(cli_mod, "_installed_agent_scaffold_bundle_dir", lambda: agents_md.parent)
 
     result = runner.invoke(
         cli_mod.app,
-        ["project", "update", "AGENTS.md", "--path", str(target)],
+        ["code-repository", "update", "AGENTS.md", "--path", str(target)],
     )
     assert result.exit_code == 0
     assert (target / "AGENTS.md").read_text(encoding="utf-8") == agents_md.read_text(
@@ -11453,40 +11453,40 @@ def test_project_update_agents_md_keeps_existing_scaffold_shaped_file_current(
     assert "already current" in result.output
 
 
-def test_project_update_agents_md_rejects_malformed_managed_block(
+def test_code_repository_update_agents_md_rejects_malformed_managed_block(
     cli_mod,
     runner,
     monkeypatch,
     tmp_path,
 ):
     agents_md = _write_installed_agent_scaffold_bundle(tmp_path / "bundle")
-    target = tmp_path / "project"
+    target = tmp_path / "code-repository"
     target.mkdir()
     start_marker = (
         f"{cli_mod.AGENTS_MD_MANAGED_BLOCK_START_PREFIX} schema=1 source=agent_scaffold -->"
     )
     (target / "AGENTS.md").write_text(
-        f"# Project Agents\n\n{start_marker}\n",
+        f"# CodeRepository Agents\n\n{start_marker}\n",
         encoding="utf-8",
     )
     monkeypatch.setattr(cli_mod, "_installed_agent_scaffold_bundle_dir", lambda: agents_md.parent)
 
     result = runner.invoke(
         cli_mod.app,
-        ["project", "update", "AGENTS.md", "--path", str(target)],
+        ["code-repository", "update", "AGENTS.md", "--path", str(target)],
     )
     assert result.exit_code == 1
     assert "malformed" in result.output
 
 
-def test_project_update_agents_md_rejects_duplicate_managed_blocks(
+def test_code_repository_update_agents_md_rejects_duplicate_managed_blocks(
     cli_mod,
     runner,
     monkeypatch,
     tmp_path,
 ):
     agents_md = _write_installed_agent_scaffold_bundle(tmp_path / "bundle")
-    target = tmp_path / "project"
+    target = tmp_path / "code-repository"
     target.mkdir()
     block = "\n".join(
         [
@@ -11500,13 +11500,13 @@ def test_project_update_agents_md_rejects_duplicate_managed_blocks(
 
     result = runner.invoke(
         cli_mod.app,
-        ["project", "update", "AGENTS.md", "--path", str(target)],
+        ["code-repository", "update", "AGENTS.md", "--path", str(target)],
     )
     assert result.exit_code == 1
     assert "multiple" in result.output
 
 
-def test_project_update_agents_md_fails_when_installed_bundle_missing_agents_md(
+def test_code_repository_update_agents_md_fails_when_installed_bundle_missing_agents_md(
     cli_mod,
     runner,
     monkeypatch,
@@ -11514,13 +11514,13 @@ def test_project_update_agents_md_fails_when_installed_bundle_missing_agents_md(
 ):
     bundle_dir = tmp_path / "bundle"
     bundle_dir.mkdir()
-    target = tmp_path / "project"
+    target = tmp_path / "code-repository"
     target.mkdir()
     monkeypatch.setattr(cli_mod, "_installed_agent_scaffold_bundle_dir", lambda: bundle_dir)
 
     result = runner.invoke(
         cli_mod.app,
-        ["project", "update", "AGENTS.md", "--path", str(target)],
+        ["code-repository", "update", "AGENTS.md", "--path", str(target)],
     )
     assert result.exit_code == 1
     assert "Installed agent_scaffold bundle is missing AGENTS.md" in result.output
@@ -11544,16 +11544,16 @@ def test_installed_agent_scaffold_bundle_dir_falls_back_to_sibling_package(cli_m
 def _cli_platform_skill_catalog():
     from pathlib import PurePosixPath
 
-    from mainsequence.project_skills import (
+    from mainsequence.code_repository_skills import (
         PLATFORM_ONTOLOGY_URI,
         PLATFORM_SKILL_URI_PREFIX,
-        PlatformProjectResource,
-        PlatformProjectSkill,
-        PlatformProjectSkillCatalog,
+        PlatformCodeRepositoryResource,
+        PlatformCodeRepositorySkill,
+        PlatformCodeRepositorySkillCatalog,
     )
 
     ontology_content = '{"title":"Main Sequence","description":"Ontology"}\n'
-    ontology = PlatformProjectResource(
+    ontology = PlatformCodeRepositoryResource(
         name="ontology",
         uri=PLATFORM_ONTOLOGY_URI,
         resource_path=PurePosixPath("ontology/platform.json"),
@@ -11566,13 +11566,13 @@ def _cli_platform_skill_catalog():
     for name in (
         "a2a_communication",
         "project_design",
-        "project_to_agent",
+        "code_repository_to_agent",
     ):
         front_matter_name = name.replace("_", "-")
         uri = f"{PLATFORM_SKILL_URI_PREFIX}{front_matter_name}"
         content = f"---\nname: {front_matter_name}\ndescription: Platform {name}\n---\n"
         skills.append(
-            PlatformProjectSkill(
+            PlatformCodeRepositorySkill(
                 name=name,
                 uri=uri,
                 resource_path=PurePosixPath(
@@ -11587,7 +11587,7 @@ def _cli_platform_skill_catalog():
                 content_size=len(content.encode("utf-8")),
             )
         )
-    return PlatformProjectSkillCatalog(
+    return PlatformCodeRepositorySkillCatalog(
         source_url="https://platform.example.test/mcp",
         manifest_version=2,
         manifest_sha256="a" * 64,
@@ -11596,7 +11596,7 @@ def _cli_platform_skill_catalog():
     )
 
 
-def test_project_update_agent_skills_overwrites_matching_folders(
+def test_code_repository_update_agent_skills_overwrites_matching_folders(
     cli_mod, runner, monkeypatch, tmp_path
 ):
     bundle_dir = tmp_path / "bundle"
@@ -11615,7 +11615,7 @@ def test_project_update_agent_skills_overwrites_matching_folders(
         "ignore me", encoding="utf-8"
     )
 
-    target = tmp_path / "project"
+    target = tmp_path / "code-repository"
     stale_top_level = target / ".agents" / "skills" / "data_publishing"
     stale_top_level.mkdir(parents=True)
     (stale_top_level / "old.txt").write_text("stale but preserved", encoding="utf-8")
@@ -11624,20 +11624,20 @@ def test_project_update_agent_skills_overwrites_matching_folders(
     (existing_mainsequence / "old.txt").write_text("stale mainsequence skill", encoding="utf-8")
 
     monkeypatch.setattr(
-        cli_mod, "_project_agent_scaffold_bundle_dir", lambda project_dir: bundle_dir
+        cli_mod, "_code_repository_agent_scaffold_bundle_dir", lambda code_repository_dir: bundle_dir
     )
     monkeypatch.setattr(
         cli_mod,
-        "_project_installed_package_version",
-        lambda project_dir, package_name: "4.4.3",
+        "_code_repository_installed_package_version",
+        lambda code_repository_dir, package_name: "4.4.3",
     )
     monkeypatch.setattr(
         cli_mod,
-        "fetch_platform_project_skill_catalog",
+        "fetch_platform_code_repository_skill_catalog",
         _cli_platform_skill_catalog,
     )
 
-    result = runner.invoke(cli_mod.app, ["project", "update_agent_skills", "--path", str(target)])
+    result = runner.invoke(cli_mod.app, ["code-repository", "update-agent-skills", "--path", str(target)])
     assert result.exit_code == 0
     assert (
         target / ".agents" / "skills" / "mainsequence" / "data_publishing" / "SKILL.md"
@@ -11658,7 +11658,7 @@ def test_project_update_agent_skills_overwrites_matching_folders(
     assert f"skills_path={(bundle_dir / 'skills').resolve()}" in sentinel_content
     assert "sdk_version=4.4.3" in sentinel_content
     assert f"platform_manifest_sha256={'a' * 64}" in sentinel_content
-    assert "Updated Project Skills" in result.output
+    assert "Updated CodeRepository Skills" in result.output
     assert "SDK Version" in result.output
     assert (
         target / ".agents" / "skills" / "mainsequence" / "project_design" / "SKILL.md"
@@ -11667,11 +11667,11 @@ def test_project_update_agent_skills_overwrites_matching_folders(
         target / ".agents" / "skills" / "mainsequence" / "a2a_communication" / "SKILL.md"
     ).is_file()
     assert (
-        target / ".agents" / "skills" / "mainsequence" / "project_to_agent" / "SKILL.md"
+        target / ".agents" / "skills" / "mainsequence" / "code_repository_to_agent" / "SKILL.md"
     ).is_file()
 
 
-def test_project_update_agent_skills_json_reports_pin_sentinel(
+def test_code_repository_update_agent_skills_json_reports_pin_sentinel(
     cli_mod, runner, monkeypatch, tmp_path
 ):
     bundle_dir = tmp_path / "bundle"
@@ -11679,26 +11679,26 @@ def test_project_update_agent_skills_json_reports_pin_sentinel(
     (bundle_dir / "skills" / "data_publishing" / "SKILL.md").write_text(
         "new data skill", encoding="utf-8"
     )
-    target = tmp_path / "project"
+    target = tmp_path / "code-repository"
     target.mkdir()
 
     monkeypatch.setattr(
-        cli_mod, "_project_agent_scaffold_bundle_dir", lambda project_dir: bundle_dir
+        cli_mod, "_code_repository_agent_scaffold_bundle_dir", lambda code_repository_dir: bundle_dir
     )
     monkeypatch.setattr(
         cli_mod,
-        "_project_installed_package_version",
-        lambda project_dir, package_name: "4.4.3",
+        "_code_repository_installed_package_version",
+        lambda code_repository_dir, package_name: "4.4.3",
     )
     monkeypatch.setattr(
         cli_mod,
-        "fetch_platform_project_skill_catalog",
+        "fetch_platform_code_repository_skill_catalog",
         _cli_platform_skill_catalog,
     )
 
     result = runner.invoke(
         cli_mod.app,
-        ["project", "update_agent_skills", "--path", str(target), "--json"],
+        ["code-repository", "update-agent-skills", "--path", str(target), "--json"],
     )
 
     assert result.exit_code == 0
@@ -11716,14 +11716,14 @@ def test_project_update_agent_skills_json_reports_pin_sentinel(
         "data_publishing",
         "a2a_communication",
         "project_design",
-        "project_to_agent",
+        "code_repository_to_agent",
     ]
     assert payload["sdk"]["version"] == "4.4.3"
     assert payload["platform"]["manifest_sha256"] == "a" * 64
     assert [item["name"] for item in payload["platform"]["skills"]] == [
         "a2a_communication",
         "project_design",
-        "project_to_agent",
+        "code_repository_to_agent",
     ]
     assert "pinned_version=4.4.3" in sentinel.read_text(encoding="utf-8")
 

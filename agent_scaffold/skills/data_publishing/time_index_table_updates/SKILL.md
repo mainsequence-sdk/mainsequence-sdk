@@ -131,7 +131,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from mainsequence.meta_tables import PlatformTimeIndexMetaTable, schema_table_name
 
-PROJECT_NAME = "<project_name>"
+PROJECT_NAME = "<code_repository_name>"
 PRICES_TABLE_NAME = schema_table_name(PROJECT_NAME, "prices")
 
 
@@ -142,7 +142,7 @@ class Base(DeclarativeBase):
 class PricesTable(PlatformTimeIndexMetaTable, Base):
     __tablename__ = PRICES_TABLE_NAME
     __metatable_namespace__ = "<domain_namespace>"
-    __metatable_identifier__ = "<project_name>.<table_identifier>"
+    __metatable_identifier__ = "<code_repository_name>.<table_identifier>"
     __metatable_description__ = (
         "Daily close prices keyed by asset unique identifier for portfolio and "
         "risk analytics."

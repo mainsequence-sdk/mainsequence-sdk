@@ -14,18 +14,18 @@ import mainsequence.client.metatables as models_metatables_mod
 import mainsequence.client.models_foundry as models_foundry_mod
 import mainsequence.client.models_helpers as models_helpers_mod
 import mainsequence.client.models_user as models_user_mod
-import mainsequence.project_context as project_context
+import mainsequence.code_repository_context as code_repository_context
 from mainsequence.client.base import BaseObjectOrm, BasePydanticModel, ShareableObjectMixin
 
-PROJECT_UID = "1d0530c0-65d1-4db0-856b-dc29d8260a09"
-PROJECT_BRANCH_UID = "5a28020a-0f1b-47ee-aab8-334286234bea"
+CODE_REPOSITORY_UID = "1d0530c0-65d1-4db0-856b-dc29d8260a09"
+CODE_REPOSITORY_BRANCH_UID = "5a28020a-0f1b-47ee-aab8-334286234bea"
 ENVIRONMENT_UID = "58218213-5e4e-43de-a5bd-6757f4e1c8f6"
 
 
 @pytest.fixture(autouse=True)
-def _resolved_project_context(monkeypatch):
-    project_context._reset_project_runtime_context()
-    source = project_context.GitProjectSourceContext(
+def _resolved_code_repository_context(monkeypatch):
+    code_repository_context._reset_code_repository_context()
+    source = code_repository_context.GitCodeRepositorySourceContext(
         repository_root=pathlib.Path.cwd().resolve(),
         canonical_repository_identity="github.com/mainsequence-sdk/filters",
         repository_branch="main",
@@ -33,19 +33,19 @@ def _resolved_project_context(monkeypatch):
         commit_sha="a" * 40,
     )
     monkeypatch.setattr(
-        project_context,
+        code_repository_context,
         "_resolve_git_source_context",
-        lambda project_dir: source,
+        lambda code_repository_dir: source,
     )
-    project_context.get_project_runtime_context(
-        _project_branch_context_loader=lambda resolved_source: SimpleNamespace(
+    code_repository_context.get_code_repository_context(
+        _code_repository_branch_context_loader=lambda resolved_source: SimpleNamespace(
             canonical_repository_identity=(resolved_source.canonical_repository_identity),
             repository_branch=resolved_source.repository_branch,
             repository_ref=resolved_source.repository_ref,
             commit_sha=resolved_source.commit_sha,
-            project_branch=SimpleNamespace(
-                uid=PROJECT_BRANCH_UID,
-                project_uid=PROJECT_UID,
+            code_repository_branch=SimpleNamespace(
+                uid=CODE_REPOSITORY_BRANCH_UID,
+                code_repository_uid=CODE_REPOSITORY_UID,
                 repository_branch=resolved_source.repository_branch,
                 organization_environment_uid=ENVIRONMENT_UID,
                 metatables_data_source=None,
@@ -53,7 +53,7 @@ def _resolved_project_context(monkeypatch):
         ),
     )
     yield
-    project_context._reset_project_runtime_context()
+    code_repository_context._reset_code_repository_context()
 
 
 class _IdRef:
@@ -176,10 +176,10 @@ def test_job_run_status_uses_status_detail_endpoint(monkeypatch):
         uid="4c1d77c8-8a42-42b8-a9c1-06be9a336e5d",
         name="demo-run",
         unique_identifier="jobrun_501",
-        project_uid=None,
-        project_name=None,
-        project_branch_uid=None,
-        project_branch_name=None,
+        code_repository_uid=None,
+        code_repository_name=None,
+        code_repository_branch_uid=None,
+        code_repository_branch_name=None,
         organization_environment_uid=ENVIRONMENT_UID,
         runtime_image_uid="6cfdb152-923e-45b9-a150-c4541c68b0d1",
         runtime_image_digest="sha256:" + "b" * 64,
@@ -268,10 +268,10 @@ def test_job_run_deserializes_uid_payload_without_id():
         unique_identifier="jobrun_501",
         job_uid="ab6a5d50-8a3e-4f0d-a9bb-7e84180bd50e",
         job_name="daily-training-job",
-        project_uid="1d0530c0-65d1-4db0-856b-dc29d8260a09",
-        project_name="market-data-service",
-        project_branch_uid="5a28020a-0f1b-47ee-aab8-334286234bea",
-        project_branch_name="main",
+        code_repository_uid="1d0530c0-65d1-4db0-856b-dc29d8260a09",
+        code_repository_name="market-data-service",
+        code_repository_branch_uid="5a28020a-0f1b-47ee-aab8-334286234bea",
+        code_repository_branch_name="main",
         organization_environment_uid=ENVIRONMENT_UID,
         status="RUNNING",
         cpu_request="1",
@@ -310,13 +310,13 @@ def test_normalize_filter_kwargs_coerces_supported_values():
     }
 
 
-def test_project_image_accepts_creation_date():
-    from mainsequence.client.models_foundry import ProjectImage
+def test_code_repository_image_accepts_creation_date():
+    from mainsequence.client.models_foundry import CodeRepositoryImage
 
-    image = ProjectImage(
+    image = CodeRepositoryImage(
         uid="f3cb8477-df47-49cb-a151-80b746fb1243",
-        project_repo_hash="abc123",
-        related_project_branch_uid="5a28020a-0f1b-47ee-aab8-334286234bea",
+        code_repository_commit_hash="abc123",
+        related_code_repository_branch_uid="5a28020a-0f1b-47ee-aab8-334286234bea",
         base_image=None,
         build_error=False,
         is_ready=False,
@@ -336,20 +336,20 @@ def test_project_image_accepts_creation_date():
     )
 
 
-def _project_image_response(*, uid: str, build_error: bool, is_ready: bool = False):
+def _code_repository_image_response(*, uid: str, build_error: bool, is_ready: bool = False):
     return {
         "uid": uid,
-        "project_repo_hash": "abc123abc123abc123abc123abc123abc123abcd",
-        "related_project_branch_uid": "5a28020a-0f1b-47ee-aab8-334286234bea",
+        "code_repository_commit_hash": "abc123abc123abc123abc123abc123abc123abcd",
+        "related_code_repository_branch_uid": "5a28020a-0f1b-47ee-aab8-334286234bea",
         "base_image": None,
         "tags": [],
         "build_error": build_error,
         "is_ready": is_ready,
         "source_provenance": {
             "verification_state": "verified",
-            "project_uid": "1d0530c0-65d1-4db0-856b-dc29d8260a09",
-            "project_branch_uid": "5a28020a-0f1b-47ee-aab8-334286234bea",
-            "git_repository_uid": "3c2113e7-40ba-4d8c-ad65-51ca236c3b0c",
+            "code_repository_uid": "1d0530c0-65d1-4db0-856b-dc29d8260a09",
+            "code_repository_branch_uid": "5a28020a-0f1b-47ee-aab8-334286234bea",
+            "github_repository_binding_uid": "3c2113e7-40ba-4d8c-ad65-51ca236c3b0c",
             "repository_branch": "main",
             "repository_ref": "refs/heads/main",
             "commit_sha": "abc123abc123abc123abc123abc123abc123abcd",
@@ -363,9 +363,9 @@ def _project_image_response(*, uid: str, build_error: bool, is_ready: bool = Fal
 
 
 @pytest.mark.parametrize("build_error", [False, True])
-def test_project_image_accepts_boolean_build_error(build_error):
-    image = models_foundry_mod.ProjectImage.model_validate(
-        _project_image_response(
+def test_code_repository_image_accepts_boolean_build_error(build_error):
+    image = models_foundry_mod.CodeRepositoryImage.model_validate(
+        _code_repository_image_response(
             uid="f3cb8477-df47-49cb-a151-80b746fb1243",
             build_error=build_error,
         )
@@ -375,8 +375,8 @@ def test_project_image_accepts_boolean_build_error(build_error):
 
 
 @pytest.mark.parametrize("build_error", [False, True])
-def test_project_image_create_accepts_boolean_build_error(monkeypatch, build_error):
-    payload = _project_image_response(
+def test_code_repository_image_create_accepts_boolean_build_error(monkeypatch, build_error):
+    payload = _code_repository_image_response(
         uid="f3cb8477-df47-49cb-a151-80b746fb1243",
         build_error=build_error,
     )
@@ -389,23 +389,23 @@ def test_project_image_create_accepts_boolean_build_error(monkeypatch, build_err
             return payload
 
     monkeypatch.setattr(
-        models_foundry_mod.ProjectImage,
+        models_foundry_mod.CodeRepositoryImage,
         "build_session",
         classmethod(lambda cls: object()),
     )
     monkeypatch.setattr(models_foundry_mod, "make_request", lambda **kwargs: FakeResponse())
 
-    image = models_foundry_mod.ProjectImage.create(
-        project_repo_hash=payload["project_repo_hash"],
-        related_project_branch_uid=payload["related_project_branch_uid"],
+    image = models_foundry_mod.CodeRepositoryImage.create(
+        code_repository_commit_hash=payload["code_repository_commit_hash"],
+        related_code_repository_branch_uid=payload["related_code_repository_branch_uid"],
     )
 
     assert image.build_error is build_error
 
 
 @pytest.mark.parametrize("build_error", [False, True])
-def test_project_image_get_accepts_boolean_build_error(monkeypatch, build_error):
-    payload = _project_image_response(
+def test_code_repository_image_get_accepts_boolean_build_error(monkeypatch, build_error):
+    payload = _code_repository_image_response(
         uid="f3cb8477-df47-49cb-a151-80b746fb1243",
         build_error=build_error,
     )
@@ -418,24 +418,24 @@ def test_project_image_get_accepts_boolean_build_error(monkeypatch, build_error)
             return payload
 
     monkeypatch.setattr(
-        models_foundry_mod.ProjectImage,
+        models_foundry_mod.CodeRepositoryImage,
         "build_session",
         classmethod(lambda cls: object()),
     )
     monkeypatch.setattr(base_mod, "make_request", lambda **kwargs: FakeResponse())
 
-    image = models_foundry_mod.ProjectImage.get(pk=payload["uid"])
+    image = models_foundry_mod.CodeRepositoryImage.get(pk=payload["uid"])
 
     assert image.build_error is build_error
 
 
-def test_project_image_filter_accepts_boolean_build_error(monkeypatch):
+def test_code_repository_image_filter_accepts_boolean_build_error(monkeypatch):
     payloads = [
-        _project_image_response(
+        _code_repository_image_response(
             uid="f3cb8477-df47-49cb-a151-80b746fb1243",
             build_error=False,
         ),
-        _project_image_response(
+        _code_repository_image_response(
             uid="39dc72dc-d905-43af-8012-d67c026c2970",
             build_error=True,
         ),
@@ -449,14 +449,14 @@ def test_project_image_filter_accepts_boolean_build_error(monkeypatch):
             return {"results": payloads, "next": None}
 
     monkeypatch.setattr(
-        models_foundry_mod.ProjectImage,
+        models_foundry_mod.CodeRepositoryImage,
         "build_session",
         classmethod(lambda cls: object()),
     )
     monkeypatch.setattr(base_mod, "make_request", lambda **kwargs: FakeResponse())
 
-    images = models_foundry_mod.ProjectImage.filter(
-        related_project_branch_uid="5a28020a-0f1b-47ee-aab8-334286234bea"
+    images = models_foundry_mod.CodeRepositoryImage.filter(
+        related_code_repository_branch_uid="5a28020a-0f1b-47ee-aab8-334286234bea"
     )
 
     assert [image.build_error for image in images] == [False, True]
@@ -1737,7 +1737,7 @@ def test_agent_runtime_models_deserialize_backend_uid_payloads():
     session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
     user_uid = "fdf409f7-d16f-4f71-986b-9057db6c7eca"
     service_uid = "ac9e221d-1cd6-464c-a253-e302754872c1"
-    project_branch_uid = "9d81d63f-b8c9-404d-9f1a-5f2ad29dbf16"
+    code_repository_branch_uid = "9d81d63f-b8c9-404d-9f1a-5f2ad29dbf16"
     environment_uid = "22222222-2222-4222-8222-222222222222"
 
     agent = agent_models_mod.Agent.model_validate(
@@ -1756,7 +1756,7 @@ def test_agent_runtime_models_deserialize_backend_uid_payloads():
             "has_agent_service": True,
             "agent_service_uid": service_uid,
             "agent_service_automatic_deployment": True,
-            "project_branch_uid": project_branch_uid,
+            "code_repository_branch_uid": code_repository_branch_uid,
             "repository_branch": "main",
             "organization_environment_uid": environment_uid,
             "organization_environment_name": "production",
@@ -1766,7 +1766,7 @@ def test_agent_runtime_models_deserialize_backend_uid_payloads():
     assert agent.has_agent_service is True
     assert agent.agent_service_uid == service_uid
     assert agent.agent_service_automatic_deployment is True
-    assert agent.project_branch_uid == project_branch_uid
+    assert agent.code_repository_branch_uid == code_repository_branch_uid
     assert agent.repository_branch == "main"
     assert agent.organization_environment_uid == environment_uid
     assert agent.organization_environment_name == "production"
@@ -1778,7 +1778,7 @@ def test_agent_runtime_models_deserialize_backend_uid_payloads():
             "name": "Research Copilot",
             "agent_type": "custom",
             "description": "Research assistant.",
-            "project_branch_uid": project_branch_uid,
+            "code_repository_branch_uid": code_repository_branch_uid,
             "repository_branch": "main",
             "organization_environment_uid": environment_uid,
             "organization_environment_name": "production",
@@ -1788,7 +1788,7 @@ def test_agent_runtime_models_deserialize_backend_uid_payloads():
         }
     )
     assert search_result.uid == agent_uid
-    assert search_result.project_branch_uid == project_branch_uid
+    assert search_result.code_repository_branch_uid == code_repository_branch_uid
     assert search_result.repository_branch == "main"
     assert search_result.organization_environment_uid == environment_uid
     assert search_result.organization_environment_name == "production"
@@ -1867,10 +1867,10 @@ def test_agent_runtime_models_deserialize_backend_uid_payloads():
             "uid": service_uid,
             "harness": "tau",
             "agent_uid": agent_uid,
-            "agent_type": "project-executor",
+            "agent_type": "code-repository-executor",
             "scope": {
-                "kind": "project_branch",
-                "project_branch_uid": "project-branch-uid",
+                "kind": "code_repository_branch",
+                "code_repository_branch_uid": "code-repository-branch-uid",
             },
             "is_ready": True,
             "image_drift": {"has_drift": False, "checks": []},
@@ -1895,9 +1895,9 @@ def test_agent_runtime_models_deserialize_backend_uid_payloads():
     )
     assert service.uid == service_uid
     assert service.agent_uid == agent_uid
-    assert service.agent_type == "project-executor"
+    assert service.agent_type == "code-repository-executor"
     assert service.harness is agent_models_mod.AgentHarnessKind.TAU
-    assert service.scope["project_branch_uid"] == "project-branch-uid"
+    assert service.scope["code_repository_branch_uid"] == "code-repository-branch-uid"
     assert service.llm_model == "gpt-5.4"
     assert service.cpu_request == "250m"
     assert service.spot is False
@@ -1906,7 +1906,7 @@ def test_agent_runtime_models_deserialize_backend_uid_payloads():
     assert service.automatic_redeployment_policy.policy_revision == 1
 
 
-def test_agent_scope_projection_is_required_but_nullable():
+def test_agent_scope_code_repositoryion_is_required_but_nullable():
     payload = {
         "name": "Astro Orchestrator",
         "llm_thinking": "medium",
@@ -1921,13 +1921,13 @@ def test_agent_scope_projection_is_required_but_nullable():
     assert agent.organization_environment_uid is None
     assert agent.organization_environment_name is None
 
-    missing_projection = dict(payload)
-    missing_projection.pop("repository_branch")
+    missing_code_repositoryion = dict(payload)
+    missing_code_repositoryion.pop("repository_branch")
     with pytest.raises(ValidationError, match="repository_branch"):
-        agent_models_mod.Agent.model_validate(missing_projection)
+        agent_models_mod.Agent.model_validate(missing_code_repositoryion)
 
 
-def test_agent_filter_sends_environment_read_scope_and_parses_projection(monkeypatch):
+def test_agent_filter_sends_environment_read_scope_and_parses_code_repositoryion(monkeypatch):
     captured = {}
     environment_uid = uuid.UUID("22222222-2222-4222-8222-222222222222")
 
@@ -1940,9 +1940,9 @@ def test_agent_filter_sends_environment_read_scope_and_parses_projection(monkeyp
                 "results": [
                     {
                         "uid": "e0e75693-4110-464c-93e0-82c7fd9c9a23",
-                        "name": "Project Executor",
+                        "name": "CodeRepository Executor",
                         "llm_thinking": "medium",
-                        "project_branch_uid": "9d81d63f-b8c9-404d-9f1a-5f2ad29dbf16",
+                        "code_repository_branch_uid": "9d81d63f-b8c9-404d-9f1a-5f2ad29dbf16",
                         "repository_branch": "main",
                         "organization_environment_uid": str(environment_uid),
                         "organization_environment_name": "production",
@@ -1971,7 +1971,7 @@ def test_agent_filter_sends_environment_read_scope_and_parses_projection(monkeyp
 
     agents = agent_models_mod.Agent.filter(
         organization_environment_uid=environment_uid,
-        agent_type="project-executor",
+        agent_type="code-repository-executor",
         timeout=11,
     )
 
@@ -1980,7 +1980,7 @@ def test_agent_filter_sends_environment_read_scope_and_parses_projection(monkeyp
         "url": f"{agent_models_mod.Agent.get_object_url()}/",
         "payload": {
             "params": {
-                "agent_type": "project-executor",
+                "agent_type": "code-repository-executor",
                 "organization_environment_uid": str(environment_uid),
             }
         },
@@ -1991,7 +1991,7 @@ def test_agent_filter_sends_environment_read_scope_and_parses_projection(monkeyp
     assert agents[0].organization_environment_uid == str(environment_uid)
 
 
-def test_agent_semantic_search_sends_environment_scope_and_parses_projection(monkeypatch):
+def test_agent_semantic_search_sends_environment_scope_and_parses_code_repositoryion(monkeypatch):
     captured = {}
     environment_uid = uuid.UUID("22222222-2222-4222-8222-222222222222")
 
@@ -2003,10 +2003,10 @@ def test_agent_semantic_search_sends_environment_scope_and_parses_projection(mon
             return [
                 {
                     "uid": "e0e75693-4110-464c-93e0-82c7fd9c9a23",
-                    "name": "Project Executor",
-                    "agent_type": "project-executor",
-                    "description": "Project coding agent.",
-                    "project_branch_uid": "9d81d63f-b8c9-404d-9f1a-5f2ad29dbf16",
+                    "name": "CodeRepository Executor",
+                    "agent_type": "code-repository-executor",
+                    "description": "CodeRepository coding agent.",
+                    "code_repository_branch_uid": "9d81d63f-b8c9-404d-9f1a-5f2ad29dbf16",
                     "repository_branch": "main",
                     "organization_environment_uid": str(environment_uid),
                     "organization_environment_name": "production",
@@ -2054,7 +2054,7 @@ def test_agent_semantic_search_sends_environment_scope_and_parses_projection(mon
         "timeout": 13,
     }
     assert len(results) == 1
-    assert results[0].project_branch_uid == "9d81d63f-b8c9-404d-9f1a-5f2ad29dbf16"
+    assert results[0].code_repository_branch_uid == "9d81d63f-b8c9-404d-9f1a-5f2ad29dbf16"
     assert results[0].organization_environment_name == "production"
 
 
@@ -2387,12 +2387,12 @@ def test_agent_session_archive_actions_return_current_session_contract(monkeypat
 
 def test_resource_release_model_accepts_collection_payload_without_runtime_child_fields():
     release_uid = "2f4c4c3d-5669-4da5-9d86-b84633c1e6ed"
-    project_branch_uid = "9d81d63f-b8c9-404d-9f1a-5f2ad29dbf16"
+    code_repository_branch_uid = "9d81d63f-b8c9-404d-9f1a-5f2ad29dbf16"
 
     release = models_helpers_mod.ResourceRelease.model_validate(
         {
             "uid": release_uid,
-            "project_branch_uid": project_branch_uid,
+            "code_repository_branch_uid": code_repository_branch_uid,
             "name": "Competition Analysis",
             "release_kind": "static_site",
             "automatic_deployment": True,
@@ -2400,7 +2400,7 @@ def test_resource_release_model_accepts_collection_payload_without_runtime_child
     )
 
     assert release.uid == release_uid
-    assert release.project_branch_uid == project_branch_uid
+    assert release.code_repository_branch_uid == code_repository_branch_uid
     assert release.name == "Competition Analysis"
     assert release.release_kind == models_helpers_mod.ResourceReleaseKind.STATIC_SITE
     assert release.resource_uid is None
@@ -2422,9 +2422,9 @@ def test_job_requires_exact_image_and_exposes_automatic_redeployment_state():
         {
             "uid": "7d0ab07c-d1c0-4b7f-9c69-3c1a41c0a4da",
             "name": "Daily prices",
-            "project_branch_uid": "5a28020a-0f1b-47ee-aab8-334286234bea",
+            "code_repository_branch_uid": "5a28020a-0f1b-47ee-aab8-334286234bea",
             "related_image_uid": "6cfdb152-923e-45b9-a150-c4541c68b0d1",
-            "project_repo_hash": "a" * 40,
+            "code_repository_commit_hash": "a" * 40,
             "image_status": "ready",
             "automatic_deployment": True,
             "automatic_redeployment_policy": {
@@ -2435,7 +2435,7 @@ def test_job_requires_exact_image_and_exposes_automatic_redeployment_state():
     )
 
     assert job.related_image_uid == "6cfdb152-923e-45b9-a150-c4541c68b0d1"
-    assert job.project_repo_hash == "a" * 40
+    assert job.code_repository_commit_hash == "a" * 40
     assert job.image_status == "ready"
     assert job.automatic_deployment is True
     assert job.automatic_redeployment_policy is not None
@@ -2448,10 +2448,10 @@ def test_job_accepts_backend_derived_environment_uid(environment_uid):
         {
             "uid": "7d0ab07c-d1c0-4b7f-9c69-3c1a41c0a4da",
             "name": "Daily prices",
-            "project_branch_uid": PROJECT_BRANCH_UID,
+            "code_repository_branch_uid": CODE_REPOSITORY_BRANCH_UID,
             "organization_environment_uid": environment_uid,
             "related_image_uid": "6cfdb152-923e-45b9-a150-c4541c68b0d1",
-            "project_repo_hash": "a" * 40,
+            "code_repository_commit_hash": "a" * 40,
             "image_status": "ready",
         }
     )
@@ -2471,10 +2471,10 @@ def test_job_filter_parses_backend_derived_environment_uid(monkeypatch):
                 {
                     "uid": "7d0ab07c-d1c0-4b7f-9c69-3c1a41c0a4da",
                     "name": "Daily prices",
-                    "project_branch_uid": PROJECT_BRANCH_UID,
+                    "code_repository_branch_uid": CODE_REPOSITORY_BRANCH_UID,
                     "organization_environment_uid": ENVIRONMENT_UID,
                     "related_image_uid": "6cfdb152-923e-45b9-a150-c4541c68b0d1",
-                    "project_repo_hash": "a" * 40,
+                    "code_repository_commit_hash": "a" * 40,
                     "image_status": "ready",
                 }
             ]
@@ -2489,7 +2489,7 @@ def test_job_filter_parses_backend_derived_environment_uid(monkeypatch):
 
     assert jobs[0].organization_environment_uid == ENVIRONMENT_UID
     assert captured["payload"]["params"] == {
-        "project_branch_uid": PROJECT_BRANCH_UID,
+        "code_repository_branch_uid": CODE_REPOSITORY_BRANCH_UID,
     }
 
 
@@ -2504,9 +2504,9 @@ def test_job_create_requires_exact_image_and_does_not_send_commit(monkeypatch):
             return {
                 "uid": "7d0ab07c-d1c0-4b7f-9c69-3c1a41c0a4da",
                 "name": "Daily prices",
-                "project_branch_uid": "5a28020a-0f1b-47ee-aab8-334286234bea",
+                "code_repository_branch_uid": "5a28020a-0f1b-47ee-aab8-334286234bea",
                 "related_image_uid": "6cfdb152-923e-45b9-a150-c4541c68b0d1",
-                "project_repo_hash": "a" * 40,
+                "code_repository_commit_hash": "a" * 40,
                 "image_status": "ready",
                 "automatic_deployment": True,
                 "automatic_redeployment_policy": {
@@ -2524,7 +2524,7 @@ def test_job_create_requires_exact_image_and_does_not_send_commit(monkeypatch):
     with pytest.raises(ValueError, match="related_image_uid is required"):
         models_helpers_mod.Job.create(
             name="Daily prices",
-            project_branch_uid="5a28020a-0f1b-47ee-aab8-334286234bea",
+            code_repository_branch_uid="5a28020a-0f1b-47ee-aab8-334286234bea",
             execution_path="jobs/daily_prices.py",
             cpu_request="1",
             memory_request="2",
@@ -2532,7 +2532,7 @@ def test_job_create_requires_exact_image_and_does_not_send_commit(monkeypatch):
 
     job = models_helpers_mod.Job.create(
         name="Daily prices",
-        project_branch_uid="5a28020a-0f1b-47ee-aab8-334286234bea",
+        code_repository_branch_uid="5a28020a-0f1b-47ee-aab8-334286234bea",
         execution_path="jobs/daily_prices.py",
         cpu_request="1",
         memory_request="2",
@@ -2544,13 +2544,13 @@ def test_job_create_requires_exact_image_and_does_not_send_commit(monkeypatch):
     assert captured["r_type"] == "POST"
     assert captured["payload"]["json"]["automatic_deployment"] is True
     assert captured["payload"]["json"]["automatic_redeployment_policy"] == {"tag_regex": None}
-    assert "project_repo_hash" not in captured["payload"]["json"]
+    assert "code_repository_commit_hash" not in captured["payload"]["json"]
     assert "related_image_uid" not in captured["payload"]["json"]
 
     with pytest.raises(ValueError, match="must be omitted"):
         models_helpers_mod.Job.create(
             name="Invalid auto job",
-            project_branch_uid="5a28020a-0f1b-47ee-aab8-334286234bea",
+            code_repository_branch_uid="5a28020a-0f1b-47ee-aab8-334286234bea",
             execution_path="jobs/daily_prices.py",
             related_image_uid="6cfdb152-923e-45b9-a150-c4541c68b0d1",
             cpu_request="1",
@@ -2564,10 +2564,10 @@ def test_job_run_requires_immutable_runtime_image_snapshot():
         "uid": "4c1d77c8-8a42-42b8-a9c1-06be9a336e5d",
         "name": "daily-prices-run",
         "unique_identifier": "jobrun_2026_08_19_abc123",
-        "project_uid": "1d0530c0-65d1-4db0-856b-dc29d8260a09",
-        "project_name": "market-data-service",
-        "project_branch_uid": "5a28020a-0f1b-47ee-aab8-334286234bea",
-        "project_branch_name": "main",
+        "code_repository_uid": "1d0530c0-65d1-4db0-856b-dc29d8260a09",
+        "code_repository_name": "market-data-service",
+        "code_repository_branch_uid": "5a28020a-0f1b-47ee-aab8-334286234bea",
+        "code_repository_branch_name": "main",
         "organization_environment_uid": ENVIRONMENT_UID,
         "commit_hash": "a" * 40,
         "runtime_image_uid": "6cfdb152-923e-45b9-a150-c4541c68b0d1",
@@ -2578,26 +2578,26 @@ def test_job_run_requires_immutable_runtime_image_snapshot():
     assert run.runtime_image_uid == payload["runtime_image_uid"]
     assert run.runtime_image_digest == payload["runtime_image_digest"]
     assert run.commit_hash == payload["commit_hash"]
-    assert run.project_uid == payload["project_uid"]
-    assert run.project_name == payload["project_name"]
-    assert run.project_branch_uid == payload["project_branch_uid"]
-    assert run.project_branch_name == payload["project_branch_name"]
+    assert run.code_repository_uid == payload["code_repository_uid"]
+    assert run.code_repository_name == payload["code_repository_name"]
+    assert run.code_repository_branch_uid == payload["code_repository_branch_uid"]
+    assert run.code_repository_branch_name == payload["code_repository_branch_name"]
     assert run.organization_environment_uid == ENVIRONMENT_UID
 
-    missing_project_context = dict(payload)
-    missing_project_context.pop("project_uid")
-    with pytest.raises(ValueError, match="project_uid"):
-        models_helpers_mod.JobRun.model_validate(missing_project_context)
+    missing_code_repository_context = dict(payload)
+    missing_code_repository_context.pop("code_repository_uid")
+    with pytest.raises(ValueError, match="code_repository_uid"):
+        models_helpers_mod.JobRun.model_validate(missing_code_repository_context)
 
     with pytest.raises(ValueError, match="runtime_image_uid"):
         models_helpers_mod.JobRun.model_validate(
             {
                 "name": "bad-run",
                 "unique_identifier": "jobrun_bad",
-                "project_uid": None,
-                "project_name": None,
-                "project_branch_uid": None,
-                "project_branch_name": None,
+                "code_repository_uid": None,
+                "code_repository_name": None,
+                "code_repository_branch_uid": None,
+                "code_repository_branch_name": None,
                 "organization_environment_uid": ENVIRONMENT_UID,
                 "runtime_image_digest": "sha256:" + "b" * 64,
             }
@@ -2638,12 +2638,12 @@ def test_resource_release_model_supports_automatic_deployment_payloads():
     assert release.desired_revision == "2a9370a7-c07f-439c-bcd9-629e3e916699"
 
 
-def test_resource_release_filter_accepts_canonical_revision_lifecycle_projection(monkeypatch):
+def test_resource_release_filter_accepts_canonical_revision_lifecycle_code_repositoryion(monkeypatch):
     release_uid = "2f4c4c3d-5669-4da5-9d86-b84633c1e6ed"
     desired_revision_uid = "2a9370a7-c07f-439c-bcd9-629e3e916699"
     response_payload = {
         "uid": release_uid,
-        "project_branch_uid": PROJECT_BRANCH_UID,
+        "code_repository_branch_uid": CODE_REPOSITORY_BRANCH_UID,
         "name": "Pricing API",
         "release_kind": "fastapi",
         "automatic_deployment": True,
@@ -2665,7 +2665,7 @@ def test_resource_release_filter_accepts_canonical_revision_lifecycle_projection
 
     monkeypatch.setattr(base_mod, "make_request", lambda **kwargs: FakeResponse())
 
-    releases = models_helpers_mod.ResourceRelease.filter(project_branch_uid=PROJECT_BRANCH_UID)
+    releases = models_helpers_mod.ResourceRelease.filter(code_repository_branch_uid=CODE_REPOSITORY_BRANCH_UID)
 
     assert len(releases) == 1
     assert releases[0].uid == release_uid
@@ -2772,12 +2772,12 @@ def test_resource_release_create_rejects_invalid_revision_retention_count(
         )
 
 
-def test_project_resource_create_release_uses_related_image_uid(monkeypatch):
+def test_code_repository_resource_create_release_uses_related_image_uid(monkeypatch):
     captured = {}
     resource_uid = "857bec7b-dd77-4272-aecd-13fc2138eacc"
     image_uid = "6cfdb152-923e-45b9-a150-c4541c68b0d1"
     release_uid = "2f4c4c3d-5669-4da5-9d86-b84633c1e6ed"
-    resource = models_helpers_mod.ProjectResource(
+    resource = models_helpers_mod.CodeRepositoryResource(
         uid=resource_uid,
         name="analytics_dashboard.py",
         resource_type="dashboard",
@@ -2830,15 +2830,15 @@ def test_project_resource_create_release_uses_related_image_uid(monkeypatch):
         "dashboard",
         "agent",
         "fastapi",
-        "project_agent_card",
+        "code_repository_agent_card",
         "markdown",
     ],
 )
-def test_project_resource_accepts_canonical_backend_resource_types(resource_type):
-    resource = models_helpers_mod.ProjectResource.model_validate(
+def test_code_repository_resource_accepts_canonical_backend_resource_types(resource_type):
+    resource = models_helpers_mod.CodeRepositoryResource.model_validate(
         {
             "uid": "857bec7b-dd77-4272-aecd-13fc2138eacc",
-            "project_branch_uid": PROJECT_BRANCH_UID,
+            "code_repository_branch_uid": CODE_REPOSITORY_BRANCH_UID,
             "name": ".agents/agent_card.json",
             "resource_type": resource_type,
             "path": ".agents/agent_card.json",
@@ -2961,7 +2961,7 @@ def _resource_release_pipeline_payload(*, running_step: str | None = None):
         "resolve_revision",
         "validate_deployment",
         "resolve_resource",
-        "build_project_image",
+        "build_code_repository_image",
         "deploy_runtime",
         "verify_runtime_readiness",
     )
@@ -3021,7 +3021,7 @@ def test_resource_release_deploy_current_version_posts_detail_action(monkeypatch
                 "uid": run_uid,
                 "target_type": "resource_release",
                 "target": {"uid": release_uid, "name": "analytics-123", "kind": "fastapi"},
-                "project_branch_uid": "33333333-3333-4333-8333-333333333333",
+                "code_repository_branch_uid": "33333333-3333-4333-8333-333333333333",
                 "operation": "build_and_deploy",
                 "source": "manual",
                 "commit_sha": "a" * 40,
@@ -3088,7 +3088,7 @@ def test_deployment_run_collection_and_detail_use_unified_resource_release_contr
         "uid": run_uid,
         "target_type": "resource_release",
         "target": {"uid": release_uid, "name": "analytics-123", "kind": "fastapi"},
-        "project_branch_uid": PROJECT_BRANCH_UID,
+        "code_repository_branch_uid": CODE_REPOSITORY_BRANCH_UID,
         "operation": "build_and_deploy",
         "source": "repository_event",
         "commit_sha": "a" * 40,
@@ -3169,7 +3169,7 @@ def test_deployment_run_collection_and_detail_use_unified_resource_release_contr
     assert detail.error is None
     assert captured[0]["payload"] == {
         "params": {
-            "project_branch_uid": PROJECT_BRANCH_UID,
+            "code_repository_branch_uid": CODE_REPOSITORY_BRANCH_UID,
             "target_type": "resource_release",
             "target_uid": release_uid,
         }
@@ -3181,20 +3181,20 @@ def test_unified_deployment_run_models_and_filters(monkeypatch):
     captured = {}
     run_uid = "11111111-1111-4111-8111-111111111111"
     target_uid = "22222222-2222-4222-8222-222222222222"
-    project_branch_uid = "33333333-3333-4333-8333-333333333333"
+    code_repository_branch_uid = "33333333-3333-4333-8333-333333333333"
     run = models_helpers_mod.DeploymentRun.model_validate(
         {
             "uid": run_uid,
             "target_type": "resource_release",
             "target": {"uid": target_uid, "name": "Orders API", "kind": "fastapi"},
-            "project_branch_uid": project_branch_uid,
+            "code_repository_branch_uid": code_repository_branch_uid,
             "operation": "build_and_deploy",
             "source": "repository_event",
             "commit_sha": "a" * 40,
             "configuration_revision": None,
             "state": "running",
             "outcome": "",
-            "pipeline": _resource_release_pipeline_payload(running_step="build_project_image"),
+            "pipeline": _resource_release_pipeline_payload(running_step="build_code_repository_image"),
             "created_at": "2026-07-19T12:00:00Z",
             "started_at": "2026-07-19T12:00:01Z",
             "finished_at": None,
@@ -3211,20 +3211,20 @@ def test_unified_deployment_run_models_and_filters(monkeypatch):
 
     normalized = models_helpers_mod.DeploymentRun._normalize_filter_kwargs(
         {
-            "project_branch_uid": f" {project_branch_uid} ",
+            "code_repository_branch_uid": f" {code_repository_branch_uid} ",
             "target_type__in": [" resource_release ", " static_site "],
             "state__in": [" running ", " failed "],
         }
     )
 
     assert run.target.uid == target_uid
-    assert run.pipeline.current_step_key == "build_project_image"
+    assert run.pipeline.current_step_key == "build_code_repository_image"
     assert run.pipeline.steps[3].state == "running"
     assert run.pipeline.steps[4].state == "pending"
     assert run.builder_image == "us-docker.pkg.dev/platform/static-builder:latest"
     assert run.builder_runtime == "nodejs22"
     assert normalized == {
-        "project_branch_uid": project_branch_uid,
+        "code_repository_branch_uid": code_repository_branch_uid,
         "target_type__in": ["resource_release", "static_site"],
         "state__in": ["running", "failed"],
     }
@@ -4233,7 +4233,7 @@ def test_shareable_models_keep_shareable_object_mixin():
     expected = {
         "Artifact": models_foundry_bases,
         "Bucket": models_foundry_bases,
-        "Project": models_foundry_bases,
+        "CodeRepository": models_foundry_bases,
         "Constant": models_foundry_bases,
         "Secret": models_foundry_bases,
         "ResourceRelease": models_helpers_bases,

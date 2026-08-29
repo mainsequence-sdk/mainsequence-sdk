@@ -65,7 +65,7 @@ def test_core_client_import_does_not_require_duckdb(monkeypatch):
     foundry_module = importlib.import_module("mainsequence.client.models_foundry")
     metatables_module = importlib.import_module("mainsequence.client.metatables")
 
-    assert hasattr(foundry_module, "Project")
+    assert hasattr(foundry_module, "CodeRepository")
     assert hasattr(metatables_module, "DataSource")
     assert not hasattr(metatables_module, "DynamicTableDataSource")
     assert not hasattr(foundry_module, "DynamicTableDataSource")
@@ -88,7 +88,7 @@ def test_models_foundry_import_does_not_resolve_session_data_source(monkeypatch)
 
     foundry_module = importlib.import_module("mainsequence.client.models_foundry")
 
-    assert hasattr(foundry_module, "Project")
+    assert hasattr(foundry_module, "CodeRepository")
 
 
 def test_duckdb_helper_points_to_local_data_extra(monkeypatch):

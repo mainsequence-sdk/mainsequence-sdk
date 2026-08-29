@@ -7,7 +7,7 @@ import pytest
 from pydantic import ValidationError
 
 import mainsequence.client.metatables as meta_table_models
-import mainsequence.project_context as project_context
+import mainsequence.code_repository_context as code_repository_context
 from mainsequence.client.exceptions import ConflictError, PermissionDeniedError
 from mainsequence.meta_tables.compiled_sql.v1 import build_operation, compile_sqlalchemy_statement
 
@@ -17,7 +17,7 @@ ENVIRONMENT_UID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
 @pytest.fixture(autouse=True)
 def _resolved_environment(monkeypatch):
     monkeypatch.setattr(
-        project_context,
+        code_repository_context,
         "resolve_organization_environment_uid",
         lambda operation: ENVIRONMENT_UID,
     )
@@ -83,9 +83,9 @@ def _meta_table_response(**overrides):
     return payload
 
 
-def _project_context():
-    return meta_table_models.MetaTableProjectContextRequest(
-        project_branch_uid="22222222-2222-4222-8222-222222222222",
+def _code_repository_context():
+    return meta_table_models.MetaTableCodeRepositoryContextRequest(
+        code_repository_branch_uid="22222222-2222-4222-8222-222222222222",
     )
 
 
@@ -247,12 +247,12 @@ def test_meta_table_cascade_delete_preserves_typed_backend_errors(
 
 @pytest.mark.parametrize(
     "legacy_field",
-    ["organization_environment_uid", "project_uid", "repository_branch"],
+    ["organization_environment_uid", "code_repository_uid", "repository_branch"],
 )
-def test_metatable_project_context_rejects_legacy_routing_fields(legacy_field):
+def test_metatable_code_repository_context_rejects_legacy_routing_fields(legacy_field):
     with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
-        meta_table_models.MetaTableProjectContextRequest(
-            project_branch_uid="22222222-2222-4222-8222-222222222222",
+        meta_table_models.MetaTableCodeRepositoryContextRequest(
+            code_repository_branch_uid="22222222-2222-4222-8222-222222222222",
             **{legacy_field: "22222222-2222-4222-8222-222222222222"},
         )
 
@@ -323,8 +323,8 @@ def test_meta_table_bulk_create_posts_raw_collection_payload(monkeypatch):
     )
     monkeypatch.setattr(
         meta_table_models,
-        "_current_metatable_project_context",
-        _project_context,
+        "_current_metatable_code_repository_context",
+        _code_repository_context,
     )
 
     row = {
@@ -357,7 +357,7 @@ def test_meta_table_bulk_create_posts_raw_collection_payload(monkeypatch):
     assert captured["payload"]["json"] == [
         {
             **row,
-            "project_context": _project_context().model_dump(mode="json"),
+            "code_repository_context": _code_repository_context().model_dump(mode="json"),
         }
     ]
 
@@ -394,8 +394,8 @@ def test_time_index_meta_table_bulk_create_posts_raw_collection_payload(monkeypa
     )
     monkeypatch.setattr(
         meta_table_models,
-        "_current_metatable_project_context",
-        _project_context,
+        "_current_metatable_code_repository_context",
+        _code_repository_context,
     )
 
     row = {
@@ -434,7 +434,7 @@ def test_time_index_meta_table_bulk_create_posts_raw_collection_payload(monkeypa
     assert captured["payload"]["json"] == [
         {
             **row,
-            "project_context": _project_context().model_dump(mode="json"),
+            "code_repository_context": _code_repository_context().model_dump(mode="json"),
         }
     ]
 
@@ -512,8 +512,8 @@ def test_time_index_meta_table_register_injects_sdk_resolved_local_context(monke
     )
     monkeypatch.setattr(
         meta_table_models,
-        "_current_metatable_project_context",
-        _project_context,
+        "_current_metatable_code_repository_context",
+        _code_repository_context,
     )
 
     meta_table_models.TimeIndexMetaTable.register(
@@ -528,13 +528,13 @@ def test_time_index_meta_table_register_injects_sdk_resolved_local_context(monke
         },
     )
 
-    assert captured["payload"]["json"]["project_context"] == (
-        _project_context().model_dump(mode="json")
+    assert captured["payload"]["json"]["code_repository_context"] == (
+        _code_repository_context().model_dump(mode="json")
     )
     assert "organization_environment_uid" not in captured["payload"]["json"]
 
 
-def test_metatable_register_rejects_caller_project_context():
+def test_metatable_register_rejects_caller_code_repository_context():
     with pytest.raises(ValueError, match="SDK-controlled"):
         meta_table_models.TimeIndexMetaTable.register(
             data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
@@ -546,7 +546,7 @@ def test_metatable_register_rejects_caller_project_context():
                 "physical": {"schema": "analytics", "table_name": "prices"},
                 "columns": [],
             },
-            project_context=_project_context(),
+            code_repository_context=_code_repository_context(),
         )
 
 
@@ -583,7 +583,7 @@ def test_meta_table_models_accept_backend_environment_identity(
     assert table.organization_environment_name == environment_name
 
 
-def test_metatable_accepts_projection_relation_fields():
+def test_metatable_accepts_code_repositoryion_relation_fields():
     meta_table = meta_table_models.MetaTable(
         **_meta_table_response(
             indexes_meta=[
@@ -646,8 +646,8 @@ def test_meta_table_register_posts_contract_to_meta_table_endpoint(monkeypatch):
     )
     monkeypatch.setattr(
         meta_table_models,
-        "_current_metatable_project_context",
-        _project_context,
+        "_current_metatable_code_repository_context",
+        _code_repository_context,
     )
 
     table = meta_table_models.MetaTable.register(
@@ -688,8 +688,8 @@ def test_meta_table_register_posts_contract_to_meta_table_endpoint(monkeypatch):
         "create_table": True,
         "if_not_exists": True,
     }
-    assert captured["payload"]["json"]["project_context"] == {
-        "project_branch_uid": "22222222-2222-4222-8222-222222222222",
+    assert captured["payload"]["json"]["code_repository_context"] == {
+        "code_repository_branch_uid": "22222222-2222-4222-8222-222222222222",
     }
     assert "organization_environment_uid" not in captured["payload"]["json"]
 
@@ -723,7 +723,7 @@ def test_external_meta_table_register_uses_branch_derived_environment(monkeypatc
 
     assert table.organization_environment_uid == environment_uid
     assert captured["payload"]["json"]["organization_environment_uid"] == (environment_uid)
-    assert "project_context" not in captured["payload"]["json"]
+    assert "code_repository_context" not in captured["payload"]["json"]
 
 
 def test_external_meta_table_register_rejects_caller_environment():
@@ -901,8 +901,8 @@ def test_managed_bulk_create_rejects_non_alembic_reservation_before_http(monkeyp
     monkeypatch.setattr(meta_table_models, "make_request", fake_make_request)
     monkeypatch.setattr(
         meta_table_models,
-        "_current_metatable_project_context",
-        _project_context,
+        "_current_metatable_code_repository_context",
+        _code_repository_context,
     )
 
     with pytest.raises(ValidationError, match="Input should be 'reserved'"):
@@ -1228,8 +1228,8 @@ def test_meta_table_issue_migration_connection_posts_scope(monkeypatch):
     )
     monkeypatch.setattr(
         meta_table_models,
-        "_current_metatable_project_context",
-        _project_context,
+        "_current_metatable_code_repository_context",
+        _code_repository_context,
     )
 
     meta_table = meta_table_models.MetaTable.model_construct(
@@ -1257,8 +1257,8 @@ def test_meta_table_issue_migration_connection_posts_scope(monkeypatch):
         "migration_namespace": "markets",
         "migration_provider_key": "msm:markets",
         "ttl_seconds": 60,
-        "project_context": {
-            "project_branch_uid": "22222222-2222-4222-8222-222222222222",
+        "code_repository_context": {
+            "code_repository_branch_uid": "22222222-2222-4222-8222-222222222222",
         },
     }
 
@@ -1331,8 +1331,8 @@ def test_meta_table_finalize_managed_posts_finalize_payload(monkeypatch):
     )
     monkeypatch.setattr(
         meta_table_models,
-        "_current_metatable_project_context",
-        _project_context,
+        "_current_metatable_code_repository_context",
+        _code_repository_context,
     )
 
     response = meta_table_models.MetaTable.finalize_managed(
@@ -1359,8 +1359,8 @@ def test_meta_table_finalize_managed_posts_finalize_payload(monkeypatch):
         "migration_provider_key": "msm:markets",
         "alembic_version_meta_table_uid": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
         "alembic_revision": "0001",
-        "project_context": {
-            "project_branch_uid": "22222222-2222-4222-8222-222222222222",
+        "code_repository_context": {
+            "code_repository_branch_uid": "22222222-2222-4222-8222-222222222222",
         },
     }
     for forbidden in (
@@ -1411,8 +1411,8 @@ def test_meta_table_finalize_managed_accepts_conflict_response(monkeypatch):
     )
     monkeypatch.setattr(
         meta_table_models,
-        "_current_metatable_project_context",
-        _project_context,
+        "_current_metatable_code_repository_context",
+        _code_repository_context,
     )
 
     response = meta_table_models.MetaTable.finalize_managed(

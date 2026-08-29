@@ -25,7 +25,8 @@ from .runtime_flags import is_running_in_pod
 
 logger = None
 
-_RETIRED_PROJECT_SOURCE_ENV = frozenset(
+# Removed identity inputs are denylisted, not supported as aliases.
+_RETIRED_CODE_REPOSITORY_SOURCE_ENV = frozenset(
     {
         "MAIN_SEQUENCE_PROJECT_UID",
         "MAIN_SEQUENCE_PROJECT_BRANCH_UID",
@@ -226,7 +227,7 @@ def _apply_additional_environment(startup_state: Mapping[str, Any]) -> None:
     if isinstance(extra, dict):
         for k, v in extra.items():
             key = str(k)
-            if key in _RETIRED_PROJECT_SOURCE_ENV:
+            if key in _RETIRED_CODE_REPOSITORY_SOURCE_ENV:
                 continue
             os.environ[key] = str(v)
 

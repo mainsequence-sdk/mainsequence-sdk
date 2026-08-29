@@ -17,7 +17,7 @@ from mainsequence.client.metatables import (
     MetaTable,
     TimeIndexMetaTable,
 )
-from mainsequence.client.metatables.core import MetaTableProjectContextRequest
+from mainsequence.client.metatables.core import MetaTableCodeRepositoryContextRequest
 from mainsequence.meta_tables import (
     PlatformManagedMetaTable,
     PlatformTimeIndexMetaTable,
@@ -46,16 +46,16 @@ from mainsequence.meta_tables.migrations import (
     scaffold_migration_package,
 )
 
-PROJECT_BRANCH_UID = "11111111-1111-4111-8111-111111111111"
+CODE_REPOSITORY_BRANCH_UID = "11111111-1111-4111-8111-111111111111"
 
 
 @pytest.fixture(autouse=True)
-def _project_context(monkeypatch):
-    context = MetaTableProjectContextRequest(
-        project_branch_uid=PROJECT_BRANCH_UID,
+def _code_repository_context(monkeypatch):
+    context = MetaTableCodeRepositoryContextRequest(
+        code_repository_branch_uid=CODE_REPOSITORY_BRANCH_UID,
     )
     monkeypatch.setattr(
-        "mainsequence.client.metatables.core._current_metatable_project_context",
+        "mainsequence.client.metatables.core._current_metatable_code_repository_context",
         lambda: context,
     )
     monkeypatch.setattr(
@@ -189,7 +189,7 @@ def test_alembic_version_metatable_uses_session_data_source(monkeypatch):
     assert request.data_source_uid == "session-data-source-uid"
 
 
-def test_project_can_scope_alembic_version_metatable():
+def test_code_repository_can_scope_alembic_version_metatable():
     class ProjectAlembicVersion(AlembicVersionMetaTable):
         __alembic_version_schema__ = "markets"
         __alembic_version_table_name__ = "alembic_version"
@@ -328,7 +328,7 @@ def test_alembic_metatable_migration_registers_registry_from_bound_data_source(m
     assert row["migration_namespace"] == "markets"
     assert row["migration_provider_key"] == "msm:markets"
     assert row["alembic_version_meta_table_uid"] is None
-    assert "project_context" not in row
+    assert "code_repository_context" not in row
     assert row["physical_schema"] == "public"
     assert row["physical_table_name"] == "alembic_version"
     assert row["table_contract"]["physical"]["schema"] == "public"
@@ -727,7 +727,7 @@ def test_build_alembic_version_metatable_and_provider_factory():
 
 def test_scaffold_migration_package_creates_idempotent_sdk_skeleton(tmp_path):
     result = scaffold_migration_package(
-        project_root=tmp_path,
+        code_repository_root=tmp_path,
         module="migrations",
         package="msm",
         namespace="mainsequence.examples",
@@ -747,7 +747,7 @@ def test_scaffold_migration_package_creates_idempotent_sdk_skeleton(tmp_path):
     assert (result.root / "versions" / "mainsequence_examples" / "__init__.py").exists()
 
     second_result = scaffold_migration_package(
-        project_root=tmp_path,
+        code_repository_root=tmp_path,
         module="migrations",
         package="msm",
         namespace="mainsequence.examples",
@@ -760,7 +760,7 @@ def test_scaffold_migration_package_creates_idempotent_sdk_skeleton(tmp_path):
     package_init.write_text("changed", encoding="utf-8")
     with pytest.raises(FileExistsError, match="Refusing to overwrite"):
         scaffold_migration_package(
-            project_root=tmp_path,
+            code_repository_root=tmp_path,
             module="migrations",
             package="msm",
             namespace="mainsequence.examples",
@@ -769,7 +769,7 @@ def test_scaffold_migration_package_creates_idempotent_sdk_skeleton(tmp_path):
         )
 
     forced_result = scaffold_migration_package(
-        project_root=tmp_path,
+        code_repository_root=tmp_path,
         module="migrations",
         package="msm",
         namespace="mainsequence.examples",
@@ -1056,7 +1056,7 @@ def test_alembic_metatable_migration_sync_catalog_hook_has_no_reserved_policy(
     )
 
     def fake_register(request, *, timeout=None):
-        assert "project_context" not in request.model_dump(exclude_none=True)
+        assert "code_repository_context" not in request.model_dump(exclude_none=True)
         return MetaTable.model_construct(
             uid="asset-meta-table-uid",
             data_source_uid=request.data_source_uid,

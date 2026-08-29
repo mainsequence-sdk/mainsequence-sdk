@@ -48,7 +48,7 @@ used by MetaTable schema migrations.
 ## Collection Scope
 
 Project-facing collection requests derive the Organization Environment from the
-process-frozen current ProjectBranch:
+process-frozen current CodeRepositoryBranch:
 
 ```python
 tables = MetaTable.filter(namespace="mainsequence.examples")
@@ -57,7 +57,7 @@ tables = MetaTable.filter(namespace="mainsequence.examples")
 `TimeIndexMetaTable.filter(...)` uses the same resolution. The SDK sends the
 branch-derived Environment UID internally and rejects caller attempts to select
 another Environment. An unregistered branch can continue ordinary local work,
-but table operations fail because they require registered ProjectBranch context.
+but table operations fail because they require registered CodeRepositoryBranch context.
 
 ## Registration Primitive
 
@@ -86,7 +86,7 @@ Request fields:
 | `data_source_uid` | Canonical `DataSource.uid` that owns connection, capabilities, and execution. |
 | `management_mode` | `external_registered` or `platform_managed`. |
 | `schema_management` | Physical schema owner. Alembic providers use `mode="alembic_managed"` with provider metadata; backend-created tables use `backend_managed`; external registration resolves to `external_registered`. |
-| `project_context` | Internal wire-only consistency context. It is not accepted as caller input by the SDK. The SDK derives the exact persisted `project_branch_uid` from the process-frozen Git repository and attached branch in both local and deployed project-code runs; the backend additionally verifies deployed equality against the authenticated runtime target. |
+| `code_repository_context` | Internal wire-only consistency context. It is not accepted as caller input by the SDK. The SDK derives the exact persisted `code_repository_branch_uid` from the process-frozen Git repository and attached branch in both local and deployed project-code runs; the backend additionally verifies deployed equality against the authenticated runtime target. |
 | `identifier` | Optional logical MetaTable identifier, such as `Asset`. A non-empty value is unique within its Organization Environment, or within the Organization for an Organization-scoped external row. Alembic migration preparation resolves provider MetaTables by authored SQLAlchemy table name instead. |
 | `namespace` | Logical namespace, such as `sdk-examples`. |
 | `description` | Optional discovery text. |

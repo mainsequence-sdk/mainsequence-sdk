@@ -52,19 +52,19 @@ combined with `--export`.
 
 `mainsequence logout` now performs a hard CLI logout when the session came from browser-based CLI login and a refresh token is available. It revokes the tracked CLI login session server-side through `/auth/cli/revoke/`, falls back to JWT logout on older backends that do not implement that endpoint, and otherwise clears only local CLI auth state.
 
-`mainsequence project set-up-locally` and `mainsequence project refresh_token`
+`mainsequence code-repository set-up-locally` and `mainsequence code-repository refresh-token`
 are auth-mode aware. In a backend-launched runtime credential process they
 preserve the injected auth mode, credential id/secret, and an exchanged
 `MAINSEQUENCE_ACCESS_TOKEN` in the project `.env`; they do not require or write
 `MAINSEQUENCE_REFRESH_TOKEN`. Both commands preserve unrelated `.env` entries
 and do not carry obsolete `MAINSEQUENCE_TOKEN` or
 `MAIN_SEQUENCE_PROJECT_ID` entries into the rendered file. They never write a
-ProjectBranch UID, repository branch, Organization Environment UID, or another
+CodeRepositoryBranch UID, repository branch, Organization Environment UID, or another
 caller-selected deployed runtime context.
 
 Local setup registers a new or inaccessible deploy key against the logical Project at
-`/api/v1/projects/{project_uid}/add-deploy-key/` and verifies repository access with that forced
-identity before cloning. The selected ProjectBranch is only the Git branch to clone and is not the
+`/api/v1/code-repositories/{code_repository_uid}/add-deploy-key/` and verifies repository access with that forced
+identity before cloning. The selected CodeRepositoryBranch is only the Git branch to clone and is not the
 owner of repository credentials.
 
 Repository keys use the cross-CLI filename
@@ -80,36 +80,36 @@ untouched and are not used as a fallback.
 
 mainsequence login
 
-mainsequence project list
-mainsequence project set-up-locally <PROJECT_UID>
-mainsequence project open-signed-terminal <PROJECT_UID>
+mainsequence code-repository list
+mainsequence code-repository set-up-locally <PROJECT_UID>
+mainsequence code-repository open-signed-terminal <PROJECT_UID>
 
 # Project operations
-mainsequence project add-label <PROJECT_UID> --label rates --label research
+mainsequence code-repository add-label <PROJECT_UID> --label rates --label research
 mainsequence time-index-table add-label <TIME_INDEX_META_TABLE_UID> --label curated
 
 # Compile environment
-mainsequence project freeze-env --path .
+mainsequence code-repository freeze-env --path .
 # writes requirements.txt using uv export
 
 # Sync project (commit + push workflow)
-mainsequence project sync -m "Update deps" --path .
-# first maps the Git repository, attached branch, and exact commit to ProjectBranch;
+mainsequence code-repository sync -m "Update deps" --path .
+# first maps the Git repository, attached branch, and exact commit to CodeRepositoryBranch;
 # detached, unregistered, or mismatched project assertions fail before mutations
 # then requests the backend-owned branch tag and runs lock/sync/export/commit/push
 
 # Docker environment build
-mainsequence project build-docker-env --path .
+mainsequence code-repository build-docker-env --path .
 # builds via docker buildx and writes .devcontainer/devcontainer.json
 
 # Current project status
-mainsequence project current --debug --json
-# reports logical Project UID, current Git branch, resolved ProjectBranch UID,
+mainsequence code-repository current --debug --json
+# reports logical Project UID, current Git branch, resolved CodeRepositoryBranch UID,
 # and branch resolution status
 
 # SDK status and update
-mainsequence project sdk-status --path .
-mainsequence project update-sdk --path .
+mainsequence code-repository sdk-status --path .
+mainsequence code-repository update-sdk --path .
 
 # Diagnostics
 mainsequence doctor

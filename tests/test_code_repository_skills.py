@@ -8,16 +8,16 @@ from pathlib import Path
 
 import pytest
 
-from mainsequence import project_skills
+from mainsequence import code_repository_skills
 from mainsequence.cli import api as cli_api
 from mainsequence.cli.api import ApiError
-from mainsequence.project_skills import (
+from mainsequence.code_repository_skills import (
     PLATFORM_ONTOLOGY_URI,
     PLATFORM_SKILL_URI_PREFIX,
-    PlatformProjectSkillCatalog,
-    ProjectSkillAssemblyError,
-    install_dual_source_project_skills,
-    parse_platform_project_skill_catalog,
+    CodeRepositorySkillAssemblyError,
+    PlatformCodeRepositorySkillCatalog,
+    install_dual_source_code_repository_skills,
+    parse_platform_code_repository_skill_catalog,
 )
 
 _DEFAULT_TEST_SKILLS = ("alpha_skill", "beta_skill", "gamma_skill")
@@ -26,8 +26,8 @@ _CURRENT_BACKEND_SKILL_PATHS = {
     "command_center": "skills/command_center/command_center/SKILL.md",
     "command_center_connections": "skills/command_center/connections/SKILL.md",
     "project_design": "skills/platform/project_design/SKILL.md",
-    "project_local_setup": "skills/pod_manager/project_local_setup/SKILL.md",
-    "project_to_agent": "skills/agents/project_to_agent/SKILL.md",
+    "code_repository_local_setup": "skills/pod_manager/code_repository_local_setup/SKILL.md",
+    "code_repository_to_agent": "skills/agents/code_repository_to_agent/SKILL.md",
     "static_site": "skills/pod_manager/static_site/SKILL.md",
 }
 
@@ -139,15 +139,15 @@ def _replace_resource_content(row: dict, content: str) -> None:
     row["_content"]["_meta"]["content_size"] = len(content_bytes)
 
 
-def _platform_catalog() -> PlatformProjectSkillCatalog:
-    return parse_platform_project_skill_catalog(
+def _platform_catalog() -> PlatformCodeRepositorySkillCatalog:
+    return parse_platform_code_repository_skill_catalog(
         _platform_rows(),
         source_url="https://platform.example.test/mcp",
     )
 
 
-def _current_backend_catalog() -> PlatformProjectSkillCatalog:
-    return parse_platform_project_skill_catalog(
+def _current_backend_catalog() -> PlatformCodeRepositorySkillCatalog:
+    return parse_platform_code_repository_skill_catalog(
         _platform_rows(
             skill_names=tuple(_CURRENT_BACKEND_SKILL_PATHS),
             skill_paths=_CURRENT_BACKEND_SKILL_PATHS,
@@ -167,16 +167,16 @@ def test_parse_platform_catalog_validates_one_complete_revision():
 
 
 def test_parse_platform_catalog_rejects_incomplete_or_drifted_content():
-    with pytest.raises(ProjectSkillAssemblyError, match="missing declared skills"):
-        parse_platform_project_skill_catalog(
+    with pytest.raises(CodeRepositorySkillAssemblyError, match="missing declared skills"):
+        parse_platform_code_repository_skill_catalog(
             _platform_rows()[:-1],
             source_url="https://platform.example.test/mcp",
         )
 
     rows = _platform_rows()
     rows[-1]["_content"]["text"] = "drift"
-    with pytest.raises(ProjectSkillAssemblyError, match="hash mismatch"):
-        parse_platform_project_skill_catalog(
+    with pytest.raises(CodeRepositorySkillAssemblyError, match="hash mismatch"):
+        parse_platform_code_repository_skill_catalog(
             rows,
             source_url="https://platform.example.test/mcp",
         )
@@ -185,7 +185,7 @@ def test_parse_platform_catalog_rejects_incomplete_or_drifted_content():
 def test_parse_platform_catalog_accepts_additive_skills_and_ignores_order():
     rows = _platform_rows(skill_names=("gamma_skill", "new_capability", "alpha_skill"))
 
-    catalog = parse_platform_project_skill_catalog(
+    catalog = parse_platform_code_repository_skill_catalog(
         list(reversed(rows)),
         source_url="https://platform.example.test/mcp",
     )
@@ -201,15 +201,7 @@ def test_parse_platform_catalog_accepts_current_backend_skill_membership():
     catalog = _current_backend_catalog()
 
     assert len(catalog.resources) == 8
-    assert [skill.name for skill in catalog.skills] == [
-        "a2a_communication",
-        "command_center",
-        "command_center_connections",
-        "project_design",
-        "project_local_setup",
-        "project_to_agent",
-        "static_site",
-    ]
+    assert [skill.name for skill in catalog.skills] == sorted(_CURRENT_BACKEND_SKILL_PATHS)
     assert {skill.name: skill.relative_path.as_posix() for skill in catalog.skills} == {
         name: path.removeprefix("skills/")
         for name, path in _CURRENT_BACKEND_SKILL_PATHS.items()
@@ -218,20 +210,20 @@ def test_parse_platform_catalog_accepts_current_backend_skill_membership():
 
 def test_dual_source_install_preserves_current_backend_skill_hierarchy(tmp_path):
     sdk_skills = tmp_path / "installed-sdk" / "agent_scaffold" / "skills"
-    sdk_skill = sdk_skills / "sdk_project_execution"
+    sdk_skill = sdk_skills / "sdk_code_repository_execution"
     sdk_skill.mkdir(parents=True)
     (sdk_skill / "SKILL.md").write_text("sdk execution", encoding="utf-8")
-    project_dir = tmp_path / "project"
+    code_repository_dir = tmp_path / "project"
 
-    install_dual_source_project_skills(
-        project_dir=project_dir,
+    install_dual_source_code_repository_skills(
+        code_repository_dir=code_repository_dir,
         sdk_library_name="mainsequence",
         sdk_skills_path=sdk_skills,
         sdk_version="6.0.4",
         platform_catalog=_current_backend_catalog(),
     )
 
-    managed_root = project_dir / ".agents" / "skills" / "mainsequence"
+    managed_root = code_repository_dir / ".agents" / "skills" / "mainsequence"
     for resource_path in _CURRENT_BACKEND_SKILL_PATHS.values():
         assert (managed_root / resource_path.removeprefix("skills/")).is_file()
 
@@ -239,16 +231,16 @@ def test_dual_source_install_preserves_current_backend_skill_hierarchy(tmp_path)
 def test_parse_platform_catalog_rejects_undeclared_duplicate_and_unsafe_skills():
     rows = _platform_rows()
     rows.append(_platform_rows(skill_names=("undeclared_skill",))[1])
-    with pytest.raises(ProjectSkillAssemblyError, match="undeclared listed skills"):
-        parse_platform_project_skill_catalog(
+    with pytest.raises(CodeRepositorySkillAssemblyError, match="undeclared listed skills"):
+        parse_platform_code_repository_skill_catalog(
             rows,
             source_url="https://platform.example.test/mcp",
         )
 
     rows = _platform_rows()
     rows.append(rows[-1])
-    with pytest.raises(ProjectSkillAssemblyError, match="duplicate URI"):
-        parse_platform_project_skill_catalog(
+    with pytest.raises(CodeRepositorySkillAssemblyError, match="duplicate URI"):
+        parse_platform_code_repository_skill_catalog(
             rows,
             source_url="https://platform.example.test/mcp",
         )
@@ -256,8 +248,8 @@ def test_parse_platform_catalog_rejects_undeclared_duplicate_and_unsafe_skills()
     rows = _platform_rows()
     rows[1]["_meta"]["resource_path"] = "skills/../escape/SKILL.md"
     rows[1]["_content"]["_meta"]["resource_path"] = "skills/../escape/SKILL.md"
-    with pytest.raises(ProjectSkillAssemblyError, match="unsafe resource path"):
-        parse_platform_project_skill_catalog(
+    with pytest.raises(CodeRepositorySkillAssemblyError, match="unsafe resource path"):
+        parse_platform_code_repository_skill_catalog(
             rows,
             source_url="https://platform.example.test/mcp",
         )
@@ -265,15 +257,15 @@ def test_parse_platform_catalog_rejects_undeclared_duplicate_and_unsafe_skills()
     rows = _platform_rows(
         skill_paths={"alpha_skill": "skills/invalid-group/alpha_skill/SKILL.md"}
     )
-    with pytest.raises(ProjectSkillAssemblyError, match="safe lowercase snake case"):
-        parse_platform_project_skill_catalog(
+    with pytest.raises(CodeRepositorySkillAssemblyError, match="safe lowercase snake case"):
+        parse_platform_code_repository_skill_catalog(
             rows,
             source_url="https://platform.example.test/mcp",
         )
 
     rows = _platform_rows(skill_paths={"alpha_skill": "skills/SKILL.md"})
-    with pytest.raises(ProjectSkillAssemblyError, match="at least one skill directory"):
-        parse_platform_project_skill_catalog(
+    with pytest.raises(CodeRepositorySkillAssemblyError, match="at least one skill directory"):
+        parse_platform_code_repository_skill_catalog(
             rows,
             source_url="https://platform.example.test/mcp",
         )
@@ -285,8 +277,8 @@ def test_parse_platform_catalog_rejects_invalid_front_matter_and_schema_version(
         rows[1],
         "---\nname: alpha-skill\n---\n",
     )
-    with pytest.raises(ProjectSkillAssemblyError, match="front matter description"):
-        parse_platform_project_skill_catalog(
+    with pytest.raises(CodeRepositorySkillAssemblyError, match="front matter description"):
+        parse_platform_code_repository_skill_catalog(
             rows,
             source_url="https://platform.example.test/mcp",
         )
@@ -295,8 +287,8 @@ def test_parse_platform_catalog_rejects_invalid_front_matter_and_schema_version(
     for row in rows:
         row["_meta"]["manifest_version"] = 999
         row["_content"]["_meta"]["manifest_version"] = 999
-    with pytest.raises(ProjectSkillAssemblyError, match="unsupported platform manifest version"):
-        parse_platform_project_skill_catalog(
+    with pytest.raises(CodeRepositorySkillAssemblyError, match="unsupported platform manifest version"):
+        parse_platform_code_repository_skill_catalog(
             rows,
             source_url="https://platform.example.test/mcp",
         )
@@ -306,27 +298,27 @@ def test_dual_source_install_replaces_only_managed_tree_and_records_both_sources
     tmp_path,
 ):
     sdk_skills = tmp_path / "installed-sdk" / "agent_scaffold" / "skills"
-    sdk_skill = sdk_skills / "sdk_project_execution"
+    sdk_skill = sdk_skills / "sdk_code_repository_execution"
     sdk_skill.mkdir(parents=True)
     (sdk_skill / "SKILL.md").write_text("sdk execution", encoding="utf-8")
-    maintenance_skill = sdk_skills / "maintenance" / "project-maintenance"
+    maintenance_skill = sdk_skills / "maintenance" / "code_repository_maintenance"
     maintenance_skill.mkdir(parents=True)
     (maintenance_skill / "SKILL.md").write_text(
         "sdk project maintenance",
         encoding="utf-8",
     )
 
-    project_dir = tmp_path / "project"
-    managed_root = project_dir / ".agents" / "skills" / "mainsequence"
+    code_repository_dir = tmp_path / "project"
+    managed_root = code_repository_dir / ".agents" / "skills" / "mainsequence"
     stale_skill = managed_root / "stale"
     stale_skill.mkdir(parents=True)
     (stale_skill / "SKILL.md").write_text("stale", encoding="utf-8")
-    project_owned = project_dir / ".agents" / "skills" / "project_owned"
-    project_owned.mkdir(parents=True)
-    (project_owned / "SKILL.md").write_text("keep", encoding="utf-8")
+    code_repository_owned = code_repository_dir / ".agents" / "skills" / "project_owned"
+    code_repository_owned.mkdir(parents=True)
+    (code_repository_owned / "SKILL.md").write_text("keep", encoding="utf-8")
 
-    result = install_dual_source_project_skills(
-        project_dir=project_dir,
+    result = install_dual_source_code_repository_skills(
+        code_repository_dir=code_repository_dir,
         sdk_library_name="mainsequence",
         sdk_skills_path=sdk_skills,
         sdk_version="4.4.34",
@@ -334,19 +326,19 @@ def test_dual_source_install_replaces_only_managed_tree_and_records_both_sources
     )
 
     assert not stale_skill.exists()
-    assert (managed_root / "sdk_project_execution" / "SKILL.md").read_text(
+    assert (managed_root / "sdk_code_repository_execution" / "SKILL.md").read_text(
         encoding="utf-8"
     ) == "sdk execution"
-    assert (managed_root / "maintenance" / "project-maintenance" / "SKILL.md").read_text(
+    assert (managed_root / "maintenance" / "code_repository_maintenance" / "SKILL.md").read_text(
         encoding="utf-8"
     ) == "sdk project maintenance"
     assert (managed_root / "alpha_skill" / "SKILL.md").is_file()
     assert (managed_root / "beta_skill" / "SKILL.md").is_file()
     assert (managed_root / "gamma_skill" / "SKILL.md").is_file()
-    assert (project_owned / "SKILL.md").read_text(encoding="utf-8") == "keep"
+    assert (code_repository_owned / "SKILL.md").read_text(encoding="utf-8") == "keep"
     assert [(item.name, item.owner) for item in result.installed] == [
         ("maintenance", "sdk"),
-        ("sdk_project_execution", "sdk"),
+        ("sdk_code_repository_execution", "sdk"),
         ("alpha_skill", "platform"),
         ("beta_skill", "platform"),
         ("gamma_skill", "platform"),
@@ -375,14 +367,14 @@ def test_dual_source_install_rejects_sdk_platform_path_collision_without_writes(
     colliding_skill = sdk_skills / "beta_skill"
     colliding_skill.mkdir(parents=True)
     (colliding_skill / "SKILL.md").write_text("sdk collision", encoding="utf-8")
-    project_dir = tmp_path / "project"
-    existing = project_dir / ".agents" / "skills" / "mainsequence" / "existing" / "SKILL.md"
+    code_repository_dir = tmp_path / "project"
+    existing = code_repository_dir / ".agents" / "skills" / "mainsequence" / "existing" / "SKILL.md"
     existing.parent.mkdir(parents=True)
     existing.write_text("keep", encoding="utf-8")
 
-    with pytest.raises(ProjectSkillAssemblyError, match="collision"):
-        install_dual_source_project_skills(
-            project_dir=project_dir,
+    with pytest.raises(CodeRepositorySkillAssemblyError, match="collision"):
+        install_dual_source_code_repository_skills(
+            code_repository_dir=code_repository_dir,
             sdk_library_name="mainsequence",
             sdk_skills_path=sdk_skills,
             sdk_version="4.4.34",
@@ -397,12 +389,12 @@ def test_dual_source_install_restores_previous_tree_when_final_swap_fails(
     tmp_path,
 ):
     sdk_skills = tmp_path / "installed-sdk" / "agent_scaffold" / "skills"
-    sdk_skill = sdk_skills / "sdk_project_execution"
+    sdk_skill = sdk_skills / "sdk_code_repository_execution"
     sdk_skill.mkdir(parents=True)
     (sdk_skill / "SKILL.md").write_text("sdk execution", encoding="utf-8")
 
-    project_dir = tmp_path / "project"
-    managed_root = project_dir / ".agents" / "skills" / "mainsequence"
+    code_repository_dir = tmp_path / "project"
+    managed_root = code_repository_dir / ".agents" / "skills" / "mainsequence"
     previous = managed_root / "previous" / "SKILL.md"
     previous.parent.mkdir(parents=True)
     previous.write_text("previous valid tree", encoding="utf-8")
@@ -422,11 +414,11 @@ def test_dual_source_install_restores_previous_tree_when_final_swap_fails(
             raise OSError("simulated final swap failure")
         return real_replace(source, destination)
 
-    monkeypatch.setattr(project_skills.os, "replace", _fail_staging_swap)
+    monkeypatch.setattr(code_repository_skills.os, "replace", _fail_staging_swap)
 
     with pytest.raises(OSError, match="simulated final swap failure"):
-        install_dual_source_project_skills(
-            project_dir=project_dir,
+        install_dual_source_code_repository_skills(
+            code_repository_dir=code_repository_dir,
             sdk_library_name="mainsequence",
             sdk_skills_path=sdk_skills,
             sdk_version="4.4.34",
@@ -479,7 +471,7 @@ def test_cli_fetch_uses_authenticated_mcp_resources(monkeypatch):
         lambda: "https://platform.example.test",
     )
 
-    catalog = cli_api.fetch_platform_project_skill_catalog()
+    catalog = cli_api.fetch_platform_code_repository_skill_catalog()
 
     assert catalog.source_url == "https://platform.example.test/mcp"
     assert [item.name for item in catalog.skills] == list(_DEFAULT_TEST_SKILLS)
@@ -535,7 +527,7 @@ def test_cli_fetch_follows_resource_pagination_and_normalizes_order(monkeypatch)
         lambda: "https://platform.example.test",
     )
 
-    catalog = cli_api.fetch_platform_project_skill_catalog()
+    catalog = cli_api.fetch_platform_code_repository_skill_catalog()
 
     assert [skill.name for skill in catalog.skills] == [
         "alpha_skill",
@@ -563,7 +555,7 @@ def test_cli_fetch_rejects_repeated_resource_pagination_cursor(monkeypatch):
     monkeypatch.setattr(cli_api, "_mcp_json_rpc", _mcp_json_rpc)
 
     with pytest.raises(ApiError, match="repeated a pagination cursor"):
-        cli_api.fetch_platform_project_skill_catalog()
+        cli_api.fetch_platform_code_repository_skill_catalog()
 
 
 def test_mcp_json_rpc_uses_existing_jwt_and_refreshes_once(monkeypatch):
@@ -629,7 +621,7 @@ def test_cli_fetch_rejects_mcp_or_resource_contract_failures(monkeypatch):
         },
     )
     with pytest.raises(ApiError, match="unsupported protocol version"):
-        cli_api.fetch_platform_project_skill_catalog()
+        cli_api.fetch_platform_code_repository_skill_catalog()
 
     rows = _platform_rows()
     listed_resources = [
@@ -650,7 +642,7 @@ def test_cli_fetch_rejects_mcp_or_resource_contract_failures(monkeypatch):
 
     monkeypatch.setattr(cli_api, "_mcp_json_rpc", _drifted_mcp)
     with pytest.raises(ApiError, match="content hash mismatch"):
-        cli_api.fetch_platform_project_skill_catalog()
+        cli_api.fetch_platform_code_repository_skill_catalog()
 
 
 def test_sdk_source_tree_does_not_vendor_platform_owned_content():
@@ -661,8 +653,8 @@ def test_sdk_source_tree_does_not_vendor_platform_owned_content():
         sdk_root / "agent_scaffold" / "SDK_CAPABILITY_ASSEMBLY.json",
         sdk_root / "agent_scaffold" / "skills" / "project_design",
         sdk_root / "agent_scaffold" / "skills" / "a2a_communication",
-        sdk_root / "agent_scaffold" / "skills" / "project_local_setup",
-        sdk_root / "agent_scaffold" / "skills" / "project_to_agent",
+        sdk_root / "agent_scaffold" / "skills" / "code_repository_local_setup",
+        sdk_root / "agent_scaffold" / "skills" / "code_repository_to_agent",
         sdk_root / "agent_scaffold" / "skills" / "static_site",
         sdk_root / "mainsequence" / "platform_capability_snapshot.py",
     ]
@@ -676,20 +668,20 @@ def test_sdk_source_tree_does_not_vendor_extension_library_routing_skills():
     assert not (sdk_root / "agent_scaffold" / "skills" / "ms-markets").exists()
 
 
-def test_project_maintenance_is_sdk_owned_and_uses_canonical_cli_workflows():
+def test_code_repository_maintenance_is_sdk_owned_and_uses_canonical_cli_workflows():
     sdk_root = Path(__file__).resolve().parents[1]
     skill_path = (
-        sdk_root / "agent_scaffold" / "skills" / "maintenance" / "project-maintenance" / "SKILL.md"
+        sdk_root / "agent_scaffold" / "skills" / "maintenance" / "code_repository_maintenance" / "SKILL.md"
     )
     content = skill_path.read_text(encoding="utf-8")
 
-    assert "name: project-maintenance" in content
-    assert "mainsequence project build_local_venv --path ." in content
-    assert "mainsequence project refresh_token --path ." in content
-    assert "mainsequence project update-sdk --path ." in content
-    assert "mainsequence project sync --path . -m" in content
-    assert content.index("mainsequence project update_agent_skills --path .") < (
-        content.index("mainsequence project update AGENTS.md --path .")
+    assert "name: code_repository_maintenance" in content
+    assert "mainsequence code-repository build-local-venv --path ." in content
+    assert "mainsequence code-repository refresh-token --path ." in content
+    assert "mainsequence code-repository update-sdk --path ." in content
+    assert "mainsequence code-repository sync --path . -m" in content
+    assert content.index("mainsequence code-repository update-agent-skills --path .") < (
+        content.index("mainsequence code-repository update AGENTS.md --path .")
     )
     assert "Do not call `sync-after-commit`" in content
     assert "mainsequence://" not in content

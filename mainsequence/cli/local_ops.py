@@ -31,8 +31,8 @@ def normalize_path(p: str | os.PathLike[str]) -> pathlib.Path:
     return pathlib.Path(p).expanduser().resolve()
 
 
-def venv_paths(project_dir: pathlib.Path) -> VenvPaths:
-    venv = project_dir / ".venv"
+def venv_paths(code_repository_dir: pathlib.Path) -> VenvPaths:
+    venv = code_repository_dir / ".venv"
     if sys.platform == "win32":
         py = venv / "Scripts" / "python.exe"
         uv = venv / "Scripts" / "uv.exe"
@@ -47,14 +47,14 @@ def venv_paths(project_dir: pathlib.Path) -> VenvPaths:
     return VenvPaths(venv_dir=venv, python=py, uv=uv)
 
 
-def ensure_venv(project_dir: pathlib.Path) -> VenvPaths:
+def ensure_venv(code_repository_dir: pathlib.Path) -> VenvPaths:
     """
     Ensure .venv exists and python executable is present.
 
     Raises:
         RuntimeError: if missing
     """
-    vp = venv_paths(project_dir)
+    vp = venv_paths(code_repository_dir)
     if not vp.venv_dir.exists() or not vp.venv_dir.is_dir():
         raise RuntimeError("A virtual environment needs to be set first (.venv not found).")
     if not vp.python.exists():
@@ -62,14 +62,14 @@ def ensure_venv(project_dir: pathlib.Path) -> VenvPaths:
     return vp
 
 
-def ensure_uv_installed(project_dir: pathlib.Path, upgrade: bool = True) -> pathlib.Path:
+def ensure_uv_installed(code_repository_dir: pathlib.Path, upgrade: bool = True) -> pathlib.Path:
     """
     Resolve a usable uv executable for the project workflow.
 
     Returns:
         Path to uv executable
     """
-    vp = ensure_venv(project_dir)
+    vp = ensure_venv(code_repository_dir)
     if vp.uv and vp.uv.exists():
         return vp.uv
 
@@ -161,7 +161,7 @@ def uv_preview_patch_version(
     return version.strip()
 
 
-def git_origin(project_dir: pathlib.Path) -> str:
+def git_origin(code_repository_dir: pathlib.Path) -> str:
     """
     Return git remote origin URL.
 
@@ -169,7 +169,7 @@ def git_origin(project_dir: pathlib.Path) -> str:
         RuntimeError if missing.
     """
     r = subprocess.run(
-        ["git", "-C", str(project_dir), "remote", "get-url", "origin"],
+        ["git", "-C", str(code_repository_dir), "remote", "get-url", "origin"],
         capture_output=True,
         text=True,
     )

@@ -236,11 +236,11 @@ def test_runtime_credential_provider_exchanges_and_writes_access_token(monkeypat
     monkeypatch.setenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET", "cred-secret")
 
     utils = _load_mainsequence_submodule("mainsequence.client.utils")
-    runtime_context_module = importlib.import_module("mainsequence.project_context")
+    runtime_context_module = importlib.import_module("mainsequence.code_repository_context")
     installed_contexts: list[dict] = []
     monkeypatch.setattr(
         runtime_context_module,
-        "_install_authenticated_runtime_project_context",
+        "_install_authenticated_runtime_code_repository_context",
         lambda value: installed_contexts.append(dict(value)),
     )
     calls: list[dict] = []
@@ -253,9 +253,9 @@ def test_runtime_credential_provider_exchanges_and_writes_access_token(monkeypat
                 "access": "runtime-access",
                 "token_type": "Bearer",
                 "expires_in": 300,
-                "runtime_project_context": {
-                    "project_uid": "project-uid",
-                    "project_branch_uid": "project-branch-uid",
+                "runtime_code_repository_context": {
+                    "code_repository_uid": "project-uid",
+                    "code_repository_branch_uid": "code-repository-branch-uid",
                     "repository_branch": "main",
                     "organization_environment_uid": "environment-uid",
                 },
@@ -278,8 +278,8 @@ def test_runtime_credential_provider_exchanges_and_writes_access_token(monkeypat
     assert os.environ["MAINSEQUENCE_REFRESH_TOKEN"] == "must-not-be-used"
     assert installed_contexts == [
         {
-            "project_uid": "project-uid",
-            "project_branch_uid": "project-branch-uid",
+            "code_repository_uid": "project-uid",
+            "code_repository_branch_uid": "code-repository-branch-uid",
             "repository_branch": "main",
             "organization_environment_uid": "environment-uid",
         }

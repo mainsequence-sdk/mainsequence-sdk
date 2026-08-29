@@ -184,8 +184,8 @@ eval "$(mainsequence login --export)"
 Local project provisioning is also runtime-credential aware:
 
 ```bash
-mainsequence project set-up-locally <PROJECT_UID>
-mainsequence project refresh_token --path .
+mainsequence code-repository set-up-locally <PROJECT_UID>
+mainsequence code-repository refresh-token --path .
 ```
 
 When an already authenticated coding-agent runtime uses
@@ -203,13 +203,13 @@ MAINSEQUENCE_ENDPOINT=<platform API origin>
 They do not require or write `MAINSEQUENCE_REFRESH_TOKEN` in runtime credential mode.
 Both local-project commands preserve unrelated `.env` entries while rendering
 the current supported authentication shape. They remove obsolete token aliases
-and retired Project, ProjectBranch, repository-branch, and Environment identity
+and retired Project, CodeRepositoryBranch, repository-branch, and Environment identity
 entries.
 
 Project source identity is separate from authentication. In local and deployed
 project images, the SDK reads the containing sanitized Git checkout, attached
 branch, and exact HEAD commit, then maps that source to Project and
-ProjectBranch through the platform API. Switching branches does not rewrite
+CodeRepositoryBranch through the platform API. Switching branches does not rewrite
 credentials and takes effect in the next process. Runtime credentials authorize
 the deployed target but do not select repository or branch identity.
 
@@ -230,13 +230,13 @@ Important constraints:
 - runtime credential mode wins when `MAINSEQUENCE_AUTH_MODE=runtime_credential`
 - the exchanged access token should be treated as short-lived runtime material
 - project `.env` files may contain runtime credential material; keep `.env` out of version control
-- users and application code never set Project, ProjectBranch, repository
+- users and application code never set Project, CodeRepositoryBranch, repository
   branch, or Organization Environment values to choose context
-- deployed branch-owned SDK requests carry the Git-resolved ProjectBranch; the
-  backend requires equality with the authenticated JobRun, Project Executor, or
+- deployed branch-owned SDK requests carry the Git-resolved CodeRepositoryBranch; the
+  backend requires equality with the authenticated JobRun, CodeRepository Executor, or
   ResourceRelease target
 - a genuine local checkout may select a Git branch, but the SDK resolves its
-  persisted ProjectBranch internally and never treats that local choice as a
+  persisted CodeRepositoryBranch internally and never treats that local choice as a
   deployed runtime authority
 
 Use this for:

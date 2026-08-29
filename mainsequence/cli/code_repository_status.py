@@ -16,7 +16,7 @@ from dataclasses import dataclass
 
 
 @dataclass
-class CurrentProjectInfo:
+class CurrentCodeRepositoryInfo:
     path: str
     folder: str
     venv_path: str | None = None
@@ -39,7 +39,7 @@ class WorkspaceCheckDebug:
 
 
 @dataclass
-class CurrentProjectDebug:
+class CurrentCodeRepositoryDebug:
     workspaces: list[str]
     selected_workspace: str | None = None
     base_dir: str | None = None
@@ -74,10 +74,10 @@ def is_path_within(base: pathlib.Path, target: pathlib.Path) -> bool:
     )
 
 
-def detect_current_project(
+def detect_current_code_repository(
     workspaces: Iterable[str],
     base_dir: str,
-) -> tuple[CurrentProjectInfo | None, CurrentProjectDebug]:
+) -> tuple[CurrentCodeRepositoryInfo | None, CurrentCodeRepositoryDebug]:
     """
     Detect the current MainSequence project from a list of workspace directories.
 
@@ -89,19 +89,19 @@ def detect_current_project(
         (project_info | None, debug)
     """
     workspaces = list(workspaces or [])
-    debug = CurrentProjectDebug(workspaces=workspaces, base_dir=base_dir, checks=[])
+    debug = CurrentCodeRepositoryDebug(workspaces=workspaces, base_dir=base_dir, checks=[])
 
     if not workspaces:
         debug.reason = "no-workspace"
         return None, debug
 
     for w in workspaces:
-        project, check = _analyze_workspace(w, base_dir)
+        code_repository, check = _analyze_workspace(w, base_dir)
         debug.checks.append(check)
-        if project:
+        if code_repository:
             debug.selected_workspace = w
             debug.reason = check.reason or "detected"
-            return project, debug
+            return code_repository, debug
 
     debug.reason = "no-matches"
     return None, debug
@@ -109,7 +109,7 @@ def detect_current_project(
 
 def _analyze_workspace(
     workspace_dir: str, base_dir: str
-) -> tuple[CurrentProjectInfo | None, WorkspaceCheckDebug]:
+) -> tuple[CurrentCodeRepositoryInfo | None, WorkspaceCheckDebug]:
     check = WorkspaceCheckDebug(workspace_dir=workspace_dir, base_dir=base_dir)
 
     try:
@@ -140,14 +140,14 @@ def _analyze_workspace(
         folder = git_root.name
         check.projects_folder = folder
         venv_path, pyver = _detect_venv_info(git_root)
-        project = CurrentProjectInfo(
+        code_repository = CurrentCodeRepositoryInfo(
             path=str(git_root),
             folder=folder,
             venv_path=venv_path,
             python_version=pyver,
         )
         check.reason = "detected-git-worktree"
-        return project, check
+        return code_repository, check
 
     except Exception as e:
         check.reason = f"error:{e}"

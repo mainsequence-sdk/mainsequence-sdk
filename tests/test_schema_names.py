@@ -13,7 +13,7 @@ from mainsequence.meta_tables import (
 )
 
 
-def test_schema_table_name_normalizes_project_prefixed_parts() -> None:
+def test_schema_table_name_normalizes_code_repository_prefixed_parts() -> None:
     assert schema_table_name("SDK Examples", "Account Holdings") == (
         "sdk_examples__account_holdings"
     )
@@ -22,7 +22,7 @@ def test_schema_table_name_normalizes_project_prefixed_parts() -> None:
     )
 
 
-def test_schema_table_name_truncates_with_stable_project_prefix() -> None:
+def test_schema_table_name_truncates_with_stable_code_repository_prefix() -> None:
     table_name = schema_table_name(
         "sdk_examples",
         "very_long_concept_name_that_would_exceed_the_postgres_identifier_limit",
@@ -71,7 +71,7 @@ def test_schema_constraint_helpers() -> None:
     assert len(fk_name) <= POSTGRES_IDENTIFIER_MAX_LENGTH
 
 
-def test_sqlalchemy_naming_convention_generates_project_prefixed_names() -> None:
+def test_sqlalchemy_naming_convention_generates_code_repository_prefixed_names() -> None:
     metadata = MetaData(naming_convention=sqlalchemy_naming_convention())
     account = Table(
         "sdk_examples__account",

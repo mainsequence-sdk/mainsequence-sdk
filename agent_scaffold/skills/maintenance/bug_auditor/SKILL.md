@@ -63,7 +63,7 @@ This skill audits. It does not implement by default.
   `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
 - environment repair, authentication refresh, SDK updates, managed skill
   refresh, and project sync after the failure is classified:
-  `.agents/skills/mainsequence/maintenance/project-maintenance/SKILL.md`
+  `.agents/skills/mainsequence/maintenance/code_repository_maintenance/SKILL.md`
 
 Streamlit dashboard design and implementation failures are target-project application code issues unless the evidence points to Main Sequence deployment, resource discovery, image selection, release creation, or platform runtime behavior.
 

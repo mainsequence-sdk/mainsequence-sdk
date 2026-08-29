@@ -11,9 +11,9 @@ import pytest
 from sqlalchemy import MetaData
 from typer.testing import CliRunner
 
-import mainsequence.project_context as project_context
+import mainsequence.code_repository_context as code_repository_context
 from mainsequence.client.metatables import MetaTable
-from mainsequence.client.metatables.core import MetaTableProjectContextRequest
+from mainsequence.client.metatables.core import MetaTableCodeRepositoryContextRequest
 from mainsequence.meta_tables.migrations import (
     AlembicMetaTableMigration,
     AlembicVersionMetaTable,
@@ -67,19 +67,19 @@ def _migration(
     )
 
 
-def _project_context() -> MetaTableProjectContextRequest:
-    return MetaTableProjectContextRequest(
-        project_branch_uid="11111111-1111-4111-8111-111111111111",
+def _code_repository_context() -> MetaTableCodeRepositoryContextRequest:
+    return MetaTableCodeRepositoryContextRequest(
+        code_repository_branch_uid="11111111-1111-4111-8111-111111111111",
     )
 
 
 @pytest.fixture(autouse=True)
-def _resolved_project_branch_context(monkeypatch):
-    project_uid = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
-    project_branch_uid = "11111111-1111-4111-8111-111111111111"
+def _resolved_code_repository_branch_context(monkeypatch):
+    code_repository_uid = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    code_repository_branch_uid = "11111111-1111-4111-8111-111111111111"
     environment_uid = "22222222-2222-4222-8222-222222222222"
-    project_context._reset_project_runtime_context()
-    source = project_context.GitProjectSourceContext(
+    code_repository_context._reset_code_repository_context()
+    source = code_repository_context.GitCodeRepositorySourceContext(
         repository_root=pathlib.Path.cwd().resolve(),
         canonical_repository_identity="github.com/mainsequence-sdk/migrations",
         repository_branch="main",
@@ -87,19 +87,19 @@ def _resolved_project_branch_context(monkeypatch):
         commit_sha="a" * 40,
     )
     monkeypatch.setattr(
-        project_context,
+        code_repository_context,
         "_resolve_git_source_context",
-        lambda project_dir: source,
+        lambda code_repository_dir: source,
     )
-    project_context.get_project_runtime_context(
-        _project_branch_context_loader=lambda resolved_source: types.SimpleNamespace(
+    code_repository_context.get_code_repository_context(
+        _code_repository_branch_context_loader=lambda resolved_source: types.SimpleNamespace(
             canonical_repository_identity=(resolved_source.canonical_repository_identity),
             repository_branch=resolved_source.repository_branch,
             repository_ref=resolved_source.repository_ref,
             commit_sha=resolved_source.commit_sha,
-            project_branch=types.SimpleNamespace(
-                uid=project_branch_uid,
-                project_uid=project_uid,
+            code_repository_branch=types.SimpleNamespace(
+                uid=code_repository_branch_uid,
+                code_repository_uid=code_repository_uid,
                 repository_branch=resolved_source.repository_branch,
                 organization_environment_uid=environment_uid,
                 metatables_data_source=None,
@@ -107,7 +107,7 @@ def _resolved_project_branch_context(monkeypatch):
         ),
     )
     yield
-    project_context._reset_project_runtime_context()
+    code_repository_context._reset_code_repository_context()
 
 
 def _patch_preflight(monkeypatch, migration_cli, migration, *, emit_reservation=False):
@@ -190,8 +190,8 @@ def _patch_scoped_connection(monkeypatch, migration_cli, captured):
 
     monkeypatch.setattr(
         metatable_models,
-        "_current_metatable_project_context",
-        _project_context,
+        "_current_metatable_code_repository_context",
+        _code_repository_context,
     )
 
     def fake_issue_migration_connection(self, request, *, timeout=None):
@@ -274,7 +274,7 @@ def test_migrations_current_uses_scoped_connection_without_printing_secret(monke
     assert result.exit_code == 0
     assert captured["meta_table_uid"] == "registry-meta-table-uid"
     assert not hasattr(captured["connection_request"], "meta_table_uids")
-    assert not hasattr(captured["connection_request"], "project_context")
+    assert not hasattr(captured["connection_request"], "code_repository_context")
     assert captured["connection_timeout"] == 5.0
     assert captured["sqlalchemy_url"] == "postgresql://temporary-secret"
     assert captured["owner_role"] == "connection-owner"
@@ -449,7 +449,7 @@ def test_migrations_current_reserves_scoped_platform_registry(monkeypatch):
     assert registry_row["provisioning_status"] == "reserved"
     assert registry_row["is_alembic_managed"] is True
     assert registry_row["alembic_version_meta_table_uid"] is None
-    assert registry_row["project_context"] == _project_context().model_dump(mode="json")
+    assert registry_row["code_repository_context"] == _code_repository_context().model_dump(mode="json")
     registry = migration.alembic_registry.get_meta_table()
     assert registry is not None
     assert registry.management_mode == "platform_managed"
@@ -521,8 +521,8 @@ def test_migrations_current_reuses_registry_across_independent_cli_operations(
     )
     monkeypatch.setattr(
         metatable_models,
-        "_current_metatable_project_context",
-        _project_context,
+        "_current_metatable_code_repository_context",
+        _code_repository_context,
     )
     monkeypatch.setattr(
         MetaTable,

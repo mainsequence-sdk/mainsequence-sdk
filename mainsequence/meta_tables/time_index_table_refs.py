@@ -11,8 +11,8 @@ import structlog.contextvars as cvars
 from mainsequence.client.dtype_codec import TIMESTAMP_TZ, token_to_pandas_series
 from mainsequence.client.metatables import MetaTable, TimeIndexMetaTable, TimeIndexTableUpdate
 from mainsequence.client.utils import DoesNotExist
+from mainsequence.code_repository_context import resolve_organization_environment_uid
 from mainsequence.logconf import logger
-from mainsequence.project_context import resolve_organization_environment_uid
 
 
 def _required_uid(value: Any, *, context: str) -> str:
