@@ -279,7 +279,7 @@ detected and rejected until a deliberate two-phase contract flow exists.
 - [x] Update the then-current MetaTable tutorial with a complete parent and child
   registration example.
 - [x] Update the then-current DataNode tutorial anywhere it shows MetaTable-backed
-  FK storage. The canonical tutorial was later moved to its own Project.
+  FK storage. The canonical tutorial was later moved to its own project.
 - [x] Update `agent_scaffold/skills/data_publishing/meta_tables/SKILL.md` to state
   that platform-managed FKs must use `MetaTableForeignKey(TargetModel, ...)`.
 - [x] Update `agent_scaffold/skills/data_publishing/data_nodes/SKILL.md` to point

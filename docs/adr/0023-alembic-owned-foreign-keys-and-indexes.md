@@ -54,7 +54,7 @@ For Alembic-managed platform MetaTables:
    primary keys, indexes, and foreign keys. This is a local opaque fingerprint
    input only. It must not reintroduce backend FK/index contracts or SDK
    FK/index name ownership.
-6. Project models should use ordinary SQLAlchemy declarations:
+6. Application models should use ordinary SQLAlchemy declarations:
 
 ```python
 from sqlalchemy import ForeignKey, Index
@@ -78,7 +78,7 @@ class Position(Base):
     )
 ```
 
-Project-authored table names should be project-prefixed, for example
+Application-authored table names should be project-prefixed, for example
 `ms_markets__account`, to avoid collisions in shared schemas.
 
 ## Deprecation And Removal

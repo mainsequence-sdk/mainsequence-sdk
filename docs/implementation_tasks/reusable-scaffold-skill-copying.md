@@ -4,7 +4,7 @@ Date: 2026-06-14
 
 > Current Main Sequence behavior: the generic `copy_scaffold_skills(...)`
 > helper and its schema-1 SDK-only sentinel remain supported for extension
-> libraries. The Main Sequence `project update_agent_skills` command now uses
+> libraries. The Main Sequence `code-repository update-agent-skills` command now uses
 > that helper's dry-run/source-validation behavior as one lane of a
 > dual-source installation, combines installed SDK skills with authenticated
 > platform skills, and writes its schema-2 dual-provenance sentinel. The
@@ -13,7 +13,7 @@ Date: 2026-06-14
 
 ## Context
 
-`mainsequence project update_agent_skills` currently owns one hard-coded copy
+`mainsequence code-repository update-agent-skills` currently owns one hard-coded copy
 flow:
 
 1. resolve the target project;
@@ -67,7 +67,7 @@ destination namespace overlaps the source skill bundle.
 Main Sequence should use the same function for:
 
 ```bash
-mainsequence project update_agent_skills --path .
+mainsequence code-repository update-agent-skills --path .
 ```
 
 An extension library should be able to build its own command around the same
@@ -236,7 +236,7 @@ namespace=mainsequence
 pinned_version=4.4.3
 skills_path=/project/.venv/lib/pythonX.Y/site-packages/agent_scaffold/skills
 copied_at_utc=2026-06-14T12:34:56Z
-command=mainsequence project update_agent_skills
+command=mainsequence code-repository update-agent-skills
 ```
 
 Example for `ms-markets`:
@@ -257,7 +257,7 @@ need structured validation.
 
 ## Main Sequence CLI Integration
 
-Refactor `project_update_agent_skills` so it:
+Refactor `code_repository_update_agent_skills` so it:
 
 1. resolves `project_dir` as today;
 2. resolves the target project's installed `agent_scaffold` bundle as today;
@@ -272,7 +272,7 @@ Refactor `project_update_agent_skills` so it:
        namespace="mainsequence",
        skills_path=skills_dir,
        pinned_version=resolved_project_mainsequence_version,
-       command="mainsequence project update_agent_skills",
+       command="mainsequence code-repository update-agent-skills",
        protected_project_roots=(sdk_source_checkout_root_if_known,),
    )
    ```
@@ -341,9 +341,9 @@ It must not overwrite:
 - [x] Add a helper in CLI code to resolve an installed package version from the
   target project `.venv`, using the same interpreter that resolved the scaffold
   bundle.
-- [x] Make version resolution mandatory for `project_update_agent_skills`; do not
+- [x] Make version resolution mandatory for `code_repository_update_agent_skills`; do not
   copy skills when the version cannot be resolved.
-- [x] Refactor `project_update_agent_skills` to call `copy_scaffold_skills(...)`.
+- [x] Refactor `code_repository_update_agent_skills` to call `copy_scaffold_skills(...)`.
 - [x] Extend CLI JSON output with:
   - `library_name`;
   - `namespace`;
@@ -383,7 +383,7 @@ Add focused tests for the reusable function:
 
 Update CLI tests:
 
-- [x] `test_project_update_agent_skills_overwrites_matching_folders` should assert
+- [x] `test_code_repository_update_agent_skills_overwrites_matching_folders` should assert
   the sentinel exists under `.agents/skills/mainsequence/PINNED_FROM.txt`.
 - [x] CLI JSON mode should include sentinel metadata.
 - [x] The version resolver should be monkeypatched so tests do not depend on the

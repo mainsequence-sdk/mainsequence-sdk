@@ -6,12 +6,12 @@ from pathlib import Path
 import mkdocs_gen_files
 
 nav = mkdocs_gen_files.Nav()
-project_name = "mainsequence"
+package_name = "mainsequence"
 
-prefix = [project_name]
+prefix = [package_name]
 
 root = Path(__file__).parent.parent
-src = root / project_name
+src = root / package_name
 docs_folder = root / "docs"
 
 for path in sorted(src.rglob("*.py")):

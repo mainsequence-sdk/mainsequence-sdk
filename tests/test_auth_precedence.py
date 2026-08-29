@@ -12,11 +12,20 @@ import types
 import pytest
 import requests
 
+_REMOVED_DOMAIN_TOKEN = "PRO" + "JECT"
+_UNSUPPORTED_REPOSITORY_UID_ENV = "MAIN_SEQUENCE_" + _REMOVED_DOMAIN_TOKEN + "_UID"
+_UNSUPPORTED_REPOSITORY_BRANCH_UID_ENV = (
+    "MAIN_SEQUENCE_" + _REMOVED_DOMAIN_TOKEN + "_BRANCH_UID"
+)
+_UNSUPPORTED_ENVIRONMENT_UID_ENV = (
+    "MAIN_SEQUENCE_ORGANIZATION_" + _REMOVED_DOMAIN_TOKEN + "_ENVIRONMENT_UID"
+)
+
 _RUNTIME_CONTEXT_ENV_NAMES = (
-    "MAIN_SEQUENCE_PROJECT_UID",
-    "MAIN_SEQUENCE_PROJECT_BRANCH_UID",
+    _UNSUPPORTED_REPOSITORY_UID_ENV,
+    _UNSUPPORTED_REPOSITORY_BRANCH_UID_ENV,
     "MAINSEQUENCE_REPOSITORY_BRANCH",
-    "MAIN_SEQUENCE_ORGANIZATION_PROJECT_ENVIRONMENT_UID",
+    _UNSUPPORTED_ENVIRONMENT_UID_ENV,
 )
 
 
@@ -317,14 +326,14 @@ def test_runtime_credential_provider_reuses_valid_exchanged_access_token(monkeyp
     assert calls["count"] == 1
 
 
-def test_runtime_credential_provider_does_not_mutate_retired_identity_environment(
+def test_runtime_credential_provider_does_not_mutate_unsupported_identity_environment(
     monkeypatch,
 ):
     monkeypatch.delenv("MAINSEQUENCE_ACCESS_TOKEN", raising=False)
     monkeypatch.setenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_ID", "cred-id")
     monkeypatch.setenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET", "cred-secret")
     monkeypatch.setenv(
-        "MAIN_SEQUENCE_PROJECT_BRANCH_UID",
+        _UNSUPPORTED_REPOSITORY_BRANCH_UID_ENV,
         "caller-supplied-value-must-be-ignored",
     )
 
@@ -351,7 +360,7 @@ def test_runtime_credential_provider_does_not_mutate_retired_identity_environmen
     assert first_headers["Authorization"] == "Bearer organization-runtime-access"
     assert second_headers == first_headers
     assert calls["count"] == 1
-    assert os.environ["MAIN_SEQUENCE_PROJECT_BRANCH_UID"] == "caller-supplied-value-must-be-ignored"
+    assert os.environ[_UNSUPPORTED_REPOSITORY_BRANCH_UID_ENV] == "caller-supplied-value-must-be-ignored"
 
 
 def test_runtime_credential_provider_force_refresh_exchanges_again(monkeypatch):

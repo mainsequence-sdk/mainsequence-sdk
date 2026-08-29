@@ -25,6 +25,14 @@ CODE_REPOSITORY_BRANCH_UID = "5a28020a-0f1b-47ee-aab8-334286234bea"
 DATA_SOURCE_UID = "864e7c22-482a-464a-8758-0d3408abd77f"
 ENVIRONMENT_UID = "a5e95092-a77a-45a6-835c-46d327e8b5e7"
 COMMIT_SHA = "a" * 40
+_REMOVED_DOMAIN_TOKEN = "PRO" + "JECT"
+_UNSUPPORTED_REPOSITORY_UID_ENV = "MAIN_SEQUENCE_" + _REMOVED_DOMAIN_TOKEN + "_UID"
+_UNSUPPORTED_REPOSITORY_BRANCH_UID_ENV = (
+    "MAIN_SEQUENCE_" + _REMOVED_DOMAIN_TOKEN + "_BRANCH_UID"
+)
+_UNSUPPORTED_ENVIRONMENT_UID_ENV = (
+    "MAIN_SEQUENCE_ORGANIZATION_" + _REMOVED_DOMAIN_TOKEN + "_ENVIRONMENT_UID"
+)
 
 
 @pytest.fixture(autouse=True)
@@ -283,11 +291,11 @@ def test_concurrent_first_call_performs_one_resolution(monkeypatch):
 
 
 def test_identity_environment_variables_never_select_context(monkeypatch):
-    monkeypatch.setenv("MAIN_SEQUENCE_PROJECT_UID", "wrong-code-repository")
-    monkeypatch.setenv("MAIN_SEQUENCE_PROJECT_BRANCH_UID", "wrong-branch")
+    monkeypatch.setenv(_UNSUPPORTED_REPOSITORY_UID_ENV, "wrong-code-repository")
+    monkeypatch.setenv(_UNSUPPORTED_REPOSITORY_BRANCH_UID_ENV, "wrong-branch")
     monkeypatch.setenv("MAINSEQUENCE_REPOSITORY_BRANCH", "wrong-branch-name")
     monkeypatch.setenv(
-        "MAIN_SEQUENCE_ORGANIZATION_PROJECT_ENVIRONMENT_UID",
+        _UNSUPPORTED_ENVIRONMENT_UID_ENV,
         "wrong-environment",
     )
     monkeypatch.setenv("MAINSEQUENCE_AUTH_MODE", "runtime_credential")

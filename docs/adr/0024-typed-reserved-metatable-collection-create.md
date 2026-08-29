@@ -112,7 +112,7 @@ The relational MetaTable reservation payload must include:
     "physical_schema": "public",
     "physical_table_name": "ms_markets__asset__mainsequence_examples",
     "project_context": {
-      "project_branch_uid": "00000000-0000-4000-8000-000000000001"
+      "code_repository_branch_uid": "00000000-0000-4000-8000-000000000001"
     },
     "table_contract": {
       "version": "relational-table.v1",
@@ -148,7 +148,7 @@ must also include its first-class fields:
     "physical_schema": "public",
     "physical_table_name": "ms_markets__prices__mainsequence_examples",
     "project_context": {
-      "project_branch_uid": "00000000-0000-4000-8000-000000000001"
+      "code_repository_branch_uid": "00000000-0000-4000-8000-000000000001"
     },
     "time_index_name": "time_index",
     "partition_strategy": "backend_default",
@@ -204,7 +204,7 @@ HTTP contract is normal collection `POST` with a list body.
    `alembic_version_meta_table_uid`, and `alembic_revision`;
 8. include authored `physical_table_name` before Alembic runs so Alembic renders
    against the correct SQLAlchemy table name;
-9. internally include the Git-resolved exact ProjectBranch UID in
+9. internally include the Git-resolved exact CodeRepositoryBranch UID in
    `project_context` on every managed wire row, including deployed project-code
    runtimes;
 10. include `time_index_name` and `partition_strategy` only for the

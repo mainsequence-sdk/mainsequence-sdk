@@ -58,7 +58,7 @@ preserve the injected auth mode, credential id/secret, and an exchanged
 `MAINSEQUENCE_ACCESS_TOKEN` in the CodeRepository `.env`; they do not require or write
 `MAINSEQUENCE_REFRESH_TOKEN`. Both commands preserve unrelated `.env` entries
 and do not carry obsolete `MAINSEQUENCE_TOKEN` or
-`MAIN_SEQUENCE_PROJECT_ID` entries into the rendered file. They never write a
+superseded numeric repository-identity entries into the rendered file. They never write a
 CodeRepositoryBranch UID, repository branch, Organization Environment UID, or another
 caller-selected deployed runtime context.
 

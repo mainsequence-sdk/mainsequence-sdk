@@ -1,79 +1,61 @@
-# 7.x To 8.0: CodeRepository Ontology Hard Cut
+# SDK 8.0 CodeRepository Ontology Cutover
 
-Main Sequence SDK 8.0 completes the coordinated repository-domain cutover.
-The governed codebase aggregate is `CodeRepository`, one exact branch context
-is `CodeRepositoryBranch`, and its GitHub provider record is
-`GitHubRepositoryBinding`.
+Main Sequence SDK 8.0 requires the matching canonical backend. The repository
+domain consists of `CodeRepository`, `CodeRepositoryBranch`, and
+`GitHubRepositoryBinding`; no former model, route, field, filter, CLI group,
+structured-output key, runtime discriminator, import, or alias is accepted.
 
-This is a breaking cut. SDK 8 must run with the matching canonical backend.
-The removed model names, routes, fields, filters, CLI group names, structured
-output keys, and runtime discriminators are not available as aliases.
+## Required Consumer Changes
 
-## What Changed
-
-| Removed repository-domain name | SDK 8 name |
-| --- | --- |
-| `Project` | `CodeRepository` |
-| `ProjectBranch` | `CodeRepositoryBranch` |
-| `GitRepository` | `GitHubRepositoryBinding` |
-| `ProjectImage` | `CodeRepositoryImage` |
-| `ProjectResource` | `CodeRepositoryResource` |
-| `project_uid` | `code_repository_uid` |
-| `project_branch_uid` | `code_repository_branch_uid` |
-| `project` CLI group | `code-repository` CLI group |
-| `--projects-base` | `--code-repositories-base` |
+1. Deploy the canonical backend and SDK as one coordinated release.
+2. Use `CodeRepository` for the governed logical repository.
+3. Use `CodeRepositoryBranch` for every exact branch execution context.
+4. Use `GitHubRepositoryBinding` only for GitHub provider integration state.
+5. Use `code_repository_uid` and `code_repository_branch_uid` explicitly; they
+   are different identities and are never interchangeable.
+6. Use the `code-repository` CLI group and `--code-repositories-base` option.
+7. Update structured-output consumers to read the canonical repository fields.
 
 New local setup uses
 `<base>/<organization>/code-repositories/<checkout>`. Existing checkouts are
 ordinary Git repositories and may be moved deliberately; the SDK does not
-silently search the retired managed directory name.
+search superseded managed-directory conventions.
 
-The migration scaffold now generates `CodeRepositoryAlembicVersion` by
-default. Existing authored migration registries keep working under whatever
-class name their repository defines, but regenerated examples and new
-scaffolds use the canonical name.
+The migration scaffold generates `CodeRepositoryAlembicVersion`. Existing
+authored migration registries continue to use the class name recorded in their
+own immutable history, while regenerated examples and new scaffolds use the
+canonical name.
 
-The platform-owned agent conversion skill is installed at
-`.agents/skills/mainsequence/code_repository_to_agent/SKILL.md`. Refresh the
-managed scaffold after upgrading:
+Refresh the platform-owned agent skills and repository instructions after the
+upgrade:
 
 ```bash
 mainsequence code-repository update-agent-skills --path .
 mainsequence code-repository update AGENTS.md --path .
 ```
 
-## Source Context
+## Source Context Verification
 
 The SDK resolves source context once per process from the canonical Git remote,
-attached branch, and exact HEAD commit. The backend maps that source to
-`CodeRepository` and `CodeRepositoryBranch`. An unregistered local branch can
-still be used for ordinary local development; only operations requiring a
+attached branch, and exact HEAD commit. The backend maps that source to one
+`CodeRepository` and one `CodeRepositoryBranch`. An unregistered local branch
+can still be used for ordinary local development; operations requiring a
 registered branch, its Organization Environment, or its MetaTables DataSource
-fail.
+fail closed.
 
-Callers do not supply branch or Environment identity. Retired
-`MAIN_SEQUENCE_PROJECT_*` environment names are removed from rendered `.env`
-files and ignored as source-selection inputs.
+Callers do not select branch or Environment identity through compatibility
+environment variables. Verify the cutover from the checkout:
 
-## Migration Checklist
+```bash
+mainsequence code-repository current --debug --json
+```
 
-1. Deploy the matching canonical backend and SDK as one coordinated release.
-2. Replace removed Python imports, type names, fields, filters, and routes with
-   the CodeRepository equivalents.
-3. Replace CLI invocations and automation using `project` or
-   `--projects-base` with `code-repository` and
-   `--code-repositories-base`.
-4. Update consumers of structured CLI output to read `code_repository` and
-   canonical CodeRepository fields.
-5. Refresh managed skills and `AGENTS.md` from the installed SDK.
-6. Run `mainsequence code-repository current --debug --json` from the checkout
-   and verify a resolved `code_repository_uid` and
-   `code_repository_branch_uid` before branch-owned operations.
-7. Run the repository's tests and live branch-owned smoke checks.
+The result must contain a resolved `code_repository_uid` and
+`code_repository_branch_uid` before branch-owned operations are invoked.
 
-## Vocabulary That Did Not Change
+## Unrelated Vocabulary
 
 Project Blueprint, the backend-owned `project-design` skill, Blueprint
 `project`, and Blueprint `project_to_agent` remain product-intent vocabulary.
 Python packaging `[project]`, `pyproject.toml`, and
-`UV_PROJECT_ENVIRONMENT` are external standards and are also unchanged.
+`UV_PROJECT_ENVIRONMENT` are external standards and are unchanged.

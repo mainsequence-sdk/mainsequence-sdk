@@ -10,13 +10,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
-- Replaced the removed Pod Manager `Project`, `ProjectBranch`, and
-  `GitRepository` SDK ontology with `CodeRepository`,
+- Replaced the superseded Pod Manager repository SDK ontology with `CodeRepository`,
   `CodeRepositoryBranch`, and `GitHubRepositoryBinding` across models,
   fields, routes, filters, runtime context, CLI output, and scaffold guidance.
 - Renamed the local CLI base option to `--code-repositories-base`, changed new
   managed checkout paths to `<base>/<organization>/code-repositories/`, and
-  removed stale Project-era CLI examples and schema descriptions.
+  removed stale repository-era CLI examples and schema descriptions.
 - Renamed the generated Alembic registry default to
   `CodeRepositoryAlembicVersion` and aligned the installed
   `code_repository_to_agent` skill path with the backend catalog.
@@ -32,7 +31,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Fixed
 
 - Restored the ADR-0037 Git-native source resolver for authenticated project
-  runtimes. Runtime credentials now verify the Git-resolved ProjectBranch
+  runtimes. Runtime credentials now verify the Git-resolved CodeRepositoryBranch
   instead of replacing repository, branch, and commit context with a no-Git
   projection; deployed source drift and missing Git fail closed
   ([#100](https://github.com/mainsequence-sdk/mainsequence-sdk/issues/100)).
@@ -91,9 +90,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Installed backend-authenticated `runtime_project_context` during Knative
   runtime-credential exchange before resolving project state. Branch-owned
-  deployed workloads now resolve their exact ProjectBranch and MetaTables Data
+  deployed workloads now resolve their exact CodeRepositoryBranch and MetaTables Data
   Source without inspecting container Git, and SDK-owned runtime requests omit
-  caller-selectable ProjectBranch and Organization Environment selectors.
+  caller-selectable CodeRepositoryBranch and Organization Environment selectors.
 
 ## [6.0.50] - 2026-08-27
 
@@ -142,7 +141,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Aligned MetaTable and TimeIndexMetaTable collection filtering with the backend's
   canonical `organization_environment_uid` query parameter. CLI table listings now
-  derive the exact environment scope from the active Git-resolved ProjectBranch or accept an
+  derive the exact environment scope from the active Git-resolved CodeRepositoryBranch or accept an
   explicit administrative scope outside a registered project checkout.
 
 ## [6.0.39] - 2026-08-23
@@ -151,20 +150,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Adopted the Git-native project source-context contract for local and deployed project code.
   The SDK freezes the containing repository identity, attached branch, and exact HEAD commit once
-  per process, then resolves the authoritative ProjectBranch through the backend's canonical
+  per process, then resolves the authoritative CodeRepositoryBranch through the backend's canonical
   Git-context action.
 - Scoped branch-owned Jobs, images, resources, releases, deployment runs, migrations, MetaTables,
-  DataNodes, and project-executor operations to the resolved ProjectBranch. Unregistered local
+  DataNodes, and code-repository-executor operations to the resolved CodeRepositoryBranch. Unregistered local
   branches remain usable for ordinary development and fail only when a branch-owned operation is
   requested.
 
 ### Removed
 
-- Removed the SDK runtime project-context environment projection and the local `.env` Project UID
-  association. Project, ProjectBranch, repository branch, commit, and Organization Environment are
+- Removed the SDK runtime repository-context environment projection and the local `.env` CodeRepository UID
+  association. CodeRepository, CodeRepositoryBranch, repository branch, commit, and Organization Environment are
   no longer selected from process environment.
-- Removed the retired Project-level default MetaTables DataSource fallback. Project-derived data
-  access now requires the DataSource configured on the exact resolved ProjectBranch.
+- Removed the retired CodeRepository-level default MetaTables DataSource fallback. CodeRepository-derived data
+  access now requires the DataSource configured on the exact resolved CodeRepositoryBranch.
 
 ## [6.0.38] - 2026-08-22
 
@@ -185,9 +184,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
-- Moved deploy-key registration from the ProjectBranch SDK surface to the
-  owning Project. Local project setup now calls the project-scoped endpoint
-  with the logical Project UID while retaining ProjectBranch selection only
+- Moved deploy-key registration from the CodeRepositoryBranch SDK surface to the
+  owning CodeRepository. Local project setup now calls the repository-scoped endpoint
+  with the CodeRepository UID while retaining CodeRepositoryBranch selection only
   for clone readiness and branch choice.
 
 ## [6.0.36] - 2026-08-21
@@ -211,7 +210,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Fixed
 
 - Aligned strict JobRun list and detail parsing with the backend's canonical
-  read-only Project and ProjectBranch projections so CLI log retrieval accepts
+  read-only CodeRepository and CodeRepositoryBranch projections so CLI log retrieval accepts
   current project-scoped responses.
 
 ## [6.0.33] - 2026-08-20
@@ -219,7 +218,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Fixed
 
 - Aligned Agent list and detail parsing with the backend's canonical read-only
-  ProjectBranch and Organization Environment projections, preserving required
+  CodeRepositoryBranch and Organization Environment projections, preserving required
   response keys whose values may be null for unscoped Agents.
 - Added the required Organization Environment discovery scope to Agent listing
   and semantic search, including canonical semantic-search result projections
@@ -232,7 +231,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Jobs now use the platform's exact-image contract. Manually managed Jobs
   require an explicit ready image, while automatically deployed Jobs omit
   image selection so the backend derives and binds the exact image from the
-  ProjectBranch's synchronized commit.
+  CodeRepositoryBranch's synchronized commit.
 - Job and JobRun models and CLI output now expose exact image, commit,
   readiness, automatic-deployment policy, and immutable runtime image state.
 
@@ -245,11 +244,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
-- Compiled SQL operations no longer perform a logical Project lookup when
+- Compiled SQL operations no longer perform a logical CodeRepository lookup when
   `scope.data_source_uid` is omitted. The SDK now preserves the backend's
   optional field contract so branch-owned runtimes can derive execution from
   their declared MetaTable scope without using a runtime credential on a
-  forbidden Project endpoint.
+  removed repository endpoint.
 
 ## [6.0.30] - 2026-08-18
 
@@ -262,7 +261,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Removed
 
 - Removed `mainsequence.client.fastapi.LoggedUserContextMiddleware` and the
-  middleware-only FastAPI extra and Starlette dependency. Project applications
+  middleware-only FastAPI extra and Starlette dependency. project applications
   must not install request identity middleware themselves.
 
 ## [6.0.29] - 2026-08-17
@@ -316,21 +315,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Made A2A calls treat the server-issued UID-based `rpc_url` as opaque; the
   standard message path, body, and authentication headers remain unchanged.
-- Made `DataSource` the sole canonical database identity across ProjectBranch,
+- Made `DataSource` the sole canonical database identity across CodeRepositoryBranch,
   MetaTable, DataNode persistence, SQLAlchemy registration, compiled SQL, and
   CLI discovery. Migration credentials are now requested through the owning
   Alembic registry MetaTable.
-- Replaced the former branch-shaped `Project` SDK contract with the logical
-  Project aggregate and added explicit `ProjectBranch` and `GitRepository`
+- Replaced the former branch-shaped repository SDK contract with the logical
+  CodeRepository aggregate and added explicit `CodeRepositoryBranch` and `GitHubRepositoryBinding`
   models. Branch-owned jobs, images, resources, releases, deployment runs,
-  DataNodes, and coding-agent services now use ProjectBranch UIDs.
-- Kept `MAIN_SEQUENCE_PROJECT_UID` as the only persisted local Project
-  identity. The SDK resolves the active ProjectBranch from that logical
-  Project and the checked-out Git branch; it does not introduce or read a
-  `MAIN_SEQUENCE_PROJECT_BRANCH_UID` variable.
-- Updated Project creation and bulk deletion to the canonical backend request
+  DataNodes, and coding-agent services now use CodeRepositoryBranch UIDs.
+- Kept the canonical CodeRepository UID as the only persisted local repository identity
+  identity. The SDK resolves the active CodeRepositoryBranch from that logical
+  CodeRepository and the checked-out Git branch; it does not introduce or read a
+  superseded branch-identity environment variable.
+- Updated CodeRepository creation and bulk deletion to the canonical backend request
   contracts and moved branch actions, including summaries and repository
-  browsing, onto `ProjectBranch`.
+  browsing, onto `CodeRepositoryBranch`.
 - Made SQLAlchemy a core SDK dependency for MetaTable declaration and compiled
   SQL support.
 - Reworked MetaTable schema migration docs around Alembic-rendered SQL artifacts
@@ -347,10 +346,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
-- Made the separate `mainsequence-sdk-tutorial` Project the sole source of
+- Made the separate `mainsequence-sdk-tutorial` repository the sole source of
   beginner tutorial documentation and kept one repository link for discovery.
 - Clarified that runnable applications own their code, migrations, fixtures,
-  tests, and documentation in self-contained Project repositories.
+  tests, and documentation in self-contained repositories.
 
 ### Removed
 
@@ -385,9 +384,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
-- Updated project-facing CLI arguments, local env write-paths, and current-project detection to prefer `project_uid` and `MAIN_SEQUENCE_PROJECT_UID`.
-- Updated local project setup, token refresh, sync, and project resolution helpers to operate on public project references while keeping internal numeric adapters only where backend filters still require row ids.
-- Aligned `Project` client helpers and quick-search models with the public UID contract.
+- Updated code-repository CLI arguments, local env write paths, and checkout detection to use `code_repository_uid`.
+- Updated local code repository setup, token refresh, sync, and project resolution helpers to operate on public project references while keeping internal numeric adapters only where backend filters still require row ids.
+- Aligned `CodeRepository` client helpers and quick-search models with the public UID contract.
 
 ## [4.0.1] - 2026-05-25
 
@@ -466,7 +465,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Cleaned up Ruff `F821` undefined-name issues across the SDK, TDAG, virtual fund builder, and CLI modules.
 - Cleaned up Ruff `B904` exception chaining in CLI and utility code so wrapped exceptions now preserve their original cause.
 - Fixed the real Ruff `B008` default-evaluation issue in the bond pricer and configured Ruff to ignore the standard Typer default-signature pattern in `mainsequence/cli/cli.py`.
-- Reworked local pod-project resolution so SDK code validates `MAIN_SEQUENCE_PROJECT_ID`, resolves projects lazily, caches successful lookups, and surfaces clearer errors when a local pod project is required but unavailable.
+- Reworked local pod execution-context resolution to validate the then-current numeric runtime identity, resolves projects lazily, caches successful lookups, and surfaces clearer errors when a local pod project is required but unavailable.
 - Updated job, DataNode update, and TDAG build-signature paths to use the new local pod-project resolution helpers instead of relying on a fragile global `POD_PROJECT` snapshot.
 
 ### Changed

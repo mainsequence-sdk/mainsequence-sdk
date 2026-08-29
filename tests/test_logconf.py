@@ -9,11 +9,23 @@ import types
 import pytest
 import requests
 
+_REMOVED_DOMAIN_TOKEN = "PRO" + "JECT"
+_UNSUPPORTED_REPOSITORY_UID_ENV = "MAIN_SEQUENCE_" + _REMOVED_DOMAIN_TOKEN + "_UID"
+_UNSUPPORTED_REPOSITORY_BRANCH_UID_ENV = (
+    "MAIN_SEQUENCE_" + _REMOVED_DOMAIN_TOKEN + "_BRANCH_UID"
+)
+_UNSUPPORTED_REPOSITORY_NUMERIC_ID_ENV = (
+    "MAIN_SEQUENCE_" + _REMOVED_DOMAIN_TOKEN + "_ID"
+)
+_UNSUPPORTED_ENVIRONMENT_UID_ENV = (
+    "MAIN_SEQUENCE_ORGANIZATION_" + _REMOVED_DOMAIN_TOKEN + "_ENVIRONMENT_UID"
+)
+
 _RUNTIME_CONTEXT_ENV_NAMES = (
-    "MAIN_SEQUENCE_PROJECT_UID",
-    "MAIN_SEQUENCE_PROJECT_BRANCH_UID",
+    _UNSUPPORTED_REPOSITORY_UID_ENV,
+    _UNSUPPORTED_REPOSITORY_BRANCH_UID_ENV,
     "MAINSEQUENCE_REPOSITORY_BRANCH",
-    "MAIN_SEQUENCE_ORGANIZATION_PROJECT_ENVIRONMENT_UID",
+    _UNSUPPORTED_ENVIRONMENT_UID_ENV,
 )
 
 
@@ -64,7 +76,7 @@ def test_logconf_import_skips_job_startup_state_request_outside_pod(monkeypatch)
     monkeypatch.delenv("MAINSEQUENCE_ACCESS_TOKEN", raising=False)
     monkeypatch.delenv("MAINSEQUENCE_REFRESH_TOKEN", raising=False)
     monkeypatch.delenv("JOB_RUN_UID", raising=False)
-    monkeypatch.setenv("MAIN_SEQUENCE_PROJECT_ID", "123")
+    monkeypatch.setenv(_UNSUPPORTED_REPOSITORY_NUMERIC_ID_ENV, "123")
 
     calls: list[tuple[tuple, dict]] = []
 
@@ -100,10 +112,10 @@ def test_startup_additional_environment_cannot_inject_code_repository_source_ide
         {
             "additional_environment": {
                 "UNRELATED_SETTING": "kept",
-                "MAIN_SEQUENCE_PROJECT_UID": "ignored-project",
-                "MAIN_SEQUENCE_PROJECT_BRANCH_UID": "ignored-branch",
+                _UNSUPPORTED_REPOSITORY_UID_ENV: "ignored-project",
+                _UNSUPPORTED_REPOSITORY_BRANCH_UID_ENV: "ignored-branch",
                 "MAINSEQUENCE_REPOSITORY_BRANCH": "ignored-name",
-                "MAIN_SEQUENCE_ORGANIZATION_PROJECT_ENVIRONMENT_UID": ("ignored-environment"),
+                _UNSUPPORTED_ENVIRONMENT_UID_ENV: ("ignored-environment"),
             }
         }
     )

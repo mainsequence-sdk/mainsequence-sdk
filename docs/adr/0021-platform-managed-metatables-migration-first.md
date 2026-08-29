@@ -173,7 +173,7 @@ such as `c15aca390d02_migration.py`.
 ### Positive
 
 - Users get one platform-managed workflow: `migrations upgrade`.
-- Project code does not need scattered `Model.register()` bootstrap calls.
+- Application code does not need scattered `Model.register()` bootstrap calls.
 - Alembic SQL always targets backend-resolved physical table names.
 - Initial and later migrations share the same lifecycle.
 - Catalog state and schema state are reconciled together.
@@ -223,7 +223,7 @@ or be treated as private SDK plumbing.
 - [x] Update `docs/knowledge/meta_tables/migrations.md`.
 - [x] Update `docs/knowledge/meta_tables/api.md`.
 - [x] Update the then-current tutorial migration page. The canonical tutorial was
-  later moved to its own Project.
+  later moved to its own project.
 - [x] Update MetaTable examples to be migration-first only.
 - [x] Update MetaTable skill guidance to stop recommending direct registration
   for platform-managed models.

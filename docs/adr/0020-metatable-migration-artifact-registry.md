@@ -260,7 +260,7 @@ callers never provide it:
   "physical_schema": "public",
   "physical_table_name": "msm_alembic_version",
   "project_context": {
-    "project_branch_uid": "uuid"
+    "code_repository_branch_uid": "uuid"
   },
   "identifier": "msm.alembic_version",
   "namespace": "msm",
@@ -368,7 +368,7 @@ request = migration.alembic_registry.build_registration_request(
   "physical_schema": "public",
   "physical_table_name": "msm_alembic_version",
   "project_context": {
-    "project_branch_uid": "uuid"
+    "code_repository_branch_uid": "uuid"
   },
   "identifier": "msm.alembic_version",
   "namespace": "msm",
@@ -638,7 +638,7 @@ The SDK owns:
   SQLAlchemy table names before Alembic runs
 - docs and examples that show Alembic, not SDK operation lists, including the
   then-current migration walkthrough later relocated to the canonical tutorial
-  Project
+  project
 
 The SDK does not own:
 
@@ -713,7 +713,7 @@ Remove these concepts from SDK public behavior:
 Remove or rewrite this supporting material:
 
 - the then-current SDK MetaTable migration example tree, later removed when
-  runnable applications moved to self-contained Project repositories
+  runnable applications moved to self-contained project repositories
 - migration sections in the then-current SDK-hosted tutorial
 - stale artifact-table content in `docs/knowledge/meta_tables/migrations.md`
 - stale artifact-table content in `docs/knowledge/meta_tables/api.md`
@@ -772,7 +772,7 @@ stable identifier.
   table-name identifiers.
 - [x] Update the then-current tutorial migration page so the user-facing flow is
   one `mainsequence migrations upgrade --provider ... head` path with table-name
-  catalog sync. The canonical tutorial was later moved to its own Project.
+  catalog sync. The canonical tutorial was later moved to its own project.
 - [x] Update `docs/knowledge/meta_tables/migrations.md` and
   `docs/knowledge/meta_tables/api.md` to remove the `--register-metatables`
   workflow and document table-name catalog sync.

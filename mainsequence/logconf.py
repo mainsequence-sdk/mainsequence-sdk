@@ -21,20 +21,10 @@ from structlog.stdlib import BoundLogger
 
 from .defaults import resolve_backend_endpoint
 from .instrumentation import OTelJSONRenderer
+from .repository_identity_security import UNSUPPORTED_SOURCE_IDENTITY_ENV_NAMES
 from .runtime_flags import is_running_in_pod
 
 logger = None
-
-# Removed identity inputs are denylisted, not supported as aliases.
-_RETIRED_CODE_REPOSITORY_SOURCE_ENV = frozenset(
-    {
-        "MAIN_SEQUENCE_PROJECT_UID",
-        "MAIN_SEQUENCE_PROJECT_BRANCH_UID",
-        "MAINSEQUENCE_REPOSITORY_BRANCH",
-        "MAIN_SEQUENCE_ORGANIZATION_PROJECT_ENVIRONMENT_UID",
-    }
-)
-
 
 def _get_sdk_version() -> str:
     """Return the installed SDK package version for automatic log binding."""
@@ -227,7 +217,7 @@ def _apply_additional_environment(startup_state: Mapping[str, Any]) -> None:
     if isinstance(extra, dict):
         for k, v in extra.items():
             key = str(k)
-            if key in _RETIRED_CODE_REPOSITORY_SOURCE_ENV:
+            if key in UNSUPPORTED_SOURCE_IDENTITY_ENV_NAMES:
                 continue
             os.environ[key] = str(v)
 

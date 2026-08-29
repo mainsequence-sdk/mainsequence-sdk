@@ -58,7 +58,7 @@ from mainsequence.meta_tables.migrations import (
 )
 ```
 
-Project code should define models and project-specific naming policy. The SDK
+Application code should define models and project-specific naming policy. The SDK
 should provide the migration wiring.
 
 ## SDK-Owned Module
@@ -163,7 +163,7 @@ Behavior:
 - wires the provider for normal CLI commands;
 - supports both full package providers and one-model dynamic providers.
 
-Projects should not need to manually calculate `version_locations` and
+Applications should not need to manually calculate `version_locations` and
 `version_path`.
 
 ### Alembic Version Table Factory
@@ -183,7 +183,7 @@ build_alembic_version_metatable(
 This removes the repeated hand-written subclass where the only meaningful
 inputs are namespace, identifier, schema, table name, and version column.
 
-Projects may still write a subclass directly when they need normal Python
+Applications may still write a subclass directly when they need normal Python
 class-level clarity.
 
 ### Metadata Selection
@@ -219,7 +219,7 @@ SDK-owned `env.py` should support:
 - online execution from `sqlalchemy.url` for direct Alembic compatibility;
 - offline execution.
 
-Project `env.py` should be thin or generated. It should not duplicate the SDK
+Application `env.py` should be thin or generated. It should not duplicate the SDK
 implementation.
 
 ## CLI Scaffolding
@@ -265,7 +265,7 @@ The scaffold command should be idempotent:
 - refuse to overwrite changed existing files unless `--force` is passed;
 - print exactly which files were created, skipped, or overwritten.
 
-## Project-Owned Responsibilities
+## Application-Owned Responsibilities
 
 The SDK should not own:
 

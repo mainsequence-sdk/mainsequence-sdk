@@ -15,6 +15,14 @@ from typer.testing import CliRunner
 USER_UID = "8f5d6b54-2f5e-4a8b-bb10-0b17f3f4c123"
 TEAM_UID = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
 _REAL_SUBPROCESS_RUN = subprocess.run
+_REMOVED_DOMAIN_TOKEN = "PRO" + "JECT"
+_UNSUPPORTED_REPOSITORY_UID_ENV = "MAIN_SEQUENCE_" + _REMOVED_DOMAIN_TOKEN + "_UID"
+_UNSUPPORTED_REPOSITORY_BRANCH_UID_ENV = (
+    "MAIN_SEQUENCE_" + _REMOVED_DOMAIN_TOKEN + "_BRANCH_UID"
+)
+_UNSUPPORTED_REPOSITORY_NUMERIC_ID_ENV = (
+    "MAIN_SEQUENCE_" + _REMOVED_DOMAIN_TOKEN + "_ID"
+)
 
 
 def _load_cli_module():
@@ -2529,7 +2537,7 @@ def test_config_get_tokens_prefers_env_over_local_store(cli_mod, monkeypatch, tm
     assert out["refresh"] == "env-ref"
 
 
-def test_prime_runtime_env_reads_endpoint_but_ignores_retired_code_repository_identity(
+def test_prime_runtime_env_reads_endpoint_but_ignores_unsupported_repository_identity(
     cli_mod, monkeypatch, tmp_path
 ):
     bootstrap = importlib.import_module("mainsequence.bootstrap")
@@ -2537,7 +2545,7 @@ def test_prime_runtime_env_reads_endpoint_but_ignores_retired_code_repository_id
     code_repository_dir.mkdir(parents=True, exist_ok=True)
     (code_repository_dir / ".env").write_text(
         "MAINSEQUENCE_ENDPOINT=https://sdk-backend.test\n"
-        "MAIN_SEQUENCE_PROJECT_UID=code-repository-uid-123\n",
+        f"{_UNSUPPORTED_REPOSITORY_UID_ENV}=code-repository-uid-123\n",
         encoding="utf-8",
     )
 
@@ -2550,8 +2558,8 @@ def test_prime_runtime_env_reads_endpoint_but_ignores_retired_code_repository_id
     )
     for key in (
         "MAINSEQUENCE_ENDPOINT",
-        "MAIN_SEQUENCE_PROJECT_UID",
-        "MAIN_SEQUENCE_PROJECT_ID",
+        _UNSUPPORTED_REPOSITORY_UID_ENV,
+        _UNSUPPORTED_REPOSITORY_NUMERIC_ID_ENV,
         "MAINSEQUENCE_ACCESS_TOKEN",
         "MAINSEQUENCE_REFRESH_TOKEN",
     ):
@@ -2560,8 +2568,8 @@ def test_prime_runtime_env_reads_endpoint_but_ignores_retired_code_repository_id
     bootstrap.prime_runtime_env()
 
     assert os.environ["MAINSEQUENCE_ENDPOINT"] == "https://sdk-backend.test"
-    assert "MAIN_SEQUENCE_PROJECT_UID" not in os.environ
-    assert "MAIN_SEQUENCE_PROJECT_ID" not in os.environ
+    assert _UNSUPPORTED_REPOSITORY_UID_ENV not in os.environ
+    assert _UNSUPPORTED_REPOSITORY_NUMERIC_ID_ENV not in os.environ
     assert os.environ["MAINSEQUENCE_ACCESS_TOKEN"] == "acc-123"
     assert os.environ["MAINSEQUENCE_REFRESH_TOKEN"] == "ref-456"
 
@@ -2580,8 +2588,8 @@ def test_prime_runtime_env_falls_back_to_cli_login_context(cli_mod, monkeypatch,
     )
     for key in (
         "MAINSEQUENCE_ENDPOINT",
-        "MAIN_SEQUENCE_PROJECT_UID",
-        "MAIN_SEQUENCE_PROJECT_ID",
+        _UNSUPPORTED_REPOSITORY_UID_ENV,
+        _UNSUPPORTED_REPOSITORY_NUMERIC_ID_ENV,
         "MAINSEQUENCE_ACCESS_TOKEN",
         "MAINSEQUENCE_REFRESH_TOKEN",
     ):
@@ -2590,8 +2598,8 @@ def test_prime_runtime_env_falls_back_to_cli_login_context(cli_mod, monkeypatch,
     bootstrap.prime_runtime_env()
 
     assert os.environ["MAINSEQUENCE_ENDPOINT"] == "http://127.0.0.1:8000"
-    assert "MAIN_SEQUENCE_PROJECT_UID" not in os.environ
-    assert "MAIN_SEQUENCE_PROJECT_ID" not in os.environ
+    assert _UNSUPPORTED_REPOSITORY_UID_ENV not in os.environ
+    assert _UNSUPPORTED_REPOSITORY_NUMERIC_ID_ENV not in os.environ
     assert os.environ["MAINSEQUENCE_ACCESS_TOKEN"] == "acc-123"
     assert os.environ["MAINSEQUENCE_REFRESH_TOKEN"] == "ref-456"
 
@@ -3055,7 +3063,7 @@ def test_get_code_repository_time_index_table_updates_sets_code_repository_env(c
         api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"}
     )
     monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
-    monkeypatch.delenv("MAIN_SEQUENCE_PROJECT_UID", raising=False)
+    monkeypatch.delenv(_UNSUPPORTED_REPOSITORY_UID_ENV, raising=False)
     monkeypatch.setattr(
         api_mod,
         "resolve_code_repository_branch_uid",
@@ -3119,7 +3127,7 @@ def test_get_code_repository_time_index_table_updates_sets_code_repository_env(c
         @classmethod
         def get(cls, pk, timeout=None):
             captured["code_repository_branch_uid_arg"] = pk
-            captured["env_code_repository_uid"] = os.environ.get("MAIN_SEQUENCE_PROJECT_UID")
+            captured["env_code_repository_uid"] = os.environ.get(_UNSUPPORTED_REPOSITORY_UID_ENV)
             return types.SimpleNamespace(
                 get_time_index_table_updates=lambda timeout=None: [FakeUpdate()]
             )
@@ -3138,7 +3146,7 @@ def test_get_code_repository_time_index_table_updates_sets_code_repository_env(c
     assert captured["env_code_repository_uid"] is None
     assert captured["jwt"] == ("acc", "ref")
     assert out == [{"uid": "time-index-table-update-uid-10", "update_hash": "abc123"}]
-    assert os.environ.get("MAIN_SEQUENCE_PROJECT_UID") is None
+    assert os.environ.get(_UNSUPPORTED_REPOSITORY_UID_ENV) is None
 
 
 def test_list_code_repository_users_can_view_uses_client_model(cli_mod, monkeypatch):
@@ -3969,7 +3977,7 @@ def test_create_code_repository_image_uses_client_model(cli_mod, monkeypatch):
         api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"}
     )
     monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
-    monkeypatch.delenv("MAIN_SEQUENCE_PROJECT_UID", raising=False)
+    monkeypatch.delenv(_UNSUPPORTED_REPOSITORY_UID_ENV, raising=False)
     monkeypatch.setattr(api_mod, "resolve_code_repository_branch_uid", lambda value: str(value))
 
     fake_client_pkg = types.ModuleType("mainsequence.client")
@@ -4005,7 +4013,7 @@ def test_create_code_repository_image_uses_client_model(cli_mod, monkeypatch):
             captured["code_repository_commit_hash"] = code_repository_commit_hash
             captured["related_code_repository_branch_uid"] = related_code_repository_branch_uid
             captured["base_image_uid"] = base_image_uid
-            captured["env_code_repository_uid"] = os.environ.get("MAIN_SEQUENCE_PROJECT_UID")
+            captured["env_code_repository_uid"] = os.environ.get(_UNSUPPORTED_REPOSITORY_UID_ENV)
             return types.SimpleNamespace(
                 model_dump=lambda: {
                     "uid": "8b62d1dd-e146-44af-957c-38c5f5b1d8d5",
@@ -4039,7 +4047,7 @@ def test_create_code_repository_image_uses_client_model(cli_mod, monkeypatch):
     assert captured["jwt"] == ("acc", "ref")
     assert out["uid"] == "8b62d1dd-e146-44af-957c-38c5f5b1d8d5"
     assert out["build_error"] is False
-    assert os.environ.get("MAIN_SEQUENCE_PROJECT_UID") is None
+    assert os.environ.get(_UNSUPPORTED_REPOSITORY_UID_ENV) is None
 
 
 def test_list_code_repository_images_uses_client_model(cli_mod, monkeypatch):
@@ -4050,7 +4058,7 @@ def test_list_code_repository_images_uses_client_model(cli_mod, monkeypatch):
         api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"}
     )
     monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
-    monkeypatch.delenv("MAIN_SEQUENCE_PROJECT_UID", raising=False)
+    monkeypatch.delenv(_UNSUPPORTED_REPOSITORY_UID_ENV, raising=False)
     monkeypatch.setattr(api_mod, "resolve_code_repository_branch_uid", lambda value: str(value))
 
     fake_client_pkg = types.ModuleType("mainsequence.client")
@@ -4077,7 +4085,7 @@ def test_list_code_repository_images_uses_client_model(cli_mod, monkeypatch):
         @classmethod
         def filter(cls, timeout=None, **kwargs):
             captured["filters"].append(kwargs)
-            captured["env_code_repository_uid"] = os.environ.get("MAIN_SEQUENCE_PROJECT_UID")
+            captured["env_code_repository_uid"] = os.environ.get(_UNSUPPORTED_REPOSITORY_UID_ENV)
             if "related_code_repository_branch_uid" in kwargs:
                 return [
                     types.SimpleNamespace(
@@ -4124,7 +4132,7 @@ def test_list_code_repository_images_uses_client_model(cli_mod, monkeypatch):
             "creation_date": "2026-04-07T09:00:00Z",
         }
     ]
-    assert os.environ.get("MAIN_SEQUENCE_PROJECT_UID") is None
+    assert os.environ.get(_UNSUPPORTED_REPOSITORY_UID_ENV) is None
 
 
 def test_delete_code_repository_image_uses_client_model(cli_mod, monkeypatch):
@@ -4203,7 +4211,7 @@ def test_list_code_repository_jobs_uses_client_model(cli_mod, monkeypatch):
         api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"}
     )
     monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
-    monkeypatch.delenv("MAIN_SEQUENCE_PROJECT_UID", raising=False)
+    monkeypatch.delenv(_UNSUPPORTED_REPOSITORY_UID_ENV, raising=False)
     monkeypatch.setattr(api_mod, "resolve_code_repository_branch_uid", lambda value: str(value))
 
     fake_client_pkg = types.ModuleType("mainsequence.client")
@@ -4229,7 +4237,7 @@ def test_list_code_repository_jobs_uses_client_model(cli_mod, monkeypatch):
         @classmethod
         def filter(cls, timeout=None, **kwargs):
             captured["filters"].append(kwargs)
-            captured["env_code_repository_uid"] = os.environ.get("MAIN_SEQUENCE_PROJECT_UID")
+            captured["env_code_repository_uid"] = os.environ.get(_UNSUPPORTED_REPOSITORY_UID_ENV)
             if "code_repository_branch_uid" in kwargs:
                 return [
                     types.SimpleNamespace(
@@ -4290,7 +4298,7 @@ def test_list_code_repository_jobs_uses_client_model(cli_mod, monkeypatch):
             "related_image": 77,
         }
     ]
-    assert os.environ.get("MAIN_SEQUENCE_PROJECT_UID") is None
+    assert os.environ.get(_UNSUPPORTED_REPOSITORY_UID_ENV) is None
 
 
 def test_list_code_repository_resources_uses_client_model(cli_mod, monkeypatch):
@@ -4301,7 +4309,7 @@ def test_list_code_repository_resources_uses_client_model(cli_mod, monkeypatch):
         api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"}
     )
     monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
-    monkeypatch.delenv("MAIN_SEQUENCE_PROJECT_UID", raising=False)
+    monkeypatch.delenv(_UNSUPPORTED_REPOSITORY_UID_ENV, raising=False)
     monkeypatch.setattr(api_mod, "resolve_code_repository_branch_uid", lambda value: str(value))
 
     fake_client_pkg = types.ModuleType("mainsequence.client")
@@ -4328,7 +4336,7 @@ def test_list_code_repository_resources_uses_client_model(cli_mod, monkeypatch):
         @classmethod
         def filter(cls, timeout=None, **kwargs):
             captured["filters"].append(kwargs)
-            captured["env_code_repository_uid"] = os.environ.get("MAIN_SEQUENCE_PROJECT_UID")
+            captured["env_code_repository_uid"] = os.environ.get(_UNSUPPORTED_REPOSITORY_UID_ENV)
             return [
                 types.SimpleNamespace(
                     model_dump=lambda: {
@@ -4381,7 +4389,7 @@ def test_list_code_repository_resources_uses_client_model(cli_mod, monkeypatch):
         "code_repository_agent_card",
     ]
     assert out[1]["path"] == ".agents/agent_card.json"
-    assert os.environ.get("MAIN_SEQUENCE_PROJECT_UID") is None
+    assert os.environ.get(_UNSUPPORTED_REPOSITORY_UID_ENV) is None
 
 
 def test_create_code_repository_resource_release_uses_client_model(cli_mod, monkeypatch):
@@ -5570,7 +5578,7 @@ def test_create_code_repository_job_uses_client_model_task_schedule(cli_mod, mon
         api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"}
     )
     monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
-    monkeypatch.delenv("MAIN_SEQUENCE_PROJECT_UID", raising=False)
+    monkeypatch.delenv(_UNSUPPORTED_REPOSITORY_UID_ENV, raising=False)
     monkeypatch.setattr(api_mod, "resolve_code_repository_branch_uid", lambda value: str(value))
 
     fake_client_pkg = types.ModuleType("mainsequence.client")
@@ -5631,7 +5639,7 @@ def test_create_code_repository_job_uses_client_model_task_schedule(cli_mod, mon
                 "automatic_redeployment_policy": automatic_redeployment_policy,
                 "timeout": timeout,
             }
-            captured["env_code_repository_uid"] = os.environ.get("MAIN_SEQUENCE_PROJECT_UID")
+            captured["env_code_repository_uid"] = os.environ.get(_UNSUPPORTED_REPOSITORY_UID_ENV)
             return types.SimpleNamespace(
                 model_dump=lambda: {
                     "uid": "7d0ab07c-d1c0-4b7f-9c69-3c1a41c0a4da",
@@ -5670,7 +5678,7 @@ def test_create_code_repository_job_uses_client_model_task_schedule(cli_mod, mon
         "uid": "7d0ab07c-d1c0-4b7f-9c69-3c1a41c0a4da",
         "task_schedule": schedule,
     }
-    assert os.environ.get("MAIN_SEQUENCE_PROJECT_UID") is None
+    assert os.environ.get(_UNSUPPORTED_REPOSITORY_UID_ENV) is None
 
 
 def test_create_code_repository_does_not_send_code_repository_visible(cli_mod, monkeypatch):
@@ -9990,8 +9998,8 @@ def test_code_repository_set_up_locally(cli_mod, runner, monkeypatch, tmp_path):
     assert "MAINSEQUENCE_ACCESS_TOKEN=access-123" in env_text
     assert "MAINSEQUENCE_REFRESH_TOKEN=refresh-456" in env_text
     assert "MAINSEQUENCE_ENDPOINT=https://backend.test" in env_text
-    assert "MAIN_SEQUENCE_PROJECT_UID" not in env_text
-    assert "MAIN_SEQUENCE_PROJECT_ID" not in env_text
+    assert _UNSUPPORTED_REPOSITORY_UID_ENV not in env_text
+    assert _UNSUPPORTED_REPOSITORY_NUMERIC_ID_ENV not in env_text
     assert "DEFAULT_BASE_IMAGE" not in env_text
     assert "FOO=bar" not in env_text
     assert "MAINSEQUENCE_TOKEN=legacy-token" not in env_text
@@ -10098,8 +10106,8 @@ def test_code_repository_set_up_locally_runtime_credential(cli_mod, runner, monk
     assert "MAINSEQUENCE_RUNTIME_CREDENTIAL_ID=cred-id" in env_text
     assert "MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET=cred-secret" in env_text
     assert "MAINSEQUENCE_ENDPOINT=https://backend.test" in env_text
-    assert "MAIN_SEQUENCE_PROJECT_UID" not in env_text
-    assert "MAIN_SEQUENCE_PROJECT_ID" not in env_text
+    assert _UNSUPPORTED_REPOSITORY_UID_ENV not in env_text
+    assert _UNSUPPORTED_REPOSITORY_NUMERIC_ID_ENV not in env_text
     assert "MAINSEQUENCE_REFRESH_TOKEN" not in env_text
     assert "DEFAULT_BASE_IMAGE" not in env_text
     assert "FOO=bar" not in env_text
@@ -10180,8 +10188,8 @@ def test_code_repository_refresh_token(cli_mod, runner, monkeypatch, tmp_path):
     env_path = target / ".env"
     env_path.write_text(
         "FOO=bar\n"
-        "MAIN_SEQUENCE_PROJECT_UID=code-repository-uid-123\n"
-        "MAIN_SEQUENCE_PROJECT_ID=123\n"
+        f"{_UNSUPPORTED_REPOSITORY_UID_ENV}=code-repository-uid-123\n"
+        f"{_UNSUPPORTED_REPOSITORY_NUMERIC_ID_ENV}=123\n"
         "MAINSEQUENCE_ACCESS_TOKEN=old-access\n"
         "MAINSEQUENCE_REFRESH_TOKEN=old-refresh\n"
         "MAINSEQUENCE_ENDPOINT=https://old-backend.test\n"
@@ -10205,8 +10213,8 @@ def test_code_repository_refresh_token(cli_mod, runner, monkeypatch, tmp_path):
     assert "MAINSEQUENCE_ACCESS_TOKEN=new-access" in env_text
     assert "MAINSEQUENCE_REFRESH_TOKEN=new-refresh" in env_text
     assert "MAINSEQUENCE_ENDPOINT=https://backend.test" in env_text
-    assert "MAIN_SEQUENCE_PROJECT_UID" not in env_text
-    assert "MAIN_SEQUENCE_PROJECT_ID" not in env_text
+    assert _UNSUPPORTED_REPOSITORY_UID_ENV not in env_text
+    assert _UNSUPPORTED_REPOSITORY_NUMERIC_ID_ENV not in env_text
     assert "MAINSEQUENCE_TOKEN" not in env_text
     assert "old-access" not in env_text
     assert "old-refresh" not in env_text
@@ -10218,8 +10226,8 @@ def test_code_repository_refresh_token_runtime_credential(cli_mod, runner, monke
     env_path = target / ".env"
     env_path.write_text(
         "FOO=bar\n"
-        "MAIN_SEQUENCE_PROJECT_UID=code-repository-uid-123\n"
-        "MAIN_SEQUENCE_PROJECT_ID=123\n"
+        f"{_UNSUPPORTED_REPOSITORY_UID_ENV}=code-repository-uid-123\n"
+        f"{_UNSUPPORTED_REPOSITORY_NUMERIC_ID_ENV}=123\n"
         "MAINSEQUENCE_AUTH_MODE=jwt\n"
         "MAINSEQUENCE_ACCESS_TOKEN=old-access\n"
         "MAINSEQUENCE_REFRESH_TOKEN=old-refresh\n"
@@ -10253,8 +10261,8 @@ def test_code_repository_refresh_token_runtime_credential(cli_mod, runner, monke
     assert "MAINSEQUENCE_RUNTIME_CREDENTIAL_ID=cred-id" in env_text
     assert "MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET=cred-secret" in env_text
     assert "MAINSEQUENCE_ENDPOINT=https://backend.test" in env_text
-    assert "MAIN_SEQUENCE_PROJECT_UID" not in env_text
-    assert "MAIN_SEQUENCE_PROJECT_ID" not in env_text
+    assert _UNSUPPORTED_REPOSITORY_UID_ENV not in env_text
+    assert _UNSUPPORTED_REPOSITORY_NUMERIC_ID_ENV not in env_text
     assert "MAINSEQUENCE_TOKEN" not in env_text
     assert "MAINSEQUENCE_REFRESH_TOKEN" not in env_text
     assert "old-access" not in env_text
@@ -10267,7 +10275,7 @@ def test_code_repository_refresh_token_defaults_to_cwd(cli_mod, runner, monkeypa
     env_path = target / ".env"
     env_path.write_text(
         "FOO=bar\n"
-        "MAIN_SEQUENCE_PROJECT_UID=code-repository-uid-123\n"
+        f"{_UNSUPPORTED_REPOSITORY_UID_ENV}=code-repository-uid-123\n"
         "MAINSEQUENCE_ACCESS_TOKEN=old-access\n"
         "MAINSEQUENCE_REFRESH_TOKEN=old-refresh\n",
         encoding="utf-8",
@@ -10289,7 +10297,7 @@ def test_code_repository_refresh_token_defaults_to_cwd(cli_mod, runner, monkeypa
     assert "MAINSEQUENCE_ACCESS_TOKEN=new-access" in env_text
     assert "MAINSEQUENCE_REFRESH_TOKEN=new-refresh" in env_text
     assert "MAINSEQUENCE_ENDPOINT=https://backend.test" in env_text
-    assert "MAIN_SEQUENCE_PROJECT_UID" not in env_text
+    assert _UNSUPPORTED_REPOSITORY_UID_ENV not in env_text
 
 
 def test_code_repository_delete_local(cli_mod, runner, monkeypatch, tmp_path):

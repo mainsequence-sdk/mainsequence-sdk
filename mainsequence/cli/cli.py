@@ -2124,6 +2124,10 @@ def _render_code_repository_runtime_env_text(
     Managed keys are rewritten from scratch to avoid duplicate stale entries.
     Obsolete local CodeRepository aliases are not carried into the rendered file.
     """
+    from mainsequence.repository_identity_security import (
+        UNSUPPORTED_SOURCE_IDENTITY_ENV_NAMES,
+    )
+
     managed_prefixes = (
         "MAINSEQUENCE_AUTH_MODE=",
         "MAINSEQUENCE_ACCESS_TOKEN=",
@@ -2131,14 +2135,8 @@ def _render_code_repository_runtime_env_text(
         "MAINSEQUENCE_RUNTIME_CREDENTIAL_ID=",
         "MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET=",
         "MAINSEQUENCE_ENDPOINT=",
-        # Purge removed identity inputs; they are never read or emitted.
-        "MAIN_SEQUENCE_PROJECT_UID=",
-        "MAIN_SEQUENCE_PROJECT_BRANCH_UID=",
-        "MAINSEQUENCE_REPOSITORY_BRANCH=",
-        "MAIN_SEQUENCE_ORGANIZATION_PROJECT_ENVIRONMENT_UID=",
-        "MAIN_SEQUENCE_PROJECT_ID=",
         "MAINSEQUENCE_TOKEN=",
-    )
+    ) + tuple(f"{name}=" for name in UNSUPPORTED_SOURCE_IDENTITY_ENV_NAMES)
     lines = [
         ln
         for ln in (env_text or "").replace("\r", "").splitlines()

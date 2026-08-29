@@ -203,7 +203,7 @@ MAINSEQUENCE_ENDPOINT=<platform API origin>
 They do not require or write `MAINSEQUENCE_REFRESH_TOKEN` in runtime credential mode.
 Both local CodeRepository commands preserve unrelated `.env` entries while rendering
 the current supported authentication shape. They remove obsolete token aliases
-and retired Project, CodeRepositoryBranch, repository-branch, and Environment identity
+and superseded repository, branch, and Environment identity
 entries.
 
 CodeRepository source identity is separate from authentication. In local and deployed

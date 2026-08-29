@@ -231,7 +231,7 @@ shared exact cases in
 [`tests/fixtures/time_index_table_update_hash_v2_golden.json`](https://github.com/mainsequence-sdk/mainsequence-sdk/blob/v7.0.0/tests/fixtures/time_index_table_update_hash_v2_golden.json)
 as the conversion contract.
 
-## Project migration checklist
+## Application migration checklist
 
 1. Confirm the backend cutover and offline data migration are ready.
 2. Pin or lock `mainsequence==7.0.0` for every participating process.

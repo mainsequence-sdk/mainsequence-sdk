@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-`mainsequence project update_agent_skills` assembles SDK-owned execution skills
+`mainsequence code-repository update-agent-skills` assembles SDK-owned execution skills
 and platform-owned skills retrieved from the authenticated MCP gateway. The
 initial SDK implementation also hardcoded the complete platform resource URI
 set, its order, each skill name and path, and the expected number of skills.

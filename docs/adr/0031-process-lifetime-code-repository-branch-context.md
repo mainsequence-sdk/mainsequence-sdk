@@ -1,19 +1,19 @@
-# ADR 0031: Git-Native Process Project Context
+# ADR 0031: Git-Native Process CodeRepositoryBranch Context
 
 Date: 2026-08-22
 
 Status: Superseded by platform ADR-046 (immediate CodeRepository cutover)
 
-> Historical record: the `Project`, `ProjectBranch`, and `GitRepository` names below describe the pre-cutover contract and MUST NOT be implemented or exposed by current SDK code.
+> Historical record: the `CodeRepository`, `CodeRepositoryBranch`, and `GitHubRepositoryBinding` names below describe the pre-cutover contract and MUST NOT be implemented or exposed by current SDK code.
 
 Platform decision: `tdag-django` ADR-0037, stable fingerprint
 `git-native-project-source-context-v1`
 
 ## Context
 
-Project code runs in local checkouts and platform-built runtime images. The SDK
+Application code runs in local checkouts and platform-built runtime images. The SDK
 previously used two identity mechanisms: local `.env` plus Git for developer
-work, and authenticated ProjectBranch values projected into process environment
+work, and authenticated CodeRepositoryBranch values projected into process environment
 for deployed work. That split allowed source identity to depend on mutable
 configuration even though both locations execute a Git checkout.
 
@@ -26,11 +26,11 @@ backend-owned and target-derived; Git identity never grants permission.
 | Concept | Responsibility |
 | --- | --- |
 | Git worktree | Identifies the repository, attached branch/ref, and exact commit executed by this process |
-| `GitRepository` | Maps canonical Git repository identity to the logical platform `Project` |
-| `Project` | Repository-level platform aggregate; it does not authorize a branch or Environment |
-| `ProjectBranch` | Persisted platform identity for the exact Project and Git branch |
-| `OrganizationProjectEnvironment` | Environment derived from the resolved ProjectBranch |
-| `ProjectBranch.metatables_data_source` | Optional physical MetaTables DataSource for that exact branch |
+| `GitHubRepositoryBinding` | Maps canonical Git repository identity to the logical platform `CodeRepository` |
+| `CodeRepository` | Repository-level platform aggregate; it does not authorize a branch or Environment |
+| `CodeRepositoryBranch` | Persisted platform identity for the exact CodeRepository and Git branch |
+| `OrganizationEnvironment` | Environment derived from the resolved CodeRepositoryBranch |
+| `CodeRepositoryBranch.metatables_data_source` | Optional physical MetaTables DataSource for that exact branch |
 | Runtime credential or human token | Authenticates and authorizes the caller; it does not select source identity |
 
 ## Decision
@@ -42,7 +42,7 @@ get_project_runtime_context()
 ```
 
 It uses the same algorithm in a local shell, CLI process, Job, FastAPI release,
-Streamlit release, runtime-agent release, or Project Executor:
+Streamlit release, runtime-agent release, or CodeRepository Executor:
 
 ```text
 containing Git worktree
@@ -50,11 +50,11 @@ containing Git worktree
   -> attached refs/heads/<branch>
   -> exact full HEAD commit
   -> backend resolve-git-context contract
-  -> GitRepository
-  -> Project
-  -> exact ProjectBranch
-  -> OrganizationProjectEnvironment
-  -> optional ProjectBranch MetaTables DataSource
+  -> GitHubRepositoryBinding
+  -> CodeRepository
+  -> exact CodeRepositoryBranch
+  -> OrganizationEnvironment
+  -> optional CodeRepositoryBranch MetaTables DataSource
 ```
 
 Authentication mode affects credentials only. The resolver does not choose a
@@ -70,8 +70,8 @@ canonical_repository_identity
 repository_branch
 repository_ref
 commit_sha
-project_uid | None
-project_branch_uid | None
+code_repository_uid | None
+code_repository_branch_uid | None
 organization_environment_uid | None
 metatables_data_source | None
 status
@@ -88,36 +88,33 @@ drift; it does not silently retarget platform work.
 
 ### Valid unresolved states
 
-Resolution itself does not fail merely because no visible ProjectBranch maps to
+Resolution itself does not fail merely because no visible CodeRepositoryBranch maps to
 the repository and branch:
 
 ```text
-project_branch_not_registered
+code_repository_branch_not_registered
 ```
 
 The canonical backend action deliberately exposes one not-found result rather
 than leaking whether the repository or only its branch is registered. This
 permits ordinary work on local repositories and new feature branches. Only an
 operation that requires branch-linked platform context calls
-`require_project_branch_context()` and fails before its backend request. This
-includes both ProjectBranch-owned objects and project-facing operations on
+`require_code_repository_branch_context()` and fails before its backend request. This
+includes both CodeRepositoryBranch-owned objects and project-facing operations on
 Environment-owned resources whose Environment is resolved from the current
-ProjectBranch.
+CodeRepositoryBranch.
 
-No unresolved state may fall back to `main`, a sibling ProjectBranch, a
-Project-level DataSource, an Environment inferred from a DataSource, collection
-order, or a caller-supplied ProjectBranch UID. The removed
-`Project.default_metatables_data_source` contract is not restored.
+No unresolved state may fall back to `main`, a sibling CodeRepositoryBranch, a
+repository-level DataSource, an Environment inferred from a DataSource, collection
+order, or a caller-supplied CodeRepositoryBranch UID. The removed
+the removed repository-level default MetaTables DataSource contract is not restored.
 
 ### Retired environment contract
 
 The SDK does not read, write, or inject these values as project identity:
 
 ```text
-MAIN_SEQUENCE_PROJECT_UID
-MAIN_SEQUENCE_PROJECT_BRANCH_UID
-MAINSEQUENCE_REPOSITORY_BRANCH
-MAIN_SEQUENCE_ORGANIZATION_PROJECT_ENVIRONMENT_UID
+Caller-supplied repository, branch, and Environment identity variables
 ```
 
 Local `.env` stores only unrelated user configuration plus supported endpoint
@@ -131,33 +128,33 @@ source is running.
 
 ### Branch-owned consumers
 
-Current-branch Job, ProjectImage, ResourceRelease, ProjectResource,
-ProjectExecutor, migration, platform-managed MetaTable, and DataNode workflows
+Current-branch Job, CodeRepositoryImage, ResourceRelease, CodeRepositoryResource,
+CodeRepositoryExecutor, migration, platform-managed MetaTable, and DataNode workflows
 consume the frozen context. Ordinary branch-owned collections are scoped to the
-resolved ProjectBranch. Explicit administrative enumeration uses separately
+resolved CodeRepositoryBranch. Explicit administrative enumeration uses separately
 named admin APIs.
 
 Parent-derived operations retain the persisted parent's ownership instead of
 inventing another branch selector. Backend authorization remains the final
 enforcement boundary and deployed runtime endpoints must require the
-Git-resolved ProjectBranch to equal the authenticated runtime target.
+Git-resolved CodeRepositoryBranch to equal the authenticated runtime target.
 
-### Environment-owned resources resolved from the current ProjectBranch
+### Environment-owned resources resolved from the current CodeRepositoryBranch
 
 Object ownership and operation context are separate concerns. `Secret`,
 `Constant`, logical `Bucket`, `Artifact`, and `MetaTable` belong to one
-`OrganizationProjectEnvironment`; they are not owned by one ProjectBranch.
+`OrganizationEnvironment`; they are not owned by one CodeRepositoryBranch.
 Projects and branches participating in the same Environment may use the same
 resources.
 
-Project-facing SDK operations nevertheless resolve that Environment only through
-the frozen current ProjectBranch:
+CodeRepository-scoped SDK operations nevertheless resolve that Environment only through
+the frozen current CodeRepositoryBranch:
 
 ```text
 actual Git worktree and attached branch
   -> get_project_runtime_context()
-  -> exact persisted ProjectBranch
-  -> OrganizationProjectEnvironment
+  -> exact persisted CodeRepositoryBranch
+  -> OrganizationEnvironment
   -> Environment-owned resource operation
 ```
 
@@ -166,11 +163,11 @@ operations for Secrets, Constants, Buckets, and Artifacts. It also covers
 MetaTable registration and import, including `external_registered` MetaTables.
 An external MetaTable may select its physical DataSource, but that DataSource is
 not Environment identity and cannot override the Environment derived from the
-ProjectBranch.
+CodeRepositoryBranch.
 
 The public project-facing SDK API accepts neither
-`organization_environment_uid` nor a caller-supplied ProjectBranch UID.
-The SDK resolves the current ProjectBranch once and transports its derived
+`organization_environment_uid` nor a caller-supplied CodeRepositoryBranch UID.
+The SDK resolves the current CodeRepositoryBranch once and transports its derived
 Environment UID as an SDK-owned wire field:
 
 ```json
@@ -189,13 +186,13 @@ transported Environment that disagrees with that runtime target.
 Create requests carry the SDK-owned field in their body. List, detail, patch,
 delete, and detail-action requests carry it as a query parameter. Both forms
 have the same semantics: the Environment came from the frozen current
-ProjectBranch and is not a public selector. Backend endpoints must normalize
+CodeRepositoryBranch and is not a public selector. Backend endpoints must normalize
 these inputs through one Environment resolver before filtering or resolving a
 known resource UID.
 
 An unregistered local branch remains valid for unrelated development. A
 project-facing operation on one of these Environment-owned resources calls
-`require_project_branch_context()` and fails before its request because no
+`require_code_repository_branch_context()` and fails before its request because no
 Environment can be derived. It must not fall back to `main`, another branch, an
 Environment UID, a DataSource, or Organization-wide enumeration.
 
@@ -211,7 +208,7 @@ SDK models parse those fields but never use them as write authority.
 
 ## Coordinated Implementation Plan
 
-- [ ] Add one backend ProjectBranch-context resolver for Environment-owned
+- [ ] Add one backend CodeRepositoryBranch-context resolver for Environment-owned
   resource operations. It must accept SDK-resolved local context, derive context
   from authenticated deployed runtimes, verify equality when both exist, and
   return the canonical Environment.
@@ -219,11 +216,11 @@ SDK models parse those fields but never use them as write authority.
   create, update, and delete paths. Known public UIDs must not bypass the same
   Environment boundary.
 - [ ] Change project-facing external MetaTable registration and import to derive
-  Environment from ProjectBranch context. Preserve the explicitly selected
+  Environment from CodeRepositoryBranch context. Preserve the explicitly selected
   physical DataSource without treating it as Environment identity.
 - [x] Add one SDK helper that attaches the branch-derived Environment to request
   bodies or query parameters. The helper calls
-  `require_project_branch_context()` and rejects caller overrides.
+  `require_code_repository_branch_context()` and rejects caller overrides.
 - [x] Route `Secret`, `Constant`, `Bucket`, and `Artifact` SDK methods and their
   CLI commands through that helper. Remove direct Environment selection from
   project-facing command and method signatures.
@@ -254,7 +251,7 @@ SDK models parse those fields but never use them as write authority.
   Images without that contract must be rebuilt; the SDK has no permanent
   environment fallback.
 - Repository mapping uses the canonical
-  `POST /api/v1/project-branches/resolve-git-context/` action. That action also
+  `POST /api/v1/code-repository-branches/resolve-git-context/` action. That action also
   verifies exact equality with an authenticated JobRun or Knative runtime
   target.
 
@@ -273,12 +270,12 @@ ownership after a branch switch.
 ### Fail every operation on an unregistered branch
 
 Rejected because local Git development does not require a persisted
-ProjectBranch. Enforcement belongs at branch-owned platform operations.
+CodeRepositoryBranch. Enforcement belongs at branch-owned platform operations.
 
-### Accept explicit ProjectBranch UIDs for current-project work
+### Accept explicit CodeRepositoryBranch UIDs for current-project work
 
 Rejected because callers could select a branch that differs from the source
-actually executing. Explicit Project UIDs retained by some CLI commands are
+actually executing. Explicit CodeRepository UIDs retained by some CLI commands are
 assertions against Git resolution, never selectors.
 
 ## Required Invariants
@@ -291,9 +288,9 @@ assertions against Git resolution, never selectors.
 - Unregistered repository or branch state does not abort unrelated local work.
 - Branch-owned operations and project-facing Environment-resource operations
   reject unresolved context before backend calls.
-- Project-facing resource APIs never accept caller-selected ProjectBranch or
+- CodeRepository-scoped resource APIs never accept caller-selected CodeRepositoryBranch or
   Environment identity.
 - The four retired identity variables never influence source resolution.
-- No ProjectBranch, Environment, sibling-branch, or DataSource fallback exists.
+- No CodeRepositoryBranch, Environment, sibling-branch, or DataSource fallback exists.
 - Backend authorization remains authoritative and must verify deployed target
   equality.
