@@ -8,10 +8,10 @@ If your jobs consume spreadsheets, CSV drops, model files, or generated reports,
 
 In this guide, you will:
 
-- understand the lifecycle from project code to scheduled execution
+- understand the lifecycle from code repository code to scheduled execution
 - manage jobs from the CLI
 - create the same jobs from the Python client
-- decide when to use backend-managed project workflows and when to create jobs directly
+- decide when to use backend-managed code-repository workflows and when to create jobs directly
 - inspect runs, logs, and frozen images
 
 ## The mental model
@@ -101,12 +101,12 @@ mainsequence code-repository sync -m "Prepare scheduling changes"
 
 That command is more than a `git push`. It updates the local environment, exports `requirements.txt`, creates a commit, and pushes the result in the platform-compatible flow.
 
-### Apply a reviewed project workflow
+### Apply a reviewed code-repository workflow
 
 After backend validation, commit the workflow through the standard sync:
 
 ```bash
-mainsequence code-repository sync -m "Update project workflow"
+mainsequence code-repository sync -m "Update code-repository workflow"
 ```
 
 The push triggers backend repository processing. Inspect the repository-event
@@ -222,7 +222,7 @@ mainsequence code-repository jobs runs logs <JOB_RUN_UID> --max-wait-seconds 900
 
 The logs command polls while the run is still `PENDING` or `RUNNING`, so it works well as a simple live tail for operational checks.
 
-### Bind a job to an exact project image
+### Bind a job to an exact code repository image
 
 Every job requires this binding. The image represents one pushed, exact commit
 and remains the job's current image until an explicit image change or a
@@ -253,13 +253,13 @@ This is the only supported creation pattern. There is no dynamic, blank-image,
 branch-tip, or `latest` job mode.
 
 !!! note "Important"
-    Project images are built from pushed commits. If a commit does not exist on the remote, it cannot be turned into a project image.
+    CodeRepository images are built from pushed commits. If a commit does not exist on the remote, it cannot be turned into a code repository image.
 
 ## Working from the Python client
 
 The Python client is useful when job creation itself is part of your automation. It is the right tool when you want to provision jobs from code rather than from a shell session.
 
-Run this code from the intended Project checkout. The SDK resolves the canonical
+Run this code from the intended CodeRepository checkout. The SDK resolves the canonical
 Git repository, attached branch, and exact HEAD commit once for the process,
 maps them to CodeRepositoryBranch, and uses that immutable context for every Job
 operation. Application code does not select a CodeRepositoryBranch UID.
@@ -278,7 +278,7 @@ from mainsequence.client import CrontabSchedule, IntervalSchedule, Job, JobRun
 manual_job = Job.create(
     name="Simulated Prices - Manual",
     execution_path="scripts/simulated_prices_launcher.py",
-    related_image_uid="<PROJECT_IMAGE_UID>",
+    related_image_uid="<CODE_REPOSITORY_IMAGE_UID>",
     cpu_request="0.25",
     memory_request="0.5",
 )
@@ -304,7 +304,7 @@ promoted_job = Job.create(
 hourly_job = Job.create(
     name="Simulated Prices - Hourly",
     execution_path="scripts/simulated_prices_launcher.py",
-    related_image_uid="<PROJECT_IMAGE_UID>",
+    related_image_uid="<CODE_REPOSITORY_IMAGE_UID>",
     task_schedule=IntervalSchedule(
         every=1,
         period="hours",
@@ -321,7 +321,7 @@ hourly_job = Job.create(
 nightly_job = Job.create(
     name="Simulated Prices - Nightly",
     execution_path="scripts/simulated_prices_launcher.py",
-    related_image_uid="<PROJECT_IMAGE_UID>",
+    related_image_uid="<CODE_REPOSITORY_IMAGE_UID>",
     task_schedule={
         "schedule": CrontabSchedule(
             expression="0 0 * * *",
@@ -441,7 +441,7 @@ not backslashes. The platform handles the path correctly.
 If a job is operationally important, ask whether it should follow the latest project state or a frozen image.
 
 - Follow the repository tip when you want quick iteration.
-- Pin to a project image when you want repeatable execution and stable rollbacks.
+- Pin to a code repository image when you want repeatable execution and stable rollbacks.
 
 ### Keep recurring jobs reviewable
 

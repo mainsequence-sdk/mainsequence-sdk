@@ -1,6 +1,6 @@
 ---
 name: mainsequence-orchestration-and-releases
-description: Use this skill for Main Sequence jobs, schedules, backend-managed project workflow files, project images, run inspection, resources, releases, Streamlit deployment, and operational Artifacts. It does not own TimeIndexTableUpdater behavior, MetaTable schemas, API contracts, Streamlit design, or RBAC policy.
+description: Use this skill for Main Sequence jobs, schedules, backend-managed code-repository workflow files, code repository images, run inspection, resources, releases, Streamlit deployment, and operational Artifacts. It does not own TimeIndexTableUpdater behavior, MetaTable schemas, API contracts, Streamlit design, or RBAC policy.
 ---
 
 # Main Sequence Orchestration And Releases
@@ -14,7 +14,7 @@ This skill is for:
 - jobs
 - schedules
 - images
-- project resources
+- code repository resources
 - releases
 - Streamlit dashboard deployment as `streamlit_dashboard` releases
 - operational logs and run inspection
@@ -26,14 +26,14 @@ This skill is for:
 - create or review scheduled jobs
 - author backend-managed declarations under `.mainsequence/workflows/`
 - validate workflow files through the CodeRepositoryBranch workflow endpoints
-- create or select project images
-- bind every job to one exact project image
+- create or select code repository images
+- bind every job to one exact code repository image
 - configure standalone Job automatic deployment as future exact-image promotion
 - inspect job runs and logs
-- reason about project resources and resource releases
+- reason about code repository resources and resource releases
 - decide whether a `ResourceRelease` should opt into `automatic_deployment`
 - inspect automatic deployment run state for release rotations
-- create or review Streamlit dashboard deployment through project resources and `streamlit_dashboard` releases
+- create or review Streamlit dashboard deployment through code repository resources and `streamlit_dashboard` releases
 - review Artifact-based workflows in operational pipelines
 
 ## This Skill Must Not Claim
@@ -89,7 +89,7 @@ Before changing orchestration or release behavior, collect or infer:
   - new image
 - whether the workflow is:
   - direct CLI/client job creation
-  - backend-managed project workflow declarations
+  - backend-managed code-repository workflow declarations
   - Streamlit dashboard release creation
 - whether a `ResourceRelease` should be manually pinned or opted into repository-sync automatic deployment
 - whether Artifact inputs or outputs are part of the run
@@ -110,7 +110,7 @@ For every non-trivial orchestration task, decide:
    automatic deployment make the backend derive it from the synchronized commit?
 4. Does the workflow depend on Artifacts?
 5. Is the task actually a release/resource problem instead of only a job problem?
-6. For Streamlit dashboard deployment, do the selected app resource, README resource, and project image all refer to the intended pushed commit?
+6. For Streamlit dashboard deployment, do the selected app resource, README resource, and code repository image all refer to the intended pushed commit?
 7. For a `ResourceRelease`, should repository sync be allowed to rotate the release automatically through `automatic_deployment`?
 
 ## Build Rules
@@ -138,7 +138,7 @@ Do not hide important recurring schedules in ad hoc shell history or one-off man
 
 ### 2. Every Job requires one exact image
 
-Every persisted direct Job has one exact project image, but the creation mode
+Every persisted direct Job has one exact code repository image, but the creation mode
 determines who supplies it.
 
 Remember:
@@ -157,7 +157,7 @@ Job, enabling or disabling it retains the current exact image. The backend owns
 repository-event truth, policy evaluation, image preparation, and promotion;
 project code and the SDK must not choose a Job's deployment branch or image.
 This deployment-policy rule does not replace ADR-0037 runtime source discovery:
-code executing inside the resulting project image still resolves and validates
+code executing inside the resulting code repository image still resolves and validates
 its attached Git branch and exact commit.
 
 For direct creation use:
@@ -238,7 +238,7 @@ Do not force a file workflow into a table workflow too early.
 For deployed dashboards, APIs, or agents:
 
 - the local file is not enough
-- the project resource must exist
+- the code repository resource must exist
 - the release must exist
 - the release must point at the intended image or resource version
 
@@ -251,7 +251,7 @@ For Streamlit dashboard deployment:
 - the dashboard `app.py` must already exist in the repository
 - the dashboard `README.md` must exist next to `app.py`
 - both files must be committed and pushed
-- the project image must be built from the intended pushed commit
+- the code repository image must be built from the intended pushed commit
 - `mainsequence code-repository resources list` must discover the dashboard app and README resources
 - create the release with `mainsequence code-repository resources create_dashboard`
 - the dashboard release kind is `streamlit_dashboard`
@@ -267,13 +267,13 @@ Validate the deployment path, not the Streamlit design.
 When `automatic_deployment=True`, repository-sync events may create a unified `DeploymentRun` with `target_type="resource_release"` and source `repository_event`. That run:
 
 - reads the project's current synced commit
-- resolves the current project resource at the release's existing resource path
+- resolves the current code repository resource at the release's existing resource path
 - resolves the current adjacent `README.md` when the release kind requires one, such as Streamlit dashboards
-- creates or resolves the project image for that commit
-- redeploys the existing release to the current resource, README, and project image
+- creates or resolves the code repository image for that commit
+- redeploys the existing release to the current resource, README, and code repository image
 - records state, phase, outcome, revision context, artifact context, steps, logs, result, and errors on the deployment run
 
-This is not a local development shortcut. It does not deploy unpushed local files. The repository must be pushed, the project repository must be synced, and project resource discovery must find the resource at the same path for the current commit.
+This is not a local development shortcut. It does not deploy unpushed local files. The repository must be pushed, the code repository must be synced, and code repository resource discovery must find the resource at the same path for the current commit.
 
 Enable `automatic_deployment` only when:
 

@@ -1,6 +1,6 @@
 # Artifacts
 
-Part 4 of the tutorial introduces jobs, schedules, and project images. This page explains another infrastructure concept that often appears right after that: **Artifacts**.
+Part 4 of the tutorial introduces jobs, schedules, and code repository images. This page explains another infrastructure concept that often appears right after that: **Artifacts**.
 
 An `Artifact` is the platform's file-storage primitive. A `TimeIndexTableUpdater`
 can produce a structured `TimeIndexMetaTable`; an `Artifact` stores and retrieves

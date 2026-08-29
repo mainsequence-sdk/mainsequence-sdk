@@ -5,9 +5,9 @@ This CLI mirrors key functionality from the MainSequence VS Code extension:
 - Project list + setup locally
 - Signed terminal support
 - Compile environment (`uv export`)
-- Sync project workflow (bump, lock/sync/export, git commit/push)
+- Sync code-repository workflow (bump, lock/sync/export, git commit/push)
 - Docker environment build + devcontainer config
-- Current project detection
+- Current code repository detection
 - SDK version status + update
 - Diagnostics (`doctor`)
 
@@ -102,7 +102,7 @@ mainsequence code-repository sync -m "Update deps" --path .
 mainsequence code-repository build-docker-env --path .
 # builds via docker buildx and writes .devcontainer/devcontainer.json
 
-# Current project status
+# Current code repository status
 mainsequence code-repository current --debug --json
 # reports logical Project UID, current Git branch, resolved CodeRepositoryBranch UID,
 # and branch resolution status

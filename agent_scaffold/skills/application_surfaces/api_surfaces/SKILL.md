@@ -1,6 +1,6 @@
 ---
 name: mainsequence-command-center-fastapi
-description: Build, contract-test, release, and verify a FastAPI project resource that serves the Command Center frontend. Use when a Main Sequence API must implement a wire contract defined by the mainsequence-sdk/command-center-sdk GitHub repository and then move through local testing, project sync, image and resource resolution, FastAPI ResourceRelease creation, and deployed frontend validation.
+description: Build, contract-test, release, and verify a FastAPI code repository resource that serves the Command Center frontend. Use when a Main Sequence API must implement a wire contract defined by the mainsequence-sdk/command-center-sdk GitHub repository and then move through local testing, code-repository sync, image and resource resolution, FastAPI ResourceRelease creation, and deployed frontend validation.
 ---
 
 # Command Center FastAPI Release Lifecycle
@@ -193,7 +193,7 @@ mainsequence code-repository resources create_fastapi
 
 Verify that:
 
-- project sync used the intended Git branch
+- code-repository sync used the intended Git branch
 - the selected image contains the exact tested commit
 - resource discovery found the expected FastAPI path at that commit
 - the selected resource UID and image UID refer to the same commit
@@ -226,7 +226,7 @@ Report:
 - implemented contract IDs and schema `$id` values
 - conformance and route-test results
 - local frontend integration path used
-- Git commit, project image UID, project resource UID, and release identity
+- Git commit, code repository image UID, code repository resource UID, and release identity
 - deployed contract validation and Command Center frontend result
 - whether automatic deployment is enabled and why
 

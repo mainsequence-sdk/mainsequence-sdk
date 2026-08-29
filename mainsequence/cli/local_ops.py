@@ -64,7 +64,7 @@ def ensure_venv(code_repository_dir: pathlib.Path) -> VenvPaths:
 
 def ensure_uv_installed(code_repository_dir: pathlib.Path, upgrade: bool = True) -> pathlib.Path:
     """
-    Resolve a usable uv executable for the project workflow.
+    Resolve a usable uv executable for the code-repository workflow.
 
     Returns:
         Path to uv executable

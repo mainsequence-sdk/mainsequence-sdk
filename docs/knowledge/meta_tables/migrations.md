@@ -156,7 +156,7 @@ migration = build_metatable_migration_provider(
 
 Provider discovery order:
 
-1. `mainsequence_migrations.py:migration` in the current project root.
+1. `mainsequence_migrations.py:migration` in the current code repository root.
 2. `<current_package>.migrations:migration` when the CLI can infer the package.
 3. `--provider module.path:migration` as an explicit override.
 

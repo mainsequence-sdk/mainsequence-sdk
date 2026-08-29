@@ -50,7 +50,7 @@ This skill must not claim ownership of:
 
 ## Route Adjacent Work
 
-- jobs, schedules, images, project resources, releases, and Artifacts as operational workflows:
+- jobs, schedules, images, code repository resources, releases, and Artifacts as operational workflows:
   `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
 - TimeIndexTableUpdaters:
   `.agents/skills/mainsequence/data_publishing/time_index_table_updates/SKILL.md`

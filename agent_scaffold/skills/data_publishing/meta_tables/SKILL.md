@@ -195,9 +195,9 @@ Register through the class API:
 ```python
 from mainsequence.meta_tables import PlatformManagedMetaTable, schema_table_name
 
-PROJECT_NAME = "sdk_examples"
-ACCOUNT_TABLE_NAME = schema_table_name(PROJECT_NAME, "account")
-BROKER_ACCOUNT_TABLE_NAME = schema_table_name(PROJECT_NAME, "account", suffix="broker")
+CODE_REPOSITORY_NAME = "sdk_examples"
+ACCOUNT_TABLE_NAME = schema_table_name(CODE_REPOSITORY_NAME, "account")
+BROKER_ACCOUNT_TABLE_NAME = schema_table_name(CODE_REPOSITORY_NAME, "account", suffix="broker")
 
 
 class Account(PlatformManagedMetaTable, Base):

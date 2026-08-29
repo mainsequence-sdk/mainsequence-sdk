@@ -15,7 +15,7 @@ or replace `project-design`.
 
 This skill is for:
 
-- establishing project context
+- establishing code repository context
 - defining success up front
 - enforcing a docs-first workflow
 - verifying platform context before making claims
@@ -25,7 +25,7 @@ This skill is for:
 
 - determine the correct startup and read order
 - define a concrete success condition before implementation starts
-- verify current project and platform context
+- verify current code repository and platform context
 - decide which specialized skill owns the actual domain work
 - enforce standard Main Sequence repository structure expectations
 - separate verified facts from assumptions
@@ -83,11 +83,11 @@ Before starting non-trivial work, collect or infer:
 
 - the user goal
 - the concrete success condition
-- the repository path and current project context
+- the repository path and current code repository context
 - whether live platform verification is required
 - which specialized skill should own the domain behavior
 
-If the user goal or project context is unclear, stop before routing domain work.
+If the user goal or code repository context is unclear, stop before routing domain work.
 
 ## Resolve Local Project Context From Git
 
@@ -104,7 +104,7 @@ to `code_repository_branch_status=resolved` and a nonempty `code_repository_bran
 is an internal resolution result for branch-owned platform calls; it is not a
 local or environment configuration input. Never require the user to look it up,
 persist project identity in `.env`, accept a branch environment override, or
-infer a branch from collection order. Local and deployed project images use the
+infer a branch from collection order. Local and deployed code repository images use the
 same Git algorithm. A detached checkout or an unregistered Git branch is
 unresolved context and must block only live branch-owned operations.
 
@@ -178,7 +178,7 @@ Make the end state explicit before changing code, docs, or platform objects.
 
 Do not start domain work with a vague target.
 
-### 4. Verify project context before making platform claims
+### 4. Verify code repository context before making platform claims
 
 Use the CLI to confirm the active project and refresh credentials before live checks when needed.
 
@@ -216,7 +216,7 @@ When reviewing bootstrap behavior, look for:
 
 Do not claim bootstrap success until you have checked:
 
-- the correct project context is selected
+- the correct code repository context is selected
 - the relevant docs were checked
 - the success condition is explicit
 - the correct specialized skill was chosen
@@ -225,7 +225,7 @@ Do not claim bootstrap success until you have checked:
 ## This Skill Must Stop And Escalate When
 
 - the relevant docs cannot be accessed
-- the project context is unclear
+- the code repository context is unclear
 - the success condition is still ambiguous
 - live platform state is required but has not been verified
 - domain work is proceeding without the relevant specialized skill or docs

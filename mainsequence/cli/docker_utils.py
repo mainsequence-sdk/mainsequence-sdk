@@ -315,7 +315,7 @@ def write_devcontainer_config(code_repository_dir: pathlib.Path, image_ref: str)
     if not config:
         name = code_repository_dir.name
         config = {
-            "name": f"{name} (MainSequence)" if name else "MainSequence Project",
+            "name": f"{name} (MainSequence)" if name else "MainSequence CodeRepository",
             "image": image_ref,
             "workspaceFolder": "/app",
             "workspaceMount": "source=${localWorkspaceFolder},target=/app,type=bind,consistency=cached",

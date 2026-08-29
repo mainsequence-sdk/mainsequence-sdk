@@ -207,7 +207,7 @@ and retired Project, CodeRepositoryBranch, repository-branch, and Environment id
 entries.
 
 Project source identity is separate from authentication. In local and deployed
-project images, the SDK reads the containing sanitized Git checkout, attached
+code repository images, the SDK reads the containing sanitized Git checkout, attached
 branch, and exact HEAD commit, then maps that source to Project and
 CodeRepositoryBranch through the platform API. Switching branches does not rewrite
 credentials and takes effect in the next process. Runtime credentials authorize

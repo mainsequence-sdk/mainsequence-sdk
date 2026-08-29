@@ -991,7 +991,7 @@ def validate_code_repository_name(
     timeout: int | None = None,
 ) -> dict[str, Any]:
     """
-    Validate whether a project name is available for creation.
+    Validate whether a code repository name is available for creation.
 
     Single source of truth:
       - delegates payload parsing to `CodeRepository.validate_name()`
@@ -1845,7 +1845,7 @@ def add_code_repository_user_to_view(
     timeout: int | None = None,
 ) -> dict[str, Any]:
     """
-    Grant explicit view access to one user for a project.
+    Grant explicit view access to one user for a code repository.
     """
     return _mutate_shareable_object_access(
         module_name="mainsequence.client.models_foundry",
@@ -1864,7 +1864,7 @@ def add_code_repository_user_to_edit(
     timeout: int | None = None,
 ) -> dict[str, Any]:
     """
-    Grant explicit edit access to one user for a project.
+    Grant explicit edit access to one user for a code repository.
     """
     return _mutate_shareable_object_access(
         module_name="mainsequence.client.models_foundry",
@@ -1883,7 +1883,7 @@ def remove_code_repository_user_from_view(
     timeout: int | None = None,
 ) -> dict[str, Any]:
     """
-    Remove explicit view access from one user for a project.
+    Remove explicit view access from one user for a code repository.
     """
     return _mutate_shareable_object_access(
         module_name="mainsequence.client.models_foundry",
@@ -1902,7 +1902,7 @@ def remove_code_repository_user_from_edit(
     timeout: int | None = None,
 ) -> dict[str, Any]:
     """
-    Remove explicit edit access from one user for a project.
+    Remove explicit edit access from one user for a code repository.
     """
     return _mutate_shareable_object_access(
         module_name="mainsequence.client.models_foundry",
@@ -2100,7 +2100,7 @@ def remove_code_repository_labels(
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
-    """Remove one or more organizational labels from a project."""
+    """Remove one or more organizational labels from a code repository."""
 
     return _mutate_labelable_object_labels(
         module_name="mainsequence.client.models_foundry",
@@ -2228,7 +2228,7 @@ def create_code_repository_image(
     timeout: int | None = None,
 ) -> dict[str, Any]:
     """
-    Create a project image via SDK client model.
+    Create a code repository image via SDK client model.
 
     Single source of truth:
       - delegates payload construction and request behavior to `CodeRepositoryImage.create()`
@@ -2338,7 +2338,7 @@ def list_code_repository_images(
     timeout: int | None = None,
 ) -> list[dict[str, Any]]:
     """
-    List project images for a project via SDK client model.
+    List code repository images for a project via SDK client model.
 
     Single source of truth:
       - delegates filtering and payload parsing to `CodeRepositoryImage.filter()`
@@ -2729,7 +2729,7 @@ def list_code_repository_resources(
     timeout: int | None = None,
 ) -> list[dict[str, Any]]:
     """
-    List project resources for a project and repository commit via SDK client model.
+    List code repository resources for a project and repository commit via SDK client model.
 
     Single source of truth:
       - delegates filtering and payload parsing to `CodeRepositoryResource.filter()`

@@ -10,7 +10,7 @@ operate within the Main Sequence platform and must follow Main Sequence platform
 THIS LINE UNLESS YOU REPLACE IT WITH REAL PROJECT-SPECIFIC CONTENT. ]
 
 Do not remove the `<!-- mainsequence-agent-scaffold:start schema=1 source=agent_scaffold -->`
-or `<!-- mainsequence-agent-scaffold:end -->` markers. `mainsequence project update AGENTS.md`
+or `<!-- mainsequence-agent-scaffold:end -->` markers. `mainsequence code-repository update AGENTS.md`
 uses them to update only the Main Sequence section below.
 
 
@@ -20,11 +20,11 @@ uses them to update only the Main Sequence section below.
 Before any non-trivial Main Sequence work, update the project SDK first, then compare the
 installed SDK version with the managed skills pin:
 
-- `mainsequence project update-sdk --path .`
+- `mainsequence code-repository update-sdk --path .`
 
 After the SDK update, inspect `.agents/skills/mainsequence/PINNED_FROM.txt`.
 The schema-2 record describes both sources installed by
-`mainsequence project update_agent_skills`:
+`mainsequence code-repository update-agent-skills`:
 
 - `sdk_version=...` and `sdk_skills_path=...` identify the SDK-owned execution
   skills copied from the target project's installed SDK;
@@ -40,8 +40,8 @@ Compare the SDK value with the installed version reported by
 Refresh the managed scaffold only when `PINNED_FROM.txt` is missing or its
 `pinned_version` differs from the installed SDK version:
 
-- `mainsequence project update_agent_skills --path .`
-- `mainsequence project update AGENTS.md --path .`
+- `mainsequence code-repository update-agent-skills --path .`
+- `mainsequence code-repository update AGENTS.md --path .`
 
 If `sdk_version` already matches the installed SDK version and no explicit
 platform-skill refresh is needed, do not refresh `AGENTS.md` or
@@ -189,10 +189,10 @@ Typical routing:
   `.agents/skills/mainsequence/project_design/SKILL.md`
 - project setup, local checkout, CLI environment, scaffolding, and standard
   repository layout:
-  `.agents/skills/mainsequence/sdk_project_execution/SKILL.md`
+  `.agents/skills/mainsequence/sdk_code_repository_execution/SKILL.md`
 - local environment repair, project authentication refresh, SDK updates,
   managed skill refresh, and canonical project sync:
-  `.agents/skills/mainsequence/maintenance/project-maintenance/SKILL.md`
+  `.agents/skills/mainsequence/maintenance/code_repository_maintenance/SKILL.md`
 - turning an existing project into a project-backed coding agent, defining
   project-owned skills, and authoring `.agents/agent_card.json`:
   `.agents/skills/mainsequence/project_to_agent/SKILL.md`
@@ -206,7 +206,7 @@ Typical routing:
   `.agents/skills/mainsequence/data_access/exploration/SKILL.md`
 - FastAPI APIs serving the Command Center frontend and their release lifecycle:
   `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
-- jobs, schedules, images, project resources, releases, and Artifacts:
+- jobs, schedules, images, code repository resources, releases, and Artifacts:
   `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
 - RBAC, sharing, constants, secrets, and access verification:
   `.agents/skills/mainsequence/platform_operations/access_control_and_sharing/SKILL.md`
@@ -225,13 +225,13 @@ For any non-trivial Main Sequence task:
 2. Compare the implementation against the latest documented behavior.
 3. Confirm you are in the correct project checkout, or use `--path` explicitly.
 4. Confirm platform context with:
-   `mainsequence project current --debug`
+   `mainsequence code-repository current --debug`
 5. Before validations or live checks, run:
-   `mainsequence project refresh_token --path .`
+   `mainsequence code-repository refresh-token --path .`
 6. If git push or pull is required, use:
-    `mainsequence project open-signed-terminal <PROJECT_ID>`
+    `mainsequence code-repository open-signed-terminal <CODE_REPOSITORY_UID>`
 7. Before proceeding with non-trivial Main Sequence work, update the project SDK:
-    `mainsequence project update-sdk --path .`
+    `mainsequence code-repository update-sdk --path .`
 8. After updating the SDK, compare `mainsequence --version` with
     `.agents/skills/mainsequence/PINNED_FROM.txt` field `sdk_version=...`
     (`pinned_version=...` is its compatibility alias), and verify that the
@@ -239,8 +239,8 @@ For any non-trivial Main Sequence task:
 9. If `PINNED_FROM.txt` is missing, `sdk_version` differs from the installed
     SDK version, or a platform-skill refresh is explicitly required, refresh
     the managed scaffold files:
-    `mainsequence project update_agent_skills --path .`
-    `mainsequence project update AGENTS.md --path .`
+    `mainsequence code-repository update-agent-skills --path .`
+    `mainsequence code-repository update AGENTS.md --path .`
 10. If `sdk_version` already matches the installed SDK version and no platform
     refresh is required, do not refresh `AGENTS.md` or
     `.agents/skills/mainsequence/` as a startup ritual.
@@ -253,7 +253,7 @@ Use the skills as an orchestrated sequence, not as isolated documents.
 Default pattern:
 
 1. `.agents/skills/mainsequence/project_design/SKILL.md`
-2. `.agents/skills/mainsequence/sdk_project_execution/SKILL.md`
+2. `.agents/skills/mainsequence/sdk_code_repository_execution/SKILL.md`
 3. the relevant domain skill
 
 When the intended project surface is a project-backed coding agent, apply
@@ -264,9 +264,9 @@ interfaces and security declarations.
 
 Use `.agents/skills/mainsequence/project_design/SKILL.md` as the platform
 source of truth for intent and ontology. Use
-`.agents/skills/mainsequence/sdk_project_execution/SKILL.md` for installed-SDK,
+`.agents/skills/mainsequence/sdk_code_repository_execution/SKILL.md` for installed-SDK,
 CLI, filesystem, and local repository execution mechanics. Use
-`.agents/skills/mainsequence/maintenance/project-maintenance/SKILL.md` for
+`.agents/skills/mainsequence/maintenance/code_repository_maintenance/SKILL.md` for
 repeatable environment, authentication, SDK, scaffold-refresh, and project-sync
 routines.
 
@@ -292,23 +292,23 @@ When platform state matters, verify it with the CLI and/or platform UI.
 
 At minimum, verify relevant:
 
-- current project selection
+- current code repository selection
 - data availability
 - jobs
 - job runs and logs
-- project images
+- code repository images
 - dashboard or agent resources/releases
 - data assets
 - related platform objects used by the project
 
 Typical verification commands:
 
-- `mainsequence project current --debug`
-- `mainsequence project jobs list`
-- `mainsequence project jobs runs list <JOB_UID>`
-- `mainsequence project jobs runs logs <JOB_RUN_UID> --max-wait-seconds 900`
-- `mainsequence project images list`
-- `mainsequence project project_resource list`
+- `mainsequence code-repository current --debug`
+- `mainsequence code-repository jobs list`
+- `mainsequence code-repository jobs runs list <JOB_UID>`
+- `mainsequence code-repository jobs runs logs <JOB_RUN_UID> --max-wait-seconds 900`
+- `mainsequence code-repository images list`
+- `mainsequence code-repository resources list`
 
 If live verification is not possible:
 

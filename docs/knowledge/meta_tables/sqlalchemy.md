@@ -42,8 +42,8 @@ names, FK string targets, indexes, and Alembic version tables use one
 collision-resistant convention.
 
 ```python
-PROJECT_NAME = "sdk_examples"
-ACCOUNT_TABLE_NAME = schema_table_name(PROJECT_NAME, "account")
+CODE_REPOSITORY_NAME = "sdk_examples"
+ACCOUNT_TABLE_NAME = schema_table_name(CODE_REPOSITORY_NAME, "account")
 
 
 class Account(PlatformManagedMetaTable, Base):
@@ -79,7 +79,7 @@ The utility includes the physical table name by default; pass
 
 ```python
 class DailyReturns(PlatformTimeIndexMetaTable, Base):
-    __tablename__ = schema_table_name(PROJECT_NAME, "daily_returns")
+    __tablename__ = schema_table_name(CODE_REPOSITORY_NAME, "daily_returns")
     __metatable_namespace__ = "sdk-examples"
     __metatable_identifier__ = "sdk_examples.DailyReturns"
     __metatable_description__ = "Daily return observations keyed by time for tutorial assets."
@@ -101,7 +101,7 @@ assert "storage_hash" not in request.model_dump(mode="json", exclude_none=True)
 assert request.table_contract.physical.table_name == Account.__table__.name
 ```
 
-The data source is resolved from the active Main Sequence project/session, like
+The data source is resolved from the active Main Sequence code repository/session, like
 TimeIndexTableUpdater. Registration metadata belongs on the model class, but users should
 not call `Account.register()` directly for platform-managed tables.
 
@@ -142,7 +142,7 @@ schema.
 
 ```python
 class Asset(PlatformManagedMetaTable, Base):
-    __tablename__ = schema_table_name(PROJECT_NAME, "asset")
+    __tablename__ = schema_table_name(CODE_REPOSITORY_NAME, "asset")
     __table_args__ = (
         Index(None, "account_uid"),
     )
@@ -207,7 +207,7 @@ foreign-key contracts.
 
 ```python
 class AccountHoldings(PlatformTimeIndexMetaTable, Base):
-    __tablename__ = schema_table_name(PROJECT_NAME, "account_holdings")
+    __tablename__ = schema_table_name(CODE_REPOSITORY_NAME, "account_holdings")
     __table_args__ = (
         Index(None, "account_uid"),
     )
@@ -264,7 +264,7 @@ For generic MetaTables:
 
 ```python
 class Account(PlatformManagedMetaTable, Base):
-    __tablename__ = schema_table_name(PROJECT_NAME, "account")
+    __tablename__ = schema_table_name(CODE_REPOSITORY_NAME, "account")
     __metatable_namespace__ = "sdk-examples"
     __metatable_identifier__ = "sdk-examples.Account"
 
@@ -276,7 +276,7 @@ For time-indexed updater output tables:
 
 ```python
 class AccountHoldings(PlatformTimeIndexMetaTable, Base):
-    __tablename__ = schema_table_name(PROJECT_NAME, "account_holdings")
+    __tablename__ = schema_table_name(CODE_REPOSITORY_NAME, "account_holdings")
     __metatable_namespace__ = "sdk-examples"
     __metatable_identifier__ = "sdk-examples.AccountHoldings"
     __time_index_name__ = "time_index"
@@ -369,7 +369,7 @@ Use:
 
 ```python
 class Asset(PlatformManagedMetaTable, Base):
-    __tablename__ = schema_table_name(PROJECT_NAME, "asset")
+    __tablename__ = schema_table_name(CODE_REPOSITORY_NAME, "asset")
     __metatable_namespace__ = "sdk-examples"
     __metatable_identifier__ = "sdk_examples.Asset"
     __metatable_description__ = "Externally managed asset table registered as a governed MetaTable."

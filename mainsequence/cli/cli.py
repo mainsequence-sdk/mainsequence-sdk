@@ -12,7 +12,7 @@ Parity with VS Code extension:
 - project sync (uv bump + lock/sync/export + git commit/push)
 - project build-docker-env (docker build + devcontainer config)
 - local `.env` provisioning during set-up-locally uses only CLI-managed runtime values
-- project current (detect current project + venv/python info)
+- project current (detect current code repository + venv/python info)
 - sdk latest + project sdk-status + project update-sdk
 - doctor diagnostics
 
@@ -1445,7 +1445,7 @@ def _get_remote_branch_head_commit(code_repository_dir: pathlib.Path) -> tuple[s
     upstream = _git_upstream_ref(code_repository_dir)
     if not upstream:
         raise RuntimeError(
-            "Current branch has no upstream remote branch. Push with --set-upstream before listing project resources."
+            "Current branch has no upstream remote branch. Push with --set-upstream before listing code repository resources."
         )
 
     result = _git_run(code_repository_dir, ["rev-parse", upstream])
@@ -7308,7 +7308,7 @@ def code_repository_validate_name_cmd(
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
-    Validate whether a project name is available for creation on the platform.
+    Validate whether a code repository name is available for creation on the platform.
 
     Examples
     --------
@@ -7752,7 +7752,7 @@ def code_repository_remove_label_cmd(
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
-    Remove one or more organizational labels from a project.
+    Remove one or more organizational labels from a code repository.
 
     Labels are helpers for grouping and discovery only. They do not affect runtime behavior or functionality.
     """
@@ -7773,7 +7773,7 @@ def code_repository_add_to_view_cmd(
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
-    Grant explicit view access to one user for one project.
+    Grant explicit view access to one user for one code repository.
 
     Examples
     --------
@@ -7798,7 +7798,7 @@ def code_repository_add_to_edit_cmd(
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
-    Grant explicit edit access to one user for one project.
+    Grant explicit edit access to one user for one code repository.
 
     Examples
     --------
@@ -7823,7 +7823,7 @@ def code_repository_remove_from_view_cmd(
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
-    Remove explicit view access from one user for one project.
+    Remove explicit view access from one user for one code repository.
 
     Examples
     --------
@@ -7848,7 +7848,7 @@ def code_repository_remove_from_edit_cmd(
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
-    Remove explicit edit access from one user for one project.
+    Remove explicit edit access from one user for one code repository.
 
     Examples
     --------
@@ -7997,8 +7997,8 @@ def _code_repository_resources_list_impl(
             rows,
         )
     else:
-        info("No project resources found.")
-    info(f"Total project resources: {len(resources)}")
+        info("No code repository resources found.")
+    info(f"Total code repository resources: {len(resources)}")
 
 
 @code_repository_resources_group.command("list")
@@ -8007,7 +8007,7 @@ def code_repository_code_repository_resource_list_cmd(
         None, help="Optional CodeRepository UID assertion; Git repository identity is authoritative."
     ),
     path: str | None = typer.Option(
-        None, "--path", help="CodeRepository repository path (default: current project)"
+        None, "--path", help="CodeRepository repository path (default: current code repository)"
     ),
     filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
     show_filters: bool = typer.Option(
@@ -8016,7 +8016,7 @@ def code_repository_code_repository_resource_list_cmd(
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
-    List project resources for the current project at the head commit of the remote branch.
+    List code repository resources for the current code repository at the head commit of the remote branch.
 
     Uses SDK client `CodeRepositoryResource.filter()` as the single source of truth and always applies
     the standard `repo_commit_sha` filter resolved from the current upstream branch head.
@@ -8079,7 +8079,7 @@ def _code_repository_resource_release_create_impl(
         raise typer.Exit(1) from e
 
     if not code_repository_images:
-        error("No project images are available. Create an image first.")
+        error("No code repository images are available. Create an image first.")
         raise typer.Exit(1)
 
     if related_image_uid is None:
@@ -8127,7 +8127,7 @@ def _code_repository_resource_release_create_impl(
 
     if not resources:
         error(
-            "No project resources match the selected image commit and release type. "
+            "No code repository resources match the selected image commit and release type. "
             f"Expected resource_type={resource_type!r} for release_kind={release_kind!r}."
         )
         raise typer.Exit(1)
@@ -8231,7 +8231,7 @@ def code_repository_code_repository_resource_create_dashboard_cmd(
     ),
     resource_uid: str | None = typer.Option(None, "--resource-uid", help="CodeRepository resource UID."),
     path: str | None = typer.Option(
-        None, "--path", help="CodeRepository repository path (default: current project)"
+        None, "--path", help="CodeRepository repository path (default: current code repository)"
     ),
     related_image_uid: str | None = typer.Option(
         None, "--related-image-uid", help="CodeRepository image UID."
@@ -8255,9 +8255,9 @@ def code_repository_code_repository_resource_create_dashboard_cmd(
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
-    Create a Streamlit dashboard release from a project resource.
+    Create a Streamlit dashboard release from a code repository resource.
 
-    The command first lets the user select a project image and then filters resources so
+    The command first lets the user select a code repository image and then filters resources so
     only resources with `repo_commit_sha == related_image.code_repository_commit_hash` are eligible.
     """
     _code_repository_resource_release_create_impl(
@@ -8283,7 +8283,7 @@ def code_repository_code_repository_resource_create_fastapi_cmd(
     ),
     resource_uid: str | None = typer.Option(None, "--resource-uid", help="CodeRepository resource UID."),
     path: str | None = typer.Option(
-        None, "--path", help="CodeRepository repository path (default: current project)"
+        None, "--path", help="CodeRepository repository path (default: current code repository)"
     ),
     related_image_uid: str | None = typer.Option(
         None, "--related-image-uid", help="CodeRepository image UID."
@@ -8307,9 +8307,9 @@ def code_repository_code_repository_resource_create_fastapi_cmd(
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
-    Create a FastAPI release from a project resource.
+    Create a FastAPI release from a code repository resource.
 
-    The command first lets the user select a project image and then filters resources so
+    The command first lets the user select a code repository image and then filters resources so
     only resources with `repo_commit_sha == related_image.code_repository_commit_hash` are eligible.
     """
     _code_repository_resource_release_create_impl(
@@ -8541,7 +8541,7 @@ def _code_repository_images_list_impl(
     if rows:
         print_table("CodeRepository Images", ["UID", "CodeRepository Repo Hash", "Base Image"], rows)
     else:
-        info("No project images.")
+        info("No code repository images.")
     info(f"Total images: {len(images)}")
 
 
@@ -8551,7 +8551,7 @@ def code_repository_images_list_cmd(
         None, help="Optional CodeRepository UID assertion; Git repository identity is authoritative."
     ),
     path: str | None = typer.Option(
-        None, "--path", help="CodeRepository repository path (default: current project)"
+        None, "--path", help="CodeRepository repository path (default: current code repository)"
     ),
     filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
     show_filters: bool = typer.Option(
@@ -8560,7 +8560,7 @@ def code_repository_images_list_cmd(
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
-    List project images for a project.
+    List code repository images for a project.
 
     Uses SDK client `CodeRepositoryImage.filter()` as the single source of truth.
 
@@ -8607,7 +8607,7 @@ def _code_repository_images_delete_impl(
     _confirm_delete_action(
         preview_title="CodeRepository Image Delete Preview",
         preview_items=_format_code_repository_image_delete_preview(image),
-        prompt_text=f"Delete project image {image_uid}?",
+        prompt_text=f"Delete code repository image {image_uid}?",
         yes=yes,
     )
 
@@ -8631,7 +8631,7 @@ def code_repository_images_delete_cmd(
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
-    Delete a project image.
+    Delete a code repository image.
 
     Examples
     --------
@@ -8721,7 +8721,7 @@ def _code_repository_images_create_impl(
 
     existing_for_hash = images_by_hash.get(code_repository_commit_hash, [])
     if existing_for_hash:
-        warn("This commit already has project image(s): " + _format_image_uids(existing_for_hash))
+        warn("This commit already has code repository image(s): " + _format_image_uids(existing_for_hash))
 
     try:
         if base_image_uid is None:
@@ -8798,7 +8798,7 @@ def _code_repository_images_create_impl(
         else:
             if not emit_json:
                 warn(
-                    f"Timed out after {timeout}s waiting for project image {image_uid} to become ready. "
+                    f"Timed out after {timeout}s waiting for code repository image {image_uid} to become ready. "
                     "It may still be building on the backend."
                 )
 
@@ -8834,7 +8834,7 @@ def code_repository_images_create_cmd(
         help="Git commit hash for the image build. Must already be pushed to the remote.",
     ),
     path: str | None = typer.Option(
-        None, "--path", help="CodeRepository repository path (default: current project)"
+        None, "--path", help="CodeRepository repository path (default: current code repository)"
     ),
     base_image_uid: str | None = typer.Option(
         None, "--base-image-uid", help="CodeRepository base image UID"
@@ -8847,7 +8847,7 @@ def code_repository_images_create_cmd(
     ),
 ):
     """
-    Create a project image from a pushed git commit.
+    Create a code repository image from a pushed git commit.
 
     The current Git repository and attached branch select the CodeRepositoryBranch.
     If `code_repository_commit_hash` is omitted, the command shows
@@ -8860,7 +8860,7 @@ def code_repository_images_create_cmd(
     code_repository_commit_hash:
         Git commit hash already pushed to remote.
     path:
-        Local repository path. Defaults to current project folder.
+        Local repository path. Defaults to current code repository folder.
     base_image_uid:
         CodeRepository base image UID. If omitted, prompt from available base images.
     timeout:
@@ -9092,7 +9092,7 @@ def code_repository_jobs_list_cmd(
         None, help="Optional CodeRepository UID assertion; Git repository identity is authoritative."
     ),
     path: str | None = typer.Option(
-        None, "--path", help="CodeRepository repository path (default: current project)"
+        None, "--path", help="CodeRepository repository path (default: current code repository)"
     ),
     filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
     show_filters: bool = typer.Option(
@@ -9631,7 +9631,7 @@ def code_repository_jobs_create_cmd(
     ),
     name: str | None = pydantic_option(JOB_MODEL_REF, "name", None, "--name"),
     path: str | None = typer.Option(
-        None, "--path", help="CodeRepository repository path (default: current project)"
+        None, "--path", help="CodeRepository repository path (default: current code repository)"
     ),
     execution_path: str | None = pydantic_option(
         JOB_MODEL_REF,
@@ -10574,7 +10574,7 @@ def code_repository_current(
     debug: bool = typer.Option(False, "--debug", help="Show detection debug details"),
 ):
     """
-    Detect and display current project context from current directory.
+    Detect and display current code repository context from current directory.
 
     Includes detected path, logical CodeRepository UID, current Git branch, resolved
     CodeRepositoryBranch UID, virtual environment, Python version, and SDK status when
@@ -10598,7 +10598,7 @@ def code_repository_current(
 
     code_repository_info, dbg = detect_current_code_repository([cwd], base)
     if not code_repository_info:
-        warn(f"No MainSequence project detected (reason: {dbg.reason}).")
+        warn(f"No MainSequence code repository detected (reason: {dbg.reason}).")
         if debug and dbg.checks:
             print_kv("Debug", [("checks", json.dumps([c.__dict__ for c in dbg.checks], indent=2))])
         raise typer.Exit(1)

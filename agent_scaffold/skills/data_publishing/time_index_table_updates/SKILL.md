@@ -131,8 +131,8 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from mainsequence.meta_tables import PlatformTimeIndexMetaTable, schema_table_name
 
-PROJECT_NAME = "<code_repository_name>"
-PRICES_TABLE_NAME = schema_table_name(PROJECT_NAME, "prices")
+CODE_REPOSITORY_NAME = "<code_repository_name>"
+PRICES_TABLE_NAME = schema_table_name(CODE_REPOSITORY_NAME, "prices")
 
 
 class Base(DeclarativeBase):

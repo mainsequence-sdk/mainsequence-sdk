@@ -41,7 +41,7 @@ enrichment remains available on each `OwnerLogRow`.
 `DeploymentRun.get_logs()` is deliberately separate from application runtime
 logs. It returns deployment pipeline entries and sources, retaining its
 `step_uid`, `source`, and `level` filters. The SDK adds the Organization
-Environment resolved from the process-frozen Git project context. Callers do
+Environment resolved from the process-frozen Git code repository context. Callers do
 not provide it.
 
 ## CLI

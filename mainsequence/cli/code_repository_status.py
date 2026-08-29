@@ -2,7 +2,7 @@
 mainsequence.cli.project_status
 ===============================
 
-Current project detection from the containing Git worktree.
+Current code repository detection from the containing Git worktree.
 """
 
 from __future__ import annotations
@@ -79,7 +79,7 @@ def detect_current_code_repository(
     base_dir: str,
 ) -> tuple[CurrentCodeRepositoryInfo | None, CurrentCodeRepositoryDebug]:
     """
-    Detect the current MainSequence project from a list of workspace directories.
+    Detect the current MainSequence code repository from a list of workspace directories.
 
     Args:
         workspaces: list of candidate dirs (in CLI typically [cwd])
