@@ -295,7 +295,7 @@ The registry has no `alembic_version_meta_table_uid` because it is the provider
 root. Initial migration setup does not require the physical `alembic_version`
 table to exist: the catalog row remains `reserved` until Alembic runs and
 managed finalization confirms the physical table. The backend still enforces
-project context, permissions, data-source ownership, provider identity,
+CodeRepository context, permissions, data-source ownership, provider identity,
 physical identity, and non-empty contract columns.
 
 ## Client Workflow

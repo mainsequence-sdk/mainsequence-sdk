@@ -175,7 +175,7 @@ Behavior:
   - overwrite only the matching destination folder.
 - Do not delete unrelated folders in the destination namespace unless they are
   overwritten by a copied source folder.
-- Do not touch project-owned skills outside the destination namespace.
+- Do not touch CodeRepository-owned skills outside the destination namespace.
 - When `dry_run=True`, return the same copy plan without writing files.
 - Write the sentinel after all non-dry-run copies succeed.
 - Fail before copying if the caller cannot resolve a non-empty library version.
@@ -392,6 +392,6 @@ Update CLI tests:
 ## Non-Goals
 
 - Do not make extension libraries copy into `.agents/skills/mainsequence/`.
-- Do not delete existing project-owned skill folders.
+- Do not delete existing CodeRepository-owned skill folders.
 - Do not require extension libraries to use Typer or the Main Sequence CLI.
 - Do not build the project-health/version-drift checker in the first change.
