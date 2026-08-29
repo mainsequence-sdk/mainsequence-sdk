@@ -1,4 +1,4 @@
-"""Dual-source Main Sequence project skill assembly.
+"""Dual-source Main Sequence code repository skill assembly.
 
 The existing ``mainsequence code-repository update-agent-skills`` command has two
 canonical inputs:
@@ -7,8 +7,8 @@ canonical inputs:
   ``agent_scaffold/skills`` tree.
 * Platform-owned skills retrieved from authenticated MCP resources.
 
-Platform content is validated in memory and written only to the target
-project. It is never persisted in the installed SDK package.
+Platform content is validated in memory and written only to the target code
+repository. It is never persisted in the installed SDK package.
 """
 
 from __future__ import annotations
