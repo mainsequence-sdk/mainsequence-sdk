@@ -184,7 +184,7 @@ eval "$(mainsequence login --export)"
 Local project provisioning is also runtime-credential aware:
 
 ```bash
-mainsequence code-repository set-up-locally <PROJECT_UID>
+mainsequence code-repository set-up-locally <CODE_REPOSITORY_UID>
 mainsequence code-repository refresh-token --path .
 ```
 

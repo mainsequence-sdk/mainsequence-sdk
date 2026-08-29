@@ -44,7 +44,7 @@ Example:
 ```python
 from mainsequence.client.models_foundry import Project
 
-project = Project.get_by_uid("<PROJECT_UID>")
+code_repository = CodeRepository.get_by_uid("<CODE_REPOSITORY_UID>")
 project.add_label(["rates", "research"])
 project.remove_label("archive")
 ```
@@ -54,8 +54,8 @@ project.remove_label("archive")
 The CLI exposes the same verbs on the object groups that support labels:
 
 ```bash
-mainsequence code-repository add-label <PROJECT_UID> --label rates --label research
-mainsequence code-repository remove-label <PROJECT_UID> --label archive
+mainsequence code-repository add-label <CODE_REPOSITORY_UID> --label rates --label research
+mainsequence code-repository remove-label <CODE_REPOSITORY_UID> --label archive
 
 mainsequence time-index-table add-label <TIME_INDEX_META_TABLE_UID> --label curated
 mainsequence time-index-table remove-label <TIME_INDEX_META_TABLE_UID> --label archive

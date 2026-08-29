@@ -2785,7 +2785,7 @@ def list_code_repository_resources(
         merged_filters: dict[str, Any] = dict(filters or {})
         merged_filters.update(
             {
-                "project__uid": resolved_branch_uid,
+                "code_repository_branch_uid": resolved_branch_uid,
                 "repo_commit_sha": str(repo_commit_sha).strip(),
             }
         )

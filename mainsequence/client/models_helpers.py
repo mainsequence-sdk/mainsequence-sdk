@@ -926,22 +926,22 @@ class JobRun(
 
 class CodeRepositoryResource(CurrentCodeRepositoryBranchCollectionMixin, BaseObjectOrm, BasePydanticModel):
     SEARCH_FIELDS: ClassVar[list[str]] = [
-        "project__uid",
+        "code_repository_branch_uid",
         "uid",
         "repo_commit_sha",
         "resource_type",
     ]
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
-        "project__uid": ["exact"],
+        "code_repository_branch_uid": ["exact"],
         "uid": ["in", "exact"],
         "repo_commit_sha": ["exact"],
         "resource_type": ["exact"],
     }
     FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
-        "project__uid": "uid",
+        "code_repository_branch_uid": "uid",
         "uid": "uid",
     }
-    CODE_REPOSITORY_BRANCH_FILTER_FIELD: ClassVar[str] = "project__uid"
+    CODE_REPOSITORY_BRANCH_FILTER_FIELD: ClassVar[str] = "code_repository_branch_uid"
 
     uid: str | None = Field(
         None,

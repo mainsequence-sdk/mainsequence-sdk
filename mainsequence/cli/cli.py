@@ -7778,7 +7778,7 @@ def code_repository_add_to_view_cmd(
     Examples
     --------
     ```bash
-    mainsequence code-repository add_to_view <PROJECT_UID> <USER_UID>
+    mainsequence code-repository add_to_view <CODE_REPOSITORY_UID> <USER_UID>
     ```
     """
     _shareable_user_access_update_impl(
@@ -7803,7 +7803,7 @@ def code_repository_add_to_edit_cmd(
     Examples
     --------
     ```bash
-    mainsequence code-repository add_to_edit <PROJECT_UID> <USER_UID>
+    mainsequence code-repository add_to_edit <CODE_REPOSITORY_UID> <USER_UID>
     ```
     """
     _shareable_user_access_update_impl(
@@ -7828,7 +7828,7 @@ def code_repository_remove_from_view_cmd(
     Examples
     --------
     ```bash
-    mainsequence code-repository remove_from_view <PROJECT_UID> <USER_UID>
+    mainsequence code-repository remove_from_view <CODE_REPOSITORY_UID> <USER_UID>
     ```
     """
     _shareable_user_access_update_impl(
@@ -7853,7 +7853,7 @@ def code_repository_remove_from_edit_cmd(
     Examples
     --------
     ```bash
-    mainsequence code-repository remove_from_edit <PROJECT_UID> <USER_UID>
+    mainsequence code-repository remove_from_edit <CODE_REPOSITORY_UID> <USER_UID>
     ```
     """
     _shareable_user_access_update_impl(
@@ -7943,7 +7943,7 @@ def _code_repository_resources_list_impl(
         show_filters=show_filters,
         command_label="CodeRepository Resources",
         reserved_filter_descriptions={
-            "project__uid": "always set from the selected CodeRepositoryBranch",
+            "code_repository_branch_uid": "always set from the selected CodeRepositoryBranch",
             "repo_commit_sha": "always set from the upstream remote branch head commit",
         },
     )

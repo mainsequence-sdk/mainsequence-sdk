@@ -4369,7 +4369,7 @@ def test_list_code_repository_resources_uses_client_model(cli_mod, monkeypatch):
     )
     assert captured["filters"][0] == {
         "uid__in": ["857bec7b-dd77-4272-aecd-13fc2138eacc"],
-        "project__uid": "5a28020a-0f1b-47ee-aab8-334286234bea",
+        "code_repository_branch_uid": "5a28020a-0f1b-47ee-aab8-334286234bea",
         "repo_commit_sha": "abc123",
         "resource_type": "dashboard",
     }

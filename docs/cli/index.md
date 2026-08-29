@@ -199,28 +199,28 @@ mainsequence time-index-table delete <TIME_INDEX_META_TABLE_UID> --full-delete-s
 
 # 1) List and create
 mainsequence code-repository list
-mainsequence code-repository add-label <PROJECT_UID> --label rates --label research
-mainsequence code-repository remove-label <PROJECT_UID> --label legacy
-mainsequence code-repository can_view <PROJECT_UID>
-mainsequence code-repository can_edit <PROJECT_UID>
-mainsequence code-repository add_to_view <PROJECT_UID> <USER_UID>
-mainsequence code-repository add_to_edit <PROJECT_UID> <USER_UID>
-mainsequence code-repository add_team_to_view <PROJECT_UID> <TEAM_UID>
-mainsequence code-repository add_team_to_edit <PROJECT_UID> <TEAM_UID>
-mainsequence code-repository remove_from_view <PROJECT_UID> <USER_UID>
-mainsequence code-repository remove_from_edit <PROJECT_UID> <USER_UID>
-mainsequence code-repository remove_team_from_view <PROJECT_UID> <TEAM_UID>
-mainsequence code-repository remove_team_from_edit <PROJECT_UID> <TEAM_UID>
+mainsequence code-repository add-label <CODE_REPOSITORY_UID> --label rates --label research
+mainsequence code-repository remove-label <CODE_REPOSITORY_UID> --label legacy
+mainsequence code-repository can_view <CODE_REPOSITORY_UID>
+mainsequence code-repository can_edit <CODE_REPOSITORY_UID>
+mainsequence code-repository add_to_view <CODE_REPOSITORY_UID> <USER_UID>
+mainsequence code-repository add_to_edit <CODE_REPOSITORY_UID> <USER_UID>
+mainsequence code-repository add_team_to_view <CODE_REPOSITORY_UID> <TEAM_UID>
+mainsequence code-repository add_team_to_edit <CODE_REPOSITORY_UID> <TEAM_UID>
+mainsequence code-repository remove_from_view <CODE_REPOSITORY_UID> <USER_UID>
+mainsequence code-repository remove_from_edit <CODE_REPOSITORY_UID> <USER_UID>
+mainsequence code-repository remove_team_from_view <CODE_REPOSITORY_UID> <TEAM_UID>
+mainsequence code-repository remove_team_from_edit <CODE_REPOSITORY_UID> <TEAM_UID>
 mainsequence code-repository images list
-mainsequence code-repository images list <PROJECT_UID>
+mainsequence code-repository images list <CODE_REPOSITORY_UID>
 mainsequence code-repository images list --show-filters
 mainsequence code-repository images list --filter code_repository_commit_hash__in=4a1b2c3d,5e6f7a8b
 mainsequence code-repository create tutorial-project
 mainsequence code-repository create tutorial-project --default-base-image-uid <base_image_uid> --github-org-uid <github_org_uid>
 mainsequence code-repository images create
-mainsequence code-repository images create <PROJECT_UID>
-mainsequence code-repository images create <PROJECT_UID> 4a1b2c3d
-mainsequence code-repository images create <PROJECT_UID> --timeout 600 --poll-interval 15
+mainsequence code-repository images create <CODE_REPOSITORY_UID>
+mainsequence code-repository images create <CODE_REPOSITORY_UID> 4a1b2c3d
+mainsequence code-repository images create <CODE_REPOSITORY_UID> --timeout 600 --poll-interval 15
 mainsequence code-repository jobs list
 mainsequence code-repository jobs runs list <JOB_UID>
 mainsequence code-repository jobs runs logs <JOB_RUN_UID>
@@ -231,19 +231,19 @@ mainsequence code-repository jobs run <JOB_UID> -- --name demo-from-cli
 mainsequence code-repository jobs create --name daily-run --execution-path scripts/test.py --related-image-uid <IMAGE_UID>
 mainsequence code-repository jobs create --name promoted-run --execution-path scripts/test.py --automatic-deployment
 mainsequence code-repository time-index-table-updates list
-mainsequence code-repository time-index-table-updates list <PROJECT_UID>
+mainsequence code-repository time-index-table-updates list <CODE_REPOSITORY_UID>
 mainsequence code-repository resources list
 mainsequence code-repository resources list --show-filters
 mainsequence code-repository resources list --filter resource_type=dashboard
 mainsequence code-repository resources list --filter resource_type=fastapi
 mainsequence code-repository resources create_fastapi
-mainsequence code-repository resources create_fastapi <PROJECT_UID>
+mainsequence code-repository resources create_fastapi <CODE_REPOSITORY_UID>
 mainsequence code-repository resources delete_fastapi <RELEASE_UID>
 mainsequence code-repository resources delete_fastapi <RELEASE_UID> --yes
 mainsequence code-repository validate-name "Rates Platform"
 
 # 2) Set up locally
-mainsequence code-repository set-up-locally <PROJECT_UID>
+mainsequence code-repository set-up-locally <CODE_REPOSITORY_UID>
 mainsequence code-repository refresh-token
 
 # 3) Environment setup

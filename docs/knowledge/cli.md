@@ -81,11 +81,11 @@ untouched and are not used as a fallback.
 mainsequence login
 
 mainsequence code-repository list
-mainsequence code-repository set-up-locally <PROJECT_UID>
-mainsequence code-repository open-signed-terminal <PROJECT_UID>
+mainsequence code-repository set-up-locally <CODE_REPOSITORY_UID>
+mainsequence code-repository open-signed-terminal <CODE_REPOSITORY_UID>
 
 # Project operations
-mainsequence code-repository add-label <PROJECT_UID> --label rates --label research
+mainsequence code-repository add-label <CODE_REPOSITORY_UID> --label rates --label research
 mainsequence time-index-table add-label <TIME_INDEX_META_TABLE_UID> --label curated
 
 # Compile environment
