@@ -6,6 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [8.0.0] - 2026-08-29
+
+### Changed
+
+- Replaced the removed Pod Manager `Project`, `ProjectBranch`, and
+  `GitRepository` SDK ontology with `CodeRepository`,
+  `CodeRepositoryBranch`, and `GitHubRepositoryBinding` across models,
+  fields, routes, filters, runtime context, CLI output, and scaffold guidance.
+- Renamed the local CLI base option to `--code-repositories-base`, changed new
+  managed checkout paths to `<base>/<organization>/code-repositories/`, and
+  removed stale Project-era CLI examples and schema descriptions.
+- Renamed the generated Alembic registry default to
+  `CodeRepositoryAlembicVersion` and aligned the installed
+  `code_repository_to_agent` skill path with the backend catalog.
+
+### Migration
+
+- Follow the [7.x to 8.0 CodeRepository ontology hard-cut guide](docs/migrations/v8-code-repository-ontology.md).
+  Version 8 requires the coordinated canonical backend and does not provide
+  aliases for the removed repository-domain contract.
+
 ## [7.0.2] - 2026-08-28
 
 ### Fixed

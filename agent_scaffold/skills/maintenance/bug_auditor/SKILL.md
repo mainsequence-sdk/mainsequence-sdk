@@ -1,28 +1,28 @@
 ---
 name: doc-bug-auditor
-description: Reviews a Main Sequence project for status, blockers, failures, and completion.
+description: Reviews a Main Sequence CodeRepository for status, blockers, failures, and completion.
 ---
 
 # Main Sequence Bug Auditor
 
 ## Overview
 
-Use this skill to inspect a checked-out Main Sequence project and determine:
+Use this skill to inspect a checked-out Main Sequence CodeRepository and determine:
 
 - what is already finished
 - what is still in progress
 - what is blocked or failing
 - what evidence supports that assessment
-- whether a failure looks like target-project misuse, environment or setup drift, or a likely `mainsequence-sdk` execution bug
+- whether a failure looks like target-repository misuse, environment or setup drift, or a likely `mainsequence-sdk` execution bug
 
 This skill is for diagnosis and assessment. Default behavior is read-only unless the task explicitly asks for edits.
 
 ## This Skill Can Do
 
-- inspect project state and summarize completion status
+- inspect CodeRepository state and summarize completion status
 - use repo state, logs, test output, and stderr as evidence
 - classify failures into:
-  - target-project issue
+  - target-repository issue
   - environment or credentials issue
   - likely upstream `mainsequence-sdk` issue
   - unclear
@@ -62,10 +62,10 @@ This skill audits. It does not implement by default.
 - Streamlit dashboard deployment or release issues:
   `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
 - environment repair, authentication refresh, SDK updates, managed skill
-  refresh, and project sync after the failure is classified:
+  refresh, and CodeRepository sync after the failure is classified:
   `.agents/skills/mainsequence/maintenance/code_repository_maintenance/SKILL.md`
 
-Streamlit dashboard design and implementation failures are target-project application code issues unless the evidence points to Main Sequence deployment, resource discovery, image selection, release creation, or platform runtime behavior.
+Streamlit dashboard design and implementation failures are target-repository application code issues unless the evidence points to Main Sequence deployment, resource discovery, image selection, release creation, or platform runtime behavior.
 
 ## Read First
 
@@ -91,7 +91,7 @@ For every audit, decide:
 1. Is the overall state `finished`, `in_progress`, `blocked`, or `failed`?
 2. What evidence supports the completed work?
 3. What work is still open?
-4. Is each failure best classified as target-project, environment, upstream SDK, or unclear?
+4. Is each failure best classified as target-repository, environment, upstream SDK, or unclear?
 5. Does the evidence justify inspecting the installed SDK or public `mainsequence-sdk` source?
 6. Does the evidence justify GitHub duplicate search or upstream issue escalation?
 
@@ -133,7 +133,7 @@ Especially announce when you are:
 
 Every failure should be classified as one of:
 
-- target-project issue
+- target-repository issue
 - environment or credentials issue
 - likely upstream `mainsequence-sdk` issue
 - unclear

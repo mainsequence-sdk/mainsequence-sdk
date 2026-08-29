@@ -4,7 +4,7 @@ Some SDK objects expose a `labels` field together with the client `LabelableObje
 
 Current examples include:
 
-- `Project`
+- `CodeRepository`
 - `TimeIndexMetaTable`
 - `MetaTable`
 
@@ -45,8 +45,8 @@ Example:
 from mainsequence.client.models_foundry import CodeRepository
 
 code_repository = CodeRepository.get_by_uid("<CODE_REPOSITORY_UID>")
-project.add_label(["rates", "research"])
-project.remove_label("archive")
+code_repository.add_label(["rates", "research"])
+code_repository.remove_label("archive")
 ```
 
 ## CLI Usage

@@ -42,7 +42,7 @@ def _reset_context(monkeypatch):
 def _source(*, branch: str = "main", commit_sha: str = COMMIT_SHA):
     return code_repository_context.GitCodeRepositorySourceContext(
         repository_root=pathlib.Path.cwd().resolve(),
-        canonical_repository_identity="github.com/mainsequence-sdk/example-project",
+        canonical_repository_identity="github.com/mainsequence-sdk/example-repository",
         repository_branch=branch,
         repository_ref=f"refs/heads/{branch}",
         commit_sha=commit_sha,
@@ -130,7 +130,7 @@ def _git(repo: pathlib.Path, *args: str) -> str:
 
 
 def test_git_source_context_reads_attached_branch_remote_and_full_commit(tmp_path):
-    repo = tmp_path / "project"
+    repo = tmp_path / "code-repository"
     repo.mkdir()
     _git(repo, "init", "-b", "development")
     _git(repo, "config", "user.email", "sdk@example.test")
@@ -170,14 +170,14 @@ def test_code_repository_branch_git_context_uses_canonical_backend_action(monkey
         @staticmethod
         def json():
             return {
-                "canonical_repository_identity": ("github.com/mainsequence-sdk/example-project"),
+                "canonical_repository_identity": ("github.com/mainsequence-sdk/example-repository"),
                 "repository_branch": "main",
                 "repository_ref": "refs/heads/main",
                 "commit_sha": COMMIT_SHA,
                 "code_repository_branch": {
                     "uid": CODE_REPOSITORY_BRANCH_UID,
                     "code_repository_uid": CODE_REPOSITORY_UID,
-                    "code_repository_name": "Example Project",
+                    "code_repository_name": "Example CodeRepository",
                     "repository_branch": "main",
                     "metatables_data_source": None,
                     "metatables_data_source_uid": None,
@@ -204,14 +204,14 @@ def test_code_repository_branch_git_context_uses_canonical_backend_action(monkey
     )
 
     resolution = models_foundry.CodeRepositoryBranch.resolve_git_context(
-        repository_identity="github.com/mainsequence-sdk/example-project",
+        repository_identity="github.com/mainsequence-sdk/example-repository",
         repository_branch="main",
         commit_sha=COMMIT_SHA,
     )
 
     assert captured["url"].endswith("/code-repository-branches/resolve-git-context/")
     assert captured["payload"]["json"] == {
-        "repository_identity": "github.com/mainsequence-sdk/example-project",
+        "repository_identity": "github.com/mainsequence-sdk/example-repository",
         "repository_branch": "main",
         "commit_sha": COMMIT_SHA,
     }
@@ -283,7 +283,7 @@ def test_concurrent_first_call_performs_one_resolution(monkeypatch):
 
 
 def test_identity_environment_variables_never_select_context(monkeypatch):
-    monkeypatch.setenv("MAIN_SEQUENCE_PROJECT_UID", "wrong-project")
+    monkeypatch.setenv("MAIN_SEQUENCE_PROJECT_UID", "wrong-code-repository")
     monkeypatch.setenv("MAIN_SEQUENCE_PROJECT_BRANCH_UID", "wrong-branch")
     monkeypatch.setenv("MAINSEQUENCE_REPOSITORY_BRANCH", "wrong-branch-name")
     monkeypatch.setenv(
@@ -347,7 +347,7 @@ def test_authenticated_runtime_context_has_no_missing_git_fallback(monkeypatch):
 @pytest.mark.parametrize(
     ("field", "value"),
     [
-        ("code_repository_uid", "different-project"),
+        ("code_repository_uid", "different-code-repository"),
         ("code_repository_branch_uid", "different-code-repository-branch"),
         ("repository_branch", "development"),
         ("organization_environment_uid", "different-environment"),
@@ -557,7 +557,7 @@ def test_code_repository_data_source_requires_exact_registered_branch(monkeypatc
 
     assert (
         code_repository_context.require_code_repository_metatables_data_source(
-            "Project-derived data access",
+            "CodeRepositoryBranch-derived data access",
             context=context,
         )
         is data_source
@@ -708,7 +708,7 @@ def test_metatable_request_always_submits_git_resolved_context(monkeypatch):
 def test_code_repository_model_rejects_removed_default_data_source_fields():
     payload = {
         "uid": CODE_REPOSITORY_UID,
-        "code_repository_name": "Example Project",
+        "code_repository_name": "Example CodeRepository",
         "code_repository_type": "python",
         "primary_language": "python",
         "framework": "mainsequence",

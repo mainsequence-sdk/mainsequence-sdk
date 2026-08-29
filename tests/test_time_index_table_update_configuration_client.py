@@ -726,8 +726,8 @@ def test_table_update_accepts_labels():
 
 def test_label_fields_exist_on_code_repository_and_storage_models():
     code_repository = CodeRepository(
-        uid="project-uid-1",
-        code_repository_name="Project",
+        uid="code-repository-uid-1",
+        code_repository_name="CodeRepository",
         code_repository_type="python",
         primary_language="python",
         framework="mainsequence",

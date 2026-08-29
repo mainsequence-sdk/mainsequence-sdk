@@ -23,7 +23,7 @@ def test_copy_scaffold_skills_copies_namespace_and_writes_pin_sentinel(tmp_path)
     _write_skill(skills_root, ".hidden", "hidden")
     _write_skill(skills_root, "__pycache__", "cache")
 
-    code_repository_dir = tmp_path / "project"
+    code_repository_dir = tmp_path / "code-repository"
     code_repository_owned = code_repository_dir / ".agents" / "skills" / "data_publishing"
     code_repository_owned.mkdir(parents=True)
     (code_repository_owned / "old.txt").write_text("preserved", encoding="utf-8")
@@ -64,7 +64,7 @@ def test_copy_scaffold_skills_copies_namespace_and_writes_pin_sentinel(tmp_path)
 def test_copy_scaffold_skills_dry_run_writes_nothing(tmp_path):
     skills_root = tmp_path / "package" / "scaffold_skills"
     _write_skill(skills_root, "data_publishing")
-    code_repository_dir = tmp_path / "project"
+    code_repository_dir = tmp_path / "code-repository"
 
     result = copy_scaffold_skills(
         code_repository_dir=code_repository_dir,
@@ -86,7 +86,7 @@ def test_copy_scaffold_skills_requires_resolved_pinned_version(tmp_path, version
 
     with pytest.raises(ValueError, match="pinned_version"):
         copy_scaffold_skills(
-            code_repository_dir=tmp_path / "project",
+            code_repository_dir=tmp_path / "code-repository",
             library_name="mainsequence",
             skills_path=skills_root,
             pinned_version=version,
@@ -94,7 +94,7 @@ def test_copy_scaffold_skills_requires_resolved_pinned_version(tmp_path, version
 
 
 def test_copy_scaffold_skills_blocks_destination_source_overlap(tmp_path):
-    code_repository_dir = tmp_path / "project"
+    code_repository_dir = tmp_path / "code-repository"
     skills_root = code_repository_dir / ".agents" / "skills" / "ms_markets"
     _write_skill(skills_root, "data_publishing")
 
@@ -109,7 +109,7 @@ def test_copy_scaffold_skills_blocks_destination_source_overlap(tmp_path):
 
 
 def test_copy_scaffold_skills_blocks_destination_inside_source(tmp_path):
-    code_repository_dir = tmp_path / "project"
+    code_repository_dir = tmp_path / "code-repository"
     skills_root = code_repository_dir / ".agents"
     _write_skill(skills_root, "data_publishing")
 
@@ -124,7 +124,7 @@ def test_copy_scaffold_skills_blocks_destination_inside_source(tmp_path):
 
 
 def test_copy_scaffold_skills_blocks_source_inside_destination(tmp_path):
-    code_repository_dir = tmp_path / "project"
+    code_repository_dir = tmp_path / "code-repository"
     skills_root = code_repository_dir / ".agents" / "skills" / "ms_markets" / "source"
     _write_skill(skills_root, "data_publishing")
 
@@ -160,7 +160,7 @@ def test_copy_scaffold_skills_blocks_code_repository_guard_reason(tmp_path):
 
     with pytest.raises(ScaffoldSkillCopyBlocked, match="source checkout"):
         copy_scaffold_skills(
-            code_repository_dir=tmp_path / "project",
+            code_repository_dir=tmp_path / "code-repository",
             library_name="ms-markets",
             namespace="ms_markets",
             skills_path=skills_root,

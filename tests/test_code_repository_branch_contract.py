@@ -182,7 +182,9 @@ def test_code_repository_bulk_delete_uses_selection_and_options(monkeypatch):
 
     def fake_make_request(**kwargs):
         captured.update(kwargs)
-        return FakeResponse({"detail": "Projects deleted.", "matched_count": 1, "deleted_count": 1})
+        return FakeResponse(
+            {"detail": "CodeRepositories deleted.", "matched_count": 1, "deleted_count": 1}
+        )
 
     monkeypatch.setattr(
         models_foundry.CodeRepository,

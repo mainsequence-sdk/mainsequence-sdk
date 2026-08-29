@@ -43,7 +43,7 @@ This skill discovers and identifies data. It does not publish, redesign, or defi
 
 ## Route Adjacent Work
 
-- project bootstrap, scaffolding, and routing:
+- CodeRepository bootstrap, scaffolding, and routing:
   `.agents/skills/mainsequence/project_design/SKILL.md`
 - `TimeIndexTableUpdater` creation or modification:
   `.agents/skills/mainsequence/data_publishing/time_index_table_updates/SKILL.md`
@@ -56,7 +56,7 @@ This skill discovers and identifies data. It does not publish, redesign, or defi
 - blocker and failure analysis:
   `.agents/skills/mainsequence/maintenance/bug_auditor/SKILL.md`
 
-Streamlit dashboard implementation is app-owned project code, not a Main Sequence scaffold skill.
+Streamlit dashboard implementation is app-owned repository code, not a Main Sequence scaffold skill.
 
 ## Read First
 
@@ -70,7 +70,7 @@ Streamlit dashboard implementation is app-owned project code, not a Main Sequenc
 Before exploring, collect or infer:
 
 - the business question being asked
-- whether the user is exploring organization-wide data or project-scoped data
+- whether the user is exploring organization-wide data or CodeRepositoryBranch-scoped data
 - whether the target is a published table or a row-oriented table
 - whether the user already knows an identifier, keyword, or object UID
 - whether metadata discovery alone answers the question
@@ -155,7 +155,7 @@ field to filter by:
 - `mainsequence time-index-table detail <TIME_INDEX_META_TABLE_UID>`
 
 Collection listing is scoped to one Organization Environment. Inside a
-registered project checkout, the CLI derives that scope from the process-frozen
+registered CodeRepository checkout, the CLI derives that scope from the process-frozen
 Git-resolved CodeRepositoryBranch. Do not pass an Environment UID or branch UID. On an
 unregistered branch, table operations fail when they require CodeRepositoryBranch
 context while unrelated local development remains available.

@@ -188,7 +188,7 @@ class AgentRuntimeImageDriftCheck(BasePydanticModel):
         "", description="Actual runtime image URI, when the check is image-based."
     )
     expected_commit_hash: str = Field(
-        "", description="Expected project commit hash, when the check is commit-based."
+        "", description="Expected CodeRepository commit hash, when the check is commit-based."
     )
     actual_commit_hash: str = Field(
         "", description="Actual runtime commit hash, when the check is commit-based."
@@ -990,7 +990,7 @@ class CodingAgentService(BaseObjectOrm, BasePydanticModel):
         from mainsequence.code_repository_context import resolve_code_repository_branch_uid
 
         resolved_code_repository_branch_uid = resolve_code_repository_branch_uid(
-            "CodingAgentService.deploy_project",
+            "CodingAgentService.deploy_code_repository",
             supplied_uid=code_repository_branch_uid,
         )
         body: dict[str, Any] = {

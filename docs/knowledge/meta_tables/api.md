@@ -47,7 +47,7 @@ used by MetaTable schema migrations.
 
 ## Collection Scope
 
-Project-facing collection requests derive the Organization Environment from the
+CodeRepository-facing collection requests derive the Organization Environment from the
 process-frozen current CodeRepositoryBranch:
 
 ```python
@@ -143,9 +143,9 @@ reach the backend.
 
 `PlatformManagedMetaTable` exists so SQLAlchemy table construction and
 migration-managed registration produce the same table contract while preserving
-the authored physical table name. Prefix explicit table names with the project
+the authored physical table name. Prefix explicit table names with the repository
 or package name.
-Use `schema_table_name(project_or_app, concept)` and
+Use `schema_table_name(app, concept)` and
 `sqlalchemy_naming_convention()` to keep authored table, index, constraint, and
 Alembic version names collision-resistant and within PostgreSQL identifier
 limits.

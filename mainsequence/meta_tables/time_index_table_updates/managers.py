@@ -302,19 +302,19 @@ def _unbound_output_table_message(
         resolution_detail = ""
         if lookup_result.data_source_resolution_error:
             resolution_detail = (
-                " Project/session default data-source resolution failed: "
+                " CodeRepositoryBranch/session default data-source resolution failed: "
                 f"{lookup_result.data_source_resolution_error}."
             )
         return (
             f"{message} The SDK could not determine a data-source UID from "
-            "the storage model or the current project/session default, so no "
+            "the storage model or the current CodeRepositoryBranch/session default, so no "
             f"backend catalog lookup was possible.{resolution_detail}"
         )
     if lookup_result.data_source_mismatch is not None:
         explicit_uid, session_uid = lookup_result.data_source_mismatch
         return (
             f"{message} Storage model data-source UID {explicit_uid!r} does "
-            "not match current project/session default data-source UID "
+            "not match current CodeRepositoryBranch/session default data-source UID "
             f"{session_uid!r}; refusing to bind this storage model."
         )
 

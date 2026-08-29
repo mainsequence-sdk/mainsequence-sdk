@@ -7,7 +7,7 @@ description: Use this skill for Main Sequence jobs, schedules, backend-managed c
 
 ## Overview
 
-Use this skill when the task is about getting project code to run on the platform in a controlled and verifiable way.
+Use this skill when the task is about getting CodeRepository code to run on the platform in a controlled and verifiable way.
 
 This skill is for:
 
@@ -69,7 +69,7 @@ This skill must not claim ownership of:
 
 If the task touches deployed FastAPI APIs, also read the relevant API skill/docs before changing the operational workflow.
 
-If the task asks to design, build, style, or restructure a Streamlit app, do not treat that as Main Sequence platform skill work. Streamlit implementation is app-owned project code. This skill only owns deployment and verification of an already-authored dashboard.
+If the task asks to design, build, style, or restructure a Streamlit app, do not treat that as Main Sequence platform skill work. Streamlit implementation is app-owned repository code. This skill only owns deployment and verification of an already-authored dashboard.
 
 ## Inputs This Skill Needs
 
@@ -127,7 +127,7 @@ application. Retrieve the current template from
 `path` and `content` with
 `POST /api/v1/code-repository-branches/{uid}/validate-workflow/`, then commit the file.
 Do not reproduce the parser or construct an interpreted deployment payload in
-the SDK or project code.
+the SDK or CodeRepository code.
 
 Every file requires the backend-advertised `api_version`, a name, and resource
 declarations. Use the current template for accepted fields and resource kinds.
@@ -155,7 +155,7 @@ backend prepares the exact initial image and later qualifying immutable
 repository events may atomically promote another exact image. On an existing
 Job, enabling or disabling it retains the current exact image. The backend owns
 repository-event truth, policy evaluation, image preparation, and promotion;
-project code and the SDK must not choose a Job's deployment branch or image.
+CodeRepository code and the SDK must not choose a Job's deployment branch or image.
 This deployment-policy rule does not replace ADR-0037 runtime source discovery:
 code executing inside the resulting code repository image still resolves and validates
 its attached Git branch and exact commit.
@@ -262,11 +262,11 @@ Validate the deployment path, not the Streamlit design.
 
 ### 6.2 Automatic ResourceRelease deployment
 
-`automatic_deployment` is the automated deployment opt-in flag on a `ResourceRelease`. It means repository synchronization can rotate an existing release to the latest synced project commit for the same resource path.
+`automatic_deployment` is the automated deployment opt-in flag on a `ResourceRelease`. It means repository synchronization can rotate an existing release to the latest synced CodeRepository commit for the same resource path.
 
 When `automatic_deployment=True`, repository-sync events may create a unified `DeploymentRun` with `target_type="resource_release"` and source `repository_event`. That run:
 
-- reads the project's current synced commit
+- reads the CodeRepository's current synced commit
 - resolves the current code repository resource at the release's existing resource path
 - resolves the current adjacent `README.md` when the release kind requires one, such as Streamlit dashboards
 - creates or resolves the code repository image for that commit
@@ -277,7 +277,7 @@ This is not a local development shortcut. It does not deploy unpushed local file
 
 Enable `automatic_deployment` only when:
 
-- the release should track the project's synced repository version
+- the release should track the CodeRepository's synced version
 - the resource path is stable across commits
 - the current synced branch/version is an acceptable deployment source for that release
 - dashboard README requirements are satisfied for the current commit
@@ -289,7 +289,7 @@ Keep `automatic_deployment` disabled when:
 - each release rotation needs human approval
 - the resource path or entrypoint is still moving
 - API or widget contracts are not stable enough for automatic rotation
-- the current branch/project sync target is not the intended deployment source
+- the current branch/CodeRepository sync target is not the intended deployment source
 
 Create opted-in releases with the CLI flags that exist:
 
@@ -380,7 +380,7 @@ If the workflow uses Artifacts, also check:
 - a manually pinned Job has no exact ready initial image
 - an automatically deployed Job has no persisted synchronized CodeRepositoryBranch commit
 - the workflow depends on local file paths that should be platform Artifacts
-- automatic deployment is requested but the deployment source branch/current synced project version is unclear
+- automatic deployment is requested but the deployment source branch/current synced CodeRepository version is unclear
 - automatic deployment is requested but the resource path or required README is not stable
 - the task is actually about RBAC policy rather than orchestration
 - the task is actually about producer semantics rather than platform execution

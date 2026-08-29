@@ -94,7 +94,7 @@ Record:
 
 FastAPI releases receive the authenticated human from the Main Sequence
 platform through injected request state. No SDK authentication setup is
-required in project code:
+required in repository code:
 
 ```python
 from fastapi import FastAPI, Request
@@ -132,7 +132,7 @@ Keep Command Center contract-bearing route code focused on transport and
 application behavior:
 
 1. validate request bodies and parameters
-2. invoke project-owned services and Main Sequence data access
+2. invoke repository-owned services and Main Sequence data access
 3. serialize the declared Command Center contract
 4. validate the serialized body against the schema from the selected repository
    commit before it crosses the HTTP boundary
@@ -176,7 +176,7 @@ Adapter From API schema and fixtures at the selected repository commit.
 
 ### 5. Release the tested commit
 
-Before release, verify local project resolution:
+Before release, verify local CodeRepository resolution:
 
 ```bash
 mainsequence code-repository current --debug --json

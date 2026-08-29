@@ -181,7 +181,7 @@ If the parent shell needs the exchanged token, use:
 eval "$(mainsequence login --export)"
 ```
 
-Local project provisioning is also runtime-credential aware:
+Local CodeRepository provisioning is also runtime-credential aware:
 
 ```bash
 mainsequence code-repository set-up-locally <CODE_REPOSITORY_UID>
@@ -190,7 +190,7 @@ mainsequence code-repository refresh-token --path .
 
 When an already authenticated coding-agent runtime uses
 `MAINSEQUENCE_AUTH_MODE=runtime_credential`, these commands preserve the
-backend-injected runtime credential auth shape in the project `.env`:
+backend-injected runtime credential auth shape in the CodeRepository `.env`:
 
 ```bash
 MAINSEQUENCE_AUTH_MODE=runtime_credential
@@ -201,14 +201,14 @@ MAINSEQUENCE_ENDPOINT=<platform API origin>
 ```
 
 They do not require or write `MAINSEQUENCE_REFRESH_TOKEN` in runtime credential mode.
-Both local-project commands preserve unrelated `.env` entries while rendering
+Both local CodeRepository commands preserve unrelated `.env` entries while rendering
 the current supported authentication shape. They remove obsolete token aliases
 and retired Project, CodeRepositoryBranch, repository-branch, and Environment identity
 entries.
 
-Project source identity is separate from authentication. In local and deployed
+CodeRepository source identity is separate from authentication. In local and deployed
 code repository images, the SDK reads the containing sanitized Git checkout, attached
-branch, and exact HEAD commit, then maps that source to Project and
+branch, and exact HEAD commit, then maps that source to CodeRepository and
 CodeRepositoryBranch through the platform API. Switching branches does not rewrite
 credentials and takes effect in the next process. Runtime credentials authorize
 the deployed target but do not select repository or branch identity.
@@ -229,8 +229,8 @@ Important constraints:
 - `MAINSEQUENCE_REFRESH_TOKEN` is not used in this mode
 - runtime credential mode wins when `MAINSEQUENCE_AUTH_MODE=runtime_credential`
 - the exchanged access token should be treated as short-lived runtime material
-- project `.env` files may contain runtime credential material; keep `.env` out of version control
-- users and application code never set Project, CodeRepositoryBranch, repository
+- CodeRepository `.env` files may contain runtime credential material; keep `.env` out of version control
+- users and application code never set CodeRepository, CodeRepositoryBranch, repository
   branch, or Organization Environment values to choose context
 - deployed branch-owned SDK requests carry the Git-resolved CodeRepositoryBranch; the
   backend requires equality with the authenticated JobRun, CodeRepository Executor, or

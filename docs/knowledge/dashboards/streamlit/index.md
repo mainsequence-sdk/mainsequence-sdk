@@ -2,7 +2,7 @@
 
 Streamlit remains a supported dashboard deployment target on the Main Sequence Platform.
 
-The SDK no longer ships `mainsequence.dashboards.streamlit` scaffolding, theme helpers, or reusable dashboard UI components. Dashboard projects should own their Streamlit layout, styling, sidebar widgets, and page helpers directly.
+The SDK no longer ships `mainsequence.dashboards.streamlit` scaffolding, theme helpers, or reusable dashboard UI components. Dashboard CodeRepositories should own their Streamlit layout, styling, sidebar widgets, and page helpers directly.
 
 Use the SDK from Streamlit dashboards for platform work:
 
@@ -12,12 +12,12 @@ Use the SDK from Streamlit dashboards for platform work:
 
 ## Dashboard code ownership
 
-A Streamlit dashboard should declare its own app dependencies and helper modules in the dashboard project.
+A Streamlit dashboard should declare its own app dependencies and helper modules in its CodeRepository.
 
 That means:
 
 - call `st.set_page_config(...)` directly from your app
-- keep reusable UI helpers inside the dashboard folder or project package
+- keep reusable UI helpers inside the dashboard folder or repository package
 - use normal Streamlit widgets for sidebar controls and session state
 - keep dashboard deployment metadata such as `README.md` next to `app.py`
 
@@ -25,6 +25,6 @@ The SDK should provide platform capabilities. The application should own present
 
 ## Runnable example ownership
 
-The canonical tutorial Project owns the beginner Streamlit application and its
+The canonical tutorial CodeRepository owns the beginner Streamlit application and its
 deployment walkthrough. This page remains the SDK knowledge reference for the
 integration boundary.

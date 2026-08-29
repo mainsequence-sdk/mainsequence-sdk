@@ -354,7 +354,7 @@ class AlembicVersionMetaTable:
 
 @dataclass(slots=True)
 class AlembicMetaTableMigration:
-    """Single Alembic-backed migration provider for MetaTable projects."""
+    """Single Alembic-backed migration provider for CodeRepository MetaTables."""
 
     package: str
     migration_namespace: str
@@ -1107,7 +1107,7 @@ def _validate_provider_runtime_data_source(
     if str(data_source_uid) == str(runtime_data_source_uid):
         return
     raise ValueError(
-        "Alembic MetaTable provider DataSource does not match the runtime Project "
+        "Alembic MetaTable provider DataSource does not match the runtime CodeRepositoryBranch "
         f"routing context: provider={data_source_uid!r} "
         f"runtime={str(runtime_data_source_uid)!r}."
     )

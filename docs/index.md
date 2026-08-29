@@ -20,6 +20,7 @@ Key entry points:
 
 - [Time-Index Table Updaters](knowledge/time_index_table_updates.md)
 - [MetaTables](knowledge/meta_tables/index.md)
+- [Migrating from 7.x to 8.0](migrations/v8-code-repository-ontology.md)
 - [Migrating from 6.x to 7.0](migrations/v7-time-index-table-updater-hard-cut.md)
 - [Constants and Secrets](knowledge/infrastructure/constants_and_secrets.md)
 - [Scheduling Jobs](knowledge/infrastructure/scheduling_jobs.md)
@@ -42,11 +43,11 @@ Use the generated reference when you need the API surface directly:
 The SDK is organized around a few main areas:
 
 - `mainsequence.meta_tables`: `TimeIndexTableUpdater`s, persistence, orchestration, and update workflows
-- `mainsequence.client`: API client models for projects, jobs, tables, platform resources, and sharing
+- `mainsequence.client`: API client models for CodeRepositories, jobs, tables, platform resources, and sharing
 - `mainsequence.cli`: the `mainsequence` command-line interface
 
 ## Tutorial ownership
 
-The beginner tutorial is maintained in its own self-contained Project rather
+The beginner tutorial is maintained in its own self-contained CodeRepository rather
 than inside this SDK reference site. This repository remains the source of truth
 for SDK APIs, concepts, CLI behavior, and generated reference documentation.

@@ -677,7 +677,7 @@ def scaffold(
     package: str = typer.Option(
         ...,
         "--package",
-        help="Project package or migration provider package name, for example msm.",
+        help="CodeRepository package or migration provider package name, for example msm.",
     ),
     namespace: str = typer.Option(
         ...,
@@ -696,18 +696,18 @@ def scaffold(
     ),
     code_repository_root: pathlib.Path = typer.Option(  # noqa: B008
         DEFAULT_SCAFFOLD_CODE_REPOSITORY_ROOT,
-        "--project-root",
-        help="Project root where the source tree lives.",
+        "--code-repository-root",
+        help="CodeRepository checkout root where the source tree lives.",
     ),
     source_root: pathlib.Path = typer.Option(  # noqa: B008
         DEFAULT_SCAFFOLD_SOURCE_ROOT,
         "--source-root",
-        help="Source root under project root.",
+        help="Source root under the CodeRepository checkout root.",
     ),
     base: str | None = typer.Option(
         None,
         "--base",
-        help="Optional project declarative base reference in module:object form.",
+        help="Optional CodeRepository declarative base reference in module:object form.",
     ),
     models: str | None = typer.Option(
         None,
@@ -715,7 +715,7 @@ def scaffold(
         help="Optional model registry function reference in module:object form.",
     ),
     alembic_version_name: str = typer.Option(
-        "ProjectAlembicVersion",
+        "CodeRepositoryAlembicVersion",
         "--alembic-version-name",
         help="Generated Alembic version MetaTable class name.",
     ),

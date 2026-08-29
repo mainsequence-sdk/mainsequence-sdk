@@ -1270,7 +1270,7 @@ def test_meta_table_deserializes_canonical_data_source():
         data_source={
             "uid": data_source_uid,
             "data_source_uid": data_source_uid,
-            "display_name": "project-db",
+            "display_name": "code-repository-db",
             "organization_uid": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
             "class_type": "postgresql",
             "status": "AVAILABLE",

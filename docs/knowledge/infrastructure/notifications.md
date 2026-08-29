@@ -219,7 +219,7 @@ from mainsequence.client.models_user import Notification
 Notification.send_to_self(
     type="IN",
     title="Sync complete",
-    description="Your local project sync completed successfully.",
+    description="Your local CodeRepository sync completed successfully.",
 )
 ```
 

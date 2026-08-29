@@ -14,7 +14,7 @@ def test_create_code_repository():
 
     # todo:loop unitl is_initialized == True
     code_repository = msc.CodeRepository.create(
-        code_repository_name="demo-project-002",
+        code_repository_name="demo-repository-002",
         data_source=ds,  # <-- pydantic obj with .id
         default_base_image=img,  # <-- pydantic obj with .id (or None)
         github_org=org,  # <-- pydantic obj with .id (or None)
@@ -37,13 +37,13 @@ def test_code_repository_time_index_table_updates():
         if not updates:
             remaining = max(0, int(deadline - time.time()))
             print(
-                f"No time-index table updates yet for project branch {code_repository_branch.uid}. "
+                f"No time-index table updates yet for CodeRepositoryBranch {code_repository_branch.uid}. "
                 f"Retrying in {poll_interval_s}s (remaining: {remaining}s)..."
             )
             time.sleep(poll_interval_s)
 
     assert updates, (
-        "No time-index table updates found for project branch "
+        "No time-index table updates found for CodeRepositoryBranch "
         f"{code_repository_branch.uid} within {timeout_s}s."
     )
 
@@ -54,7 +54,7 @@ def test_code_repository_time_index_table_updates():
 def test_code_repository_image_filter():
     images = msc.CodeRepositoryImage.filter()
     if not images:
-        pytest.skip("No project images available for filter test.")
+        pytest.skip("No CodeRepository images available for filter test.")
 
     image = images[0]
     code_repository_id = (
@@ -78,14 +78,14 @@ def test_code_repository_image_filter():
 def test_code_repository_resource_filter():
     resources = msc.CodeRepositoryResource.filter()
     if not resources:
-        pytest.skip("No project resources available for filter test.")
+        pytest.skip("No CodeRepository resources available for filter test.")
 
     resource = next(
         (item for item in resources if item.id is not None and item.code_repository is not None),
         None,
     )
     if resource is None:
-        pytest.skip("No project resource with id and project available for filter test.")
+        pytest.skip("No CodeRepository resource with an ID and owner available for filter test.")
 
     code_repository_ref = resource.code_repository
     code_repository_id = code_repository_ref.id if hasattr(code_repository_ref, "id") else code_repository_ref

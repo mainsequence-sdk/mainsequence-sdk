@@ -146,7 +146,7 @@ class Organization(UserApiBaseObjectOrm, BasePydanticModel):
         title="Production Environment UID",
         description=(
             "Stable public UID of the organization's backend-managed production "
-            "project environment."
+            "Organization Environment."
         ),
         examples=["00000000-0000-4000-8000-000000000002"],
     )

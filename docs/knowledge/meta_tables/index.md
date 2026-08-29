@@ -119,14 +119,14 @@ specifies which.
 
 Typical flow:
 
-1. Define SQLAlchemy models with `PlatformManagedMetaTable` and project-prefixed `__tablename__` values, preferably from `schema_table_name(project_or_app, concept)`.
+1. Define SQLAlchemy models with `PlatformManagedMetaTable` and repository-prefixed `__tablename__` values, preferably from `schema_table_name(app, concept)`.
 2. Add those models to `AlembicMetaTableMigration.metatable_models`.
 3. Run `mainsequence migrations upgrade --provider ... head`.
 4. Migration tooling reserves catalog rows for missing models, Alembic applies schema
    evolution SQL.
 
 For `platform_managed`, the authored SQLAlchemy table name is sent as
-`table_contract.physical.table_name` and should be prefixed with the project or
+`table_contract.physical.table_name` and should be prefixed with the repository or
 package name. Alembic owns the physical table lifecycle, while the backend owns
 MetaTable uniqueness and reconciliation through `uid`, `identifier`, data
 source, and physical table name.
@@ -173,7 +173,7 @@ It contains:
 - optional authoring metadata
 
 The selected data source does not belong inside `table_contract`. In normal
-project execution it is resolved from the active Main Sequence session, the same
+CodeRepository execution it is resolved from the active Main Sequence session, the same
 way TimeIndexTableUpdater resolves its data source.
 
 ```python
@@ -201,7 +201,7 @@ contract_hash = compute_metatable_contract_hash(Asset)
 The utility includes the physical table name by default, so two same-shaped
 tables with different authored table names produce different fingerprints.
 
-For platform-managed tables, prefer explicit, project-prefixed SQLAlchemy table
+For platform-managed tables, prefer explicit, repository-prefixed SQLAlchemy table
 names:
 
 ```python
@@ -239,14 +239,14 @@ These components are not MetaTable identity. Do not use them for labels,
 descriptions, runtime options, test isolation, backend UIDs, data-source UIDs,
 or updater scope.
 
-For explicit physical naming, use a project-prefixed SQLAlchemy table name:
+For explicit physical naming, use a repository-prefixed SQLAlchemy table name:
 
 ```python
 __tablename__ = schema_table_name("sdk_examples", "asset")
 ```
 
 Keep authored physical table names within PostgreSQL's 63-character identifier
-limit. `schema_table_name()` preserves the project/app prefix and adds a stable
+limit. `schema_table_name()` preserves the repository/app prefix and adds a stable
 hash suffix when a generated name would exceed that limit.
 
 ## Backend Responsibilities

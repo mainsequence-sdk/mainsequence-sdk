@@ -171,7 +171,7 @@ def test_alembic_version_metatable_builds_platform_managed_registration_request(
 def test_alembic_version_metatable_uses_session_data_source(monkeypatch):
     import mainsequence.client.metatables as metatables
 
-    class ProjectAlembicVersion(AlembicVersionMetaTable):
+    class CodeRepositoryAlembicVersion(AlembicVersionMetaTable):
         __metatable_data_source_uid__ = None
 
     monkeypatch.setattr(
@@ -180,7 +180,7 @@ def test_alembic_version_metatable_uses_session_data_source(monkeypatch):
         lambda: types.SimpleNamespace(uid="session-data-source-uid"),
     )
 
-    request = ProjectAlembicVersion.build_registration_request(
+    request = CodeRepositoryAlembicVersion.build_registration_request(
         migration_package="sample",
         migration_namespace="markets",
         migration_provider_key="sample:markets",
@@ -190,14 +190,14 @@ def test_alembic_version_metatable_uses_session_data_source(monkeypatch):
 
 
 def test_code_repository_can_scope_alembic_version_metatable():
-    class ProjectAlembicVersion(AlembicVersionMetaTable):
+    class CodeRepositoryAlembicVersion(AlembicVersionMetaTable):
         __alembic_version_schema__ = "markets"
         __alembic_version_table_name__ = "alembic_version"
         __metatable_namespace__ = "msm"
         __metatable_identifier__ = "msm.alembic_version"
         __metatable_description__ = "Markets Alembic version table."
 
-    request = ProjectAlembicVersion.build_registration_request(
+    request = CodeRepositoryAlembicVersion.build_registration_request(
         migration_package="sample",
         migration_namespace="markets",
         migration_provider_key="sample:markets",
@@ -214,7 +214,7 @@ def test_code_repository_can_scope_alembic_version_metatable():
 
 
 def test_alembic_version_metatable_register_reserves_managed_root(monkeypatch):
-    class ProjectAlembicVersion(AlembicVersionMetaTable):
+    class CodeRepositoryAlembicVersion(AlembicVersionMetaTable):
         __metatable_data_source_uid__ = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
 
     captured = {}
@@ -231,7 +231,7 @@ def test_alembic_version_metatable_register_reserves_managed_root(monkeypatch):
 
     monkeypatch.setattr(MetaTable, "bulk_create", staticmethod(fake_bulk_create))
 
-    result = ProjectAlembicVersion.register(
+    result = CodeRepositoryAlembicVersion.register(
         migration_package="sample",
         migration_namespace="markets",
         migration_provider_key="sample:markets",
@@ -251,7 +251,7 @@ def test_alembic_version_metatable_register_reserves_managed_root(monkeypatch):
 
 
 def test_alembic_version_metatable_binds_uid_and_data_source_uid(monkeypatch):
-    class ProjectAlembicVersion(AlembicVersionMetaTable):
+    class CodeRepositoryAlembicVersion(AlembicVersionMetaTable):
         __metatable_uid__ = None
         __metatable_data_source_uid__ = "data-source-uid"
 
@@ -262,21 +262,21 @@ def test_alembic_version_metatable_binds_uid_and_data_source_uid(monkeypatch):
 
     monkeypatch.setattr(MetaTable, "bulk_create", staticmethod(fake_bulk_create))
 
-    ProjectAlembicVersion.register(
+    CodeRepositoryAlembicVersion.register(
         migration_package="sample",
         migration_namespace="markets",
         migration_provider_key="sample:markets",
     )
 
-    assert ProjectAlembicVersion.get_meta_table_uid() == "metatable-uid"
-    assert ProjectAlembicVersion.get_data_source_uid() == "data-source-uid"
+    assert CodeRepositoryAlembicVersion.get_meta_table_uid() == "metatable-uid"
+    assert CodeRepositoryAlembicVersion.get_data_source_uid() == "data-source-uid"
 
 
 def test_alembic_metatable_migration_uses_registry_for_version_table_config():
     metadata = MetaData()
     Table("asset", metadata, Column("uid", Integer, primary_key=True), schema="public")
 
-    class ProjectAlembicVersion(AlembicVersionMetaTable):
+    class CodeRepositoryAlembicVersion(AlembicVersionMetaTable):
         __metatable_uid__ = "registry-meta-table-uid"
         __metatable_data_source_uid__ = "data-source-uid"
 
@@ -285,7 +285,7 @@ def test_alembic_metatable_migration_uses_registry_for_version_table_config():
         migration_namespace="markets",
         script_location="msm:alembic",
         target_metadata=metadata,
-        alembic_registry=ProjectAlembicVersion,
+        alembic_registry=CodeRepositoryAlembicVersion,
         metatable_models=[],
     )
 
@@ -296,7 +296,7 @@ def test_alembic_metatable_migration_uses_registry_for_version_table_config():
 
 
 def test_alembic_metatable_migration_registers_registry_from_bound_data_source(monkeypatch):
-    class ProjectAlembicVersion(AlembicVersionMetaTable):
+    class CodeRepositoryAlembicVersion(AlembicVersionMetaTable):
         __metatable_uid__ = None
         __metatable_data_source_uid__ = "data-source-uid"
 
@@ -305,7 +305,7 @@ def test_alembic_metatable_migration_registers_registry_from_bound_data_source(m
         migration_namespace="markets",
         script_location="msm:alembic",
         target_metadata=MetaData(),
-        alembic_registry=ProjectAlembicVersion,
+        alembic_registry=CodeRepositoryAlembicVersion,
     )
     captured = {}
 
@@ -335,7 +335,7 @@ def test_alembic_metatable_migration_registers_registry_from_bound_data_source(m
     assert row["table_contract"]["physical"]["table_name"] == "alembic_version"
     assert row["table_contract"]["columns"][0]["name"] == "version_num"
     assert "schema_management" not in row
-    assert ProjectAlembicVersion.get_meta_table_uid() == "registry-uid"
+    assert CodeRepositoryAlembicVersion.get_meta_table_uid() == "registry-uid"
 
 
 def test_alembic_metatable_migration_registers_registry_from_session_data_source(
@@ -343,7 +343,7 @@ def test_alembic_metatable_migration_registers_registry_from_session_data_source
 ):
     import mainsequence.client.metatables as metatables
 
-    class ProjectAlembicVersion(AlembicVersionMetaTable):
+    class CodeRepositoryAlembicVersion(AlembicVersionMetaTable):
         __metatable_uid__ = None
         __metatable_data_source_uid__ = None
 
@@ -352,7 +352,7 @@ def test_alembic_metatable_migration_registers_registry_from_session_data_source
         migration_namespace="markets",
         script_location="msm:alembic",
         target_metadata=MetaData(),
-        alembic_registry=ProjectAlembicVersion,
+        alembic_registry=CodeRepositoryAlembicVersion,
     )
     captured = {}
 
@@ -376,11 +376,11 @@ def test_alembic_metatable_migration_registers_registry_from_session_data_source
     migration.register_alembic_registry()
 
     assert captured["rows"][0]["data_source_uid"] == "session-data-source-uid"
-    assert ProjectAlembicVersion.get_data_source_uid() == "session-data-source-uid"
+    assert CodeRepositoryAlembicVersion.get_data_source_uid() == "session-data-source-uid"
 
 
 def test_ensure_alembic_registry_forces_backend_registration_for_stale_cache(monkeypatch):
-    class ProjectAlembicVersion(AlembicVersionMetaTable):
+    class CodeRepositoryAlembicVersion(AlembicVersionMetaTable):
         __metatable_uid__ = "stale-registry-uid"
         __metatable_data_source_uid__ = "data-source-uid"
         __metatable__ = types.SimpleNamespace(
@@ -393,7 +393,7 @@ def test_ensure_alembic_registry_forces_backend_registration_for_stale_cache(mon
         migration_namespace="markets",
         script_location="msm:alembic",
         target_metadata=MetaData(),
-        alembic_registry=ProjectAlembicVersion,
+        alembic_registry=CodeRepositoryAlembicVersion,
     )
     captured = {}
 
@@ -412,11 +412,11 @@ def test_ensure_alembic_registry_forces_backend_registration_for_stale_cache(mon
     assert captured["rows"][0]["data_source_uid"] == "data-source-uid"
     assert captured["timeout"] == 7
     assert meta_table.uid == "fresh-registry-uid"
-    assert ProjectAlembicVersion.get_meta_table_uid() == "fresh-registry-uid"
+    assert CodeRepositoryAlembicVersion.get_meta_table_uid() == "fresh-registry-uid"
 
 
 def test_alembic_registry_rejects_legacy_external_registered_catalog_row(monkeypatch):
-    class ProjectAlembicVersion(AlembicVersionMetaTable):
+    class CodeRepositoryAlembicVersion(AlembicVersionMetaTable):
         __metatable_data_source_uid__ = "data-source-uid"
 
     migration = AlembicMetaTableMigration(
@@ -424,7 +424,7 @@ def test_alembic_registry_rejects_legacy_external_registered_catalog_row(monkeyp
         migration_namespace="markets",
         script_location="sample:migrations",
         target_metadata=MetaData(),
-        alembic_registry=ProjectAlembicVersion,
+        alembic_registry=CodeRepositoryAlembicVersion,
     )
     legacy_registry = _reserved_registry_metatable(
         management_mode="external_registered",
@@ -456,7 +456,7 @@ def test_alembic_registry_rejects_legacy_external_registered_catalog_row(monkeyp
 def test_ensure_alembic_registry_reuses_persistent_registry_across_operations(
     monkeypatch,
 ):
-    class ProjectAlembicVersion(AlembicVersionMetaTable):
+    class CodeRepositoryAlembicVersion(AlembicVersionMetaTable):
         __metatable_uid__ = None
         __metatable_data_source_uid__ = "data-source-uid"
         __metatable__ = None
@@ -466,7 +466,7 @@ def test_ensure_alembic_registry_reuses_persistent_registry_across_operations(
         migration_namespace="markets",
         script_location="sample:migrations",
         target_metadata=MetaData(),
-        alembic_registry=ProjectAlembicVersion,
+        alembic_registry=CodeRepositoryAlembicVersion,
     )
     persisted: list[MetaTable] = []
     create_calls = 0
@@ -491,20 +491,20 @@ def test_ensure_alembic_registry_reuses_persistent_registry_across_operations(
     first = migration.ensure_alembic_registry()
 
     # A separate CLI process starts without any class-level binding.
-    ProjectAlembicVersion.__metatable__ = None
-    ProjectAlembicVersion.__metatable_uid__ = None
+    CodeRepositoryAlembicVersion.__metatable__ = None
+    CodeRepositoryAlembicVersion.__metatable_uid__ = None
     second = migration.ensure_alembic_registry()
 
     assert first.uid == "persistent-registry-uid"
     assert second.uid == first.uid
     assert create_calls == 1
-    assert ProjectAlembicVersion.get_meta_table_uid() == "persistent-registry-uid"
+    assert CodeRepositoryAlembicVersion.get_meta_table_uid() == "persistent-registry-uid"
 
 
 def test_ensure_alembic_registry_recovers_from_concurrent_create_conflict(
     monkeypatch,
 ):
-    class ProjectAlembicVersion(AlembicVersionMetaTable):
+    class CodeRepositoryAlembicVersion(AlembicVersionMetaTable):
         __metatable_uid__ = None
         __metatable_data_source_uid__ = "data-source-uid"
         __metatable__ = None
@@ -514,7 +514,7 @@ def test_ensure_alembic_registry_recovers_from_concurrent_create_conflict(
         migration_namespace="markets",
         script_location="sample:migrations",
         target_metadata=MetaData(),
-        alembic_registry=ProjectAlembicVersion,
+        alembic_registry=CodeRepositoryAlembicVersion,
     )
     registry = _reserved_registry_metatable()
     registry.uid = "concurrent-registry-uid"
@@ -555,7 +555,7 @@ def test_ensure_alembic_registry_rejects_incompatible_existing_root(
     invalid_value,
     error,
 ):
-    class ProjectAlembicVersion(AlembicVersionMetaTable):
+    class CodeRepositoryAlembicVersion(AlembicVersionMetaTable):
         __metatable_uid__ = None
         __metatable_data_source_uid__ = "data-source-uid"
         __metatable__ = None
@@ -565,7 +565,7 @@ def test_ensure_alembic_registry_rejects_incompatible_existing_root(
         migration_namespace="markets",
         script_location="sample:migrations",
         target_metadata=MetaData(),
-        alembic_registry=ProjectAlembicVersion,
+        alembic_registry=CodeRepositoryAlembicVersion,
     )
     registry = _reserved_registry_metatable()
     setattr(registry, field_name, invalid_value)
@@ -590,7 +590,7 @@ def test_ensure_alembic_registry_rejects_incompatible_existing_root(
 
 
 def test_alembic_metatable_migration_requires_callable_after_register_hook():
-    class ProjectAlembicVersion(AlembicVersionMetaTable):
+    class CodeRepositoryAlembicVersion(AlembicVersionMetaTable):
         __metatable_uid__ = "registry-meta-table-uid"
         __metatable_data_source_uid__ = "data-source-uid"
 
@@ -600,7 +600,7 @@ def test_alembic_metatable_migration_requires_callable_after_register_hook():
             migration_namespace="markets",
             script_location="msm:alembic",
             target_metadata=MetaData(),
-            alembic_registry=ProjectAlembicVersion,
+            alembic_registry=CodeRepositoryAlembicVersion,
             after_register_metatables="not-callable",
         )
 
@@ -785,7 +785,7 @@ def test_alembic_metatable_migration_finalizes_catalog_after_alembic(monkeypatch
     class Base(DeclarativeBase):
         metadata = MetaData()
 
-    class ProjectAlembicVersion(AlembicVersionMetaTable):
+    class CodeRepositoryAlembicVersion(AlembicVersionMetaTable):
         __metatable_data_source_uid__ = "data-source-uid"
 
     class Asset(PlatformManagedMetaTable, Base):
@@ -815,14 +815,14 @@ def test_alembic_metatable_migration_finalizes_catalog_after_alembic(monkeypatch
         migration_namespace="markets",
         script_location="msm:alembic",
         target_metadata=Base.metadata,
-        alembic_registry=ProjectAlembicVersion,
+        alembic_registry=CodeRepositoryAlembicVersion,
         metatable_models=[Asset],
         after_register_metatables=after_register,
     )
 
     captured = {}
 
-    ProjectAlembicVersion._bind_meta_table(
+    CodeRepositoryAlembicVersion._bind_meta_table(
         MetaTable.model_construct(
             uid="registry-meta-table-uid",
             data_source_uid="data-source-uid",
@@ -896,7 +896,7 @@ def test_alembic_metatable_migration_finalizes_catalog_after_alembic(monkeypatch
 
 
 def test_finalize_metatable_catalog_requires_managed_registry_root():
-    class ProjectAlembicVersion(AlembicVersionMetaTable):
+    class CodeRepositoryAlembicVersion(AlembicVersionMetaTable):
         __metatable_uid__ = None
         __metatable_data_source_uid__ = "data-source-uid"
 
@@ -905,7 +905,7 @@ def test_finalize_metatable_catalog_requires_managed_registry_root():
         migration_namespace="markets",
         script_location="msm:alembic",
         target_metadata=MetaData(),
-        alembic_registry=ProjectAlembicVersion,
+        alembic_registry=CodeRepositoryAlembicVersion,
     )
 
     with pytest.raises(RuntimeError, match="managed Alembic registry root"):
@@ -921,7 +921,7 @@ def test_finalize_metatable_catalog_passes_full_bound_provider_scope_to_hook(mon
     class Base(DeclarativeBase):
         metadata = MetaData()
 
-    class ProjectAlembicVersion(AlembicVersionMetaTable):
+    class CodeRepositoryAlembicVersion(AlembicVersionMetaTable):
         __metatable_data_source_uid__ = "data-source-uid"
 
     class Asset(PlatformManagedMetaTable, Base):
@@ -940,7 +940,7 @@ def test_finalize_metatable_catalog_passes_full_bound_provider_scope_to_hook(mon
 
         uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
 
-    ProjectAlembicVersion._bind_meta_table(
+    CodeRepositoryAlembicVersion._bind_meta_table(
         MetaTable.model_construct(
             uid="registry-meta-table-uid",
             data_source_uid="data-source-uid",
@@ -972,7 +972,7 @@ def test_finalize_metatable_catalog_passes_full_bound_provider_scope_to_hook(mon
         migration_namespace="markets",
         script_location="msm:alembic",
         target_metadata=Base.metadata,
-        alembic_registry=ProjectAlembicVersion,
+        alembic_registry=CodeRepositoryAlembicVersion,
         metatable_models=[Asset, Price],
         after_register_metatables=after_register,
     )
@@ -1029,7 +1029,7 @@ def test_alembic_metatable_migration_sync_catalog_hook_has_no_reserved_policy(
     class Base(DeclarativeBase):
         metadata = MetaData()
 
-    class ProjectAlembicVersion(AlembicVersionMetaTable):
+    class CodeRepositoryAlembicVersion(AlembicVersionMetaTable):
         __metatable_data_source_uid__ = "data-source-uid"
 
     class Asset(PlatformManagedMetaTable, Base):
@@ -1050,7 +1050,7 @@ def test_alembic_metatable_migration_sync_catalog_hook_has_no_reserved_policy(
         migration_namespace="markets",
         script_location="msm:alembic",
         target_metadata=Base.metadata,
-        alembic_registry=ProjectAlembicVersion,
+        alembic_registry=CodeRepositoryAlembicVersion,
         metatable_models=[Asset],
         after_register_metatables=after_register,
     )
@@ -1075,7 +1075,7 @@ def test_finalize_metatable_catalog_surfaces_missing_physical_tables(monkeypatch
     class Base(DeclarativeBase):
         metadata = MetaData()
 
-    class ProjectAlembicVersion(AlembicVersionMetaTable):
+    class CodeRepositoryAlembicVersion(AlembicVersionMetaTable):
         __metatable_data_source_uid__ = "data-source-uid"
 
     class Asset(PlatformManagedMetaTable, Base):
@@ -1091,10 +1091,10 @@ def test_finalize_metatable_catalog_surfaces_missing_physical_tables(monkeypatch
         migration_namespace="markets",
         script_location="msm:alembic",
         target_metadata=Base.metadata,
-        alembic_registry=ProjectAlembicVersion,
+        alembic_registry=CodeRepositoryAlembicVersion,
         metatable_models=[Asset],
     )
-    ProjectAlembicVersion._bind_meta_table(
+    CodeRepositoryAlembicVersion._bind_meta_table(
         MetaTable.model_construct(
             uid="registry-meta-table-uid",
             data_source_uid="data-source-uid",
@@ -1220,7 +1220,7 @@ def test_apply_helpers_do_not_reintroduce_data_source_override():
 
 
 def test_alembic_config_for_provider_uses_scoped_url_and_owner_role():
-    class ProjectAlembicVersion(AlembicVersionMetaTable):
+    class CodeRepositoryAlembicVersion(AlembicVersionMetaTable):
         __metatable_data_source_uid__ = "data-source-uid"
 
     migration = AlembicMetaTableMigration(
@@ -1228,7 +1228,7 @@ def test_alembic_config_for_provider_uses_scoped_url_and_owner_role():
         migration_namespace="markets",
         script_location="sample:migrations",
         target_metadata=MetaData(),
-        alembic_registry=ProjectAlembicVersion,
+        alembic_registry=CodeRepositoryAlembicVersion,
     )
 
     config = alembic_config_for_provider(
@@ -1274,7 +1274,7 @@ def test_alembic_config_for_provider_supports_namespace_version_locations(tmp_pa
         encoding="utf-8",
     )
 
-    class ProjectAlembicVersion(AlembicVersionMetaTable):
+    class CodeRepositoryAlembicVersion(AlembicVersionMetaTable):
         __metatable_data_source_uid__ = "data-source-uid"
 
     migration = AlembicMetaTableMigration(
@@ -1284,7 +1284,7 @@ def test_alembic_config_for_provider_supports_namespace_version_locations(tmp_pa
         version_locations=[str(namespace_versions)],
         version_path=str(namespace_versions),
         target_metadata=MetaData(),
-        alembic_registry=ProjectAlembicVersion,
+        alembic_registry=CodeRepositoryAlembicVersion,
     )
 
     config = alembic_config_for_provider(migration, sqlalchemy_url="postgresql://example")
@@ -1395,7 +1395,7 @@ def test_prepare_for_alembic_preserves_authored_table_names(monkeypatch):
     class Base(DeclarativeBase):
         metadata = MetaData()
 
-    class ProjectAlembicVersion(AlembicVersionMetaTable):
+    class CodeRepositoryAlembicVersion(AlembicVersionMetaTable):
         __metatable_uid__ = "registry-meta-table-uid"
         __metatable_data_source_uid__ = "data-source-uid"
 
@@ -1481,7 +1481,7 @@ def test_prepare_for_alembic_preserves_authored_table_names(monkeypatch):
         migration_namespace="markets",
         script_location="sample:migrations",
         target_metadata=Base.metadata,
-        alembic_registry=ProjectAlembicVersion,
+        alembic_registry=CodeRepositoryAlembicVersion,
         metatable_models=[Account, Asset],
     )
 
@@ -1531,7 +1531,7 @@ def test_prepare_for_alembic_does_not_resolve_foreign_key_targets(monkeypatch):
     class Base(DeclarativeBase):
         metadata = MetaData()
 
-    class ProjectAlembicVersion(AlembicVersionMetaTable):
+    class CodeRepositoryAlembicVersion(AlembicVersionMetaTable):
         __metatable_data_source_uid__ = "data-source-uid"
 
     class Account(PlatformManagedMetaTable, Base):
@@ -1587,7 +1587,7 @@ def test_prepare_for_alembic_does_not_resolve_foreign_key_targets(monkeypatch):
         migration_namespace="markets",
         script_location="sample:migrations",
         target_metadata=Base.metadata,
-        alembic_registry=ProjectAlembicVersion,
+        alembic_registry=CodeRepositoryAlembicVersion,
         metatable_models=[Asset],
     )
 
@@ -1603,7 +1603,7 @@ def test_prepare_for_alembic_routes_time_indexed_models_to_dynamic_table_bulk_cr
     class Base(DeclarativeBase):
         metadata = MetaData()
 
-    class ProjectAlembicVersion(AlembicVersionMetaTable):
+    class CodeRepositoryAlembicVersion(AlembicVersionMetaTable):
         __metatable_uid__ = "registry-meta-table-uid"
         __metatable_data_source_uid__ = "data-source-uid"
 
@@ -1652,7 +1652,7 @@ def test_prepare_for_alembic_routes_time_indexed_models_to_dynamic_table_bulk_cr
         migration_namespace="markets",
         script_location="sample:migrations",
         target_metadata=Base.metadata,
-        alembic_registry=ProjectAlembicVersion,
+        alembic_registry=CodeRepositoryAlembicVersion,
         metatable_models=[Prices],
     )
 
@@ -1682,7 +1682,7 @@ def test_provider_adds_time_index_grain_index_when_table_cls_is_overridden():
             name, metadata, *table_items = args
             return Table(str(name), metadata, *table_items, **kwargs)
 
-    class ProjectAlembicVersion(AlembicVersionMetaTable):
+    class CodeRepositoryAlembicVersion(AlembicVersionMetaTable):
         __metatable_uid__ = "registry-meta-table-uid"
         __metatable_data_source_uid__ = "data-source-uid"
 
@@ -1710,7 +1710,7 @@ def test_provider_adds_time_index_grain_index_when_table_cls_is_overridden():
         migration_namespace="markets",
         script_location="sample:migrations",
         target_metadata=Base.metadata,
-        alembic_registry=ProjectAlembicVersion,
+        alembic_registry=CodeRepositoryAlembicVersion,
         metatable_models=[Prices],
     )
 
@@ -1736,7 +1736,7 @@ def test_prepare_for_alembic_reuses_existing_reserved_table_name(monkeypatch):
     class Base(DeclarativeBase):
         metadata = MetaData()
 
-    class ProjectAlembicVersion(AlembicVersionMetaTable):
+    class CodeRepositoryAlembicVersion(AlembicVersionMetaTable):
         __metatable_data_source_uid__ = "data-source-uid"
 
     class Account(PlatformManagedMetaTable, Base):
@@ -1830,7 +1830,7 @@ def test_prepare_for_alembic_reuses_existing_reserved_table_name(monkeypatch):
         migration_namespace="markets",
         script_location="sample:migrations",
         target_metadata=Base.metadata,
-        alembic_registry=ProjectAlembicVersion,
+        alembic_registry=CodeRepositoryAlembicVersion,
         metatable_models=[Account, Asset],
     )
 
@@ -1862,7 +1862,7 @@ def test_prepare_for_alembic_reserves_already_staged_existing_rows(monkeypatch):
     class Base(DeclarativeBase):
         metadata = MetaData()
 
-    class ProjectAlembicVersion(AlembicVersionMetaTable):
+    class CodeRepositoryAlembicVersion(AlembicVersionMetaTable):
         __metatable_uid__ = "registry-meta-table-uid"
         __metatable_data_source_uid__ = "data-source-uid"
 
@@ -1951,7 +1951,7 @@ def test_prepare_for_alembic_reserves_already_staged_existing_rows(monkeypatch):
         migration_namespace="markets",
         script_location="sample:migrations",
         target_metadata=Base.metadata,
-        alembic_registry=ProjectAlembicVersion,
+        alembic_registry=CodeRepositoryAlembicVersion,
         metatable_models=[Account, Asset],
     )
 

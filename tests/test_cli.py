@@ -51,9 +51,9 @@ def cli_mod(monkeypatch):
         module,
         "get_code_repository_context",
         lambda *args, **kwargs: types.SimpleNamespace(
-            code_repository_uid="project-uid-123",
+            code_repository_uid="code-repository-uid-123",
             repository_branch="main",
-            canonical_repository_identity=("github.com/mainsequence-sdk/cli-test-project"),
+            canonical_repository_identity=("github.com/mainsequence-sdk/cli-test-repository"),
             commit_sha="a" * 40,
             code_repository_branch_uid="code-repository-branch-uid-123",
             organization_environment_uid="environment-uid-123",
@@ -123,7 +123,7 @@ def _print_cli_terminal(monkeypatch):
                 "remote",
                 "add",
                 "origin",
-                "git@github.com:mainsequence-sdk/cli-test-project.git",
+                "git@github.com:mainsequence-sdk/cli-test-repository.git",
             ],
             cwd=candidate,
             check=True,
@@ -208,7 +208,7 @@ def test_skills_list(cli_mod, runner, monkeypatch, tmp_path):
     bundle_dir = tmp_path / "agent_scaffold"
     (bundle_dir / "skills" / "project_design").mkdir(parents=True)
     (bundle_dir / "skills" / "project_design" / "SKILL.md").write_text(
-        "project builder", encoding="utf-8"
+        "repository builder", encoding="utf-8"
     )
     (bundle_dir / "skills" / "data_publishing" / "meta_tables").mkdir(parents=True)
     (bundle_dir / "skills" / "data_publishing" / "meta_tables" / "SKILL.md").write_text(
@@ -267,13 +267,13 @@ def test_code_repository_search(cli_mod, runner, monkeypatch):
         "search_code_repositories",
         lambda q, limit=20, timeout=None: [
             {
-                "uid": "project-uid-11",
+                "uid": "code-repository-uid-11",
                 "code_repository_name": "alpha-research",
                 "repository_branch": "main",
                 "cluster_id": 7,
             },
             {
-                "uid": "project-uid-12",
+                "uid": "code-repository-uid-12",
                 "code_repository_name": "data-live",
                 "repository_branch": "release",
                 "cluster_id": 9,
@@ -285,7 +285,7 @@ def test_code_repository_search(cli_mod, runner, monkeypatch):
     assert result.exit_code == 0
     assert "CodeRepository Search Results" in result.output
     assert "UID" in result.output
-    assert "project-uid-11" in result.output
+    assert "code-repository-uid-11" in result.output
     assert "CodeRepository Name" in result.output
     assert "alpha-research" in result.output
     assert "data-live" in result.output
@@ -314,7 +314,7 @@ def test_code_repository_search_json(cli_mod, runner, monkeypatch):
         "search_code_repositories",
         lambda q, limit=20, timeout=None: [
             {
-                "uid": "project-uid-11",
+                "uid": "code-repository-uid-11",
                 "code_repository_name": "alpha-research",
                 "repository_branch": "main",
                 "cluster_id": 7,
@@ -327,7 +327,7 @@ def test_code_repository_search_json(cli_mod, runner, monkeypatch):
     payload = json.loads(result.output)
     assert payload == [
         {
-            "uid": "project-uid-11",
+            "uid": "code-repository-uid-11",
             "code_repository_name": "alpha-research",
             "repository_branch": "main",
             "cluster_id": 7,
@@ -1259,7 +1259,7 @@ def test_settings_set_base(cli_mod, runner, monkeypatch):
     )
     result = runner.invoke(cli_mod.app, ["settings", "set-base", "/tmp/ms-base"])
     assert result.exit_code == 0
-    assert "Projects base folder set to" in result.output
+    assert "CodeRepositories base folder set to" in result.output
 
 
 def test_settings_set_base_json(cli_mod, runner, monkeypatch):
@@ -1423,7 +1423,7 @@ def test_login_mocked(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(
         cli_mod,
         "get_code_repositories",
-        lambda: (_ for _ in ()).throw(AssertionError("login should not fetch projects")),
+        lambda: (_ for _ in ()).throw(AssertionError("login should not fetch CodeRepositories")),
     )
     monkeypatch.setenv("MAINSEQUENCE_ENDPOINT", configured_backend)
 
@@ -1539,7 +1539,7 @@ def test_login_via_mcp_handoff_explicit_backend_overrides_configured_backend(
 ):
     configured_backend = "https://configured.example.test"
     explicit_backend = "https://explicit.example.test"
-    projects_base = str(tmp_path / "projects")
+    code_repositories_base = str(tmp_path / "code-repositories")
     captured: dict[str, object] = {}
 
     def _mcp_login(*, timeout_seconds, on_handoff):
@@ -1562,7 +1562,7 @@ def test_login_via_mcp_handoff_explicit_backend_overrides_configured_backend(
         cli_mod.cfg,
         "get_config",
         lambda: {
-            "mainsequence_path": projects_base,
+            "mainsequence_path": code_repositories_base,
             "backend_url": configured_backend,
         },
     )
@@ -1585,8 +1585,8 @@ def test_login_via_mcp_handoff_explicit_backend_overrides_configured_backend(
             "--mcp",
             "--backend",
             explicit_backend,
-            "--projects-base",
-            projects_base,
+            "--code-repositories-base",
+            code_repositories_base,
         ],
     )
 
@@ -1594,7 +1594,7 @@ def test_login_via_mcp_handoff_explicit_backend_overrides_configured_backend(
     assert captured["backend_during_handoff"] == explicit_backend
     assert captured["session"] == {
         "backend_url": explicit_backend,
-        "mainsequence_path": projects_base,
+        "mainsequence_path": code_repositories_base,
     }
     assert os.environ["MAINSEQUENCE_ENDPOINT"] == configured_backend
 
@@ -1677,7 +1677,7 @@ def test_login_with_backend_override(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(
         cli_mod,
         "get_code_repositories",
-        lambda: (_ for _ in ()).throw(AssertionError("login should not fetch projects")),
+        lambda: (_ for _ in ()).throw(AssertionError("login should not fetch CodeRepositories")),
     )
     monkeypatch.delenv("MAINSEQUENCE_ENDPOINT", raising=False)
 
@@ -1717,7 +1717,7 @@ def test_login_with_different_backend_requires_code_repositories_base(cli_mod, r
         ["login", "127.0.0.1:8000", "--no-status"],
     )
     assert result.exit_code == 1
-    assert "must also specify a projects base folder" in result.output
+    assert "must also specify a CodeRepositories base folder" in result.output
     assert called["browser"] is False
 
 
@@ -1777,7 +1777,7 @@ def test_login_export_env(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(
         cli_mod,
         "get_code_repositories",
-        lambda: (_ for _ in ()).throw(AssertionError("login should not fetch projects")),
+        lambda: (_ for _ in ()).throw(AssertionError("login should not fetch CodeRepositories")),
     )
 
     result = runner.invoke(
@@ -1817,7 +1817,7 @@ def test_login_with_jwt_tokens(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(
         cli_mod,
         "get_code_repositories",
-        lambda: (_ for _ in ()).throw(AssertionError("login should not fetch projects")),
+        lambda: (_ for _ in ()).throw(AssertionError("login should not fetch CodeRepositories")),
     )
     monkeypatch.setenv("MAINSEQUENCE_ENDPOINT", configured_backend)
 
@@ -1955,7 +1955,7 @@ def test_login_runtime_credential_uses_backend_override(cli_mod, runner, monkeyp
             "login",
             "--backend",
             "http://127.0.0.1:8000",
-            "--projects-base",
+            "--code-repositories-base",
             "mainsequence-dev",
         ],
     )
@@ -2124,7 +2124,7 @@ def test_login_with_jwt_tokens_and_backend_override(cli_mod, runner, monkeypatch
     monkeypatch.setattr(
         cli_mod,
         "get_code_repositories",
-        lambda: (_ for _ in ()).throw(AssertionError("login should not fetch projects")),
+        lambda: (_ for _ in ()).throw(AssertionError("login should not fetch CodeRepositories")),
     )
     monkeypatch.delenv("MAINSEQUENCE_ENDPOINT", raising=False)
 
@@ -2138,7 +2138,7 @@ def test_login_with_jwt_tokens_and_backend_override(cli_mod, runner, monkeypatch
             "ref-456",
             "--backend",
             "http://127.0.0.1:80",
-            "--projects-base",
+            "--code-repositories-base",
             "mainsequence-dev",
             "--no-status",
         ],
@@ -2186,7 +2186,7 @@ def test_login_with_jwt_tokens_and_different_backend_requires_code_repositories_
         ],
     )
     assert result.exit_code == 1
-    assert "must also specify a projects base folder" in result.output
+    assert "must also specify a CodeRepositories base folder" in result.output
     assert called["save_tokens"] is False
 
 
@@ -2239,7 +2239,7 @@ def test_login_warns_when_secure_persist_fails(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(
         cli_mod,
         "get_code_repositories",
-        lambda: (_ for _ in ()).throw(AssertionError("login should not fetch projects")),
+        lambda: (_ for _ in ()).throw(AssertionError("login should not fetch CodeRepositories")),
     )
 
     result = runner.invoke(
@@ -2274,7 +2274,7 @@ def test_login_does_not_fetch_code_repositories_after_success(cli_mod, runner, m
     monkeypatch.setattr(
         cli_mod,
         "get_code_repositories",
-        lambda: (_ for _ in ()).throw(AssertionError("login should not fetch projects")),
+        lambda: (_ for _ in ()).throw(AssertionError("login should not fetch CodeRepositories")),
     )
 
     result = runner.invoke(
@@ -2283,7 +2283,7 @@ def test_login_does_not_fetch_code_repositories_after_success(cli_mod, runner, m
     )
     assert result.exit_code == 0
     assert "Signed in as user@example.com" in result.output
-    assert "Projects:" not in result.output
+    assert "CodeRepositories:" not in result.output
 
 
 def test_jwt_login_does_not_fetch_code_repositories_after_success(cli_mod, runner, monkeypatch):
@@ -2298,7 +2298,7 @@ def test_jwt_login_does_not_fetch_code_repositories_after_success(cli_mod, runne
     monkeypatch.setattr(
         cli_mod,
         "get_code_repositories",
-        lambda: (_ for _ in ()).throw(AssertionError("login should not fetch projects")),
+        lambda: (_ for _ in ()).throw(AssertionError("login should not fetch CodeRepositories")),
     )
 
     result = runner.invoke(
@@ -2307,7 +2307,7 @@ def test_jwt_login_does_not_fetch_code_repositories_after_success(cli_mod, runne
     )
     assert result.exit_code == 0
     assert "Signed in with JWT tokens" in result.output
-    assert "Projects:" not in result.output
+    assert "CodeRepositories:" not in result.output
 
 
 def test_logout(cli_mod, runner, monkeypatch):
@@ -2536,8 +2536,8 @@ def test_prime_runtime_env_reads_endpoint_but_ignores_retired_code_repository_id
     code_repository_dir = tmp_path / "code-repository"
     code_repository_dir.mkdir(parents=True, exist_ok=True)
     (code_repository_dir / ".env").write_text(
-        "MAINSEQUENCE_ENDPOINT=https://project-backend.test\n"
-        "MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n",
+        "MAINSEQUENCE_ENDPOINT=https://sdk-backend.test\n"
+        "MAIN_SEQUENCE_PROJECT_UID=code-repository-uid-123\n",
         encoding="utf-8",
     )
 
@@ -2559,7 +2559,7 @@ def test_prime_runtime_env_reads_endpoint_but_ignores_retired_code_repository_id
 
     bootstrap.prime_runtime_env()
 
-    assert os.environ["MAINSEQUENCE_ENDPOINT"] == "https://project-backend.test"
+    assert os.environ["MAINSEQUENCE_ENDPOINT"] == "https://sdk-backend.test"
     assert "MAIN_SEQUENCE_PROJECT_UID" not in os.environ
     assert "MAIN_SEQUENCE_PROJECT_ID" not in os.environ
     assert os.environ["MAINSEQUENCE_ACCESS_TOKEN"] == "acc-123"
@@ -2744,14 +2744,14 @@ def test_add_deploy_key_uses_code_repository_route(cli_mod, monkeypatch):
         captured.update(method=method, path=path, body=body)
         return _Response()
 
-    monkeypatch.setattr(api_mod, "resolve_code_repository_uid", lambda code_repository_ref: "project-uid-123")
+    monkeypatch.setattr(api_mod, "resolve_code_repository_uid", lambda code_repository_ref: "code-repository-uid-123")
     monkeypatch.setattr(api_mod, "authed", _authed)
 
-    api_mod.add_deploy_key("project-uid-123", "workstation", "ssh-ed25519 AAA test")
+    api_mod.add_deploy_key("code-repository-uid-123", "workstation", "ssh-ed25519 AAA test")
 
     assert captured == {
         "method": "POST",
-        "path": "/api/v1/code-repositories/project-uid-123/add-deploy-key/",
+        "path": "/api/v1/code-repositories/code-repository-uid-123/add-deploy-key/",
         "body": {"key_title": "workstation", "public_key": "ssh-ed25519 AAA test"},
     }
 
@@ -2854,7 +2854,7 @@ def test_code_repository_list(cli_mod, runner, monkeypatch):
         "get_code_repositories",
         lambda: [
             {
-                "uid": "project-uid-1",
+                "uid": "code-repository-uid-1",
                 "code_repository_name": "Demo",
                 "is_initialized": True,
             }
@@ -2863,7 +2863,7 @@ def test_code_repository_list(cli_mod, runner, monkeypatch):
     result = runner.invoke(cli_mod.app, ["code-repository", "list"])
     assert result.exit_code == 0
     assert "UID" in result.output
-    assert "project-uid-1" in result.output
+    assert "code-repository-uid-1" in result.output
     assert "Branches" in result.output
     assert "Local" not in result.output
     assert "Demo" in result.output
@@ -2930,7 +2930,7 @@ def test_code_repository_add_label(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
 
     def _add(code_repository_id, labels, timeout=None):
-        captured["project_id"] = code_repository_id
+        captured["code_repository_id"] = code_repository_id
         captured["labels"] = labels
         captured["timeout"] = timeout
         return {"labels": [{"name": "rates"}, {"name": "research"}]}
@@ -2939,11 +2939,11 @@ def test_code_repository_add_label(cli_mod, runner, monkeypatch):
 
     result = runner.invoke(
         cli_mod.app,
-        ["code-repository", "add-label", "project-uid-4", "--label", "rates,research"],
+        ["code-repository", "add-label", "code-repository-uid-4", "--label", "rates,research"],
     )
     assert result.exit_code == 0
     assert captured == {
-        "project_id": "project-uid-4",
+        "code_repository_id": "code-repository-uid-4",
         "labels": ["rates", "research"],
         "timeout": None,
     }
@@ -2957,7 +2957,7 @@ def test_code_repository_add_to_edit(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
 
     def _add(code_repository_id, user_uid, timeout=None):
-        captured["project_id"] = code_repository_id
+        captured["code_repository_id"] = code_repository_id
         captured["user_uid"] = user_uid
         captured["timeout"] = timeout
         return {
@@ -2965,7 +2965,7 @@ def test_code_repository_add_to_edit(cli_mod, runner, monkeypatch):
             "action": "add_to_edit",
             "detail": "User now has explicit edit access.",
             "object_uid": code_repository_id,
-            "object_type": "tdag.project",
+            "object_type": "pod_manager.coderepository",
             "user": {
                 "uid": user_uid,
                 "username": "editor",
@@ -2983,11 +2983,11 @@ def test_code_repository_add_to_edit(cli_mod, runner, monkeypatch):
 
     result = runner.invoke(
         cli_mod.app,
-        ["code-repository", "add_to_edit", "project-uid-4", USER_UID],
+        ["code-repository", "add_to_edit", "code-repository-uid-4", USER_UID],
     )
     assert result.exit_code == 0
     assert captured == {
-        "project_id": "project-uid-4",
+        "code_repository_id": "code-repository-uid-4",
         "user_uid": USER_UID,
         "timeout": None,
     }
@@ -2999,7 +2999,7 @@ def test_code_repository_add_to_edit(cli_mod, runner, monkeypatch):
 def test_code_repository_add_to_edit_rejects_numeric_user_identifier(cli_mod, runner):
     result = runner.invoke(
         cli_mod.app,
-        ["code-repository", "add_to_edit", "project-uid-4", "12"],
+        ["code-repository", "add_to_edit", "code-repository-uid-4", "12"],
     )
 
     assert result.exit_code == 2
@@ -3012,14 +3012,14 @@ def test_code_repository_add_team_to_view(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
 
     def _add(code_repository_id, team_uid, timeout=None):
-        captured["project_id"] = code_repository_id
+        captured["code_repository_id"] = code_repository_id
         captured["team_uid"] = team_uid
         captured["timeout"] = timeout
         return {
             "action": "add_team_to_view",
             "detail": "Team now has explicit view access.",
             "object_uid": code_repository_id,
-            "object_type": "tdag.project",
+            "object_type": "pod_manager.coderepository",
             "team": {
                 "uid": team_uid,
                 "name": "Research",
@@ -3035,11 +3035,11 @@ def test_code_repository_add_team_to_view(cli_mod, runner, monkeypatch):
 
     result = runner.invoke(
         cli_mod.app,
-        ["code-repository", "add_team_to_view", "project-uid-4", TEAM_UID],
+        ["code-repository", "add_team_to_view", "code-repository-uid-4", TEAM_UID],
     )
     assert result.exit_code == 0
     assert captured == {
-        "project_id": "project-uid-4",
+        "code_repository_id": "code-repository-uid-4",
         "team_uid": TEAM_UID,
         "timeout": None,
     }
@@ -3178,20 +3178,20 @@ def test_list_code_repository_users_can_view_uses_client_model(cli_mod, monkeypa
     class FakeBaseObjectOrm:
         ROOT_URL = "https://old.test/api/v1"
 
-    class FakeProject:
+    class FakeCodeRepository:
         ROOT_URL = "https://old.test/api/v1/code-repositories"
 
         @classmethod
         def get_by_uid(cls, uid, timeout=None):
             captured["get_by_uid"] = {"uid": uid, "timeout": timeout}
 
-            class _Project:
+            class _CodeRepository:
                 def can_view(self, timeout=None):
                     captured["can_view_timeout"] = timeout
                     return types.SimpleNamespace(
                         model_dump=lambda mode="python": {
                             "object_uid": uid,
-                            "object_type": "tdag.project",
+                            "object_type": "pod_manager.coderepository",
                             "access_level": "view",
                             "users": [
                                 {
@@ -3206,10 +3206,10 @@ def test_list_code_repository_users_can_view_uses_client_model(cli_mod, monkeypa
                         }
                     )
 
-            return _Project()
+            return _CodeRepository()
 
     fake_base.BaseObjectOrm = FakeBaseObjectOrm
-    fake_models.CodeRepository = FakeProject
+    fake_models.CodeRepository = FakeCodeRepository
     fake_client_pkg.utils = fake_utils
 
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
@@ -3217,8 +3217,8 @@ def test_list_code_repository_users_can_view_uses_client_model(cli_mod, monkeypa
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
     monkeypatch.setitem(sys.modules, "mainsequence.client.models_foundry", fake_models)
 
-    out = api_mod.list_code_repository_users_can_view("project-uid-4", timeout=9)
-    assert captured["get_by_uid"] == {"uid": "project-uid-4", "timeout": 9}
+    out = api_mod.list_code_repository_users_can_view("code-repository-uid-4", timeout=9)
+    assert captured["get_by_uid"] == {"uid": "code-repository-uid-4", "timeout": 9}
     assert captured["can_view_timeout"] == 9
     assert captured["jwt"] == ("acc", "ref")
     assert out["users"][0]["username"] == "viewer"
@@ -3261,14 +3261,14 @@ def test_add_code_repository_user_to_edit_uses_client_model(cli_mod, monkeypatch
     class FakeBaseObjectOrm:
         ROOT_URL = "https://old.test/api/v1"
 
-    class FakeProject:
+    class FakeCodeRepository:
         ROOT_URL = "https://old.test/api/v1/code-repositories"
 
         @classmethod
         def get_by_uid(cls, uid, timeout=None):
             captured["get_by_uid"] = {"uid": uid, "timeout": timeout}
 
-            class _Project:
+            class _CodeRepository:
                 def add_to_edit(self, user_uid, timeout=None):
                     captured["add_to_edit"] = {"user_uid": user_uid, "timeout": timeout}
                     return {
@@ -3276,7 +3276,7 @@ def test_add_code_repository_user_to_edit_uses_client_model(cli_mod, monkeypatch
                         "action": "add_to_edit",
                         "detail": "User now has explicit edit access.",
                         "object_uid": uid,
-                        "object_type": "tdag.project",
+                        "object_type": "pod_manager.coderepository",
                         "user": {
                             "uid": user_uid,
                             "username": "editor",
@@ -3288,10 +3288,10 @@ def test_add_code_repository_user_to_edit_uses_client_model(cli_mod, monkeypatch
                         "explicit_can_edit_user_uids": [user_uid],
                     }
 
-            return _Project()
+            return _CodeRepository()
 
     fake_base.BaseObjectOrm = FakeBaseObjectOrm
-    fake_models.CodeRepository = FakeProject
+    fake_models.CodeRepository = FakeCodeRepository
     fake_client_pkg.utils = fake_utils
 
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
@@ -3299,8 +3299,8 @@ def test_add_code_repository_user_to_edit_uses_client_model(cli_mod, monkeypatch
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
     monkeypatch.setitem(sys.modules, "mainsequence.client.models_foundry", fake_models)
 
-    out = api_mod.add_code_repository_user_to_edit("project-uid-4", USER_UID, timeout=10)
-    assert captured["get_by_uid"] == {"uid": "project-uid-4", "timeout": 10}
+    out = api_mod.add_code_repository_user_to_edit("code-repository-uid-4", USER_UID, timeout=10)
+    assert captured["get_by_uid"] == {"uid": "code-repository-uid-4", "timeout": 10}
     assert captured["add_to_edit"] == {"user_uid": USER_UID, "timeout": 10}
     assert captured["jwt"] == ("acc", "ref")
     assert out["action"] == "add_to_edit"
@@ -4010,7 +4010,7 @@ def test_create_code_repository_image_uses_client_model(cli_mod, monkeypatch):
                 model_dump=lambda: {
                     "uid": "8b62d1dd-e146-44af-957c-38c5f5b1d8d5",
                     "code_repository_commit_hash": code_repository_commit_hash,
-                    "related_project": related_code_repository_branch_uid,
+                    "related_code_repository_branch_uid": related_code_repository_branch_uid,
                     "base_image": base_image_uid,
                     "build_error": False,
                     "is_ready": False,
@@ -4084,7 +4084,7 @@ def test_list_code_repository_images_uses_client_model(cli_mod, monkeypatch):
                         model_dump=lambda: {
                             "uid": "8b62d1dd-e146-44af-957c-38c5f5b1d8d5",
                             "code_repository_commit_hash": "abc123",
-                            "related_project": 123,
+                            "related_code_repository_branch_uid": 123,
                             "base_image": {"id": 22, "title": "Python 3.12"},
                             "build_error": False,
                             "is_ready": False,
@@ -4117,7 +4117,7 @@ def test_list_code_repository_images_uses_client_model(cli_mod, monkeypatch):
         {
             "uid": "8b62d1dd-e146-44af-957c-38c5f5b1d8d5",
             "code_repository_commit_hash": "abc123",
-            "related_project": 123,
+            "related_code_repository_branch_uid": 123,
             "base_image": {"id": 22, "title": "Python 3.12"},
             "build_error": False,
             "is_ready": False,
@@ -4847,7 +4847,7 @@ def test_validate_code_repository_name_uses_client_model(cli_mod, monkeypatch):
     class FakeBaseObjectOrm:
         ROOT_URL = "https://old.test/api/v1"
 
-    class FakeProject:
+    class FakeCodeRepository:
         ROOT_URL = "https://old.test/api/v1/code-repositories"
 
         @classmethod
@@ -4858,7 +4858,7 @@ def test_validate_code_repository_name_uses_client_model(cli_mod, monkeypatch):
                 model_dump=lambda mode="json": {
                     "code_repository_name": code_repository_name,
                     "available": False,
-                    "reason": "A project with this name already exists in your organization.",
+                    "reason": "A code repository with this name already exists in your organization.",
                     "normalized": {
                         "slugified_code_repository_name": "rates-platform",
                         "repository_library_name": "rates_platform",
@@ -4868,7 +4868,7 @@ def test_validate_code_repository_name_uses_client_model(cli_mod, monkeypatch):
             )
 
     fake_base.BaseObjectOrm = FakeBaseObjectOrm
-    fake_models.CodeRepository = FakeProject
+    fake_models.CodeRepository = FakeCodeRepository
     fake_client_pkg.utils = fake_utils
 
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
@@ -5504,7 +5504,7 @@ def test_search_code_repositories_uses_client_model(cli_mod, monkeypatch):
     class FakeBaseObjectOrm:
         ROOT_URL = "https://old.test/api/v1"
 
-    class FakeProject:
+    class FakeCodeRepository:
         ROOT_URL = "https://old.test/api/v1/code-repositories"
 
         @classmethod
@@ -5515,7 +5515,7 @@ def test_search_code_repositories_uses_client_model(cli_mod, monkeypatch):
             return [
                 types.SimpleNamespace(
                     model_dump=lambda mode="json": {
-                        "uid": "project-uid-11",
+                        "uid": "code-repository-uid-11",
                         "code_repository_name": "alpha-research",
                         "code_repository_type": "python",
                         "cluster_id": 7,
@@ -5523,7 +5523,7 @@ def test_search_code_repositories_uses_client_model(cli_mod, monkeypatch):
                 ),
                 types.SimpleNamespace(
                     model_dump=lambda mode="json": {
-                        "uid": "project-uid-12",
+                        "uid": "code-repository-uid-12",
                         "code_repository_name": "data-live",
                         "code_repository_type": "vite_react",
                         "cluster_id": 9,
@@ -5532,7 +5532,7 @@ def test_search_code_repositories_uses_client_model(cli_mod, monkeypatch):
             ]
 
     fake_base.BaseObjectOrm = FakeBaseObjectOrm
-    fake_models.CodeRepository = FakeProject
+    fake_models.CodeRepository = FakeCodeRepository
     fake_client_pkg.utils = fake_utils
 
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
@@ -5548,13 +5548,13 @@ def test_search_code_repositories_uses_client_model(cli_mod, monkeypatch):
     assert captured["timeout"] == 12
     assert out == [
         {
-            "uid": "project-uid-11",
+            "uid": "code-repository-uid-11",
             "code_repository_name": "alpha-research",
             "code_repository_type": "python",
             "cluster_id": 7,
         },
         {
-            "uid": "project-uid-12",
+            "uid": "code-repository-uid-12",
             "code_repository_name": "data-live",
             "code_repository_type": "vite_react",
             "cluster_id": 9,
@@ -5683,7 +5683,7 @@ def test_create_code_repository_does_not_send_code_repository_visible(cli_mod, m
         headers = {"content-type": "application/json"}
 
         def json(self):
-            return {"id": 321, "code_repository_name": "demo-project"}
+            return {"id": 321, "code_repository_name": "demo-repository"}
 
     def _fake_authed(method, api_path, body=None):
         captured["method"] = method
@@ -5694,7 +5694,7 @@ def test_create_code_repository_does_not_send_code_repository_visible(cli_mod, m
     monkeypatch.setattr(api_mod, "authed", _fake_authed)
 
     out = api_mod.create_code_repository(
-        code_repository_name="demo-project",
+        code_repository_name="demo-repository",
         default_base_image_uid="22222222-2222-4222-8222-222222222222",
         github_org_uid="33333333-3333-4333-8333-333333333333",
         env_vars={"FOO": "bar"},
@@ -5703,14 +5703,14 @@ def test_create_code_repository_does_not_send_code_repository_visible(cli_mod, m
     assert captured["method"] == "POST"
     assert captured["api_path"] == "/api/v1/code-repositories/"
     assert captured["body"] == {
-        "code_repository_name": "demo-project",
+        "code_repository_name": "demo-repository",
         "code_repository_type": "python",
         "default_base_image_uid": "22222222-2222-4222-8222-222222222222",
         "github_org_uid": "33333333-3333-4333-8333-333333333333",
         "env_vars": [{"name": "FOO", "value": "bar"}],
     }
     assert "project_visible" not in captured["body"]
-    assert out == {"id": 321, "code_repository_name": "demo-project"}
+    assert out == {"id": 321, "code_repository_name": "demo-repository"}
 
 
 def test_run_code_repository_job_uses_client_model(cli_mod, monkeypatch):
@@ -6059,7 +6059,7 @@ def test_code_repository_images_list_rejects_reserved_filter(cli_mod, runner, mo
             "code-repository",
             "images",
             "list",
-            "project-uid-123",
+            "code-repository-uid-123",
             "--filter",
             "related_code_repository_branch_uid=other-branch-uid",
         ],
@@ -6099,7 +6099,7 @@ def test_code_repository_images_delete_requires_confirmation(cli_mod, runner, mo
     assert result.exit_code == 0
     assert captured["image_uid"] == image_uid
     assert "CodeRepository Image Delete Preview" in result.output
-    assert f"Delete project image {image_uid}?" in result.output
+    assert f"Delete code repository image {image_uid}?" in result.output
     assert f"CodeRepository image deleted: uid={image_uid}" in result.output
 
 
@@ -6205,7 +6205,7 @@ def test_code_repository_code_repository_resource_list_defaults_to_remote_branch
     assert "CodeRepository Resources" in result.output
     assert "analytics_d" in result.output
     assert "board.py" in result.output
-    assert "Total project resources: 1" in result.output
+    assert "Total code repository resources: 1" in result.output
 
 
 def test_code_repository_code_repository_resource_list_passes_extra_filters(cli_mod, runner, monkeypatch, tmp_path):
@@ -7812,7 +7812,7 @@ def test_code_repository_validate_name_cmd(cli_mod, runner, monkeypatch):
         lambda code_repository_name, timeout=None: {
             "code_repository_name": code_repository_name,
             "available": False,
-            "reason": "A project with this name already exists in your organization.",
+            "reason": "A code repository with this name already exists in your organization.",
             "normalized": {
                 "slugified_code_repository_name": "rates-platform",
                 "repository_library_name": "rates_platform",
@@ -9350,7 +9350,7 @@ def test_code_repository_create_image_interactive_defaults(cli_mod, runner, monk
     assert "2026-03-14" in result.output
     assert "10:11:12" in result.output
     assert "66666666" in result.output
-    assert "already has project image(s)" in result.output
+    assert "already has code repository image(s)" in result.output
 
 
 def test_code_repository_create_image_rejects_unpushed_hash(cli_mod, runner, monkeypatch, tmp_path):
@@ -9390,7 +9390,7 @@ def test_code_repository_create_image_rejects_unpushed_hash(cli_mod, runner, mon
             "code-repository",
             "images",
             "create",
-            "project-uid-123",
+            "code-repository-uid-123",
             "deadbeef",
             "--path",
             str(target),
@@ -9466,7 +9466,7 @@ def test_code_repository_create_image_polls_until_ready(cli_mod, runner, monkeyp
             "code-repository",
             "images",
             "create",
-            "project-uid-123",
+            "code-repository-uid-123",
             "abc123",
             "--path",
             str(target),
@@ -9534,7 +9534,7 @@ def test_code_repository_create_image_normalizes_short_hash_to_full_sha(
             "code-repository",
             "images",
             "create",
-            "project-uid-123",
+            "code-repository-uid-123",
             "adb3fbb",
             "--path",
             str(target),
@@ -9583,7 +9583,7 @@ def test_code_repository_create_image_rejects_unresolvable_short_hash(
             "code-repository",
             "images",
             "create",
-            "project-uid-123",
+            "code-repository-uid-123",
             "adb3fbb",
             "--path",
             str(target),
@@ -9613,8 +9613,8 @@ def test_code_repository_create_interactive_defaults(cli_mod, runner, monkeypatc
             "available": True,
             "reason": None,
             "normalized": {
-                "slugified_code_repository_name": "demo-project",
-                "repository_library_name": "demo_project",
+                "slugified_code_repository_name": "demo-repository",
+                "repository_library_name": "demo_repository",
             },
             "suggestions": [],
         },
@@ -9647,7 +9647,7 @@ def test_code_repository_create_interactive_defaults(cli_mod, runner, monkeypatc
     def _create_code_repository(**kwargs):
         captured.update(kwargs)
         return {
-            "uid": "project-uid-321",
+            "uid": "code-repository-uid-321",
             "code_repository_name": kwargs["code_repository_name"],
         }
 
@@ -9658,16 +9658,16 @@ def test_code_repository_create_interactive_defaults(cli_mod, runner, monkeypatc
     # 2) Default base image uid
     # 3) GitHub organization uid
     # 4) Environment variables line
-    user_input = "demo-project\n\n\nFOO=bar, BAZ=qux\n"
+    user_input = "demo-repository\n\n\nFOO=bar, BAZ=qux\n"
     result = runner.invoke(cli_mod.app, ["code-repository", "create"], input=user_input)
 
     assert result.exit_code == 0
-    assert captured["code_repository_name"] == "demo-project"
+    assert captured["code_repository_name"] == "demo-repository"
     assert captured["code_repository_type"] == "python"
     assert captured["default_base_image_uid"] == "22222222-2222-4222-8222-222222222222"
     assert captured["github_org_uid"] == "33333333-3333-4333-8333-333333333333"
     assert captured["env_vars"] == {"FOO": "bar", "BAZ": "qux"}
-    assert "CodeRepository created: demo-project (uid=project-uid-321)" in result.output
+    assert "CodeRepository created: demo-repository (uid=code-repository-uid-321)" in result.output
 
 
 def test_code_repository_create_with_explicit_options_returns_logical_code_repository(
@@ -9684,8 +9684,8 @@ def test_code_repository_create_with_explicit_options_returns_logical_code_repos
             "available": True,
             "reason": None,
             "normalized": {
-                "slugified_code_repository_name": "demo-project",
-                "repository_library_name": "demo_project",
+                "slugified_code_repository_name": "demo-repository",
+                "repository_library_name": "demo_repository",
             },
             "suggestions": [],
         },
@@ -9706,7 +9706,7 @@ def test_code_repository_create_with_explicit_options_returns_logical_code_repos
         [
             "code-repository",
             "create",
-            "demo-project",
+            "demo-repository",
             "--default-base-image-uid",
             "22222222-2222-4222-8222-222222222222",
             "--github-org-uid",
@@ -9718,7 +9718,7 @@ def test_code_repository_create_with_explicit_options_returns_logical_code_repos
 
     assert result.exit_code == 0
     assert "default_metatables_data_source_uid" not in captured
-    assert "CodeRepository created: demo-project" in result.output
+    assert "CodeRepository created: demo-repository" in result.output
 
 
 def test_code_repository_create_rejects_unavailable_name(cli_mod, runner, monkeypatch):
@@ -9729,10 +9729,10 @@ def test_code_repository_create_rejects_unavailable_name(cli_mod, runner, monkey
         lambda code_repository_name, timeout=None: {
             "code_repository_name": code_repository_name,
             "available": False,
-            "reason": "A project with this name already exists in your organization.",
+            "reason": "A code repository with this name already exists in your organization.",
             "normalized": {
-                "slugified_code_repository_name": "demo-project",
-                "repository_library_name": "demo_project",
+                "slugified_code_repository_name": "demo-repository",
+                "repository_library_name": "demo_repository",
             },
             "suggestions": ["Demo CodeRepository 2", "Demo CodeRepository 3"],
         },
@@ -9741,7 +9741,7 @@ def test_code_repository_create_rejects_unavailable_name(cli_mod, runner, monkey
     result = runner.invoke(cli_mod.app, ["code-repository", "create", "Demo CodeRepository"])
 
     assert result.exit_code == 1
-    assert "A project with this name already exists in your organization." in result.output
+    assert "A code repository with this name already exists in your organization." in result.output
     assert "CodeRepository Name Validation" in result.output
     assert "Demo CodeRepository 2" in result.output
     assert "Demo CodeRepository 3" in result.output
@@ -9752,7 +9752,7 @@ def test_code_repository_delete_remote_yes(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(
         cli_mod,
         "resolve_code_repository",
-        lambda code_repository_id: {"id": 321, "uid": "project-uid-321", "code_repository_name": "Demo CodeRepository"},
+        lambda code_repository_id: {"id": 321, "uid": "code-repository-uid-321", "code_repository_name": "Demo CodeRepository"},
     )
 
     captured = {}
@@ -9766,12 +9766,12 @@ def test_code_repository_delete_remote_yes(cli_mod, runner, monkeypatch):
 
     result = runner.invoke(
         cli_mod.app,
-        ["code-repository", "delete", "project-uid-321", "--yes", "--delete-repositories"],
+        ["code-repository", "delete", "code-repository-uid-321", "--yes", "--delete-repositories"],
     )
     assert result.exit_code == 0
-    assert captured["uids"] == ["project-uid-321"]
+    assert captured["uids"] == ["code-repository-uid-321"]
     assert captured["delete_repositories"] is True
-    assert "CodeRepository deleted: Demo CodeRepository (uid=project-uid-321; deleted=1)" in result.output
+    assert "CodeRepository deleted: Demo CodeRepository (uid=code-repository-uid-321; deleted=1)" in result.output
 
 
 def test_resolve_code_repository_repository_ssh_url_uses_canonical_repository(
@@ -9848,7 +9848,7 @@ def test_ensure_code_repository_repository_ssh_access_registers_new_key_before_v
 
     key_path, public_key, env = cli_mod._ensure_code_repository_repository_ssh_access(
         origin=origin,
-        code_repository_ref="project-uid-123",
+        code_repository_ref="code-repository-uid-123",
         verify_access=lambda ssh_env: events.append(("verify", ssh_env["GIT_SSH_COMMAND"])),
     )
 
@@ -9856,7 +9856,7 @@ def test_ensure_code_repository_repository_ssh_access_registers_new_key_before_v
     assert public_key == "ssh-ed25519 AAA test"
     assert env["GIT_SSH_COMMAND"] == f'ssh -i "{key}" -o IdentitiesOnly=yes'
     assert events == [
-        ("register", "project-uid-123", "developer-laptop", "ssh-ed25519 AAA test"),
+        ("register", "code-repository-uid-123", "developer-laptop", "ssh-ed25519 AAA test"),
         ("verify", env["GIT_SSH_COMMAND"]),
     ]
 
@@ -9891,7 +9891,7 @@ def test_ensure_code_repository_repository_ssh_access_registers_inaccessible_exi
 
     cli_mod._ensure_code_repository_repository_ssh_access(
         origin=origin,
-        code_repository_ref="project-uid-123",
+        code_repository_ref="code-repository-uid-123",
         verify_access=verify_access,
     )
 
@@ -9916,7 +9916,7 @@ def test_code_repository_set_up_locally(cli_mod, runner, monkeypatch, tmp_path):
         cli_mod,
         "resolve_code_repository",
         lambda code_repository_ref: {
-            "uid": "project-uid-123",
+            "uid": "code-repository-uid-123",
             "code_repository_name": "Demo",
             "github_repository_binding_uid": "repository-uid-123",
             "archived": False,
@@ -9930,7 +9930,7 @@ def test_code_repository_set_up_locally(cli_mod, runner, monkeypatch, tmp_path):
         "get_code_repository_branch",
         lambda branch_uid: {
             "uid": branch_uid,
-            "code_repository_uid": "project-uid-123",
+            "code_repository_uid": "code-repository-uid-123",
             "code_repository_name": "Demo",
             "repository_branch": "main",
             "is_initialized": True,
@@ -9975,16 +9975,16 @@ def test_code_repository_set_up_locally(cli_mod, runner, monkeypatch, tmp_path):
 
     result = runner.invoke(
         cli_mod.app,
-        ["code-repository", "set-up-locally", "project-uid-123", "--branch", "main"],
+        ["code-repository", "set-up-locally", "code-repository-uid-123", "--branch", "main"],
     )
     assert result.exit_code == 0
     assert repository_requests == ["repository-uid-123"]
     assert len(deploy_key_requests) == 1
-    assert deploy_key_requests[0][0][0] == "project-uid-123"
+    assert deploy_key_requests[0][0][0] == "code-repository-uid-123"
     assert deploy_key_requests[0][0][2] == "ssh-ed25519 AAA test"
     assert deploy_key_requests[0][1] == {}
 
-    env_file = base / "org" / "projects" / "demo-project-uid-123" / ".env"
+    env_file = base / "org" / "code-repositories" / "demo-code-repository-uid-123" / ".env"
     assert env_file.exists()
     env_text = env_file.read_text(encoding="utf-8")
     assert "MAINSEQUENCE_ACCESS_TOKEN=access-123" in env_text
@@ -10018,7 +10018,7 @@ def test_code_repository_set_up_locally_runtime_credential(cli_mod, runner, monk
         cli_mod,
         "resolve_code_repository",
         lambda code_repository_ref: {
-            "uid": "project-uid-123",
+            "uid": "code-repository-uid-123",
             "code_repository_name": "Demo",
             "github_repository_binding_uid": "repository-uid-123",
             "archived": False,
@@ -10032,7 +10032,7 @@ def test_code_repository_set_up_locally_runtime_credential(cli_mod, runner, monk
         "get_code_repository_branch",
         lambda branch_uid: {
             "uid": branch_uid,
-            "code_repository_uid": "project-uid-123",
+            "code_repository_uid": "code-repository-uid-123",
             "code_repository_name": "Demo",
             "repository_branch": "main",
             "is_initialized": True,
@@ -10082,16 +10082,16 @@ def test_code_repository_set_up_locally_runtime_credential(cli_mod, runner, monk
 
     result = runner.invoke(
         cli_mod.app,
-        ["code-repository", "set-up-locally", "project-uid-123", "--branch", "main"],
+        ["code-repository", "set-up-locally", "code-repository-uid-123", "--branch", "main"],
     )
     assert result.exit_code == 0
     assert repository_requests == ["repository-uid-123"]
     assert len(deploy_key_requests) == 1
-    assert deploy_key_requests[0][0][0] == "project-uid-123"
+    assert deploy_key_requests[0][0][0] == "code-repository-uid-123"
     assert deploy_key_requests[0][0][2] == "ssh-ed25519 AAA test"
     assert deploy_key_requests[0][1] == {}
 
-    env_file = base / "org" / "projects" / "demo-project-uid-123" / ".env"
+    env_file = base / "org" / "code-repositories" / "demo-code-repository-uid-123" / ".env"
     env_text = env_file.read_text(encoding="utf-8")
     assert "MAINSEQUENCE_AUTH_MODE=runtime_credential" in env_text
     assert "MAINSEQUENCE_ACCESS_TOKEN=runtime-access" in env_text
@@ -10124,7 +10124,7 @@ def test_code_repository_set_up_locally_rejects_uninitialized_code_repository(
         cli_mod,
         "resolve_code_repository",
         lambda code_repository_ref: {
-            "uid": "project-uid-123",
+            "uid": "code-repository-uid-123",
             "code_repository_name": "Demo",
             "github_repository_binding_uid": "repository-uid-123",
             "archived": False,
@@ -10138,7 +10138,7 @@ def test_code_repository_set_up_locally_rejects_uninitialized_code_repository(
         "get_code_repository_branch",
         lambda branch_uid: {
             "uid": branch_uid,
-            "code_repository_uid": "project-uid-123",
+            "code_repository_uid": "code-repository-uid-123",
             "code_repository_name": "Demo",
             "repository_branch": "main",
             "is_initialized": False,
@@ -10155,7 +10155,7 @@ def test_code_repository_set_up_locally_rejects_uninitialized_code_repository(
 
     result = runner.invoke(
         cli_mod.app,
-        ["code-repository", "set-up-locally", "project-uid-123", "--branch", "main"],
+        ["code-repository", "set-up-locally", "code-repository-uid-123", "--branch", "main"],
     )
 
     assert result.exit_code == 1
@@ -10175,12 +10175,12 @@ def test_code_repository_open(cli_mod, runner, monkeypatch, tmp_path):
 
 
 def test_code_repository_refresh_token(cli_mod, runner, monkeypatch, tmp_path):
-    target = tmp_path / "demo-project-uid-123"
+    target = tmp_path / "demo-code-repository-uid-123"
     target.mkdir(parents=True, exist_ok=True)
     env_path = target / ".env"
     env_path.write_text(
         "FOO=bar\n"
-        "MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n"
+        "MAIN_SEQUENCE_PROJECT_UID=code-repository-uid-123\n"
         "MAIN_SEQUENCE_PROJECT_ID=123\n"
         "MAINSEQUENCE_ACCESS_TOKEN=old-access\n"
         "MAINSEQUENCE_REFRESH_TOKEN=old-refresh\n"
@@ -10213,12 +10213,12 @@ def test_code_repository_refresh_token(cli_mod, runner, monkeypatch, tmp_path):
 
 
 def test_code_repository_refresh_token_runtime_credential(cli_mod, runner, monkeypatch, tmp_path):
-    target = tmp_path / "demo-project-uid-123"
+    target = tmp_path / "demo-code-repository-uid-123"
     target.mkdir(parents=True, exist_ok=True)
     env_path = target / ".env"
     env_path.write_text(
         "FOO=bar\n"
-        "MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n"
+        "MAIN_SEQUENCE_PROJECT_UID=code-repository-uid-123\n"
         "MAIN_SEQUENCE_PROJECT_ID=123\n"
         "MAINSEQUENCE_AUTH_MODE=jwt\n"
         "MAINSEQUENCE_ACCESS_TOKEN=old-access\n"
@@ -10262,12 +10262,12 @@ def test_code_repository_refresh_token_runtime_credential(cli_mod, runner, monke
 
 
 def test_code_repository_refresh_token_defaults_to_cwd(cli_mod, runner, monkeypatch, tmp_path):
-    target = tmp_path / "demo-project-uid-123"
+    target = tmp_path / "demo-code-repository-uid-123"
     target.mkdir(parents=True, exist_ok=True)
     env_path = target / ".env"
     env_path.write_text(
         "FOO=bar\n"
-        "MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n"
+        "MAIN_SEQUENCE_PROJECT_UID=code-repository-uid-123\n"
         "MAINSEQUENCE_ACCESS_TOKEN=old-access\n"
         "MAINSEQUENCE_REFRESH_TOKEN=old-refresh\n",
         encoding="utf-8",
@@ -10294,7 +10294,7 @@ def test_code_repository_refresh_token_defaults_to_cwd(cli_mod, runner, monkeypa
 
 def test_code_repository_delete_local(cli_mod, runner, monkeypatch, tmp_path):
     base = tmp_path / "base"
-    code_repository_path = base / "org" / "projects" / "demo-123"
+    code_repository_path = base / "org" / "code-repositories" / "demo-123"
     code_repository_path.mkdir(parents=True, exist_ok=True)
     (code_repository_path / "x.txt").write_text("x", encoding="utf-8")
 
@@ -10374,7 +10374,7 @@ def test_code_repository_build_local_venv(cli_mod, runner, monkeypatch, tmp_path
 def test_code_repository_build_local_venv_defaults_to_cwd_with_env_code_repository_id(
     cli_mod, runner, monkeypatch, tmp_path
 ):
-    target = tmp_path / "demo-project-uid-123"
+    target = tmp_path / "demo-code-repository-uid-123"
     target.mkdir(parents=True, exist_ok=True)
     (target / ".env").write_text("", encoding="utf-8")
     (target / "pyproject.toml").write_text(
@@ -10534,7 +10534,7 @@ def test_code_repository_build_local_venv_requires_pyproject(cli_mod, runner, tm
         ["code-repository", "build-local-venv", "--path", str(target)],
     )
     assert result.exit_code == 1
-    assert "pyproject.toml not found in the project root." in result.output
+    assert "pyproject.toml not found in the CodeRepository root." in result.output
 
 
 def test_code_repository_freeze_env(cli_mod, runner, monkeypatch, tmp_path):
@@ -11070,13 +11070,13 @@ def test_code_repository_build_docker_env(cli_mod, runner, monkeypatch, tmp_path
 
 
 def test_code_repository_current(cli_mod, runner, monkeypatch, tmp_path):
-    code_repository_path = tmp_path / "org" / "projects" / "demo-project-uid-123"
+    code_repository_path = tmp_path / "org" / "code-repositories" / "demo-code-repository-uid-123"
     code_repository_path.mkdir(parents=True, exist_ok=True)
 
     code_repository_info = types.SimpleNamespace(
         path=str(code_repository_path),
-        folder="demo-project-uid-123",
-        code_repository_uid="project-uid-123",
+        folder="demo-code-repository-uid-123",
+        code_repository_uid="code-repository-uid-123",
         code_repository_id="123",
         venv_path=None,
         python_version=None,
@@ -11097,7 +11097,7 @@ def test_code_repository_current(cli_mod, runner, monkeypatch, tmp_path):
         cli_mod,
         "get_code_repository_context",
         lambda *args, **kwargs: types.SimpleNamespace(
-            code_repository_uid="project-uid-123",
+            code_repository_uid="code-repository-uid-123",
             repository_branch="main",
             canonical_repository_identity="github.com/org/demo",
             commit_sha="a" * 40,
@@ -11115,13 +11115,13 @@ def test_code_repository_current(cli_mod, runner, monkeypatch, tmp_path):
 
 
 def test_code_repository_current_json(cli_mod, runner, monkeypatch, tmp_path):
-    code_repository_path = tmp_path / "org" / "projects" / "demo-project-uid-123"
+    code_repository_path = tmp_path / "org" / "code-repositories" / "demo-code-repository-uid-123"
     code_repository_path.mkdir(parents=True, exist_ok=True)
 
     code_repository_info = types.SimpleNamespace(
         path=str(code_repository_path),
-        folder="demo-project-uid-123",
-        code_repository_uid="project-uid-123",
+        folder="demo-code-repository-uid-123",
+        code_repository_uid="code-repository-uid-123",
         code_repository_id="123",
         venv_path=None,
         python_version=None,
@@ -11142,7 +11142,7 @@ def test_code_repository_current_json(cli_mod, runner, monkeypatch, tmp_path):
         cli_mod,
         "get_code_repository_context",
         lambda *args, **kwargs: types.SimpleNamespace(
-            code_repository_uid="project-uid-123",
+            code_repository_uid="code-repository-uid-123",
             repository_branch="main",
             canonical_repository_identity="github.com/org/demo",
             commit_sha="a" * 40,
@@ -11155,7 +11155,7 @@ def test_code_repository_current_json(cli_mod, runner, monkeypatch, tmp_path):
     result = runner.invoke(cli_mod.app, ["code-repository", "current", "--json"])
     assert result.exit_code == 0
     payload = json.loads(result.output)
-    assert payload["code_repository"]["code_repository_uid"] == "project-uid-123"
+    assert payload["code_repository"]["code_repository_uid"] == "code-repository-uid-123"
     assert payload["code_repository"]["git_branch"] == "main"
     assert payload["code_repository"]["code_repository_branch_uid"] == "code-repository-branch-uid-123"
     assert payload["code_repository"]["code_repository_branch_status"] == "resolved"
@@ -11174,12 +11174,12 @@ def test_code_repository_current_debug_reports_authenticated_runtime_git_context
         GitCodeRepositorySourceContext,
     )
 
-    code_repository_path = tmp_path / "org" / "projects" / "demo-project-uid-123"
+    code_repository_path = tmp_path / "org" / "code-repositories" / "demo-code-repository-uid-123"
     code_repository_path.mkdir(parents=True, exist_ok=True)
     code_repository_info = types.SimpleNamespace(
         path=str(code_repository_path),
-        folder="demo-project-uid-123",
-        code_repository_uid="project-uid-123",
+        folder="demo-code-repository-uid-123",
+        code_repository_uid="code-repository-uid-123",
         code_repository_id="123",
         venv_path=None,
         python_version="3.13.7",
@@ -11193,7 +11193,7 @@ def test_code_repository_current_debug_reports_authenticated_runtime_git_context
     )
     runtime_context = CodeRepositoryContext(
         source_context=source_context,
-        code_repository_uid="project-uid-123",
+        code_repository_uid="code-repository-uid-123",
         code_repository_branch_uid="code-repository-branch-uid-123",
         organization_environment_uid="environment-uid-123",
         metatables_data_source=None,
@@ -11226,8 +11226,8 @@ def test_code_repository_current_debug_reports_authenticated_runtime_git_context
     payload = json.loads(result.output)
     assert payload["code_repository"] == {
         "path": str(code_repository_path),
-        "folder": "demo-project-uid-123",
-        "code_repository_uid": "project-uid-123",
+        "folder": "demo-code-repository-uid-123",
+        "code_repository_uid": "code-repository-uid-123",
         "git_branch": "development",
         "github_repository_binding": "github.com/org/demo",
         "git_commit": "b" * 40,
@@ -11328,7 +11328,7 @@ def test_code_repository_update_agents_md_replaces_custom_unmarked_file(
     agents_md = _write_installed_agent_scaffold_bundle(tmp_path / "bundle")
     target = tmp_path / "code-repository"
     target.mkdir()
-    original = "# CodeRepository Agents\n\nKeep this project-specific instruction.\n"
+    original = "# CodeRepository Agents\n\nKeep this repository-specific instruction.\n"
     (target / "AGENTS.md").write_text(original, encoding="utf-8")
     monkeypatch.setattr(cli_mod, "_installed_agent_scaffold_bundle_dir", lambda: agents_md.parent)
 
@@ -11341,7 +11341,7 @@ def test_code_repository_update_agents_md_replaces_custom_unmarked_file(
     assert content == agents_md.read_text(encoding="utf-8")
     assert "Installed managed block." in cli_mod._extract_agents_md_managed_block(content)
     assert "Installed managed block." in content
-    assert "Keep this project-specific instruction." not in content
+    assert "Keep this repository-specific instruction." not in content
     assert "Action" in result.output
     assert "replaced" in result.output
 

@@ -213,7 +213,7 @@ def test_dual_source_install_preserves_current_backend_skill_hierarchy(tmp_path)
     sdk_skill = sdk_skills / "sdk_code_repository_execution"
     sdk_skill.mkdir(parents=True)
     (sdk_skill / "SKILL.md").write_text("sdk execution", encoding="utf-8")
-    code_repository_dir = tmp_path / "project"
+    code_repository_dir = tmp_path / "code-repository"
 
     install_dual_source_code_repository_skills(
         code_repository_dir=code_repository_dir,
@@ -304,16 +304,16 @@ def test_dual_source_install_replaces_only_managed_tree_and_records_both_sources
     maintenance_skill = sdk_skills / "maintenance" / "code_repository_maintenance"
     maintenance_skill.mkdir(parents=True)
     (maintenance_skill / "SKILL.md").write_text(
-        "sdk project maintenance",
+        "sdk code repository maintenance",
         encoding="utf-8",
     )
 
-    code_repository_dir = tmp_path / "project"
+    code_repository_dir = tmp_path / "code-repository"
     managed_root = code_repository_dir / ".agents" / "skills" / "mainsequence"
     stale_skill = managed_root / "stale"
     stale_skill.mkdir(parents=True)
     (stale_skill / "SKILL.md").write_text("stale", encoding="utf-8")
-    code_repository_owned = code_repository_dir / ".agents" / "skills" / "project_owned"
+    code_repository_owned = code_repository_dir / ".agents" / "skills" / "repository_owned"
     code_repository_owned.mkdir(parents=True)
     (code_repository_owned / "SKILL.md").write_text("keep", encoding="utf-8")
 
@@ -331,7 +331,7 @@ def test_dual_source_install_replaces_only_managed_tree_and_records_both_sources
     ) == "sdk execution"
     assert (managed_root / "maintenance" / "code_repository_maintenance" / "SKILL.md").read_text(
         encoding="utf-8"
-    ) == "sdk project maintenance"
+    ) == "sdk code repository maintenance"
     assert (managed_root / "alpha_skill" / "SKILL.md").is_file()
     assert (managed_root / "beta_skill" / "SKILL.md").is_file()
     assert (managed_root / "gamma_skill" / "SKILL.md").is_file()
@@ -367,7 +367,7 @@ def test_dual_source_install_rejects_sdk_platform_path_collision_without_writes(
     colliding_skill = sdk_skills / "beta_skill"
     colliding_skill.mkdir(parents=True)
     (colliding_skill / "SKILL.md").write_text("sdk collision", encoding="utf-8")
-    code_repository_dir = tmp_path / "project"
+    code_repository_dir = tmp_path / "code-repository"
     existing = code_repository_dir / ".agents" / "skills" / "mainsequence" / "existing" / "SKILL.md"
     existing.parent.mkdir(parents=True)
     existing.write_text("keep", encoding="utf-8")
@@ -393,7 +393,7 @@ def test_dual_source_install_restores_previous_tree_when_final_swap_fails(
     sdk_skill.mkdir(parents=True)
     (sdk_skill / "SKILL.md").write_text("sdk execution", encoding="utf-8")
 
-    code_repository_dir = tmp_path / "project"
+    code_repository_dir = tmp_path / "code-repository"
     managed_root = code_repository_dir / ".agents" / "skills" / "mainsequence"
     previous = managed_root / "previous" / "SKILL.md"
     previous.parent.mkdir(parents=True)

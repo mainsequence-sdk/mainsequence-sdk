@@ -1,13 +1,13 @@
 ---
 name: mainsequence-access-control-and-sharing
-description: Use this skill when the task is about RBAC, resource sharing, or access verification in a Main Sequence project. This skill owns organization and team access concepts, view and edit semantics, choosing the correct shareable resource boundary, and access checks across projects, TimeIndexMetaTable, constants, secrets, buckets, artifacts, and releases. It does not own job scheduling, TimeIndexTableUpdater producer logic, or API route design.
+description: Use this skill when the task is about RBAC, resource sharing, or access verification in a Main Sequence CodeRepository. This skill owns organization and team access concepts, view and edit semantics, choosing the correct shareable resource boundary, and access checks across CodeRepositories, TimeIndexMetaTable, constants, secrets, buckets, artifacts, and releases. It does not own job scheduling, TimeIndexTableUpdater producer logic, or API route design.
 ---
 
 # Main Sequence Access Control And Sharing
 
 ## Overview
 
-Use this skill when the task is about who can view, edit, maintain, or administer a resource in a Main Sequence project.
+Use this skill when the task is about who can view, edit, maintain, or administer a resource in a Main Sequence CodeRepository.
 
 This skill is for:
 
@@ -25,7 +25,7 @@ This skill is for:
 - decide whether a resource should be shared directly to a user or to a team
 - decide whether a user needs `view` or `edit`
 - identify the correct shareable object boundary:
-  - `Project`
+  - `CodeRepository`
   - `TimeIndexMetaTable`
   - `Constant`
   - `Secret`
@@ -61,7 +61,7 @@ This skill must not claim ownership of:
 - Streamlit dashboard deployment:
   `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
 
-Streamlit dashboard implementation is app-owned project code. This skill only reasons about access to deployed resources such as `ResourceRelease`.
+Streamlit dashboard implementation is app-owned repository code. This skill only reasons about access to deployed resources such as `ResourceRelease`.
 
 ## Read First
 
@@ -159,7 +159,7 @@ Do not downgrade a secret into a constant for convenience.
 ### 6. `Constant` and `Secret` names are unique configuration identities
 
 Treat `Constant.name` and `Secret.name` as unique Environment-level
-configuration keys. Project-facing SDK and CLI operations derive the
+configuration keys. CodeRepository-facing SDK and CLI operations derive the
 Environment from the process-frozen current Git branch and registered
 `CodeRepositoryBranch`. Never ask the user to provide an Environment UID or branch UID.
 

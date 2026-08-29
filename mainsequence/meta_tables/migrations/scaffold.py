@@ -28,7 +28,7 @@ def scaffold_migration_package(
     metadata_ref: str,
     base_ref: str | None = None,
     model_registry_ref: str | None = None,
-    alembic_version_name: str = "ProjectAlembicVersion",
+    alembic_version_name: str = "CodeRepositoryAlembicVersion",
     alembic_version_identifier: str | None = None,
     alembic_version_schema: str | None = "public",
     alembic_version_table_name: str = "alembic_version",
@@ -166,7 +166,7 @@ from mainsequence.meta_tables.migrations import build_metatable_model_registry
 
 def _metatable_model_sources() -> list[type[Any]]:
     return [
-        # Add project-owned MetaTable model classes here, or expand package
+        # Add CodeRepository-owned MetaTable model classes here, or expand package
         # functions that return model classes.
     ]
 

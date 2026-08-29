@@ -7,13 +7,13 @@ MainSequence CLI entrypoint.
 Parity with VS Code extension:
 - settings set-backend
 - logout (clear tokens)
-- project freeze-env (compile environment)
-- project build_local_venv (create local .venv from pyproject + uv sync)
-- project sync (uv bump + lock/sync/export + git commit/push)
-- project build-docker-env (docker build + devcontainer config)
+- code-repository freeze-env (compile environment)
+- code-repository build_local_venv (create local .venv from pyproject + uv sync)
+- code-repository sync (uv bump + lock/sync/export + git commit/push)
+- code-repository build-docker-env (docker build + devcontainer config)
 - local `.env` provisioning during set-up-locally uses only CLI-managed runtime values
-- project current (detect current code repository + venv/python info)
-- sdk latest + project sdk-status + project update-sdk
+- code-repository current (detect current code repository + venv/python info)
+- sdk latest + code-repository sdk-status + code-repository update-sdk
 - doctor diagnostics
 
 All commands have docstrings so `--help` is useful.
@@ -352,7 +352,7 @@ organization_teams_group = typer.Typer(help="Organization team commands")
 meta_table_group = typer.Typer(help="MetaTable table-storage commands")
 time_index_table_group = typer.Typer(help="Time-index table discovery and access commands")
 code_repository = typer.Typer(help="CodeRepository commands (remote + local operations)")
-code_repository_list_group = typer.Typer(help="List-related project commands")
+code_repository_list_group = typer.Typer(help="List-related CodeRepository commands")
 code_repository_resources_group = typer.Typer(help="CodeRepository resource commands")
 code_repository_time_index_table_updates_group = typer.Typer(
     help="CodeRepository time-index table update commands"
@@ -666,7 +666,7 @@ def copy_instructions_to_clipboard(
 
 def _code_repositories_root(base_dir: str, org_slug: str) -> pathlib.Path:
     p = pathlib.Path(base_dir).expanduser()
-    return p / org_slug / "projects"
+    return p / org_slug / "code-repositories"
 
 
 def _org_slug_from_profile() -> str:
@@ -739,7 +739,7 @@ def _code_repository_identity_value(code_repository: dict) -> str:
 
 
 def _render_code_repositories_table(items: list[dict]) -> str:
-    """Return an aligned table with platform project and branch identity."""
+    """Return an aligned table with CodeRepository and branch identity."""
 
     rows = []
     for p in items:
@@ -758,7 +758,7 @@ def _render_code_repositories_table(items: list[dict]) -> str:
 
     header = ["UID", "CodeRepository", "Branches"]
     if not rows:
-        return "No projects."
+        return "No CodeRepositories."
 
     colw = [max(len(str(r[i])) for r in rows + [tuple(header)]) for i in range(len(header))]
     fmt = "  ".join("{:<" + str(colw[i]) + "}" for i in range(len(header)))
@@ -836,15 +836,15 @@ def _resolve_code_repository_dir(code_repository_id: str | None, path: str | Non
                 check=False,
             )
         except (OSError, subprocess.SubprocessError) as exc:
-            error("Run this command inside a Git project checkout or pass --path.")
+            error("Run this command inside a Git CodeRepository checkout or pass --path.")
             raise typer.Exit(1) from exc
         root = result.stdout.strip() if result.returncode == 0 else ""
         if not root:
-            error("Run this command inside a Git project checkout or pass --path.")
+            error("Run this command inside a Git CodeRepository checkout or pass --path.")
             raise typer.Exit(1)
         p = pathlib.Path(root).resolve()
     if not p.is_dir():
-        error(f"Git project root is missing: {p}")
+        error(f"Git CodeRepository root is missing: {p}")
         raise typer.Exit(1)
     if code_repository_id:
         try:
@@ -896,14 +896,14 @@ def _resolve_git_code_repository_branch_context(
     *,
     code_repository_dir: pathlib.Path | None = None,
 ) -> tuple[str, str]:
-    """Read the process-lifetime context for a current-project CLI workflow."""
+    """Read the process-lifetime context for a current-CodeRepository CLI workflow."""
     try:
         context = get_code_repository_context(
             code_repository_uid=code_repository_ref,
             code_repository_dir=code_repository_dir,
         )
         context = require_code_repository_branch_context(
-            "This current-project CLI operation",
+            "This current-CodeRepository CLI operation",
             context=context,
         )
     except CodeRepositoryContextError as exc:
@@ -994,7 +994,7 @@ def _code_repository_installed_package_version(code_repository_dir: pathlib.Path
         detail = (lookup.stderr or lookup.stdout or "").strip()
         message = (
             f"Could not resolve installed {package_name!r} version from the target "
-            "project's .venv. Run `mainsequence code-repository update-sdk --path .` first."
+            "CodeRepository's .venv. Run `mainsequence code-repository update-sdk --path .` first."
         )
         if detail:
             message = f"{message} ({detail})"
@@ -1944,7 +1944,7 @@ def _normalize_python_version_request(spec: str | None) -> str | None:
 
 
 def _extract_python_request_from_pyproject_text(pyproject_text: str) -> str | None:
-    """Extract and validate the project Python interpreter request."""
+    """Extract and validate the package's Python interpreter request."""
 
     try:
         import tomllib
@@ -2081,7 +2081,7 @@ def _current_session_jwt_tokens() -> tuple[str, str]:
 
 def _current_code_repository_runtime_auth_env(backend_url: str) -> dict[str, str]:
     """
-    Return auth environment entries for local project `.env` provisioning.
+    Return auth environment entries for local CodeRepository `.env` provisioning.
 
     The output follows the active auth mode:
     - a backend-injected runtime credential mode preserves its credential keys
@@ -2122,7 +2122,7 @@ def _render_code_repository_runtime_env_text(
     Return `.env` text with managed runtime auth keys refreshed.
 
     Managed keys are rewritten from scratch to avoid duplicate stale entries.
-    Obsolete local-project aliases are not carried into the rendered file.
+    Obsolete local CodeRepository aliases are not carried into the rendered file.
     """
     managed_prefixes = (
         "MAINSEQUENCE_AUTH_MODE=",
@@ -2166,9 +2166,9 @@ def login(
         None,
         help="Optional backend URL or host[:port], for example 127.0.0.1:8000.",
     ),
-    projects_base: str | None = typer.Argument(
+    code_repositories_base: str | None = typer.Argument(
         None,
-        help="Optional local projects base folder, for example mainsequence-dev.",
+        help="Optional local CodeRepositories base folder, for example mainsequence-dev.",
     ),
     access_token: str | None = typer.Option(None, "--access-token", help="JWT access token."),
     refresh_token: str | None = typer.Option(None, "--refresh-token", help="JWT refresh token."),
@@ -2196,11 +2196,11 @@ def login(
         "--backend",
         help="Backend URL or host[:port], for example http://127.0.0.1:8000.",
     ),
-    projects_base_option: str | None = typer.Option(
+    code_repositories_base_option: str | None = typer.Option(
         None,
-        "--projects-base",
+        "--code-repositories-base",
         "--base-folder",
-        help="Local projects base folder for this terminal session, for example mainsequence-dev.",
+        help="Local CodeRepositories base folder for this terminal session, for example mainsequence-dev.",
     ),
     no_status: bool = typer.Option(
         False,
@@ -2236,8 +2236,8 @@ def login(
     ----------
     backend:
         Optional positional backend override for backward compatibility.
-    projects_base:
-        Optional positional projects base folder for backward compatibility.
+    code_repositories_base:
+        Optional positional CodeRepositories base folder.
     access_token:
         JWT access token for manual token import.
     refresh_token:
@@ -2250,8 +2250,8 @@ def login(
         Maximum time to wait for the MCP authorization handoff.
     backend_option:
         Backend override for this terminal session.
-    projects_base_option:
-        Projects base-folder override for this terminal session.
+    code_repositories_base_option:
+        CodeRepositories base-folder override for this terminal session.
     export:
         If True, print shell export lines for auth variables.
 
@@ -2263,7 +2263,7 @@ def login(
     mainsequence login --no-open
     mainsequence login --mcp
     mainsequence login --access-token "$TOKEN" --refresh-token "$REFRESH"
-    mainsequence login --access-token "$TOKEN" --refresh-token "$REFRESH" --backend http://127.0.0.1:8000 --projects-base mainsequence-dev
+    mainsequence login --access-token "$TOKEN" --refresh-token "$REFRESH" --backend http://127.0.0.1:8000 --code-repositories-base mainsequence-dev
     mainsequence login --export
     ```
     """
@@ -2309,16 +2309,19 @@ def login(
         explicit_backend_input if explicit_backend_input is not None else current_backend
     )
 
-    if projects_base and projects_base_option:
-        if cfg.normalize_mainsequence_path(projects_base) != cfg.normalize_mainsequence_path(
-            projects_base_option
+    if code_repositories_base and code_repositories_base_option:
+        if cfg.normalize_mainsequence_path(code_repositories_base) != cfg.normalize_mainsequence_path(
+            code_repositories_base_option
         ):
             error(
-                "Pass projects base either positionally or with --projects-base/--base-folder, not both."
+                "Pass the CodeRepositories base either positionally or with "
+                "--code-repositories-base/--base-folder, not both."
             )
             raise typer.Exit(1)
     effective_code_repositories_base_input = (
-        projects_base_option if projects_base_option is not None else projects_base
+        code_repositories_base_option
+        if code_repositories_base_option is not None
+        else code_repositories_base
     )
 
     if using_jwt:
@@ -2333,7 +2336,10 @@ def login(
 
     if explicit_backend_input is not None and normalized_backend != current_backend:
         if not effective_code_repositories_base_input:
-            error("When using a different backend, you must also specify a projects base folder.")
+            error(
+                "When using a different backend, you must also specify a "
+                "CodeRepositories base folder."
+            )
             raise typer.Exit(1)
 
     previous_backend_override = os.environ.get("MAINSEQUENCE_ENDPOINT")
@@ -2476,7 +2482,7 @@ def login(
         success(f"Signed in with runtime credential (Backend: {res['backend']})")
     else:
         success(f"Signed in with JWT tokens (Backend: {res['backend']})")
-    info(f"Projects base folder: {base}")
+    info(f"CodeRepositories base folder: {base}")
     auth_store_label = cfg.auth_persistence_label()
     if res.get("auth_mode") == "runtime_credential":
         info(
@@ -3096,7 +3102,7 @@ def settings_show():
     """
     Show current CLI configuration.
 
-    Prints backend URL and base projects path as JSON.
+    Prints the backend URL and CodeRepositories base path as JSON.
 
     Examples
     --------
@@ -3117,14 +3123,14 @@ def settings_show():
 
 
 @settings.command("set-base")
-def settings_set_base(path: str = typer.Argument(..., help="New projects base folder")):
+def settings_set_base(path: str = typer.Argument(..., help="New CodeRepositories base folder")):
     """
-    Set the base folder where projects are cloned locally.
+    Set the base folder where CodeRepositories are cloned locally.
 
     Parameters
     ----------
     path:
-        New base path for local project folders.
+        New base path for local CodeRepository folders.
 
     Examples
     --------
@@ -3135,7 +3141,7 @@ def settings_set_base(path: str = typer.Argument(..., help="New projects base fo
     out = cfg.set_mainsequence_path(path)
     if _emit_json(out):
         return
-    success(f"Projects base folder set to: {out['mainsequence_path']}")
+    success(f"CodeRepositories base folder set to: {out['mainsequence_path']}")
 
 
 @settings.command("set-backend")
@@ -3198,7 +3204,7 @@ def settings_reset():
         return
     success("Settings reset to standard defaults.")
     info(f"Backend URL: {out.get('backend_url')}")
-    info(f"Projects base folder: {out.get('mainsequence_path')}")
+    info(f"CodeRepositories base folder: {out.get('mainsequence_path')}")
 
 
 @settings.command("refresh")
@@ -7149,7 +7155,7 @@ def time_index_table_remove_team_from_edit_cmd(
     )
 
 
-# ---------- project group ----------
+# ---------- CodeRepository group ----------
 
 
 @code_repository_list_group.callback(invoke_without_command=True)
@@ -7161,7 +7167,7 @@ def code_repository_list(
     ),
 ):
     """
-    List projects visible to the authenticated user.
+    List CodeRepositories visible to the authenticated user.
 
     The output includes platform CodeRepository identity and registered branches.
 
@@ -7178,7 +7184,7 @@ def code_repository_list(
         model_ref=None,
         filter_entries=filter_entries,
         show_filters=show_filters,
-        command_label="Projects",
+        command_label="CodeRepositories",
     )
 
     _require_login()
@@ -7195,14 +7201,14 @@ def _print_code_repository_time_index_table_updates(
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ) -> None:
     """
-    List time-index table updates for a project.
+    List time-index table updates for a CodeRepository.
 
     Uses SDK client `CodeRepositoryBranch.get_time_index_table_updates()` as the single source of truth
     for payload parsing and shape handling.
 
     Parameters
     ----------
-    project_id:
+    code_repository_id:
         Optional CodeRepository UID assertion. Git repository identity remains authoritative.
     timeout:
         Optional request timeout in seconds.
@@ -7211,8 +7217,8 @@ def _print_code_repository_time_index_table_updates(
     --------
     ```bash
     mainsequence code-repository time-index-table-updates list
-    mainsequence code-repository time-index-table-updates list project-uid-123
-    mainsequence code-repository time-index-table-updates list project-uid-123 --timeout 60
+    mainsequence code-repository time-index-table-updates list code-repository-uid-123
+    mainsequence code-repository time-index-table-updates list code-repository-uid-123 --timeout 60
     ```
     """
     _resolve_cli_list_filters(
@@ -7220,7 +7226,9 @@ def _print_code_repository_time_index_table_updates(
         filter_entries=filter_entries,
         show_filters=show_filters,
         command_label="CodeRepository Time-Index Table Updates",
-        reserved_filter_descriptions={"project_id": "resolved from the current Git repository"},
+        reserved_filter_descriptions={
+            "code_repository_uid": "resolved from the current Git repository"
+        },
     )
 
     _require_login()
@@ -7284,14 +7292,14 @@ def code_repository_time_index_table_updates_list_cmd(
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
-    List time-index table updates for a project.
+    List time-index table updates for a CodeRepository.
 
     Examples
     --------
     ```bash
     mainsequence code-repository time-index-table-updates list
-    mainsequence code-repository time-index-table-updates list project-uid-123
-    mainsequence code-repository time-index-table-updates list project-uid-123 --timeout 60
+    mainsequence code-repository time-index-table-updates list code-repository-uid-123
+    mainsequence code-repository time-index-table-updates list code-repository-uid-123 --timeout 60
     ```
     """
     _print_code_repository_time_index_table_updates(
@@ -7314,7 +7322,7 @@ def code_repository_validate_name_cmd(
     --------
     ```bash
     mainsequence code-repository validate-name "Rates Platform"
-    mainsequence code-repository validate-name tutorial-project --timeout 60
+    mainsequence code-repository validate-name tutorial-repository --timeout 60
     ```
     """
     _require_login()
@@ -7366,7 +7374,7 @@ def code_repository_search_cmd(
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
-    Search projects visible to the authenticated user.
+    Search CodeRepositories visible to the authenticated user.
 
     Uses SDK client `CodeRepository.quick_search()` as the single source of truth.
 
@@ -7407,7 +7415,7 @@ def code_repository_search_cmd(
             ],
         )
     else:
-        info("No projects matched the search.")
+        info("No CodeRepositories matched the search.")
     info(f'CodeRepository search matches for "{normalized_query}": {len(code_repositories)}')
 
 
@@ -7428,7 +7436,7 @@ def code_repository_create_cmd(
     ),
 ):
     """
-    Create a project on the platform.
+    Create a CodeRepository on the platform.
 
     If required values are omitted, the command prompts interactively and applies defaults.
     CodeRepository creation creates the logical CodeRepository and its initial `main` CodeRepositoryBranch.
@@ -7450,9 +7458,9 @@ def code_repository_create_cmd(
     --------
     ```bash
     mainsequence code-repository create
-    mainsequence code-repository create tutorial-project
-    mainsequence code-repository create tutorial-project --default-base-image-uid <base_image_uid> --github-org-uid <github_org_uid>
-    mainsequence code-repository create tutorial-project --env FOO=bar --env BAZ=qux
+    mainsequence code-repository create tutorial-repository
+    mainsequence code-repository create tutorial-repository --default-base-image-uid <base_image_uid> --github-org-uid <github_org_uid>
+    mainsequence code-repository create tutorial-repository --env FOO=bar --env BAZ=qux
     ```
     """
     _require_login()
@@ -7596,14 +7604,14 @@ def code_repository_delete_remote_cmd(
     yes: bool = typer.Option(False, "--yes", "-y", help="Do not prompt for confirmation"),
 ):
     """
-    Delete a project from the platform (remote deletion).
+    Delete a CodeRepository from the platform.
 
-    This does not delete local files unless you run `project delete-local`.
+    This does not delete local files unless you run `code-repository delete-local`.
 
     Parameters
     ----------
-    project_id:
-        Platform project UID.
+    code_repository_id:
+        Platform CodeRepository UID.
     delete_repositories:
         Also delete linked repositories on backend workflow.
     yes:
@@ -7612,14 +7620,14 @@ def code_repository_delete_remote_cmd(
     Examples
     --------
     ```bash
-    mainsequence code-repository delete project-uid-123
-    mainsequence code-repository delete project-uid-123 --yes
-    mainsequence code-repository delete project-uid-123 --delete-repositories --yes
+    mainsequence code-repository delete code-repository-uid-123
+    mainsequence code-repository delete code-repository-uid-123 --yes
+    mainsequence code-repository delete code-repository-uid-123 --delete-repositories --yes
     ```
     """
     _require_login()
 
-    code_repository_name = f"project-{code_repository_id}"
+    code_repository_name = f"code-repository-{code_repository_id}"
     code_repository_uid = str(code_repository_id)
     try:
         found = resolve_code_repository(code_repository_id)
@@ -7632,7 +7640,8 @@ def code_repository_delete_remote_cmd(
 
     if not yes:
         warning = (
-            f"This will permanently delete project '{code_repository_name}' (uid={code_repository_uid}) from the platform.\n"
+            f"This will permanently delete CodeRepository '{code_repository_name}' "
+            f"(uid={code_repository_uid}) from the platform.\n"
             "This action cannot be undone."
         )
         if delete_repositories:
@@ -7672,7 +7681,7 @@ def code_repository_can_view_cmd(
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
-    List users who can view one project.
+    List users who can view one CodeRepository.
 
     Uses the SDK `ShareableObjectMixin.users_can_view()` path through the `CodeRepository` model.
 
@@ -7697,7 +7706,7 @@ def code_repository_can_edit_cmd(
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
-    List users who can edit one project.
+    List users who can edit one CodeRepository.
 
     Uses the SDK `ShareableObjectMixin.users_can_edit()` path through the `CodeRepository` model.
 
@@ -7727,7 +7736,7 @@ def code_repository_add_label_cmd(
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
-    Add one or more organizational labels to a project.
+    Add one or more organizational labels to a CodeRepository.
 
     Labels are helpers for grouping and discovery only. They do not affect runtime behavior or functionality.
     """
@@ -8023,7 +8032,7 @@ def code_repository_code_repository_resource_list_cmd(
 
     Parameters
     ----------
-    project_id:
+    code_repository_id:
         Optional CodeRepository UID assertion.
     path:
         Local repository path used for Git context and remote branch head resolution.
@@ -8034,7 +8043,7 @@ def code_repository_code_repository_resource_list_cmd(
     --------
     ```bash
     mainsequence code-repository resources list
-    mainsequence code-repository resources list project-uid-123
+    mainsequence code-repository resources list code-repository-uid-123
     mainsequence code-repository resources list --path .
     ```
     """
@@ -8560,13 +8569,13 @@ def code_repository_images_list_cmd(
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
-    List code repository images for a project.
+    List images for a CodeRepository.
 
     Uses SDK client `CodeRepositoryImage.filter()` as the single source of truth.
 
     Parameters
     ----------
-    project_id:
+    code_repository_id:
         Optional CodeRepository UID assertion.
     path:
         Local repository path used for Git-native context resolution.
@@ -8577,8 +8586,8 @@ def code_repository_images_list_cmd(
     --------
     ```bash
     mainsequence code-repository images list
-    mainsequence code-repository images list project-uid-123
-    mainsequence code-repository images list project-uid-123 --path .
+    mainsequence code-repository images list code-repository-uid-123
+    mainsequence code-repository images list code-repository-uid-123 --path .
     ```
     """
     _code_repository_images_list_impl(
@@ -8855,7 +8864,7 @@ def code_repository_images_create_cmd(
 
     Parameters
     ----------
-    project_id:
+    code_repository_id:
         Optional CodeRepository UID assertion.
     code_repository_commit_hash:
         Git commit hash already pushed to remote.
@@ -8872,10 +8881,10 @@ def code_repository_images_create_cmd(
     --------
     ```bash
     mainsequence code-repository images create
-    mainsequence code-repository images create project-uid-123
-    mainsequence code-repository images create project-uid-123 4a1b2c3d
-    mainsequence code-repository images create project-uid-123 --path .
-    mainsequence code-repository images create project-uid-123 --timeout 600 --poll-interval 15
+    mainsequence code-repository images create code-repository-uid-123
+    mainsequence code-repository images create code-repository-uid-123 4a1b2c3d
+    mainsequence code-repository images create code-repository-uid-123 --path .
+    mainsequence code-repository images create code-repository-uid-123 --timeout 600 --poll-interval 15
     ```
     """
     _code_repository_images_create_impl(
@@ -8981,7 +8990,7 @@ def _code_repository_jobs_list_impl(
             deployment_rows,
         )
     else:
-        info("No project jobs.")
+        info("No CodeRepository jobs.")
     info(f"Total jobs: {len(jobs)}")
 
 
@@ -9101,7 +9110,7 @@ def code_repository_jobs_list_cmd(
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
-    List jobs for a project.
+    List jobs for a CodeRepository.
 
     Uses SDK client `Job.filter()` as the single source of truth.
 
@@ -9109,8 +9118,8 @@ def code_repository_jobs_list_cmd(
     --------
     ```bash
     mainsequence code-repository jobs list
-    mainsequence code-repository jobs list project-uid-123
-    mainsequence code-repository jobs list project-uid-123 --path .
+    mainsequence code-repository jobs list code-repository-uid-123
+    mainsequence code-repository jobs list code-repository-uid-123 --path .
     ```
     """
     _code_repository_jobs_list_impl(
@@ -9137,7 +9146,7 @@ def code_repository_jobs_run_cmd(
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
-    Run a project job immediately.
+    Run a CodeRepository job immediately.
 
     Uses SDK client `Job.run_job()` as the single source of truth.
     Per-run args are appended to the saved job entrypoint; they do not replace it.
@@ -9739,7 +9748,7 @@ def code_repository_jobs_create_cmd(
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
-    Create a job for a project.
+    Create a job for a CodeRepository.
 
     Uses SDK client `Job.create()` as the single source of truth. Manual Jobs
     require `--related-image-uid`; automatically deployed Jobs forbid it and
@@ -9752,8 +9761,8 @@ def code_repository_jobs_create_cmd(
     --------
     ```bash
     mainsequence code-repository jobs create
-    mainsequence code-repository jobs create project-uid-123 --name daily-run --execution-path scripts/test.py --related-image-uid <uid>
-    mainsequence code-repository jobs create project-uid-123 --name dashboard --app-name dashboard-api --related-image-uid <uid>
+    mainsequence code-repository jobs create code-repository-uid-123 --name daily-run --execution-path scripts/test.py --related-image-uid <uid>
+    mainsequence code-repository jobs create code-repository-uid-123 --name dashboard --app-name dashboard-api --related-image-uid <uid>
     ```
     """
     _code_repository_jobs_create_impl(
@@ -9799,29 +9808,29 @@ def code_repository_set_up_locally(
     ),
 ):
     """
-    Clone a project locally and provision runtime `.env`.
+    Clone a CodeRepository locally and provision runtime `.env`.
 
     Workflow:
     - ensure, register when needed, and verify a repository-specific SSH key,
-    - clone repository into local projects root,
+    - clone the repository into the local CodeRepositories root,
     - build local runtime auth/backend entries for the active auth mode,
     - write/update `.env` with local runtime values.
 
     Parameters
     ----------
-    project_id:
-        Platform project UID.
+    code_repository_id:
+        Platform CodeRepository UID.
     base_dir:
-        Override local projects base directory.
+        Override the local CodeRepositories base directory.
     scaffold_docker:
         Deprecated compatibility flag. No effect.
 
     Examples
     --------
     ```bash
-    mainsequence code-repository set-up-locally project-uid-123
-    mainsequence code-repository set-up-locally project-uid-123 --base-dir ~/mainsequence
-    mainsequence code-repository set-up-locally project-uid-123 --no-scaffold-docker
+    mainsequence code-repository set-up-locally code-repository-uid-123
+    mainsequence code-repository set-up-locally code-repository-uid-123 --base-dir ~/mainsequence
+    mainsequence code-repository set-up-locally code-repository-uid-123 --no-scaffold-docker
     ```
     """
     _require_login()
@@ -9863,10 +9872,12 @@ def code_repository_set_up_locally(
         error(str(e))
         raise typer.Exit(1) from e
 
-    name = safe_slug(p.get("code_repository_name") or f"project-{code_repository_uid}")
-    projects_root = _code_repositories_root(base, org_slug)
-    target_dir = projects_root / f"{name}-{code_repository_uid}"
-    projects_root.mkdir(parents=True, exist_ok=True)
+    name = safe_slug(
+        p.get("code_repository_name") or f"code-repository-{code_repository_uid}"
+    )
+    code_repositories_root = _code_repositories_root(base, org_slug)
+    target_dir = code_repositories_root / f"{name}-{code_repository_uid}"
+    code_repositories_root.mkdir(parents=True, exist_ok=True)
 
     if target_dir.exists():
         warn(f"Target already exists: {target_dir}")
@@ -9891,7 +9902,7 @@ def code_repository_set_up_locally(
         rc = subprocess.call(
             ["git", "clone", "--branch", repository_branch, repo, str(target_dir)],
             env=env,
-            cwd=str(projects_root),
+            cwd=str(code_repositories_root),
         )
     if rc != 0:
         try:
@@ -9938,11 +9949,11 @@ def code_repository_open(
     ),
 ):
     """
-    Open a mapped project folder in the OS file manager.
+    Open a mapped CodeRepository folder in the OS file manager.
 
     Parameters
     ----------
-    project_id:
+    code_repository_id:
         Optional CodeRepository UID assertion against the current Git worktree.
     path:
         Explicit local path to open.
@@ -9950,7 +9961,7 @@ def code_repository_open(
     Examples
     --------
     ```bash
-    mainsequence code-repository open project-uid-123
+    mainsequence code-repository open code-repository-uid-123
     mainsequence code-repository open --path .
     ```
     """
@@ -9970,13 +9981,13 @@ def code_repository_delete_local(
     yes: bool = typer.Option(False, "--yes", "-y", help="Do not prompt for confirmation"),
 ):
     """
-    Delete a local project folder.
+    Delete a local CodeRepository folder.
 
-    Safety checks prevent deletion outside configured projects root.
+    Safety checks prevent deletion outside the configured CodeRepositories root.
 
     Parameters
     ----------
-    project_id:
+    code_repository_id:
         Optional CodeRepository UID assertion against the current Git worktree.
     path:
         Explicit local path to delete.
@@ -9986,13 +9997,13 @@ def code_repository_delete_local(
     Examples
     --------
     ```bash
-    mainsequence code-repository delete-local project-uid-123
-    mainsequence code-repository delete-local --path ./my-project --yes
+    mainsequence code-repository delete-local code-repository-uid-123
+    mainsequence code-repository delete-local --path ./my-repository --yes
     ```
     """
     p = _resolve_code_repository_dir(code_repository_id, path)
 
-    # Determine projects root for safety check
+    # Determine the CodeRepositories root for the safety check.
     cfg_obj = cfg.get_config()
     base = cfg_obj["mainsequence_path"]
     org_slug = "default"
@@ -10003,16 +10014,16 @@ def code_repository_delete_local(
     except Exception:
         pass
 
-    projects_root = _code_repositories_root(base, org_slug).resolve()
+    code_repositories_root = _code_repositories_root(base, org_slug).resolve()
     try:
-        p.resolve().relative_to(projects_root)
+        p.resolve().relative_to(code_repositories_root)
     except Exception as e:
-        error(f"Refusing to delete outside projects root: {p}")
+        error(f"Refusing to delete outside the CodeRepositories root: {p}")
         raise typer.Exit(1) from e
 
     warning_text = (
-        "This will permanently delete the local project folder.\n"
-        "Your project will remain on the platform.\n"
+        "This will permanently delete the local CodeRepository folder.\n"
+        "Your CodeRepository will remain on the platform.\n"
     )
     if not yes:
         if not typer.confirm(f"{warning_text}\nDelete: {p} ?", default=False):
@@ -10030,14 +10041,16 @@ def code_repository_open_signed_terminal(
     code_repository_id: str | None = typer.Argument(
         None, help="Optional CodeRepository UID assertion against the current Git worktree"
     ),
-    path: str | None = typer.Option(None, "--path", help="Open in a specific project directory"),
+    path: str | None = typer.Option(
+        None, "--path", help="Open in a specific CodeRepository directory"
+    ),
 ):
     """
-    Open terminal with `ssh-agent` and project key preloaded.
+    Open a terminal with `ssh-agent` and the CodeRepository key preloaded.
 
     Parameters
     ----------
-    project_id:
+    code_repository_id:
         Optional CodeRepository UID assertion against the current Git worktree.
     path:
         Explicit local path.
@@ -10045,7 +10058,7 @@ def code_repository_open_signed_terminal(
     Examples
     --------
     ```bash
-    mainsequence code-repository open-signed-terminal project-uid-123
+    mainsequence code-repository open-signed-terminal code-repository-uid-123
     mainsequence code-repository open-signed-terminal --path .
     ```
     """
@@ -10076,7 +10089,7 @@ def code_repository_build_local_venv(
     recreate: bool = typer.Option(
         False,
         "--recreate",
-        help="Replace an existing .venv after validating the project Python requirement",
+        help="Replace an existing .venv after validating the package Python requirement",
     ),
 ):
     """
@@ -10086,7 +10099,7 @@ def code_repository_build_local_venv(
 
     Parameters
     ----------
-    project_id:
+    code_repository_id:
         Optional CodeRepository UID assertion. The current Git worktree selects the folder.
     path:
         Explicit local path.
@@ -10095,7 +10108,7 @@ def code_repository_build_local_venv(
     --------
     ```bash
     mainsequence code-repository build-local-venv
-    mainsequence code-repository build-local-venv project-uid-123
+    mainsequence code-repository build-local-venv code-repository-uid-123
     mainsequence code-repository build-local-venv --path .
     mainsequence code-repository build-local-venv --path . --recreate
     ```
@@ -10103,13 +10116,13 @@ def code_repository_build_local_venv(
     code_repository_dir = _resolve_code_repository_dir(code_repository_id, path)
     pyproject_path = code_repository_dir / "pyproject.toml"
     if not pyproject_path.is_file():
-        error("pyproject.toml not found in the project root.")
+        error("pyproject.toml not found in the CodeRepository root.")
         raise typer.Exit(1)
 
     try:
         pyproject_text = pyproject_path.read_text(encoding="utf-8")
     except Exception as e:
-        error("Could not read pyproject.toml from the project root.")
+        error("Could not read pyproject.toml from the CodeRepository root.")
         raise typer.Exit(1) from e
 
     python_request = _extract_python_request_from_pyproject_text(pyproject_text)
@@ -10212,15 +10225,15 @@ def code_repository_refresh_token(
     path: str | None = typer.Option(None, "--path", help="CodeRepository directory"),
 ):
     """
-    Refresh local project auth entries in `.env` from the active auth mode.
+    Refresh local CodeRepository auth entries in `.env` from the active auth mode.
 
-    Use this when a project has been idle long enough for the previously injected
+    Use this when a CodeRepository has been idle long enough for the previously injected
     auth token to expire. The command preserves the rest of the `.env` file and
     only rewrites the runtime auth keys managed by the CLI.
 
     Parameters
     ----------
-    project_id:
+    code_repository_id:
         Optional CodeRepository UID assertion against the current Git worktree.
     path:
         Explicit local path. If omitted, the current directory is used.
@@ -10229,7 +10242,7 @@ def code_repository_refresh_token(
     --------
     ```bash
     mainsequence code-repository refresh-token
-    mainsequence code-repository refresh-token project-uid-123
+    mainsequence code-repository refresh-token code-repository-uid-123
     mainsequence code-repository refresh-token --path .
     ```
     """
@@ -10237,7 +10250,7 @@ def code_repository_refresh_token(
     code_repository_dir = _resolve_code_repository_dir(code_repository_id, path)
     env_path = code_repository_dir / ".env"
     if not env_path.is_file():
-        error(f".env not found in project root: {env_path}")
+        error(f".env not found in CodeRepository root: {env_path}")
         info(
             "Run: mainsequence code-repository set-up-locally <code_repository_uid> to provision the local runtime first."
         )
@@ -10285,7 +10298,7 @@ def code_repository_freeze_env(
 
     Parameters
     ----------
-    project_id:
+    code_repository_id:
         Optional CodeRepository UID assertion against the current Git worktree.
     path:
         Explicit local path.
@@ -10295,7 +10308,7 @@ def code_repository_freeze_env(
     Examples
     --------
     ```bash
-    mainsequence code-repository freeze-env project-uid-123
+    mainsequence code-repository freeze-env code-repository-uid-123
     mainsequence code-repository freeze-env --path .
     mainsequence code-repository freeze-env --path . --no-ensure-uv
     ```
@@ -10327,15 +10340,18 @@ def code_repository_sync(
     dry_run: bool = typer.Option(
         False,
         "--dry-run",
-        help="Run read-only preflight and print steps without generating keys or changing the project",
+        help=(
+            "Run read-only preflight and print steps without generating keys or "
+            "changing the CodeRepository"
+        ),
     ),
 ):
     """
-    Run end-to-end sync workflow for project dependencies and git state.
+    Run the end-to-end sync workflow for CodeRepository dependencies and Git state.
 
     Workflow:
     1. preview the patch version and backend-owned CodeRepositoryBranch tag,
-    2. reject local and remote collisions before mutating the project,
+    2. reject local and remote collisions before mutating the CodeRepository,
     3. apply and verify the patch version via `uv version`,
     4. run `uv lock` + `uv sync`,
     5. export locked `requirements.txt`,
@@ -10346,13 +10362,13 @@ def code_repository_sync(
     ----------
     message:
         Commit message. Can be passed positionally or via `--message`.
-    project_id:
+    code_repository_id:
         Optional CodeRepository UID assertion against the current Git worktree.
     path:
         Explicit local path.
     dry_run:
         Run read-only preflight and print the plan without generating keys or
-        changing project files, dependencies, Git state, or backend state.
+        changing CodeRepository files, dependencies, Git state, or backend state.
 
     Examples
     --------
@@ -10525,11 +10541,11 @@ def code_repository_build_docker_env(
     ),
 ):
     """
-    Build Docker image for project and optionally write devcontainer config.
+    Build a Docker image for the CodeRepository and optionally write devcontainer config.
 
     Parameters
     ----------
-    project_id:
+    code_repository_id:
         Optional CodeRepository UID assertion against the current Git worktree.
     path:
         Explicit local path.
@@ -10541,7 +10557,7 @@ def code_repository_build_docker_env(
     Examples
     --------
     ```bash
-    mainsequence code-repository build-docker-env project-uid-123
+    mainsequence code-repository build-docker-env code-repository-uid-123
     mainsequence code-repository build-docker-env --path . --image-ref ghcr.io/acme/proj:dev
     mainsequence code-repository build-docker-env --path . --no-devcontainer
     ```
@@ -10549,7 +10565,7 @@ def code_repository_build_docker_env(
     code_repository_dir = _resolve_code_repository_dir(code_repository_id, path)
     dockerfile = code_repository_dir / "Dockerfile"
     if not dockerfile.exists():
-        error("Dockerfile not found in the project root.")
+        error("Dockerfile not found in the CodeRepository root.")
         raise typer.Exit(1)
 
     ref = (image_ref or "").strip() or compute_docker_image_ref(code_repository_dir)
@@ -10715,11 +10731,11 @@ def code_repository_sdk_status(
     path: str | None = typer.Option(None, "--path", help="CodeRepository directory"),
 ):
     """
-    Show local project SDK version versus latest GitHub release.
+    Show the local CodeRepository SDK version versus the latest GitHub release.
 
     Parameters
     ----------
-    project_id:
+    code_repository_id:
         Optional CodeRepository UID assertion against the current Git worktree.
     path:
         Explicit local path.
@@ -10727,7 +10743,7 @@ def code_repository_sdk_status(
     Examples
     --------
     ```bash
-    mainsequence code-repository sdk-status project-uid-123
+    mainsequence code-repository sdk-status code-repository-uid-123
     mainsequence code-repository sdk-status --path .
     ```
     """
@@ -10773,11 +10789,11 @@ def code_repository_update_sdk(
     dry_run: bool = typer.Option(False, "--dry-run", help="Print steps but do not execute"),
 ):
     """
-    Upgrade project SDK dependency (`mainsequence`) using `uv`.
+    Upgrade the CodeRepository SDK dependency (`mainsequence`) using `uv`.
 
     Parameters
     ----------
-    project_id:
+    code_repository_id:
         Optional CodeRepository UID assertion against the current Git worktree.
     path:
         Explicit local path.
@@ -10787,7 +10803,7 @@ def code_repository_update_sdk(
     Examples
     --------
     ```bash
-    mainsequence code-repository update-sdk project-uid-123
+    mainsequence code-repository update-sdk code-repository-uid-123
     mainsequence code-repository update-sdk --path .
     mainsequence code-repository update-sdk --path . --dry-run
     ```
@@ -10827,7 +10843,7 @@ def code_repository_update_scaffold_target(
     path: str | None = typer.Option(None, "--path", help="CodeRepository directory"),
 ):
     """
-    Update a scaffold-managed file in the local project root.
+    Update a scaffold-managed file in the local CodeRepository root.
 
     Currently this command supports only `AGENTS.md`.
     If the Main Sequence managed marker is present, only that block is updated.
@@ -10839,7 +10855,7 @@ def code_repository_update_scaffold_target(
     ```bash
     mainsequence code-repository update AGENTS.md
     mainsequence code-repository update AGENTS.md --path .
-    mainsequence code-repository update AGENTS.md --project-uid project-uid-123
+    mainsequence code-repository update AGENTS.md --code-repository-uid code-repository-uid-123
     ```
     """
     if target != "AGENTS.md":
@@ -10905,7 +10921,7 @@ def code_repository_update_agent_skills(
     Update `.agents/skills/mainsequence` from installed SDK and platform sources.
 
     The existing command copies SDK-owned execution skills from the target
-    project's installed `agent_scaffold/skills` tree and retrieves
+    CodeRepository's installed `agent_scaffold/skills` tree and retrieves
     platform-owned skills from authenticated MCP resources. It validates and
     stages both sources, then replaces only the managed `mainsequence`
     namespace and writes one dual-source `PINNED_FROM.txt`. Bundle-root files
@@ -10916,7 +10932,7 @@ def code_repository_update_agent_skills(
     ```bash
     mainsequence code-repository update-agent-skills
     mainsequence code-repository update-agent-skills --path .
-    mainsequence code-repository update-agent-skills --project-uid project-uid-123
+    mainsequence code-repository update-agent-skills --code-repository-uid code-repository-uid-123
     ```
     """
     code_repository_dir = _resolve_code_repository_dir(code_repository_id, path)

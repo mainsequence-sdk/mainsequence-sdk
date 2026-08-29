@@ -189,7 +189,7 @@ def clear_session_overrides() -> None:
 
 def get_config() -> dict:
     """
-    Load config.json merged with DEFAULTS and ensure the base projects path exists.
+    Load config.json merged with DEFAULTS and ensure the CodeRepositories base path exists.
 
     Returns:
         dict: merged config with at least {backend_url, mainsequence_path, version}.
@@ -231,7 +231,7 @@ def set_backend_url(url: str) -> dict:
 
 def set_mainsequence_path(path: str) -> dict:
     """
-    Convenience helper to set the projects base folder in config.json.
+    Convenience helper to set the CodeRepositories base folder in config.json.
 
     A bare folder name like `mainsequence-dev` is interpreted as `~/mainsequence-dev`.
     """
@@ -274,7 +274,7 @@ def normalize_backend_url(url: str | None) -> str:
 
 def normalize_mainsequence_path(path: str | None) -> str:
     """
-    Normalize projects base folder input into an absolute path.
+    Normalize CodeRepositories base folder input into an absolute path.
 
     Rules:
       - `~/foo`, `/tmp/foo`, `./foo`, `../foo` behave like normal filesystem paths

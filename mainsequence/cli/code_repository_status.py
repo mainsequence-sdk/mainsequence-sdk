@@ -1,6 +1,6 @@
 """
-mainsequence.cli.project_status
-===============================
+mainsequence.cli.code_repository_status
+=======================================
 
 Current code repository detection from the containing Git worktree.
 """
@@ -32,8 +32,7 @@ class WorkspaceCheckDebug:
     resolved_base: str | None = None
     base_exists: bool | None = None
     within_base: bool | None = None
-    projects_segment_index: int | None = None
-    projects_folder: str | None = None
+    code_repository_folder: str | None = None
     git_root: str | None = None
     reason: str | None = None
 
@@ -86,7 +85,7 @@ def detect_current_code_repository(
         base_dir: configured base folder (mainsequence_path)
 
     Returns:
-        (project_info | None, debug)
+        (code_repository_info | None, debug)
     """
     workspaces = list(workspaces or [])
     debug = CurrentCodeRepositoryDebug(workspaces=workspaces, base_dir=base_dir, checks=[])
@@ -138,7 +137,7 @@ def _analyze_workspace(
         git_root = pathlib.Path(git_root_text).resolve()
         check.git_root = str(git_root)
         folder = git_root.name
-        check.projects_folder = folder
+        check.code_repository_folder = folder
         venv_path, pyver = _detect_venv_info(git_root)
         code_repository = CurrentCodeRepositoryInfo(
             path=str(git_root),

@@ -15,7 +15,7 @@ AlembicMetaTableMigration provider
 -> SDK requests a provider migration database URI
 -> SDK reserves provider.metatable_models only for upgrade/downgrade
 -> Alembic executes revision/current/upgrade/downgrade directly
--> project tooling refreshes provider.metatable_models
+-> CodeRepository tooling refreshes provider.metatable_models
 ```
 
 Alembic owns revision files, current revision reads, upgrade/downgrade
@@ -76,13 +76,13 @@ Alembic executes DDL through the provider migration credential. The backend owns
 catalog reservation and credential issuance; it does not own the Alembic
 migration lifecycle or FK/index naming.
 
-The canonical tutorial Project contains the runnable beginner migration flow.
+The canonical tutorial CodeRepository contains the runnable beginner migration flow.
 This page remains the SDK reference for provider behavior and migration
 contracts.
 
 ## Provider Object
 
-Each project defines one selected provider object in an importable Python
+Each CodeRepository defines one selected provider object in an importable Python
 module. The SDK-owned scaffold command creates the normal provider package:
 
 ```bash
@@ -94,7 +94,7 @@ mainsequence migrations scaffold \
 ```
 
 ```text
-your-project/
+your-repository/
   pyproject.toml
   sdk_examples/
     migrations/
@@ -124,7 +124,7 @@ from mainsequence.meta_tables import schema_table_name
 from sdk_examples.meta_tables.account_limits import Account, AccountLimit, Base
 
 
-def refresh_project_catalog_from_registered_metatables(
+def refresh_code_repository_catalog_from_registered_metatables(
     context: AlembicMetaTableCatalogRefreshContext,
 ):
     models = context.metatable_models
@@ -133,8 +133,8 @@ def refresh_project_catalog_from_registered_metatables(
     ...
 
 
-ProjectAlembicVersion = build_alembic_version_metatable(
-    class_name="ProjectAlembicVersion",
+CodeRepositoryAlembicVersion = build_alembic_version_metatable(
+    class_name="CodeRepositoryAlembicVersion",
     namespace="sdk-examples",
     identifier="sdk_examples.alembic_version",
     schema="public",
@@ -148,9 +148,9 @@ migration = build_metatable_migration_provider(
     script_location="sdk_examples.migrations:",
     version_location_prefix="sdk_examples.migrations:versions",
     target_metadata=Base.metadata,
-    alembic_registry=ProjectAlembicVersion,
+    alembic_registry=CodeRepositoryAlembicVersion,
     metatable_models=[Account, AccountLimit],
-    after_register_metatables=refresh_project_catalog_from_registered_metatables,
+    after_register_metatables=refresh_code_repository_catalog_from_registered_metatables,
 )
 ```
 
@@ -167,7 +167,7 @@ such as `sdk_examples/migrations/__init__.py` and pass
 The provider is the scope boundary. The SDK must not scan every imported model
 or every installed package to decide what to migrate.
 
-`after_register_metatables` is optional. Use it only when the project has a
+`after_register_metatables` is optional. Use it only when the CodeRepository has a
 derived catalog that must refresh after the provider-scoped MetaTable models are
 registered successfully.
 
@@ -305,17 +305,17 @@ The migration CLI coordinates with backend endpoints around Alembic:
   MetaTables after Alembic creates or alters the physical tables.
 
 The returned database URI is a secret and should not be printed, logged, or
-stored in project files.
+stored in repository files.
 
 ## MetaTable Catalog Binding
 
 MetaTables remain catalog metadata. They do not own migration execution records,
 affected-table validation, or contract reconciliation during Alembic apply.
 
-Before Alembic renders SQL, project tooling resolves/reserves only the
+Before Alembic renders SQL, CodeRepository tooling resolves/reserves only the
 application MetaTable classes listed in `migration.metatable_models` and binds
 their backend `MetaTable.uid`/storage metadata while preserving authored table
-names. After Alembic changes physical tables, project tooling finalizes the same
+names. After Alembic changes physical tables, CodeRepository tooling finalizes the same
 catalog scope. Provider scope prevents unrelated imported models from being
 registered by migration tooling.
 

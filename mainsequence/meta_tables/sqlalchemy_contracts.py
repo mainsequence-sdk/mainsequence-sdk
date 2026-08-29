@@ -810,7 +810,7 @@ def _resolve_data_source_uid(
     if not uid:
         raise ValueError(
             "Could not resolve a time-indexed data source uid. Run inside a configured "
-            "Main Sequence project/session, or pass data_source=... / data_source_uid=... "
+            "Main Sequence CodeRepositoryBranch/session, or pass data_source=... / data_source_uid=... "
             "explicitly."
         )
     return str(uid)

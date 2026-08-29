@@ -1,6 +1,6 @@
 # Users and Access
 
-Main Sequence is built for shared work. Projects, datasets, dashboards, constants, secrets, artifacts, and releases are rarely useful for only one person.
+Main Sequence is built for shared work. CodeRepositories, datasets, dashboards, constants, secrets, artifacts, and releases are rarely useful for only one person.
 
 That means access control is not an optional admin topic. It is part of how teams build and operate on the platform.
 
@@ -33,7 +33,7 @@ graph TD
     Org["Organization"] --> Users["Users"]
     Org --> Teams["Teams"]
     Users -->|membership| Teams
-    Users -->|direct access| Resources["Projects, TimeIndexMetaTable, Constants, Secrets, Buckets, Artifacts, Releases"]
+    Users -->|direct access| Resources["CodeRepositories, TimeIndexMetaTable, Constants, Secrets, Buckets, Artifacts, Releases"]
     Teams -->|team access| Resources
 ```
 
@@ -90,7 +90,7 @@ Why:
 
 - roles are coarse
 - real collaboration usually happens at the resource level
-- two users with the same broad role may still need access to very different projects, tables, or dashboards
+- two users with the same broad role may still need access to very different CodeRepositories, tables, or dashboards
 
 So the safe rule is:
 
@@ -148,7 +148,7 @@ That is the practical layer that answers:
 
 This model appears across resources such as:
 
-- `Project`
+- `CodeRepository`
 - `TimeIndexMetaTable`
 - `Constant`
 - `Secret`
@@ -271,7 +271,7 @@ That is why RBAC appears early in the Main Sequence workflow. The moment a resou
 - use direct sharing for exceptional or personal cases
 - keep `view` and `edit` separate whenever possible
 - do not assume team membership means team administration
-- think in terms of resource boundaries: project, dataset, secret, bucket, artifact, release
+- think in terms of resource boundaries: CodeRepository, dataset, secret, bucket, artifact, release
 
 For related configuration guidance, see
 [Constants and Secrets](./constants_and_secrets.md).

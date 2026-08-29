@@ -1,13 +1,13 @@
 # AGENTS.md
 
-You are a dual-mandate agent. Follow the project-specific instructions in this file and the
+You are a dual-mandate agent. Follow the repository-specific instructions in this file and the
 relevant skills, while also keeping in mind that application surfaces, data, and implementation
 operate within the Main Sequence platform and must follow Main Sequence platform instructions.
 
-## Project-Specific Instructions
+## Repository-Specific Instructions
 
-[ HERE SHOULD BE THE PROJECT-SPECIFIC ACTIONS, RULES, CONTEXT, AND LOCAL NOTES. DO NOT REMOVE
-THIS LINE UNLESS YOU REPLACE IT WITH REAL PROJECT-SPECIFIC CONTENT. ]
+[ HERE SHOULD BE THE REPOSITORY-SPECIFIC ACTIONS, RULES, CONTEXT, AND LOCAL NOTES. DO NOT REMOVE
+THIS LINE UNLESS YOU REPLACE IT WITH REAL REPOSITORY-SPECIFIC CONTENT. ]
 
 Do not remove the `<!-- mainsequence-agent-scaffold:start schema=1 source=agent_scaffold -->`
 or `<!-- mainsequence-agent-scaffold:end -->` markers. `mainsequence code-repository update AGENTS.md`
@@ -17,7 +17,7 @@ uses them to update only the Main Sequence section below.
 <!-- mainsequence-agent-scaffold:start schema=1 source=agent_scaffold -->
 ## Main Sequence Instructions
 
-Before any non-trivial Main Sequence work, update the project SDK first, then compare the
+Before any non-trivial Main Sequence work, update the CodeRepository SDK first, then compare the
 installed SDK version with the managed skills pin:
 
 - `mainsequence code-repository update-sdk --path .`
@@ -66,7 +66,7 @@ Core responsibilities:
   - for APIs serving the Command Center frontend, use the contract-authoritative
     FastAPI release workflow
   - for visualization, confirm the delivery target with the user:
-    - if they want a Streamlit app, treat app design and implementation as project-owned code and
+    - if they want a Streamlit app, treat app design and implementation as repository-owned code and
       use Main Sequence skills only for platform deployment and release verification
   - for scheduled execution, releases, and backend operations, use jobs, images, resources, and
     other platform objects through the proper platform skills
@@ -74,7 +74,7 @@ Core responsibilities:
 - route each part of the work to the correct repository skill instead of improvising across domains
 - use the `mainsequence` CLI as the default control surface for backend and platform interaction
 - translate user business logic into reusable code under `src/` so it can be reused by APIs,
-  dashboards, jobs, and other project components instead of duplicating logic in integration
+  dashboards, jobs, and other repository components instead of duplicating logic in integration
   layers
 - use the bug auditor skill for blocker and SDK/platform issue assessment
 
@@ -85,7 +85,7 @@ Typical outcomes include:
 - build and release a `FastAPI` API whose Command Center contract-bearing
   responses conform to a recorded revision of the canonical Command Center SDK
   GitHub contracts
-- confirm whether a visualization should be a project-owned Streamlit app or a reusable Command
+- confirm whether a visualization should be a repository-owned Streamlit app or a reusable Command
   Center surface before building or deploying it
 - build reusable business logic in `src/` and keep thin integration layers in APIs, jobs, and
   dashboards
@@ -185,18 +185,18 @@ Use the latest relevant documentation or specialized skill for the task at hand.
 
 Typical routing:
 
-- project architecture, ontology, and Project Blueprint:
+- product architecture, ontology, and Project Blueprint:
   `.agents/skills/mainsequence/project_design/SKILL.md`
-- project setup, local checkout, CLI environment, scaffolding, and standard
+- CodeRepository setup, local checkout, CLI environment, scaffolding, and standard
   repository layout:
   `.agents/skills/mainsequence/sdk_code_repository_execution/SKILL.md`
-- local environment repair, project authentication refresh, SDK updates,
-  managed skill refresh, and canonical project sync:
+- local environment repair, CodeRepository authentication refresh, SDK updates,
+  managed skill refresh, and canonical CodeRepository sync:
   `.agents/skills/mainsequence/maintenance/code_repository_maintenance/SKILL.md`
-- turning an existing project into a project-backed coding agent, defining
-  project-owned skills, and authoring `.agents/agent_card.json`:
-  `.agents/skills/mainsequence/project_to_agent/SKILL.md`
-- project status audits, blocker analysis, failure classification, and upstream SDK assessment:
+- turning an existing CodeRepository into a code-repository-backed coding agent, defining
+  repository-owned skills, and authoring `.agents/agent_card.json`:
+  `.agents/skills/mainsequence/code_repository_to_agent/SKILL.md`
+- CodeRepository status audits, blocker analysis, failure classification, and upstream SDK assessment:
   `.agents/skills/mainsequence/maintenance/bug_auditor/SKILL.md`
 - TimeIndexTableUpdaters, updates, identifiers, schema, metadata:
   `.agents/skills/mainsequence/data_publishing/time_index_table_updates/SKILL.md`
@@ -213,7 +213,7 @@ Typical routing:
 - Streamlit dashboard deployment and release verification:
   `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
 
-Streamlit dashboard design and implementation are app-owned project work, not a separate Main
+Streamlit dashboard design and implementation are app-owned repository work, not a separate Main
 Sequence scaffold skill. Route only deployment of an already-authored Streamlit dashboard to
 orchestration and releases.
 
@@ -223,14 +223,14 @@ For any non-trivial Main Sequence task:
 
 1. Read the latest relevant Main Sequence documentation.
 2. Compare the implementation against the latest documented behavior.
-3. Confirm you are in the correct project checkout, or use `--path` explicitly.
+3. Confirm you are in the correct CodeRepository checkout, or use `--path` explicitly.
 4. Confirm platform context with:
    `mainsequence code-repository current --debug`
 5. Before validations or live checks, run:
    `mainsequence code-repository refresh-token --path .`
 6. If git push or pull is required, use:
     `mainsequence code-repository open-signed-terminal <CODE_REPOSITORY_UID>`
-7. Before proceeding with non-trivial Main Sequence work, update the project SDK:
+7. Before proceeding with non-trivial Main Sequence work, update the CodeRepository SDK:
     `mainsequence code-repository update-sdk --path .`
 8. After updating the SDK, compare `mainsequence --version` with
     `.agents/skills/mainsequence/PINNED_FROM.txt` field `sdk_version=...`
@@ -256,9 +256,9 @@ Default pattern:
 2. `.agents/skills/mainsequence/sdk_code_repository_execution/SKILL.md`
 3. the relevant domain skill
 
-When the intended project surface is a project-backed coding agent, apply
-`.agents/skills/mainsequence/project_to_agent/SKILL.md` after the relevant
-project behavior exists and has been verified. The repository source card is
+When the intended repository surface is a code-repository-backed coding agent, apply
+`.agents/skills/mainsequence/code_repository_to_agent/SKILL.md` after the relevant
+repository behavior exists and has been verified. The repository source card is
 not the runtime A2A Agent Card; the deployed runtime supplies its concrete
 interfaces and security declarations.
 
@@ -267,7 +267,7 @@ source of truth for intent and ontology. Use
 `.agents/skills/mainsequence/sdk_code_repository_execution/SKILL.md` for installed-SDK,
 CLI, filesystem, and local repository execution mechanics. Use
 `.agents/skills/mainsequence/maintenance/code_repository_maintenance/SKILL.md` for
-repeatable environment, authentication, SDK, scaffold-refresh, and project-sync
+repeatable environment, authentication, SDK, scaffold-refresh, and CodeRepository-sync
 routines.
 
 ## Core Working Rules
@@ -299,7 +299,7 @@ At minimum, verify relevant:
 - code repository images
 - dashboard or agent resources/releases
 - data assets
-- related platform objects used by the project
+- related platform objects used by the CodeRepository
 
 Typical verification commands:
 
@@ -318,7 +318,7 @@ If live verification is not possible:
 
 ## Dependency Management Rules
 
-Manage project Python dependencies with `uv`.
+Manage CodeRepository Python dependencies with `uv`.
 
 Rules:
 
@@ -326,16 +326,16 @@ Rules:
 - add development-only libraries with `uv add --dev <package>`
 - do not edit dependency declarations or lockfiles manually when `uv` should manage them
 - do not treat `requirements.txt` as the source of truth for dependency changes
-- when dependency changes matter to the project runtime, keep the `uv`-managed project files and
+- when dependency changes matter to the CodeRepository runtime, keep the `uv`-managed package files and
   exported requirements in sync
 
 ## Documentation Rules
 
-- all formal project documentation must live under `docs/`
+- all formal CodeRepository documentation must live under `docs/`
 - documentation must remain MkDocs-compatible
 - keep `docs/SUMMARY.md` aligned with the docs structure
 - the root `README.md` must remain the entry point and documentation map
-- every major project area must have its own page under `docs/`
+- every major CodeRepository area must have its own page under `docs/`
 - operational and verification procedures must be documented under `docs/`
 - any new feature, workflow, component, or integration must be reflected in documentation
 

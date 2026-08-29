@@ -19,7 +19,7 @@ The Main Sequence platform allows you to:
 
 The key idea is that you can focus on development and deployment, while the platform handles the DevOps layer.
 
-## Project Status
+## Repository Status
 
 - Status: actively maintained
 - Last commit: `2026-03-27` - [`6aa5dea`](https://github.com/mainsequence-sdk/mainsequence-sdk/commit/6aa5deab73586226c7b267abf2e3f02f4f7e7669) - `docs logo fix v.3.17.6`
@@ -27,16 +27,16 @@ The key idea is that you can focus on development and deployment, while the plat
 - Documentation: [Documentation Site](https://mainsequence-sdk.github.io/mainsequence-sdk/)
 - Security policy: [SECURITY.md](SECURITY.md)
 - Release history: [CHANGELOG.md](CHANGELOG.md)
-- Major-version migration: [6.x to 7.0 hard cut](docs/migrations/v7-time-index-table-updater-hard-cut.md)
+- Major-version migrations: [Migration guides](docs/migrations/v8-code-repository-ontology.md)
 
 ## What this repository contains
 
-This repository contains the SDK and the documentation used to build and operate Main Sequence projects.
+This repository contains the SDK and documentation used to build and operate Main Sequence CodeRepositories.
 
 Main package areas:
 
 - `mainsequence.meta_tables`: `MetaTable`s, `TimeIndexTableUpdater`s, update workflows, and persistence
-- `mainsequence.client`: API client models for projects, jobs, time-index tables, sharing, and platform resources
+- `mainsequence.client`: API client models for CodeRepositories, jobs, time-index tables, sharing, and platform resources
 - `mainsequence.cli`: the `mainsequence` command-line interface
 
 Repository areas:
@@ -55,7 +55,7 @@ The documentation is organized into three reading modes:
 Recommended entry points:
 
 - Beginner tutorial:
-  - [MainSequence SDK tutorial Project](https://github.com/mainsequence-projects/mainsequence-sdk-tutorial)
+  - [MainSequence SDK tutorial CodeRepository](https://github.com/mainsequence-projects/mainsequence-sdk-tutorial)
 - Knowledge:
   - [Time-Index Table Updaters](docs/knowledge/time_index_table_updates.md)
   - [MetaTables](docs/knowledge/meta_tables/index.md)
@@ -63,6 +63,7 @@ Recommended entry points:
   - [Scheduling Jobs](docs/knowledge/infrastructure/scheduling_jobs.md)
   - [Streamlit Dashboards](docs/knowledge/dashboards/streamlit/index.md)
 - Migrations:
+  - [7.x to 8.0: CodeRepository ontology hard cut](docs/migrations/v8-code-repository-ontology.md)
   - [6.x to 7.0: Time-Index Table Updater hard cut](docs/migrations/v7-time-index-table-updater-hard-cut.md)
 - CLI:
   - [CLI Overview](docs/cli/index.md)
@@ -87,23 +88,23 @@ session with `mainsequence login --mcp`, then call the printed
 callback URI; tokens return directly to the CLI and are never exposed through
 MCP.
 
-Check that you can see your projects:
+Check that you can see your CodeRepositories:
 
 ```bash
 mainsequence code-repository list
 ```
 
-Create a new project:
+Create a new CodeRepository:
 
 ```bash
-mainsequence code-repository create my-first-project
+mainsequence code-repository create my-first-repository
 ```
 
 Set it up locally:
 
 ```bash
-mainsequence code-repository set-up-locally <PROJECT_ID>
-cd my-first-project
+mainsequence code-repository set-up-locally <CODE_REPOSITORY_UID>
+cd my-first-repository
 mainsequence code-repository build-local-venv --path .
 ```
 
@@ -115,7 +116,7 @@ From there, the normal learning path is:
 4. add an API or another application surface
 5. schedule jobs
 6. build dashboards or downstream consumers
-7. package the project as an agent-facing surface when the repository is ready
+7. package the CodeRepository as an agent-facing surface when it is ready
 
 ## Installation for development
 
@@ -171,13 +172,13 @@ black .
 
 If you are evaluating the platform:
 
-- start with the separate canonical tutorial Project linked above
+- start with the separate canonical tutorial CodeRepository linked above
 
 If you are building a feature and already know the area:
 
 - go straight to the relevant guide in `docs/knowledge/`
 
-If you are operating projects day to day:
+If you are operating CodeRepositories day to day:
 
 - use `docs/cli/` and the `mainsequence --help` command tree
 
@@ -191,7 +192,7 @@ If you need the exact SDK surface:
 - Python: `>=3.13`
 - CLI entry point: `mainsequence`
 
-Project metadata is defined in [pyproject.toml](pyproject.toml).
+Package metadata is defined in [pyproject.toml](pyproject.toml).
 
 ## License
 

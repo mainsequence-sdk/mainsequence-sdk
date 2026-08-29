@@ -30,7 +30,7 @@ def _read_local_env_values(env_path: pathlib.Path) -> dict[str, str]:
 def prime_runtime_env() -> None:
     """
     Best-effort bootstrap so CLI/SDK imports can discover runtime config without
-    requiring the user to source project `.env` manually.
+    requiring the user to source the checkout `.env` manually.
     """
     local_values = _read_local_env_values(pathlib.Path.cwd() / ".env")
 

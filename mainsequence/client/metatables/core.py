@@ -4992,7 +4992,7 @@ class PodDataSource:
     def set_remote_db(self, *, resolution: CodeRepositoryContext | None = None):
         context = resolution or get_code_repository_context()
         data_source = require_code_repository_metatables_data_source(
-            "Project-derived session data access",
+            "CodeRepositoryBranch-derived session data access",
             context=context,
         )
         logger.debug(f"Set remote data source to {data_source}")

@@ -2035,7 +2035,7 @@ def test_agent_semantic_search_sends_environment_scope_and_parses_code_repositor
     )
 
     results = agent_models_mod.Agent.semantic_search(
-        "project coding",
+        "repository coding",
         organization_environment_uid=environment_uid,
         limit=7,
         timeout=13,
@@ -2047,7 +2047,7 @@ def test_agent_semantic_search_sends_environment_scope_and_parses_code_repositor
         "payload": {
             "json": {
                 "organization_environment_uid": str(environment_uid),
-                "q": "project coding",
+                "q": "repository coding",
                 "limit": 7,
             }
         },

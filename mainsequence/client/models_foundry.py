@@ -124,13 +124,13 @@ class CodeRepositoryQuickSearchResult(BasePydanticModel):
     uid: str = Field(
         ...,
         title="UID",
-        description="Public uid of the matching project.",
+        description="Public UID of the matching CodeRepository.",
         json_schema_extra={"label": "UID"},
     )
     code_repository_name: str = Field(
         ...,
         title="CodeRepository Name",
-        description="Display name of the matching project.",
+        description="Display name of the matching CodeRepository.",
         json_schema_extra={"label": "CodeRepository Name"},
     )
     code_repository_type: str = Field(
@@ -184,14 +184,14 @@ class CodeRepository(LabelableObjectMixin, ShareableObjectMixin, BasePydanticMod
     uid: str = Field(
         ...,
         title="CodeRepository UID",
-        description="Public uid of the project.",
-        examples=["project-uid-142"],
+        description="Public UID of the CodeRepository.",
+        examples=["code-repository-uid-142"],
         json_schema_extra={"label": "CodeRepository UID"},
     )
     code_repository_name: str = Field(
         ...,
         title="CodeRepository Name",
-        description="Human-readable name of the project.",
+        description="Human-readable name of the CodeRepository.",
         examples=["Data Research Pipeline"],
         json_schema_extra={"label": "CodeRepository Name"},
     )
@@ -218,7 +218,7 @@ class CodeRepository(LabelableObjectMixin, ShareableObjectMixin, BasePydanticMod
     created_by: str | int | dict[str, Any] | None = Field(
         None,
         title="Created By",
-        description="Backend-provided creator metadata for the project.",
+        description="Backend-provided creator metadata for the CodeRepository.",
         json_schema_extra={"label": "Created By"},
     )
 
@@ -226,7 +226,7 @@ class CodeRepository(LabelableObjectMixin, ShareableObjectMixin, BasePydanticMod
         default_factory=list,
         title="Labels",
         description=(
-            "Organizational labels attached to the project. "
+            "Organizational labels attached to the CodeRepository. "
             "These are helpers for grouping and discovery only and do not change runtime behavior or functionality."
         ),
         json_schema_extra={"label": "Labels"},
@@ -340,7 +340,7 @@ class CodeRepository(LabelableObjectMixin, ShareableObjectMixin, BasePydanticMod
         timeout: int | None = None,
     ) -> list[CodeRepositoryQuickSearchResult]:
         """
-        Return project quick-search matches visible to the authenticated user.
+        Return CodeRepository quick-search matches visible to the authenticated user.
 
         This hits:
             GET /api/v1/code-repositories/quick-search/?q=...
@@ -1055,7 +1055,7 @@ class Artifact(
 
 def _norm_value(v: Any) -> Any:
     """Normalize values into hashable, deterministic forms for the cache key."""
-    # CodeRepository objects → their integer IDs (project scoped vs global)
+    # CodeRepository objects → their integer IDs (repository scoped vs global)
     if CodeRepository and isinstance(v, CodeRepository):
         return getattr(v, "id", v)
 
@@ -1206,7 +1206,7 @@ class Constant(
         key=lambda cls, **kw: _norm_kwargs(kw),
     )
     def get(cls, **kwargs):
-        # e.g. get(name="CURVE__M_BONOS", project=None)
+        # Delegate to the API only on a cache miss.
         return super().get(**kwargs)
 
     @classmethod

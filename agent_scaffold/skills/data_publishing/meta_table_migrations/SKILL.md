@@ -32,7 +32,7 @@ platform-managed application tables outside the migration workflow.
 - Which provider-scoped MetaTable models belong in `metatable_models`?
 - Does a dynamic provider need `metadata_for_models(...)` instead of full
   package metadata?
-- Does the project need an `after_register_metatables` catalog hook, and does
+- Does the CodeRepository need an `after_register_metatables` catalog hook, and does
   that hook use `context.metatable_models` and `context.registered_metatables`
   instead of importing a broader registry?
 
@@ -119,7 +119,7 @@ platform-managed, Alembic-managed reservations and are validated before HTTP.
   and SDK provider APIs.
 - Do not call platform-managed model `.register()` in normal application code.
   Registration is reserved for the migration workflow.
-- Resolve Project/Git context once per CLI operation and reuse it for the
+- Resolve CodeRepository/Git context once per CLI operation and reuse it for the
   registry reservation, provider reservations, and migration credential.
 - Reject a returned registry unless it is a platform-managed,
   Alembic-managed root in `reserved` or `active` state. Do not silently reuse a
@@ -134,7 +134,7 @@ platform-managed, Alembic-managed reservations and are validated before HTTP.
 - If `current` fails before Alembic runs, inspect the provider import path and
   Alembic version MetaTable binding. Confirm the registry reservation is
   `platform_managed` + `alembic_managed`, has no parent registry UID, and
-  carries the same Project/Git context as the migration operation.
+  carries the same CodeRepository/Git context as the migration operation.
 - If `revision` autogenerate tries to create everything again, the local
   migration connection cannot see the provider's current physical tables.
 - If `upgrade` fails during prepare, inspect provider model identifiers,

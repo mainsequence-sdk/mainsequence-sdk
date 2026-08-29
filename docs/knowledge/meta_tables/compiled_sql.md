@@ -91,7 +91,7 @@ If `scope.data_source_uid` is omitted or `None`, the SDK leaves it out of the
 request. The backend derives the execution connection from the declared
 MetaTables and rejects a scope that spans multiple data sources. This keeps
 deployed runtime code on the backend-derived CodeRepositoryBranch/environment path and
-avoids a separate Project lookup.
+avoids a separate CodeRepository lookup.
 
 The SDK validates:
 
@@ -172,7 +172,7 @@ POST /api/v1/meta-tables/execute-operation/
 Compiled SQL execution has two pieces of scope:
 
 - `scope.data_source_uid` selects the canonical `DataSource` execution
-  connection. The SDK resolves the project/session default when callers omit it.
+  connection. The SDK resolves the CodeRepositoryBranch/session default when callers omit it.
 - `scope.tables` declares MetaTable permissions for the operation.
 
 Every table referenced by the compiled SQL should appear in scope:

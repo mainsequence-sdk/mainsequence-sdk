@@ -1,4 +1,4 @@
-"""Reusable helpers for copying packaged scaffold skills into projects.
+"""Reusable helpers for copying packaged scaffold skills into repository checkouts.
 
 Extension libraries can use this module to copy their own packaged skill bundle
 into `.agents/skills/<namespace>/` without depending on the Main Sequence CLI
@@ -61,10 +61,10 @@ def copy_scaffold_skills(
     protected_code_repository_roots: Sequence[Path] = (),
     code_repository_guard: Callable[[Path], str | None] | None = None,
 ) -> ScaffoldSkillCopyResult:
-    """Copy packaged scaffold skills into a managed project skill namespace.
+    """Copy packaged scaffold skills into a managed CodeRepository skill namespace.
 
     The helper copies each immediate child skill directory from `skills_path` to
-    `<project_dir>/.agents/skills/<namespace>/`, overwriting only matching
+    `<code_repository_dir>/.agents/skills/<namespace>/`, overwriting only matching
     managed skill folders. Files, hidden folders, and folders starting with
     `__` are skipped.
 
@@ -74,8 +74,8 @@ def copy_scaffold_skills(
     version.
 
     The helper refuses to copy when the source and destination overlap, when
-    `project_dir` is inside a protected source checkout, or when `project_guard`
-    returns a block reason.
+    `code_repository_dir` is inside a protected source checkout, or when
+    `code_repository_guard` returns a block reason.
     """
 
     resolved_library_name = _validate_library_name(library_name)
@@ -226,7 +226,7 @@ def _check_code_repository_guards(
         resolved_root = protected_root.expanduser().resolve(strict=False)
         if _same_or_inside(code_repository_dir, resolved_root):
             raise ScaffoldSkillCopyBlocked(
-                "Blocked: target project is inside a protected library source checkout "
+                "Blocked: target CodeRepository is inside a protected library source checkout "
                 f"({resolved_root})."
             )
 

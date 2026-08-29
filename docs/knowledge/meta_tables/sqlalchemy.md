@@ -25,7 +25,7 @@ from mainsequence.meta_tables import (
 
 ## Define A Base
 
-You can create a small project-local base and use `PlatformManagedMetaTable` only on
+You can create a small repository-local base and use `PlatformManagedMetaTable` only on
 models that should be platform-managed.
 
 ```python
@@ -36,8 +36,8 @@ class Base(DeclarativeBase):
 For platform-managed tables, inherit `PlatformManagedMetaTable`. It builds a
 neutral MetaTable contract from storage-relevant SQLAlchemy metadata and exposes
 registration helpers on the model class. The authored SQLAlchemy `__tablename__`
-is the physical table name Alembic uses, so prefix it with the project or
-package name. Prefer `schema_table_name(project_or_app, concept)` so table
+is the physical table name Alembic uses, so prefix it with the repository or
+package name. Prefer `schema_table_name(app, concept)` so table
 names, FK string targets, indexes, and Alembic version tables use one
 collision-resistant convention.
 
@@ -67,10 +67,10 @@ SQLAlchemy/Alembic DDL metadata and are not serialized into the MetaTable
 registration contract.
 
 Prefix explicit table identifiers, explicit physical table names, and Alembic
-version table names with the project or package name. Use
+version table names with the repository or package name. Use
 `schema_table_name("sdk_examples", "asset")` instead of hand-building names.
 Bare names such as `Account`, `Asset`, or `alembic_version` can collide across
-projects sharing the same organization or database schema.
+CodeRepositories sharing the same organization or database schema.
 
 Use `compute_metatable_contract_hash()` when you need an explicit deterministic
 contract fingerprint for drift checks, cache keys, or custom stability checks.
@@ -114,7 +114,7 @@ migration = build_metatable_migration_provider(
     script_location="sdk_examples.migrations:",
     version_location_prefix="sdk_examples.migrations:versions",
     target_metadata=Base.metadata,
-    alembic_registry=ProjectAlembicVersion,
+    alembic_registry=CodeRepositoryAlembicVersion,
     metatable_models=[Account],
 )
 ```
@@ -136,8 +136,8 @@ MetaTable registration does not serialize foreign keys into the backend table
 contract and does not resolve target MetaTable UIDs for FK declarations.
 
 Use SQLAlchemy `ForeignKey(...)` exactly as you would for an Alembic-managed
-table. Prefer explicit table names prefixed with the project or package name so
-string targets remain stable and do not collide across projects sharing one
+table. Prefer explicit table names prefixed with the repository or package name so
+string targets remain stable and do not collide across CodeRepositories sharing one
 schema.
 
 ```python
@@ -322,7 +322,7 @@ In this mode:
 
 ## Runnable application ownership
 
-Complete runnable applications belong in their own Project repositories, where
+Complete runnable applications belong in their own CodeRepositories, where
 their migrations, dependencies, fixtures, tests, and documentation can remain
 synchronized. This SDK page documents the public SQLAlchemy contract without
 maintaining a second application source tree.
@@ -333,7 +333,7 @@ The SDK intentionally fails early for ambiguous metadata:
 
 - platform-managed tables must use `PlatformManagedMetaTable` so the SDK can derive a neutral MetaTable contract
 - default-schema tables should leave SQLAlchemy `Table.schema` unset; set schema metadata only for non-default schemas
-- project tables should use `schema_table_name(project_or_app, concept)` for project-prefixed SQLAlchemy table names when FK string targets are authored explicitly
+- CodeRepository tables should use `schema_table_name(app, concept)` for repository-prefixed SQLAlchemy table names when FK string targets are authored explicitly
 - Alembic owns index and foreign-key DDL; the SDK does not resolve FK target MetaTable UIDs
 - unsupported SQLAlchemy column types raise before registration
 

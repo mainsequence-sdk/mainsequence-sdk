@@ -52,7 +52,7 @@ def test_repository_ssh_key_identity_preserves_path_case_and_non_default_port():
 
 @pytest.mark.parametrize(
     "origin",
-    ["", "file:///tmp/project.git", "github.com/org/project", "git@github.com:"],
+    ["", "file:///tmp/repository.git", "github.com/org/repository", "git@github.com:"],
 )
 def test_repository_ssh_key_identity_rejects_invalid_origins(origin):
     with pytest.raises(ValueError):

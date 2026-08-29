@@ -90,7 +90,7 @@ class PlatformCodeRepositoryResource:
 
 @dataclass(frozen=True)
 class PlatformCodeRepositorySkill(PlatformCodeRepositoryResource):
-    """One platform resource that is installed as a project skill."""
+    """One platform resource installed as a managed CodeRepository skill."""
 
     relative_path: PurePosixPath
 
@@ -120,7 +120,7 @@ class PlatformCodeRepositorySkillCatalog:
 
 @dataclass(frozen=True)
 class InstalledCodeRepositorySkill:
-    """One skill written to the managed project namespace."""
+    """One skill written to the managed CodeRepository namespace."""
 
     name: str
     owner: str
@@ -131,7 +131,7 @@ class InstalledCodeRepositorySkill:
 
 @dataclass(frozen=True)
 class DualSourceCodeRepositorySkillInstallResult:
-    """Result of one completed dual-source project skill update."""
+    """Result of one completed dual-source CodeRepository skill update."""
 
     code_repository_dir: Path
     destination_root: Path
@@ -148,10 +148,10 @@ def parse_platform_code_repository_skill_catalog(
     *,
     source_url: str,
 ) -> PlatformCodeRepositorySkillCatalog:
-    """Validate one complete server-owned MCP project-skill catalog."""
+    """Validate one complete server-owned MCP skill catalog."""
 
     if not rows:
-        raise CodeRepositorySkillAssemblyError("The platform returned no MCP project resources.")
+        raise CodeRepositorySkillAssemblyError("The platform returned no MCP skill resources.")
 
     normalized_source_url = _single_line_text(
         source_url,
@@ -172,7 +172,7 @@ def parse_platform_code_repository_skill_catalog(
                 f"The platform MCP resource catalog returned duplicate URI {uri!r}."
             )
         if uri != PLATFORM_ONTOLOGY_URI and not uri.startswith(PLATFORM_SKILL_URI_PREFIX):
-            raise CodeRepositorySkillAssemblyError(f"Unsupported platform project resource URI {uri!r}.")
+            raise CodeRepositorySkillAssemblyError(f"Unsupported platform skill resource URI {uri!r}.")
         raw_rows_by_uri[uri] = row
 
     if PLATFORM_ONTOLOGY_URI not in raw_rows_by_uri:
@@ -243,7 +243,7 @@ def parse_platform_code_repository_skill_catalog(
         relative_path = PurePosixPath(*payload.resource_path.parts[1:])
         if relative_path in destination_paths:
             raise CodeRepositorySkillAssemblyError(
-                f"{label} resolves to duplicate project destination {relative_path!s}."
+                f"{label} resolves to duplicate CodeRepository destination {relative_path!s}."
             )
         destination_paths.add(relative_path)
         skills.append(
@@ -460,7 +460,7 @@ def install_dual_source_code_repository_skills(
     command: str = "mainsequence code-repository update-agent-skills",
     protected_code_repository_roots: Sequence[Path] = (),
 ) -> DualSourceCodeRepositorySkillInstallResult:
-    """Install SDK-owned and platform-owned skills as one validated project tree."""
+    """Install SDK-owned and platform-owned skills as one validated CodeRepository tree."""
 
     sdk_plan = copy_scaffold_skills(
         code_repository_dir=code_repository_dir,
@@ -615,7 +615,7 @@ def _validate_source_ownership(
         raise CodeRepositorySkillAssemblyError(
             "SDK/platform skill path ownership collision: "
             + ", ".join(collisions)
-            + ". Refactor the SDK-owned skill path before updating the project."
+            + ". Refactor the SDK-owned skill path before updating the CodeRepository."
         )
 
 

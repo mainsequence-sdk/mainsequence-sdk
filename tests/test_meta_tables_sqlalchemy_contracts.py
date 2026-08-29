@@ -258,7 +258,7 @@ def _assert_omits_storage_hash(request):
 
 def test_metatable_identifier_is_optional_with_pyproject(tmp_path, monkeypatch):
     (tmp_path / "pyproject.toml").write_text(
-        '[project]\nname = "alpha-project"\n',
+        '[project]\nname = "alpha-repository"\n',
         encoding="utf-8",
     )
     monkeypatch.chdir(tmp_path)
@@ -267,7 +267,7 @@ def test_metatable_identifier_is_optional_with_pyproject(tmp_path, monkeypatch):
         "AssetModel",
         (),
         {
-            "__module__": "project.models.assets",
+            "__module__": "repository.models.assets",
             "__qualname__": "Outer.AssetModel",
             "__metatable_namespace__": "example.assets",
             "__table__": table,
@@ -284,7 +284,7 @@ def test_explicit_metatable_identifier_does_not_require_pyproject(tmp_path, monk
         "AssetModel",
         (),
         {
-            "__module__": "project.models.assets",
+            "__module__": "repository.models.assets",
             "__metatable_namespace__": "example.assets",
             "__metatable_identifier__": "global.asset",
             "__table__": table,
@@ -301,7 +301,7 @@ def test_metatable_identifier_is_optional_without_pyproject(tmp_path, monkeypatc
         "AssetModel",
         (),
         {
-            "__module__": "project.models.assets",
+            "__module__": "repository.models.assets",
             "__metatable_namespace__": "example.assets",
             "__table__": table,
         },
@@ -1742,7 +1742,7 @@ def test_ensure_registered_output_table_rejects_data_source_mismatch(monkeypatch
         ensure_registered_output_table(AssetSnapshots, context="TimeIndexTableUpdater")
     assert not called
     message = str(exc_info.value)
-    assert "does not match current project/session default data-source UID" in message
+    assert "does not match current CodeRepositoryBranch/session default data-source UID" in message
     assert "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee" in message
 
 
@@ -1803,13 +1803,13 @@ def test_contract_hash_extra_components_are_explicit_utility_inputs():
         "RandomNumber",
         table_a,
         namespace="mainsequence.examples",
-        identifier="daily_random_number_project",
+        identifier="daily_random_number_repository",
     )
     RandomAddition = _time_index_model_class(
         "RandomAddition",
         table_b,
         namespace="mainsequence.examples",
-        identifier="daily_random_addition_project",
+        identifier="daily_random_addition_repository",
     )
 
     random_number_storage_hash = _configured_storage_hash(RandomNumber)
@@ -1829,7 +1829,7 @@ def test_contract_hash_extra_components_are_explicit_utility_inputs():
     )
     _assert_omits_storage_hash(request)
     assert request.table_contract["physical"]["table_name"] == table_a.name
-    assert request.identifier == "daily_random_number_project"
+    assert request.identifier == "daily_random_number_repository"
     assert request.namespace == "mainsequence.examples"
 
 

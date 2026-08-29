@@ -7,7 +7,7 @@ HTTP API wrapper for MainSequence CLI.
 This module is intentionally aligned with the VS Code extension implementation:
 - Browser-based code exchange + refresh
 - authed() retries after refresh on 401
-- CodeRepository helpers: list projects, get env text, deploy key
+- CodeRepository helpers: list repositories, get env text, deploy key
 
 Any behavioral differences vs the VS Code extension should be considered bugs.
 """
@@ -526,8 +526,8 @@ def _mcp_json_rpc(
 
 def safe_slug(s: str) -> str:
     """Return a filesystem-safe slug (max 64 chars)."""
-    x = re.sub(r"[^a-z0-9-_]+", "-", (s or "project").lower()).strip("-")
-    return x[:64] or "project"
+    x = re.sub(r"[^a-z0-9-_]+", "-", (s or "code-repository").lower()).strip("-")
+    return x[:64] or "code-repository"
 
 
 def repo_name_from_git_url(url: str | None) -> str | None:
@@ -824,17 +824,17 @@ def get_logged_user_details() -> dict[str, Any]:
 
 def get_code_repositories() -> list[dict]:
     """
-    List projects visible to the current user.
+    List CodeRepositories visible to the current user.
 
     Returns:
-        list[dict]: project objects (API-dependent shape)
+        list[dict]: CodeRepository objects (API-dependent shape)
 
     Raises:
         ApiError: on non-200 response
     """
     r = authed("GET", "/api/v1/code-repositories/")
     if not r.ok:
-        raise ApiError(f"Projects fetch failed ({r.status_code}).")
+        raise ApiError(f"CodeRepositories fetch failed ({r.status_code}).")
     data = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
     if isinstance(data, list):
         return data
@@ -876,7 +876,9 @@ def resolve_code_repository_uid(code_repository_ref: int | str) -> str:
     normalized_uid = str(payload.get("uid") or "").strip()
     if normalized_uid:
         return normalized_uid
-    raise ApiError(f"CodeRepository UID is not available for project reference: {code_repository_ref}")
+    raise ApiError(
+        f"CodeRepository UID is not available for reference: {code_repository_ref}"
+    )
 
 
 def get_code_repository_branch(code_repository_branch_uid: str) -> dict[str, Any]:
@@ -963,7 +965,7 @@ def search_code_repositories(
     timeout: int | None = None,
 ) -> list[dict[str, Any]]:
     """
-    Search projects visible to the authenticated user via SDK client model.
+    Search CodeRepositories visible to the authenticated user via the SDK client model.
 
     Single source of truth:
       - delegates payload parsing to `CodeRepository.quick_search()`
@@ -1778,7 +1780,7 @@ def remove_agent_team_from_edit(
 
 def get_code_repository(code_repository_uid: str) -> dict:
     """
-    Fetch a single project by public UID.
+    Fetch a single CodeRepository by public UID.
     """
     normalized_uid = str(code_repository_uid).strip()
     if not normalized_uid:
@@ -1810,7 +1812,7 @@ def list_code_repository_users_can_view(
     timeout: int | None = None,
 ) -> dict[str, Any]:
     """
-    Fetch the view-access state for a project via `ShareableObjectMixin.can_view()`.
+    Fetch the view-access state for a CodeRepository via `ShareableObjectMixin.can_view()`.
     """
     return _get_shareable_object_access_state(
         module_name="mainsequence.client.models_foundry",
@@ -1827,7 +1829,7 @@ def list_code_repository_users_can_edit(
     timeout: int | None = None,
 ) -> dict[str, Any]:
     """
-    Fetch the edit-access state for a project via `ShareableObjectMixin.can_edit()`.
+    Fetch the edit-access state for a CodeRepository via `ShareableObjectMixin.can_edit()`.
     """
     return _get_shareable_object_access_state(
         module_name="mainsequence.client.models_foundry",
@@ -2082,7 +2084,7 @@ def add_code_repository_labels(
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
-    """Attach one or more organizational labels to a project."""
+    """Attach one or more organizational labels to a CodeRepository."""
 
     return _mutate_labelable_object_labels(
         module_name="mainsequence.client.models_foundry",
@@ -2338,7 +2340,7 @@ def list_code_repository_images(
     timeout: int | None = None,
 ) -> list[dict[str, Any]]:
     """
-    List code repository images for a project via SDK client model.
+    List images for a CodeRepository via the SDK client model.
 
     Single source of truth:
       - delegates filtering and payload parsing to `CodeRepositoryImage.filter()`
@@ -2618,7 +2620,7 @@ def list_code_repository_jobs(
     timeout: int | None = None,
 ) -> list[dict[str, Any]]:
     """
-    List jobs for a project via SDK client model.
+    List jobs for a CodeRepository via the SDK client model.
 
     Single source of truth:
       - delegates filtering and payload parsing to `Job.filter()`
@@ -2729,7 +2731,7 @@ def list_code_repository_resources(
     timeout: int | None = None,
 ) -> list[dict[str, Any]]:
     """
-    List code repository resources for a project and repository commit via SDK client model.
+    List resources for a CodeRepository and repository commit via the SDK client model.
 
     Single source of truth:
       - delegates filtering and payload parsing to `CodeRepositoryResource.filter()`
@@ -4544,7 +4546,7 @@ def create_code_repository_job(
     timeout: int | None = None,
 ) -> dict[str, Any]:
     """
-    Create a project job via SDK client model.
+    Create a CodeRepository job via the SDK client model.
 
     Single source of truth:
       - delegates payload construction and request behavior to `Job.create()`
@@ -4661,7 +4663,7 @@ def get_code_repository_job(
     timeout: int | None = None,
 ) -> dict[str, Any]:
     """
-    Retrieve one project job via SDK client model.
+    Retrieve one CodeRepository job via the SDK client model.
     """
     try:
         job = _run_sdk_model_operation(
@@ -4686,7 +4688,7 @@ def run_code_repository_job(
     timeout: int | None = None,
 ) -> dict[str, Any]:
     """
-    Run a project job via SDK client model.
+    Run a CodeRepository job via the SDK client model.
 
     Single source of truth:
       - delegates request behavior to `Job.run_job()`
@@ -5227,7 +5229,7 @@ def create_code_repository(
     labels: list[str] | None = None,
 ) -> dict:
     """
-    Create a new project.
+    Create a new CodeRepository.
     """
     payload: dict[str, Any] = {
         "code_repository_name": code_repository_name,
@@ -5266,7 +5268,7 @@ def create_code_repository(
 
 def delete_code_repository(code_repository_uid: str) -> dict[str, Any] | None:
     """
-    Delete a project by public UID.
+    Delete a CodeRepository by public UID.
 
     Mirrors backend behavior:
       - DELETE /api/v1/code-repositories/{uid}/
@@ -5313,7 +5315,7 @@ def bulk_delete_code_repositories(
 
 def add_deploy_key(code_repository_uid: str, key_title: str, public_key: str) -> None:
     """
-    Add a deploy key for the project.
+    Add a deploy key for the CodeRepository.
 
     Note: The CLI command should treat this as best-effort (like the VS Code extension),
     because failures can happen if the key already exists or permissions differ.

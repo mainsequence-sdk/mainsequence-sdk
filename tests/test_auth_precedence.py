@@ -254,7 +254,7 @@ def test_runtime_credential_provider_exchanges_and_writes_access_token(monkeypat
                 "token_type": "Bearer",
                 "expires_in": 300,
                 "runtime_code_repository_context": {
-                    "code_repository_uid": "project-uid",
+                    "code_repository_uid": "code-repository-uid",
                     "code_repository_branch_uid": "code-repository-branch-uid",
                     "repository_branch": "main",
                     "organization_environment_uid": "environment-uid",
@@ -278,7 +278,7 @@ def test_runtime_credential_provider_exchanges_and_writes_access_token(monkeypat
     assert os.environ["MAINSEQUENCE_REFRESH_TOKEN"] == "must-not-be-used"
     assert installed_contexts == [
         {
-            "code_repository_uid": "project-uid",
+            "code_repository_uid": "code-repository-uid",
             "code_repository_branch_uid": "code-repository-branch-uid",
             "repository_branch": "main",
             "organization_environment_uid": "environment-uid",

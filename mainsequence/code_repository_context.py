@@ -18,7 +18,7 @@ CodeRepositoryContextSource = Literal["git", "authenticated_runtime"]
 
 
 class CodeRepositoryContextError(RuntimeError):
-    """Raised when the SDK cannot establish stable Git-native project context."""
+    """Raised when the SDK cannot establish stable Git-native CodeRepository context."""
 
 
 class CodeRepositorySourceContextDriftError(CodeRepositoryContextError):
@@ -34,7 +34,7 @@ class CodeRepositoryEnvironmentContextRequiredError(CodeRepositoryBranchContextR
 
 
 class CodeRepositoryDataSourceContextRequiredError(CodeRepositoryContextError):
-    """Raised when project-derived data access has no usable branch DataSource."""
+    """Raised when branch-derived data access has no usable DataSource."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,7 +113,7 @@ def _normalize_authenticated_runtime_context(
     missing = [field for field, field_value in normalized.items() if not field_value]
     if missing:
         raise CodeRepositoryContextError(
-            "Authenticated runtime project context is incomplete; missing "
+            "Authenticated runtime CodeRepository context is incomplete; missing "
             + ", ".join(sorted(missing))
             + "."
         )
@@ -134,7 +134,7 @@ def _install_authenticated_runtime_code_repository_context(value: Mapping[str, A
             installed = _authenticated_runtime_context_for_process()
             if installed is not None and installed != normalized:
                 raise CodeRepositorySourceContextDriftError(
-                    "Authenticated runtime project context changed while resolving."
+                    "Authenticated runtime CodeRepository context changed while resolving."
                 )
         if _STATE.phase == "resolved":
             assert _STATE.context is not None
@@ -152,7 +152,7 @@ def _install_authenticated_runtime_code_repository_context(value: Mapping[str, A
                 or existing.repository_branch != normalized["repository_branch"]
             ):
                 raise CodeRepositorySourceContextDriftError(
-                    "Authenticated runtime project context changed after process initialization."
+                    "Authenticated runtime CodeRepository context changed after process initialization."
                 )
         _AUTHENTICATED_RUNTIME_CONTEXT = (process_id, normalized)
         if _STATE.phase == "failed":
@@ -195,7 +195,7 @@ def _exchange_authenticated_runtime_context_if_configured() -> None:
         loaders.refresh_headers(force=True)
     except AuthError as exc:
         raise CodeRepositoryContextError(
-            "Could not exchange the deployed runtime credential for project context."
+            "Could not exchange the deployed runtime credential for CodeRepository context."
         ) from exc
     if _authenticated_runtime_context_for_process() is None:
         raise CodeRepositoryContextError(
@@ -353,11 +353,11 @@ def _load_code_repository_branch_context(
         error_name = type(exc).__name__
         if error_name in {"AuthenticationError", "PermissionDeniedError"}:
             raise CodeRepositoryContextError(
-                "Git-native project resolution failed because SDK authentication or "
+                "Git-native CodeRepository resolution failed because SDK authentication or "
                 f"authorization failed. Backend response: {exc}"
             ) from exc
         raise CodeRepositoryContextError(
-            f"Git-native project resolution backend lookup failed: {exc}"
+            f"Git-native CodeRepository resolution backend lookup failed: {exc}"
         ) from exc
 
 
@@ -528,7 +528,7 @@ def validate_code_repository_source_context(
     observed = _resolve_git_source_context(resolved.repository_root)
     if observed != resolved.source_context:
         raise CodeRepositorySourceContextDriftError(
-            "Git repository, branch, or HEAD changed after project context was frozen."
+            "Git repository, branch, or HEAD changed after CodeRepository context was frozen."
         )
     return resolved
 

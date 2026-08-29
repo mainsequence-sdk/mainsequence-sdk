@@ -468,9 +468,9 @@ For new code, model foreign keys on the `PlatformTimeIndexMetaTable` storage
 class, or route the storage work to the MetaTable skill. When an updater output
 table needs a platform-managed FK, use normal SQLAlchemy `ForeignKey(...)` /
 `ForeignKeyConstraint(...)` metadata on the storage class. Prefer
-project-prefixed SQLAlchemy table names for explicit FK string targets so
-projects sharing one schema do not collide. Generate those names with
-`schema_table_name(project_or_app, concept)` from `mainsequence.meta_tables`.
+repository-prefixed SQLAlchemy table names for explicit FK string targets so
+CodeRepositories sharing one schema do not collide. Generate those names with
+`schema_table_name(app, concept)` from `mainsequence.meta_tables`.
 
 Do not ask users to put FK target `MetaTable.uid` values into TimeIndexTableUpdater config or
 MetaTable registration contracts. Alembic, SQLAlchemy, and the database own FK
@@ -488,8 +488,8 @@ Do not add TimeIndexTableUpdater configuration fields just to mutate storage met
 Production-quality table identifiers, descriptions, labels, column docs, and
 foreign-key metadata belong to the storage class/MetaTable registration path.
 Prefix explicit table identifiers, explicit physical table names, and Alembic
-version table names with the project or package name rather than using bare
-names that can collide across projects. Use `schema_table_name(...)` for
+version table names with the repository or package name rather than using bare
+names that can collide across CodeRepositories. Use `schema_table_name(...)` for
 authored SQLAlchemy table names, including updater output tables.
 
 Do not put schema or published table metadata on the TimeIndexTableUpdater configuration.

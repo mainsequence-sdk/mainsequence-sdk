@@ -54,10 +54,10 @@ A useful mental split is:
 
 That keeps the repository cleaner and reduces the amount of environment-specific data hardcoded into scripts and jobs.
 
-Constants and Secrets are owned by an Organization Environment. Project-facing
+Constants and Secrets are owned by an Organization Environment. CodeRepository-facing
 SDK operations resolve that Environment from the process-frozen current Git
 branch and its registered `CodeRepositoryBranch`. Users do not pass an Environment UID
-or branch UID. Projects and branches mapped to the same Environment can use the
+or branch UID. CodeRepositories and branches mapped to the same Environment can use the
 same configuration identities.
 
 ## Names Are Unique Identities
@@ -87,12 +87,12 @@ Main Sequence applies resource-level access control, so the real operational que
 
 - who can see it
 - who can edit it
-- which team or project boundary it belongs to
+- which team or CodeRepository boundary it belongs to
 - whether it is safe to expose through a deployed release
 
 In practice, the current SDK exposes sharing behavior across several resource types:
 
-- `Project`
+- `CodeRepository`
 - `TimeIndexMetaTable`
 - `Constant`
 - `Secret`
@@ -102,7 +102,7 @@ In practice, the current SDK exposes sharing behavior across several resource ty
 
 Why these matter:
 
-- `Project` defines an important collaboration and execution boundary
+- `CodeRepository` defines an important collaboration and execution boundary
 - `TimeIndexMetaTable` is the published table boundary for shared datasets
 - `Constant` stores shareable, non-sensitive runtime configuration
 - `Secret` stores protected credentials
@@ -112,13 +112,13 @@ Why these matter:
 
 !!! warning "IMPORTANT"
     `Constant` and `Secret` are not the only shareable resources in the SDK.
-    `Project`, `TimeIndexMetaTable`, `Bucket`, `Artifact`, and `ResourceRelease` also participate in the same shareable-object model.
+    `CodeRepository`, `TimeIndexMetaTable`, `Bucket`, `Artifact`, and `ResourceRelease` also participate in the same shareable-object model.
     This guide focuses on constants and secrets because they are the simplest place to learn the pattern.
 
 That is the practical reason this topic matters early:
 
 - constants and secrets teach the access-control model in its simplest form
-- the same idea scales later to projects, shared tables, buckets, artifacts, and deployed resources
+- the same idea scales later to CodeRepositories, shared tables, buckets, artifacts, and deployed resources
 
 ## Constants
 
@@ -469,7 +469,7 @@ That gives you:
 
 - better readability
 - safer operations
-- fewer credentials hardcoded in project code
+- fewer credentials hardcoded in repository code
 
 ## Anti-Patterns
 
@@ -483,6 +483,6 @@ Avoid these:
 
 ## Final Rule
 
-If the value is safe to read, review, and discuss as part of ordinary project configuration, use a `Constant`.
+If the value is safe to read, review, and discuss as part of ordinary repository configuration, use a `Constant`.
 
 If the value must be protected, use a `Secret`.

@@ -341,7 +341,7 @@ handle for a different task or conversation.
 ### Runtime-Owned Child Or Executor Agent
 
 - May use bounded A2A within the active task scope without separate user confirmation.
-- Should keep the request tightly scoped to the current project or active task.
+- Should keep the request tightly scoped to the current CodeRepository or active task.
 
 ## A2A Response Behavior
 

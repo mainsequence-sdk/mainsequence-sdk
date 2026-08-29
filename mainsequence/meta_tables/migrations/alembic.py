@@ -51,7 +51,7 @@ def namespace_version_location(
 
 def build_alembic_version_metatable(
     *,
-    class_name: str = "ProjectAlembicVersion",
+    class_name: str = "CodeRepositoryAlembicVersion",
     namespace: str,
     identifier: str,
     schema: str | None,

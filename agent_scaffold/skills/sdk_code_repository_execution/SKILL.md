@@ -1,9 +1,9 @@
 ---
-name: mainsequence-sdk-project-execution
-description: Use the installed Main Sequence SDK and project-local tools to verify repository context, apply local scaffold conventions, and route concrete implementation work after platform intent and ontology have been established.
+name: mainsequence-sdk-code-repository-execution
+description: Use the installed Main Sequence SDK and repository-local tools to verify CodeRepository context, apply local scaffold conventions, and route concrete implementation work after platform intent and ontology have been established.
 ---
 
-# Main Sequence SDK Project Execution
+# Main Sequence SDK CodeRepository Execution
 
 ## Overview
 
@@ -57,17 +57,17 @@ Do not let this skill become a domain manual.
   `.agents/skills/mainsequence/data_access/exploration/SKILL.md`
 - FastAPI APIs serving the Command Center frontend:
   `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
-- project audits, blocker analysis, and upstream SDK assessment:
+- CodeRepository audits, blocker analysis, and upstream SDK assessment:
   `.agents/skills/mainsequence/maintenance/bug_auditor/SKILL.md`
-- local environment repair, project authentication refresh, SDK updates,
-  managed skill refresh, and canonical project sync:
+- local environment repair, CodeRepository authentication refresh, SDK updates,
+  managed skill refresh, and canonical CodeRepository sync:
   `.agents/skills/mainsequence/maintenance/code_repository_maintenance/SKILL.md`
 - jobs, schedules, artifacts, images, resources, releases, and Streamlit dashboard deployment:
   `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
 - RBAC and sharing:
   `.agents/skills/mainsequence/platform_operations/access_control_and_sharing/SKILL.md`
 
-Streamlit dashboard design and implementation are app-owned project work, not a separate Main Sequence scaffold skill. Route only platform deployment of an already-authored Streamlit dashboard to orchestration and releases.
+Streamlit dashboard design and implementation are app-owned repository work, not a separate Main Sequence scaffold skill. Route only platform deployment of an already-authored Streamlit dashboard to orchestration and releases.
 
 ## Read First
 
@@ -89,11 +89,11 @@ Before starting non-trivial work, collect or infer:
 
 If the user goal or code repository context is unclear, stop before routing domain work.
 
-## Resolve Local Project Context From Git
+## Resolve Local CodeRepository Context From Git
 
 The containing Git worktree is the only source of repository, attached branch,
 and exact commit identity. The SDK normalizes the non-secret repository remote,
-maps it to Project and CodeRepositoryBranch through the platform API, resolves once for
+maps it to CodeRepository and CodeRepositoryBranch through the platform API, resolves once for
 the process, and reuses the immutable result. Authentication selects credentials
 and permissions; it does not select source identity. A `git switch` performed in
 a long-running process takes effect only in the next CLI invocation, worker,
@@ -103,14 +103,14 @@ Use `mainsequence code-repository current --debug --json` to verify that Git con
 to `code_repository_branch_status=resolved` and a nonempty `code_repository_branch_uid`. The UID
 is an internal resolution result for branch-owned platform calls; it is not a
 local or environment configuration input. Never require the user to look it up,
-persist project identity in `.env`, accept a branch environment override, or
+persist CodeRepository identity in `.env`, accept a branch environment override, or
 infer a branch from collection order. Local and deployed code repository images use the
 same Git algorithm. A detached checkout or an unregistered Git branch is
 unresolved context and must block only live branch-owned operations.
 
 Keep the platform boundaries explicit:
 
-- use the Git-resolved logical Project UID for aggregate identity and Project operations;
+- use the Git-resolved logical CodeRepository UID for aggregate identity and CodeRepository operations;
 - let the SDK resolve the current Git branch to CodeRepositoryBranch only when Jobs,
   images, releases, resources, pods, or other branch-owned APIs require it;
 - treat GitHubRepositoryBinding as repository metadata and clone-location ownership;
@@ -119,11 +119,11 @@ Keep the platform boundaries explicit:
 For ordinary local implementation, work naturally in the current Git branch.
 Do not make CodeRepositoryBranch selection a separate user workflow.
 An unregistered local branch remains valid for ordinary local development, but
-it has no CodeRepositoryBranch, Environment, or project-derived MetaTables DataSource.
+it has no CodeRepositoryBranch, Environment, or branch-derived MetaTables DataSource.
 Only branch-owned operations fail. Register the branch before using Jobs,
 images, releases, resources, platform-managed MetaTables/TimeIndexTableUpdaters, migrations,
 pods, or other branch-owned platform APIs. Never fall back to another branch or
-to a Project-level default DataSource.
+to an aggregate-level default DataSource.
 
 ## Required Decisions
 
@@ -140,9 +140,9 @@ For every non-trivial task, decide:
 
 Do not rely on memory or copied snippets when the current Main Sequence docs should be checked.
 
-### 2. Maintain the standard Main Sequence project structure
+### 2. Maintain the standard Main Sequence CodeRepository structure
 
-Also maintain these standard project areas when relevant:
+Also maintain these standard repository areas when relevant:
 
 - `src/`
 - `scripts/`
@@ -152,13 +152,13 @@ Also maintain these standard project areas when relevant:
 - `dashboards/`
 - `dashboards/components/`
 
-If the project has recurring scheduled jobs or repository-managed releases,
+If the CodeRepository has recurring scheduled jobs or repository-managed releases,
 keep backend-managed declarations as direct `.yaml` or `.yml` children of
 `.mainsequence/workflows/`. Never create `scheduled_jobs.yaml`; retrieve and
 validate the current workflow contract through the backend-owned CodeRepositoryBranch
 workflow endpoints.
 
-Use the standard Main Sequence project structure unless the repository explicitly documents a different layout.
+Use the standard Main Sequence CodeRepository structure unless the repository explicitly documents a different layout.
 
 Repository-local execution paths for jobs must:
 
@@ -170,7 +170,7 @@ Do not treat:
 
 - `.env` as long-term documentation
 - `.venv` as source code
-- local absolute paths as reusable project instructions
+- local absolute paths as reusable repository instructions
 
 ### 3. Define success before implementation
 
@@ -180,7 +180,7 @@ Do not start domain work with a vague target.
 
 ### 4. Verify code repository context before making platform claims
 
-Use the CLI to confirm the active project and refresh credentials before live checks when needed.
+Use the CLI to confirm the active CodeRepository and refresh credentials before live checks when needed.
 
 When the result will be consumed programmatically or used as machine-readable evidence, prefer the CLI `--json` flag.
 
@@ -189,7 +189,7 @@ Typical bootstrap checks:
 - `mainsequence code-repository current --debug`
 - `mainsequence code-repository refresh-token --path .`
 
-Do not proceed with a live branch-owned check unless `project current` reports
+Do not proceed with a live branch-owned check unless `code-repository current` reports
 the current Git branch and a resolved CodeRepositoryBranch UID.
 
 ### 5. Route domain work instead of expanding the bootstrap skill

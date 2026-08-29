@@ -2,7 +2,7 @@
 
 This CLI mirrors key functionality from the MainSequence VS Code extension:
 - Login / logout
-- Project list + setup locally
+- CodeRepository list + setup locally
 - Signed terminal support
 - Compile environment (`uv export`)
 - Sync code-repository workflow (bump, lock/sync/export, git commit/push)
@@ -55,14 +55,14 @@ combined with `--export`.
 `mainsequence code-repository set-up-locally` and `mainsequence code-repository refresh-token`
 are auth-mode aware. In a backend-launched runtime credential process they
 preserve the injected auth mode, credential id/secret, and an exchanged
-`MAINSEQUENCE_ACCESS_TOKEN` in the project `.env`; they do not require or write
+`MAINSEQUENCE_ACCESS_TOKEN` in the CodeRepository `.env`; they do not require or write
 `MAINSEQUENCE_REFRESH_TOKEN`. Both commands preserve unrelated `.env` entries
 and do not carry obsolete `MAINSEQUENCE_TOKEN` or
 `MAIN_SEQUENCE_PROJECT_ID` entries into the rendered file. They never write a
 CodeRepositoryBranch UID, repository branch, Organization Environment UID, or another
 caller-selected deployed runtime context.
 
-Local setup registers a new or inaccessible deploy key against the logical Project at
+Local setup registers a new or inaccessible deploy key against the logical CodeRepository at
 `/api/v1/code-repositories/{code_repository_uid}/add-deploy-key/` and verifies repository access with that forced
 identity before cloning. The selected CodeRepositoryBranch is only the Git branch to clone and is not the
 owner of repository credentials.
@@ -84,7 +84,7 @@ mainsequence code-repository list
 mainsequence code-repository set-up-locally <CODE_REPOSITORY_UID>
 mainsequence code-repository open-signed-terminal <CODE_REPOSITORY_UID>
 
-# Project operations
+# CodeRepository operations
 mainsequence code-repository add-label <CODE_REPOSITORY_UID> --label rates --label research
 mainsequence time-index-table add-label <TIME_INDEX_META_TABLE_UID> --label curated
 
@@ -92,10 +92,10 @@ mainsequence time-index-table add-label <TIME_INDEX_META_TABLE_UID> --label cura
 mainsequence code-repository freeze-env --path .
 # writes requirements.txt using uv export
 
-# Sync project (commit + push workflow)
+# Sync CodeRepository (commit + push workflow)
 mainsequence code-repository sync -m "Update deps" --path .
 # first maps the Git repository, attached branch, and exact commit to CodeRepositoryBranch;
-# detached, unregistered, or mismatched project assertions fail before mutations
+# detached, unregistered, or mismatched CodeRepository assertions fail before mutations
 # then requests the backend-owned branch tag and runs lock/sync/export/commit/push
 
 # Docker environment build
@@ -104,7 +104,7 @@ mainsequence code-repository build-docker-env --path .
 
 # Current code repository status
 mainsequence code-repository current --debug --json
-# reports logical Project UID, current Git branch, resolved CodeRepositoryBranch UID,
+# reports logical CodeRepository UID, current Git branch, resolved CodeRepositoryBranch UID,
 # and branch resolution status
 
 # SDK status and update

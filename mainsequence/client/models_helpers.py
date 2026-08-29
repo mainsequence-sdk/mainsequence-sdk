@@ -188,7 +188,7 @@ class Job(CurrentCodeRepositoryBranchCollectionMixin, BaseObjectOrm, BasePydanti
     code_repository_commit_hash: str | None = Field(
         default=None,
         description=(
-            "Exact full Git commit represented by the selected project image. "
+            "Exact full Git commit represented by the selected CodeRepositoryImage. "
             "The backend derives this field; null is reserved for platform-maintenance Jobs."
         ),
         examples=["4f3c2b1a9d8e7f6c5b4a39281716151413121110"],
@@ -755,17 +755,17 @@ class JobRun(
     )
     code_repository_uid: str | None = Field(
         ...,
-        description="Read-only public UID of the associated project, or null for a run outside project scope.",
+        description="Read-only public UID of the associated CodeRepository, or null for an unscoped run.",
         examples=["1d0530c0-65d1-4db0-856b-dc29d8260a09"],
     )
     code_repository_name: str | None = Field(
         ...,
-        description="Read-only name of the associated project, or null for a run outside project scope.",
+        description="Read-only name of the associated CodeRepository, or null for an unscoped run.",
         examples=["market-data-service"],
     )
     code_repository_branch_uid: str | None = Field(
         ...,
-        description="Read-only public UID of the associated project branch, or null for an unscoped run.",
+        description="Read-only public UID of the associated CodeRepositoryBranch, or null for an unscoped run.",
         examples=["5a28020a-0f1b-47ee-aab8-334286234bea"],
     )
     code_repository_branch_name: str | None = Field(
@@ -777,7 +777,7 @@ class JobRun(
         ...,
         description=(
             "Read-only public UID of the Organization Environment resolved from the "
-            "JobRun's owning project branch."
+            "JobRun's owning CodeRepositoryBranch."
         ),
         examples=["58218213-5e4e-43de-a5bd-6757f4e1c8f6"],
     )
@@ -946,7 +946,7 @@ class CodeRepositoryResource(CurrentCodeRepositoryBranchCollectionMixin, BaseObj
     uid: str | None = Field(
         None,
         title="CodeRepository Resource UID",
-        description="Public UID of the project resource.",
+        description="Public UID of the CodeRepository resource.",
         examples=["857bec7b-dd77-4272-aecd-13fc2138eacc"],
     )
     code_repository_branch_uid: str | None = Field(
@@ -958,7 +958,7 @@ class CodeRepositoryResource(CurrentCodeRepositoryBranchCollectionMixin, BaseObj
     name: str | None = Field(
         None,
         title="Resource Name",
-        description="Display name of the resource discovered in the project's repository.",
+        description="Display name of the resource discovered in the CodeRepository checkout.",
         examples=["analytics_dashboard.py"],
     )
     resource_type: (
@@ -977,7 +977,7 @@ class CodeRepositoryResource(CurrentCodeRepositoryBranchCollectionMixin, BaseObj
         None,
         title="Resource Type",
         description=(
-            "Canonical backend discriminator for the discovered project resource. "
+            "Canonical backend discriminator for the discovered CodeRepository resource. "
             "Allowed values are `configuration`, `notebook`, `script`, `dashboard`, "
             "`agent`, `fastapi`, `code_repository_agent_card`, and `markdown`."
         ),
@@ -1019,13 +1019,13 @@ class CodeRepositoryResource(CurrentCodeRepositoryBranchCollectionMixin, BaseObj
     created_at: datetime.datetime | None = Field(
         None,
         title="Created At",
-        description="Timestamp when the project resource record was created.",
+        description="Timestamp when the CodeRepository resource record was created.",
         examples=["2026-03-14T09:00:00Z"],
     )
     updated_at: datetime.datetime | None = Field(
         None,
         title="Updated At",
-        description="Timestamp when the project resource record was last updated.",
+        description="Timestamp when the CodeRepository resource record was last updated.",
         examples=["2026-03-15T11:45:00Z"],
     )
     repo_commit_sha: str | None = Field(
@@ -1127,13 +1127,13 @@ class ResourceRelease(
     resource_uid: str | None = Field(
         None,
         title="Resource UID",
-        description="Public UID of the primary project resource for this release.",
+        description="Public UID of the primary CodeRepository resource for this release.",
         examples=["857bec7b-dd77-4272-aecd-13fc2138eacc"],
     )
     readme_resource_uid: str | None = Field(
         None,
         title="README Resource UID",
-        description="Public UID of the optional README/supporting project resource.",
+        description="Public UID of the optional README/supporting CodeRepository resource.",
         examples=["b50b17b4-9a47-4b0e-b75a-b65fbdf81b0d"],
     )
     related_job_uid: str | None = Field(
@@ -1187,7 +1187,7 @@ class ResourceRelease(
         title="Automatic Deployment",
         description=(
             "Whether repository synchronization should rotate this release to the "
-            "current project commit."
+            "current CodeRepository commit."
         ),
         examples=[False, True],
     )

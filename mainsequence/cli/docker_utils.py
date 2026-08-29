@@ -42,7 +42,7 @@ FROM __BASE_IMAGE__
 
 WORKDIR /app
 
-# Copy the project into the image
+# Copy the CodeRepository checkout into the image.
 COPY . /app
 
 # NOTE:
@@ -293,7 +293,7 @@ def compute_docker_image_ref(code_repository_dir: pathlib.Path) -> str:
     """
     base = code_repository_dir.name
     safe = re.sub(r"[^a-z0-9_.-]+", "", base.lower())
-    image_name = f"{safe or 'project'}-img"
+    image_name = f"{safe or 'code-repository'}-img"
     tag = _git_short_hash(code_repository_dir) or _timestamp_tag()
     return f"{image_name}:{tag}"
 
@@ -342,7 +342,7 @@ def build_docker_environment(code_repository_dir: pathlib.Path, image_ref: str) 
     """
     dockerfile = code_repository_dir / "Dockerfile"
     if not dockerfile.exists():
-        raise RuntimeError("Dockerfile not found in the project root.")
+        raise RuntimeError("Dockerfile not found in the CodeRepository root.")
 
     cmd = [
         "docker",

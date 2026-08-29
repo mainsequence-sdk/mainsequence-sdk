@@ -4,7 +4,7 @@ mainsequence.cli.local_ops
 
 Local operations shared by several commands:
 
-- Resolve project path from id or --path
+- Resolve CodeRepository path from UID or --path
 - Ensure .venv exists and locate venv python/uv
 - Run uv and git commands with nice error messages
 """
@@ -103,7 +103,7 @@ def uv_project_version(
     cwd: pathlib.Path,
     env: dict[str, str] | None = None,
 ) -> str:
-    """Return the current project version reported by ``uv version --short``."""
+    """Return the current package version reported by ``uv version --short``."""
     result = subprocess.run(
         [str(uv_path), "version", "--short"],
         cwd=str(cwd),
@@ -119,7 +119,7 @@ def uv_project_version(
         )
     version = (result.stdout or "").strip()
     if not version:
-        raise RuntimeError("uv version --short returned an empty project version.")
+        raise RuntimeError("uv version --short returned an empty package version.")
     return version.splitlines()[-1].strip()
 
 
@@ -157,7 +157,7 @@ def uv_preview_patch_version(
         raise RuntimeError("uv version patch preview returned invalid JSON.") from exc
     version = payload.get("version") if isinstance(payload, dict) else None
     if not isinstance(version, str) or not version.strip():
-        raise RuntimeError("uv version patch preview returned no project version.")
+        raise RuntimeError("uv version patch preview returned no package version.")
     return version.strip()
 
 
@@ -176,7 +176,7 @@ def git_origin(code_repository_dir: pathlib.Path) -> str:
     origin = (r.stdout or "").strip().splitlines()
     if r.returncode == 0 and origin:
         return origin[-1]
-    raise RuntimeError('Could not find git remote "origin" for this project.')
+    raise RuntimeError('Could not find Git remote "origin" for this CodeRepository.')
 
 
 def uv_export_requirements(

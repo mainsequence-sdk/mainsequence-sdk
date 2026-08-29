@@ -20,7 +20,7 @@ mainsequence login 127.0.0.1:8000 mainsequence-dev
 mainsequence login --no-open
 mainsequence login --mcp
 mainsequence login --access-token "$TOKEN" --refresh-token "$REFRESH"
-mainsequence login --access-token "$TOKEN" --refresh-token "$REFRESH" --backend http://127.0.0.1:80 --projects-base mainsequence-dev
+mainsequence login --access-token "$TOKEN" --refresh-token "$REFRESH" --backend http://127.0.0.1:80 --code-repositories-base mainsequence-dev
 mainsequence logout
 ```
 
@@ -97,7 +97,7 @@ mainsequence settings show
 mainsequence sdk latest
 ```
 
-## Project Commands
+## CodeRepository Commands
 
 ```bash
 mainsequence code-repository --help
@@ -215,8 +215,8 @@ mainsequence code-repository images list
 mainsequence code-repository images list <CODE_REPOSITORY_UID>
 mainsequence code-repository images list --show-filters
 mainsequence code-repository images list --filter code_repository_commit_hash__in=4a1b2c3d,5e6f7a8b
-mainsequence code-repository create tutorial-project
-mainsequence code-repository create tutorial-project --default-base-image-uid <base_image_uid> --github-org-uid <github_org_uid>
+mainsequence code-repository create tutorial-repository
+mainsequence code-repository create tutorial-repository --default-base-image-uid <base_image_uid> --github-org-uid <github_org_uid>
 mainsequence code-repository images create
 mainsequence code-repository images create <CODE_REPOSITORY_UID>
 mainsequence code-repository images create <CODE_REPOSITORY_UID> 4a1b2c3d
@@ -296,7 +296,7 @@ Rules:
 - `__in` filters accept comma-separated values such as `id__in=1,2,3`.
 - Some commands always apply scoping filters internally and will reject attempts to override them.
   - `mainsequence code-repository images list` always scopes by the selected code repository.
-  - `mainsequence code-repository resources list` always scopes by project and upstream remote `repo_commit_sha`.
+  - `mainsequence code-repository resources list` always scopes by CodeRepositoryBranch and upstream remote `repo_commit_sha`.
   - `mainsequence code-repository jobs runs list` always scopes by `job__uid`.
 - If a command's backing model does not expose filter metadata, `--show-filters` will tell you that no additional model filters are available.
 - `mainsequence constants list` exposes filters from `Constant.FILTERSET_FIELDS`, currently `name` and `name__in`.
@@ -325,9 +325,9 @@ mainsequence skills path meta_tables
 mainsequence skills path meta_tables --json
 ```
 
-### Updating project agent skills
+### Updating CodeRepository agent skills
 
-`mainsequence code-repository update-agent-skills --path <PROJECT>` performs one
+`mainsequence code-repository update-agent-skills --path <CODE_REPOSITORY>` performs one
 dual-source update:
 
 1. it resolves SDK-owned execution skills from the target code repository's installed
@@ -355,7 +355,7 @@ order.
 
 If authentication, transport, unsupported manifest schema, catalog validation,
 staging, or final replacement fails, the command exits non-zero and preserves
-the previous managed tree and sentinel. It never changes project-owned skills
+the previous managed tree and sentinel. It never changes repository-owned skills
 outside `.agents/skills/mainsequence/`, and it is not run implicitly when an
 agent starts.
 
@@ -365,14 +365,14 @@ two independent sources:
 
 ```json
 {
-  "project": "/project",
+  "code_repository": "/code-repository",
   "library_name": "mainsequence",
   "namespace": "mainsequence",
   "pinned_version": "5.0.0",
   "sdk": {
     "library_name": "mainsequence",
     "version": "5.0.0",
-    "skills_path": "/project/.venv/lib/pythonX.Y/site-packages/agent_scaffold/skills"
+    "skills_path": "/code-repository/.venv/lib/pythonX.Y/site-packages/agent_scaffold/skills"
   },
   "platform": {
     "source_url": "https://platform.example/mcp",
@@ -400,9 +400,9 @@ two independent sources:
         "content_sha256": "<sha256>"
       },
       {
-        "name": "project_to_agent",
+        "name": "code_repository_to_agent",
         "uri": "mainsequence://platform/skills/code-repository-to-agent",
-        "path": "skills/agents/project_to_agent/SKILL.md",
+        "path": "skills/agents/code_repository_to_agent/SKILL.md",
         "content_sha256": "<sha256>"
       }
     ],
@@ -420,9 +420,9 @@ two independent sources:
         "content_sha256": "<sha256>"
       },
       {
-        "name": "project_to_agent",
+        "name": "code_repository_to_agent",
         "uri": "mainsequence://platform/skills/code-repository-to-agent",
-        "path": "agents/project_to_agent/SKILL.md",
+        "path": "agents/code_repository_to_agent/SKILL.md",
         "content_sha256": "<sha256>"
       }
     ]
@@ -445,7 +445,7 @@ two independent sources:
       "owner": "platform"
     },
     {
-      "name": "project_to_agent",
+      "name": "code_repository_to_agent",
       "owner": "platform"
     }
   ]
@@ -470,8 +470,8 @@ ontology and each installed platform skill.
 - `mainsequence skills path <skill_name>` prints the installed `SKILL.md` path for one scaffold skill from the current CLI installation. It accepts full relative skill names such as `data_publishing/meta_tables` and unique leaf names such as `meta_tables`.
 - `mainsequence user` shows the authenticated MainSequence account through `User.get_authenticated_user_details()`.
 - in standalone authenticated CLI or script code that is not request-bound, prefer `User.get_authenticated_user_details()` over `User.get_logged_user()`. `User.get_logged_user()` is for SDK-bound identity contexts such as Streamlit or code that explicitly binds `_CURRENT_AUTH_HEADERS`; FastAPI handlers use the platform-populated `request.state.user` instead.
-- `mainsequence code-repository search "<QUERY>"` searches visible projects through the SDK client `Project.quick_search()` path and returns `uid` and `code_repository_name` for matching rows.
-- `mainsequence code-repository search` requires at least 3 query characters. The backend matches `code_repository_name` by substring and also matches an exact public project UID.
+- `mainsequence code-repository search "<QUERY>"` searches visible CodeRepositories through the SDK client `CodeRepository.quick_search()` path and returns `uid` and `code_repository_name` for matching rows.
+- `mainsequence code-repository search` requires at least 3 query characters. The backend matches `code_repository_name` by substring and also matches an exact public CodeRepository UID.
 - `mainsequence organization teams list` lists teams through the SDK client `Team.filter()` path.
 - `mainsequence organization teams create`, `edit`, and `delete` use the SDK client `Team.create()`, `Team.patch()`, and `Team.delete()` paths.
 - `mainsequence organization teams can_view` and `can_edit` inspect team access through the SDK `Team.can_view()` and `Team.can_edit()` paths.
@@ -525,7 +525,7 @@ ontology and each installed platform skill.
 - `mainsequence code-repository search "<QUERY>"` is the first-class CLI command for finding existing code repositories before creation or local setup. Use it for fuzzy discovery, then use `mainsequence code-repository validate-name "<CODE_REPOSITORY_NAME>"` for the exact create-time availability check.
 - `mainsequence code-repository validate-name "<CODE_REPOSITORY_NAME>"` validates a candidate code repository name through the SDK client `CodeRepository.validate_name()` path, prints normalized names and suggestions, and exits non-zero when the name is unavailable.
 - `mainsequence code-repository update AGENTS.md` is code-repository-scoped. It resolves the target code repository first, then reads `AGENTS.md` from the running CLI's installed `agent_scaffold` bundle. This command does not require the target code repository's `.venv`. If the target file is missing, it creates it from that installed bundle. If an existing `AGENTS.md` has no Main Sequence managed marker, the command replaces the whole file. If the managed marker exists, the command updates only that managed block.
-- `mainsequence code-repository update-agent-skills` is code-repository-scoped and dual-source. In one invocation it resolves SDK-owned execution skills from the target code repository's installed `agent_scaffold/skills/` bundle, uses the existing platform JWT to initialize `/mcp`, discovers the server-owned resource catalog through paginated `resources/list`, reads the ontology and its dynamically declared `skill_resources` through `resources/read`, validates the complete platform manifest revision and every generic resource/content rule, rejects SDK/platform destination collisions, stages the deterministically ordered combined tree, and replaces only `.agents/skills/mainsequence/`. It writes one schema-2 `.agents/skills/mainsequence/PINNED_FROM.txt` containing the installed SDK version/source path and the independent platform manifest version/hash, ontology hash, resource URIs, resource paths, and content hashes. A failed update preserves the previous managed tree and sentinel. It does not copy bundle-root files such as `AGENTS.md`, does not package platform content in the SDK, and does not modify project-owned skills outside `.agents/skills/mainsequence/`.
+- `mainsequence code-repository update-agent-skills` is CodeRepository-scoped and dual-source. In one invocation it resolves SDK-owned execution skills from the target CodeRepository's installed `agent_scaffold/skills/` bundle, uses the existing platform JWT to initialize `/mcp`, discovers the server-owned resource catalog through paginated `resources/list`, reads the ontology and its dynamically declared `skill_resources` through `resources/read`, validates the complete platform manifest revision and every generic resource/content rule, rejects SDK/platform destination collisions, stages the deterministically ordered combined tree, and replaces only `.agents/skills/mainsequence/`. It writes one schema-2 `.agents/skills/mainsequence/PINNED_FROM.txt` containing the installed SDK version/source path and the independent platform manifest version/hash, ontology hash, resource URIs, resource paths, and content hashes. A failed update preserves the previous managed tree and sentinel. It does not copy bundle-root files such as `AGENTS.md`, does not package platform content in the SDK, and does not modify repository-owned skills outside `.agents/skills/mainsequence/`.
 - `mainsequence time-index-table can_view` lists users returned by the SDK `ShareableObjectMixin.can_view()` path for `TimeIndexMetaTable`.
 - `mainsequence time-index-table can_edit` lists users returned by the SDK `ShareableObjectMixin.can_edit()` path for `TimeIndexMetaTable`.
 - `mainsequence time-index-table add_to_view`, `add_to_edit`, `remove_from_view`, and `remove_from_edit` mutate time-index-table user sharing through the SDK `ShareableObjectMixin` paths and render the resulting permission state in the terminal.
@@ -536,17 +536,17 @@ ontology and each installed platform skill.
 - `CodeRepositoryImage` responses include backend metadata such as `creation_date` and the required boolean `build_error` build-status flag.
 - All list commands share the same `--filter KEY=VALUE` and `--show-filters` pattern. Commands that already enforce scoping filters reject overriding those keys.
 - `mainsequence code-repository images create` only accepts pushed commits for `code_repository_commit_hash`. If omitted, it lists commits from the current branch upstream (or remote refs as fallback), shows which commits already have image ids, and waits until `is_ready=true` by polling every 30 seconds for up to 5 minutes by default.
-- `mainsequence code-repository jobs list` lists project jobs through the SDK client `Job.filter()` path.
+- `mainsequence code-repository jobs list` lists CodeRepository jobs through the SDK client `Job.filter()` path.
 - `mainsequence code-repository jobs list` shows a human-readable schedule summary from `task_schedule`.
 - `mainsequence code-repository time-index-table-updates list` lists persisted table
   updates through `CodeRepositoryBranch.get_time_index_table_updates()`.
-- `mainsequence code-repository add-label` and `remove-label` mutate `Project` labels through the SDK `LabelableObjectMixin` path. Labels are organizational metadata only and do not affect runtime behavior or functionality.
-- `mainsequence code-repository can_view` lists users returned by the SDK `ShareableObjectMixin.users_can_view()` path for `Project`.
-- `mainsequence code-repository can_edit` lists users returned by the SDK `ShareableObjectMixin.users_can_edit()` path for `Project`.
-- `mainsequence code-repository add_to_view`, `add_to_edit`, `remove_from_view`, and `remove_from_edit` mutate project user sharing through the SDK `ShareableObjectMixin` paths and render the resulting permission state in the terminal.
-- `mainsequence code-repository add_team_to_view`, `add_team_to_edit`, `remove_team_from_view`, and `remove_team_from_edit` mutate project team sharing through the SDK `ShareableObjectMixin` team-action paths.
+- `mainsequence code-repository add-label` and `remove-label` mutate `CodeRepository` labels through the SDK `LabelableObjectMixin` path. Labels are organizational metadata only and do not affect runtime behavior or functionality.
+- `mainsequence code-repository can_view` lists users returned by the SDK `ShareableObjectMixin.users_can_view()` path for `CodeRepository`.
+- `mainsequence code-repository can_edit` lists users returned by the SDK `ShareableObjectMixin.users_can_edit()` path for `CodeRepository`.
+- `mainsequence code-repository add_to_view`, `add_to_edit`, `remove_from_view`, and `remove_from_edit` mutate CodeRepository user sharing through the SDK `ShareableObjectMixin` paths and render the resulting permission state in the terminal.
+- `mainsequence code-repository add_team_to_view`, `add_team_to_edit`, `remove_team_from_view`, and `remove_from_edit` mutate CodeRepository team sharing through the SDK `ShareableObjectMixin` team-action paths.
 - `mainsequence code-repository resources list` lists code repository resources through the SDK client `CodeRepositoryResource.filter()` path and always applies `repo_commit_sha` from the current upstream branch head.
-- `mainsequence code-repository current` reports the logical Project UID, current named Git branch, exact commit, resolved CodeRepositoryBranch UID, and branch-resolution status. Local and deployed code resolve the same Git worktree context; `.env` and runtime environment variables do not supply Project or branch identity.
+- `mainsequence code-repository current` reports the logical CodeRepository UID, current named Git branch, exact commit, resolved CodeRepositoryBranch UID, and branch-resolution status. Local and deployed code resolve the same Git worktree context; `.env` and runtime environment variables do not supply CodeRepository or branch identity.
 - `mainsequence code-repository sync` is the canonical local release workflow. Its preflight maps the canonical Git repository, attached branch, and exact HEAD commit to CodeRepositoryBranch and rejects detached or unregistered checkouts. With `--dry-run`, it uses `uv version --bump patch --dry-run`, requests the backend-owned tag for that future version, rejects an invalid or existing local tag, prints the complete plan, and returns before SSH key generation, private remote access, dependency changes, or Git mutations. A normal run establishes the forced SSH identity, rejects the exact tag if it already exists on `origin`, applies and verifies the patch version, runs `uv lock`, runs `uv sync`, exports locked production requirements, commits, creates the returned annotated tag, and atomically pushes the explicit branch and tag refs with `--follow-tags`. The backend returns a stable tag on `main` and a branch-qualified tag on every other branch. Backend repository reconciliation is triggered independently by the GitHub branch-push webhook; there is no client post-commit callback.
 - `mainsequence code-repository jobs runs list` lists job-run history through the SDK client `JobRun.filter(job__uid=job_uid)` exact-filter path. Multi-job callers can use `job__uid__in` with a list.
 - `mainsequence code-repository jobs runs logs` fetches canonical owner-scoped logs through `JobRun.get_logs()`, follows opaque pagination cursors, polls JobRun status separately every 30 seconds while the run is `PENDING` or `RUNNING`, and stops after 10 minutes unless you override `--max-wait-seconds` or disable it with `--max-wait-seconds 0`.

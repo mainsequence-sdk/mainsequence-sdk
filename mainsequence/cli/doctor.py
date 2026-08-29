@@ -42,7 +42,7 @@ def run_doctor() -> None:
             ("Config dir", str(cfg.CFG_DIR)),
             ("Config file", str(cfg.CONFIG_JSON)),
             ("Auth storage", cfg.auth_persistence_label()),
-            ("Projects base", str(c.get("mainsequence_path"))),
+            ("CodeRepositories base", str(c.get("mainsequence_path"))),
             ("Logged in user", tokens.get("username") or "-"),
         ],
     )

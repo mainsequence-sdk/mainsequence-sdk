@@ -227,7 +227,7 @@ def test_migrations_scaffold_writes_sdk_owned_package(tmp_path):
             "msm.base:MarketsBase.metadata",
             "--base",
             "msm.base:MarketsBase",
-            "--project-root",
+            "--code-repository-root",
             str(tmp_path),
         ],
     )

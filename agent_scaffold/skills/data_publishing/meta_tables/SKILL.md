@@ -7,7 +7,7 @@ description: Use this skill when the task is about defining, querying, or review
 
 ## Overview
 
-Use this skill when the task changes row-oriented project tables that are not naturally time-indexed.
+Use this skill when the task changes row-oriented CodeRepository tables that are not naturally time-indexed.
 
 This skill is for schema-driven application tables registered through TS Manager as `MetaTable` resources.
 
@@ -133,11 +133,11 @@ Keep the application table model as the authoring source for the neutral table c
 
 Do not hand-build contract fragments when the SQLAlchemy helper can derive them.
 
-### 2. Use explicit project-prefixed table names
+### 2. Use explicit repository-prefixed table names
 
 For `platform_managed`, inherit from `PlatformManagedMetaTable`.
 
-Declare an explicit project-prefixed SQLAlchemy `__tablename__`. Use
+Declare an explicit repository-prefixed SQLAlchemy `__tablename__`. Use
 `schema_table_name(app, concept, suffix=None)` from `mainsequence.meta_tables`
 to generate that name:
 
@@ -149,7 +149,7 @@ def schema_table_name(
 ) -> str: ...
 ```
 
-Use `app` for the project/package prefix, `concept` for the table concept, and
+Use `app` for the repository/package prefix, `concept` for the table concept, and
 `suffix` for a namespace, variant, or bounded specialization when the same
 concept exists in multiple logical scopes. The authored SQLAlchemy table name is
 the physical database binding. A computed contract hash is an optional utility,
@@ -184,10 +184,10 @@ caching, or validation, call
 result as MetaTable identity.
 
 Prefix explicit table identifiers, explicit physical table names, and Alembic
-version table names with the project or package name. Bare names such as
-`Account`, `Asset`, or `alembic_version` can collide across projects sharing an
+version table names with the repository or package name. Bare names such as
+`Account`, `Asset`, or `alembic_version` can collide across CodeRepositories sharing an
 organization or database schema. Prefer `schema_table_name(...)` over
-hand-built f-strings so project/app prefixes, bounded length, and separators are
+hand-built f-strings so repository/app prefixes, bounded length, and separators are
 consistent.
 
 Register through the class API:
@@ -236,7 +236,7 @@ selected `AlembicMetaTableMigration.metatable_models` list and let
 and bind them.
 
 For platform-managed migration registration, the data source is resolved from
-the active Main Sequence project/session, the same way TimeIndexTableUpdater does. Do not
+the active Main Sequence CodeRepositoryBranch/session, the same way TimeIndexTableUpdater does. Do not
 require or thread a `data_source_uid` through normal platform-managed example
 code.
 
@@ -264,9 +264,9 @@ lifecycle path: the SDK reserves provider MetaTable rows, Alembic renders and
 applies FK/index DDL from SQLAlchemy metadata, and finalization refreshes the
 catalog after upgrade.
 
-Prefer project-prefixed SQLAlchemy table names for explicit FK string targets.
+Prefer repository-prefixed SQLAlchemy table names for explicit FK string targets.
 Alembic, SQLAlchemy, and the database own physical FK/index names unless the
-project explicitly names them in SQLAlchemy.
+CodeRepository explicitly names them in SQLAlchemy.
 
 Use this pattern:
 
@@ -346,7 +346,7 @@ Application MetaTable catalog sync resolves existing rows by the authored
 SQLAlchemy table name used by the provider model. Keep that table name stable
 when a class is renamed or moved but must keep the same platform identity.
 When declaring an explicit identifier, explicit physical table name, or Alembic
-version table name, prefix it with the project or package name rather than using
+version table name, prefix it with the repository or package name rather than using
 a bare table name. Use `schema_table_name(app, concept, suffix=None)` for the
 physical table and Alembic version table names. Use `suffix` for a namespace or
 variant, for example `schema_table_name("msm", "positions", suffix="broker")`.
@@ -440,7 +440,7 @@ Do not claim success until you have checked:
 - indexes are intentional
 - foreign keys are present in SQLAlchemy metadata for Alembic when required
 - management mode is correct
-- authored physical names are explicit, project-prefixed SQLAlchemy table names
+- authored physical names are explicit, repository-prefixed SQLAlchemy table names
 - registration returns a `MetaTable.uid`
 - compiled SQL operations declare table scope
 - migrations use Alembic-rendered SQL
@@ -454,7 +454,7 @@ For related tables, also check:
 
 - aliases are readable
 - platform-managed child tables and parent tables are included in the selected migration provider
-- FK target strings use stable project-prefixed SQLAlchemy table names where explicit strings are authored
+- FK target strings use stable repository-prefixed SQLAlchemy table names where explicit strings are authored
 - query results still match the expected response contract
 
 ## This Skill Must Stop And Escalate When

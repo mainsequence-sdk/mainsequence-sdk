@@ -62,7 +62,7 @@ That means:
 
 - two teams should not publish different datasets under the same identifier,
 - tutorial-style identifiers are likely to collide on shared backends,
-- project-specific suffixes are often the safest starting point while learning.
+- repository-specific suffixes are often the safest starting point while learning.
 
 Important architectural point:
 
@@ -446,8 +446,8 @@ relationship on the `PlatformTimeIndexMetaTable` storage model with normal
 SQLAlchemy `ForeignKey(...)` metadata. Foreign keys are not part of
 `TimeIndexTableUpdateConfig` and are not serialized into the platform-managed
 MetaTable registration contract. Alembic, SQLAlchemy, and the database own the
-physical FK DDL. Prefer project-prefixed table names when using explicit FK
-string targets so project tables do not collide in shared schemas.
+physical FK DDL. Prefer repository-prefixed table names when using explicit FK
+string targets so CodeRepository tables do not collide in shared schemas.
 
 Log useful operational facts:
 
@@ -782,7 +782,7 @@ Keep test runs bounded:
 
 ### Example: keep integration tests in `tests/` and set `config.offset_start`
 
-In real projects, keep these tests in the `tests/` folder, for example:
+In real CodeRepositories, keep these tests in the `tests/` folder, for example:
 
 - `tests/test_my_updater.py`
 

@@ -18,11 +18,11 @@ In this guide, you will:
 
 A scheduled workflow in Main Sequence usually has five moving parts:
 
-1. **Project code**  
+1. **CodeRepository code**
    Your launcher script, notebook, or YAML entrypoint lives in the repository.
 
 2. **Environment**  
-   The project needs a reproducible Python environment and dependency lockfile.
+   The CodeRepository needs a reproducible Python environment and dependency lockfile.
 
 3. **Job**  
    A job tells the platform what to execute. That can be a repository file such as `scripts/simulated_prices_launcher.py`, or an app entrypoint.
@@ -39,7 +39,7 @@ If you keep that chain in mind, most operational decisions become straightforwar
 
 ## The recommended default
 
-For shared projects, treat recurring schedules as part of the repository.
+For shared CodeRepositories, treat recurring schedules as part of the repository.
 
 That means:
 
@@ -89,11 +89,11 @@ The direct path can be done from the CLI or from the Python client.
 
 ## Working from the CLI
 
-The CLI is the fastest operational tool once the project already exists locally.
+The CLI is the fastest operational tool once the CodeRepository already exists locally.
 
-### Sync the project first
+### Sync the CodeRepository first
 
-Before creating or updating scheduled jobs, make sure the project state is consistent:
+Before creating or updating scheduled jobs, make sure the CodeRepository state is consistent:
 
 ```bash
 mainsequence code-repository sync -m "Prepare scheduling changes"
@@ -438,7 +438,7 @@ not backslashes. The platform handles the path correctly.
 
 ### Choose images when reproducibility matters
 
-If a job is operationally important, ask whether it should follow the latest project state or a frozen image.
+If a job is operationally important, ask whether it should follow the latest CodeRepository state or a frozen image.
 
 - Follow the repository tip when you want quick iteration.
 - Pin to a code repository image when you want repeatable execution and stable rollbacks.

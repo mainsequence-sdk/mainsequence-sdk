@@ -22,11 +22,12 @@
         - [Artifacts](knowledge/infrastructure/artifacts.md)
         - [Constants and Secrets](knowledge/infrastructure/constants_and_secrets.md)
 - Migrations
+    - [7.x to 8.0: CodeRepository Ontology Hard Cut](migrations/v8-code-repository-ontology.md)
     - [6.x to 7.0: Time-Index Table Updater Hard Cut](migrations/v7-time-index-table-updater-hard-cut.md)
 - CLI
     - [Overview](cli/index.md)
 - [Reference](reference/index.md)
-- Project
+- Repository
     - [About](about.md)
     - [Changelog](changelog.md)
     - [Contributing](contributing.md)
