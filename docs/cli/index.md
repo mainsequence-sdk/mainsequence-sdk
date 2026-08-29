@@ -394,9 +394,9 @@ two independent sources:
         "content_sha256": "<sha256>"
       },
       {
-        "name": "project_design",
-        "uri": "mainsequence://platform/skills/project-design",
-        "path": "skills/platform/project_design/SKILL.md",
+        "name": "code_repository_design",
+        "uri": "mainsequence://platform/skills/code-repository-design",
+        "path": "skills/platform/code_repository_design/SKILL.md",
         "content_sha256": "<sha256>"
       },
       {
@@ -414,9 +414,9 @@ two independent sources:
         "content_sha256": "<sha256>"
       },
       {
-        "name": "project_design",
-        "uri": "mainsequence://platform/skills/project-design",
-        "path": "platform/project_design/SKILL.md",
+        "name": "code_repository_design",
+        "uri": "mainsequence://platform/skills/code-repository-design",
+        "path": "platform/code_repository_design/SKILL.md",
         "content_sha256": "<sha256>"
       },
       {
@@ -441,7 +441,7 @@ two independent sources:
       "owner": "platform"
     },
     {
-      "name": "project_design",
+      "name": "code_repository_design",
       "owner": "platform"
     },
     {

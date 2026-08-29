@@ -214,9 +214,9 @@ def test_user_show_json(cli_mod, runner, monkeypatch):
 
 def test_skills_list(cli_mod, runner, monkeypatch, tmp_path):
     bundle_dir = tmp_path / "agent_scaffold"
-    (bundle_dir / "skills" / "project_design").mkdir(parents=True)
-    (bundle_dir / "skills" / "project_design" / "SKILL.md").write_text(
-        "repository builder", encoding="utf-8"
+    (bundle_dir / "skills" / "code_repository_design").mkdir(parents=True)
+    (bundle_dir / "skills" / "code_repository_design" / "SKILL.md").write_text(
+        "CodeRepository design", encoding="utf-8"
     )
     (bundle_dir / "skills" / "data_publishing" / "meta_tables").mkdir(parents=True)
     (bundle_dir / "skills" / "data_publishing" / "meta_tables" / "SKILL.md").write_text(
@@ -227,7 +227,7 @@ def test_skills_list(cli_mod, runner, monkeypatch, tmp_path):
 
     result = runner.invoke(cli_mod.app, ["skills", "list"])
     assert result.exit_code == 0
-    assert "project_design" in result.output
+    assert "code_repository_design" in result.output
     assert "data_publishing/meta_tables" in result.output
 
 
@@ -11573,7 +11573,7 @@ def _cli_platform_skill_catalog():
     skills = []
     for name in (
         "a2a_communication",
-        "project_design",
+        "code_repository_design",
         "code_repository_to_agent",
     ):
         front_matter_name = name.replace("_", "-")
@@ -11669,7 +11669,7 @@ def test_code_repository_update_agent_skills_overwrites_matching_folders(
     assert "Updated CodeRepository Skills" in result.output
     assert "SDK Version" in result.output
     assert (
-        target / ".agents" / "skills" / "mainsequence" / "project_design" / "SKILL.md"
+        target / ".agents" / "skills" / "mainsequence" / "code_repository_design" / "SKILL.md"
     ).is_file()
     assert (
         target / ".agents" / "skills" / "mainsequence" / "a2a_communication" / "SKILL.md"
@@ -11723,14 +11723,14 @@ def test_code_repository_update_agent_skills_json_reports_pin_sentinel(
     assert [item["name"] for item in payload["updated"]] == [
         "data_publishing",
         "a2a_communication",
-        "project_design",
+        "code_repository_design",
         "code_repository_to_agent",
     ]
     assert payload["sdk"]["version"] == "4.4.3"
     assert payload["platform"]["manifest_sha256"] == "a" * 64
     assert [item["name"] for item in payload["platform"]["skills"]] == [
         "a2a_communication",
-        "project_design",
+        "code_repository_design",
         "code_repository_to_agent",
     ]
     assert "pinned_version=4.4.3" in sentinel.read_text(encoding="utf-8")

@@ -44,7 +44,7 @@ This skill discovers and identifies data. It does not publish, redesign, or defi
 ## Route Adjacent Work
 
 - CodeRepository bootstrap, scaffolding, and routing:
-  `.agents/skills/mainsequence/project_design/SKILL.md`
+  `.agents/skills/mainsequence/code_repository_design/SKILL.md`
 - `TimeIndexTableUpdater` creation or modification:
   `.agents/skills/mainsequence/data_publishing/time_index_table_updates/SKILL.md`
 - `MetaTable` registration or operation work:

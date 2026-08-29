@@ -48,7 +48,7 @@ This skill audits. It does not implement by default.
 ## Route Adjacent Work
 
 - bootstrap, routing, and repo structure:
-  `.agents/skills/mainsequence/project_design/SKILL.md`
+  `.agents/skills/mainsequence/code_repository_design/SKILL.md`
 - TimeIndexTableUpdater implementation issues:
   `.agents/skills/mainsequence/data_publishing/time_index_table_updates/SKILL.md`
 - MetaTable implementation issues:
@@ -70,7 +70,7 @@ Streamlit dashboard design and implementation failures are target-repository app
 ## Read First
 
 1. `AGENTS.md`
-2. `.agents/skills/mainsequence/project_design/SKILL.md`
+2. `.agents/skills/mainsequence/code_repository_design/SKILL.md`
 3. the latest relevant Main Sequence docs for the failing workflow
 
 ## Inputs This Skill Needs

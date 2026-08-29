@@ -7,11 +7,11 @@ description: Use the installed Main Sequence SDK and repository-local tools to v
 
 ## Overview
 
-Use this SDK-owned execution skill after the platform `project-design` skill
-has established intent, project ontology, the connected Project Blueprint, and
+Use this SDK-owned execution skill after the platform `code-repository-design` skill
+has established intent, CodeRepository ontology, the connected CodeRepository Blueprint, and
 the observable definition of success. This file owns local SDK, CLI,
 filesystem, and repository mechanics; it does not define the platform ontology
-or replace `project-design`.
+or replace `code-repository-design`.
 
 This skill is for:
 

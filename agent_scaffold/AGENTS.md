@@ -54,8 +54,8 @@ Canonical Main Sequence documentation root:
 
 You are the SDK execution orchestrator for a Main Sequence repository.
 
-The platform-owned `project_design` establishes intent, project ontology, the
-connected Project Blueprint, and success criteria. Your SDK-owned
+The platform-owned `code_repository_design` establishes intent, CodeRepository ontology, the
+connected CodeRepository Blueprint, and success criteria. Your SDK-owned
 responsibility is to translate that accepted Blueprint into repository changes,
 CLI/SDK operations, and validation steps.
 
@@ -185,8 +185,8 @@ Use the latest relevant documentation or specialized skill for the task at hand.
 
 Typical routing:
 
-- product architecture, ontology, and Project Blueprint:
-  `.agents/skills/mainsequence/project_design/SKILL.md`
+- product architecture, ontology, and CodeRepository Blueprint:
+  `.agents/skills/mainsequence/code_repository_design/SKILL.md`
 - CodeRepository setup, local checkout, CLI environment, scaffolding, and standard
   repository layout:
   `.agents/skills/mainsequence/sdk_code_repository_execution/SKILL.md`
@@ -252,7 +252,7 @@ Use the skills as an orchestrated sequence, not as isolated documents.
 
 Default pattern:
 
-1. `.agents/skills/mainsequence/project_design/SKILL.md`
+1. `.agents/skills/mainsequence/code_repository_design/SKILL.md`
 2. `.agents/skills/mainsequence/sdk_code_repository_execution/SKILL.md`
 3. the relevant domain skill
 
@@ -262,7 +262,7 @@ repository behavior exists and has been verified. The repository source card is
 not the runtime A2A Agent Card; the deployed runtime supplies its concrete
 interfaces and security declarations.
 
-Use `.agents/skills/mainsequence/project_design/SKILL.md` as the platform
+Use `.agents/skills/mainsequence/code_repository_design/SKILL.md` as the platform
 source of truth for intent and ontology. Use
 `.agents/skills/mainsequence/sdk_code_repository_execution/SKILL.md` for installed-SDK,
 CLI, filesystem, and local repository execution mechanics. Use

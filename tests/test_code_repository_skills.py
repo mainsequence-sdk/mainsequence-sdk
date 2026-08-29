@@ -25,7 +25,7 @@ _CURRENT_BACKEND_SKILL_PATHS = {
     "a2a_communication": "skills/agents/a2a_communication/SKILL.md",
     "command_center": "skills/command_center/command_center/SKILL.md",
     "command_center_connections": "skills/command_center/connections/SKILL.md",
-    "project_design": "skills/platform/project_design/SKILL.md",
+    "code_repository_design": "skills/platform/code_repository_design/SKILL.md",
     "code_repository_local_setup": "skills/pod_manager/code_repository_local_setup/SKILL.md",
     "code_repository_to_agent": "skills/agents/code_repository_to_agent/SKILL.md",
     "static_site": "skills/pod_manager/static_site/SKILL.md",
@@ -651,7 +651,7 @@ def test_sdk_source_tree_does_not_vendor_platform_owned_content():
     forbidden_paths = [
         sdk_root / "agent_scaffold" / "platform_capabilities",
         sdk_root / "agent_scaffold" / "SDK_CAPABILITY_ASSEMBLY.json",
-        sdk_root / "agent_scaffold" / "skills" / "project_design",
+        sdk_root / "agent_scaffold" / "skills" / "code_repository_design",
         sdk_root / "agent_scaffold" / "skills" / "a2a_communication",
         sdk_root / "agent_scaffold" / "skills" / "code_repository_local_setup",
         sdk_root / "agent_scaffold" / "skills" / "code_repository_to_agent",

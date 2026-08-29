@@ -21,13 +21,13 @@ Own:
 
 Do not own:
 
-- platform ontology or Project Blueprint design;
+- platform ontology or CodeRepository Blueprint design;
 - domain implementation for MetaTables, TimeIndexTableUpdaters, APIs, jobs, or releases;
 - backend repository reconciliation;
 - MCP authorization policy, OAuth token storage, or access-token extraction;
 - repository-owned skills outside `.agents/skills/mainsequence/`.
 
-Route architecture changes to `project_design`, implementation routing to
+Route architecture changes to `code_repository_design`, implementation routing to
 `sdk_code_repository_execution`, and failure classification to
 `maintenance/bug_auditor` when diagnosis extends beyond the maintenance
 workflow itself.
