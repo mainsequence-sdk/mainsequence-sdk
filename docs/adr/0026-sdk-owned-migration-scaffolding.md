@@ -171,7 +171,7 @@ Applications should not need to manually calculate `version_locations` and
 ```python
 build_alembic_version_metatable(
     *,
-    class_name: str = "ProjectAlembicVersion",
+    class_name: str = "CodeRepositoryAlembicVersion",
     namespace: str,
     identifier: str,
     schema: str | None,

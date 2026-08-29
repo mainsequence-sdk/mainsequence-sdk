@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [8.0.4] - 2026-08-29
+
+### Fixed
+
+- Aligned current ADR guidance with the v8 CodeRepository ontology, including
+  the canonical `code_repository_context` wire field,
+  `get_code_repository_context()` entry point, and
+  `CodeRepositoryAlembicVersion` scaffold default ([#104](https://github.com/mainsequence-sdk/mainsequence-sdk/issues/104)).
+- Added a published-documentation contract check that rejects retired Project
+  identifiers while explicitly preserving historical changelog entries.
+
 ## [8.0.3] - 2026-08-29
 
 ### Fixed

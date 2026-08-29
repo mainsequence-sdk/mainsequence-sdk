@@ -2,9 +2,12 @@
 
 Date: 2026-08-22
 
-Status: Superseded by platform ADR-046 (immediate CodeRepository cutover)
+Status: Accepted and implemented; aligned with platform ADR-046 for the
+immediate CodeRepository cutover
 
-> Historical record: the `CodeRepository`, `CodeRepositoryBranch`, and `GitHubRepositoryBinding` names below describe the pre-cutover contract and MUST NOT be implemented or exposed by current SDK code.
+> Current contract: `CodeRepository`, `CodeRepositoryBranch`, and
+> `GitHubRepositoryBinding` are the canonical public names. The Project-era
+> SDK ontology is retired and must not be reintroduced.
 
 Platform decision: `tdag-django` ADR-0037, stable fingerprint
 `git-native-project-source-context-v1`
@@ -35,10 +38,12 @@ backend-owned and target-derived; Git identity never grants permission.
 
 ## Decision
 
-The SDK has one project-context entry point:
+The SDK has one CodeRepository-context entry point:
 
 ```python
-get_project_runtime_context()
+from mainsequence.code_repository_context import get_code_repository_context
+
+get_code_repository_context()
 ```
 
 It uses the same algorithm in a local shell, CLI process, Job, FastAPI release,
@@ -100,18 +105,18 @@ than leaking whether the repository or only its branch is registered. This
 permits ordinary work on local repositories and new feature branches. Only an
 operation that requires branch-linked platform context calls
 `require_code_repository_branch_context()` and fails before its backend request. This
-includes both CodeRepositoryBranch-owned objects and project-facing operations on
-Environment-owned resources whose Environment is resolved from the current
+includes both CodeRepositoryBranch-owned objects and CodeRepository-facing operations
+on Environment-owned resources whose Environment is resolved from the current
 CodeRepositoryBranch.
 
 No unresolved state may fall back to `main`, a sibling CodeRepositoryBranch, a
 repository-level DataSource, an Environment inferred from a DataSource, collection
 order, or a caller-supplied CodeRepositoryBranch UID. The removed
-the removed repository-level default MetaTables DataSource contract is not restored.
+repository-level default MetaTables DataSource contract is not restored.
 
 ### Retired environment contract
 
-The SDK does not read, write, or inject these values as project identity:
+The SDK does not read, write, or inject these values as source identity:
 
 ```text
 Caller-supplied repository, branch, and Environment identity variables
@@ -123,16 +128,16 @@ four variables. Existing process values are ignored, not treated as fallbacks.
 
 The SDK still supports authentication variables such as
 `MAINSEQUENCE_ENDPOINT`, `MAINSEQUENCE_AUTH_MODE`, access/refresh tokens, and
-runtime credentials. They answer where and as whom to call, not which project
+runtime credentials. They answer where and as whom to call, not which repository
 source is running.
 
 ### Branch-owned consumers
 
 Current-branch Job, CodeRepositoryImage, ResourceRelease, CodeRepositoryResource,
-CodeRepositoryExecutor, migration, platform-managed MetaTable, and DataNode workflows
-consume the frozen context. Ordinary branch-owned collections are scoped to the
-resolved CodeRepositoryBranch. Explicit administrative enumeration uses separately
-named admin APIs.
+CodeRepositoryExecutor, migration, platform-managed MetaTable, and
+TimeIndexTableUpdater workflows consume the frozen context. Ordinary branch-owned
+collections are scoped to the resolved CodeRepositoryBranch. Explicit administrative
+enumeration uses separately named admin APIs.
 
 Parent-derived operations retain the persisted parent's ownership instead of
 inventing another branch selector. Backend authorization remains the final
@@ -144,7 +149,7 @@ Git-resolved CodeRepositoryBranch to equal the authenticated runtime target.
 Object ownership and operation context are separate concerns. `Secret`,
 `Constant`, logical `Bucket`, `Artifact`, and `MetaTable` belong to one
 `OrganizationEnvironment`; they are not owned by one CodeRepositoryBranch.
-Projects and branches participating in the same Environment may use the same
+CodeRepositories and branches participating in the same Environment may use the same
 resources.
 
 CodeRepository-scoped SDK operations nevertheless resolve that Environment only through
@@ -152,20 +157,20 @@ the frozen current CodeRepositoryBranch:
 
 ```text
 actual Git worktree and attached branch
-  -> get_project_runtime_context()
+  -> get_code_repository_context()
   -> exact persisted CodeRepositoryBranch
   -> OrganizationEnvironment
   -> Environment-owned resource operation
 ```
 
-This rule covers project-facing create, lookup, list, search, update, and delete
+This rule covers CodeRepository-facing create, lookup, list, search, update, and delete
 operations for Secrets, Constants, Buckets, and Artifacts. It also covers
 MetaTable registration and import, including `external_registered` MetaTables.
 An external MetaTable may select its physical DataSource, but that DataSource is
 not Environment identity and cannot override the Environment derived from the
 CodeRepositoryBranch.
 
-The public project-facing SDK API accepts neither
+The public CodeRepository-facing SDK API accepts neither
 `organization_environment_uid` nor a caller-supplied CodeRepositoryBranch UID.
 The SDK resolves the current CodeRepositoryBranch once and transports its derived
 Environment UID as an SDK-owned wire field:
@@ -215,7 +220,7 @@ SDK models parse those fields but never use them as write authority.
 - [ ] Apply that resolver to Secret, Constant, Bucket, and Artifact list, detail,
   create, update, and delete paths. Known public UIDs must not bypass the same
   Environment boundary.
-- [ ] Change project-facing external MetaTable registration and import to derive
+- [ ] Change CodeRepository-facing external MetaTable registration and import to derive
   Environment from CodeRepositoryBranch context. Preserve the explicitly selected
   physical DataSource without treating it as Environment identity.
 - [x] Add one SDK helper that attaches the branch-derived Environment to request
@@ -223,10 +228,10 @@ SDK models parse those fields but never use them as write authority.
   `require_code_repository_branch_context()` and rejects caller overrides.
 - [x] Route `Secret`, `Constant`, `Bucket`, and `Artifact` SDK methods and their
   CLI commands through that helper. Remove direct Environment selection from
-  project-facing command and method signatures.
+  CodeRepository-facing command and method signatures.
 - [x] Route external `MetaTable.register()` through the same helper instead of
   skipping Environment injection. Keep managed MetaTable,
-  migration, and DataNode paths on the existing shared resolver.
+  migration, and TimeIndexTableUpdater paths on the existing shared resolver.
 - [x] Add read-only Environment UID and name projections to all affected
   SDK response models while preserving strict rejection of unknown fields.
 - [x] Test SDK request injection, caller override rejection, canonical response
@@ -272,7 +277,7 @@ ownership after a branch switch.
 Rejected because local Git development does not require a persisted
 CodeRepositoryBranch. Enforcement belongs at branch-owned platform operations.
 
-### Accept explicit CodeRepositoryBranch UIDs for current-project work
+### Accept explicit CodeRepositoryBranch UIDs for current-repository work
 
 Rejected because callers could select a branch that differs from the source
 actually executing. Explicit CodeRepository UIDs retained by some CLI commands are
@@ -286,7 +291,7 @@ assertions against Git resolution, never selectors.
 - Detached HEAD, missing Git metadata, missing/ambiguous remote identity, and
   source drift fail explicitly.
 - Unregistered repository or branch state does not abort unrelated local work.
-- Branch-owned operations and project-facing Environment-resource operations
+- Branch-owned operations and CodeRepository-facing Environment-resource operations
   reject unresolved context before backend calls.
 - CodeRepository-scoped resource APIs never accept caller-selected CodeRepositoryBranch or
   Environment identity.

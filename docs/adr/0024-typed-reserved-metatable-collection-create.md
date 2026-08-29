@@ -87,10 +87,10 @@ The SDK must not rely on the endpoint alone to imply Alembic management and must
 ## Request Shape
 
 These are branch-owned backend wire shapes. Under ADR 0031, the SDK derives and
-inserts `project_context` from the frozen Git-native context in both local and
-deployed project-code runs; application callers cannot provide or override it.
-The backend additionally verifies deployed equality against the authenticated
-runtime target.
+inserts `code_repository_context` from the frozen Git-native context for local
+requests. Authenticated deployed runtimes omit the field because the backend
+derives the same context from the verified runtime target. Application callers
+cannot provide or override it.
 
 The relational MetaTable reservation payload must include:
 
@@ -111,7 +111,7 @@ The relational MetaTable reservation payload must include:
     "alembic_revision": null,
     "physical_schema": "public",
     "physical_table_name": "ms_markets__asset__mainsequence_examples",
-    "project_context": {
+    "code_repository_context": {
       "code_repository_branch_uid": "00000000-0000-4000-8000-000000000001"
     },
     "table_contract": {
@@ -147,7 +147,7 @@ must also include its first-class fields:
     "alembic_revision": null,
     "physical_schema": "public",
     "physical_table_name": "ms_markets__prices__mainsequence_examples",
-    "project_context": {
+    "code_repository_context": {
       "code_repository_branch_uid": "00000000-0000-4000-8000-000000000001"
     },
     "time_index_name": "time_index",
@@ -205,8 +205,8 @@ HTTP contract is normal collection `POST` with a list body.
 8. include authored `physical_table_name` before Alembic runs so Alembic renders
    against the correct SQLAlchemy table name;
 9. internally include the Git-resolved exact CodeRepositoryBranch UID in
-   `project_context` on every managed wire row, including deployed project-code
-   runtimes;
+   `code_repository_context` on every local managed wire row, while allowing
+   authenticated deployed runtimes to use backend-derived runtime context;
 10. include `time_index_name` and `partition_strategy` only for the
    time-indexed endpoint;
 11. bind returned `MetaTable` and `TimeIndexMetaTable` rows back to the
