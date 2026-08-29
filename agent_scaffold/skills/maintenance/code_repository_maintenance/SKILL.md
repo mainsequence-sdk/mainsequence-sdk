@@ -46,7 +46,7 @@ fall back to credential claims or injected CodeRepositoryBranch values.
 
 1. Read `AGENTS.md` and the relevant repository skills.
 2. Confirm the repository root and the user's requested maintenance outcome.
-3. Inspect project and Git state:
+3. Inspect code repository and Git state:
 
    ```bash
    mainsequence code-repository current --debug --json
@@ -54,7 +54,7 @@ fall back to credential claims or injected CodeRepositoryBranch values.
    git status --short
    ```
 
-   The `project current` result must report the logical `code_repository_uid`, current
+   The `code-repository current` result must report the logical `code_repository_uid`, current
    `git_branch`, `code_repository_branch_uid`, and `code_repository_branch_status=resolved`.
    Treat a detached checkout, unresolved repository, or unresolved/unregistered
    Git branch as a maintenance preflight failure before any
@@ -251,7 +251,7 @@ Run only repository-relevant validation discovered from `AGENTS.md`, project
 documentation, and the changed files. Report:
 
 - the maintenance routine performed;
-- the project path and installed SDK version;
+- the code repository path and installed SDK version;
 - files or generated state changed;
 - validation run and its result;
 - whether changes remain local or were committed, tagged, and pushed;

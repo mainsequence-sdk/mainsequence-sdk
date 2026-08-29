@@ -27,7 +27,7 @@ The schema-2 record describes both sources installed by
 `mainsequence code-repository update-agent-skills`:
 
 - `sdk_version=...` and `sdk_skills_path=...` identify the SDK-owned execution
-  skills copied from the target project's installed SDK;
+  skills copied from the target code repository's installed SDK;
 - `platform_manifest_version=...`, `platform_manifest_sha256=...`,
   `platform_ontology_sha256=...`, and the
   `platform_resource.<name>.*` fields identify the platform-owned ontology and

@@ -925,12 +925,12 @@ def _resolve_code_repository_branch_uid_for_command(
 
 def _code_repository_agent_scaffold_bundle_dir(code_repository_dir: pathlib.Path) -> pathlib.Path:
     """
-    Resolve the `agent_scaffold` bundle from the target project's local `.venv`.
+    Resolve the `agent_scaffold` bundle from the target code repository's local `.venv`.
     """
     try:
         vp = ensure_venv(code_repository_dir)
     except Exception as exc:
-        error(f"Could not access the target project's .venv: {exc}")
+        error(f"Could not access the target code repository's .venv: {exc}")
         raise typer.Exit(1) from exc
 
     lookup = subprocess.run(
@@ -950,7 +950,7 @@ def _code_repository_agent_scaffold_bundle_dir(code_repository_dir: pathlib.Path
     if lookup.returncode != 0:
         detail = (lookup.stderr or lookup.stdout or "").strip()
         message = (
-            "Could not locate agent_scaffold in the target project's .venv. "
+            "Could not locate agent_scaffold in the target code repository's .venv. "
             "Run `mainsequence code-repository build-local-venv` or "
             "`mainsequence code-repository update-sdk --path .` first."
         )
@@ -961,19 +961,19 @@ def _code_repository_agent_scaffold_bundle_dir(code_repository_dir: pathlib.Path
 
     bundle_dir = pathlib.Path((lookup.stdout or "").strip()).resolve()
     if not bundle_dir.exists() or not bundle_dir.is_dir():
-        error(f"Target project .venv resolved an invalid agent_scaffold path: {bundle_dir}")
+        error(f"Target code repository .venv resolved an invalid agent_scaffold path: {bundle_dir}")
         raise typer.Exit(1)
     return bundle_dir
 
 
 def _code_repository_installed_package_version(code_repository_dir: pathlib.Path, package_name: str) -> str:
     """
-    Resolve an installed package version from the target project's local `.venv`.
+    Resolve an installed package version from the target code repository's local `.venv`.
     """
     try:
         vp = ensure_venv(code_repository_dir)
     except Exception as exc:
-        error(f"Could not access the target project's .venv: {exc}")
+        error(f"Could not access the target code repository's .venv: {exc}")
         raise typer.Exit(1) from exc
 
     lookup = subprocess.run(
@@ -1004,7 +1004,7 @@ def _code_repository_installed_package_version(code_repository_dir: pathlib.Path
     resolved_version = (lookup.stdout or "").strip()
     if not resolved_version:
         error(
-            f"Could not resolve installed {package_name!r} version from the target project's .venv."
+            f"Could not resolve installed {package_name!r} version from the target code repository's .venv."
         )
         raise typer.Exit(1)
     return resolved_version
