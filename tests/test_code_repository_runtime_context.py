@@ -186,6 +186,7 @@ def test_code_repository_branch_git_context_uses_canonical_backend_action(monkey
                     "uid": CODE_REPOSITORY_BRANCH_UID,
                     "code_repository_uid": CODE_REPOSITORY_UID,
                     "code_repository_name": "Example CodeRepository",
+                    "code_repository_type": "python",
                     "repository_branch": "main",
                     "metatables_data_source": None,
                     "metatables_data_source_uid": None,
@@ -224,6 +225,7 @@ def test_code_repository_branch_git_context_uses_canonical_backend_action(monkey
         "commit_sha": COMMIT_SHA,
     }
     assert resolution.code_repository_branch.uid == CODE_REPOSITORY_BRANCH_UID
+    assert resolution.code_repository_branch.code_repository_type == "python"
 
 
 def test_context_resolves_once_and_returns_identical_snapshot(monkeypatch):

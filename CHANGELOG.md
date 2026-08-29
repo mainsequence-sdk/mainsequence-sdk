@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [8.0.3] - 2026-08-29
+
+### Fixed
+
+- Accepted the backend-owned, read-only `code_repository_type` projection on
+  `CodeRepositoryBranch` detail and Git-context responses ([#103](https://github.com/mainsequence-sdk/mainsequence-sdk/issues/103)).
+
 ## [8.0.2] - 2026-08-29
 
 ### Fixed

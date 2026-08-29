@@ -35,6 +35,7 @@ def code_repository_branch_payload() -> dict:
         "uid": CODE_REPOSITORY_BRANCH_UID,
         "code_repository_uid": CODE_REPOSITORY_UID,
         "code_repository_name": "Analytics",
+        "code_repository_type": "python",
         "repository_branch": "main",
         "metatables_data_source": None,
         "metatables_data_source_uid": None,
@@ -70,6 +71,7 @@ def test_code_repository_is_only_the_logical_aggregate_contract():
     assert code_repository.primary_language == "python"
     assert code_repository.framework == "mainsequence"
     assert code_repository.branches[0].uid == CODE_REPOSITORY_BRANCH_UID
+    assert not hasattr(code_repository.branches[0], "code_repository_type")
     assert not hasattr(code_repository, "repository_branch")
 
     with pytest.raises(ValidationError):
@@ -107,15 +109,20 @@ def test_code_repository_branch_owns_branch_configuration():
     branch = models_foundry.CodeRepositoryBranch(**code_repository_branch_payload())
 
     assert branch.code_repository_uid == CODE_REPOSITORY_UID
+    assert branch.code_repository_type == "python"
     assert branch.repository_branch == "main"
     assert branch.default_base_image.uid == "61111111-1111-4111-8111-111111111111"
     assert branch.organization_environment_uid is None
     assert branch.organization_environment_name is None
-    assert not hasattr(branch, "code_repository_type")
     assert not hasattr(branch, "primary_language")
     assert not hasattr(branch, "framework")
     assert not hasattr(branch, "git_ssh_url")
     assert not hasattr(branch, "labels")
+
+    payload = code_repository_branch_payload()
+    payload.pop("code_repository_type")
+    with pytest.raises(ValidationError):
+        models_foundry.CodeRepositoryBranch(**payload)
 
 
 def test_github_repository_binding_is_a_separate_registry_contract():

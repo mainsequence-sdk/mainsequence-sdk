@@ -503,6 +503,13 @@ class CodeRepositoryBranch(BasePydanticModel, BaseObjectOrm):
     uid: str
     code_repository_uid: str
     code_repository_name: str
+    code_repository_type: str = Field(
+        ...,
+        description=(
+            "Read-only projection of the immutable type owned by the parent "
+            "CodeRepository."
+        ),
+    )
     repository_branch: str
     metatables_data_source: _DataSource | None = None
     metatables_data_source_uid: str | None = None
