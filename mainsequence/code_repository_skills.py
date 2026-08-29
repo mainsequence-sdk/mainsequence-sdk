@@ -3,7 +3,7 @@
 The existing ``mainsequence code-repository update-agent-skills`` command has two
 canonical inputs:
 
-* SDK-owned execution skills from the target project's installed
+* SDK-owned execution skills from the target code repository's installed
   ``agent_scaffold/skills`` tree.
 * Platform-owned skills retrieved from authenticated MCP resources.
 

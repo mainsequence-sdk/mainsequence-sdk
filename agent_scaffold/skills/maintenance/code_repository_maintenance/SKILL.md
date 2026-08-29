@@ -247,7 +247,7 @@ commit or tag.
 
 ## Validate And Report
 
-Run only repository-relevant validation discovered from `AGENTS.md`, project
+Run only repository-relevant validation discovered from `AGENTS.md`, repository
 documentation, and the changed files. Report:
 
 - the maintenance routine performed;
