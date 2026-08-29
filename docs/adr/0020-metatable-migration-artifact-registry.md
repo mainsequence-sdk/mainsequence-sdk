@@ -587,8 +587,8 @@ Command responsibilities:
   `alembic_registry` root when needed, requests a read-only scoped
   connection, and calls Alembic `current`.
 - `revision` creates a normal Alembic revision file under
-  `migration.script_location`; project code may keep generated Alembic
-  operations or edit them like any normal Alembic project.
+  `migration.script_location`; CodeRepository code may keep generated Alembic
+  operations or edit them like any normal Alembic repository.
 - `upgrade` prepares provider-scoped MetaTable reservations, binds backend
   physical table names into SQLAlchemy metadata, requests a scoped
   migration connection, calls Alembic `upgrade`, finalizes the MetaTable catalog

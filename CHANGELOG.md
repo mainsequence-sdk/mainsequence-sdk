@@ -142,13 +142,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Aligned MetaTable and TimeIndexMetaTable collection filtering with the backend's
   canonical `organization_environment_uid` query parameter. CLI table listings now
   derive the exact environment scope from the active Git-resolved CodeRepositoryBranch or accept an
-  explicit administrative scope outside a registered project checkout.
+  explicit administrative scope outside a registered CodeRepository checkout.
 
 ## [6.0.39] - 2026-08-23
 
 ### Changed
 
-- Adopted the Git-native project source-context contract for local and deployed project code.
+- Adopted the Git-native CodeRepository source-context contract for local and deployed CodeRepository code.
   The SDK freezes the containing repository identity, attached branch, and exact HEAD commit once
   per process, then resolves the authoritative CodeRepositoryBranch through the backend's canonical
   Git-context action.

@@ -191,15 +191,15 @@ these inputs through one Environment resolver before filtering or resolving a
 known resource UID.
 
 An unregistered local branch remains valid for unrelated development. A
-project-facing operation on one of these Environment-owned resources calls
+CodeRepository-facing operation on one of these Environment-owned resources calls
 `require_code_repository_branch_context()` and fails before its request because no
 Environment can be derived. It must not fall back to `main`, another branch, an
 Environment UID, a DataSource, or Organization-wide enumeration.
 
 Explicit Organization-administration APIs may allow an administrator to select
 an Environment without a Git worktree. Such APIs are separate from the
-project-facing SDK contract and must be named and authorized as administrative
-surfaces; they are not a fallback for project code.
+CodeRepository-facing SDK contract and must be named and authorized as administrative
+surfaces; they are not a fallback for CodeRepository code.
 
 Backend responses expose the derived
 `organization_environment_uid` and
@@ -235,17 +235,17 @@ SDK models parse those fields but never use them as write authority.
   deployed JobRun credentials, deployed Knative credentials, mismatched runtime
   context, cross-Environment known-UID access, and same-Environment sharing.
 - [x] Update CLI documentation and agent skills to describe branch-derived
-  Environment resolution and remove instructions that ask project users to
+  Environment resolution and remove instructions that ask CodeRepository users to
   choose an Environment UID.
 
 ## Consequences
 
-- Local and deployed project code use one resolution algorithm.
+- Local and deployed CodeRepository code use one resolution algorithm.
 - Source identity cannot be changed by environment injection.
-- Every project-sensitive consumer sees one repository, branch, and commit for
+- Every CodeRepository-sensitive consumer sees one repository, branch, and commit for
   the complete process run.
 - Unregistered branches remain usable for local development but cannot create,
-  mutate, or enumerate branch-owned platform resources or project-facing
+  mutate, or enumerate branch-owned platform resources or CodeRepository-facing
   Environment-owned resources that require branch-derived context.
 - Supported runtime images must preserve a sanitized attached Git checkout.
   Images without that contract must be rebuilt; the SDK has no permanent
