@@ -10562,7 +10562,12 @@ def test_code_repository_freeze_env(cli_mod, runner, monkeypatch, tmp_path):
     result = runner.invoke(cli_mod.app, ["code-repository", "freeze-env", "--path", str(target)])
     assert result.exit_code == 0
     assert len(calls) == 1
-    assert calls[0][2]["output_file"] == "requirements.txt"
+    assert calls[0][2] == {
+        "locked": True,
+        "no_dev": True,
+        "no_hashes": True,
+        "output_file": "requirements.txt",
+    }
 
 
 @pytest.mark.parametrize(

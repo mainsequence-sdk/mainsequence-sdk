@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [8.0.2] - 2026-08-29
+
+### Fixed
+
+- Made `code-repository freeze-env` export the locked runtime dependency
+  closure while excluding development dependency groups ([#102](https://github.com/mainsequence-sdk/mainsequence-sdk/issues/102)).
+
 ## [8.0.1] - 2026-08-29
 
 ### Fixed

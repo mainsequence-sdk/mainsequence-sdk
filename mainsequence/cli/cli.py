@@ -10292,7 +10292,9 @@ def code_repository_freeze_env(
     ),
 ):
     """
-    Export pinned dependencies into `requirements.txt` using `uv`.
+    Export locked runtime dependencies into `requirements.txt` using `uv`.
+
+    Development dependency groups are excluded from the runtime export.
 
     Parameters
     ----------
@@ -10321,7 +10323,12 @@ def code_repository_freeze_env(
 
     with status("Exporting requirements.txt via uv..."):
         uv_export_requirements(
-            uv, cwd=code_repository_dir, locked=False, no_dev=False, output_file="requirements.txt"
+            uv,
+            cwd=code_repository_dir,
+            locked=True,
+            no_dev=True,
+            no_hashes=True,
+            output_file="requirements.txt",
         )
 
     success(f"Wrote: {code_repository_dir / 'requirements.txt'}")

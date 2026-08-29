@@ -182,15 +182,16 @@ def git_origin(code_repository_dir: pathlib.Path) -> str:
 def uv_export_requirements(
     uv_path: pathlib.Path,
     cwd: pathlib.Path,
-    locked: bool = False,
-    no_dev: bool = False,
+    locked: bool = True,
+    no_dev: bool = True,
     no_hashes: bool = True,
     output_file: str = "requirements.txt",
 ) -> None:
     """
-    Export requirements using uv with compatibility fallbacks.
+    Export the locked runtime dependency closure using uv.
 
-    The VS Code extension uses slightly different flags in different places; we try:
+    Development dependencies are excluded by default. For uv output flag
+    compatibility, try:
       1) modern: --format requirements-txt -o requirements.txt
       2) fallback: --format requirements.txt --output-file requirements.txt
     """

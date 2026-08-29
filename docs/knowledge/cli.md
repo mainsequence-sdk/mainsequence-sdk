@@ -90,7 +90,7 @@ mainsequence time-index-table add-label <TIME_INDEX_META_TABLE_UID> --label cura
 
 # Compile environment
 mainsequence code-repository freeze-env --path .
-# writes requirements.txt using uv export
+# writes the locked runtime closure to requirements.txt and excludes the dev group
 
 # Sync CodeRepository (commit + push workflow)
 mainsequence code-repository sync -m "Update deps" --path .

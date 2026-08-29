@@ -251,6 +251,7 @@ mainsequence code-repository build-local-venv
 mainsequence code-repository build-local-venv --path .
 mainsequence code-repository build-local-venv --path . --recreate
 mainsequence code-repository freeze-env --path .
+# exports the locked runtime closure; development dependencies are excluded
 mainsequence code-repository update AGENTS.md
 mainsequence code-repository update AGENTS.md --path .
 mainsequence code-repository update-agent-skills
