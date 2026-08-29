@@ -129,8 +129,8 @@ the waiting CLI process.
 
 The command preserves unrelated repository configuration and renders only the
 current supported authentication shape. It removes legacy token aliases and
-all retired Project, CodeRepositoryBranch, repository-branch, and Environment identity
-entries. The Git checkout supplies source identity; switching branches changes
+all retired repository, branch, and environment identity entries. The Git
+checkout supplies source identity; switching branches changes
 context on the next process run without rewriting `.env`.
 
 ## Update The CodeRepository SDK
