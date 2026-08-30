@@ -154,7 +154,7 @@ class Job(CurrentCodeRepositoryBranchCollectionMixin, BaseObjectOrm, BasePydanti
     GPU_MIN: ClassVar[int] = 1
     GPU_MAX: ClassVar[int] = 8
     DEFAULT_ALLOWED_EXECUTION_EXTENSIONS: ClassVar[frozenset[str]] = frozenset(
-        {".py", ".ipynb", ".yaml"}
+        {".py", ".yaml"}
     )
 
     uid: str | None = Field(
@@ -168,6 +168,15 @@ class Job(CurrentCodeRepositoryBranchCollectionMixin, BaseObjectOrm, BasePydanti
         min_length=1,
         description="Human-readable job name.",
         examples=["Daily feature build"],
+    )
+
+    description: str = Field(
+        default="",
+        description=(
+            "Optional human-readable purpose or context for the Job. "
+            "It does not affect execution behavior."
+        ),
+        examples=["Refresh the daily prices dataset."],
     )
 
     code_repository_branch_uid: str | None = Field(
@@ -197,15 +206,9 @@ class Job(CurrentCodeRepositoryBranchCollectionMixin, BaseObjectOrm, BasePydanti
     execution_path: str | None = Field(
         default=None,
         description=(
-            "Repository-relative file path from the content root. Allowed extensions are .py, .ipynb, and .yaml."
+            "Repository-relative file path from the content root. Allowed extensions are .py and .yaml."
         ),
-        examples=["scripts/test.py", "jobs/train_model.py", "notebooks/eda.ipynb"],
-    )
-
-    app_name: str | None = Field(
-        default=None,
-        description="Application name to run instead of a file-based execution path.",
-        examples=["data-monitor"],
+        examples=["scripts/test.py", "jobs/train_model.py"],
     )
 
     task_schedule: PeriodicTask | None = Field(
@@ -369,14 +372,12 @@ class Job(CurrentCodeRepositoryBranchCollectionMixin, BaseObjectOrm, BasePydanti
         cls,
         *,
         execution_path: str | None = None,
-        app_name: str | None = None,
         allowed_execution_extensions: Collection[str] | str | None = None,
     ) -> dict[str, Any]:
         execution_path = cls._normalize_str(execution_path)
-        app_name = cls._normalize_str(app_name)
 
-        if bool(execution_path) == bool(app_name):
-            raise ValueError("Pass exactly one of execution_path or app_name.")
+        if execution_path is None:
+            raise ValueError("execution_path is required.")
 
         payload: dict[str, Any] = {}
 
@@ -401,9 +402,6 @@ class Job(CurrentCodeRepositoryBranchCollectionMixin, BaseObjectOrm, BasePydanti
                 )
 
             payload["execution_path"] = execution_path
-
-        if app_name is not None:
-            payload["app_name"] = app_name
 
         return payload
 
@@ -524,9 +522,9 @@ class Job(CurrentCodeRepositoryBranchCollectionMixin, BaseObjectOrm, BasePydanti
         cls,
         *,
         name: str,
+        description: str | None = None,
         code_repository_branch_uid: str | CodeRepositoryBranch | dict[str, Any] | None = None,
         execution_path: str | None = None,
-        app_name: str | None = None,
         task_schedule: PeriodicTask | Schedule | dict[str, Any] | str | None = None,
         task_schedule_id: int | None = None,
         cpu_request: str | int | float | Decimal | None = None,
@@ -550,11 +548,14 @@ class Job(CurrentCodeRepositoryBranchCollectionMixin, BaseObjectOrm, BasePydanti
                 code_repository_branch_uid=code_repository_branch_uid
             ),
         }
+        if description is not None:
+            if not isinstance(description, str):
+                raise TypeError("description must be a string or None.")
+            payload["description"] = description.strip()
 
         payload.update(
             cls._build_target_payload(
                 execution_path=execution_path,
-                app_name=app_name,
                 allowed_execution_extensions=allowed_execution_extensions,
             )
         )
@@ -625,9 +626,9 @@ class Job(CurrentCodeRepositoryBranchCollectionMixin, BaseObjectOrm, BasePydanti
         cls,
         *,
         name: str,
+        description: str | None = None,
         code_repository_branch_uid: str | CodeRepositoryBranch | dict[str, Any] | None = None,
         execution_path: str | None = None,
-        app_name: str | None = None,
         task_schedule: PeriodicTask | Schedule | dict[str, Any] | str | None = None,
         task_schedule_id: int | None = None,
         cpu_request: str | int | float | Decimal | None = None,
@@ -644,9 +645,9 @@ class Job(CurrentCodeRepositoryBranchCollectionMixin, BaseObjectOrm, BasePydanti
     ) -> Job:
         payload = cls._build_create_payload(
             name=name,
+            description=description,
             code_repository_branch_uid=code_repository_branch_uid,
             execution_path=execution_path,
-            app_name=app_name,
             task_schedule=task_schedule,
             task_schedule_id=task_schedule_id,
             cpu_request=cpu_request,
@@ -715,6 +716,9 @@ class JobRun(
     BaseObjectOrm,
     BasePydanticModel,
 ):
+    _OBSERVABILITY_ENVIRONMENT_OPTIONAL_FIELDS: ClassVar[frozenset[str]] = frozenset(
+        {"application_logs_url"}
+    )
     PUBLIC_LOOKUP_FIELD: ClassVar[str] = "uid"
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
         "job__uid": ["in", "exact"],

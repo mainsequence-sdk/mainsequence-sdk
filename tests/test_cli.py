@@ -4249,7 +4249,6 @@ def test_list_code_repository_jobs_uses_client_model(cli_mod, monkeypatch):
                             ),
                             "code_repository_commit_hash": "abc123",
                             "execution_path": "src.jobs.daily:main",
-                            "app_name": None,
                             "task_schedule": {
                                 "name": "Every hour",
                                 "task": "daily-run",
@@ -4289,7 +4288,6 @@ def test_list_code_repository_jobs_uses_client_model(cli_mod, monkeypatch):
             "organization_environment_uid": ("58218213-5e4e-43de-a5bd-6757f4e1c8f6"),
             "code_repository_commit_hash": "abc123",
             "execution_path": "src.jobs.daily:main",
-            "app_name": None,
             "task_schedule": {
                 "name": "Every hour",
                 "task": "daily-run",
@@ -5609,7 +5607,6 @@ def test_create_code_repository_job_uses_client_model_task_schedule(cli_mod, mon
             name,
             code_repository_branch_uid,
             execution_path=None,
-            app_name=None,
             task_schedule=None,
             cpu_request=None,
             memory_request=None,
@@ -5626,7 +5623,6 @@ def test_create_code_repository_job_uses_client_model_task_schedule(cli_mod, mon
                 "name": name,
                 "code_repository_branch_uid": code_repository_branch_uid,
                 "execution_path": execution_path,
-                "app_name": app_name,
                 "task_schedule": task_schedule,
                 "cpu_request": cpu_request,
                 "memory_request": memory_request,
@@ -5756,7 +5752,6 @@ def test_run_code_repository_job_uses_client_model(cli_mod, monkeypatch):
             captured["job_uid_arg"] = uid
             return types.SimpleNamespace(
                 execution_path="scripts/test.py",
-                app_name=None,
                 run_job=lambda timeout=None, command_args=None: (
                     captured.update(command_args=command_args)
                     or {
@@ -6132,7 +6127,6 @@ def test_code_repository_jobs_list_defaults_to_env_code_repository_id(cli_mod, r
                 "name": "daily-run",
                 "code_repository_commit_hash": "abc123",
                 "execution_path": "src.jobs.daily:main",
-                "app_name": None,
                 "task_schedule": {
                     "name": "Every hour",
                     "task": "daily-run",
@@ -8715,7 +8709,6 @@ def test_code_repository_jobs_run(cli_mod, runner, monkeypatch):
             "uid": job_uid_arg,
             "name": "daily-run",
             "execution_path": "scripts/test.py",
-            "app_name": None,
         },
     )
     monkeypatch.setattr(
@@ -8762,7 +8755,6 @@ def test_code_repository_jobs_run_with_arg_option(cli_mod, runner, monkeypatch):
             "uid": job_uid_arg,
             "name": "daily-run",
             "execution_path": "scripts/test.py",
-            "app_name": None,
         },
     )
     monkeypatch.setattr(
@@ -9026,7 +9018,6 @@ def test_code_repository_jobs_create_interactive_defaults(cli_mod, runner, monke
             "uid": "7d0ab07c-d1c0-4b7f-9c69-3c1a41c0a4da",
             "name": kwargs["name"],
             "execution_path": kwargs["execution_path"],
-            "app_name": kwargs["app_name"],
             "related_image": kwargs["related_image_uid"],
         }
 

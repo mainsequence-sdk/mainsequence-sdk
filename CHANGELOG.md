@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [8.0.6] - 2026-08-30
+
+### Changed
+
+- Aligned `Job` with the canonical backend execution contract: jobs now use a
+  required `.py` or `.yaml` `execution_path`, accept the read/write
+  `description` field, and no longer expose `app_name` or notebook execution.
+
+### Fixed
+
+- Allowed `JobRun.get_logs()` to follow a backend capability link without an
+  `organization_environment_uid` query parameter because the JobRun UID
+  already fixes that scope. Other owner-log links and JobRun resource-usage
+  links remain explicitly environment-scoped.
+
 ## [8.0.5] - 2026-08-30
 
 ### Changed

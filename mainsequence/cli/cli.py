@@ -8919,7 +8919,6 @@ def _code_repository_jobs_list_impl(
                 str(job.get("name") or "-"),
                 str(job.get("code_repository_commit_hash") or "-"),
                 str(job.get("execution_path") or "-"),
-                str(job.get("app_name") or "-"),
                 _format_job_schedule_summary(job.get("task_schedule")),
                 _format_related_image_label(job.get("related_image")),
             ]
@@ -8933,7 +8932,6 @@ def _code_repository_jobs_list_impl(
                 "Name",
                 "Repo Hash",
                 "Execution Path",
-                "App Name",
                 "Schedule",
                 "Related Image",
             ],
@@ -9118,7 +9116,7 @@ def code_repository_jobs_run_cmd(
     command_args: list[str] | None = typer.Option(
         None,
         "--arg",
-        help="Append one per-run arg to the saved job entrypoint. Repeatable. Does not replace the saved execution_path or app_name.",
+        help="Append one per-run arg to the saved job entrypoint. Repeatable. Does not replace the saved execution_path.",
     ),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
@@ -9150,10 +9148,6 @@ def code_repository_jobs_run_cmd(
         raise typer.Exit(1) from e
 
     entrypoint = str(job_payload.get("execution_path") or "").strip()
-    if not entrypoint:
-        app_name = str(job_payload.get("app_name") or "").strip()
-        if app_name:
-            entrypoint = f"app:{app_name}"
 
     if entrypoint:
         effective_tokens = [entrypoint, *merged_command_args]
@@ -9404,7 +9398,6 @@ def _code_repository_jobs_create_impl(
     name: str | None,
     path: str | None,
     execution_path: str | None,
-    app_name: str | None,
     related_image_uid: str | None,
     schedule_type: str | None,
     schedule_every: int | None,
@@ -9481,25 +9474,16 @@ def _code_repository_jobs_create_impl(
             error("related_image_uid is required when automatic deployment is disabled.")
             raise typer.Exit(1)
 
-    if execution_path is None and app_name is None:
+    if execution_path is None:
         execution_path = (
             typer.prompt(
-                pydantic_prompt_text(JOB_MODEL_REF, "execution_path", optional=True),
-                default="",
+                pydantic_prompt_text(JOB_MODEL_REF, "execution_path"),
             ).strip()
             or None
         )
-        if execution_path is None:
-            app_name = (
-                typer.prompt(
-                    pydantic_prompt_text(JOB_MODEL_REF, "app_name", optional=True),
-                    default="",
-                ).strip()
-                or None
-            )
 
-    if execution_path is None and app_name is None:
-        error("One of execution_path or app_name is required.")
+    if execution_path is None:
+        error("execution_path is required.")
         raise typer.Exit(1)
 
     try:
@@ -9546,7 +9530,6 @@ def _code_repository_jobs_create_impl(
             name=name,
             code_repository_branch_uid=code_repository_branch_uid,
             execution_path=execution_path,
-            app_name=app_name,
             task_schedule=task_schedule,
             cpu_request=cpu_request,
             memory_request=memory_request,
@@ -9577,7 +9560,6 @@ def _code_repository_jobs_create_impl(
             ("Name", str(created.get("name") or name)),
             ("CodeRepository UID", str(code_repository_id)),
             ("Execution Path", str(created.get("execution_path") or execution_path or "-")),
-            ("App Name", str(created.get("app_name") or app_name or "-")),
             (
                 "Related Image",
                 _format_related_image_label(created.get("related_image") or related_image_uid),
@@ -9625,7 +9607,6 @@ def code_repository_jobs_create_cmd(
         None,
         "--execution-path",
     ),
-    app_name: str | None = pydantic_option(JOB_MODEL_REF, "app_name", None, "--app-name"),
     related_image_uid: str | None = pydantic_option(
         JOB_MODEL_REF,
         "related_image_uid",
@@ -9739,7 +9720,6 @@ def code_repository_jobs_create_cmd(
     ```bash
     mainsequence code-repository jobs create
     mainsequence code-repository jobs create code-repository-uid-123 --name daily-run --execution-path scripts/test.py --related-image-uid <uid>
-    mainsequence code-repository jobs create code-repository-uid-123 --name dashboard --app-name dashboard-api --related-image-uid <uid>
     ```
     """
     _code_repository_jobs_create_impl(
@@ -9747,7 +9727,6 @@ def code_repository_jobs_create_cmd(
         name=name,
         path=path,
         execution_path=execution_path,
-        app_name=app_name,
         related_image_uid=related_image_uid,
         schedule_type=schedule_type,
         schedule_every=schedule_every,

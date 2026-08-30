@@ -2504,6 +2504,7 @@ def test_job_create_requires_exact_image_and_does_not_send_commit(monkeypatch):
             return {
                 "uid": "7d0ab07c-d1c0-4b7f-9c69-3c1a41c0a4da",
                 "name": "Daily prices",
+                "description": "Refresh the daily prices dataset.",
                 "code_repository_branch_uid": "5a28020a-0f1b-47ee-aab8-334286234bea",
                 "related_image_uid": "6cfdb152-923e-45b9-a150-c4541c68b0d1",
                 "code_repository_commit_hash": "a" * 40,
@@ -2521,6 +2522,10 @@ def test_job_create_requires_exact_image_and_does_not_send_commit(monkeypatch):
 
     monkeypatch.setattr(models_helpers_mod, "make_request", _fake_make_request)
 
+    assert "app_name" not in models_helpers_mod.Job.model_fields
+    with pytest.raises(ValueError, match="execution_path is required"):
+        models_helpers_mod.Job._build_target_payload()
+
     with pytest.raises(ValueError, match="related_image_uid is required"):
         models_helpers_mod.Job.create(
             name="Daily prices",
@@ -2532,6 +2537,7 @@ def test_job_create_requires_exact_image_and_does_not_send_commit(monkeypatch):
 
     job = models_helpers_mod.Job.create(
         name="Daily prices",
+        description="  Refresh the daily prices dataset.  ",
         code_repository_branch_uid="5a28020a-0f1b-47ee-aab8-334286234bea",
         execution_path="jobs/daily_prices.py",
         cpu_request="1",
@@ -2541,11 +2547,27 @@ def test_job_create_requires_exact_image_and_does_not_send_commit(monkeypatch):
     )
 
     assert job.automatic_deployment is True
+    assert job.description == "Refresh the daily prices dataset."
     assert captured["r_type"] == "POST"
+    assert (
+        captured["payload"]["json"]["description"]
+        == "Refresh the daily prices dataset."
+    )
     assert captured["payload"]["json"]["automatic_deployment"] is True
     assert captured["payload"]["json"]["automatic_redeployment_policy"] == {"tag_regex": None}
     assert "code_repository_commit_hash" not in captured["payload"]["json"]
     assert "related_image_uid" not in captured["payload"]["json"]
+
+    with pytest.raises(TypeError, match="description must be a string"):
+        models_helpers_mod.Job._build_create_payload(
+            name="Daily prices",
+            description=17,
+            code_repository_branch_uid="5a28020a-0f1b-47ee-aab8-334286234bea",
+            execution_path="jobs/daily_prices.py",
+            cpu_request="1",
+            memory_request="2",
+            automatic_deployment=True,
+        )
 
     with pytest.raises(ValueError, match="must be omitted"):
         models_helpers_mod.Job.create(

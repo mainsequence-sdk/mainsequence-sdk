@@ -7,6 +7,7 @@ import pytest
 from pydantic import Field
 
 import mainsequence.client.agent_runtime_models as agent_models
+import mainsequence.client.models_helpers as helper_models
 import mainsequence.client.observability as observability_models
 from mainsequence.client.base import BaseObjectOrm, BasePydanticModel
 from mainsequence.client.exceptions import ApiError
@@ -163,6 +164,52 @@ def test_owner_observability_rejects_untrusted_or_unscoped_links(url):
 
     with pytest.raises(ApiError):
         owner.get_logs()
+
+
+def test_job_run_logs_accept_backend_derived_environment_without_weakening_usage(
+    monkeypatch,
+):
+    captured = {}
+    job_run_uid = "4c1d77c8-8a42-42b8-a9c1-06be9a336e5d"
+    job_run = helper_models.JobRun.model_construct(
+        uid=job_run_uid,
+        observability=ObservabilityLinks(
+            application_logs_url=f"/api/v1/job-runs/{job_run_uid}/logs/",
+            resource_usage_url=f"/api/v1/job-runs/{job_run_uid}/resource-usage/",
+        ),
+    )
+
+    class Response:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {
+                "organization_environment_uid": ENVIRONMENT_UID,
+                "start": 100,
+                "end": 200,
+                "next_cursor": None,
+                "truncated": False,
+                "rows": [],
+            }
+
+    monkeypatch.setattr(helper_models.JobRun, "ROOT_URL", "https://backend.test/api/v1")
+    monkeypatch.setattr(
+        observability_models,
+        "make_request",
+        lambda **kwargs: captured.update(kwargs) or Response(),
+    )
+
+    page = job_run.get_logs(start=100, end=200, limit=25)
+
+    assert captured["payload"]["params"] == {
+        "start": 100,
+        "end": 200,
+        "limit": 25,
+    }
+    assert page.organization_environment_uid == ENVIRONMENT_UID
+    with pytest.raises(ApiError, match="missing organization_environment_uid"):
+        job_run.get_resource_usage()
 
 
 def test_agent_logs_support_optional_session_filter_without_environment_override(

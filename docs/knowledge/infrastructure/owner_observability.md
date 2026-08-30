@@ -11,6 +11,13 @@ Application-runtime owners expose backend-owned capability links through their
 backend session, and preserves the backend-derived Organization Environment
 scope. Callers do not pass or override an Environment UID.
 
+JobRun application logs are the deliberate exception to an environment-scoped
+capability URL. The JobRun UID already fixes its persisted Environment, so
+`JobRun.get_logs()` accepts a backend link with or without an
+`organization_environment_uid` query parameter. A supplied value remains a
+backend consistency check. Resource-usage links and every other owner log link
+remain explicitly environment-scoped.
+
 ```python
 job_run = JobRun.get(pk="<JOB_RUN_UID>")
 logs = job_run.get_logs(limit=100, severity="ERROR")

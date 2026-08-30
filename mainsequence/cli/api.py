@@ -4532,7 +4532,6 @@ def create_code_repository_job(
     name: str,
     code_repository_branch_uid: str,
     execution_path: str | None = None,
-    app_name: str | None = None,
     task_schedule: dict[str, Any] | str | None = None,
     cpu_request: str | int | float | None = None,
     memory_request: str | int | float | None = None,
@@ -4601,7 +4600,6 @@ def create_code_repository_job(
             name=name,
             code_repository_branch_uid=resolved_branch_uid,
             execution_path=execution_path,
-            app_name=app_name,
             task_schedule=task_schedule,
             cpu_request=cpu_request,
             memory_request=memory_request,
@@ -4742,11 +4740,8 @@ def run_code_repository_job(
         payload = job.run_job(timeout=timeout, command_args=command_args)
         effective_tokens: list[str] = []
         execution_path = str(getattr(job, "execution_path", "") or "").strip()
-        app_name = str(getattr(job, "app_name", "") or "").strip()
         if execution_path:
             effective_tokens.append(execution_path)
-        elif app_name:
-            effective_tokens.append(f"app:{app_name}")
         if command_args:
             effective_tokens.extend(str(arg) for arg in command_args)
         effective_run = shlex.join(effective_tokens) if effective_tokens else None

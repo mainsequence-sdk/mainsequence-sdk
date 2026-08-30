@@ -106,6 +106,7 @@ class ResourceUsagePage(BasePydanticModel):
 
 class _OwnerObservabilityTransportMixin:
     _OBSERVABILITY_ENVIRONMENT_QUERY: ClassVar[str] = "organization_environment_uid"
+    _OBSERVABILITY_ENVIRONMENT_OPTIONAL_FIELDS: ClassVar[frozenset[str]] = frozenset()
 
     def _observability_capability_url(self, field_name: str) -> str:
         links = getattr(self, "observability", None)
@@ -157,7 +158,8 @@ class _OwnerObservabilityTransportMixin:
                 raise ApiError("The backend returned a duplicate observability query parameter.")
             query[key] = value
         environment_uid = str(query.get(self._OBSERVABILITY_ENVIRONMENT_QUERY) or "").strip()
-        if not environment_uid:
+        environment_optional_fields = type(self)._OBSERVABILITY_ENVIRONMENT_OPTIONAL_FIELDS
+        if not environment_uid and field_name not in environment_optional_fields:
             raise ApiError(
                 "The backend observability capability is missing organization_environment_uid."
             )

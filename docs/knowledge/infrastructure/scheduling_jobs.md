@@ -277,6 +277,7 @@ from mainsequence.client import CrontabSchedule, IntervalSchedule, Job, JobRun
 ```python
 manual_job = Job.create(
     name="Simulated Prices - Manual",
+    description="Generate simulated prices on demand.",
     execution_path="scripts/simulated_prices_launcher.py",
     related_image_uid="<CODE_REPOSITORY_IMAGE_UID>",
     cpu_request="0.25",
@@ -349,8 +350,10 @@ usage = latest_run.get_resource_usage()
 
 `logs` is an `OwnerLogPage` with opaque cursor pagination and enriched rows.
 `usage` is a `ResourceUsagePage` containing aggregate CPU, memory, and disk
-samples. The SDK takes the required Environment scope from the backend-owned
-JobRun capability links; application code does not provide an Environment UID.
+samples. The JobRun UID is sufficient for application-log scope; the SDK
+accepts a backend-owned log capability link with or without an Environment
+query parameter. Resource usage remains explicitly environment-scoped.
+Application code does not provide an Environment UID for either operation.
 
 In practice, the client gives you the same lifecycle as the CLI:
 
@@ -424,7 +427,8 @@ Do not pass:
 - directory paths
 - paths with `..`
 
-The SDK also restricts job entrypoints to `.py`, `.ipynb`, and `.yaml`.
+The SDK restricts job entrypoints to `.py` and `.yaml`. The optional
+`description` is human-readable metadata and does not affect execution.
 
 ### Use forward slashes in paths
 
