@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [8.0.5] - 2026-08-30
+
+### Changed
+
+- Aligned CodeRepository creation with ADR-049 by replacing branch-wide
+  `env_vars` with `bootstrap_organization_environment_uid`.
+- Removed the obsolete provider-repository deletion option from logical
+  CodeRepository bulk deletion; provider repositories and Git branches are
+  preserved.
+
 ## [8.0.4] - 2026-08-29
 
 ### Fixed
