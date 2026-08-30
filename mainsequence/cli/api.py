@@ -5225,7 +5225,7 @@ def create_code_repository(
     code_repository_type: str = "python",
     default_base_image_uid: str | None = None,
     github_org_uid: str | None = None,
-    env_vars: dict[str, str] | None = None,
+    bootstrap_organization_environment_uid: str | None = None,
     labels: list[str] | None = None,
 ) -> dict:
     """
@@ -5240,8 +5240,8 @@ def create_code_repository(
         payload["default_base_image_uid"] = str(default_base_image_uid)
     if github_org_uid not in (None, ""):
         payload["github_org_uid"] = str(github_org_uid)
-    if env_vars:
-        payload["env_vars"] = [{"name": k, "value": str(v)} for k, v in env_vars.items()]
+    if bootstrap_organization_environment_uid not in (None, ""):
+        payload["bootstrap_organization_environment_uid"] = str(bootstrap_organization_environment_uid)
     if labels is not None:
         payload["labels"] = list(labels)
 
@@ -5298,11 +5298,10 @@ def delete_code_repository(code_repository_uid: str) -> dict[str, Any] | None:
 def bulk_delete_code_repositories(
     *,
     uids: list[str],
-    delete_repositories: bool = False,
 ) -> dict[str, Any]:
     payload = {
         "selection": {"mode": "explicit", "uids": list(uids)},
-        "options": {"delete_repositories": delete_repositories},
+        "options": {},
     }
     r = authed("POST", "/api/v1/code-repositories/bulk-delete/", payload)
     if not r.ok:

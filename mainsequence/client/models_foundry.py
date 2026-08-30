@@ -235,21 +235,6 @@ class CodeRepository(LabelableObjectMixin, ShareableObjectMixin, BasePydanticMod
     branches: list[CodeRepositoryBranchLight] = Field(default_factory=list)
 
     @staticmethod
-    def _normalize_env_vars(
-        env_vars: dict[str, str] | list[dict[str, str]] | None,
-    ) -> list[dict[str, str]] | None:
-        """
-        Serializer expects: [{"name": "...", "value": "..."}, ...]
-        Allow passing a dict for convenience.
-        """
-        if env_vars is None:
-            return None
-        if isinstance(env_vars, dict):
-            return [{"name": k, "value": v} for k, v in env_vars.items()]
-        # assume already list-of-dicts shape
-        return env_vars
-
-    @staticmethod
     def _coerce_uid(obj: Any, *, field_name: str) -> str | None:
         """
         Accept:
@@ -283,7 +268,7 @@ class CodeRepository(LabelableObjectMixin, ShareableObjectMixin, BasePydanticMod
         code_repository_type: str = "python",
         default_base_image_uid: str | CodeRepositoryBaseImage | dict[str, Any] | None = None,
         github_org_uid: str | GitHubOrganization | dict[str, Any] | None = None,
-        env_vars: dict[str, str] | list[dict[str, str]] | None = None,
+        bootstrap_organization_environment_uid: str | UUID | dict[str, Any] | BasePydanticModel | None = None,
         labels: list[str] | None = None,
         timeout: int | None = None,
     ) -> CodeRepository:
@@ -295,7 +280,7 @@ class CodeRepository(LabelableObjectMixin, ShareableObjectMixin, BasePydanticMod
           - code_repository_type
           - default_base_image_uid (optional)
           - github_org_uid (optional)
-          - env_vars (optional list of {name,value})
+          - bootstrap_organization_environment_uid (optional active Environment UID)
         """
         url = cls.get_object_url() + "/"
 
@@ -309,9 +294,12 @@ class CodeRepository(LabelableObjectMixin, ShareableObjectMixin, BasePydanticMod
         if org_uid is not None:
             payload["github_org_uid"] = org_uid
 
-        env_list = cls._normalize_env_vars(env_vars)
-        if env_list is not None:
-            payload["env_vars"] = env_list
+        bootstrap_environment_uid = cls._coerce_uid(
+            bootstrap_organization_environment_uid,
+            field_name="bootstrap_organization_environment_uid",
+        )
+        if bootstrap_environment_uid is not None:
+            payload["bootstrap_organization_environment_uid"] = bootstrap_environment_uid
         if labels is not None:
             payload["labels"] = list(labels)
 
@@ -441,7 +429,6 @@ class CodeRepository(LabelableObjectMixin, ShareableObjectMixin, BasePydanticMod
         *,
         uids: list[str] | None = None,
         selection: dict[str, Any] | None = None,
-        delete_repositories: bool = False,
         timeout: int | None = None,
     ) -> CodeRepositoryBulkDeleteResponse:
         if (uids is None) == (selection is None):
@@ -455,7 +442,7 @@ class CodeRepository(LabelableObjectMixin, ShareableObjectMixin, BasePydanticMod
             payload={
                 "json": {
                     "selection": resolved_selection,
-                    "options": {"delete_repositories": delete_repositories},
+                    "options": {},
                 }
             },
             time_out=timeout,

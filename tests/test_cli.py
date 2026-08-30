@@ -5705,7 +5705,7 @@ def test_create_code_repository_does_not_send_code_repository_visible(cli_mod, m
         code_repository_name="demo-repository",
         default_base_image_uid="22222222-2222-4222-8222-222222222222",
         github_org_uid="33333333-3333-4333-8333-333333333333",
-        env_vars={"FOO": "bar"},
+        bootstrap_organization_environment_uid="44444444-4444-4444-8444-444444444444",
     )
 
     assert captured["method"] == "POST"
@@ -5715,7 +5715,7 @@ def test_create_code_repository_does_not_send_code_repository_visible(cli_mod, m
         "code_repository_type": "python",
         "default_base_image_uid": "22222222-2222-4222-8222-222222222222",
         "github_org_uid": "33333333-3333-4333-8333-333333333333",
-        "env_vars": [{"name": "FOO", "value": "bar"}],
+        "bootstrap_organization_environment_uid": "44444444-4444-4444-8444-444444444444",
     }
     assert "project_visible" not in captured["body"]
     assert out == {"id": 321, "code_repository_name": "demo-repository"}
@@ -9665,8 +9665,7 @@ def test_code_repository_create_interactive_defaults(cli_mod, runner, monkeypatc
     # 1) CodeRepository name
     # 2) Default base image uid
     # 3) GitHub organization uid
-    # 4) Environment variables line
-    user_input = "demo-repository\n\n\nFOO=bar, BAZ=qux\n"
+    user_input = "demo-repository\n\n\n"
     result = runner.invoke(cli_mod.app, ["code-repository", "create"], input=user_input)
 
     assert result.exit_code == 0
@@ -9674,7 +9673,7 @@ def test_code_repository_create_interactive_defaults(cli_mod, runner, monkeypatc
     assert captured["code_repository_type"] == "python"
     assert captured["default_base_image_uid"] == "22222222-2222-4222-8222-222222222222"
     assert captured["github_org_uid"] == "33333333-3333-4333-8333-333333333333"
-    assert captured["env_vars"] == {"FOO": "bar", "BAZ": "qux"}
+    assert captured["bootstrap_organization_environment_uid"] is None
     assert "CodeRepository created: demo-repository (uid=code-repository-uid-321)" in result.output
 
 
@@ -9719,13 +9718,14 @@ def test_code_repository_create_with_explicit_options_returns_logical_code_repos
             "22222222-2222-4222-8222-222222222222",
             "--github-org-uid",
             "33333333-3333-4333-8333-333333333333",
-            "--env",
-            "FOO=bar",
+            "--environment-uid",
+            "44444444-4444-4444-8444-444444444444",
         ],
     )
 
     assert result.exit_code == 0
     assert "default_metatables_data_source_uid" not in captured
+    assert captured["bootstrap_organization_environment_uid"] == "44444444-4444-4444-8444-444444444444"
     assert "CodeRepository created: demo-repository" in result.output
 
 
@@ -9765,20 +9765,18 @@ def test_code_repository_delete_remote_yes(cli_mod, runner, monkeypatch):
 
     captured = {}
 
-    def _bulk_delete_code_repositories(*, uids, delete_repositories=False):
+    def _bulk_delete_code_repositories(*, uids):
         captured["uids"] = uids
-        captured["delete_repositories"] = delete_repositories
         return {"detail": "deleted", "deleted_count": 1}
 
     monkeypatch.setattr(cli_mod, "bulk_delete_code_repositories", _bulk_delete_code_repositories)
 
     result = runner.invoke(
         cli_mod.app,
-        ["code-repository", "delete", "code-repository-uid-321", "--yes", "--delete-repositories"],
+        ["code-repository", "delete", "code-repository-uid-321", "--yes"],
     )
     assert result.exit_code == 0
     assert captured["uids"] == ["code-repository-uid-321"]
-    assert captured["delete_repositories"] is True
     assert "CodeRepository deleted: Demo CodeRepository (uid=code-repository-uid-321; deleted=1)" in result.output
 
 

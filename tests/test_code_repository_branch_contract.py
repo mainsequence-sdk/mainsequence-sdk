@@ -167,7 +167,7 @@ def test_code_repository_create_sends_only_canonical_fields(monkeypatch):
         code_repository_type="python",
         default_base_image_uid="61111111-1111-4111-8111-111111111111",
         github_org_uid="41111111-1111-4111-8111-111111111111",
-        env_vars={"FOO": "bar"},
+        bootstrap_organization_environment_uid="71111111-1111-4111-8111-111111111111",
         labels=["analytics"],
     )
 
@@ -178,7 +178,7 @@ def test_code_repository_create_sends_only_canonical_fields(monkeypatch):
             "code_repository_type": "python",
             "default_base_image_uid": "61111111-1111-4111-8111-111111111111",
             "github_org_uid": "41111111-1111-4111-8111-111111111111",
-            "env_vars": [{"name": "FOO", "value": "bar"}],
+            "bootstrap_organization_environment_uid": "71111111-1111-4111-8111-111111111111",
             "labels": ["analytics"],
         }
     }
@@ -207,14 +207,13 @@ def test_code_repository_bulk_delete_uses_selection_and_options(monkeypatch):
 
     result = models_foundry.CodeRepository.bulk_delete(
         uids=[CODE_REPOSITORY_UID],
-        delete_repositories=True,
     )
 
     assert result.deleted_count == 1
     assert captured["payload"] == {
         "json": {
             "selection": {"mode": "explicit", "uids": [CODE_REPOSITORY_UID]},
-            "options": {"delete_repositories": True},
+            "options": {},
         }
     }
 

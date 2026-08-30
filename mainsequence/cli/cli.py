@@ -7427,10 +7427,11 @@ def code_repository_create_cmd(
     github_org_uid: str | None = typer.Option(
         None, "--github-org-uid", "--organization-uid", help="GitHub organization UID"
     ),
-    env: list[str] | None = typer.Option(
+    bootstrap_organization_environment_uid: uuid.UUID | None = typer.Option(
         None,
-        "--env",
-        help="Environment variable entry in KEY=VALUE form. Repeatable or comma-separated.",
+        "--bootstrap-organization-environment-uid",
+        "--environment-uid",
+        help="Active Organization Environment UID used for initial branch bootstrap.",
     ),
 ):
     """
@@ -7449,8 +7450,8 @@ def code_repository_create_cmd(
         Default base image UID.
     github_org_uid:
         GitHub organization UID.
-    env:
-        Environment variable entries in `KEY=VALUE` format.
+    bootstrap_organization_environment_uid:
+        Optional active Organization Environment UID. The backend derives its required branch.
 
     Examples
     --------
@@ -7458,7 +7459,7 @@ def code_repository_create_cmd(
     mainsequence code-repository create
     mainsequence code-repository create tutorial-repository
     mainsequence code-repository create tutorial-repository --default-base-image-uid <base_image_uid> --github-org-uid <github_org_uid>
-    mainsequence code-repository create tutorial-repository --env FOO=bar --env BAZ=qux
+    mainsequence code-repository create tutorial-repository --environment-uid <environment_uid>
     ```
     """
     _require_login()
@@ -7535,29 +7536,16 @@ def code_repository_create_cmd(
                     "No GitHub organizations available. CodeRepository will be created without github_org_uid."
                 )
 
-        env_entries = list(env or [])
-        if not env_entries:
-            env_line = typer.prompt(
-                "Environment variables (KEY=VALUE, comma-separated, optional)",
-                default="",
-            ).strip()
-            if env_line:
-                env_entries = [env_line]
-
-        env_vars: dict[str, str] | None = None
-        if env_entries:
-            try:
-                env_vars = _parse_env_var_entries(env_entries)
-            except ValueError as e:
-                error(str(e))
-                raise typer.Exit(1) from e
-
         created = create_code_repository(
             code_repository_name=code_repository_name,
             code_repository_type=code_repository_type,
             default_base_image_uid=default_base_image_uid,
             github_org_uid=github_org_uid,
-            env_vars=env_vars,
+            bootstrap_organization_environment_uid=(
+                str(bootstrap_organization_environment_uid)
+                if bootstrap_organization_environment_uid is not None
+                else None
+            ),
         )
     except ApiError as e:
         error(f"CodeRepository creation failed: {e}")
@@ -7594,11 +7582,6 @@ def code_repository_create_cmd(
 @code_repository.command("delete")
 def code_repository_delete_remote_cmd(
     code_repository_id: str = typer.Argument(..., help="CodeRepository UID"),
-    delete_repositories: bool = typer.Option(
-        False,
-        "--delete-repositories/--no-delete-repositories",
-        help="Also delete linked repositories in the backend workflow.",
-    ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Do not prompt for confirmation"),
 ):
     """
@@ -7610,8 +7593,6 @@ def code_repository_delete_remote_cmd(
     ----------
     code_repository_id:
         Platform CodeRepository UID.
-    delete_repositories:
-        Also delete linked repositories on backend workflow.
     yes:
         Skip interactive confirmation.
 
@@ -7620,7 +7601,6 @@ def code_repository_delete_remote_cmd(
     ```bash
     mainsequence code-repository delete code-repository-uid-123
     mainsequence code-repository delete code-repository-uid-123 --yes
-    mainsequence code-repository delete code-repository-uid-123 --delete-repositories --yes
     ```
     """
     _require_login()
@@ -7640,10 +7620,10 @@ def code_repository_delete_remote_cmd(
         warning = (
             f"This will permanently delete CodeRepository '{code_repository_name}' "
             f"(uid={code_repository_uid}) from the platform.\n"
-            "This action cannot be undone."
+            "Its branch workspaces and cascading Main Sequence descendants are removed. "
+            "The provider repository and Git branches are preserved.\n"
+            "This platform action cannot be undone."
         )
-        if delete_repositories:
-            warning += "\nLinked repositories will also be deleted."
         if not typer.confirm(f"{warning}\n\nContinue?", default=False):
             info("Cancelled.")
             raise typer.Exit(0)
@@ -7651,7 +7631,6 @@ def code_repository_delete_remote_cmd(
     try:
         resp = bulk_delete_code_repositories(
             uids=[code_repository_uid],
-            delete_repositories=delete_repositories,
         )
     except NotLoggedIn as e:
         error("Not logged in. Run: mainsequence login")
