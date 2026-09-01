@@ -2861,10 +2861,13 @@ def create_code_repository_resource_release(
     Create a resource release via SDK client model.
 
     Single source of truth:
-      - delegates to `CodeRepositoryResource.create_dashboard()` or
-        `CodeRepositoryResource.create_fastapi()`
+      - delegates to `CodeRepositoryResource.create_fastapi()`
       - which in turn use `ResourceRelease.create()`
     """
+    normalized_release_kind = str(release_kind).strip()
+    if normalized_release_kind != "fastapi":
+        raise ApiError("release_kind must be 'fastapi'.")
+
     tokens = get_tokens()
     access = (tokens.get("access") or "").strip()
     refresh = (tokens.get("refresh") or "").strip()
@@ -2924,16 +2927,9 @@ def create_code_repository_resource_release(
             "timeout": timeout,
         }
 
-        create_method_name = {
-            "streamlit_dashboard": "create_dashboard",
-            "fastapi": "create_fastapi",
-        }.get(str(release_kind).strip())
-        if not create_method_name:
-            raise ApiError("release_kind must be one of: 'streamlit_dashboard', 'fastapi'.")
-
-        create_method = getattr(resource, create_method_name, None)
+        create_method = getattr(resource, "create_fastapi", None)
         if not callable(create_method):
-            raise ApiError(f"CodeRepositoryResource does not implement {create_method_name}().")
+            raise ApiError("CodeRepositoryResource does not implement create_fastapi().")
         created = create_method(**create_kwargs)
 
         if isinstance(created, dict):

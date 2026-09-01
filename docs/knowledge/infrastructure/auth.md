@@ -26,7 +26,7 @@ Use JWT auth when:
 Use request-bound access-token auth when:
 
 - code is running inside an already authenticated request context
-- a platform dashboard or API forwards the current request identity
+- an authenticated platform gateway forwards the current request identity
 - there is an access token for this request, but no refresh token
 
 Use runtime credential auth when:
@@ -144,7 +144,6 @@ MAINSEQUENCE_ACCESS_TOKEN=<request or session access token>
 Use this for:
 
 - FastAPI request handlers running behind the platform
-- Streamlit apps running with platform-provided user context
 - code that explicitly binds request headers into the SDK auth context
 
 Do not use this mode for standalone scripts that need to run independently for a long time.
@@ -251,7 +250,7 @@ Use this for:
 | --- | --- | --- | --- |
 | JWT via CLI | `mainsequence login` credentials | refresh token renews access | local CLI and developer scripts |
 | JWT via environment | `MAINSEQUENCE_ACCESS_TOKEN` and `MAINSEQUENCE_REFRESH_TOKEN` | refresh token renews access | signed terminals and controlled launches |
-| Request-bound access token | request-provided access token | no refresh | FastAPI, Streamlit, request-context code |
+| Request-bound access token | request-provided access token | no refresh | FastAPI and explicitly bound request-context code |
 | Runtime credential | runtime credential id and secret | exchange credential for new access | long-running non-interactive runtimes |
 
 ## Getting The Current User
@@ -260,7 +259,6 @@ Authentication and current-user resolution are related, but they are not the sam
 
 Use `User.get_logged_user()` when SDK code is running with an SDK-bound identity context:
 
-- Streamlit
 - code that explicitly binds request headers into the SDK auth context
 
 Use `User.get_authenticated_user_details()` in standalone CLI or script code that is authenticated but not request-bound.

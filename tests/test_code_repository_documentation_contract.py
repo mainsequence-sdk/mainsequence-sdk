@@ -13,6 +13,16 @@ DOCUMENTATION_ROOTS = (
 HISTORICAL_IDENTIFIER_ALLOWLIST = {
     Path("CHANGELOG.md"): frozenset({"project-context", "runtime_project_context"}),
 }
+STREAMLIT_RECORD_PATHS = {
+    Path("CHANGELOG.md"),
+    Path("docs/knowledge/dashboards/streamlit/index.md"),
+    Path("docs/migrations/streamlit-dashboard-removal.md"),
+}
+STREAMLIT_REMOVAL_LINK_PATHS = {
+    Path("README.md"),
+    Path("docs/SUMMARY.md"),
+    Path("docs/index.md"),
+}
 RETIRED_PUBLIC_IDENTIFIERS = {
     "project_context": re.compile(r"(?<![A-Za-z0-9_])project_context(?![A-Za-z0-9_])"),
     "project-context": re.compile(r"(?<![A-Za-z0-9_])project-context(?![A-Za-z0-9_])"),
@@ -73,3 +83,24 @@ def test_code_repository_context_adr_describes_the_current_cutover() -> None:
     assert "get_code_repository_context()" in adr
     assert "are the canonical public names" in adr
     assert "names below describe the pre-cutover contract" not in adr
+
+
+@pytest.mark.parametrize(
+    "path",
+    _documentation_files(),
+    ids=lambda path: str(path.relative_to(REPOSITORY_ROOT)),
+)
+def test_current_documentation_does_not_advertise_streamlit_support(path: Path) -> None:
+    relative_path = path.relative_to(REPOSITORY_ROOT)
+    text = path.read_text(encoding="utf-8")
+
+    if relative_path in STREAMLIT_RECORD_PATHS:
+        return
+    if relative_path in STREAMLIT_REMOVAL_LINK_PATHS:
+        streamlit_lines = [line for line in text.splitlines() if "streamlit" in line.lower()]
+        assert all("remov" in line.lower() for line in streamlit_lines)
+        return
+
+    assert "streamlit" not in text.lower()
+    assert "create_dashboard" not in text
+    assert "delete_dashboard" not in text

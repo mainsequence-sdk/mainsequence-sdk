@@ -425,11 +425,9 @@ TEAM_MODEL_REF = "mainsequence.client.models_user.Team"
 JOB_RUN_STATUS_PENDING = "PENDING"
 JOB_RUN_STATUS_RUNNING = "RUNNING"
 RESOURCE_RELEASE_RESOURCE_TYPE_MAP = {
-    "streamlit_dashboard": "dashboard",
     "fastapi": "fastapi",
 }
 RESOURCE_RELEASE_LABEL_MAP = {
-    "streamlit_dashboard": "dashboard release",
     "fastapi": "FastAPI release",
 }
 LIST_FILTER_OPTION_HELP = (
@@ -8210,58 +8208,6 @@ def _code_repository_resource_release_create_impl(
     )
 
 
-@code_repository_resources_group.command("create_dashboard")
-def code_repository_code_repository_resource_create_dashboard_cmd(
-    code_repository_id: str | None = typer.Argument(
-        None, help="Optional CodeRepository UID assertion; Git repository identity is authoritative."
-    ),
-    resource_uid: str | None = typer.Option(None, "--resource-uid", help="CodeRepository resource UID."),
-    path: str | None = typer.Option(
-        None, "--path", help="CodeRepository repository path (default: current code repository)"
-    ),
-    related_image_uid: str | None = typer.Option(
-        None, "--related-image-uid", help="CodeRepository image UID."
-    ),
-    cpu_request: str | None = typer.Option(
-        None, "--cpu-request", help="CPU request (accepts 0.5 or 500m; default: 0.25)."
-    ),
-    memory_request: str | None = typer.Option(
-        None, "--memory-request", help="Memory request (accepts 1 or 1Gi; default: 0.5)."
-    ),
-    gpu_request: str | None = typer.Option(None, "--gpu-request", help="GPU request count."),
-    gpu_type: str | None = typer.Option(None, "--gpu-type", help="GPU accelerator type."),
-    spot: bool | None = typer.Option(
-        None, "--spot/--no-spot", help="Whether to prefer spot capacity."
-    ),
-    automatic_deployment: bool | None = typer.Option(
-        None,
-        "--automatic-deployment/--no-automatic-deployment",
-        help="Opt the release into repository-sync CI/CD rotation.",
-    ),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    """
-    Create a Streamlit dashboard release from a code repository resource.
-
-    The command first lets the user select a code repository image and then filters resources so
-    only resources with `repo_commit_sha == related_image.code_repository_commit_hash` are eligible.
-    """
-    _code_repository_resource_release_create_impl(
-        release_kind="streamlit_dashboard",
-        code_repository_id=code_repository_id,
-        resource_uid=resource_uid,
-        path=path,
-        related_image_uid=related_image_uid,
-        cpu_request=cpu_request,
-        memory_request=memory_request,
-        gpu_request=gpu_request,
-        gpu_type=gpu_type,
-        spot=spot,
-        automatic_deployment=automatic_deployment,
-        timeout=timeout,
-    )
-
-
 @code_repository_resources_group.command("create_fastapi")
 def code_repository_code_repository_resource_create_fastapi_cmd(
     code_repository_id: str | None = typer.Argument(
@@ -8359,32 +8305,6 @@ def _code_repository_resource_release_delete_impl(
 
     success(f"CodeRepository resource release deleted: uid={release_uid}")
     print_kv("Deleted CodeRepository Resource Release", _format_resource_release_delete_preview(deleted))
-
-
-@code_repository_resources_group.command("delete_dashboard")
-def code_repository_code_repository_resource_delete_dashboard_cmd(
-    release_uid: str = pydantic_argument(
-        RESOURCE_RELEASE_MODEL_REF, "uid", ..., help="Dashboard resource release UID."
-    ),
-    yes: bool = typer.Option(False, "--yes", help="Delete without confirmation."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    """
-    Delete a dashboard resource release.
-
-    Examples
-    --------
-    ```bash
-    mainsequence code-repository resources delete_dashboard <RELEASE_UID>
-    mainsequence code-repository resources delete_dashboard <RELEASE_UID> --yes
-    ```
-    """
-    _code_repository_resource_release_delete_impl(
-        release_uid=release_uid,
-        expected_release_kind="streamlit_dashboard",
-        yes=yes,
-        timeout=timeout,
-    )
 
 
 @code_repository_resources_group.command("delete_fastapi")

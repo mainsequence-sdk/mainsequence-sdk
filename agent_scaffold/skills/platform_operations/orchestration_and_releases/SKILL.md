@@ -1,6 +1,6 @@
 ---
 name: mainsequence-orchestration-and-releases
-description: Use this skill for Main Sequence jobs, schedules, backend-managed code-repository workflow files, code repository images, run inspection, resources, releases, Streamlit deployment, and operational Artifacts. It does not own TimeIndexTableUpdater behavior, MetaTable schemas, API contracts, Streamlit design, or RBAC policy.
+description: Use this skill for Main Sequence jobs, schedules, backend-managed code-repository workflow files, code repository images, run inspection, resources, releases, and operational Artifacts. It does not own TimeIndexTableUpdater behavior, MetaTable schemas, API contracts, application UI design, or RBAC policy.
 ---
 
 # Main Sequence Orchestration And Releases
@@ -16,7 +16,6 @@ This skill is for:
 - images
 - code repository resources
 - releases
-- Streamlit dashboard deployment as `streamlit_dashboard` releases
 - operational logs and run inspection
 - Artifacts as job inputs or outputs
 
@@ -33,7 +32,6 @@ This skill is for:
 - reason about code repository resources and resource releases
 - decide whether a `ResourceRelease` should opt into `automatic_deployment`
 - inspect automatic deployment run state for release rotations
-- create or review Streamlit dashboard deployment through code repository resources and `streamlit_dashboard` releases
 - review Artifact-based workflows in operational pipelines
 
 ## This Skill Must Not Claim
@@ -44,8 +42,7 @@ This skill must not claim ownership of:
 - MetaTable schema and row semantics
 - Command Center FastAPI wire contracts
 - RBAC or sharing policy
-- Streamlit dashboard implementation details
-- Streamlit layout, styling, sidebar/session behavior, page structure, or UI helper design
+- application UI implementation details
 
 ## Route Adjacent Work
 
@@ -64,12 +61,7 @@ This skill must not claim ownership of:
 2. `docs/knowledge/infrastructure/scheduling_jobs.md`
 3. `docs/knowledge/infrastructure/artifacts.md`
 4. `docs/knowledge/infrastructure/owner_observability.md` when inspecting logs or resource usage
-5. `docs/tutorial/dashboards/streamlit/streamlit_integration_2.md` when deploying or verifying a Streamlit dashboard
-6. `docs/knowledge/dashboards/streamlit/index.md` when deployment metadata or SDK/dashboard boundary questions matter
-
 If the task touches deployed FastAPI APIs, also read the relevant API skill/docs before changing the operational workflow.
-
-If the task asks to design, build, style, or restructure a Streamlit app, do not treat that as Main Sequence platform skill work. Streamlit implementation is app-owned repository code. This skill only owns deployment and verification of an already-authored dashboard.
 
 ## Inputs This Skill Needs
 
@@ -78,7 +70,6 @@ Before changing orchestration or release behavior, collect or infer:
 - the execution target:
   - `execution_path`
   - app entrypoint
-  - Streamlit `app.py` resource path when deploying a dashboard
 - whether the job is:
   - manual
   - interval
@@ -90,13 +81,11 @@ Before changing orchestration or release behavior, collect or infer:
 - whether the workflow is:
   - direct CLI/client job creation
   - backend-managed code-repository workflow declarations
-  - Streamlit dashboard release creation
 - whether a `ResourceRelease` should be manually pinned or opted into repository-sync automatic deployment
 - whether Artifact inputs or outputs are part of the run
 - who owns the exact initial image: the caller for manual pinning or the
   backend for automatic deployment
 - whether future qualifying immutable repository events may promote a standalone Job
-- for Streamlit dashboard deployment, the `README.md` resource next to `app.py`
 
 If the execution target or image strategy is unclear, stop before scheduling anything.
 
@@ -110,8 +99,7 @@ For every non-trivial orchestration task, decide:
    automatic deployment make the backend derive it from the synchronized commit?
 4. Does the workflow depend on Artifacts?
 5. Is the task actually a release/resource problem instead of only a job problem?
-6. For Streamlit dashboard deployment, do the selected app resource, README resource, and code repository image all refer to the intended pushed commit?
-7. For a `ResourceRelease`, should repository sync be allowed to rotate the release automatically through `automatic_deployment`?
+6. For a `ResourceRelease`, should repository sync be allowed to rotate the release automatically through `automatic_deployment`?
 
 ## Build Rules
 
@@ -235,32 +223,14 @@ Do not force a file workflow into a table workflow too early.
 
 ### 6. Resources and releases are part of deployment, not just code
 
-For deployed dashboards, APIs, or agents:
+For deployed APIs, agents, or other supported resources:
 
 - the local file is not enough
 - the code repository resource must exist
 - the release must exist
 - the release must point at the intended image or resource version
 
-### 6.1 Streamlit dashboard deployment is a release workflow
-
-Main Sequence owns the deployment boundary for Streamlit dashboards, not the dashboard UI design.
-
-For Streamlit dashboard deployment:
-
-- the dashboard `app.py` must already exist in the repository
-- the dashboard `README.md` must exist next to `app.py`
-- both files must be committed and pushed
-- the code repository image must be built from the intended pushed commit
-- `mainsequence code-repository resources list` must discover the dashboard app and README resources
-- create the release with `mainsequence code-repository resources create_dashboard`
-- the dashboard release kind is `streamlit_dashboard`
-
-Do not prescribe Streamlit page layout, styling, sidebar/session patterns, or helper/component architecture. Those are application-owned implementation details.
-
-Validate the deployment path, not the Streamlit design.
-
-### 6.2 Automatic ResourceRelease deployment
+### 6.1 Automatic ResourceRelease deployment
 
 `automatic_deployment` is the automated deployment opt-in flag on a `ResourceRelease`. It means repository synchronization can rotate an existing release to the latest synced CodeRepository commit for the same resource path.
 
@@ -268,7 +238,7 @@ When `automatic_deployment=True`, repository-sync events may create a unified `D
 
 - reads the CodeRepository's current synced commit
 - resolves the current code repository resource at the release's existing resource path
-- resolves the current adjacent `README.md` when the release kind requires one, such as Streamlit dashboards
+- resolves supporting resources required by the release kind
 - creates or resolves the code repository image for that commit
 - redeploys the existing release to the current resource, README, and code repository image
 - records state, phase, outcome, revision context, artifact context, steps, logs, result, and errors on the deployment run
@@ -280,7 +250,7 @@ Enable `automatic_deployment` only when:
 - the release should track the CodeRepository's synced version
 - the resource path is stable across commits
 - the current synced branch/version is an acceptable deployment source for that release
-- dashboard README requirements are satisfied for the current commit
+- required supporting resources are available for the current commit
 - the team accepts CI/CD-style rotation for this release
 
 Keep `automatic_deployment` disabled when:
@@ -293,13 +263,11 @@ Keep `automatic_deployment` disabled when:
 
 Create opted-in releases with the CLI flags that exist:
 
-- `mainsequence code-repository resources create_dashboard --automatic-deployment`
 - `mainsequence code-repository resources create_fastapi --automatic-deployment`
 - use `--no-automatic-deployment` when the decision is explicitly to keep the release pinned/manual
 
 The SDK surface also accepts:
 
-- `CodeRepositoryResource.create_dashboard(..., automatic_deployment=True)`
 - `CodeRepositoryResource.create_fastapi(..., automatic_deployment=True)`
 - `ResourceRelease.create(..., automatic_deployment=True)`
 - `ResourceRelease.deploy_current_version()` for an SDK-triggered manual deployment run; it returns `DeploymentRun`
@@ -336,8 +304,7 @@ When reviewing an orchestration task, look for:
 - workflows depending on laptop-specific file paths instead of Artifacts
 - `automatic_deployment` enabled without an explicit decision about repository-sync CI/CD rotation
 - assumptions that automatic deployment will deploy local unpushed changes
-- automatic release rotation where the resource path or dashboard README is not stable
-- Streamlit dashboard deployment work drifting into app design or UI implementation ownership
+- automatic release rotation where the resource path or required supporting resources are not stable
 - tasks that are really resource/release problems rather than simple job problems
 
 ## Validation Checklist
@@ -355,7 +322,6 @@ Do not claim success until you have checked:
 - the job exists after direct creation or repository workflow application
 - runs and logs were inspected when execution success matters
 - resources and releases were verified when deployment success matters
-- Streamlit dashboard releases use the intended app resource, README resource, image, and `streamlit_dashboard` release kind
 - `automatic_deployment` is intentionally enabled or disabled on each release
 - automatic deployment runs were inspected when repository-sync rotation matters
 - automatic deployment results match the intended commit, resource, README, image, and terminal status

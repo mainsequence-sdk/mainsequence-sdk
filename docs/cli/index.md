@@ -234,7 +234,7 @@ mainsequence code-repository time-index-table-updates list
 mainsequence code-repository time-index-table-updates list <CODE_REPOSITORY_UID>
 mainsequence code-repository resources list
 mainsequence code-repository resources list --show-filters
-mainsequence code-repository resources list --filter resource_type=dashboard
+mainsequence code-repository resources list --filter resource_type=fastapi
 mainsequence code-repository resources list --filter resource_type=fastapi
 mainsequence code-repository resources create_fastapi
 mainsequence code-repository resources create_fastapi <CODE_REPOSITORY_UID>
@@ -470,7 +470,7 @@ ontology and each installed platform skill.
 - `mainsequence skills path` with no argument prints the installed `agent_scaffold/skills` directory for the current CLI installation.
 - `mainsequence skills path <skill_name>` prints the installed `SKILL.md` path for one scaffold skill from the current CLI installation. It accepts full relative skill names such as `data_publishing/meta_tables` and unique leaf names such as `meta_tables`.
 - `mainsequence user` shows the authenticated MainSequence account through `User.get_authenticated_user_details()`.
-- in standalone authenticated CLI or script code that is not request-bound, prefer `User.get_authenticated_user_details()` over `User.get_logged_user()`. `User.get_logged_user()` is for SDK-bound identity contexts such as Streamlit or code that explicitly binds `_CURRENT_AUTH_HEADERS`; FastAPI handlers use the platform-populated `request.state.user` instead.
+- in standalone authenticated CLI or script code that is not request-bound, prefer `User.get_authenticated_user_details()` over `User.get_logged_user()`. `User.get_logged_user()` requires explicitly bound SDK request identity; FastAPI handlers use the platform-populated `request.state.user` instead.
 - `mainsequence code-repository search "<QUERY>"` searches visible CodeRepositories through the SDK client `CodeRepository.quick_search()` path and returns `uid` and `code_repository_name` for matching rows.
 - `mainsequence code-repository search` requires at least 3 query characters. The backend matches `code_repository_name` by substring and also matches an exact public CodeRepository UID.
 - `mainsequence organization teams list` lists teams through the SDK client `Team.filter()` path.

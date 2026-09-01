@@ -42,7 +42,7 @@ This skill must not claim ownership of:
 - jobs, schedules, images, resources, or releases
 - RBAC or sharing semantics
 - domain assets, translation tables, or construction logic
-- Streamlit dashboard design or implementation
+- unsupported application deployment targets
 - pricing-runtime semantics
 
 Do not let this skill become a domain manual.
@@ -62,12 +62,10 @@ Do not let this skill become a domain manual.
 - local environment repair, CodeRepository authentication refresh, SDK updates,
   managed skill refresh, and canonical CodeRepository sync:
   `.agents/skills/mainsequence/maintenance/code_repository_maintenance/SKILL.md`
-- jobs, schedules, artifacts, images, resources, releases, and Streamlit dashboard deployment:
+- jobs, schedules, artifacts, images, resources, and releases:
   `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
 - RBAC and sharing:
   `.agents/skills/mainsequence/platform_operations/access_control_and_sharing/SKILL.md`
-
-Streamlit dashboard design and implementation are app-owned repository work, not a separate Main Sequence scaffold skill. Route only platform deployment of an already-authored Streamlit dashboard to orchestration and releases.
 
 ## Read First
 
@@ -149,8 +147,6 @@ Also maintain these standard repository areas when relevant:
 - `tests/`
 - `docs/`
 - `api/`
-- `dashboards/`
-- `dashboards/components/`
 
 If the CodeRepository has recurring scheduled jobs or repository-managed releases,
 keep backend-managed declarations as direct `.yaml` or `.yml` children of

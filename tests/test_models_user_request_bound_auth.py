@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import builtins
+
 import pytest
 
 import mainsequence.client.models_user as models_user_mod
@@ -177,3 +179,17 @@ def test_get_logged_user_uses_explicitly_bound_identity_context():
         assert models_user_mod.User.get_logged_user() is expected
     finally:
         models_user_mod._CURRENT_USER.reset(token)
+
+
+def test_get_logged_user_without_bound_context_does_not_import_streamlit(monkeypatch):
+    real_import = builtins.__import__
+
+    def _guarded_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "streamlit":
+            raise AssertionError("request identity must not import Streamlit")
+        return real_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", _guarded_import)
+
+    with pytest.raises(models_user_mod.RequestIdentityError, match="explicitly bound"):
+        _resolve_with_headers({})

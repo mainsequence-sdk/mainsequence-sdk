@@ -1,6 +1,6 @@
 # Users and Access
 
-Main Sequence is built for shared work. CodeRepositories, datasets, dashboards, constants, secrets, artifacts, and releases are rarely useful for only one person.
+Main Sequence is built for shared work. CodeRepositories, datasets, application surfaces, constants, secrets, artifacts, and releases are rarely useful for only one person.
 
 That means access control is not an optional admin topic. It is part of how teams build and operate on the platform.
 
@@ -90,7 +90,7 @@ Why:
 
 - roles are coarse
 - real collaboration usually happens at the resource level
-- two users with the same broad role may still need access to very different CodeRepositories, tables, or dashboards
+- two users with the same broad role may still need access to very different CodeRepositories, tables, or application surfaces
 
 So the safe rule is:
 
@@ -113,7 +113,7 @@ Examples:
 
 Teams are useful because they let you share once and reuse that decision many times.
 
-Instead of sharing ten dashboards and five datasets to five people one by one, you can share them to one team and manage membership there.
+Instead of sharing several application resources and datasets to five people one by one, you can share them to one team and manage membership there.
 
 ## What team membership means
 
@@ -197,7 +197,7 @@ For example:
 
 - on a `TimeIndexMetaTable`, `view` means reading the published dataset
 - on a `TimeIndexMetaTable`, `edit` means maintaining or administrating the published dataset
-- on a dashboard release, `view` means opening it
+- on a supported application release, `view` means opening or calling it
 - on a constant, `edit` means changing the runtime value
 
 This is the cleanest engineering split:
@@ -245,7 +245,7 @@ If Alice is a member of `Research`:
 
 ### Example 4: Team-based edit does not mean unlimited control
 
-If `Team A` has `edit` access to a dashboard or dataset:
+If `Team A` has `edit` access to an application resource or dataset:
 
 - members of `Team A` can use that edit path on that resource
 - that does not automatically mean they can change every access rule everywhere else on the platform
@@ -259,7 +259,7 @@ The same resource-scoped pattern applies across the platform:
 - `TimeIndexMetaTable` controls access to published data
 - `Constant` and `Secret` control access to runtime configuration
 - `Bucket` and `Artifact` control access to stored files
-- `ResourceRelease` controls access to deployed experiences such as dashboards and APIs
+- `ResourceRelease` controls access to supported deployed experiences such as APIs
 
 That is why RBAC appears early in the Main Sequence workflow. The moment a resource becomes useful to other people, access design becomes part of the engineering work.
 

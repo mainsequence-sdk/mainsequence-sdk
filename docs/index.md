@@ -5,7 +5,7 @@ Main Sequence is a platform for building data products, deploying workflows, and
 The Main Sequence platform allows you to:
 
 1. rapidly build and deploy data products with normalized `MetaTable` contracts and `TimeIndexTableUpdater` producer workflows
-2. rapidly deploy RBAC-enabled dashboards on the platform
+2. deploy FastAPI services and supported application surfaces on the platform
 3. rapidly deploy agents using the Google Agent SDK
 
 The key idea is that you can focus on development and deployment, while the platform handles the DevOps layer.
@@ -24,7 +24,7 @@ Key entry points:
 - [Migrating from 6.x to 7.0](migrations/v7-time-index-table-updater-hard-cut.md)
 - [Constants and Secrets](knowledge/infrastructure/constants_and_secrets.md)
 - [Scheduling Jobs](knowledge/infrastructure/scheduling_jobs.md)
-- [Streamlit Dashboards](knowledge/dashboards/streamlit/index.md)
+- [Streamlit dashboard support removal](migrations/streamlit-dashboard-removal.md)
 
 ### CLI
 

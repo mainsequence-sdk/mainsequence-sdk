@@ -963,14 +963,13 @@ class CodeRepositoryResource(CurrentCodeRepositoryBranchCollectionMixin, BaseObj
         None,
         title="Resource Name",
         description="Display name of the resource discovered in the CodeRepository checkout.",
-        examples=["analytics_dashboard.py"],
+        examples=["main.py"],
     )
     resource_type: (
         Literal[
             "configuration",
             "notebook",
             "script",
-            "dashboard",
             "agent",
             "fastapi",
             "code_repository_agent_card",
@@ -982,14 +981,13 @@ class CodeRepositoryResource(CurrentCodeRepositoryBranchCollectionMixin, BaseObj
         title="Resource Type",
         description=(
             "Canonical backend discriminator for the discovered CodeRepository resource. "
-            "Allowed values are `configuration`, `notebook`, `script`, `dashboard`, "
-            "`agent`, `fastapi`, `code_repository_agent_card`, and `markdown`."
+            "Allowed values are `configuration`, `notebook`, `script`, `agent`, "
+            "`fastapi`, `code_repository_agent_card`, and `markdown`."
         ),
         examples=[
             "configuration",
             "notebook",
             "script",
-            "dashboard",
             "agent",
             "fastapi",
             "code_repository_agent_card",
@@ -1006,7 +1004,7 @@ class CodeRepositoryResource(CurrentCodeRepositoryBranchCollectionMixin, BaseObj
         None,
         title="Path",
         description="Repository path where the resource was discovered.",
-        examples=["src/dashboards/analytics_dashboard.py"],
+        examples=["api/pricing/main.py"],
     )
     filesize: int | None = Field(
         None,
@@ -1052,15 +1050,6 @@ class CodeRepositoryResource(CurrentCodeRepositoryBranchCollectionMixin, BaseObj
         kwargs["release_kind"] = release_kind.value
         return ResourceRelease.create(*args, timeout=timeout, files=files, **kwargs)
 
-    def create_dashboard(self, timeout=None, files=None, *args, **kwargs) -> ResourceRelease:
-        return self._create_release(
-            ResourceReleaseKind.STREAMLIT_DASHBOARD,
-            timeout,
-            files,
-            *args,
-            **kwargs,
-        )
-
     def create_fastapi(self, timeout=None, files=None, *args, **kwargs) -> ResourceRelease:
         return self._create_release(
             ResourceReleaseKind.FAST_API,
@@ -1081,7 +1070,6 @@ class CodeRepositoryResource(CurrentCodeRepositoryBranchCollectionMixin, BaseObj
 
 
 class ResourceReleaseKind(str, Enum):
-    STREAMLIT_DASHBOARD = "streamlit_dashboard"
     AGENT = "agent"
     FAST_API = "fastapi"
     STATIC_SITE = "static_site"
@@ -1150,11 +1138,11 @@ class ResourceRelease(
         default=None,
         description="Backend-owned runtime observability and related-history capabilities.",
     )
-    release_kind: ResourceReleaseKind | None = Field(
-        None,
+    release_kind: ResourceReleaseKind = Field(
+        ...,
         title="Release Kind",
         description="Type of resource release.",
-        examples=["streamlit_dashboard"],
+        examples=["fastapi"],
     )
     cpu_request: str | None = Field(
         None,

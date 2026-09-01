@@ -45,7 +45,7 @@ This skill must not claim ownership of:
 - TimeIndexTableUpdater producer implementation
 - MetaTable schema design
 - FastAPI route design
-- Streamlit dashboard design or implementation
+- application UI design or implementation
 - workspace document structure
 
 ## Route Adjacent Work
@@ -58,10 +58,7 @@ This skill must not claim ownership of:
   `.agents/skills/mainsequence/data_publishing/meta_tables/SKILL.md`
 - Command Center-serving FastAPI providers:
   `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
-- Streamlit dashboard deployment:
-  `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
-
-Streamlit dashboard implementation is app-owned repository code. This skill only reasons about access to deployed resources such as `ResourceRelease`.
+This skill only reasons about access to deployed resources such as `ResourceRelease`.
 
 ## Read First
 

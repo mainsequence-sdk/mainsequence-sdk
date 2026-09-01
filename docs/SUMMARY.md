@@ -8,9 +8,6 @@
         - [Compiled SQL Execution](knowledge/meta_tables/compiled_sql.md)
         - [MetaTable Migrations](knowledge/meta_tables/migrations.md)
     - [CLI Deep Dive](knowledge/cli.md)
-    - Dashboards
-        - Streamlit
-            - [Overview](knowledge/dashboards/streamlit/index.md)
     - FastAPI
         - [Request User Context](knowledge/fastapi/index.md)
     - Infrastructure
@@ -22,6 +19,7 @@
         - [Artifacts](knowledge/infrastructure/artifacts.md)
         - [Constants and Secrets](knowledge/infrastructure/constants_and_secrets.md)
 - Migrations
+    - [Streamlit dashboard support removal](migrations/streamlit-dashboard-removal.md)
     - [7.x to 8.0: CodeRepository Ontology Hard Cut](migrations/v8-code-repository-ontology.md)
     - [6.x to 7.0: Time-Index Table Updater Hard Cut](migrations/v7-time-index-table-updater-hard-cut.md)
 - CLI

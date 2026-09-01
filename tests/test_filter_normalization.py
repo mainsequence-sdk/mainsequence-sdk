@@ -2794,53 +2794,47 @@ def test_resource_release_create_rejects_invalid_revision_retention_count(
         )
 
 
-def test_code_repository_resource_create_release_uses_related_image_uid(monkeypatch):
-    captured = {}
-    resource_uid = "857bec7b-dd77-4272-aecd-13fc2138eacc"
-    image_uid = "6cfdb152-923e-45b9-a150-c4541c68b0d1"
-    release_uid = "2f4c4c3d-5669-4da5-9d86-b84633c1e6ed"
-    resource = models_helpers_mod.CodeRepositoryResource(
-        uid=resource_uid,
-        name="analytics_dashboard.py",
-        resource_type="dashboard",
-        path="dashboards/analytics_dashboard.py",
-    )
+def test_streamlit_dashboard_contract_is_removed():
+    assert not hasattr(models_helpers_mod.ResourceReleaseKind, "STREAMLIT_DASHBOARD")
+    assert not hasattr(models_helpers_mod.CodeRepositoryResource, "create_dashboard")
 
-    class FakeResponse:
-        status_code = 201
-
-        @staticmethod
-        def json():
-            return {
-                "uid": release_uid,
-                "resource_uid": resource_uid,
-                "readme_resource_uid": None,
-                "related_job_uid": "7d0ab07c-d1c0-4b7f-9c69-3c1a41c0a4da",
-                "release_kind": "streamlit_dashboard",
-                "automatic_deployment": True,
+    with pytest.raises(ValidationError):
+        models_helpers_mod.CodeRepositoryResource.model_validate(
+            {
+                "uid": "857bec7b-dd77-4272-aecd-13fc2138eacc",
+                "resource_type": "dashboard",
             }
+        )
 
-    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
-        captured["r_type"] = r_type
-        captured["payload"] = payload
-        captured["timeout"] = time_out
-        return FakeResponse()
+    with pytest.raises(ValidationError):
+        models_helpers_mod.ResourceRelease.model_validate(
+            {
+                "uid": "2f4c4c3d-5669-4da5-9d86-b84633c1e6ed",
+                "release_kind": "streamlit_dashboard",
+            }
+        )
 
-    monkeypatch.setattr(models_helpers_mod, "make_request", _fake_make_request)
+    with pytest.raises(ValidationError):
+        models_helpers_mod.ResourceRelease.model_validate(
+            {"uid": "2f4c4c3d-5669-4da5-9d86-b84633c1e6ed"}
+        )
 
-    release = resource.create_dashboard(
-        related_image_uid=image_uid,
-        cpu_request="500m",
-        memory_request="1Gi",
-        automatic_deployment=True,
-        timeout=7,
+
+def test_resource_release_create_rejects_retired_kind_before_request(monkeypatch):
+    monkeypatch.setattr(
+        models_helpers_mod,
+        "make_request",
+        lambda **kwargs: pytest.fail("retired kind must fail before the request"),
     )
 
-    assert release.uid == release_uid
-    assert captured["r_type"] == "POST"
-    assert captured["payload"]["json"]["related_image_uid"] == image_uid
-    assert captured["payload"]["json"]["automatic_deployment"] is True
-    assert captured["timeout"] == 7
+    with pytest.raises(ValueError, match="release_kind must be one of"):
+        models_helpers_mod.ResourceRelease.create(
+            resource_uid="857bec7b-dd77-4272-aecd-13fc2138eacc",
+            related_image_uid="6cfdb152-923e-45b9-a150-c4541c68b0d1",
+            release_kind="streamlit_dashboard",
+            cpu_request="500m",
+            memory_request="1Gi",
+        )
 
 
 @pytest.mark.parametrize(
@@ -2849,7 +2843,6 @@ def test_code_repository_resource_create_release_uses_related_image_uid(monkeypa
         "configuration",
         "notebook",
         "script",
-        "dashboard",
         "agent",
         "fastapi",
         "code_repository_agent_card",

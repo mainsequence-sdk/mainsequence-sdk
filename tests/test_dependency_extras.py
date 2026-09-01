@@ -4,6 +4,7 @@ import builtins
 import importlib
 import pathlib
 import sys
+import tomllib
 import types
 
 import pytest
@@ -125,3 +126,18 @@ def test_sqlite_helper_uses_standard_library_storage(monkeypatch):
     module = importlib.import_module("mainsequence.client.data_sources_interfaces")
 
     assert module.get_sqlite_interface_class().__name__ == "SQLiteInterface"
+
+
+def test_streamlit_is_absent_from_dependency_contracts() -> None:
+    repo_root = pathlib.Path(__file__).resolve().parents[1]
+    project = tomllib.loads((repo_root / "pyproject.toml").read_text(encoding="utf-8"))
+    declared_dependencies = list(project["project"]["dependencies"])
+    for group_dependencies in project.get("dependency-groups", {}).values():
+        declared_dependencies.extend(group_dependencies)
+
+    assert not any(
+        str(dependency).partition(";")[0].strip().lower().startswith("streamlit")
+        for dependency in declared_dependencies
+    )
+    assert '\nname = "streamlit"\n' not in (repo_root / "uv.lock").read_text(encoding="utf-8")
+    assert "streamlit" not in (repo_root / "requirements.txt").read_text(encoding="utf-8").lower()

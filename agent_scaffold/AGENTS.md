@@ -65,9 +65,8 @@ Core responsibilities:
   - for data publishing and data pipelines, use `TimeIndexTableUpdater`s and `MetaTable`s
   - for APIs serving the Command Center frontend, use the contract-authoritative
     FastAPI release workflow
-  - for visualization, confirm the delivery target with the user:
-    - if they want a Streamlit app, treat app design and implementation as repository-owned code and
-      use Main Sequence skills only for platform deployment and release verification
+  - for visualization, confirm the supported delivery target with the user, such as a Command
+    Center frontend backed by FastAPI or a static site
   - for scheduled execution, releases, and backend operations, use jobs, images, resources, and
     other platform objects through the proper platform skills
 - break work into independent executions according to the skill each part requires
@@ -85,8 +84,7 @@ Typical outcomes include:
 - build and release a `FastAPI` API whose Command Center contract-bearing
   responses conform to a recorded revision of the canonical Command Center SDK
   GitHub contracts
-- confirm whether a visualization should be a repository-owned Streamlit app or a reusable Command
-  Center surface before building or deploying it
+- confirm which supported application surface should deliver a visualization before building it
 - build reusable business logic in `src/` and keep thin integration layers in APIs, jobs, and
   dashboards
 - assess blockers and suspected SDK or platform issues from concrete repository and runtime evidence
@@ -107,7 +105,6 @@ Working rules for this role:
 User-resolution rule for agents:
 
 - use `User.get_logged_user()` only when code is running with request-bound identity context:
-  - Streamlit
   - code that explicitly binds `_CURRENT_AUTH_HEADERS`
 - treat its result as `RequestUserIdentity`: the human caller's canonical `uid` and optional
   `username`, never a numeric id or a full account profile
@@ -140,7 +137,7 @@ Delegation rules:
 
 ## Main Sequence Source-Of-Truth Rule
 
-For any task involving Main Sequence code, CLI usage, TimeIndexTableUpdaters, orchestration, jobs, dashboards,
+For any task involving Main Sequence code, CLI usage, TimeIndexTableUpdaters, orchestration, jobs, application surfaces,
 agents, releases, artifacts, RBAC, or platform
 validation, always consult the latest relevant Main Sequence documentation before acting.
 
@@ -158,7 +155,7 @@ Before implementation, debugging, or validation, make the success condition expl
 
 At minimum, define:
 
-- what artifact, behavior, dataset, job, dashboard, release, or document should exist at the end
+- what artifact, behavior, dataset, job, application surface, release, or document should exist at the end
 - what checks will prove it worked
 - what platform objects must be verified
 - what is in scope and what is intentionally not being claimed
@@ -172,7 +169,7 @@ Examples:
 - job or schedule success:
   the job exists with the intended configuration, the run executes successfully, and logs confirm
   expected behavior
-- dashboard or release success:
+- application-surface or release success:
   the resource is present, the release exists for the intended image or commit, and the deployed
   behavior is verified
 - documentation success:
@@ -210,13 +207,6 @@ Typical routing:
   `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
 - RBAC, sharing, constants, secrets, and access verification:
   `.agents/skills/mainsequence/platform_operations/access_control_and_sharing/SKILL.md`
-- Streamlit dashboard deployment and release verification:
-  `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
-
-Streamlit dashboard design and implementation are app-owned repository work, not a separate Main
-Sequence scaffold skill. Route only deployment of an already-authored Streamlit dashboard to
-orchestration and releases.
-
 ## Mandatory Startup Sequence
 
 For any non-trivial Main Sequence task:
@@ -297,7 +287,7 @@ At minimum, verify relevant:
 - jobs
 - job runs and logs
 - code repository images
-- dashboard or agent resources/releases
+- application or agent resources/releases
 - data assets
 - related platform objects used by the CodeRepository
 

@@ -4339,9 +4339,9 @@ def test_list_code_repository_resources_uses_client_model(cli_mod, monkeypatch):
                 types.SimpleNamespace(
                     model_dump=lambda: {
                         "uid": "857bec7b-dd77-4272-aecd-13fc2138eacc",
-                        "name": "analytics_dashboard.py",
+                        "name": "pricing_api.py",
                         "resource_type": "script",
-                        "path": "src/dashboards/analytics_dashboard.py",
+                        "path": "api/pricing/main.py",
                         "filesize": 2048,
                         "last_modified": "2026-03-15T10:30:00Z",
                         "repo_commit_sha": "abc123",
@@ -4370,18 +4370,18 @@ def test_list_code_repository_resources_uses_client_model(cli_mod, monkeypatch):
     out = api_mod.list_code_repository_resources(
         code_repository_branch_uid="5a28020a-0f1b-47ee-aab8-334286234bea",
         repo_commit_sha="abc123",
-        resource_type="dashboard",
+        resource_type="fastapi",
         filters={"uid__in": ["857bec7b-dd77-4272-aecd-13fc2138eacc"]},
     )
     assert captured["filters"][0] == {
         "uid__in": ["857bec7b-dd77-4272-aecd-13fc2138eacc"],
         "code_repository_branch_uid": "5a28020a-0f1b-47ee-aab8-334286234bea",
         "repo_commit_sha": "abc123",
-        "resource_type": "dashboard",
+        "resource_type": "fastapi",
     }
     assert captured["env_code_repository_uid"] is None
     assert captured["jwt"] == ("acc", "ref")
-    assert out[0]["name"] == "analytics_dashboard.py"
+    assert out[0]["name"] == "pricing_api.py"
     assert [resource["resource_type"] for resource in out] == [
         "script",
         "code_repository_agent_card",
@@ -4390,111 +4390,15 @@ def test_list_code_repository_resources_uses_client_model(cli_mod, monkeypatch):
     assert os.environ.get(_UNSUPPORTED_REPOSITORY_UID_ENV) is None
 
 
-def test_create_code_repository_resource_release_uses_client_model(cli_mod, monkeypatch):
+def test_create_code_repository_resource_release_rejects_retired_kind_before_auth(cli_mod):
     api_mod = importlib.import_module("mainsequence.cli.api")
-    captured = {}
 
-    monkeypatch.setattr(
-        api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"}
-    )
-    monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
-
-    fake_client_pkg = types.ModuleType("mainsequence.client")
-    fake_utils = types.ModuleType("mainsequence.client.utils")
-    fake_base = types.ModuleType("mainsequence.client.base")
-    fake_helpers = types.ModuleType("mainsequence.client.models_helpers")
-
-    class FakeLoaders:
-        provider = "orig"
-
-        def use_jwt(self, *, access=None, refresh=None):
-            captured["jwt"] = (access, refresh)
-
-    fake_utils.loaders = FakeLoaders()
-    fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
-    fake_utils.API_ENDPOINT = "https://old.test/api/v1"
-
-    class FakeBaseObjectOrm:
-        ROOT_URL = "https://old.test/api/v1"
-
-    class FakeCodeRepositoryResource:
-        ROOT_URL = "https://old.test/api/v1/code-repository-resources"
-
-        @classmethod
-        def get(cls, pk=None, timeout=None, **filters):
-            captured["get"] = {"pk": pk, "timeout": timeout, "filters": filters}
-
-            class _Resource:
-                def create_dashboard(self, **kwargs):
-                    captured["create_dashboard"] = kwargs
-                    return types.SimpleNamespace(
-                        model_dump=lambda: {
-                            "uid": "0ce33c15-e3b1-4677-a66e-70460b89198f",
-                            "resource": pk,
-                            "related_image": kwargs["related_image_uid"],
-                        }
-                    )
-
-                def create_agent(self, **kwargs):
-                    captured["create_agent"] = kwargs
-                    return types.SimpleNamespace(
-                        model_dump=lambda: {
-                            "uid": "1ce33c15-e3b1-4677-a66e-70460b89198f",
-                            "resource": pk,
-                            "related_image": kwargs["related_image_uid"],
-                        }
-                    )
-
-                def create_fastapi(self, **kwargs):
-                    captured["create_fastapi"] = kwargs
-                    return types.SimpleNamespace(
-                        model_dump=lambda: {
-                            "uid": "2ce33c15-e3b1-4677-a66e-70460b89198f",
-                            "resource": pk,
-                            "related_image": kwargs["related_image_uid"],
-                        }
-                    )
-
-            return _Resource()
-
-    fake_base.BaseObjectOrm = FakeBaseObjectOrm
-    fake_helpers.CodeRepositoryResource = FakeCodeRepositoryResource
-    fake_client_pkg.utils = fake_utils
-
-    monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.models_helpers", fake_helpers)
-
-    out = api_mod.create_code_repository_resource_release(
-        release_kind="streamlit_dashboard",
-        resource_uid="857bec7b-dd77-4272-aecd-13fc2138eacc",
-        related_image_uid="8b62d1dd-e146-44af-957c-38c5f5b1d8d5",
-        spot=True,
-        cpu_request="0.5",
-        memory_request="1",
-        gpu_request="",
-        gpu_type="",
-        automatic_deployment=True,
-    )
-    assert captured["get"] == {
-        "pk": "857bec7b-dd77-4272-aecd-13fc2138eacc",
-        "timeout": None,
-        "filters": {},
-    }
-    assert (
-        captured["create_dashboard"]["related_image_uid"] == "8b62d1dd-e146-44af-957c-38c5f5b1d8d5"
-    )
-    assert captured["create_dashboard"]["spot"] is True
-    assert captured["create_dashboard"]["cpu_request"] == "0.5"
-    assert captured["create_dashboard"]["memory_request"] == "1"
-    assert captured["create_dashboard"]["automatic_deployment"] is True
-    assert captured["jwt"] == ("acc", "ref")
-    assert out == {
-        "uid": "0ce33c15-e3b1-4677-a66e-70460b89198f",
-        "resource": "857bec7b-dd77-4272-aecd-13fc2138eacc",
-        "related_image": "8b62d1dd-e146-44af-957c-38c5f5b1d8d5",
-    }
+    with pytest.raises(api_mod.ApiError, match="release_kind must be 'fastapi'"):
+        api_mod.create_code_repository_resource_release(
+            release_kind="streamlit_dashboard",
+            resource_uid="857bec7b-dd77-4272-aecd-13fc2138eacc",
+            related_image_uid="8b62d1dd-e146-44af-957c-38c5f5b1d8d5",
+        )
 
 
 def test_create_code_repository_resource_release_uses_client_model_for_fastapi(cli_mod, monkeypatch):
@@ -4622,7 +4526,7 @@ def test_delete_resource_release_uses_client_model(cli_mod, monkeypatch):
                 def model_dump(self, mode="python"):
                     return {
                         "uid": pk,
-                        "release_kind": "streamlit_dashboard",
+                        "release_kind": "fastapi",
                         "resource": 381,
                         "related_image": 94,
                     }
@@ -4643,7 +4547,7 @@ def test_delete_resource_release_uses_client_model(cli_mod, monkeypatch):
 
     out = api_mod.delete_resource_release(
         release_uid="0ce33c15-e3b1-4677-a66e-70460b89198f",
-        expected_release_kind="streamlit_dashboard",
+        expected_release_kind="fastapi",
     )
     assert captured["get"] == {
         "pk": "0ce33c15-e3b1-4677-a66e-70460b89198f",
@@ -4653,7 +4557,7 @@ def test_delete_resource_release_uses_client_model(cli_mod, monkeypatch):
     assert captured["deleted"] == "0ce33c15-e3b1-4677-a66e-70460b89198f"
     assert captured["jwt"] == ("acc", "ref")
     assert out["uid"] == "0ce33c15-e3b1-4677-a66e-70460b89198f"
-    assert out["release_kind"] == "streamlit_dashboard"
+    assert out["release_kind"] == "fastapi"
 
 
 def test_list_time_index_tables_uses_client_model(cli_mod, monkeypatch):
@@ -6189,9 +6093,9 @@ def test_code_repository_code_repository_resource_list_defaults_to_remote_branch
         return [
             {
                 "uid": "857bec7b-dd77-4272-aecd-13fc2138eacc",
-                "name": "analytics_dashboard.py",
+                "name": "api.py",
                 "resource_type": "script",
-                "path": "src/dashboards/analytics_dashboard.py",
+                "path": "api/pricing/main.py",
                 "filesize": 2048,
                 "last_modified": "2026-03-15T10:30:00Z",
             }
@@ -6205,8 +6109,7 @@ def test_code_repository_code_repository_resource_list_defaults_to_remote_branch
     assert captured["repo_commit_sha"] == "abc123"
     assert "Using repo_commit_sha=abc123 from origin/main." in result.output
     assert "CodeRepository Resources" in result.output
-    assert "analytics_d" in result.output
-    assert "board.py" in result.output
+    assert "api.py" in result.output
     assert "Total code repository resources: 1" in result.output
 
 
@@ -6256,83 +6159,12 @@ def test_code_repository_code_repository_resource_list_passes_extra_filters(cli_
     assert captured["filters"] == {"uid__in": ["857bec7b-dd77-4272-aecd-13fc2138eacc"]}
 
 
-def test_code_repository_code_repository_resource_create_dashboard_filters_resources_by_selected_image(
-    cli_mod, runner, monkeypatch, tmp_path
-):
-    target = tmp_path / "demo-123"
-    target.mkdir(parents=True, exist_ok=True)
-    (target / ".env").write_text("", encoding="utf-8")
-    captured = {}
+def test_code_repository_resource_help_omits_retired_dashboard_commands(cli_mod, runner):
+    result = runner.invoke(cli_mod.app, ["code-repository", "resources", "--help"])
 
-    monkeypatch.chdir(target)
-    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
-    monkeypatch.setattr(
-        cli_mod,
-        "_resolve_code_repository_branch_uid_for_command",
-        lambda *args, **kwargs: "code-repository-branch-uid-123",
-    )
-    monkeypatch.setattr(
-        cli_mod,
-        "list_code_repository_images",
-        lambda related_code_repository_branch_uid, timeout=None: [
-            {
-                "uid": "8b62d1dd-e146-44af-957c-38c5f5b1d8d5",
-                "code_repository_commit_hash": "sha-94",
-                "base_image": {"uid": "base-image-uid-1", "title": "py311"},
-            },
-        ],
-    )
-
-    def _list_code_repository_resources(
-        code_repository_branch_uid, repo_commit_sha, resource_type=None, timeout=None
-    ):
-        captured["code_repository_branch_uid"] = code_repository_branch_uid
-        captured["repo_commit_sha"] = repo_commit_sha
-        captured["resource_type"] = resource_type
-        return [
-            {
-                "uid": "857bec7b-dd77-4272-aecd-13fc2138eacc",
-                "name": "analytics_dashboard.py",
-                "resource_type": "dashboard",
-                "path": "dashboards/analytics_dashboard.py",
-                "filesize": 2048,
-                "last_modified": "2026-03-15T10:30:00Z",
-            }
-        ]
-
-    monkeypatch.setattr(cli_mod, "list_code_repository_resources", _list_code_repository_resources)
-
-    def _create_release(**kwargs):
-        captured["create_release"] = kwargs
-        return {
-            "uid": "0ce33c15-e3b1-4677-a66e-70460b89198f",
-            "resource": kwargs["resource_uid"],
-            "related_image": kwargs["related_image_uid"],
-            "cpu_request": kwargs["cpu_request"],
-            "memory_request": kwargs["memory_request"],
-            "spot": kwargs["spot"],
-        }
-
-    monkeypatch.setattr(cli_mod, "create_code_repository_resource_release", _create_release)
-
-    result = runner.invoke(
-        cli_mod.app,
-        ["code-repository", "resources", "create_dashboard", "--automatic-deployment"],
-        input=("8b62d1dd-e146-44af-957c-38c5f5b1d8d5\n857bec7b-dd77-4272-aecd-13fc2138eacc\n"),
-    )
     assert result.exit_code == 0
-    assert captured["code_repository_branch_uid"] == "code-repository-branch-uid-123"
-    assert captured["repo_commit_sha"] == "sha-94"
-    assert captured["resource_type"] == "dashboard"
-    assert captured["create_release"]["release_kind"] == "streamlit_dashboard"
-    assert captured["create_release"]["related_image_uid"] == "8b62d1dd-e146-44af-957c-38c5f5b1d8d5"
-    assert captured["create_release"]["resource_uid"] == "857bec7b-dd77-4272-aecd-13fc2138eacc"
-    assert captured["create_release"]["cpu_request"] == "0.25"
-    assert captured["create_release"]["memory_request"] == "0.5"
-    assert captured["create_release"]["spot"] is False
-    assert captured["create_release"]["automatic_deployment"] is True
-    assert "Using defaults: cpu_request=0.25, memory_request=0.5, spot=false." in result.output
-    assert "0ce33c15-e3b1-4677-a66e-70460b89198f" in result.output
+    assert "create_dashboard" not in result.output
+    assert "delete_dashboard" not in result.output
 
 
 def test_code_repository_code_repository_resource_create_fastapi_filters_resources_by_selected_image(
@@ -6412,50 +6244,6 @@ def test_code_repository_code_repository_resource_create_fastapi_filters_resourc
     assert captured["create_release"]["automatic_deployment"] is None
     assert "Using defaults: cpu_request=0.25, memory_request=0.5, spot=false." in result.output
     assert "2ce33c15-e3b1-4677-a66e-70460b89198f" in result.output
-
-
-def test_code_repository_code_repository_resource_delete_dashboard_requires_confirmation(
-    cli_mod, runner, monkeypatch
-):
-    captured = {}
-    release_uid = "0ce33c15-e3b1-4677-a66e-70460b89198f"
-
-    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
-    monkeypatch.setattr(
-        cli_mod,
-        "get_resource_release",
-        lambda release_uid, expected_release_kind=None, timeout=None: {
-            "uid": release_uid,
-            "release_kind": expected_release_kind,
-            "resource": 381,
-            "related_image": 94,
-        },
-    )
-
-    def _delete_resource_release(release_uid, expected_release_kind=None, timeout=None):
-        captured["release_uid"] = release_uid
-        captured["expected_release_kind"] = expected_release_kind
-        return {
-            "uid": release_uid,
-            "release_kind": expected_release_kind,
-            "resource": 381,
-            "related_image": 94,
-        }
-
-    monkeypatch.setattr(cli_mod, "delete_resource_release", _delete_resource_release)
-
-    result = runner.invoke(
-        cli_mod.app,
-        ["code-repository", "resources", "delete_dashboard", release_uid],
-        input="y\n",
-    )
-    assert result.exit_code == 0
-    assert captured["release_uid"] == release_uid
-    assert captured["expected_release_kind"] == "streamlit_dashboard"
-    assert "CodeRepository Resource Release Delete Preview" in result.output
-    assert "Subdomain" not in result.output
-    assert f"Delete dashboard release {release_uid}?" in result.output
-    assert f"CodeRepository resource release deleted: uid={release_uid}" in result.output
 
 
 def test_code_repository_code_repository_resource_delete_fastapi_requires_confirmation(

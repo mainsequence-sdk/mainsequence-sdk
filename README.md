@@ -14,7 +14,7 @@ The Main Sequence Python SDK is the client and development toolkit for the Main 
 The Main Sequence platform allows you to:
 
 1. rapidly build and deploy data products with normalized `MetaTable` contracts and `TimeIndexTableUpdater` producer workflows
-2. rapidly deploy RBAC-enabled dashboards on the platform
+2. deploy FastAPI services and supported application surfaces on the platform
 3. rapidly deploy agents using the Google Agent SDK
 
 The key idea is that you can focus on development and deployment, while the platform handles the DevOps layer.
@@ -61,8 +61,8 @@ Recommended entry points:
   - [MetaTables](docs/knowledge/meta_tables/index.md)
   - [Constants and Secrets](docs/knowledge/infrastructure/constants_and_secrets.md)
   - [Scheduling Jobs](docs/knowledge/infrastructure/scheduling_jobs.md)
-  - [Streamlit Dashboards](docs/knowledge/dashboards/streamlit/index.md)
 - Migrations:
+  - [Streamlit dashboard support removal](docs/migrations/streamlit-dashboard-removal.md)
   - [7.x to 8.0: CodeRepository ontology hard cut](docs/migrations/v8-code-repository-ontology.md)
   - [6.x to 7.0: Time-Index Table Updater hard cut](docs/migrations/v7-time-index-table-updater-hard-cut.md)
 - CLI:
@@ -115,7 +115,7 @@ From there, the normal learning path is:
 3. understand sharing and RBAC for published tables
 4. add an API or another application surface
 5. schedule jobs
-6. build dashboards or downstream consumers
+6. build supported application surfaces or downstream consumers
 7. package the CodeRepository as an agent-facing surface when it is ready
 
 ## Installation for development

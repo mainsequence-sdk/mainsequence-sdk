@@ -1129,7 +1129,7 @@ class User(UserApiBaseObjectOrm, BasePydanticModel):
         Use this in standalone authenticated CLI or script code that is not
         running inside a request-bound identity context. This method reads the
         authenticated user through the backend `/api/v1/users/me/`
-        endpoint and does not depend on request headers, Streamlit context, or
+        endpoint and does not depend on request headers or
         `_CURRENT_AUTH_HEADERS`.
         """
         url = f"{cls.get_object_url()}/me/"
@@ -1192,18 +1192,10 @@ class User(UserApiBaseObjectOrm, BasePydanticModel):
         headers = _CURRENT_AUTH_HEADERS.get()
 
         if not headers:
-            try:
-                import streamlit as st
-
-                headers = st.context.headers
-            except Exception:
-                headers = None
-
-        if not headers:
             raise RequestIdentityError(
                 "No request identity is available. Provide an explicitly bound "
-                "request-header context or Streamlit request headers. FastAPI "
-                "handlers should use request.state.user instead."
+                "request-header context. FastAPI handlers should use the "
+                "platform-injected request.state.user instead."
             )
 
         normalized_headers = _normalize_request_headers(headers)

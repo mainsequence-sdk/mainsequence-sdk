@@ -1,30 +1,12 @@
-# Streamlit Dashboards
+# Streamlit Dashboard Support Removed
 
-Streamlit remains a supported dashboard deployment target on the Main Sequence Platform.
+Main Sequence no longer supports managed Streamlit dashboard discovery,
+deployment, release, authentication, or runtime operation. The
+`streamlit_dashboard` release kind, dashboard repository-resource discriminator,
+SDK creation helper, and dedicated CLI commands have been removed without
+compatibility aliases.
 
-The SDK no longer ships `mainsequence.dashboards.streamlit` scaffolding, theme helpers, or reusable dashboard UI components. Dashboard CodeRepositories should own their Streamlit layout, styling, sidebar widgets, and page helpers directly.
-
-Use the SDK from Streamlit dashboards for platform work:
-
-- read data products with `TimeIndexTableRef` and structured filters
-- query assets, releases, constants, users, and other platform resources through `mainsequence.client`
-- deploy dashboards through the CLI `streamlit_dashboard` release flow
-
-## Dashboard code ownership
-
-A Streamlit dashboard should declare its own app dependencies and helper modules in its CodeRepository.
-
-That means:
-
-- call `st.set_page_config(...)` directly from your app
-- keep reusable UI helpers inside the dashboard folder or repository package
-- use normal Streamlit widgets for sidebar controls and session state
-- keep dashboard deployment metadata such as `README.md` next to `app.py`
-
-The SDK should provide platform capabilities. The application should own presentation code.
-
-## Runnable example ownership
-
-The canonical tutorial CodeRepository owns the beginner Streamlit application and its
-deployment walkthrough. This page remains the SDK knowledge reference for the
-integration boundary.
+Existing Streamlit applications are not converted automatically. They must be
+deliberately rewritten for a supported application surface. See the
+[Streamlit dashboard removal guide](../../../migrations/streamlit-dashboard-removal.md)
+for the exact SDK symbols and commands that were removed.

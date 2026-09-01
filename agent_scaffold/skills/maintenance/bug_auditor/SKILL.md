@@ -59,13 +59,9 @@ This skill audits. It does not implement by default.
   `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
 - RBAC and access issues:
   `.agents/skills/mainsequence/platform_operations/access_control_and_sharing/SKILL.md`
-- Streamlit dashboard deployment or release issues:
-  `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
 - environment repair, authentication refresh, SDK updates, managed skill
   refresh, and CodeRepository sync after the failure is classified:
   `.agents/skills/mainsequence/maintenance/code_repository_maintenance/SKILL.md`
-
-Streamlit dashboard design and implementation failures are target-repository application code issues unless the evidence points to Main Sequence deployment, resource discovery, image selection, release creation, or platform runtime behavior.
 
 ## Read First
 

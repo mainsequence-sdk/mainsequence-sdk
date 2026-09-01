@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [8.0.7] - 2026-09-01
+
+### Removed
+
+- Removed Main Sequence-managed Streamlit dashboard support as a hard cut:
+  `ResourceReleaseKind.STREAMLIT_DASHBOARD`, the `dashboard` repository-resource
+  discriminator, `CodeRepositoryResource.create_dashboard()`, the
+  `create_dashboard` and `delete_dashboard` CLI commands, implicit Streamlit
+  request identity, bundled deployment guidance, and the development dependency.
+- Existing Streamlit applications are not converted automatically. See the
+  [removal guide](docs/migrations/streamlit-dashboard-removal.md).
+
 ## [8.0.6] - 2026-08-30
 
 ### Changed

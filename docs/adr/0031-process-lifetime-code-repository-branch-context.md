@@ -46,8 +46,8 @@ from mainsequence.code_repository_context import get_code_repository_context
 get_code_repository_context()
 ```
 
-It uses the same algorithm in a local shell, CLI process, Job, FastAPI release,
-Streamlit release, runtime-agent release, or CodeRepository Executor:
+It uses the same algorithm in a local shell, CLI process, Job, supported
+ResourceRelease, runtime-agent release, or CodeRepository Executor:
 
 ```text
 containing Git worktree
