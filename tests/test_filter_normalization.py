@@ -3299,6 +3299,26 @@ def test_unified_deployment_run_models_and_filters(monkeypatch):
     }
 
 
+def _ready_runtime_contract():
+    return {
+        "runtime_interaction": {
+            "state": "ready",
+            "can_submit": True,
+            "notice": None,
+            "action": None,
+            "operation": None,
+            "retry_after_ms": None,
+        },
+        "runtime_presence": {
+            "phase": "serving",
+            "replicas": {"desired": 1, "actual": 1},
+            "detail": "The runtime is serving requests.",
+            "observed_at": "2026-09-03T10:00:00Z",
+            "wake": None,
+        },
+    }
+
+
 def test_agent_session_runtime_access_uses_session_uid_route(monkeypatch):
     captured = {}
     session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
@@ -3315,6 +3335,7 @@ def test_agent_session_runtime_access_uses_session_uid_route(monkeypatch):
                 "rpc_url": "https://7bd86be3-d11a-4ad1-8fe2-9260ccdbca7f.coding-agent.main-sequence.app/",
                 "token": "tok-secret",
                 "is_ready": True,
+                **_ready_runtime_contract(),
                 "service_runtime_uid": "70c6efb9-8e80-4051-ad3a-f432b2c37f5a",
                 "image_drift": {
                     "agent_kind": "astro_orchestrator",
@@ -3404,6 +3425,7 @@ def test_agent_session_runtime_access_accepts_minimal_image_drift(monkeypatch):
                 "rpc_url": "https://7bd86be3-d11a-4ad1-8fe2-9260ccdbca7f.coding-agent.main-sequence.app/",
                 "token": "tok-secret",
                 "is_ready": True,
+                **_ready_runtime_contract(),
                 "knative_service_runtime_uid": "70c6efb9-8e80-4051-ad3a-f432b2c37f5a",
                 "image_drift": {
                     "has_drift": False,
@@ -3446,6 +3468,7 @@ def test_agent_session_send_a2a_message_posts_standard_contract(monkeypatch):
                 "rpc_url": "https://7bd86be3-d11a-4ad1-8fe2-9260ccdbca7f.coding-agent.main-sequence.app/",
                 "token": "tok-secret",
                 "expires_at": "2999-01-01T00:00:00Z",
+                **_ready_runtime_contract(),
             }
 
     class FakeRuntimeResponse:
@@ -3532,6 +3555,88 @@ def test_agent_session_send_a2a_message_posts_standard_contract(monkeypatch):
     assert "omit_reasoning" not in captured["runtime"]["data"]
 
 
+def test_agent_session_send_waits_only_while_runtime_interaction_is_transient(
+    monkeypatch,
+):
+    session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
+    agent_models_mod.AgentSession.clear_cached_runtime_access(session_uid)
+    responses = iter(
+        [
+            {
+                "mode": "unavailable",
+                "rpc_url": None,
+                "token": None,
+                "runtime_interaction": {
+                    "state": "waking",
+                    "can_submit": False,
+                    "notice": None,
+                    "action": None,
+                    "operation": None,
+                    "retry_after_ms": 1500,
+                },
+                "runtime_presence": {
+                    "phase": "pulling_image",
+                    "replicas": {"desired": 1, "actual": 0},
+                    "detail": "Fetching the runtime image.",
+                    "observed_at": "2026-09-03T10:00:00Z",
+                    "wake": None,
+                },
+            },
+            {
+                "mode": "token",
+                "rpc_url": "https://runtime.example.test/",
+                "token": "tok-secret",
+                **_ready_runtime_contract(),
+            },
+        ]
+    )
+    resolve_calls = []
+    sleeps = []
+
+    class FakeResolveResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            resolve_calls.append("resolve")
+            return next(responses)
+
+    class FakeRuntimeResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {
+                "message": {
+                    "messageId": "msg-output",
+                    "role": "ROLE_AGENT",
+                    "contextId": session_uid,
+                    "parts": [{"text": "Ready."}],
+                }
+            }
+
+    monkeypatch.setattr(
+        agent_models_mod,
+        "make_request",
+        lambda **_kwargs: FakeResolveResponse(),
+    )
+    monkeypatch.setattr(agent_models_mod.time, "sleep", sleeps.append)
+    monkeypatch.setattr(
+        agent_models_mod.requests,
+        "post",
+        lambda *_args, **_kwargs: FakeRuntimeResponse(),
+    )
+
+    result = agent_models_mod.AgentSession.send_a2a_message(
+        session_uid,
+        message="Wait for the active wake.",
+    )
+
+    assert result.message is not None
+    assert resolve_calls == ["resolve", "resolve"]
+    assert sleeps == [1.5]
+
+
 def test_agent_session_send_a2a_task_returns_typed_task(monkeypatch):
     captured = {}
     session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
@@ -3542,6 +3647,7 @@ def test_agent_session_send_a2a_task_returns_typed_task(monkeypatch):
             "mode": "token",
             "rpc_url": "https://runtime.example.test/",
             "token": "tok-secret",
+            **_ready_runtime_contract(),
         },
     )
 
@@ -3654,6 +3760,7 @@ def test_agent_session_a2a_task_helpers_get_wait_and_cancel(monkeypatch):
             "mode": "token",
             "rpc_url": "https://runtime.example.test/",
             "token": "tok-secret",
+            **_ready_runtime_contract(),
         },
     )
     states = iter(["TASK_STATE_WORKING", "TASK_STATE_COMPLETED", "TASK_STATE_CANCELED"])
@@ -3718,6 +3825,21 @@ def test_agent_session_send_a2a_message_reports_unavailable_runtime_without_post
                 "token": None,
                 "is_ready": False,
                 "detail": "Runtime reconciliation is queued.",
+                "runtime_interaction": {
+                    "state": "unavailable",
+                    "can_submit": False,
+                    "notice": None,
+                    "action": None,
+                    "operation": None,
+                    "retry_after_ms": None,
+                },
+                "runtime_presence": {
+                    "phase": "not_deployed",
+                    "replicas": {"desired": None, "actual": None},
+                    "detail": "The runtime has not been deployed.",
+                    "observed_at": None,
+                    "wake": None,
+                },
             }
 
     monkeypatch.setattr(
@@ -3758,6 +3880,7 @@ def test_agent_session_send_a2a_message_posts_strict_dictionary_contract(monkeyp
                 "mode": "token",
                 "rpc_url": "https://7bd86be3-d11a-4ad1-8fe2-9260ccdbca7f.coding-agent.main-sequence.app/",
                 "token": "tok-secret",
+                **_ready_runtime_contract(),
             }
 
     class FakeRuntimeResponse:
@@ -3830,6 +3953,7 @@ def test_agent_session_send_a2a_message_refreshes_access_and_reuses_body(monkeyp
                 "mode": "token",
                 "rpc_url": "https://7bd86be3-d11a-4ad1-8fe2-9260ccdbca7f.coding-agent.main-sequence.app/",
                 "token": f"tok-secret-{captured['resolve_count']}",
+                **_ready_runtime_contract(),
             }
 
     class FakeUnauthorizedResponse:
@@ -3911,6 +4035,7 @@ def test_agent_respond_uses_agent_scoped_sessionless_contract(monkeypatch):
                 "mode": "token",
                 "rpc_url": "https://runtime.example.test",
                 "token": "runtime-token",
+                **_ready_runtime_contract(),
                 "runtime_paths": {
                     "responses": f"/api/agents/{agent_uid}/responses",
                 },
@@ -3990,6 +4115,92 @@ def test_agent_respond_uses_agent_scoped_sessionless_contract(monkeypatch):
         "maxOutputTokens": 512,
         "timeoutSeconds": 30,
     }
+
+
+def test_agent_respond_waits_for_transient_runtime_interaction(monkeypatch):
+    agent_uid = "e0e75693-4110-464c-93e0-82c7fd9c9a23"
+    agent = agent_models_mod.Agent(
+        uid=agent_uid,
+        name="Research Copilot",
+        agent_type="custom",
+        description="Research assistant.",
+        agent_card=None,
+        llm_provider="openai",
+        llm_model="gpt-5.4",
+        llm_thinking="medium",
+        repository_branch=None,
+        organization_environment_uid=None,
+        organization_environment_name=None,
+    )
+    accesses = iter(
+        [
+            {
+                "mode": "unavailable",
+                "runtime_interaction": {
+                    "state": "checking",
+                    "can_submit": False,
+                    "notice": None,
+                    "action": None,
+                    "operation": None,
+                    "retry_after_ms": 2000,
+                },
+                "runtime_presence": {
+                    "phase": "observing",
+                    "replicas": {"desired": None, "actual": None},
+                    "detail": "Checking the current runtime state.",
+                    "observed_at": None,
+                    "wake": None,
+                },
+            },
+            {
+                "mode": "token",
+                "rpc_url": "https://runtime.example.test",
+                "token": "runtime-token",
+                "runtime_paths": {
+                    "responses": f"/api/agents/{agent_uid}/responses",
+                },
+                **_ready_runtime_contract(),
+            },
+        ]
+    )
+    sleeps = []
+
+    class FakeAccessResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return next(accesses)
+
+    class FakeRuntimeResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {
+                "message": {
+                    "messageId": "msg-output",
+                    "role": "ROLE_AGENT",
+                    "parts": [{"text": "Ready."}],
+                }
+            }
+
+    monkeypatch.setattr(
+        agent_models_mod,
+        "make_request",
+        lambda **_kwargs: FakeAccessResponse(),
+    )
+    monkeypatch.setattr(agent_models_mod.time, "sleep", sleeps.append)
+    monkeypatch.setattr(
+        agent_models_mod.requests,
+        "post",
+        lambda *_args, **_kwargs: FakeRuntimeResponse(),
+    )
+
+    result = agent.respond(message="Wait for the check.")
+
+    assert result.message is not None
+    assert sleeps == [2.0]
 
 
 def test_agent_get_or_create_session_posts_new_contract(monkeypatch):

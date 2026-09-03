@@ -36,6 +36,11 @@ STANDARD_A2A_OUTPUT_CONTRACT_METADATA_KEY = (
 )
 STANDARD_AGENT_INFERENCE_METADATA_KEY = "https://mainsequence.ai/a2a/extensions/agent-inference/v1"
 MAX_INLINE_A2A_FILE_BYTES = 15 * 1024 * 1024
+TRANSIENT_RUNTIME_INTERACTION_STATES = frozenset(
+    {"checking", "starting", "waking", "updating"}
+)
+MIN_RUNTIME_INTERACTION_RETRY_SECONDS = 0.5
+MAX_RUNTIME_INTERACTION_RETRY_SECONDS = 30.0
 
 
 class AgentSessionStatus(str, Enum):
@@ -229,6 +234,93 @@ class AgentRuntimePaths(BasePydanticModel):
     pass
 
 
+class AgentRuntimeInteractionNotice(BasePydanticModel):
+    model_config = ConfigDict(extra="allow")
+
+    code: str
+    severity: str
+    title: str
+    message: str
+
+
+class AgentRuntimeInteractionAction(BasePydanticModel):
+    model_config = ConfigDict(extra="allow")
+
+    type: Literal["update_agent_runtime", "retry_runtime_wake"]
+    label: str
+    confirmation_message: str
+    interaction_revision: str
+
+
+class AgentRuntimeInteractionOperation(BasePydanticModel):
+    model_config = ConfigDict(extra="allow")
+
+    uid: str
+    status: str
+    created_at: str
+    started_at: str | None = None
+    finished_at: str | None = None
+    support_reference: str
+
+
+class AgentRuntimeInteraction(BasePydanticModel):
+    model_config = ConfigDict(extra="allow")
+
+    state: Literal[
+        "ready",
+        "warning",
+        "checking",
+        "starting",
+        "waking",
+        "update_required",
+        "updating",
+        "update_failed",
+        "unavailable",
+    ]
+    can_submit: bool
+    notice: AgentRuntimeInteractionNotice | None
+    action: AgentRuntimeInteractionAction | None
+    operation: AgentRuntimeInteractionOperation | None
+    retry_after_ms: int | None = Field(None, ge=0)
+
+
+class AgentRuntimePresenceReplicas(BasePydanticModel):
+    desired: int | None = Field(None, ge=0)
+    actual: int | None = Field(None, ge=0)
+
+
+class AgentRuntimePresenceWake(BasePydanticModel):
+    operation_uid: str
+    state: Literal[
+        "requested",
+        "in_progress",
+        "serving",
+        "failed",
+        "expired",
+        "superseded",
+    ]
+    requested_at: str
+    deadline_at: str
+
+
+class AgentRuntimePresence(BasePydanticModel):
+    phase: Literal[
+        "not_deployed",
+        "observing",
+        "idle",
+        "provisioning",
+        "pulling_image",
+        "starting",
+        "serving",
+        "redeploying",
+        "failed",
+    ]
+    replicas: AgentRuntimePresenceReplicas
+    detail: str
+    observed_at: str | None
+    wake: AgentRuntimePresenceWake | None
+
+
 class AgentSessionRuntimeAccess(BasePydanticModel):
     model_config = ConfigDict(extra="allow")
 
@@ -287,6 +379,16 @@ class AgentSessionRuntimeAccess(BasePydanticModel):
         None,
         description="Runtime image drift payload for the resolved coding-agent runtime.",
     )
+    runtime_interaction: AgentRuntimeInteraction = Field(
+        ...,
+        description=(
+            "Authoritative backend decision for whether a new runtime message may be submitted."
+        ),
+    )
+    runtime_presence: AgentRuntimePresence = Field(
+        ...,
+        description="Sanitized diagnostic runtime-presence evidence.",
+    )
 
     @property
     def image_drift_dict(self) -> dict[str, Any] | None:
@@ -311,6 +413,27 @@ def _join_runtime_url(rpc_url: str, runtime_path: str) -> str:
     if runtime_path.startswith(("http://", "https://")):
         return runtime_path
     return f"{rpc_url.rstrip('/')}/{runtime_path.lstrip('/')}"
+
+
+def _runtime_access_blocked_message(access: AgentSessionRuntimeAccess) -> str:
+    notice = access.runtime_interaction.notice
+    if notice is not None and notice.message.strip():
+        return notice.message.strip()
+    if access.detail and access.detail.strip():
+        return f"Coding-agent runtime access is unavailable. {access.detail.strip()}"
+    return "Coding-agent runtime access is unavailable."
+
+
+def _runtime_access_retry_seconds(access: AgentSessionRuntimeAccess) -> float:
+    retry_after_ms = access.runtime_interaction.retry_after_ms
+    if retry_after_ms is None:
+        raise ApiError(
+            "Transient runtime access response is missing runtime_interaction.retry_after_ms."
+        )
+    return min(
+        MAX_RUNTIME_INTERACTION_RETRY_SECONDS,
+        max(MIN_RUNTIME_INTERACTION_RETRY_SECONDS, retry_after_ms / 1000.0),
+    )
 
 
 class Agent(
@@ -481,6 +604,22 @@ class Agent(
             raise TypeError("Agent runtime access response must be a JSON object")
         return AgentSessionRuntimeAccess(**data)
 
+    def _resolve_runtime_access_for_message_send(
+        self,
+        *,
+        timeout=None,
+    ) -> AgentSessionRuntimeAccess:
+        """Wait only while an active backend-owned transition blocks submission."""
+
+        while True:
+            access = self.resolve_runtime_access(timeout=timeout)
+            interaction = access.runtime_interaction
+            if interaction.can_submit:
+                return access
+            if interaction.state not in TRANSIENT_RUNTIME_INTERACTION_STATES:
+                raise ApiError(_runtime_access_blocked_message(access))
+            time.sleep(_runtime_access_retry_seconds(access))
+
     def _build_response_body(
         self,
         *,
@@ -601,7 +740,7 @@ class Agent(
             timeout_seconds=timeout_seconds,
         )
         response = self._post_response(
-            access=self.resolve_runtime_access(timeout=timeout),
+            access=self._resolve_runtime_access_for_message_send(timeout=timeout),
             body=body,
             stream=False,
             timeout=timeout,
@@ -643,7 +782,7 @@ class Agent(
             timeout_seconds=timeout_seconds,
         )
         response = self._post_response(
-            access=self.resolve_runtime_access(timeout=timeout),
+            access=self._resolve_runtime_access_for_message_send(timeout=timeout),
             body=body,
             stream=True,
             timeout=timeout,
@@ -1303,14 +1442,25 @@ class AgentSession(OwnerLogMixin, BaseObjectOrm, BasePydanticModel):
         timeout=None,
     ) -> AgentSessionRuntimeAccess:
         session_uid = cls._resolve_agent_session_uid(agent_session)
-        cached = cls.get_cached_runtime_access(session_uid)
-        if cached is not None:
-            return cached
-        return cls.resolve_runtime_access(
-            session_uid,
-            cache=True,
-            timeout=timeout,
-        )
+        access = cls.get_cached_runtime_access(session_uid)
+        while True:
+            if access is None:
+                access = cls.resolve_runtime_access(
+                    session_uid,
+                    cache=True,
+                    timeout=timeout,
+                )
+            interaction = access.runtime_interaction
+            if interaction.can_submit:
+                return access
+            if interaction.state not in TRANSIENT_RUNTIME_INTERACTION_STATES:
+                raise ApiError(_runtime_access_blocked_message(access))
+            time.sleep(_runtime_access_retry_seconds(access))
+            access = cls.resolve_runtime_access(
+                session_uid,
+                cache=True,
+                timeout=timeout,
+            )
 
     @staticmethod
     def _build_standard_a2a_message_send_body(
@@ -1513,9 +1663,8 @@ class AgentSession(OwnerLogMixin, BaseObjectOrm, BasePydanticModel):
         )
         if response.status_code in (401, 403):
             cls.clear_cached_runtime_access(session_uid)
-            access = cls.resolve_runtime_access(
+            access = cls._resolve_runtime_access_for_message_send(
                 session_uid,
-                cache=True,
                 timeout=timeout,
             )
             response = cls._post_standard_a2a_message(
@@ -1594,7 +1743,10 @@ class AgentSession(OwnerLogMixin, BaseObjectOrm, BasePydanticModel):
         response = request(access)
         if response.status_code in (401, 403):
             cls.clear_cached_runtime_access(session_uid)
-            access = cls.resolve_runtime_access(session_uid, cache=True, timeout=timeout)
+            access = cls._resolve_runtime_access_for_message_send(
+                session_uid,
+                timeout=timeout,
+            )
             response = request(access)
             if response.status_code in (401, 403):
                 cls.clear_cached_runtime_access(session_uid)
