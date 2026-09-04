@@ -71,7 +71,7 @@ opentelemetry-proto==1.37.0
     #   opentelemetry-exporter-otlp-proto-common
     #   opentelemetry-exporter-otlp-proto-grpc
     #   opentelemetry-exporter-otlp-proto-http
-opentelemetry-sdk==1.37.0
+opentelemetry-sdk==1.44.0
     # via
     #   mainsequence
     #   opentelemetry-exporter-otlp-proto-grpc
