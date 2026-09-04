@@ -226,7 +226,6 @@ def test_set_start_of_execution_prefers_canonical_update_stats(monkeypatch):
                 "multi_index_column_stats": {},
                 "time_index_name": "time_index",
                 "index_names": ["time_index", "account_uid", "unique_identifier"],
-                "must_update": True,
                 "direct_dependency_uids": ["dependency-1", "dependency-2"],
             }
 
@@ -244,7 +243,6 @@ def test_set_start_of_execution_prefers_canonical_update_stats(monkeypatch):
     assert stats.max_time_index_value == _dt(3)
     assert stats.index_progress == {"account-a": {"asset-1": _dt(2)}}
     assert stats.index_min == {"account-a": {"asset-1": _dt(0)}}
-    assert table_update_run.must_update is True
     assert table_update_run.direct_dependency_uids == ["dependency-1", "dependency-2"]
 
 

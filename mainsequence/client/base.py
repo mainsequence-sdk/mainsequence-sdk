@@ -134,7 +134,6 @@ class BaseObjectOrm:
     END_POINTS = {
         "User": "users",
         # TDAG
-        "Scheduler": "schedulers",
         "TimeIndexMetaTable": "time-index-meta-tables",
         "TimeIndexTableUpdate": "time-index-table-updates",
         "TimeIndexTableUpdateDetails": "time-index-table-update-details",

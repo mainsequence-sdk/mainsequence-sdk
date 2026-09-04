@@ -7,7 +7,7 @@ import json
 import time
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 # Third-Party Library Imports
 import numpy as np
@@ -220,48 +220,29 @@ def _require_uid(obj: Any, object_name: str) -> str:
 
 class UpdateRunner:
     """
-    Orchestrates the entire update process for a TimeIndexTableUpdater instance.
-    It handles scheduling, dependency resolution, execution, and error handling.
+    Executes the update lifecycle for a TimeIndexTableUpdater instance.
+
+    It handles dependency resolution, execution, and error reporting in the
+    current process.
     """
 
     def __init__(
         self,
         table_updater: TimeIndexTableUpdater,
-        debug_mode: bool = False,
-        force_update: bool = False,
         update_tree: bool = True,
         update_only_tree: bool = False,
-        remote_scheduler: ms_client.Scheduler | None = None,
         override_update_stats: BaseUpdateStatistics | None = None,
+        execution_trace_id: str | None = None,
     ):
         self.updater = table_updater
         self.logger = self.updater.logger
-        self.debug_mode = debug_mode
-        self.force_update = force_update
         self.update_tree = update_tree
         self.update_only_tree = update_only_tree
         if self.update_tree:
             self.update_only_tree = False
 
-        self.remote_scheduler = remote_scheduler
-        self.scheduler: ms_client.Scheduler | None = None
         self.override_update_stats = override_update_stats
-
-    def _setup_scheduler(self) -> None:
-        """Initializes or retrieves the scheduler and starts its heartbeat."""
-        if self.remote_scheduler:
-            self.scheduler = self.remote_scheduler
-            return
-
-        name_prefix = "DEBUG_" if self.debug_mode else ""
-        update_uid = _require_uid(self.updater.table_update, "TimeIndexTableUpdate")
-        self.scheduler = ms_client.Scheduler.build_and_assign_to_update_nodes(
-            scheduler_name=f"{name_prefix}{update_uid}",
-            update_node_uids=[update_uid],
-            remove_from_other_schedulers=True,
-            running_in_debug_mode=self.debug_mode,
-        )
-        self.scheduler.start_heart_beat()
+        self.execution_trace_id = execution_trace_id or str(uuid4())
 
     def _pre_update_routines(self, table_update: dict | None = None) -> tuple[dict[str, Any], Any]:
         """
@@ -272,11 +253,8 @@ class UpdateRunner:
 
         - synchronizes the head updater through its update manager,
         - ensures dependency relations and dependency dataframes are loaded,
-        - connects the active scheduler to the dependency tree when needed,
         - fetches the latest backend update objects using
-          ``self.updater.TABLE_UPDATE_CLASS.get_table_updates_and_set_updates(...)``,
-        - stores the returned run-configuration snapshots on
-          ``self.updater.update_details_tree``.
+          ``self.updater.TABLE_UPDATE_CLASS.get_table_updates_and_set_updates(...)``.
 
         Args:
             table_update: Optional already-fetched backend payload for the
@@ -300,17 +278,7 @@ class UpdateRunner:
         if self.update_tree:
             self._ensure_dependency_tree_matches_current_declarations()
 
-        # 2. Connect the dependency tree to the scheduler if it hasn't been already.
-        if not self.updater._scheduler_tree_connected and self.update_tree:
-            self.logger.debug("Connecting dependency tree to scheduler...")
-            if not self.updater.depth_df.empty:
-                all_uids = self.updater.depth_df["update_node_uid"].astype(str).to_list() + [
-                    _require_uid(self.updater.table_update, "TimeIndexTableUpdate")
-                ]
-                self.scheduler.in_active_tree_connect(update_node_uids=all_uids)
-            self.updater._scheduler_tree_connected = True
-
-        # 3. Collect all UIDs in the dependency graph to fetch their metadata.
+        # 2. Collect all UIDs in the dependency graph to fetch their metadata.
         # This correctly initializes the list, fixing the original bug.
         if not self.updater.depth_df.empty:
             dependency_columns = ["update_node_uid", "node_type", "update_hash"]
@@ -334,10 +302,9 @@ class UpdateRunner:
             }
         )
 
-        # 4. Fetch the latest metadata for the entire tree from the backend.
+        # 3. Fetch the latest metadata for the entire tree from the backend.
         update_details_batch = dict(
             error_on_last_update=False,
-            active_update_scheduler_uid=_require_uid(self.scheduler, "Scheduler"),
             active_update_status="Q",  # Assuming queue status is always set here
         )
 
@@ -348,15 +315,10 @@ class UpdateRunner:
             update_priority_dict=None,
         )
 
-        # 5. Process and return the results.
+        # 4. Process and return the results.
         state_data = batch_response.state_data
         table_updates_list = batch_response.table_updates
         table_updates_map = {_require_uid(m, m.__class__.__name__): m for m in table_updates_list}
-
-        self.updater.scheduler = self.scheduler
-        self.updater.update_details_tree = {
-            key: v.run_configuration for key, v in table_updates_map.items()
-        }
 
         return table_updates_map, state_data
 
@@ -368,12 +330,10 @@ class UpdateRunner:
         self,
         override_update_stats: BaseUpdateStatistics | None = None,
     ) -> tuple[bool, LocalUpdateResult]:
-        """Orchestrates a single TimeIndexTableUpdater update, including pre/post routines."""
+        """Execute one TimeIndexTableUpdater update, including pre/post routines."""
         table_update_run = self.updater.update_manager.table_update.set_start_of_execution(
-            active_update_scheduler_uid=_require_uid(self.scheduler, "Scheduler")
+            trace_id=self.execution_trace_id,
         )
-
-        must_update = table_update_run.must_update or self.force_update
 
         # Ensure metadata is fully loaded with relationship details before proceeding.
         self.updater.update_manager.set_table_update_lazy(include_relations_detail=True)
@@ -388,13 +348,10 @@ class UpdateRunner:
         update_result: LocalUpdateResult = None
         error_on_last_update = False
         try:
-            if must_update:
-                self.logger.debug(f"Update required for {self.updater}.")
-                update_result = self._update_local(
-                    table_update_run=table_update_run,
-                )
-            else:
-                self.logger.debug(f"Already up-to-date. Skipping update for {self.updater}.")
+            self.logger.debug(f"Executing update for {self.updater}.")
+            update_result = self._update_local(
+                table_update_run=table_update_run,
+            )
         except Exception as e:
             error_on_last_update = True
             raise e
@@ -827,13 +784,9 @@ class UpdateRunner:
                     # Each dependency gets its own clean runner.
                     dep_runner = UpdateRunner(
                         table_updater=updater_to_update,
-                        debug_mode=True,
                         update_tree=False,
-                        force_update=self.force_update,
-                        remote_scheduler=self.scheduler,
+                        execution_trace_id=self.execution_trace_id,
                     )
-                    dep_runner._setup_scheduler()
-
                     dep_runner._start_update()
                 except Exception as e:
                     self.logger.exception(f"Failed to update dependency {update_node_uid}")
@@ -843,48 +796,41 @@ class UpdateRunner:
 
         refresh_update_statistics_of_deps(self.updater)
 
-    def run(self) -> None:
+    def run(self) -> tuple[bool, LocalUpdateResult]:
         """
         Executes the full time-index table update lifecycle.
 
-        This is the main entry point for the runner. It orchestrates the setup
-        of scheduling and the execution environment, triggers the core update
-        process, and handles all error reporting and cleanup.
+        This is the main entry point for the runner. It prepares the execution
+        environment, triggers the core update process, and handles error reporting
+        and cleanup.
         """
         # Initialize tracing and set initial flags
         tracer_instrumentator = TracerInstrumentator()
         tracer = tracer_instrumentator.build_tracer()
         error_to_raise = None
 
-        # 1. Set up the scheduler for this run
         try:
-            self.updater.verify_and_build_remote_objects()  # needed to start sch
-            self._setup_scheduler()
+            self.updater.verify_and_build_remote_objects()
             cvars.bind_contextvars(
-                scheduler_name=self.scheduler.name, head_table_update_hash=self.updater.update_hash
+                table_update_trace_id=self.execution_trace_id,
+                head_table_update_hash=self.updater.update_hash,
             )
 
-            # 2. Start the main execution block with tracing
             with tracer.start_as_current_span(
-                f"Scheduler Head Update: {self.updater.update_hash}"
+                f"TimeIndexTableUpdater Run: {self.updater.update_hash}"
             ) as span:
                 span.set_attribute("table_update_hash", self.updater.update_hash)
+                span.set_attribute("table_update_trace_id", self.execution_trace_id)
                 physical_table_name = _physical_table_name(
                     self.updater.update_manager.output_metadata
                 )
                 if physical_table_name is not None:
                     span.set_attribute("physical_table_name", physical_table_name)
-                span.set_attribute("head_scheduler", self.scheduler.name)
-
-                # 3. Prepare the execution environment and dependency metadata.
+                # 1. Prepare the execution environment and dependency metadata.
                 _ = self._setup_execution_environment()
                 self.logger.debug("Execution environment and dependency metadata are set.")
 
-                # 4. Wait for the scheduled update time, if not forcing an immediate run
-                if not self.force_update:
-                    self.updater.table_update.wait_for_update_time()
-
-                # 5. Trigger the core update process
+                # 2. Trigger the core update process
                 error_on_last_update, update_result = self._start_update(
                     override_update_stats=self.override_update_stats,
                 )
@@ -901,17 +847,12 @@ class UpdateRunner:
             self.logger.exception("An unexpected error occurred during the update run.")
             error_to_raise = e
         finally:
-            # 6. Clean up resources
-            # Stop the scheduler heartbeat if it was created by this runner
-            if self.remote_scheduler is None and self.scheduler:
-                self.scheduler.stop_heart_beat()
-
             # Clean up temporary attributes on the TimeIndexTableUpdater instance
             if hasattr(self.updater, "update_tracker"):
                 del self.updater.update_tracker
 
             gc.collect()
 
-        # 7. Re-raise any captured exception after cleanup
+        # Re-raise any captured exception after cleanup
         if error_to_raise:
             raise error_to_raise

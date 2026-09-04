@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pandas as pd
 import pytest
@@ -51,28 +51,12 @@ class _TimeIndexTableUpdateManager:
         return {"updated": self.table_update.uid}
 
 
-class _Scheduler:
-    uid = "scheduler-uid"
-    name = "scheduler"
-
-    def __init__(self):
-        self.started = False
-        self.active_tree_calls = []
-
-    def start_heart_beat(self):
-        self.started = True
-
-    def in_active_tree_connect(self, update_node_uids):
-        self.active_tree_calls.append(update_node_uids)
-
-
 def _update(uid: str):
     return SimpleNamespace(
         uid=uid,
         update_hash=f"{uid}-hash",
         output_table=SimpleNamespace(physical_table_name=f"{uid}-storage"),
         NODE_TYPE="time_index_table_update",
-        run_configuration={"uid": uid},
         ogm_dependencies_linked=True,
         patch=lambda **_kwargs: None,
     )
@@ -86,9 +70,6 @@ def _updater(update=None, depth_df=None, dependencies_df=None):
         logger=_Logger(),
         depth_df=depth_df if depth_df is not None else pd.DataFrame(),
         dependencies_df=dependencies_df,
-        _scheduler_tree_connected=False,
-        scheduler=None,
-        update_details_tree=None,
         TABLE_UPDATE_CLASS=None,
         set_relation_tree=lambda **_kwargs: None,
         set_dependencies_df=lambda: None,
@@ -96,27 +77,10 @@ def _updater(update=None, depth_df=None, dependencies_df=None):
     )
 
 
-def test_update_runner_scheduler_assignment_uses_update_uid(monkeypatch):
-    captured = {}
-    scheduler = _Scheduler()
+def test_update_runner_generates_execution_trace_id():
+    runner = runner_module.UpdateRunner(_updater())
 
-    def _build_and_assign_to_update_nodes(**kwargs):
-        captured.update(kwargs)
-        return scheduler
-
-    monkeypatch.setattr(
-        runner_module.ms_client.Scheduler,
-        "build_and_assign_to_update_nodes",
-        _build_and_assign_to_update_nodes,
-    )
-
-    runner = runner_module.UpdateRunner(_updater(), debug_mode=True)
-    runner._setup_scheduler()
-
-    assert captured["scheduler_name"] == "DEBUG_head-uid"
-    assert captured["update_node_uids"] == ["head-uid"]
-    assert "update_nodes_ids" not in captured
-    assert scheduler.started is True
+    assert str(UUID(runner.execution_trace_id)) == runner.execution_trace_id
 
 
 def test_update_runner_pre_update_uses_uid_payloads_and_maps():
@@ -130,7 +94,6 @@ def test_update_runner_pre_update_uses_uid_payloads_and_maps():
             }
         ]
     )
-    scheduler = _Scheduler()
     captured = {}
 
     class _UpdateClass:
@@ -147,12 +110,10 @@ def test_update_runner_pre_update_uses_uid_payloads_and_maps():
     updater.set_relation_tree = lambda **kwargs: relation_tree_calls.append(kwargs)
     updater.TABLE_UPDATE_CLASS = _UpdateClass
     runner = runner_module.UpdateRunner(updater)
-    runner.scheduler = scheduler
 
     table_updates, state_data = runner._pre_update_routines()
 
     assert relation_tree_calls == [{}]
-    assert scheduler.active_tree_calls == [["dep-uid", "head-uid"]]
     assert captured["update_nodes"] == [
         {
             "uid": "dep-uid",
@@ -167,14 +128,45 @@ def test_update_runner_pre_update_uses_uid_payloads_and_maps():
             "node_type": "time_index_table_update",
         },
     ]
-    assert captured["update_details_kwargs"]["active_update_scheduler_uid"] == "scheduler-uid"
-    assert "active_update_scheduler_id" not in captured["update_details_kwargs"]
-    assert list(table_updates) == ["dep-uid", "head-uid"]
-    assert updater.update_details_tree == {
-        "dep-uid": {"uid": "dep-uid"},
-        "head-uid": {"uid": "head-uid"},
+    assert captured["update_details_kwargs"] == {
+        "error_on_last_update": False,
+        "active_update_status": "Q",
     }
+    assert list(table_updates) == ["dep-uid", "head-uid"]
     assert state_data == {"state": "ok"}
+
+
+def test_update_runner_always_executes_an_admitted_update(monkeypatch):
+    updater = _updater()
+    start_calls = []
+    end_calls = []
+    local_update_calls = []
+    updater.update_manager.table_update.set_start_of_execution = lambda **kwargs: (
+        start_calls.append(kwargs)
+        or SimpleNamespace(uid="run-uid", update_statistics=None)
+    )
+    updater.update_manager.table_update.set_end_of_execution = (
+        lambda **kwargs: end_calls.append(kwargs)
+    )
+    updater.run_post_update_routines = lambda **_kwargs: None
+
+    runner = runner_module.UpdateRunner(updater, execution_trace_id="trace-1")
+    monkeypatch.setattr(
+        runner,
+        "_update_local",
+        lambda **kwargs: local_update_calls.append(kwargs) or "updated",
+    )
+
+    error, result = runner._start_update(override_update_stats={"state": "current"})
+
+    assert error is False
+    assert result == "updated"
+    assert start_calls == [{"trace_id": "trace-1"}]
+    assert len(local_update_calls) == 1
+    assert local_update_calls[0]["table_update_run"].uid == "run-uid"
+    assert end_calls == [
+        {"table_update_run_uid": "run-uid", "error_on_update": False}
+    ]
 
 
 def test_update_runner_verify_tree_uses_dependency_uids(monkeypatch):
@@ -202,7 +194,7 @@ def test_update_runner_verify_tree_uses_dependency_uids(monkeypatch):
         dependencies=lambda: {},
     )
     updater.dependencies = lambda: {"dependency": dependency}
-    runner = runner_module.UpdateRunner(updater, debug_mode=True)
+    runner = runner_module.UpdateRunner(updater)
     executed = {}
     monkeypatch.setattr(
         runner,
@@ -249,7 +241,7 @@ def test_update_runner_verify_tree_self_heals_stale_backend_dependency(monkeypat
         dependencies=lambda: {},
     )
     updater.dependencies = lambda: {"dependency": dependency}
-    runner = runner_module.UpdateRunner(updater, debug_mode=True)
+    runner = runner_module.UpdateRunner(updater)
     relation_tree_calls = []
     updater.set_relation_tree = lambda **kwargs: relation_tree_calls.append(kwargs)
     updater.set_dependencies_df = lambda: setattr(
@@ -285,7 +277,7 @@ def test_update_runner_verify_tree_self_heals_stale_backend_dependency(monkeypat
     assert list(executed["update_map"]) == ["dep-uid"]
 
 
-def test_update_runner_pre_update_self_heals_before_scheduler_payload():
+def test_update_runner_pre_update_self_heals_before_batch_payload():
     dependency_update = _update("dep-uid")
     head_update = _update("head-uid")
     stale_depth_df = pd.DataFrame(
@@ -335,14 +327,11 @@ def test_update_runner_pre_update_self_heals_before_scheduler_payload():
         setattr(updater, "dependencies_df", current_depth_df.copy()),
     )
     updater.TABLE_UPDATE_CLASS = _UpdateClass
-    scheduler = _Scheduler()
-    runner = runner_module.UpdateRunner(updater, debug_mode=True)
-    runner.scheduler = scheduler
+    runner = runner_module.UpdateRunner(updater)
 
     runner._pre_update_routines()
 
     assert relation_tree_calls == [{}, {"force_rebuild": True}]
-    assert scheduler.active_tree_calls == [["dep-uid", "head-uid"]]
     assert [node["uid"] for node in captured["update_nodes"]] == ["dep-uid", "head-uid"]
 
 
@@ -374,7 +363,7 @@ def test_update_runner_verify_tree_rejects_persistent_stale_backend_dependency()
     )
     updater.dependencies = lambda: {"dependency": dependency}
     updater.set_dependencies_df = lambda: setattr(updater, "dependencies_df", depth_df.copy())
-    runner = runner_module.UpdateRunner(updater, debug_mode=True)
+    runner = runner_module.UpdateRunner(updater)
 
     try:
         runner._verify_tree_is_updated()
@@ -410,19 +399,15 @@ def test_sequential_dependency_update_uses_update_node_uid_without_data_source_u
     )
     updater = _updater()
     updater.dependencies = lambda: {"dependency": dependency}
-    runner = runner_module.UpdateRunner(updater, debug_mode=True)
-    runner.scheduler = _Scheduler()
+    runner = runner_module.UpdateRunner(updater, execution_trace_id="root-trace")
     started = []
 
     monkeypatch.setattr(
         runner_module.UpdateRunner,
-        "_setup_scheduler",
-        lambda self: started.append(("scheduler", self.updater.table_update.uid)),
-    )
-    monkeypatch.setattr(
-        runner_module.UpdateRunner,
         "_start_update",
-        lambda self, **_kwargs: started.append(("update", self.updater.table_update.uid)),
+        lambda self, **_kwargs: started.append(
+            ("update", self.updater.table_update.uid, self.execution_trace_id)
+        ),
     )
 
     runner._execute_dependencies_sequentially(
@@ -430,7 +415,7 @@ def test_sequential_dependency_update_uses_update_node_uid_without_data_source_u
         update_map={"dep-uid": {"updater": dependency}},
     )
 
-    assert started == [("scheduler", "dep-uid"), ("update", "dep-uid")]
+    assert started == [("update", "dep-uid", "root-trace")]
 
 
 def test_sequential_dependency_update_rejects_backend_dependency_not_declared():
@@ -444,7 +429,7 @@ def test_sequential_dependency_update_rejects_backend_dependency_not_declared():
             }
         ]
     )
-    runner = runner_module.UpdateRunner(_updater(), debug_mode=True)
+    runner = runner_module.UpdateRunner(_updater())
 
     try:
         runner._execute_dependencies_sequentially(

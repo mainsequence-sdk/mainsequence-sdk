@@ -12,7 +12,6 @@ import pandas as pd
 
 from mainsequence.client.metatables import (
     BaseUpdateStatistics,
-    Scheduler,
     SessionDataSource,
     TimeIndexTableUpdate,
     UpdateStatistics,
@@ -130,7 +129,6 @@ class TimeIndexTableUpdater(TimeIndexTableAccessMixin, ABC):
         self._update_manager: TimeIndexTableUpdateManager | None = None
         self.output_table = output_table
 
-        self._scheduler_tree_connected = False
         self.update_statistics = None
         self.config = config
         self._framework_initialized = True
@@ -342,9 +340,6 @@ class TimeIndexTableUpdater(TimeIndexTableAccessMixin, ABC):
             # requirements for graph update
             self.dependencies_df: pd.DataFrame | None = None
             self.depth_df: pd.DataFrame | None = None
-
-            self.scheduler: Scheduler | None = None
-            self.update_details_tree: dict[str, Any] | None = None
 
             logger.debug(f"Post-init routines for {self.__class__.__name__} complete.")
 
@@ -615,12 +610,9 @@ class TimeIndexTableUpdater(TimeIndexTableAccessMixin, ABC):
 
     def run(
         self,
-        debug_mode: bool = True,
         *,
         update_tree: bool = True,
-        force_update: bool = False,
         update_only_tree: bool = False,
-        remote_scheduler: object | None = None,
         override_update_stats: BaseUpdateStatistics | None = None,
     ):
         """
@@ -637,16 +629,10 @@ class TimeIndexTableUpdater(TimeIndexTableAccessMixin, ABC):
 
         Parameters
         ----------
-        debug_mode : bool, default=True
-            Enables debug-friendly run behavior.
         update_tree : bool, default=True
             If ``True``, update dependencies before this updater.
-        force_update : bool, default=False
-            If ``True``, run even when no new range is detected.
         update_only_tree : bool, default=False
             If ``True``, update dependencies only (skip this updater).
-        remote_scheduler : object | None, optional
-            Optional scheduler context.
         override_update_stats : BaseUpdateStatistics | None, optional
             Optional explicit update-state object (useful in tests or controlled runs).
 
@@ -657,17 +643,12 @@ class TimeIndexTableUpdater(TimeIndexTableAccessMixin, ABC):
         """
 
         require_code_repository_branch_context("TimeIndexTableUpdater.run")
-        # Execution remains sequential; distributed execution is not part of this contract.
-        debug_mode = True
 
         def _do_run():
             update_runner = runner.UpdateRunner(
                 table_updater=self,
-                debug_mode=debug_mode,
-                force_update=force_update,
                 update_tree=update_tree,
                 update_only_tree=update_only_tree,
-                remote_scheduler=remote_scheduler,
                 override_update_stats=override_update_stats,
             )
             return update_runner.run()

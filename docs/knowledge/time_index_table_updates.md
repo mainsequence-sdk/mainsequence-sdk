@@ -36,12 +36,14 @@ binding remains catalog metadata; Alembic owns the physical schema migration.
 2. Incremental updates are the default.
 3. Deterministic behavior beats clever behavior.
 4. Metadata is required for production-quality tables.
+5. Every selected updater executes when invoked; updater-owned schedules do not gate execution.
 
 In practice, this means:
 
 - treat `identifier` and schema as API contracts,
 - avoid full-history fetches in production,
 - avoid hidden global state and implicit time behavior,
+- treat an update with no new rows as an executed no-op, not a schedule skip,
 - always document table and columns with metadata.
 
 ## 3) Naming conventions
@@ -285,7 +287,7 @@ from mainsequence.meta_tables.time_index_table_updates import hash_namespace
 
 with hash_namespace("pytest_case_123"):
     updater = MyUpdater(...)
-    updater.run(debug_mode=True, force_update=True)
+    updater.run()
 ```
 
 ### What not to use it for
@@ -417,7 +419,7 @@ class ReturnsUpdater(TimeIndexTableUpdater):
 ```
 
 The reference has read helpers and canonical table identity. It deliberately
-has no `run()`, `update()`, `update_hash`, scheduler state, or no-op execution
+has no `run()`, `update()`, `update_hash`, updater execution state, or no-op execution
 methods.
 
 ## 9) Records, foreign keys, and metadata
@@ -807,7 +809,7 @@ def test_my_updater_smoke():
 
     with hash_namespace("pytest_my_updater_smoke"):
         updater = MyUpdater(config=config, output_table=MyOutputTable)
-        err, df = updater.run(debug_mode=True, force_update=True)
+        err, df = updater.run()
 
     assert err is False
     assert df is not None

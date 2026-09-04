@@ -9,7 +9,6 @@ import json
 import math
 import os
 import re
-import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, ClassVar, Literal, TypedDict
@@ -57,11 +56,8 @@ from ..dtype_codec import (
 )
 from ..exceptions import raise_for_response
 from ..utils import (
-    TDAG_CONSTANTS,
     DateInfo,
     bios_uuid,
-    get_network_ip,
-    is_process_running,
     make_request,
     serialize_to_json,
 )
@@ -2114,10 +2110,6 @@ class AlreadyExist(Exception):
     pass
 
 
-class SchedulerDoesNotExist(Exception):
-    pass
-
-
 class TimeIndexTableUpdateDoesNotExist(Exception):
     pass
 
@@ -2532,7 +2524,6 @@ class TimeIndexTableUpdate(TableUpdateNode, BaseObjectOrm):
     table_updater_source_code_git_hash: str | None = None
     table_updater_source_code: str | None = None
     update_details: TimeIndexTableUpdateDetails | None = None
-    run_configuration: TimeIndexTableUpdateConfiguration | None = None
 
     @property
     def data_source_uid(self):
@@ -2618,7 +2609,6 @@ class TimeIndexTableUpdate(TableUpdateNode, BaseObjectOrm):
                 index_min=index_min,
                 multi_index_column_stats=result.get("multi_index_column_stats"),
             ),
-            must_update=result["must_update"],
             direct_dependency_uids=result.get("direct_dependency_uids"),
         )
         return table_update_run
@@ -3136,31 +3126,6 @@ class TimeIndexTableUpdate(TableUpdateNode, BaseObjectOrm):
         )
         return table_update
 
-    def get_update_time_to_wait(self):
-        next_update = self.update_details.next_update
-        time_to_wait = 0.0
-        if next_update is not None:
-            time_to_wait = (
-                pd.to_datetime(next_update) - datetime.datetime.now(datetime.UTC)
-            ).total_seconds()
-            time_to_wait = max(0, time_to_wait)
-        return time_to_wait, next_update
-
-    def wait_for_update_time(
-        self,
-    ):
-        if self.update_details.error_on_last_update or self.update_details.last_update is None:
-            return None
-
-        time_to_wait, next_update = self.get_update_time_to_wait()
-        if time_to_wait > 0:
-            logger.info(f"Scheduler Waiting for ts update time at {next_update} {time_to_wait}")
-            time.sleep(time_to_wait)
-        else:
-            time_to_wait = max(0, 60 - datetime.datetime.now(datetime.UTC).second)
-            logger.info("Scheduler Waiting for ts update at start of minute")
-            time.sleep(time_to_wait)
-
 
 class BaseUpdateDetails:
     active_update: bool = Field(default=False, description="Flag to indicate if update is active")
@@ -3169,15 +3134,11 @@ class BaseUpdateDetails:
         default=False, description="Flag to indicate if there was an error in the last update"
     )
     last_update: datetime.datetime | None = Field(None, description="Timestamp of the last update")
-    next_update: datetime.datetime | None = Field(None, description="Timestamp of the next update")
     update_statistics: dict[str, Any] | None = Field(
         None, description="JSON field for update statistics"
     )
     active_update_status: str = Field(
         default="Q", max_length=20, description="Current update status"
-    )
-    active_update_scheduler_uid: str | None = Field(
-        None, description="UID reference to the scheduler for active update"
     )
     update_priority: int = Field(default=0, description="Priority level of the update")
     last_updated_by_user_uid: str | None = Field(
@@ -3189,7 +3150,6 @@ class TimeIndexTableUpdateDetails(BaseUpdateDetails, BasePydanticModel, BaseObje
     table_update_uid: str | None = Field(
         None, description="Public uid of the related TimeIndexTableUpdate"
     )
-    run_configuration: TimeIndexTableUpdateConfiguration | None = None
 
     @classmethod
     def patch_for_table_update_uid(
@@ -3841,242 +3801,6 @@ class TimeIndexMetaTable(MetaTable):
             columns=columns,
             table_update_uid=table_update_uid,
         )
-
-
-class ScheduledUpdateNode(BasePydanticModel):
-    """Strict read projection for an update node attached to a Scheduler.
-
-    Scheduler endpoints return a flattened polymorphic node projection with
-    output-table identity. This is intentionally separate from
-    :class:`TableUpdateNode`, which models the full update graph resource.
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    uid: str = Field(..., description="Public uid of the scheduled update node")
-    node_type: str = Field(..., min_length=1, description="Scheduled-node discriminator")
-    update_hash: str | None = Field(
-        ...,
-        max_length=63,
-        description="Update identity when exposed by the concrete scheduled node",
-    )
-    build_configuration: dict[str, Any] | None = Field(
-        ...,
-        description="Serialized build configuration exposed by the concrete node",
-    )
-    output_table_uid: str | None = Field(
-        ...,
-        description="Canonical public uid of the scheduled node's output table",
-    )
-    output_table_type: str | None = Field(
-        ...,
-        description="Output-table discriminator exposed by the backend",
-    )
-    output_table_physical_table_name: str | None = Field(
-        ...,
-        description="Physical table name of the scheduled node's output",
-    )
-    output_table_identifier: str | None = Field(
-        ...,
-        description="Published identifier of the scheduled node's output table",
-    )
-    output_table_data_source_uid: str | None = Field(
-        ...,
-        description="Canonical data-source uid of the scheduled node's output table",
-    )
-
-
-class Scheduler(BasePydanticModel, BaseObjectOrm):
-    uid: str | None = Field(None, description="Public uid of this scheduler")
-    organization_environment_uid: str = Field(
-        ...,
-        description=(
-            "Read-only public UID of the Organization Environment derived by the "
-            "backend from the scheduler's update nodes."
-        ),
-    )
-    name: str
-    is_running: bool
-    running_process_pid: int | None
-    running_in_debug_mode: bool
-    updates_halted: bool
-    host: str | None
-    api_address: str | None
-    api_port: int | None
-    last_heart_beat: datetime.datetime | None = None
-    pre_loads_in_tree: list[ScheduledUpdateNode] | None = None
-    in_active_tree: list[ScheduledUpdateNode] | None = None
-    schedules_to: list[ScheduledUpdateNode] | None = None
-    # for heartbeat
-    _stop_heart_beat: bool = False
-    _executor: object | None = None
-
-    def _public_uid(self) -> str:
-        return _require_public_uid(self, "Scheduler")
-
-    @classmethod
-    def get_scheduler_for_update_node(cls, update_node_uid: str):
-        """GET the scheduler assigned to a TimeIndexTableUpdate uid."""
-        if update_node_uid in (None, ""):
-            raise ValueError("update_node_uid is required.")
-        s = cls.build_session()
-        url = cls.get_object_url() + "/for-update-node/"
-        r = make_request(
-            s=s,
-            r_type="GET",
-            url=url,
-            payload={"params": {"update_node_uid": str(update_node_uid)}},
-            loaders=cls.LOADERS,
-        )
-        if r.status_code == 404:
-            raise SchedulerDoesNotExist(r.json().get("detail", r.text))
-        r.raise_for_status()
-        return cls(**r.json())
-
-    @classmethod
-    def build_and_assign_to_update_nodes(
-        cls,
-        scheduler_name: str,
-        update_node_uids: list[str],
-        delink_all_ts: bool = False,
-        remove_from_other_schedulers: bool = True,
-        timeout=None,
-        **kwargs,
-    ):
-        """
-        POST /schedulers/build-and-assign-to-update-nodes/
-        body: {
-          scheduler_name, update_node_uids, delink_all_ts?,
-          remove_from_other_schedulers?, scheduler_kwargs?
-        }
-        """
-        s = cls.build_session()
-        url = cls.get_object_url() + "/build-and-assign-to-update-nodes/"
-        request_body = {
-            "scheduler_name": scheduler_name,
-            "delink_all_update_nodes": delink_all_ts,
-            "remove_from_other_schedulers": remove_from_other_schedulers,
-            "scheduler_kwargs": kwargs or {},
-        }
-        request_body["update_node_uids"] = [str(uid) for uid in update_node_uids]
-        payload = {"json": request_body}
-        r = make_request(
-            s=s, r_type="POST", url=url, payload=payload, time_out=timeout, loaders=cls.LOADERS
-        )
-        if r.status_code not in [200, 201]:
-            r.raise_for_status()
-        return cls(**r.json())
-
-    def in_active_tree_connect(self, update_node_uids: list[str]):
-        """
-        PATCH /schedulers/{uid}/in-active-tree/
-        body: { update_node_uids }
-        """
-        s = self.build_session()
-        url = f"{self.get_object_url()}/{self._public_uid()}/in-active-tree/"
-        r = make_request(
-            s=s,
-            r_type="PATCH",
-            url=url,
-            payload={"json": {"update_node_uids": [str(uid) for uid in update_node_uids]}},
-            loaders=self.LOADERS,
-        )
-        if r.status_code not in (200, 204):
-            raise Exception(f"Error in request {r.text}")
-
-    def assign_to_scheduler(self, update_node_uids: list[str]):
-        """
-        PATCH /schedulers/{uid}/assign/
-        body: { update_node_uids }
-        """
-        s = self.build_session()
-        url = f"{self.get_object_url()}/{self._public_uid()}/assign/"
-        r = make_request(
-            s=s,
-            r_type="PATCH",
-            url=url,
-            payload={"json": {"update_node_uids": [str(uid) for uid in update_node_uids]}},
-            loaders=self.LOADERS,
-        )
-        r.raise_for_status()
-        return Scheduler(**r.json())
-
-    def is_scheduler_running_in_process(self):
-        # test call
-        if self.is_running and hasattr(self, "api_address"):
-            # verify  scheduler host is the same
-            if self.api_address == get_network_ip() and is_process_running(
-                self.running_process_pid
-            ):
-                return True
-        return False
-
-    def _heart_beat_patch(self):
-        try:
-            scheduler = self.patch(
-                is_running=True,
-                running_process_pid=os.getpid(),
-                running_in_debug_mode=self.running_in_debug_mode,
-                last_heart_beat=datetime.datetime.now(datetime.UTC).timestamp(),
-            )
-            for field, value in scheduler.__dict__.items():
-                setattr(self, field, value)
-        except Exception as e:
-            logger.error(e)
-
-    def _heartbeat_runner(self, run_interval):
-        """
-        Runs forever (until the main thread ends),
-        calling _scheduler_heart_beat_patch every 30 seconds.
-        """
-        logger.debug("Heartbeat thread started with interval = %d seconds", run_interval)
-
-        while True:
-            self._heart_beat_patch()
-            # Sleep in a loop so that if we ever decide to
-            # add a cancellation event, we can check it in smaller intervals
-            for _ in range(run_interval):
-                # could check for a stop event here if not daemon
-                if self._stop_heart_beat:
-                    return
-                time.sleep(1)
-
-    def start_heart_beat(self):
-        from concurrent.futures import ThreadPoolExecutor
-
-        if self._executor is None:
-            self._executor = ThreadPoolExecutor(max_workers=1)
-        run_interval = TDAG_CONSTANTS.SCHEDULER_HEART_BEAT_FREQUENCY_SECONDS
-        self._heartbeat_future = self._executor.submit(self._heartbeat_runner, run_interval)
-
-    def stop_heart_beat(self):
-        """
-        Stop the heartbeat gracefully.
-        """
-        # Signal the runner loop to exit
-        self._stop_heart_beat = True
-
-        # Optionally wait for the future to complete
-        if hasattr(self, "heartbeat_future") and self._heartbeat_future:
-            logger.info("Waiting for the heartbeat thread to finish...")
-            self._heartbeat_future.result()  # or .cancel() if you prefer
-
-        # Shut down the executor if no longer needed
-        if self._executor:
-            self._executor.shutdown(wait=True)
-            self._executor = None
-
-        logger.info("Heartbeat thread stopped.")
-
-
-class TimeIndexTableUpdateConfiguration(BasePydanticModel, BaseObjectOrm):
-    update_schedule: str = "*/1 * * * *"
-    table_update_details_uid: str | None = None
-
-    @classmethod
-    @property
-    def ROOT_URL(cls):
-        return None
 
 
 class BaseUpdateStatistics(BaseModel):
@@ -4886,7 +4610,6 @@ class _TableUpdateRunFields:
     )
     # extra fields for local control
     update_statistics: BaseUpdateStatistics | None = None
-    must_update: bool | None = None
     direct_dependency_uids: list[str] | None = None
 
 
@@ -5104,7 +4827,6 @@ def get_session_data_source() -> DataSource:
 
 TimeIndexTableUpdateDetails.model_rebuild()
 TimeIndexTableUpdate.model_rebuild()
-TimeIndexTableUpdateConfiguration.model_rebuild()
 TimeIndexedProfile.model_rebuild()
 TimeIndexMetaTable.model_rebuild()
 DataSource.model_rebuild()
@@ -5163,10 +4885,6 @@ __all__ = [
     "MetaTableStatementPayload",
     "MetaTableValidateContractRequest",
     "PodDataSource",
-    "TimeIndexTableUpdateConfiguration",
-    "ScheduledUpdateNode",
-    "Scheduler",
-    "SchedulerDoesNotExist",
     "SessionDataSource",
     "SQLITE",
     "COMPILED_SQL_V1",

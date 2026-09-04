@@ -1,3 +1,4 @@
+import inspect
 import os
 import threading
 from types import SimpleNamespace
@@ -114,8 +115,6 @@ def test_metatable_update_models_are_not_exported_from_models_foundry():
         "TimeIndexMetaTableRegistrationRequest",
         "TimeIndexTableUpdate",
         "TimeIndexTableUpdateDetails",
-        "TimeIndexTableUpdateConfiguration",
-        "Scheduler",
         "UpdateStatistics",
         "DataSource",
         "SessionDataSource",
@@ -124,35 +123,37 @@ def test_metatable_update_models_are_not_exported_from_models_foundry():
     for name in moved_names:
         assert hasattr(models_metatables, name)
         assert not hasattr(models_foundry, name)
+    assert not hasattr(models_metatables, "TimeIndexTableUpdateConfiguration")
+    assert not hasattr(models_metatables, "Scheduler")
+    assert not hasattr(models_metatables, "ScheduledUpdateNode")
+    assert not hasattr(models_metatables, "SchedulerDoesNotExist")
     assert not hasattr(models_metatables, "DynamicTableDataSource")
 
 
-def test_table_update_accepts_canonical_update_details_uid_in_run_configuration():
-    payload = {
-        "uid": "time-index-table-update-44",
-        "update_hash": "issue-44-update-hash",
-        "output_table": "time-index-table-storage-1",
-        "build_configuration": _canonical_build_configuration(),
-        "run_configuration": {
-            "update_schedule": "*/1 * * * *",
-            "table_update_details_uid": "update-details-8053",
-        },
-        "update_details": {
-            "table_update_uid": "time-index-table-update-44",
-            "run_configuration": {
-                "update_schedule": "*/1 * * * *",
-                "table_update_details_uid": "update-details-8053",
-            },
-        },
-    }
+def test_updater_run_exposes_only_meaningful_keyword_controls():
+    signature = inspect.signature(TimeIndexTableUpdater.run)
 
-    update = TimeIndexTableUpdate(**payload)
+    assert list(signature.parameters) == [
+        "self",
+        "update_tree",
+        "update_only_tree",
+        "override_update_stats",
+    ]
+    for parameter_name in (
+        "update_tree",
+        "update_only_tree",
+        "override_update_stats",
+    ):
+        assert (
+            signature.parameters[parameter_name].kind
+            is inspect.Parameter.KEYWORD_ONLY
+        )
 
-    assert update.run_configuration is not None
-    assert update.run_configuration.table_update_details_uid == "update-details-8053"
-    assert isinstance(update.update_details, TimeIndexTableUpdateDetails)
-    assert update.update_details.run_configuration is not None
-    assert update.update_details.run_configuration.table_update_details_uid == "update-details-8053"
+
+def test_table_update_models_do_not_expose_removed_cadence_fields():
+    assert "run_configuration" not in TimeIndexTableUpdate.model_fields
+    assert "run_configuration" not in TimeIndexTableUpdateDetails.model_fields
+    assert "next_update" not in TimeIndexTableUpdateDetails.model_fields
 
 
 def test_table_update_details_patches_by_table_update_uid(monkeypatch):

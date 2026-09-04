@@ -622,10 +622,6 @@ class BaseTimeIndexTableUpdateManager:
         return self.table_update.update_details
 
     @property
-    def run_configuration(self) -> dict | None:
-        return self.table_update.run_configuration
-
-    @property
     def time_indexed_profile(self) -> Any | None:
         return self._get_time_indexed_profile()
 

@@ -78,12 +78,6 @@ ENVIRONMENT_NAME_FIELD = "organization_environment_name"
             {ENVIRONMENT_UID_FIELD, ENVIRONMENT_NAME_FIELD},
             id="time-index-meta-table",
         ),
-        pytest.param(
-            ("SchedulerSerializer", "SchedulerMinimalSerializer"),
-            metatable_models.Scheduler,
-            {ENVIRONMENT_UID_FIELD},
-            id="scheduler",
-        ),
     ],
 )
 def test_backend_environment_response_contract_is_declared_by_strict_sdk_model(

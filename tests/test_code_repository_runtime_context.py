@@ -671,7 +671,6 @@ def test_table_update_always_submits_git_resolved_branch(monkeypatch):
                 "labels": [],
                 "description": None,
                 "update_details": None,
-                "run_configuration": None,
             }
 
     monkeypatch.setattr(

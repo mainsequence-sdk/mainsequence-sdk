@@ -5,6 +5,18 @@ explicit time-index-table update concepts. This is a hard cut: version 7 has no
 deprecated aliases, forwarding modules, legacy routes, old CLI commands, or
 runtime configuration converter.
 
+The current 7.x contract also removes updater-owned execution cadence. There
+is no `TimeIndexTableUpdateConfiguration`, `next_update`, `must_update`, or
+`force_update` compatibility surface. Every updater node selected for an
+invocation executes; an incremental update may still complete successfully
+without producing new rows.
+
+The final 7.x contract also removes the persisted Scheduler runtime wrapper.
+The SDK executes the dependency tree directly and correlates the root and
+dependency `TableUpdateRun` records with one internally generated `trace_id`.
+There is no `Scheduler`, `ScheduledUpdateNode`, heartbeat, Scheduler endpoint,
+or `active_update_scheduler_uid` request field.
+
 ## Release boundary
 
 Upgrade the SDK only as part of the coordinated backend cutover. The SDK and
@@ -41,7 +53,7 @@ participating SDK process to the version 7 contract in the same release window.
 | `DataNodeUpdate` | `TimeIndexTableUpdate` | Persisted backend update process |
 | `DataNodeUpdateDetails` | `TimeIndexTableUpdateDetails` | Operational state for an update process |
 | `LocalTimeSeriesHistoricalUpdate` | `TableUpdateRun` | One execution attempt |
-| `RunConfiguration` | `TimeIndexTableUpdateConfiguration` | Schedule and run configuration |
+| `RunConfiguration` | Removed | Updater-owned execution scheduling has no replacement in the update contract |
 
 `TimeIndexMetaTable` remains the table's storage identity and schema contract.
 `UpdateRunner` also keeps its name.
@@ -114,7 +126,7 @@ coordinate that additional identity change with the backend migration.
 `APIDataNode` was not an updater despite its name. In version 7 it becomes the
 read-only `TimeIndexTableRef` and can identify only a canonical
 `TimeIndexMetaTable`. It has table-read and statistics operations, but no
-`run`, `update`, `update_hash`, scheduler, or update-tree behavior.
+`run`, `update`, `update_hash`, updater execution state, or update-tree behavior.
 
 Constructor migration:
 
@@ -174,6 +186,36 @@ Custom integrations must use the canonical dependency actions:
 - `POST .../update-dependencies/`
 - `POST .../table-dependencies/`
 - `DELETE .../dependencies/`
+
+## Migrate updater run calls
+
+The updater runtime has one execution mode. The ineffective `debug_mode`
+argument and the internal `remote_scheduler` escape hatch are removed rather
+than retained as deprecated no-ops.
+
+Before:
+
+```python
+error, result = updater.run(debug_mode=True)
+```
+
+After:
+
+```python
+error, result = updater.run()
+```
+
+The remaining controls are keyword-only:
+
+```python
+updater.run(update_tree=False)
+updater.run(update_tree=False, update_only_tree=True)
+updater.run(override_update_stats=statistics)
+```
+
+Calls passing a positional Boolean, `debug_mode`, or `remote_scheduler` fail
+immediately. Direct Scheduler client imports and calls must be deleted; there
+is no replacement client resource.
 
 ## Migrate CLI usage
 
