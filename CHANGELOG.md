@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [8.1.0] - 2026-09-04
+
+### Changed
+
+- Agent and AgentSession A2A sends now honor the backend-authoritative
+  `runtime_interaction` admission decision and use server-directed retries while
+  a runtime is checking, starting, waking, or updating.
+- `TimeIndexTableUpdater` runs now execute immediately in the current process
+  with a shared execution trace ID across dependency updates.
+
+### Removed
+
+- Removed the legacy `Scheduler` client wrapper and cadence-driven updater
+  execution controls, including scheduler heartbeat and force-update behavior.
+
 ## [8.0.7] - 2026-09-01
 
 ### Removed
