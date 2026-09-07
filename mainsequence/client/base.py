@@ -130,6 +130,8 @@ class BaseObjectOrm:
     DESTROY_QUERY_PARAM_DESCRIPTIONS: ClassVar[dict[str, str] | None] = None
     PUBLIC_LOOKUP_FIELD: ClassVar[str] = "uid"
     SDK_OWNED_CONTEXT_FIELDS: ClassVar[frozenset[str]] = frozenset()
+    # Opt in when collection responses intentionally omit detail-only fields.
+    HYDRATE_FILTER_GET_FROM_DETAIL: ClassVar[bool] = False
 
     END_POINTS = {
         "User": "users",
@@ -633,7 +635,14 @@ class BaseObjectOrm:
         if len(candidates) > 1:
             raise ApiError(f"Multiple objects returned for {cls.__name__} with filters={filters}")
 
-        return candidates[0]
+        candidate = candidates[0]
+        if cls.HYDRATE_FILTER_GET_FROM_DETAIL:
+            return cls.get(
+                pk=candidate._public_detail_reference(),
+                timeout=timeout,
+            )
+
+        return candidate
 
     @classmethod
     def get_by_uid(cls, uid: str, timeout=None, **filters):

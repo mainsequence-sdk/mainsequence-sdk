@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [8.1.3] - 2026-09-07
+
+### Fixed
+
+- Made name-based Secret reads preserve metadata-only list responses while
+  hydrating the unique match through the value-bearing UID detail endpoint.
+
 ## [8.1.2] - 2026-09-07
 
 ### Fixed

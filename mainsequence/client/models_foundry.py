@@ -1083,6 +1083,7 @@ class Secret(
     BasePydanticModel,
     BaseObjectOrm,
 ):
+    HYDRATE_FILTER_GET_FROM_DETAIL: ClassVar[bool] = True
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
         "uid": ["in", "exact"],
         "name": ["in", "exact"],

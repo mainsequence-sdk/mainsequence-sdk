@@ -55,6 +55,7 @@ def test_environment_resource_reads_use_sdk_owned_scope(monkeypatch):
     detail = models_module.Secret.get_by_uid(_secret_payload()["uid"])
 
     assert listed[0].organization_environment_uid == ENVIRONMENT_UID
+    assert listed[0].value is None
     assert detail.organization_environment_name == "Development"
     assert requests[0]["payload"]["params"] == {
         "name": "API_KEY",
@@ -63,6 +64,55 @@ def test_environment_resource_reads_use_sdk_owned_scope(monkeypatch):
     assert requests[1]["payload"]["params"] == {
         "organization_environment_uid": ENVIRONMENT_UID,
     }
+
+
+def test_secret_get_by_name_hydrates_value_from_scoped_detail(monkeypatch):
+    requests = []
+
+    def fake_make_request(**kwargs):
+        requests.append(kwargs)
+        if kwargs["url"].rstrip("/").endswith("secrets"):
+            return _Response([_secret_payload()])
+        return _Response(_secret_payload() | {"value": "provider-secret"})
+
+    monkeypatch.setattr(base_module, "make_request", fake_make_request)
+
+    secret = models_module.Secret.get(name="API_KEY", timeout=17)
+
+    assert secret.value is not None
+    assert secret.value.get_secret_value() == "provider-secret"
+    assert "value" not in secret.model_dump()
+    assert len(requests) == 2
+    assert requests[0]["payload"]["params"] == {
+        "name": "API_KEY",
+        "organization_environment_uid": ENVIRONMENT_UID,
+    }
+    assert requests[1]["url"].endswith(f"/secrets/{_secret_payload()['uid']}/")
+    assert requests[1]["payload"]["params"] == {
+        "organization_environment_uid": ENVIRONMENT_UID,
+    }
+    assert [request["time_out"] for request in requests] == [17, 17]
+
+
+@pytest.mark.parametrize("list_payload", [[], [_secret_payload(), _secret_payload()]])
+def test_secret_get_by_name_preserves_unique_lookup_errors_without_detail_request(
+    monkeypatch,
+    list_payload,
+):
+    requests = []
+
+    def fake_make_request(**kwargs):
+        requests.append(kwargs)
+        return _Response(list_payload)
+
+    monkeypatch.setattr(base_module, "make_request", fake_make_request)
+
+    expected_error = base_module.DoesNotExist if not list_payload else base_module.ApiError
+    with pytest.raises(expected_error):
+        models_module.Secret.get(name="API_KEY")
+
+    assert len(requests) == 1
+    assert requests[0]["url"].rstrip("/").endswith("secrets")
 
 
 def test_environment_resource_create_delete_and_detail_actions_are_scoped(monkeypatch):
