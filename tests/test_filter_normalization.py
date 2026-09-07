@@ -3,6 +3,7 @@ import datetime
 import json
 import pathlib
 import uuid
+from decimal import Decimal
 from types import SimpleNamespace
 
 import pytest
@@ -3145,6 +3146,83 @@ def _resource_release_pipeline_payload(*, running_step: str | None = None):
     }
 
 
+def _deployment_run_billing_payload(
+    *,
+    pricing_state: str = "priced",
+    total_cost: str | None = "0.000000",
+) -> dict:
+    return {
+        "scope": "image_lifecycle",
+        "total_cost": total_cost,
+        "currency": "USD",
+        "pricing_state": pricing_state,
+        "components": {
+            "image_build": total_cost,
+            "image_registry_storage": "0.000000" if total_cost is not None else None,
+            "image_registry_service": "0.000000" if total_cost is not None else None,
+        },
+        "priced_rows": 3 if pricing_state == "priced" else 0,
+        "unpriced_rows": 0 if pricing_state == "priced" else 3,
+        "reused_image_count": 0,
+    }
+
+
+@pytest.mark.parametrize(
+    "pricing_state",
+    ["priced", "partial", "pending", "unavailable", "failed"],
+)
+def test_deployment_run_billing_parses_every_backend_pricing_state(pricing_state):
+    total_cost = "1.250000" if pricing_state in {"priced", "partial"} else None
+
+    billing = models_helpers_mod.DeploymentRunBilling.model_validate(
+        _deployment_run_billing_payload(
+            pricing_state=pricing_state,
+            total_cost=total_cost,
+        )
+    )
+
+    assert billing.pricing_state == pricing_state
+    assert billing.total_cost == (Decimal(total_cost) if total_cost is not None else None)
+    assert billing.components.image_build == billing.total_cost
+
+
+def test_deployment_run_billing_contract_is_complete_and_closed():
+    payload = _deployment_run_billing_payload()
+    for field_name in (
+        "scope",
+        "total_cost",
+        "currency",
+        "pricing_state",
+        "components",
+        "priced_rows",
+        "unpriced_rows",
+        "reused_image_count",
+    ):
+        incomplete = dict(payload)
+        incomplete.pop(field_name)
+        with pytest.raises(ValidationError, match=field_name):
+            models_helpers_mod.DeploymentRunBilling.model_validate(incomplete)
+
+    with pytest.raises(ValidationError, match="extra_forbidden"):
+        models_helpers_mod.DeploymentRunBilling.model_validate(
+            payload | {"future_billing_field": "value"}
+        )
+
+    with pytest.raises(ValidationError, match="extra_forbidden"):
+        models_helpers_mod.DeploymentRunBilling.model_validate(
+            payload
+            | {
+                "components": payload["components"]
+                | {"future_component": "0.000000"}
+            }
+        )
+
+    with pytest.raises(ValidationError, match="greater_than_equal"):
+        models_helpers_mod.DeploymentRunBilling.model_validate(
+            payload | {"unpriced_rows": -1}
+        )
+
+
 def test_resource_release_deploy_current_version_posts_detail_action(monkeypatch):
     captured = {}
     release_uid = "2f4c4c3d-5669-4da5-9d86-b84633c1e6ed"
@@ -3189,6 +3267,7 @@ def test_resource_release_deploy_current_version_posts_detail_action(monkeypatch
                     "retention_expires_at": None,
                 },
                 "error": None,
+                "billing": _deployment_run_billing_payload(),
             }
 
     def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
@@ -3213,6 +3292,7 @@ def test_resource_release_deploy_current_version_posts_detail_action(monkeypatch
     assert run.builder_runtime == ""
     assert run.logs.state == "available"
     assert run.error is None
+    assert run.billing.total_cost == Decimal("0.000000")
     assert captured == {
         "r_type": "POST",
         "url": (
@@ -3256,6 +3336,7 @@ def test_deployment_run_collection_and_detail_use_unified_resource_release_contr
             "retention_expires_at": None,
         },
         "error": None,
+        "billing": _deployment_run_billing_payload(),
     }
 
     collection_payload = {
@@ -3311,6 +3392,8 @@ def test_deployment_run_collection_and_detail_use_unified_resource_release_contr
     assert detail.builder_runtime == ""
     assert detail.logs.state == "available"
     assert detail.error is None
+    assert runs[0].billing.pricing_state == "priced"
+    assert detail.billing.components.image_registry_storage == Decimal("0.000000")
     assert captured[0]["payload"] == {
         "params": {
             "code_repository_branch_uid": CODE_REPOSITORY_BRANCH_UID,
@@ -3350,6 +3433,10 @@ def test_unified_deployment_run_models_and_filters(monkeypatch):
                 "retention_expires_at": None,
             },
             "error": None,
+            "billing": _deployment_run_billing_payload(
+                pricing_state="pending",
+                total_cost=None,
+            ),
         }
     )
 
@@ -3367,6 +3454,8 @@ def test_unified_deployment_run_models_and_filters(monkeypatch):
     assert run.pipeline.steps[4].state == "pending"
     assert run.builder_image == "us-docker.pkg.dev/platform/static-builder:latest"
     assert run.builder_runtime == "nodejs22"
+    assert run.billing.pricing_state == "pending"
+    assert run.billing.total_cost is None
     assert normalized == {
         "code_repository_branch_uid": code_repository_branch_uid,
         "target_type__in": ["resource_release", "static_site"],

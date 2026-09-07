@@ -1397,6 +1397,29 @@ class DeploymentRunPipeline(BaseModel):
     steps: list[DeploymentRunStep] = Field(default_factory=list)
 
 
+class DeploymentRunBillingComponents(BasePydanticModel):
+    image_build: Decimal | None = Field(max_digits=18, decimal_places=6)
+    image_registry_storage: Decimal | None = Field(max_digits=18, decimal_places=6)
+    image_registry_service: Decimal | None = Field(max_digits=18, decimal_places=6)
+
+
+class DeploymentRunBilling(BasePydanticModel):
+    scope: Literal["image_lifecycle"]
+    total_cost: Decimal | None = Field(max_digits=18, decimal_places=6)
+    currency: str = Field(min_length=1)
+    pricing_state: Literal[
+        "priced",
+        "partial",
+        "pending",
+        "unavailable",
+        "failed",
+    ]
+    components: DeploymentRunBillingComponents
+    priced_rows: int = Field(ge=0)
+    unpriced_rows: int = Field(ge=0)
+    reused_image_count: int = Field(ge=0)
+
+
 class DeploymentRunLogEntry(BaseModel):
     sequence: int
     timestamp: datetime.datetime | None = None
@@ -1473,6 +1496,7 @@ class DeploymentRun(CurrentCodeRepositoryBranchCollectionMixin, BaseObjectOrm, B
     builder_runtime: str = ""
     logs: DeploymentRunLogReference
     error: DeploymentRunError | None = None
+    billing: DeploymentRunBilling
 
     def get_logs(
         self,

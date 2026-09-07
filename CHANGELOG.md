@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [8.1.2] - 2026-09-07
+
+### Fixed
+
+- Added the backend-owned `billing` projection to strict `DeploymentRun` list,
+  detail, and deployment-action responses, including all canonical pricing
+  states, nullable decimal costs, and non-negative usage counters.
+
 ## [8.1.1] - 2026-09-07
 
 ### Fixed
