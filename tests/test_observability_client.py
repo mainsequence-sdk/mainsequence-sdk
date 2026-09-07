@@ -223,6 +223,11 @@ def test_agent_logs_support_optional_session_filter_without_environment_override
         repository_branch=None,
         organization_environment_uid=ENVIRONMENT_UID,
         organization_environment_name="Development",
+        runtime_update={
+            "state": "current",
+            "needs_redeploy": False,
+            "remediation": None,
+        },
         observability={
             "application_logs_url": (
                 "/api/v1/agents/e0e75693-4110-464c-93e0-82c7fd9c9a23/logs/"

@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [8.1.1] - 2026-09-07
+
+### Fixed
+
+- Added the backend-owned `runtime_update` projection to strict Agent and Agent
+  semantic-search response models, including all six canonical states,
+  tri-state redeployment status, and typed remediation.
+
 ## [8.1.0] - 2026-09-04
 
 ### Changed

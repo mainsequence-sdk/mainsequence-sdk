@@ -22,6 +22,67 @@ CODE_REPOSITORY_BRANCH_UID = "5a28020a-0f1b-47ee-aab8-334286234bea"
 ENVIRONMENT_UID = "58218213-5e4e-43de-a5bd-6757f4e1c8f6"
 
 
+def _agent_runtime_update_contract(state: str = "current") -> dict:
+    values = {
+        "current": (False, None),
+        "update_required": (True, {"tool": "agent.update_runtime"}),
+        "updating": (True, None),
+        "update_failed": (True, {"tool": "agent.update_runtime"}),
+        "not_deployed": (False, None),
+        "unknown": (None, None),
+    }
+    needs_redeploy, remediation = values[state]
+    return {
+        "state": state,
+        "needs_redeploy": needs_redeploy,
+        "remediation": remediation,
+    }
+
+
+@pytest.mark.parametrize(
+    ("state", "needs_redeploy", "remediation_tool"),
+    [
+        ("current", False, None),
+        ("update_required", True, "agent.update_runtime"),
+        ("updating", True, None),
+        ("update_failed", True, "agent.update_runtime"),
+        ("not_deployed", False, None),
+        ("unknown", None, None),
+    ],
+)
+def test_agent_runtime_update_parses_every_backend_state(
+    state,
+    needs_redeploy,
+    remediation_tool,
+):
+    runtime_update = agent_models_mod.AgentRuntimeUpdate.model_validate(
+        _agent_runtime_update_contract(state)
+    )
+
+    assert runtime_update.state == state
+    assert runtime_update.needs_redeploy is needs_redeploy
+    assert (
+        runtime_update.remediation.tool if runtime_update.remediation is not None else None
+    ) == remediation_tool
+
+
+def test_agent_runtime_update_contract_is_complete_and_closed():
+    payload = _agent_runtime_update_contract("unknown")
+    for field_name in ("state", "needs_redeploy", "remediation"):
+        incomplete = dict(payload)
+        incomplete.pop(field_name)
+        with pytest.raises(ValidationError, match=field_name):
+            agent_models_mod.AgentRuntimeUpdate.model_validate(incomplete)
+
+    with pytest.raises(ValidationError, match="extra_forbidden"):
+        agent_models_mod.AgentRuntimeUpdate.model_validate(payload | {"future_state": "value"})
+
+    invalid_remediation = _agent_runtime_update_contract("update_required")
+    invalid_remediation["remediation"] = {"tool": "agent.update_session"}
+    with pytest.raises(ValidationError, match="agent.update_runtime"):
+        agent_models_mod.AgentRuntimeUpdate.model_validate(invalid_remediation)
+
+
 @pytest.fixture(autouse=True)
 def _resolved_code_repository_context(monkeypatch):
     code_repository_context._reset_code_repository_context()
@@ -1760,6 +1821,7 @@ def test_agent_runtime_models_deserialize_backend_uid_payloads():
             "repository_branch": "main",
             "organization_environment_uid": environment_uid,
             "organization_environment_name": "production",
+            "runtime_update": _agent_runtime_update_contract(),
         }
     )
     assert agent.uid == agent_uid
@@ -1770,6 +1832,8 @@ def test_agent_runtime_models_deserialize_backend_uid_payloads():
     assert agent.repository_branch == "main"
     assert agent.organization_environment_uid == environment_uid
     assert agent.organization_environment_name == "production"
+    assert agent.runtime_update.state == "current"
+    assert agent.runtime_update.needs_redeploy is False
     assert agent.a2a_profile.supported_response_kinds == [agent_models_mod.A2AResponseKind.MESSAGE]
 
     search_result = agent_models_mod.AgentSemanticSearchResult.model_validate(
@@ -1782,6 +1846,7 @@ def test_agent_runtime_models_deserialize_backend_uid_payloads():
             "repository_branch": "main",
             "organization_environment_uid": environment_uid,
             "organization_environment_name": "production",
+            "runtime_update": _agent_runtime_update_contract("update_required"),
             "semantic_score": 0.91,
             "text_score": 0.74,
             "combined_score": 0.85,
@@ -1792,6 +1857,8 @@ def test_agent_runtime_models_deserialize_backend_uid_payloads():
     assert search_result.repository_branch == "main"
     assert search_result.organization_environment_uid == environment_uid
     assert search_result.organization_environment_name == "production"
+    assert search_result.runtime_update.state == "update_required"
+    assert search_result.runtime_update.remediation.tool == "agent.update_runtime"
     assert search_result.a2a_profile.default_response_kind == (
         agent_models_mod.A2AResponseKind.MESSAGE
     )
@@ -1913,6 +1980,7 @@ def test_agent_scope_code_repositoryion_is_required_but_nullable():
         "repository_branch": None,
         "organization_environment_uid": None,
         "organization_environment_name": None,
+        "runtime_update": _agent_runtime_update_contract("not_deployed"),
     }
 
     agent = agent_models_mod.Agent.model_validate(payload)
@@ -1946,6 +2014,7 @@ def test_agent_filter_sends_environment_read_scope_and_parses_code_repositoryion
                         "repository_branch": "main",
                         "organization_environment_uid": str(environment_uid),
                         "organization_environment_name": "production",
+                        "runtime_update": _agent_runtime_update_contract("current"),
                     }
                 ],
                 "next": None,
@@ -1989,6 +2058,63 @@ def test_agent_filter_sends_environment_read_scope_and_parses_code_repositoryion
     assert len(agents) == 1
     assert agents[0].repository_branch == "main"
     assert agents[0].organization_environment_uid == str(environment_uid)
+    assert agents[0].runtime_update.state == "current"
+
+
+def test_agent_get_parses_runtime_update_projection(monkeypatch):
+    captured = {}
+    agent_uid = "e0e75693-4110-464c-93e0-82c7fd9c9a23"
+    environment_uid = uuid.UUID("22222222-2222-4222-8222-222222222222")
+
+    class FakeResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {
+                "uid": agent_uid,
+                "name": "CodeRepository Executor",
+                "llm_thinking": "medium",
+                "code_repository_branch_uid": "9d81d63f-b8c9-404d-9f1a-5f2ad29dbf16",
+                "repository_branch": "main",
+                "organization_environment_uid": str(environment_uid),
+                "organization_environment_name": "production",
+                "runtime_update": _agent_runtime_update_contract("update_failed"),
+            }
+
+    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
+        captured.update(
+            {
+                "r_type": r_type,
+                "url": url,
+                "payload": payload,
+                "timeout": time_out,
+            }
+        )
+        return FakeResponse()
+
+    monkeypatch.setattr(base_mod, "make_request", _fake_make_request)
+    monkeypatch.setattr(
+        agent_models_mod.Agent,
+        "build_session",
+        classmethod(lambda cls: object()),
+    )
+
+    agent = agent_models_mod.Agent.get(
+        pk=agent_uid,
+        organization_environment_uid=environment_uid,
+        timeout=12,
+    )
+
+    assert captured == {
+        "r_type": "GET",
+        "url": f"{agent_models_mod.Agent.get_object_url()}/{agent_uid}/",
+        "payload": {"params": {"organization_environment_uid": str(environment_uid)}},
+        "timeout": 12,
+    }
+    assert agent.runtime_update.state == "update_failed"
+    assert agent.runtime_update.needs_redeploy is True
+    assert agent.runtime_update.remediation.tool == "agent.update_runtime"
 
 
 def test_agent_semantic_search_sends_environment_scope_and_parses_code_repositoryion(monkeypatch):
@@ -2010,6 +2136,7 @@ def test_agent_semantic_search_sends_environment_scope_and_parses_code_repositor
                     "repository_branch": "main",
                     "organization_environment_uid": str(environment_uid),
                     "organization_environment_name": "production",
+                    "runtime_update": _agent_runtime_update_contract("unknown"),
                     "semantic_score": 0.91,
                     "text_score": 0.74,
                     "combined_score": 0.85,
@@ -2056,6 +2183,8 @@ def test_agent_semantic_search_sends_environment_scope_and_parses_code_repositor
     assert len(results) == 1
     assert results[0].code_repository_branch_uid == "9d81d63f-b8c9-404d-9f1a-5f2ad29dbf16"
     assert results[0].organization_environment_name == "production"
+    assert results[0].runtime_update.state == "unknown"
+    assert results[0].runtime_update.needs_redeploy is None
 
 
 def test_agent_session_filter_supports_archive_history_query(monkeypatch):
@@ -4024,6 +4153,7 @@ def test_agent_respond_uses_agent_scoped_sessionless_contract(monkeypatch):
         repository_branch=None,
         organization_environment_uid=None,
         organization_environment_name=None,
+        runtime_update=_agent_runtime_update_contract(),
     )
 
     class FakeAccessResponse:
@@ -4131,6 +4261,7 @@ def test_agent_respond_waits_for_transient_runtime_interaction(monkeypatch):
         repository_branch=None,
         organization_environment_uid=None,
         organization_environment_name=None,
+        runtime_update=_agent_runtime_update_contract(),
     )
     accesses = iter(
         [
@@ -4221,6 +4352,7 @@ def test_agent_get_or_create_session_posts_new_contract(monkeypatch):
         repository_branch=None,
         organization_environment_uid=None,
         organization_environment_name=None,
+        runtime_update=_agent_runtime_update_contract(),
     )
 
     class FakeResponse:
@@ -4315,6 +4447,7 @@ def test_agent_get_or_create_session_parses_reused_handle_capabilities(monkeypat
         repository_branch=None,
         organization_environment_uid=None,
         organization_environment_name=None,
+        runtime_update=_agent_runtime_update_contract(),
     )
     captured = {}
 
@@ -4389,6 +4522,7 @@ def test_agent_get_or_create_session_by_uid_sends_only_session_uid(monkeypatch):
         repository_branch=None,
         organization_environment_uid=None,
         organization_environment_name=None,
+        runtime_update=_agent_runtime_update_contract(),
     )
 
     class FakeResponse:
