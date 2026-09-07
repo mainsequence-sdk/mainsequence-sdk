@@ -227,6 +227,13 @@ class AgentRuntimeImageDrift(BasePydanticModel):
     has_drift: bool = Field(
         False, description="Whether any included drift check is currently drifting."
     )
+    requires_user_action: bool = Field(
+        False,
+        description=(
+            "Whether at least one current drift condition requires explicit user "
+            "action instead of backend autohealing."
+        ),
+    )
     autoheal_available: bool = Field(
         False,
         description="Whether all currently drifting checks can be repaired automatically by the backend.",

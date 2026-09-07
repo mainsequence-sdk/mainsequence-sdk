@@ -3609,6 +3609,7 @@ def test_agent_session_runtime_access_uses_session_uid_route(monkeypatch):
                     "agent_kind": "astro_orchestrator",
                     "available": True,
                     "has_drift": False,
+                    "requires_user_action": False,
                     "autoheal_available": False,
                     "autoheal_message": "No automatic drift repair is needed.",
                     "checks": [
@@ -3667,6 +3668,7 @@ def test_agent_session_runtime_access_uses_session_uid_route(monkeypatch):
     assert access.knative_service_runtime_uid == "70c6efb9-8e80-4051-ad3a-f432b2c37f5a"
     assert access.image_drift is not None
     assert access.image_drift.agent_kind == "astro_orchestrator"
+    assert access.image_drift.requires_user_action is False
     assert access.image_drift.checks[0].key == "orchestrator_image"
     assert access.image_drift.catalog_state is not None
     assert access.image_drift.catalog_state["refresh_required"] is False
@@ -3711,11 +3713,26 @@ def test_agent_session_runtime_access_accepts_minimal_image_drift(monkeypatch):
 
     assert access.image_drift is not None
     assert access.image_drift.has_drift is False
+    assert access.image_drift.requires_user_action is False
     assert access.image_drift.detail is None
     assert access.model_dump()["reconciliation"] == {
         "queued": False,
         "reason": "not_required",
     }
+
+
+@pytest.mark.parametrize("requires_user_action", [False, True])
+def test_agent_runtime_image_drift_parses_user_action_signal(requires_user_action):
+    image_drift = agent_models_mod.AgentRuntimeImageDrift.model_validate(
+        {"requires_user_action": requires_user_action}
+    )
+
+    assert image_drift.requires_user_action is requires_user_action
+
+    with pytest.raises(ValidationError, match="requires_user_action"):
+        agent_models_mod.AgentRuntimeImageDrift.model_validate(
+            {"requires_user_action": None}
+        )
 
 
 def test_agent_session_send_a2a_message_posts_standard_contract(monkeypatch):
@@ -3747,6 +3764,13 @@ def test_agent_session_send_a2a_message_posts_standard_contract(monkeypatch):
                 "token": "tok-secret",
                 "expires_at": "2999-01-01T00:00:00Z",
                 **_ready_runtime_contract(),
+                "image_drift": {
+                    "agent_kind": "astro_orchestrator",
+                    "available": True,
+                    "has_drift": False,
+                    "requires_user_action": False,
+                    "checks": [],
+                },
             }
 
     class FakeRuntimeResponse:
@@ -3799,6 +3823,10 @@ def test_agent_session_send_a2a_message_posts_standard_contract(monkeypatch):
     )
 
     assert captured["resolve_count"] == 1
+    cached_access = agent_models_mod.AgentSession.get_cached_runtime_access(session)
+    assert cached_access is not None
+    assert cached_access.image_drift is not None
+    assert cached_access.image_drift.requires_user_action is False
     assert captured["resolve"] == {
         "r_type": "POST",
         "url": f"{agent_models_mod.AgentSession.get_object_url()}/{session_uid}/resolve-runtime-access/",

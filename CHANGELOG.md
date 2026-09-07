@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [8.1.5] - 2026-09-07
+
+### Fixed
+
+- Added the backend-owned `requires_user_action` runtime image-drift signal so
+  AgentSession runtime access can proceed to direct A2A submission.
+
 ## [8.1.4] - 2026-09-07
 
 ### Fixed
