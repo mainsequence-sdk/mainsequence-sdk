@@ -1992,6 +1992,14 @@ class AgentSession(OwnerLogMixin, BaseObjectOrm, BasePydanticModel):
             "harness. Capability names are backend-extensible."
         ),
     )
+    catalog_digest: str | None = Field(
+        ...,
+        pattern=r"^sha256:[0-9a-f]{64}$",
+        description=(
+            "Read-only digest of the model-provider catalog used to resolve the "
+            "session, or null when no provider-control projection is available."
+        ),
+    )
     agent_uid: str | None = Field(
         None, description="Public UID of the agent definition used for this session."
     )
@@ -2027,6 +2035,20 @@ class AgentSession(OwnerLogMixin, BaseObjectOrm, BasePydanticModel):
     agent_type: str = Field(
         "",
         description="Read-only helper with the canonical machine-readable agent runtime or workflow type.",
+    )
+    organization_environment_uid: str = Field(
+        ...,
+        description=(
+            "Read-only public UID of the Organization Environment that owns the "
+            "session through its Agent."
+        ),
+    )
+    organization_environment_name: str = Field(
+        ...,
+        description=(
+            "Read-only name of the Organization Environment that owns the session "
+            "through its Agent."
+        ),
     )
     harness: AgentHarnessKind | None = Field(
         None,

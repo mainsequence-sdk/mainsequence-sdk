@@ -1870,6 +1870,8 @@ def test_agent_runtime_models_deserialize_backend_uid_payloads():
             "agent_uid": agent_uid,
             "agent_name": "Research Copilot",
             "agent_type": "custom",
+            "organization_environment_uid": environment_uid,
+            "organization_environment_name": "production",
             "harness": "tau",
             "harness_protocol": "tau-session-v1",
             "harness_version": "0.3.1",
@@ -1912,10 +1914,14 @@ def test_agent_runtime_models_deserialize_backend_uid_payloads():
                 "tau_activity_sequence": "v1",
                 "tau_turn_commit": "v1",
             },
+            "catalog_digest": "sha256:" + ("a" * 64),
         }
     )
     assert session.uid == session_uid
     assert session.agent_uid == agent_uid
+    assert session.organization_environment_uid == environment_uid
+    assert session.organization_environment_name == "production"
+    assert session.catalog_digest == "sha256:" + ("a" * 64)
     assert session.name == "Research follow-up"
     assert session.harness is agent_models_mod.AgentHarnessKind.TAU
     assert session.harness_protocol is agent_models_mod.AgentHarnessProtocol.TAU_SESSION_V1
@@ -2246,6 +2252,8 @@ def test_agent_session_list_and_detail_parse_runtime_capabilities(monkeypatch):
         "agent_uid": agent_uid,
         "agent_name": "Research Copilot",
         "agent_type": "custom",
+        "organization_environment_uid": ENVIRONMENT_UID,
+        "organization_environment_name": "production",
         "harness": "tau",
         "harness_protocol": "tau-session-v1",
         "harness_version": "0.3.1",
@@ -2266,6 +2274,7 @@ def test_agent_session_list_and_detail_parse_runtime_capabilities(monkeypatch):
             "tau_activity_sequence": "v1",
             "tau_turn_commit": "v1",
         },
+        "catalog_digest": "sha256:" + ("b" * 64),
     }
     responses = iter(
         [
@@ -2295,10 +2304,48 @@ def test_agent_session_list_and_detail_parse_runtime_capabilities(monkeypatch):
     assert listed[0].runtime_capabilities["tau_turn_commit"] == "v1"
     assert detailed.runtime_capabilities == listed[0].runtime_capabilities
     assert detailed.observability.application_logs_url.endswith(f"/{session_uid}/logs/")
+    assert listed[0].organization_environment_uid == ENVIRONMENT_UID
+    assert detailed.organization_environment_name == "production"
+    assert detailed.catalog_digest == "sha256:" + ("b" * 64)
 
     with pytest.raises(ValidationError, match="unexpected_projection"):
         agent_models_mod.AgentSession.model_validate(
             {**session_payload, "unexpected_projection": "still forbidden"}
+        )
+
+
+def test_agent_session_environment_and_catalog_projection_contract_is_strict():
+    payload = {
+        "organization_environment_uid": ENVIRONMENT_UID,
+        "organization_environment_name": "production",
+        "catalog_digest": None,
+        "llm_provider": "openai",
+        "llm_model": "gpt-5.4",
+    }
+
+    session = agent_models_mod.AgentSession.model_validate(payload)
+    assert session.catalog_digest is None
+
+    for field_name in (
+        "organization_environment_uid",
+        "organization_environment_name",
+        "catalog_digest",
+    ):
+        incomplete = dict(payload)
+        incomplete.pop(field_name)
+        with pytest.raises(ValidationError, match=field_name):
+            agent_models_mod.AgentSession.model_validate(incomplete)
+
+    for field_name in (
+        "organization_environment_uid",
+        "organization_environment_name",
+    ):
+        with pytest.raises(ValidationError, match=field_name):
+            agent_models_mod.AgentSession.model_validate(payload | {field_name: None})
+
+    with pytest.raises(ValidationError, match="catalog_digest"):
+        agent_models_mod.AgentSession.model_validate(
+            payload | {"catalog_digest": "not-a-catalog-digest"}
         )
 
 
@@ -2461,6 +2508,8 @@ def test_agent_session_archive_actions_return_current_session_contract(monkeypat
                 "agent_uid": "9d81d63f-b8c9-404d-9f1a-5f2ad29dbf16",
                 "agent_name": "Research Copilot",
                 "agent_type": "custom",
+                "organization_environment_uid": ENVIRONMENT_UID,
+                "organization_environment_name": "production",
                 "harness": "tau",
                 "harness_protocol": "tau-session-v1",
                 "harness_version": "0.3.1",
@@ -2484,6 +2533,7 @@ def test_agent_session_archive_actions_return_current_session_contract(monkeypat
                 "thread_id": "thread-123",
                 "session_metadata": {},
                 "bound_handle": None,
+                "catalog_digest": None,
             }
 
     def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
@@ -3671,6 +3721,16 @@ def test_agent_session_runtime_access_accepts_minimal_image_drift(monkeypatch):
 def test_agent_session_send_a2a_message_posts_standard_contract(monkeypatch):
     captured = {"resolve_count": 0, "runtime": {}}
     session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
+    session = agent_models_mod.AgentSession.model_validate(
+        {
+            "uid": session_uid,
+            "organization_environment_uid": ENVIRONMENT_UID,
+            "organization_environment_name": "production",
+            "catalog_digest": "sha256:" + ("e" * 64),
+            "llm_provider": "openai",
+            "llm_model": "gpt-5.4",
+        }
+    )
 
     agent_models_mod.AgentSession.clear_cached_runtime_access(session_uid)
 
@@ -3733,7 +3793,7 @@ def test_agent_session_send_a2a_message_posts_standard_contract(monkeypatch):
     )
 
     payload = agent_models_mod.AgentSession.send_a2a_message(
-        session_uid,
+        session,
         message="What can this agent do?",
         timeout=15,
     )
@@ -4455,6 +4515,8 @@ def test_agent_get_or_create_session_posts_new_contract(monkeypatch):
                 "agent_uid": agent_uid,
                 "agent_name": "Research Copilot",
                 "agent_type": "custom",
+                "organization_environment_uid": ENVIRONMENT_UID,
+                "organization_environment_name": "production",
                 "created_by_user_uid": user_uid,
                 "parent_session_uid": parent_session_uid,
                 "name": "Quarterly portfolio review",
@@ -4477,6 +4539,7 @@ def test_agent_get_or_create_session_posts_new_contract(monkeypatch):
                     "owner_user_uid": user_uid,
                     "is_locked": False,
                 },
+                "catalog_digest": "sha256:" + ("c" * 64),
             }
 
     def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
@@ -4501,6 +4564,8 @@ def test_agent_get_or_create_session_posts_new_contract(monkeypatch):
     assert session.uid == session_uid
     assert session.name == "Quarterly portfolio review"
     assert session.parent_session_uid == parent_session_uid
+    assert session.organization_environment_uid == ENVIRONMENT_UID
+    assert session.catalog_digest == "sha256:" + ("c" * 64)
     assert captured == {
         "r_type": "POST",
         "url": (
@@ -4551,6 +4616,8 @@ def test_agent_get_or_create_session_parses_reused_handle_capabilities(monkeypat
                 "agent_uid": agent_uid,
                 "agent_name": "Research Copilot",
                 "agent_type": "custom",
+                "organization_environment_uid": ENVIRONMENT_UID,
+                "organization_environment_name": "production",
                 "harness": "tau",
                 "harness_protocol": "tau-session-v1",
                 "harness_version": "0.3.1",
@@ -4577,6 +4644,7 @@ def test_agent_get_or_create_session_parses_reused_handle_capabilities(monkeypat
                     "tau_activity_sequence": "v1",
                     "tau_turn_commit": "v1",
                 },
+                "catalog_digest": "sha256:" + ("d" * 64),
             }
 
     def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
@@ -4591,6 +4659,8 @@ def test_agent_get_or_create_session_parses_reused_handle_capabilities(monkeypat
     assert session.bound_handle["handle_unique_id"] == handle_unique_id
     assert session.runtime_capabilities["tau_runtime_bootstrap"] == "v1"
     assert session.observability.application_logs_url.endswith(f"/{session_uid}/logs/")
+    assert session.organization_environment_name == "production"
+    assert session.catalog_digest == "sha256:" + ("d" * 64)
     assert captured["payload"] == {"json": {"handle_unique_id": handle_unique_id}}
     assert captured["timeout"] == 13
 
@@ -4625,12 +4695,15 @@ def test_agent_get_or_create_session_by_uid_sends_only_session_uid(monkeypatch):
                 "agent_uid": agent_uid,
                 "agent_name": "Research Copilot",
                 "agent_type": "custom",
+                "organization_environment_uid": ENVIRONMENT_UID,
+                "organization_environment_name": "production",
                 "name": "Existing session",
                 "status": "running",
                 "llm_provider": "openai",
                 "llm_model": "gpt-5.4",
                 "llm_thinking": "",
                 "bound_handle": None,
+                "catalog_digest": None,
             }
 
     def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):

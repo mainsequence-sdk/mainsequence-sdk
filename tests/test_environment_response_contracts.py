@@ -26,6 +26,12 @@ RUNTIME_UPDATE_FIELD = "runtime_update"
             id="agent-semantic-search-result",
         ),
         pytest.param(
+            ("AgentSessionSerializer",),
+            agent_models.AgentSession,
+            {ENVIRONMENT_UID_FIELD, ENVIRONMENT_NAME_FIELD},
+            id="agent-session",
+        ),
+        pytest.param(
             ("JobSerializer",),
             helper_models.Job,
             {ENVIRONMENT_UID_FIELD},
