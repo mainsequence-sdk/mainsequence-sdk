@@ -76,7 +76,7 @@ Plain text:
 {
   "message": {
     "messageId": "msg-client-uuid-1",
-    "role": "ROLE_USER",
+    "role": "ROLE_REQUESTER",
     "contextId": "0b2701a1-e777-4cfe-8437-b94025f00069",
     "parts": [
       {
@@ -97,7 +97,7 @@ Strict dictionary:
 {
   "message": {
     "messageId": "msg-client-json-1",
-    "role": "ROLE_USER",
+    "role": "ROLE_REQUESTER",
     "contextId": "0b2701a1-e777-4cfe-8437-b94025f00069",
     "parts": [
       {
@@ -120,6 +120,10 @@ Strict dictionary:
   }
 }
 ```
+
+The request role is always `ROLE_REQUESTER`. A successful direct Message must
+return `ROLE_RESPONDER` and the same target `AgentSession.uid` as its
+`contextId`; the SDK rejects any other role or session context.
 
 ADR 47 replaces the timing Boolean with an explicit result contract. The SDK
 uses `response_kind="message"` for direct execution and

@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [8.1.6] - 2026-09-08
+
+### Fixed
+
+- Updated direct A2A request and response direction handling to the canonical
+  `ROLE_REQUESTER` and `ROLE_RESPONDER` wire contract, including AgentSession
+  response-context validation.
+
 ## [8.1.5] - 2026-09-07
 
 ### Fixed

@@ -30,6 +30,8 @@ DEFAULT_AGENT_RUNTIME_ACCESS_CACHE_EXPIRY_SKEW_SECONDS = 30.0
 STANDARD_A2A_MESSAGE_SEND_PATH = "/api/a2a/v1/message:send"
 STANDARD_A2A_TASKS_PATH = "/api/a2a/v1/tasks"
 STANDARD_A2A_CONTENT_TYPE = "application/a2a+json"
+STANDARD_A2A_REQUESTER_ROLE = "ROLE_REQUESTER"
+STANDARD_A2A_RESPONDER_ROLE = "ROLE_RESPONDER"
 STANDARD_A2A_RESPONSE_KIND_EXTENSION_URI = "https://mainsequence.ai/a2a/extensions/response-kind/v1"
 STANDARD_A2A_OUTPUT_CONTRACT_METADATA_KEY = (
     "https://mainsequence.ai/a2a/extensions/output-contract/v1"
@@ -105,6 +107,14 @@ class A2AMessageSendResult(BasePydanticModel):
     def _require_exact_result(self) -> A2AMessageSendResult:
         if (self.message is None) == (self.task is None):
             raise ValueError("A2A message-send result must contain exactly one of message or task")
+        if (
+            self.message is not None
+            and self.message.get("role") != STANDARD_A2A_RESPONDER_ROLE
+        ):
+            raise ValueError(
+                "A2A message result role must be "
+                f"{STANDARD_A2A_RESPONDER_ROLE}."
+            )
         return self
 
     @property
@@ -677,7 +687,7 @@ class Agent(
         body: dict[str, Any] = {
             "message": {
                 "messageId": str(message_id or "").strip() or f"msg-{uuid.uuid4()}",
-                "role": "ROLE_USER",
+                "role": STANDARD_A2A_REQUESTER_ROLE,
                 "parts": parts,
             },
             "configuration": {
@@ -1526,7 +1536,7 @@ class AgentSession(OwnerLogMixin, BaseObjectOrm, BasePydanticModel):
         body: dict[str, Any] = {
             "message": {
                 "messageId": normalized_message_id,
-                "role": "ROLE_USER",
+                "role": STANDARD_A2A_REQUESTER_ROLE,
                 "contextId": agent_session_uid,
                 "parts": parts,
             },
@@ -1729,6 +1739,16 @@ class AgentSession(OwnerLogMixin, BaseObjectOrm, BasePydanticModel):
         if result.response_kind is not normalized_response_kind:
             raise ApiError(
                 "Standard A2A response kind does not match the requested response_kind.",
+                response=response,
+                payload=body,
+            )
+        if (
+            result.message is not None
+            and result.message.get("contextId") != session_uid
+        ):
+            raise ApiError(
+                "Standard A2A message response contextId does not match the target "
+                "AgentSession.",
                 response=response,
                 payload=body,
             )

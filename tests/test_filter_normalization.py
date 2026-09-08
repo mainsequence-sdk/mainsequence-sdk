@@ -3783,7 +3783,7 @@ def test_agent_session_send_a2a_message_posts_standard_contract(monkeypatch):
             return {
                 "message": {
                     "messageId": "msg-runtime-output",
-                    "role": "ROLE_AGENT",
+                    "role": "ROLE_RESPONDER",
                     "contextId": session_uid,
                     "parts": [{"text": "I can analyze workspaces."}],
                 }
@@ -3849,7 +3849,7 @@ def test_agent_session_send_a2a_message_posts_standard_contract(monkeypatch):
     assert request_body == {
         "message": {
             "messageId": "msg-00000000-0000-4000-8000-000000000001",
-            "role": "ROLE_USER",
+            "role": "ROLE_REQUESTER",
             "contextId": session_uid,
             "parts": [{"text": "What can this agent do?"}],
         },
@@ -3859,6 +3859,58 @@ def test_agent_session_send_a2a_message_posts_standard_contract(monkeypatch):
         },
     }
     assert "omit_reasoning" not in captured["runtime"]["data"]
+
+
+@pytest.mark.parametrize("invalid_role", [None, "ROLE_REQUESTER", "requester"])
+def test_a2a_message_result_requires_responder_role(invalid_role):
+    with pytest.raises(ValidationError, match="ROLE_RESPONDER"):
+        agent_models_mod.A2AMessageSendResult.model_validate(
+            {
+                "message": {
+                    "messageId": "msg-output",
+                    "role": invalid_role,
+                    "contextId": "session-uid",
+                    "parts": [{"text": "Result."}],
+                }
+            }
+        )
+
+
+def test_agent_session_send_rejects_mismatched_response_context(monkeypatch):
+    session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
+
+    class FakeResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {
+                "message": {
+                    "messageId": "msg-output",
+                    "role": "ROLE_RESPONDER",
+                    "contextId": "different-session",
+                    "parts": [{"text": "Result."}],
+                }
+            }
+
+    monkeypatch.setattr(
+        agent_models_mod.AgentSession,
+        "_resolve_runtime_access_for_message_send",
+        classmethod(lambda cls, agent_session, timeout=None: object()),
+    )
+    monkeypatch.setattr(
+        agent_models_mod.AgentSession,
+        "_post_standard_a2a_message",
+        classmethod(
+            lambda cls, access, *, body, timeout=None: FakeResponse()
+        ),
+    )
+
+    with pytest.raises(agent_models_mod.ApiError, match="contextId"):
+        agent_models_mod.AgentSession.send_a2a_message(
+            session_uid,
+            message="Return a result.",
+        )
 
 
 def test_agent_session_send_waits_only_while_runtime_interaction_is_transient(
@@ -3915,7 +3967,7 @@ def test_agent_session_send_waits_only_while_runtime_interaction_is_transient(
             return {
                 "message": {
                     "messageId": "msg-output",
-                    "role": "ROLE_AGENT",
+                    "role": "ROLE_RESPONDER",
                     "contextId": session_uid,
                     "parts": [{"text": "Ready."}],
                 }
@@ -4198,7 +4250,7 @@ def test_agent_session_send_a2a_message_posts_strict_dictionary_contract(monkeyp
             return {
                 "message": {
                     "messageId": "msg-runtime-output",
-                    "role": "ROLE_AGENT",
+                    "role": "ROLE_RESPONDER",
                     "contextId": session_uid,
                     "parts": [{"text": '{"ok": true}'}],
                 }
@@ -4281,7 +4333,7 @@ def test_agent_session_send_a2a_message_refreshes_access_and_reuses_body(monkeyp
             return {
                 "message": {
                     "messageId": "msg-runtime-output",
-                    "role": "ROLE_AGENT",
+                    "role": "ROLE_RESPONDER",
                     "contextId": session_uid,
                     "parts": [{"text": "Done."}],
                 }
@@ -4357,7 +4409,7 @@ def test_agent_respond_uses_agent_scoped_sessionless_contract(monkeypatch):
                 "message": {
                     "kind": "message",
                     "messageId": "msg-output",
-                    "role": "ROLE_AGENT",
+                    "role": "ROLE_RESPONDER",
                     "parts": [{"data": {"answer": 42}, "mediaType": "application/json"}],
                 }
             }
@@ -4411,7 +4463,7 @@ def test_agent_respond_uses_agent_scoped_sessionless_contract(monkeypatch):
     body = runtime["body"]
     assert body["message"] == {
         "messageId": "msg-input",
-        "role": "ROLE_USER",
+        "role": "ROLE_REQUESTER",
         "parts": [{"text": "Return an answer."}],
     }
     assert "contextId" not in body["message"]
@@ -4488,7 +4540,7 @@ def test_agent_respond_waits_for_transient_runtime_interaction(monkeypatch):
             return {
                 "message": {
                     "messageId": "msg-output",
-                    "role": "ROLE_AGENT",
+                    "role": "ROLE_RESPONDER",
                     "parts": [{"text": "Ready."}],
                 }
             }

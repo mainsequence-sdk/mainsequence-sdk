@@ -1055,7 +1055,7 @@ def test_send_agent_session_a2a_message_uses_client_model(cli_mod, monkeypatch):
                 return {
                     "message": {
                         "messageId": "msg-runtime-output",
-                        "role": "ROLE_AGENT",
+                        "role": "ROLE_RESPONDER",
                         "contextId": agent_session,
                         "parts": [{"text": "Done."}],
                     }
@@ -6785,7 +6785,7 @@ def test_agent_session_a2a_send_always_returns_json(cli_mod, runner, monkeypatch
         return {
             "message": {
                 "messageId": "msg-runtime-output",
-                "role": "ROLE_AGENT",
+                "role": "ROLE_RESPONDER",
                 "contextId": agent_session_uid,
                 "parts": [{"text": '{"ok": true}'}],
             }
@@ -6860,7 +6860,7 @@ def test_agent_session_a2a_send_does_not_require_runtime_resolve(cli_mod, runner
         return {
             "message": {
                 "messageId": "msg-runtime-output",
-                "role": "ROLE_AGENT",
+                "role": "ROLE_RESPONDER",
                 "contextId": args[0],
                 "parts": [{"text": "Done."}],
             }
