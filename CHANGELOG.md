@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [8.1.8] - 2026-09-08
+
+### Fixed
+
+- Added the backend-owned `runtime_billing` and `cost_summary` projections to
+  strict DeploymentRun list, detail, and deployment-action responses.
+
 ## [8.1.7] - 2026-09-08
 
 ### Fixed

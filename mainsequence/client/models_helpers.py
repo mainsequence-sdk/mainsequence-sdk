@@ -1403,21 +1403,41 @@ class DeploymentRunBillingComponents(BasePydanticModel):
     image_registry_service: Decimal | None = Field(max_digits=18, decimal_places=6)
 
 
+DeploymentRunPricingState = Literal[
+    "priced",
+    "partial",
+    "pending",
+    "unavailable",
+    "failed",
+]
+
+
 class DeploymentRunBilling(BasePydanticModel):
     scope: Literal["image_lifecycle"]
     total_cost: Decimal | None = Field(max_digits=18, decimal_places=6)
     currency: str = Field(min_length=1)
-    pricing_state: Literal[
-        "priced",
-        "partial",
-        "pending",
-        "unavailable",
-        "failed",
-    ]
+    pricing_state: DeploymentRunPricingState
     components: DeploymentRunBillingComponents
     priced_rows: int = Field(ge=0)
     unpriced_rows: int = Field(ge=0)
     reused_image_count: int = Field(ge=0)
+
+
+class DeploymentRunRuntimeBilling(BasePydanticModel):
+    scope: Literal["knative_runtime"]
+    total_cost: Decimal | None = Field(max_digits=18, decimal_places=6)
+    base_cost: Decimal | None = Field(max_digits=18, decimal_places=6)
+    currency: str = Field(min_length=1)
+    pricing_state: DeploymentRunPricingState
+    priced_rows: int = Field(ge=0)
+    unpriced_rows: int = Field(ge=0)
+    is_complete: bool
+
+
+class DeploymentRunCostSummary(BasePydanticModel):
+    total_cost: Decimal | None = Field(max_digits=18, decimal_places=6)
+    currency: str = Field(min_length=1)
+    is_complete: bool
 
 
 class DeploymentRunLogEntry(BaseModel):
@@ -1497,6 +1517,8 @@ class DeploymentRun(CurrentCodeRepositoryBranchCollectionMixin, BaseObjectOrm, B
     logs: DeploymentRunLogReference
     error: DeploymentRunError | None = None
     billing: DeploymentRunBilling
+    runtime_billing: DeploymentRunRuntimeBilling
+    cost_summary: DeploymentRunCostSummary
 
     def get_logs(
         self,

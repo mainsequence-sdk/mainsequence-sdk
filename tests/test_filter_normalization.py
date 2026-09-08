@@ -3217,6 +3217,61 @@ def _deployment_run_billing_payload(
     }
 
 
+def _deployment_run_runtime_billing_payload(
+    *,
+    pricing_state: str = "priced",
+    total_cost: str | None = "0.000000",
+    base_cost: str | None = "0.000000",
+    is_complete: bool = True,
+) -> dict:
+    return {
+        "scope": "knative_runtime",
+        "total_cost": total_cost,
+        "base_cost": base_cost,
+        "currency": "USD",
+        "pricing_state": pricing_state,
+        "priced_rows": 3 if pricing_state == "priced" else 0,
+        "unpriced_rows": 0 if pricing_state == "priced" else 3,
+        "is_complete": is_complete,
+    }
+
+
+def _deployment_run_cost_summary_payload(
+    *,
+    total_cost: str | None = "0.000000",
+    is_complete: bool = True,
+) -> dict:
+    return {
+        "total_cost": total_cost,
+        "currency": "USD",
+        "is_complete": is_complete,
+    }
+
+
+def _deployment_run_cost_projections(
+    *,
+    pricing_state: str = "priced",
+    total_cost: str | None = "0.000000",
+    is_complete: bool = True,
+) -> dict:
+    return {
+        "billing": _deployment_run_billing_payload(
+            pricing_state=pricing_state,
+            total_cost=total_cost,
+        ),
+        "runtime_billing": _deployment_run_runtime_billing_payload(
+            pricing_state=pricing_state,
+            total_cost=total_cost,
+            base_cost=total_cost,
+            is_complete=is_complete,
+        ),
+        "cost_summary": _deployment_run_cost_summary_payload(
+            total_cost=total_cost,
+            is_complete=is_complete,
+        ),
+    }
+
+
 @pytest.mark.parametrize(
     "pricing_state",
     ["priced", "partial", "pending", "unavailable", "failed"],
@@ -3273,6 +3328,91 @@ def test_deployment_run_billing_contract_is_complete_and_closed():
         )
 
 
+@pytest.mark.parametrize(
+    "pricing_state",
+    ["priced", "partial", "pending", "unavailable", "failed"],
+)
+def test_deployment_run_runtime_billing_parses_every_backend_pricing_state(
+    pricing_state,
+):
+    total_cost = "1.250000" if pricing_state in {"priced", "partial"} else None
+    base_cost = "0.750000" if total_cost is not None else None
+
+    billing = models_helpers_mod.DeploymentRunRuntimeBilling.model_validate(
+        _deployment_run_runtime_billing_payload(
+            pricing_state=pricing_state,
+            total_cost=total_cost,
+            base_cost=base_cost,
+            is_complete=pricing_state == "priced",
+        )
+    )
+
+    assert billing.pricing_state == pricing_state
+    assert billing.total_cost == (Decimal(total_cost) if total_cost is not None else None)
+    assert billing.base_cost == (Decimal(base_cost) if base_cost is not None else None)
+    assert billing.is_complete is (pricing_state == "priced")
+
+
+@pytest.mark.parametrize("total_cost", ["2.000000", None])
+def test_deployment_run_cost_summary_parses_nullable_decimal(total_cost):
+    summary = models_helpers_mod.DeploymentRunCostSummary.model_validate(
+        _deployment_run_cost_summary_payload(
+            total_cost=total_cost,
+            is_complete=total_cost is not None,
+        )
+    )
+
+    assert summary.total_cost == (Decimal(total_cost) if total_cost is not None else None)
+    assert summary.is_complete is (total_cost is not None)
+
+
+@pytest.mark.parametrize(
+    ("model", "payload", "required_fields"),
+    [
+        (
+            models_helpers_mod.DeploymentRunRuntimeBilling,
+            _deployment_run_runtime_billing_payload(),
+            (
+                "scope",
+                "total_cost",
+                "base_cost",
+                "currency",
+                "pricing_state",
+                "priced_rows",
+                "unpriced_rows",
+                "is_complete",
+            ),
+        ),
+        (
+            models_helpers_mod.DeploymentRunCostSummary,
+            _deployment_run_cost_summary_payload(),
+            ("total_cost", "currency", "is_complete"),
+        ),
+    ],
+)
+def test_deployment_run_additive_billing_contracts_are_complete_and_closed(
+    model,
+    payload,
+    required_fields,
+):
+    for field_name in required_fields:
+        incomplete = dict(payload)
+        incomplete.pop(field_name)
+        with pytest.raises(ValidationError, match=field_name):
+            model.model_validate(incomplete)
+
+    with pytest.raises(ValidationError, match="extra_forbidden"):
+        model.model_validate(payload | {"future_billing_field": "value"})
+
+
+@pytest.mark.parametrize("field_name", ["priced_rows", "unpriced_rows"])
+def test_deployment_run_runtime_billing_rejects_negative_counters(field_name):
+    with pytest.raises(ValidationError, match="greater_than_equal"):
+        models_helpers_mod.DeploymentRunRuntimeBilling.model_validate(
+            _deployment_run_runtime_billing_payload() | {field_name: -1}
+        )
+
+
 def test_resource_release_deploy_current_version_posts_detail_action(monkeypatch):
     captured = {}
     release_uid = "2f4c4c3d-5669-4da5-9d86-b84633c1e6ed"
@@ -3317,7 +3457,7 @@ def test_resource_release_deploy_current_version_posts_detail_action(monkeypatch
                     "retention_expires_at": None,
                 },
                 "error": None,
-                "billing": _deployment_run_billing_payload(),
+                **_deployment_run_cost_projections(),
             }
 
     def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
@@ -3343,6 +3483,8 @@ def test_resource_release_deploy_current_version_posts_detail_action(monkeypatch
     assert run.logs.state == "available"
     assert run.error is None
     assert run.billing.total_cost == Decimal("0.000000")
+    assert run.runtime_billing.scope == "knative_runtime"
+    assert run.cost_summary.is_complete is True
     assert captured == {
         "r_type": "POST",
         "url": (
@@ -3386,7 +3528,7 @@ def test_deployment_run_collection_and_detail_use_unified_resource_release_contr
             "retention_expires_at": None,
         },
         "error": None,
-        "billing": _deployment_run_billing_payload(),
+        **_deployment_run_cost_projections(),
     }
 
     collection_payload = {
@@ -3444,6 +3586,10 @@ def test_deployment_run_collection_and_detail_use_unified_resource_release_contr
     assert detail.error is None
     assert runs[0].billing.pricing_state == "priced"
     assert detail.billing.components.image_registry_storage == Decimal("0.000000")
+    assert runs[0].runtime_billing.is_complete is True
+    assert detail.runtime_billing.base_cost == Decimal("0.000000")
+    assert runs[0].cost_summary.total_cost == Decimal("0.000000")
+    assert detail.cost_summary.currency == "USD"
     assert captured[0]["payload"] == {
         "params": {
             "code_repository_branch_uid": CODE_REPOSITORY_BRANCH_UID,
@@ -3483,9 +3629,10 @@ def test_unified_deployment_run_models_and_filters(monkeypatch):
                 "retention_expires_at": None,
             },
             "error": None,
-            "billing": _deployment_run_billing_payload(
+            **_deployment_run_cost_projections(
                 pricing_state="pending",
                 total_cost=None,
+                is_complete=False,
             ),
         }
     )
@@ -3506,6 +3653,10 @@ def test_unified_deployment_run_models_and_filters(monkeypatch):
     assert run.builder_runtime == "nodejs22"
     assert run.billing.pricing_state == "pending"
     assert run.billing.total_cost is None
+    assert run.runtime_billing.pricing_state == "pending"
+    assert run.runtime_billing.base_cost is None
+    assert run.cost_summary.total_cost is None
+    assert run.cost_summary.is_complete is False
     assert normalized == {
         "code_repository_branch_uid": code_repository_branch_uid,
         "target_type__in": ["resource_release", "static_site"],
