@@ -28,6 +28,10 @@ class UUIDUpdateConfig(BaseModel):
     account_uid: uuid.UUID
 
 
+class TimedeltaUpdateConfig(BaseModel):
+    delay: datetime.timedelta
+
+
 def test_create_config_crops_hash_prefix_to_postgres_identifier_limit(monkeypatch):
     class_name = "VeryLongTimeIndexTableUpdaterClassNameThatWouldOverflowPostgresIdentifierLimit"
 
@@ -230,6 +234,62 @@ def test_uuid_config_values_serialize_hash_and_rebuild(monkeypatch):
 
     assert rebuilt["config"].account_uid == account_uid
     assert isinstance(rebuilt["config"].account_uid, uuid.UUID)
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (datetime.timedelta(0), "PT0S"),
+        (datetime.timedelta(minutes=5), "PT5M"),
+        (datetime.timedelta(minutes=-5), "-PT5M"),
+    ],
+)
+def test_timedelta_values_serialize_canonically(value, expected):
+    serialized_value = configuration.serialize_argument(value)
+    assert serialized_value == expected
+    configuration.hash_signature({"delay": serialized_value})
+
+    serialized = configuration.Serializer().serialize_init_kwargs(
+        {"config": TimedeltaUpdateConfig(delay=value)}
+    )
+    assert serialized["config"]["serialized_model"]["delay"] == expected
+    configuration.hash_signature(serialized)
+
+
+def test_timedelta_config_hashes_are_stable_and_semantic():
+    five_minutes = configuration.create_config(
+        updater_class_name="TimedeltaConfigUpdater",
+        kwargs={"config": TimedeltaUpdateConfig(delay=datetime.timedelta(minutes=5))},
+    )
+    equivalent = configuration.create_config(
+        updater_class_name="TimedeltaConfigUpdater",
+        kwargs={"config": TimedeltaUpdateConfig(delay=datetime.timedelta(seconds=300))},
+    )
+    different = configuration.create_config(
+        updater_class_name="TimedeltaConfigUpdater",
+        kwargs={"config": TimedeltaUpdateConfig(delay=datetime.timedelta(minutes=6))},
+    )
+
+    assert five_minutes.update_hash == equivalent.update_hash
+    assert five_minutes.storage_hash == equivalent.storage_hash
+    assert five_minutes.update_hash != different.update_hash
+    assert five_minutes.storage_hash != different.storage_hash
+
+
+def test_timedelta_config_rebuilds_through_pydantic_validation():
+    delay = datetime.timedelta(days=-1, seconds=1, microseconds=2)
+    config = configuration.create_config(
+        updater_class_name="TimedeltaConfigUpdater",
+        kwargs={"config": TimedeltaUpdateConfig(delay=delay)},
+    )
+
+    rebuilt = configuration.DeserializerManager().rebuild_serialized_config(
+        config.local_initial_configuration,
+        updater_class_name="TimedeltaConfigUpdater",
+    )
+
+    assert rebuilt["config"].delay == delay
+    assert isinstance(rebuilt["config"].delay, datetime.timedelta)
 
 
 def test_plain_dict_with_pydantic_model_import_path_key_is_not_treated_as_wrapper(monkeypatch):

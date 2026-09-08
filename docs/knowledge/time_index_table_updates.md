@@ -206,6 +206,10 @@ class PricesConfig(TimeIndexTableUpdateConfig):
 Class-level invariants and implementation constants should be `ClassVar[...]`
 so they are not Pydantic fields and do not enter `update_hash`.
 
+Duration fields may use `datetime.timedelta`. The SDK serializes them to a
+canonical ISO-8601 duration before hashing and reconstructs them through the
+Pydantic configuration model.
+
 ### 4.3 Runtime values stay out of config
 
 Do not put these in `__init__` args.

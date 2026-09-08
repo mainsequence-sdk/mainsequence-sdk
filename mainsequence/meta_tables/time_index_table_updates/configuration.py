@@ -15,7 +15,7 @@ from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
 from mainsequence.client import BaseObjectOrm
 from mainsequence.client.models_helpers import get_model_class
@@ -83,6 +83,7 @@ def build_model(model_data):
 
 POSTGRES_IDENTIFIER_MAX_LENGTH = 63
 _HASH_SUFFIX_LENGTH = 33
+_TIMEDELTA_TYPE_ADAPTER = TypeAdapter(datetime.timedelta)
 
 
 # 1. Create a "registry" function using the decorator
@@ -213,6 +214,11 @@ def _(value: type[Any]) -> Any:
 @serialize_argument.register(datetime.datetime)
 def _(value: datetime.datetime) -> str:
     return value.isoformat()
+
+
+@serialize_argument.register(datetime.timedelta)
+def _(value: datetime.timedelta) -> str:
+    return _TIMEDELTA_TYPE_ADAPTER.dump_python(value, mode="json")
 
 
 @serialize_argument.register(UUID)
