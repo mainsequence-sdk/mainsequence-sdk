@@ -197,6 +197,12 @@ def test_code_repository_branch_git_context_uses_canonical_backend_action(monkey
                     "github_repository_binding_uid": "repository-uid",
                     "latest_git_version": COMMIT_SHA,
                     "is_initialized": True,
+                    "provisioning_status": "READY",
+                    "provisioning_job_run_uid": None,
+                    "provisioning_error_code": "",
+                    "provisioning_error_detail": "",
+                    "provisioning_updated_at": "2026-09-10T12:00:00Z",
+                    "can_retry_provisioning": False,
                     "created_by": None,
                 },
             }
@@ -226,6 +232,8 @@ def test_code_repository_branch_git_context_uses_canonical_backend_action(monkey
     }
     assert resolution.code_repository_branch.uid == CODE_REPOSITORY_BRANCH_UID
     assert resolution.code_repository_branch.code_repository_type == "python"
+    assert resolution.code_repository_branch.provisioning_status == "READY"
+    assert resolution.code_repository_branch.can_retry_provisioning is False
 
 
 def test_context_resolves_once_and_returns_identical_snapshot(monkeypatch):

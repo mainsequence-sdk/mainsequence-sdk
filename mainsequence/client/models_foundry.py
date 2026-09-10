@@ -507,6 +507,12 @@ class CodeRepositoryBranch(BasePydanticModel, BaseObjectOrm):
     github_repository_binding_uid: str | None = None
     latest_git_version: str = ""
     is_initialized: bool
+    provisioning_status: Literal["CREATING", "READY", "FAILED"]
+    provisioning_job_run_uid: str | None
+    provisioning_error_code: str
+    provisioning_error_detail: str
+    provisioning_updated_at: datetime.datetime
+    can_retry_provisioning: bool
     created_by: str | int | dict[str, Any] | None = None
 
     @classmethod
