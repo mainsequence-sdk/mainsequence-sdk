@@ -141,3 +141,21 @@ def test_streamlit_is_absent_from_dependency_contracts() -> None:
     )
     assert '\nname = "streamlit"\n' not in (repo_root / "uv.lock").read_text(encoding="utf-8")
     assert "streamlit" not in (repo_root / "requirements.txt").read_text(encoding="utf-8").lower()
+
+
+def test_postgresql_driver_is_installable_from_a_binary_wheel() -> None:
+    repo_root = pathlib.Path(__file__).resolve().parents[1]
+    project = tomllib.loads((repo_root / "pyproject.toml").read_text(encoding="utf-8"))
+    production_dependencies = [
+        str(dependency).partition(";")[0].strip().lower()
+        for dependency in project["project"]["dependencies"]
+    ]
+
+    assert any(
+        dependency.startswith("psycopg2-binary>=2.9.12")
+        for dependency in production_dependencies
+    )
+    assert not any(
+        dependency == "psycopg2" or dependency.startswith("psycopg2>=")
+        for dependency in production_dependencies
+    )

@@ -5,8 +5,6 @@ alembic==1.18.4
     # via mainsequence
 annotated-types==0.7.0
     # via pydantic
-anyio==4.14.2
-    # via starlette
 cachetools==6.2.1
     # via mainsequence
 certifi==2025.10.5
@@ -32,9 +30,7 @@ greenlet==3.5.0 ; platform_machine == 'AMD64' or platform_machine == 'WIN32' or 
 grpcio==1.75.1
     # via opentelemetry-exporter-otlp-proto-grpc
 idna==3.15
-    # via
-    #   anyio
-    #   requests
+    # via requests
 importlib-metadata==8.7.0
     # via opentelemetry-api
 mako==1.3.12
@@ -91,7 +87,7 @@ protobuf==6.33.5
     #   opentelemetry-proto
 psutil==7.1.0
     # via mainsequence
-psycopg2==2.9.12
+psycopg2-binary==2.9.13
     # via mainsequence
 pydantic==2.12.0
     # via mainsequence
@@ -123,8 +119,6 @@ sqlalchemy==2.0.50
     # via
     #   alembic
     #   mainsequence
-starlette==1.3.1
-    # via mainsequence
 structlog==25.4.0
     # via mainsequence
 tqdm==4.67.1

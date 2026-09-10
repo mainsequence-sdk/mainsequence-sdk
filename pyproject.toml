@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mainsequence"
-version = "8.1.9"
+version = "8.1.10"
 description = "Main Sequence SDK "
 readme = "README.md"
 requires-python = ">=3.13"
@@ -34,7 +34,7 @@ dependencies = [
   "pandas",
   "protobuf>=6.33.5",
   "psutil",
-  "psycopg2>=2.9.12",
+  "psycopg2-binary>=2.9.12",
   "pydantic>=2.11,<3",
   "pygments>=2.20.0",
   "pyyaml",

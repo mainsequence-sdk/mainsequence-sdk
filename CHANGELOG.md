@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [8.1.10] - 2026-09-10
+
+### Fixed
+
+- Replaced the source-only `psycopg2` runtime dependency with the
+  wheel-distributed `psycopg2-binary` package so the SDK installs in the lean
+  Python CodeRepository image without a compiler, PostgreSQL headers, or
+  `pg_config` while preserving the `psycopg2` import contract.
+
 ## [8.1.9] - 2026-09-10
 
 ### Fixed
