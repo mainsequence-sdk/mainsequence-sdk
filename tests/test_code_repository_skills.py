@@ -24,7 +24,6 @@ _DEFAULT_TEST_SKILLS = ("alpha_skill", "beta_skill", "gamma_skill")
 _CURRENT_BACKEND_SKILL_PATHS = {
     "a2a_communication": "skills/agents/a2a_communication/SKILL.md",
     "command_center": "skills/command_center/command_center/SKILL.md",
-    "command_center_connections": "skills/command_center/connections/SKILL.md",
     "code_repository_design": "skills/platform/code_repository_design/SKILL.md",
     "code_repository_local_setup": "skills/pod_manager/code_repository_local_setup/SKILL.md",
     "code_repository_to_agent": "skills/agents/code_repository_to_agent/SKILL.md",
@@ -200,7 +199,7 @@ def test_parse_platform_catalog_accepts_additive_skills_and_ignores_order():
 def test_parse_platform_catalog_accepts_current_backend_skill_membership():
     catalog = _current_backend_catalog()
 
-    assert len(catalog.resources) == 8
+    assert len(catalog.resources) == 7
     assert [skill.name for skill in catalog.skills] == sorted(_CURRENT_BACKEND_SKILL_PATHS)
     assert {skill.name: skill.relative_path.as_posix() for skill in catalog.skills} == {
         name: path.removeprefix("skills/")

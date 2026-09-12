@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [8.1.11] - 2026-09-12
+
+### Changed
+
+- Removed the retired Command Center connections skill from the backend catalog
+  compatibility fixture.
+
 ## [8.1.10] - 2026-09-10
 
 ### Fixed
