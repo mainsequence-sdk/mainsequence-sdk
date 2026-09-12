@@ -166,10 +166,10 @@ Center frontend flow, not only with isolated HTTP calls.
 
 For Adapter From API development, use the direct transport mode defined by the
 selected Command Center SDK repository contract and expose the local API through
-a temporary authenticated Cloudflare tunnel. This allows the workspace
-connection to be tested against local code before creating repeated API
-deployments. Validate discovery, queries, health behavior, exact response
-contracts, and secret redaction through that path.
+a temporary authenticated Cloudflare tunnel. Exercise the actual frontend flow
+against that local API before creating repeated API deployments. Validate
+discovery, queries, health behavior, exact response contracts, and secret
+redaction through that path.
 
 Do not guess transport field names or values from this skill. Read them from the
 Adapter From API schema and fixtures at the selected repository commit.

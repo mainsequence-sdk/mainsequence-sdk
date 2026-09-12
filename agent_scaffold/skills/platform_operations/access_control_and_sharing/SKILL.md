@@ -46,7 +46,6 @@ This skill must not claim ownership of:
 - MetaTable schema design
 - FastAPI route design
 - application UI design or implementation
-- workspace document structure
 
 ## Route Adjacent Work
 

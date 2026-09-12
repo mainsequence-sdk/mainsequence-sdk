@@ -29,7 +29,6 @@ This skill must not claim ownership of:
 
 - TimeIndexTableUpdater producer contracts
 - Command Center FastAPI wire contracts
-- workspace payloads
 - job scheduling, image pinning, or releases
 - RBAC or sharing policy
 

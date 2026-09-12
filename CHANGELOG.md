@@ -6,12 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [8.1.12] - 2026-09-12
+
+### Changed
+
+- Removed obsolete application-surface terminology from SDK-owned scaffold
+  guidance and historical release notes.
+
 ## [8.1.11] - 2026-09-12
 
 ### Changed
 
-- Removed the retired Command Center connections skill from the backend catalog
-  compatibility fixture.
+- Updated the backend catalog compatibility fixture to match current platform
+  skill membership.
 
 ## [8.1.10] - 2026-09-10
 
@@ -643,7 +650,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
-- Added first-class label mutation support for labelable SDK objects through `LabelableObjectMixin.add_label()` and `remove_label()` documentation, plus shared CLI commands on `code-repository`, `data-node`, and `cc workspace`.
+- Added first-class label mutation support for labelable SDK objects through `LabelableObjectMixin.add_label()` and `remove_label()` documentation, plus shared CLI commands on the supported labelable resources at that release.
 - Added label documentation clarifying that object labels are organizational metadata only and do not affect runtime behavior or functionality.
 
 ### Fixed

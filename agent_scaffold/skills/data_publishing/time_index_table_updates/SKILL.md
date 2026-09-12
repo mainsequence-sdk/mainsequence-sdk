@@ -44,7 +44,6 @@ This skill must not claim ownership of:
 - generic MetaTable registration or governed operation semantics
 - storage registration internals beyond the SDK lifecycle call
 - HTTP route design or FastAPI response contracts
-- workspace/widget layout payloads
 - job creation, scheduling, image pinning, or release creation
 - RBAC or sharing policy
 - domain strategy semantics
