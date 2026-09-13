@@ -202,6 +202,7 @@ from .api import (
     send_agent_session_a2a_message,
     time_index_table_column_search,
     time_index_table_description_search,
+    update_code_repository_job_scheduled_command_args,
     update_organization_team,
     validate_code_repository_name,
 )
@@ -9117,6 +9118,64 @@ def code_repository_jobs_run_cmd(
         print_kv("Job Run", rows + remaining)
 
 
+@code_repository_jobs_group.command("update")
+def code_repository_jobs_update_cmd(
+    job_uid: str = pydantic_argument(
+        JOB_MODEL_REF,
+        "uid",
+        ...,
+        help="Job UID whose future scheduled-run arguments should be replaced.",
+    ),
+    scheduled_command_args: list[str] | None = typer.Option(
+        None,
+        "--scheduled-arg",
+        help=(
+            "Set one opaque arg for future scheduler-created runs. Repeatable; "
+            "use --scheduled-arg=--flag for values beginning with '-'."
+        ),
+    ),
+    clear_scheduled_command_args: bool = typer.Option(
+        False,
+        "--clear-scheduled-args",
+        help="Replace the scheduled argument vector with an empty list.",
+    ),
+):
+    """Replace the arguments copied into future scheduler-created JobRuns."""
+    _require_login()
+
+    if scheduled_command_args and clear_scheduled_command_args:
+        error("Use --scheduled-arg or --clear-scheduled-args, not both.")
+        raise typer.Exit(1)
+    if not scheduled_command_args and not clear_scheduled_command_args:
+        error("Provide at least one --scheduled-arg or use --clear-scheduled-args.")
+        raise typer.Exit(1)
+
+    replacement = [] if clear_scheduled_command_args else list(scheduled_command_args or [])
+    try:
+        updated = update_code_repository_job_scheduled_command_args(
+            job_uid,
+            scheduled_command_args=replacement,
+        )
+    except ApiError as e:
+        error(f"CodeRepository job update failed: {e}")
+        raise typer.Exit(1) from e
+
+    if _emit_json(updated):
+        return
+
+    success(f"CodeRepository job updated: uid={updated.get('uid') or job_uid}")
+    print_kv(
+        "Scheduled Job Arguments",
+        [
+            ("Job UID", str(updated.get("uid") or job_uid)),
+            (
+                "Scheduled Args",
+                shlex.join(updated.get("scheduled_command_args") or replacement) or "None",
+            ),
+        ],
+    )
+
+
 @code_repository_job_runs_group.command("list")
 def code_repository_job_runs_list_cmd(
     job_uid: str = pydantic_argument(
@@ -9325,6 +9384,7 @@ def _code_repository_jobs_create_impl(
     schedule_expression: str | None,
     schedule_start_time: str | None,
     schedule_one_off: bool | None,
+    scheduled_command_args: list[str] | None,
     cpu_request: str | None,
     memory_request: str | None,
     gpu_request: str | None,
@@ -9451,6 +9511,7 @@ def _code_repository_jobs_create_impl(
             code_repository_branch_uid=code_repository_branch_uid,
             execution_path=execution_path,
             task_schedule=task_schedule,
+            scheduled_command_args=scheduled_command_args,
             cpu_request=cpu_request,
             memory_request=memory_request,
             gpu_request=gpu_request,
@@ -9487,6 +9548,13 @@ def _code_repository_jobs_create_impl(
             (
                 "Schedule",
                 _format_job_schedule_summary(created.get("task_schedule") or task_schedule),
+            ),
+            (
+                "Scheduled Args",
+                shlex.join(
+                    created.get("scheduled_command_args") or scheduled_command_args or []
+                )
+                or "None",
             ),
             ("CPU Request", str(created.get("cpu_request") or cpu_request)),
             ("Memory Request", str(created.get("memory_request") or memory_request)),
@@ -9576,6 +9644,14 @@ def code_repository_jobs_create_cmd(
         "--schedule-one-off/--schedule-recurring",
         help="Mark the created schedule as one-off or recurring.",
     ),
+    scheduled_command_args: list[str] | None = typer.Option(
+        None,
+        "--scheduled-arg",
+        help=(
+            "Append one opaque arg to every future scheduler-created run. Repeatable; "
+            "use --scheduled-arg=--flag for values beginning with '-'."
+        ),
+    ),
     cpu_request: str | None = pydantic_option(
         JOB_MODEL_REF,
         "cpu_request",
@@ -9634,6 +9710,7 @@ def code_repository_jobs_create_cmd(
     When compute settings are omitted, the CLI applies safe defaults:
     `cpu_request=0.25`, `memory_request=0.5`, `spot=false`, `max_runtime_seconds=86400`.
     If schedule arguments are omitted, the CLI asks whether to build an interval or crontab schedule.
+    Scheduled args are persisted on the Job and copied only into future scheduler-created runs.
 
     Examples
     --------
@@ -9654,6 +9731,7 @@ def code_repository_jobs_create_cmd(
         schedule_expression=schedule_expression,
         schedule_start_time=schedule_start_time,
         schedule_one_off=schedule_one_off,
+        scheduled_command_args=scheduled_command_args,
         cpu_request=cpu_request,
         memory_request=memory_request,
         gpu_request=gpu_request,

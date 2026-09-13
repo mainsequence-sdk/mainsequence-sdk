@@ -226,6 +226,15 @@ class Job(CurrentCodeRepositoryBranchCollectionMixin, BaseObjectOrm, BasePydanti
         ],
     )
 
+    scheduled_command_args: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Opaque argv entries copied into each future scheduler-created JobRun. "
+            "Manual runs use only the command_args supplied to Job.run_job()."
+        ),
+        examples=[["--start-date", "2026-09-08T16:43:00Z", "--family", "jobs"]],
+    )
+
     cpu_request: str | None = Field(
         default=None,
         description="Requested CPU in vCPU units, stored as a normalized string.",
@@ -319,6 +328,12 @@ class Job(CurrentCodeRepositoryBranchCollectionMixin, BaseObjectOrm, BasePydanti
     @staticmethod
     def _normalize_str(value: Any) -> str | None:
         return normalize_string(value)
+
+    @staticmethod
+    def _normalize_command_args(value: Any, *, field_name: str) -> list[str]:
+        if not isinstance(value, list) or not all(isinstance(arg, str) for arg in value):
+            raise TypeError(f"{field_name} must be a list of strings.")
+        return list(value)
 
     @staticmethod
     def _decimal_to_storage(value: Decimal | None) -> str | None:
@@ -527,6 +542,7 @@ class Job(CurrentCodeRepositoryBranchCollectionMixin, BaseObjectOrm, BasePydanti
         execution_path: str | None = None,
         task_schedule: PeriodicTask | Schedule | dict[str, Any] | str | None = None,
         task_schedule_id: int | None = None,
+        scheduled_command_args: list[str] | None = None,
         cpu_request: str | int | float | Decimal | None = None,
         memory_request: str | int | float | Decimal | None = None,
         gpu_request: str | int | None = None,
@@ -583,6 +599,12 @@ class Job(CurrentCodeRepositoryBranchCollectionMixin, BaseObjectOrm, BasePydanti
         if normalized_task_schedule is not None:
             payload["task_schedule"] = normalized_task_schedule
 
+        if scheduled_command_args is not None:
+            payload["scheduled_command_args"] = cls._normalize_command_args(
+                scheduled_command_args,
+                field_name="scheduled_command_args",
+            )
+
         if spot is not None:
             payload["spot"] = bool(spot)
 
@@ -631,6 +653,7 @@ class Job(CurrentCodeRepositoryBranchCollectionMixin, BaseObjectOrm, BasePydanti
         execution_path: str | None = None,
         task_schedule: PeriodicTask | Schedule | dict[str, Any] | str | None = None,
         task_schedule_id: int | None = None,
+        scheduled_command_args: list[str] | None = None,
         cpu_request: str | int | float | Decimal | None = None,
         memory_request: str | int | float | Decimal | None = None,
         gpu_request: str | int | None = None,
@@ -650,6 +673,7 @@ class Job(CurrentCodeRepositoryBranchCollectionMixin, BaseObjectOrm, BasePydanti
             execution_path=execution_path,
             task_schedule=task_schedule,
             task_schedule_id=task_schedule_id,
+            scheduled_command_args=scheduled_command_args,
             cpu_request=cpu_request,
             memory_request=memory_request,
             gpu_request=gpu_request,
@@ -678,15 +702,32 @@ class Job(CurrentCodeRepositoryBranchCollectionMixin, BaseObjectOrm, BasePydanti
 
         return cls(**r.json())
 
+    @classmethod
+    def patch_by_uid(cls, uid: str, *args, _into=None, **kwargs):
+        if "scheduled_command_args" in kwargs:
+            kwargs["scheduled_command_args"] = cls._normalize_command_args(
+                kwargs["scheduled_command_args"],
+                field_name="scheduled_command_args",
+            )
+        return super().patch_by_uid(uid, *args, _into=_into, **kwargs)
+
     def run_job(
         self,
         *,
         timeout: int | None = None,
         command_args: list[str] | None = None,
     ) -> dict[str, Any]:
+        """Start a manual run with optional opaque argv entries.
+
+        ``command_args`` applies only to this run. It does not configure
+        arguments for scheduler-created runs.
+        """
         job_uid = self._public_detail_reference()
-        if command_args is not None and not all(isinstance(arg, str) for arg in command_args):
-            raise TypeError("command_args must be a list of strings.")
+        if command_args is not None:
+            command_args = self._normalize_command_args(
+                command_args,
+                field_name="command_args",
+            )
 
         url = f"{self.get_object_url()}/{job_uid}/run-job/"
         s = self.build_session()

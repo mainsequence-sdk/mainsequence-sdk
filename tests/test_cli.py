@@ -5512,6 +5512,7 @@ def test_create_code_repository_job_uses_client_model_task_schedule(cli_mod, mon
             code_repository_branch_uid,
             execution_path=None,
             task_schedule=None,
+            scheduled_command_args=None,
             cpu_request=None,
             memory_request=None,
             gpu_request=None,
@@ -5528,6 +5529,7 @@ def test_create_code_repository_job_uses_client_model_task_schedule(cli_mod, mon
                 "code_repository_branch_uid": code_repository_branch_uid,
                 "execution_path": execution_path,
                 "task_schedule": task_schedule,
+                "scheduled_command_args": scheduled_command_args,
                 "cpu_request": cpu_request,
                 "memory_request": memory_request,
                 "gpu_request": gpu_request,
@@ -5557,11 +5559,13 @@ def test_create_code_repository_job_uses_client_model_task_schedule(cli_mod, mon
     monkeypatch.setitem(sys.modules, "mainsequence.client.models_helpers", fake_helpers)
 
     schedule = {"schedule": {"type": "interval", "every": 1, "period": "hours"}, "one_off": False}
+    scheduled_args = ["--start-date", "2026-09-08T16:43:00Z", "--family", "jobs"]
     out = api_mod.create_code_repository_job(
         name="demo-job",
         code_repository_branch_uid="5a28020a-0f1b-47ee-aab8-334286234bea",
         execution_path="scripts/test.py",
         task_schedule=schedule,
+        scheduled_command_args=scheduled_args,
         cpu_request="0.25",
         memory_request="0.5",
         spot=False,
@@ -5569,6 +5573,7 @@ def test_create_code_repository_job_uses_client_model_task_schedule(cli_mod, mon
         related_image_uid="6a28020a-0f1b-47ee-aab8-334286234bea",
     )
     assert captured["payload"]["task_schedule"] == schedule
+    assert captured["payload"]["scheduled_command_args"] == scheduled_args
     assert captured["payload"]["related_image_uid"] == "6a28020a-0f1b-47ee-aab8-334286234bea"
     assert captured["payload"]["automatic_deployment"] is False
     assert captured["payload"]["automatic_redeployment_policy"] == {"tag_regex": None}
@@ -5579,6 +5584,43 @@ def test_create_code_repository_job_uses_client_model_task_schedule(cli_mod, mon
         "task_schedule": schedule,
     }
     assert os.environ.get(_UNSUPPORTED_REPOSITORY_UID_ENV) is None
+
+
+def test_update_code_repository_job_scheduled_command_args_uses_client_patch(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {}
+
+    class FakeJob:
+        @classmethod
+        def patch_by_uid(cls, uid, **kwargs):
+            captured.update(uid=uid, kwargs=kwargs)
+            return types.SimpleNamespace(
+                model_dump=lambda mode="json": {
+                    "uid": uid,
+                    "scheduled_command_args": kwargs["scheduled_command_args"],
+                }
+            )
+
+    monkeypatch.setattr(
+        api_mod,
+        "_run_sdk_model_operation",
+        lambda *, module_name, class_name, operation: operation(FakeJob),
+    )
+
+    scheduled_args = ["--family", "jobs"]
+    out = api_mod.update_code_repository_job_scheduled_command_args(
+        "7d0ab07c-d1c0-4b7f-9c69-3c1a41c0a4da",
+        scheduled_command_args=scheduled_args,
+    )
+
+    assert captured == {
+        "uid": "7d0ab07c-d1c0-4b7f-9c69-3c1a41c0a4da",
+        "kwargs": {"scheduled_command_args": scheduled_args},
+    }
+    assert out == {
+        "uid": "7d0ab07c-d1c0-4b7f-9c69-3c1a41c0a4da",
+        "scheduled_command_args": scheduled_args,
+    }
 
 
 def test_create_code_repository_does_not_send_code_repository_visible(cli_mod, monkeypatch):
@@ -8575,6 +8617,79 @@ def test_code_repository_jobs_run_with_arg_option(cli_mod, runner, monkeypatch):
     assert "Effective run: scripts/test.py demo-from-cli" in result.output
 
 
+def test_code_repository_jobs_update_replaces_scheduled_command_args(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    captured = {}
+    job_uid = "7d0ab07c-d1c0-4b7f-9c69-3c1a41c0a4da"
+
+    def _update(job_uid_arg, *, scheduled_command_args):
+        captured.update(
+            job_uid=job_uid_arg,
+            scheduled_command_args=scheduled_command_args,
+        )
+        return {
+            "uid": job_uid_arg,
+            "scheduled_command_args": scheduled_command_args,
+        }
+
+    monkeypatch.setattr(
+        cli_mod,
+        "update_code_repository_job_scheduled_command_args",
+        _update,
+    )
+
+    result = runner.invoke(
+        cli_mod.app,
+        [
+            "code-repository",
+            "jobs",
+            "update",
+            job_uid,
+            "--scheduled-arg=--family",
+            "--scheduled-arg",
+            "jobs",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured == {
+        "job_uid": job_uid,
+        "scheduled_command_args": ["--family", "jobs"],
+    }
+    assert "--family jobs" in result.output
+
+
+def test_code_repository_jobs_update_clears_scheduled_command_args(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    captured = {}
+    job_uid = "7d0ab07c-d1c0-4b7f-9c69-3c1a41c0a4da"
+
+    monkeypatch.setattr(
+        cli_mod,
+        "update_code_repository_job_scheduled_command_args",
+        lambda job_uid_arg, *, scheduled_command_args: captured.update(
+            job_uid=job_uid_arg,
+            scheduled_command_args=scheduled_command_args,
+        )
+        or {"uid": job_uid_arg, "scheduled_command_args": scheduled_command_args},
+    )
+
+    result = runner.invoke(
+        cli_mod.app,
+        [
+            "code-repository",
+            "jobs",
+            "update",
+            job_uid,
+            "--clear-scheduled-args",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured == {"job_uid": job_uid, "scheduled_command_args": []}
+    assert "None" in result.output
+
+
 def test_code_repository_job_runs_list(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(
@@ -8820,6 +8935,7 @@ def test_code_repository_jobs_create_interactive_defaults(cli_mod, runner, monke
     assert captured["related_image_uid"] == "code-repository-image-uid-77"
     assert captured["execution_path"] == "scripts/test.py"
     assert captured["task_schedule"] is None
+    assert captured["scheduled_command_args"] is None
     assert captured["cpu_request"] == "0.25"
     assert captured["memory_request"] == "0.5"
     assert captured["spot"] is False
@@ -9038,7 +9154,14 @@ def test_code_repository_jobs_create_interactive_interval_schedule(cli_mod, runn
 
     result = runner.invoke(
         cli_mod.app,
-        ["code-repository", "jobs", "create"],
+        [
+            "code-repository",
+            "jobs",
+            "create",
+            "--scheduled-arg=--family",
+            "--scheduled-arg",
+            "jobs",
+        ],
         input="demo-job\n\nscripts/test.py\ny\n\n\n\n\nn\n",
     )
     assert result.exit_code == 0
@@ -9046,6 +9169,7 @@ def test_code_repository_jobs_create_interactive_interval_schedule(cli_mod, runn
         "schedule": {"type": "interval", "every": 1, "period": "hours"},
         "one_off": False,
     }
+    assert captured["scheduled_command_args"] == ["--family", "jobs"]
     assert "every 1 hours" in result.output
 
 

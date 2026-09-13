@@ -57,10 +57,9 @@ This skill must not claim ownership of:
 
 ## Read First
 
-1. `docs/tutorial/scheduling_jobs.md`
-2. `docs/knowledge/infrastructure/scheduling_jobs.md`
-3. `docs/knowledge/infrastructure/artifacts.md`
-4. `docs/knowledge/infrastructure/owner_observability.md` when inspecting logs or resource usage
+1. `docs/knowledge/infrastructure/scheduling_jobs.md`
+2. `docs/knowledge/infrastructure/artifacts.md`
+3. `docs/knowledge/infrastructure/owner_observability.md` when inspecting logs or resource usage
 If the task touches deployed FastAPI APIs, also read the relevant API skill/docs before changing the operational workflow.
 
 ## Inputs This Skill Needs
@@ -167,13 +166,53 @@ Use the standard CLI execution loop when execution success matters:
 
 - `mainsequence code-repository jobs list`
 - `mainsequence code-repository jobs run <JOB_UID>`
+- `mainsequence code-repository jobs run <JOB_UID> --arg=<ARG>` for repeatable
+  manual per-run arguments, including values that start with `-`
+- `mainsequence code-repository jobs run <JOB_UID> -- <ARG>...` for manual
+  passthrough arguments
 - `mainsequence code-repository jobs runs list <JOB_UID>`
 - `mainsequence code-repository jobs runs logs <JOB_RUN_UID> --max-wait-seconds 900`
+
+The Python equivalent for one manual run is:
+
+```python
+job.run_job(
+    command_args=[
+        "--start-date",
+        "2026-09-08T16:43:00Z",
+        "--family",
+        "jobs",
+    ]
+)
+```
+
+Treat each argument as one opaque argv string. Do not join arguments into a
+shell command, and do not treat `command_args` as a replacement for the saved
+Job entrypoint.
+
+Current support matrix:
+
+| Invocation | Argument support |
+| --- | --- |
+| `Job.run_job(command_args=[...])` | Supported for that manual run |
+| `mainsequence code-repository jobs run ... --arg/-- ...` | Supported for that manual run |
+| `Job.scheduled_command_args` | Persisted list copied into future scheduler-created runs |
+| `mainsequence code-repository jobs create/update --scheduled-arg ...` | Creates or replaces the persisted scheduled list |
+| `.mainsequence/workflows/*.yaml` Job declaration | Supports `scheduled_command_args` as an ordered `list[str]` |
+
+Keep `scheduled_command_args` separate from manual `command_args`. Retrieve the
+backend workflow template and use only its advertised contract. Preserve every
+list entry exactly; never collapse argv into a shell string. Updating the Job
+changes only future scheduler-created runs, while existing `JobRun.command_args`
+snapshots stay immutable.
 
 Verify:
 
 - the job exists
 - the run was triggered manually when immediate validation matters, or has already been triggered by the scheduler
+- manual per-run arguments are preserved as separate argv entries when used
+- scheduled arguments are persisted on the Job or validated workflow declaration
+- a scheduler-created run snapshots the configured list without merging manual arguments
 - the logs and run status match expectations
 
 Use owner-scoped observability rather than infrastructure discovery:

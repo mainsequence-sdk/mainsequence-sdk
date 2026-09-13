@@ -12,6 +12,7 @@ In this guide, you will:
 - manage jobs from the CLI
 - create the same jobs from the Python client
 - decide when to use backend-managed code-repository workflows and when to create jobs directly
+- distinguish manual per-run arguments from scheduled defaults
 - inspect runs, logs, and frozen images
 
 ## The mental model
@@ -127,6 +128,64 @@ mainsequence code-repository jobs runs list <JOB_UID>
 mainsequence code-repository jobs runs logs <JOB_RUN_UID> --max-wait-seconds 900
 ```
 
+### Command arguments: manual versus scheduled
+
+The current contract supports opaque arguments on a manually requested run:
+
+```bash
+mainsequence code-repository jobs run <JOB_UID> \
+  --arg=--start-date \
+  --arg=2026-09-08T16:43:00Z \
+  --arg=--family \
+  --arg=jobs
+```
+
+You can also put per-run arguments after `--`:
+
+```bash
+mainsequence code-repository jobs run <JOB_UID> -- \
+  --start-date 2026-09-08T16:43:00Z \
+  --family jobs
+```
+
+Both forms preserve argument boundaries and append the values to the saved
+`execution_path`. They do not replace the entrypoint. Use `--arg=<value>` when
+the value itself starts with `-`, and do not combine arguments into a shell
+string.
+
+Scheduled defaults use the separate `Job.scheduled_command_args` field. The
+backend copies the current ordered list into each scheduler-created
+`JobRun.command_args`; changing the Job affects only future scheduled runs and
+never rewrites an existing run snapshot. Manual runs do not inherit the saved
+list.
+
+For direct creation, repeat `--scheduled-arg` once per argv entry. Use the
+equals form when an entry starts with `-`:
+
+```bash
+mainsequence code-repository jobs create \
+  --name "Daily family refresh" \
+  --execution-path scripts/simulated_prices_launcher.py \
+  --related-image-uid <IMAGE_UID> \
+  --schedule-type crontab \
+  --schedule-expression "0 0 * * *" \
+  --scheduled-arg=--family \
+  --scheduled-arg=jobs
+```
+
+Replace the persisted list on an existing Job, or clear it explicitly:
+
+```bash
+mainsequence code-repository jobs update <JOB_UID> \
+  --scheduled-arg=--family \
+  --scheduled-arg=jobs
+mainsequence code-repository jobs update <JOB_UID> --clear-scheduled-args
+```
+
+Repository-managed Job declarations use the same `scheduled_command_args`
+list. Continue to retrieve and validate against the current backend workflow
+template rather than reproducing the rest of the workflow schema client-side.
+
 ### Create a manual job
 
 Use this when you want a job that only runs when someone triggers it:
@@ -181,7 +240,9 @@ mainsequence code-repository jobs create \
   --related-image-uid <IMAGE_UID> \
   --schedule-type interval \
   --schedule-every 1 \
-  --schedule-period hours
+  --schedule-period hours \
+  --scheduled-arg=--family \
+  --scheduled-arg=jobs
 ```
 
 ### Create a crontab schedule
@@ -311,6 +372,7 @@ hourly_job = Job.create(
         period="hours",
         start_time=datetime(2026, 3, 14, 8, 0, tzinfo=UTC),
     ),
+    scheduled_command_args=["--family", "jobs"],
     cpu_request="0.25",
     memory_request="0.5",
 )
@@ -335,12 +397,19 @@ nightly_job = Job.create(
 )
 ```
 
-### List jobs, trigger a run, and fetch logs
+### List jobs, trigger a manual run with arguments, and fetch logs
 
 ```python
 jobs = Job.filter()
 
-run_payload = nightly_job.run_job()
+run_payload = nightly_job.run_job(
+    command_args=[
+        "--start-date",
+        "2026-09-08T16:43:00Z",
+        "--family",
+        "jobs",
+    ]
+)
 job_runs = JobRun.filter(job__uid=nightly_job.uid)
 
 latest_run = job_runs[0]
@@ -365,6 +434,11 @@ In practice, the client gives you the same lifecycle as the CLI:
 Each `JobRun` response freezes the exact `runtime_image_uid`, image digest, and
 commit selected at run creation. Launch uses that snapshot even if the job is
 promoted later.
+
+`Job.run_job(command_args=[...])` configures only the manual run it creates.
+It does not change `nightly_job` or inherit `nightly_job.scheduled_command_args`.
+Use `nightly_job.patch(scheduled_command_args=[...])` to replace the persisted
+list for future scheduled runs.
 
 !!! note "One practical difference"
     The CLI applies safe defaults for `cpu_request`, `memory_request`, `spot`, and `max_runtime_seconds` when you omit them. The Python client expects you to pass the compute values yourself. A manual Job requires `related_image_uid`; an automatic Job rejects it and delegates exact initial-image preparation to the backend.

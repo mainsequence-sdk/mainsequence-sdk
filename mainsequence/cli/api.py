@@ -4529,6 +4529,7 @@ def create_code_repository_job(
     code_repository_branch_uid: str,
     execution_path: str | None = None,
     task_schedule: dict[str, Any] | str | None = None,
+    scheduled_command_args: list[str] | None = None,
     cpu_request: str | int | float | None = None,
     memory_request: str | int | float | None = None,
     gpu_request: str | int | float | None = None,
@@ -4597,6 +4598,7 @@ def create_code_repository_job(
             code_repository_branch_uid=resolved_branch_uid,
             execution_path=execution_path,
             task_schedule=task_schedule,
+            scheduled_command_args=scheduled_command_args,
             cpu_request=cpu_request,
             memory_request=memory_request,
             gpu_request=gpu_request,
@@ -4649,6 +4651,31 @@ def create_code_repository_job(
                 os.environ.pop(k, None)
             else:
                 os.environ[k] = v
+
+
+def update_code_repository_job_scheduled_command_args(
+    job_uid: str,
+    *,
+    scheduled_command_args: list[str],
+) -> dict[str, Any]:
+    """Replace the persisted argv used by future scheduler-created JobRuns."""
+    try:
+        job = _run_sdk_model_operation(
+            module_name="mainsequence.client.models_helpers",
+            class_name="Job",
+            operation=lambda ClientJob: ClientJob.patch_by_uid(
+                str(job_uid),
+                scheduled_command_args=scheduled_command_args,
+            ),
+        )
+        return _sdk_object_to_dict(job)
+    except Exception as e:
+        err_name = type(e).__name__
+        if err_name == "NotFoundError":
+            raise ApiError(f"Job not found: {job_uid}") from e
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"CodeRepository job update failed: {e}") from e
 
 
 def get_code_repository_job(

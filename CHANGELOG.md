@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [8.1.13] - 2026-09-13
+
+### Added
+
+- Added typed `Job.scheduled_command_args` support for Job reads, direct
+  creation, updates, and the CodeRepository Jobs CLI.
+
+### Fixed
+
+- Enforced the exact `list[str]` contract for manual Job `command_args` and
+  documented the boundary between per-run arguments and persisted scheduler
+  defaults.
+
 ## [8.1.12] - 2026-09-12
 
 ### Changed
