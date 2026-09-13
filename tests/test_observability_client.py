@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime
 import inspect
 from typing import ClassVar
 
@@ -63,12 +64,16 @@ def test_owner_logs_follow_authenticated_backend_capability_and_preserve_enrichm
                 "organization_environment_uid": ENVIRONMENT_UID,
                 "start": 100,
                 "end": 200,
+                "start_time": "2026-09-13T10:00:00Z",
+                "end_time": "2026-09-13T11:00:00Z",
                 "next_cursor": "opaque-cursor",
                 "truncated": True,
                 "rows": [
                     {
                         "time": 123000,
+                        "occurred_at": "2026-09-13T10:30:00Z",
                         "severity": "INFO",
+                        "level": "info",
                         "message": "Completed",
                         "future_enrichment": {"provider": "normalized"},
                     }
@@ -82,24 +87,67 @@ def test_owner_logs_follow_authenticated_backend_capability_and_preserve_enrichm
     monkeypatch.setattr(observability_models, "make_request", fake_make_request)
 
     page = _owner().get_logs(
-        start=100,
-        end=200,
+        start_time="2026-09-13T10:00:00Z",
+        end_time="2026-09-13T11:00:00Z",
         limit=25,
-        severity="INFO",
+        level="info",
         timeout=8,
     )
 
     assert captured["url"] == "https://backend.test/api/v1/demo-owners/owner-uid/logs/"
     assert captured["payload"]["params"] == {
         "organization_environment_uid": ENVIRONMENT_UID,
-        "start": 100,
-        "end": 200,
+        "start_time": "2026-09-13T10:00:00Z",
+        "end_time": "2026-09-13T11:00:00Z",
         "limit": 25,
-        "severity": "INFO",
+        "level": "info",
     }
     assert captured["time_out"] == 8
     assert page.next_cursor == "opaque-cursor"
+    assert page.start_time == datetime.datetime(2026, 9, 13, 10, tzinfo=datetime.UTC)
+    assert page.rows[0].level == "info"
     assert page.rows[0].model_extra == {"future_enrichment": {"provider": "normalized"}}
+
+
+def test_owner_logs_keep_deprecated_aliases_and_reject_ambiguous_filters(monkeypatch):
+    captured = {}
+
+    class Response:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {
+                "organization_environment_uid": ENVIRONMENT_UID,
+                "start": 100,
+                "end": 200,
+                "start_time": "2026-09-13T10:00:00Z",
+                "end_time": "2026-09-13T11:00:00Z",
+                "next_cursor": None,
+                "truncated": False,
+                "rows": [],
+            }
+
+    monkeypatch.setattr(
+        observability_models,
+        "make_request",
+        lambda **kwargs: captured.update(kwargs) or Response(),
+    )
+
+    _owner().get_logs(start=100, end=200, severity="ERROR")
+
+    assert captured["payload"]["params"] == {
+        "organization_environment_uid": ENVIRONMENT_UID,
+        "start": 100,
+        "end": 200,
+        "severity": "ERROR",
+    }
+    with pytest.raises(ValueError, match="either start_time"):
+        _owner().get_logs(start_time="2026-09-13T10:00:00Z", start=100)
+    with pytest.raises(ValueError, match="supplied together"):
+        _owner().get_logs(start_time="2026-09-13T10:00:00Z")
+    with pytest.raises(ValueError, match="either level"):
+        _owner().get_logs(level="error", severity="ERROR")
 
 
 def test_owner_resource_usage_uses_distinct_strict_contract(monkeypatch):
@@ -188,6 +236,8 @@ def test_job_run_logs_accept_backend_derived_environment_without_weakening_usage
                 "organization_environment_uid": ENVIRONMENT_UID,
                 "start": 100,
                 "end": 200,
+                "start_time": "1970-01-01T00:01:40Z",
+                "end_time": "1970-01-01T00:03:20Z",
                 "next_cursor": None,
                 "truncated": False,
                 "rows": [],
@@ -245,6 +295,8 @@ def test_agent_logs_support_optional_session_filter_without_environment_override
                 "organization_environment_uid": ENVIRONMENT_UID,
                 "start": 100,
                 "end": 200,
+                "start_time": "1970-01-01T00:01:40Z",
+                "end_time": "1970-01-01T00:03:20Z",
                 "next_cursor": None,
                 "truncated": False,
                 "rows": [],
@@ -269,5 +321,156 @@ def test_agent_logs_support_optional_session_filter_without_environment_override
 def test_owner_observability_models_remain_strict_except_enriched_rows():
     assert observability_models.ObservabilityLinks.model_config["extra"] == "forbid"
     assert observability_models.OwnerLogPage.model_config["extra"] == "forbid"
+    assert observability_models.EnvironmentLogSearchPage.model_config["extra"] == "forbid"
     assert observability_models.ResourceUsagePage.model_config["extra"] == "forbid"
     assert observability_models.OwnerLogRow.model_config["extra"] == "allow"
+    assert observability_models.EnvironmentLogSearchRow.model_config["extra"] == "allow"
+
+
+@pytest.mark.parametrize(
+    ("model", "owner_type", "endpoint", "family_filters"),
+    [
+        (
+            helper_models.DeploymentRun,
+            "deployment_run",
+            "deployment-runs",
+            {
+                "deployment_run_uid": "11111111-1111-4111-8111-111111111111",
+                "target_type": "resource_release",
+                "target_uid": "22222222-2222-4222-8222-222222222222",
+                "step_uid": "33333333-3333-4333-8333-333333333333",
+                "source": "orchestrator",
+            },
+        ),
+        (
+            helper_models.JobRun,
+            "job_run",
+            "job-runs",
+            {
+                "job_run_uid": "44444444-4444-4444-8444-444444444444",
+                "job_uid": "55555555-5555-4555-8555-555555555555",
+                "request_id": "request-1",
+                "outcome": "failed",
+            },
+        ),
+        (
+            helper_models.ResourceRelease,
+            "resource_release",
+            "resource-releases",
+            {
+                "resource_release_uid": "66666666-6666-4666-8666-666666666666",
+                "request_id": "request-2",
+                "outcome": "failed",
+            },
+        ),
+        (
+            agent_models.Agent,
+            "agent",
+            "agents",
+            {
+                "agent_uid": "77777777-7777-4777-8777-777777777777",
+                "agent_session_uid": "88888888-8888-4888-8888-888888888888",
+                "request_id": "request-3",
+                "outcome": "failed",
+            },
+        ),
+        (
+            agent_models.AgentSession,
+            "agent_session",
+            "agent-sessions",
+            {
+                "agent_session_uid": "99999999-9999-4999-8999-999999999999",
+                "agent_uid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                "request_id": "request-4",
+                "outcome": "failed",
+            },
+        ),
+    ],
+)
+def test_environment_collection_log_clients_use_adr060_routes_and_filters(
+    monkeypatch,
+    model,
+    owner_type,
+    endpoint,
+    family_filters,
+):
+    captured = {}
+    start_time = datetime.datetime(2026, 9, 13, 10, tzinfo=datetime.UTC)
+    end_time = datetime.datetime(2026, 9, 13, 11, tzinfo=datetime.UTC)
+
+    class Response:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {
+                "organization_environment_uid": ENVIRONMENT_UID,
+                "start_time": "2026-09-13T10:00:00Z",
+                "end_time": "2026-09-13T11:00:00Z",
+                "limit": 25,
+                "returned_count": 1,
+                "cumulative_returned_count": 1,
+                "result_limit": 10_000,
+                "next_cursor": "opaque-cursor",
+                "truncated": True,
+                "truncation_reason": "page_limit",
+                "rows": [
+                    {
+                        "owner_type": owner_type,
+                        "owner_uid": next(
+                            value for key, value in family_filters.items() if key.endswith("_uid")
+                        ),
+                        "occurred_at": "2026-09-13T10:30:00Z",
+                        "level": "error",
+                        "message": "failed",
+                        "family_projection": "preserved",
+                    }
+                ],
+            }
+
+    monkeypatch.setattr(model, "ROOT_URL", "https://backend.test/api/v1")
+    monkeypatch.setattr(
+        observability_models,
+        "make_request",
+        lambda **kwargs: captured.update(kwargs) or Response(),
+    )
+
+    page = model.search_logs(
+        organization_environment_uid=ENVIRONMENT_UID,
+        start_time=start_time,
+        end_time=end_time,
+        cursor="previous-cursor",
+        limit=25,
+        level="error",
+        event="request.failed",
+        timeout=8,
+        **family_filters,
+    )
+
+    assert captured["r_type"] == "GET"
+    assert captured["url"] == f"https://backend.test/api/v1/{endpoint}/logs/"
+    assert captured["payload"] == {
+        "params": {
+            "organization_environment_uid": ENVIRONMENT_UID,
+            "start_time": "2026-09-13T10:00:00+00:00",
+            "end_time": "2026-09-13T11:00:00+00:00",
+            "cursor": "previous-cursor",
+            "limit": 25,
+            "level": "error",
+            "event": "request.failed",
+            **family_filters,
+        }
+    }
+    assert captured["time_out"] == 8
+    assert page.returned_count == 1
+    assert page.rows[0].owner_type == owner_type
+    assert page.rows[0].model_extra == {"family_projection": "preserved"}
+
+
+def test_environment_collection_log_clients_require_explicit_timezone():
+    with pytest.raises(ValueError, match="explicit timezone"):
+        helper_models.JobRun.search_logs(
+            organization_environment_uid=ENVIRONMENT_UID,
+            start_time=datetime.datetime(2026, 9, 13, 10),
+            end_time=datetime.datetime(2026, 9, 13, 11, tzinfo=datetime.UTC),
+        )

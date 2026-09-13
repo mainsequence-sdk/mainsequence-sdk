@@ -3670,6 +3670,8 @@ def test_unified_deployment_run_models_and_filters(monkeypatch):
         def json():
             return {
                 "run_uid": run_uid,
+                "start_time": "2026-07-19T12:00:00Z",
+                "end_time": "2026-07-19T13:00:00Z",
                 "entries": [
                     {
                         "sequence": 1,
@@ -3700,18 +3702,28 @@ def test_unified_deployment_run_models_and_filters(monkeypatch):
 
     monkeypatch.setattr(models_helpers_mod, "make_request", _fake_make_request)
 
-    page = run.get_logs(limit=25, source="orchestrator", timeout=8)
+    page = run.get_logs(
+        start_time="2026-07-19T12:00:00Z",
+        end_time="2026-07-19T13:00:00Z",
+        limit=25,
+        source="orchestrator",
+        event="deployment_run.running",
+        timeout=8,
+    )
 
     assert page.complete is True
+    assert page.start_time == datetime.datetime(2026, 7, 19, 12, tzinfo=datetime.UTC)
     assert page.entries[0].source == "orchestrator"
     assert captured == {
         "r_type": "GET",
         "url": f"{models_helpers_mod.DeploymentRun.get_object_url()}/{run_uid}/logs/",
         "payload": {
             "params": {
+                "start_time": "2026-07-19T12:00:00Z",
+                "end_time": "2026-07-19T13:00:00Z",
                 "limit": 25,
                 "source": "orchestrator",
-                "organization_environment_uid": ENVIRONMENT_UID,
+                "event": "deployment_run.running",
             }
         },
         "timeout": 8,

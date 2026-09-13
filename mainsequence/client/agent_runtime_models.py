@@ -17,10 +17,15 @@ from .base import BaseObjectOrm, BasePydanticModel, ShareableObjectMixin
 from .exceptions import ApiError, raise_for_response
 from .models_helpers import AutomaticRedeploymentPolicy
 from .observability import (
+    EnvironmentLogSearchMixin,
+    EnvironmentLogSearchPage,
+    LogSearchOutcome,
+    LogTime,
     ObservabilityLinks,
     OwnerLogMixin,
     OwnerLogPage,
     OwnerResourceUsageMixin,
+    PublicLogLevel,
 )
 from .utils import make_request, serialize_to_json
 
@@ -475,6 +480,7 @@ def _runtime_access_retry_seconds(access: AgentSessionRuntimeAccess) -> float:
 
 
 class Agent(
+    EnvironmentLogSearchMixin,
     OwnerLogMixin,
     OwnerResourceUsageMixin,
     ShareableObjectMixin,
@@ -493,6 +499,39 @@ class Agent(
         "agent_type": "str",
         "search": "str",
     }
+
+    @classmethod
+    def search_logs(
+        cls,
+        *,
+        organization_environment_uid: str | uuid.UUID,
+        start_time: LogTime,
+        end_time: LogTime,
+        agent_uid: str | uuid.UUID | None = None,
+        agent_session_uid: str | uuid.UUID | None = None,
+        cursor: str | None = None,
+        limit: int | None = None,
+        level: PublicLogLevel | None = None,
+        event: str | None = None,
+        request_id: str | None = None,
+        outcome: LogSearchOutcome | None = None,
+        timeout: int | float | tuple[float, float] | None = None,
+    ) -> EnvironmentLogSearchPage:
+        return cls._search_environment_logs(
+            organization_environment_uid=organization_environment_uid,
+            start_time=start_time,
+            end_time=end_time,
+            agent_uid=agent_uid,
+            agent_session_uid=agent_session_uid,
+            cursor=cursor,
+            limit=limit,
+            level=level,
+            event=event,
+            request_id=request_id,
+            outcome=outcome,
+            timeout=timeout,
+        )
+
     READ_QUERY_PARAMS: ClassVar[dict[str, str]] = {
         "organization_environment_uid": "uid",
     }
@@ -600,22 +639,28 @@ class Agent(
     def get_logs(
         self,
         *,
+        start_time: LogTime | None = None,
+        end_time: LogTime | None = None,
         start: int | float | None = None,
         end: int | float | None = None,
         cursor: str | None = None,
         limit: int | None = None,
+        level: PublicLogLevel | None = None,
         severity: str | None = None,
         request_id: str | None = None,
         event: str | None = None,
-        outcome: str | None = None,
+        outcome: LogSearchOutcome | None = None,
         agent_session_uid: str | None = None,
         timeout: int | float | tuple[float, float] | None = None,
     ) -> OwnerLogPage:
         return self._get_owner_logs(
+            start_time=start_time,
+            end_time=end_time,
             start=start,
             end=end,
             cursor=cursor,
             limit=limit,
+            level=level,
             severity=severity,
             request_id=request_id,
             event=event,
@@ -1345,7 +1390,12 @@ class TauAgentSessionInsights(AgentSessionInsightsBase):
 AgentSessionInsights = PiAgentSessionInsights | TauAgentSessionInsights
 
 
-class AgentSession(OwnerLogMixin, BaseObjectOrm, BasePydanticModel):
+class AgentSession(
+    EnvironmentLogSearchMixin,
+    OwnerLogMixin,
+    BaseObjectOrm,
+    BasePydanticModel,
+):
     ENDPOINT: ClassVar[str] = "agent-sessions"
     _RUNTIME_ACCESS_CACHE: ClassVar[dict[str, tuple[float | None, AgentSessionRuntimeAccess]]] = {}
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]] | None] = {
@@ -1370,6 +1420,39 @@ class AgentSession(OwnerLogMixin, BaseObjectOrm, BasePydanticModel):
         "search": "str",
         "q": "str",
     }
+
+    @classmethod
+    def search_logs(
+        cls,
+        *,
+        organization_environment_uid: str | uuid.UUID,
+        start_time: LogTime,
+        end_time: LogTime,
+        agent_session_uid: str | uuid.UUID | None = None,
+        agent_uid: str | uuid.UUID | None = None,
+        cursor: str | None = None,
+        limit: int | None = None,
+        level: PublicLogLevel | None = None,
+        event: str | None = None,
+        request_id: str | None = None,
+        outcome: LogSearchOutcome | None = None,
+        timeout: int | float | tuple[float, float] | None = None,
+    ) -> EnvironmentLogSearchPage:
+        return cls._search_environment_logs(
+            organization_environment_uid=organization_environment_uid,
+            start_time=start_time,
+            end_time=end_time,
+            agent_session_uid=agent_session_uid,
+            agent_uid=agent_uid,
+            cursor=cursor,
+            limit=limit,
+            level=level,
+            event=event,
+            request_id=request_id,
+            outcome=outcome,
+            timeout=timeout,
+        )
+
     READ_QUERY_PARAMS: ClassVar[dict[str, str]] = {
         "ordering": "str",
         "limit": "str",

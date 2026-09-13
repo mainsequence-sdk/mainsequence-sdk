@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [8.1.14] - 2026-09-14
+
+### Added
+
+- Added typed Environment-scoped `search_logs()` clients for DeploymentRun,
+  JobRun, ResourceRelease, Agent, and AgentSession collections, including the
+  canonical ADR-060 filters and bounded-page response model.
+
+### Fixed
+
+- Updated owner-detail log clients for canonical `start_time`, `end_time`, and
+  `level` queries and additive response fields while preserving the deprecated
+  `start`, `end`, and `severity` aliases.
+- Made DeploymentRun detail log reads independent of local repository context
+  and added canonical time-window and event filtering.
+
 ## [8.1.13] - 2026-09-13
 
 ### Added

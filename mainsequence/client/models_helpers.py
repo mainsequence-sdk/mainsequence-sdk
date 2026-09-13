@@ -11,10 +11,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, PositiveInt
 
-from mainsequence.code_repository_context import (
-    resolve_code_repository_branch_uid,
-    resolve_organization_environment_uid,
-)
+from mainsequence.code_repository_context import resolve_code_repository_branch_uid
 
 from .base import (
     BaseObjectOrm,
@@ -33,9 +30,14 @@ from .models_foundry import (
     CodeRepositoryImage,
 )
 from .observability import (
+    EnvironmentLogSearchMixin,
+    EnvironmentLogSearchPage,
+    LogSearchOutcome,
+    LogTime,
     ObservabilityLinks,
     OwnerLogMixin,
     OwnerResourceUsageMixin,
+    PublicLogLevel,
 )
 from .utils import make_request
 
@@ -752,6 +754,7 @@ class Job(CurrentCodeRepositoryBranchCollectionMixin, BaseObjectOrm, BasePydanti
 
 
 class JobRun(
+    EnvironmentLogSearchMixin,
     OwnerLogMixin,
     OwnerResourceUsageMixin,
     BaseObjectOrm,
@@ -769,6 +772,38 @@ class JobRun(
         "job__uid": "str",
         "uid": "str",
     }
+
+    @classmethod
+    def search_logs(
+        cls,
+        *,
+        organization_environment_uid: str | UUID,
+        start_time: LogTime,
+        end_time: LogTime,
+        job_run_uid: str | UUID | None = None,
+        job_uid: str | UUID | None = None,
+        cursor: str | None = None,
+        limit: int | None = None,
+        level: PublicLogLevel | None = None,
+        event: str | None = None,
+        request_id: str | None = None,
+        outcome: LogSearchOutcome | None = None,
+        timeout: int | float | tuple[float, float] | None = None,
+    ) -> EnvironmentLogSearchPage:
+        return cls._search_environment_logs(
+            organization_environment_uid=organization_environment_uid,
+            start_time=start_time,
+            end_time=end_time,
+            job_run_uid=job_run_uid,
+            job_uid=job_uid,
+            cursor=cursor,
+            limit=limit,
+            level=level,
+            event=event,
+            request_id=request_id,
+            outcome=outcome,
+            timeout=timeout,
+        )
 
     uid: str | None = Field(
         default=None,
@@ -1118,6 +1153,7 @@ class ResourceReleaseKind(str, Enum):
 
 class ResourceRelease(
     CurrentCodeRepositoryBranchCollectionMixin,
+    EnvironmentLogSearchMixin,
     OwnerLogMixin,
     OwnerResourceUsageMixin,
     ShareableObjectMixin,
@@ -1138,6 +1174,36 @@ class ResourceRelease(
         "related_job__uid": "uid",
         "release_kind": "str",
     }
+
+    @classmethod
+    def search_logs(
+        cls,
+        *,
+        organization_environment_uid: str | UUID,
+        start_time: LogTime,
+        end_time: LogTime,
+        resource_release_uid: str | UUID | None = None,
+        cursor: str | None = None,
+        limit: int | None = None,
+        level: PublicLogLevel | None = None,
+        event: str | None = None,
+        request_id: str | None = None,
+        outcome: LogSearchOutcome | None = None,
+        timeout: int | float | tuple[float, float] | None = None,
+    ) -> EnvironmentLogSearchPage:
+        return cls._search_environment_logs(
+            organization_environment_uid=organization_environment_uid,
+            start_time=start_time,
+            end_time=end_time,
+            resource_release_uid=resource_release_uid,
+            cursor=cursor,
+            limit=limit,
+            level=level,
+            event=event,
+            request_id=request_id,
+            outcome=outcome,
+            timeout=timeout,
+        )
 
     uid: str | None = Field(
         None,
@@ -1498,6 +1564,8 @@ class DeploymentRunLogSource(BaseModel):
 
 class DeploymentRunLogPage(BaseModel):
     run_uid: str
+    start_time: datetime.datetime | None = None
+    end_time: datetime.datetime | None = None
     entries: list[DeploymentRunLogEntry] = Field(default_factory=list)
     sources: list[DeploymentRunLogSource] = Field(default_factory=list)
     next_cursor: str | None = None
@@ -1505,7 +1573,12 @@ class DeploymentRunLogPage(BaseModel):
     retention_expires_at: datetime.datetime | None = None
 
 
-class DeploymentRun(CurrentCodeRepositoryBranchCollectionMixin, BaseObjectOrm, BasePydanticModel):
+class DeploymentRun(
+    CurrentCodeRepositoryBranchCollectionMixin,
+    EnvironmentLogSearchMixin,
+    BaseObjectOrm,
+    BasePydanticModel,
+):
     ENDPOINT: ClassVar[str] = "deployment-runs"
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
         "code_repository_branch_uid": ["exact", "in"],
@@ -1533,6 +1606,53 @@ class DeploymentRun(CurrentCodeRepositoryBranchCollectionMixin, BaseObjectOrm, B
         "ordering": "str",
         "search": "str",
     }
+
+    @classmethod
+    def search_logs(
+        cls,
+        *,
+        organization_environment_uid: str | UUID,
+        start_time: LogTime,
+        end_time: LogTime,
+        deployment_run_uid: str | UUID | None = None,
+        target_type: Literal[
+            "job",
+            "code_repository_executor",
+            "user_orchestrator",
+            "resource_release",
+            "static_site",
+            "code_repository_image",
+        ]
+        | None = None,
+        target_uid: str | UUID | None = None,
+        step_uid: str | UUID | None = None,
+        source: Literal[
+            "orchestrator",
+            "code_repository_image_build",
+            "static_site_build",
+        ]
+        | None = None,
+        cursor: str | None = None,
+        limit: int | None = None,
+        level: PublicLogLevel | None = None,
+        event: str | None = None,
+        timeout: int | float | tuple[float, float] | None = None,
+    ) -> EnvironmentLogSearchPage:
+        return cls._search_environment_logs(
+            organization_environment_uid=organization_environment_uid,
+            start_time=start_time,
+            end_time=end_time,
+            deployment_run_uid=deployment_run_uid,
+            target_type=target_type,
+            target_uid=target_uid,
+            step_uid=step_uid,
+            source=source,
+            cursor=cursor,
+            limit=limit,
+            level=level,
+            event=event,
+            timeout=timeout,
+        )
 
     uid: str
     target_type: str
@@ -1564,11 +1684,20 @@ class DeploymentRun(CurrentCodeRepositoryBranchCollectionMixin, BaseObjectOrm, B
     def get_logs(
         self,
         *,
+        organization_environment_uid: str | UUID | None = None,
+        start_time: LogTime | None = None,
+        end_time: LogTime | None = None,
         cursor: str | None = None,
         limit: int | None = None,
         step_uid: str | UUID | None = None,
-        source: str | None = None,
-        level: str | None = None,
+        source: Literal[
+            "orchestrator",
+            "code_repository_image_build",
+            "static_site_build",
+        ]
+        | None = None,
+        level: PublicLogLevel | None = None,
+        event: str | None = None,
         timeout: int | float | tuple[float, float] | None = None,
     ) -> DeploymentRunLogPage:
         params = {
@@ -1576,11 +1705,22 @@ class DeploymentRun(CurrentCodeRepositoryBranchCollectionMixin, BaseObjectOrm, B
             for key, value in {
                 "cursor": cursor,
                 "limit": limit,
+                "start_time": (
+                    start_time.isoformat()
+                    if isinstance(start_time, datetime.datetime)
+                    else start_time
+                ),
+                "end_time": (
+                    end_time.isoformat() if isinstance(end_time, datetime.datetime) else end_time
+                ),
                 "step_uid": str(step_uid) if step_uid is not None else None,
                 "source": source,
                 "level": level,
-                "organization_environment_uid": resolve_organization_environment_uid(
-                    "DeploymentRun.get_logs"
+                "event": event,
+                "organization_environment_uid": (
+                    str(organization_environment_uid)
+                    if organization_environment_uid is not None
+                    else None
                 ),
             }.items()
             if value is not None
