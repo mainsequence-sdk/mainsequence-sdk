@@ -6,6 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [8.1.15] - 2026-09-14
+
+### Added
+
+- Added typed backend-mediated GitHub issue, comment, pagination, and operation
+  clients with explicit idempotency and asynchronous reconciliation results.
+- Added `CodeRepositoryBranch.list_github_issues()` and
+  `CodeRepositoryBranch.create_github_issue()` as current-branch operations.
+
+### Changed
+
+- Enforced the process-frozen Git context as the only authority for GitHub
+  issue collection and creation. Branch instances are checked against that
+  context, and callers cannot select a branch or Organization Environment.
+- Documented GitHub issue ownership, opaque cursors, untrusted Markdown, and
+  the single branch-and-Environment resolution path.
+- Reduced the managed `AGENTS.md` scaffold to routing and authority rules,
+  made SDK and skill updates explicitly user-requested operations, and removed
+  the mandatory design-first sequence for already-scoped work.
+
 ## [8.1.14] - 2026-09-14
 
 ### Added

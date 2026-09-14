@@ -604,7 +604,7 @@ wheels = [
 
 [[package]]
 name = "mainsequence"
-version = "8.1.14"
+version = "8.1.15"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },

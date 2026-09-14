@@ -35,7 +35,7 @@ This skill must not claim ownership of:
 - producing or modifying `TimeIndexTableUpdater` pipelines
 - designing `MetaTable` registration or operation behavior
 - deciding code-level read patterns for discovered datasets
-- building APIs or dashboards
+- building application surfaces
 - scheduling jobs, images, or releases
 - sharing or RBAC policy
 
@@ -43,8 +43,11 @@ This skill discovers and identifies data. It does not publish, redesign, or defi
 
 ## Route Adjacent Work
 
-- CodeRepository bootstrap, scaffolding, and routing:
-  `.agents/skills/mainsequence/code_repository_design/SKILL.md`
+- Product architecture, platform ontology, and CodeRepository Blueprint work:
+  use the matching platform-owned design skill declared by the installed
+  platform catalog; do not assume its filesystem path
+- CodeRepository bootstrap, scaffolding, and implementation routing:
+  `.agents/skills/mainsequence/sdk_code_repository_execution/SKILL.md`
 - `TimeIndexTableUpdater` creation or modification:
   `.agents/skills/mainsequence/data_publishing/time_index_table_updates/SKILL.md`
 - `MetaTable` registration or operation work:
@@ -203,7 +206,7 @@ Examples:
 
 - if the task is about publishing or modifying time-series data, hand off to `.agents/skills/mainsequence/data_publishing/time_index_table_updates/SKILL.md`
 - if the task is about row-oriented operational data, hand off to `.agents/skills/mainsequence/data_publishing/meta_tables/SKILL.md`
-- if the task is about APIs or dashboards, hand off to the relevant surface skill after discovery is complete
+- if the task is about an application surface, hand off to the relevant surface skill after discovery is complete
 
 ## Review Rules
 

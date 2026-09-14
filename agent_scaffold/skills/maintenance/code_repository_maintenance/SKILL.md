@@ -1,6 +1,6 @@
 ---
 name: code_repository_maintenance
-description: Maintain an existing Main Sequence CodeRepository checkout using the SDK-version-matched CLI. Use for inspecting repository state, building or repairing .venv, refreshing local authentication, updating the SDK, refreshing SDK and platform skills plus AGENTS.md, publishing changes with CodeRepository sync, or diagnosing a partially completed maintenance workflow.
+description: Maintain an existing Main Sequence CodeRepository checkout using the SDK-version-matched CLI. Use for inspecting repository state, building or repairing .venv, refreshing local authentication, performing explicitly requested SDK, skill, or AGENTS.md updates, publishing changes with CodeRepository sync, or diagnosing a partially completed maintenance workflow.
 ---
 
 # Main Sequence CodeRepository Maintenance
@@ -135,8 +135,10 @@ context on the next process run without rewriting `.env`.
 
 ## Update The CodeRepository SDK
 
-Inspect the current status, preview the update, and then update when requested
-or required by repository instructions:
+Run an SDK update only when the user explicitly requests it. A newer available
+version, documentation mismatch, or non-trivial task is not permission to
+mutate the environment. For an explicit update, inspect the current status,
+preview it, and then update:
 
 ```bash
 mainsequence code-repository sdk-status --path . --json
@@ -145,16 +147,19 @@ mainsequence code-repository update-sdk --path .
 ```
 
 `update-sdk` updates the lock and local environment. It does not publish the
-working tree. After the SDK changes, refresh the managed agent context and run
-the repository-specific validation required by `AGENTS.md`.
+working tree or authorize a managed-skill or `AGENTS.md` refresh. Report any
+resulting pin mismatch and run those updates only when the user explicitly
+requests them.
 
 Do not automatically commit or push an SDK update unless the user also asked
 to publish the CodeRepository changes.
 
 ## Refresh Managed Skills And Instructions
 
-Refresh the SDK-owned and platform-owned skills first, then update the managed
-Main Sequence block in `AGENTS.md`:
+Run either managed-scaffold command only when the user explicitly requests that
+specific update. When both are requested, refresh the SDK-owned and
+platform-owned skills first, then update the managed Main Sequence block in
+`AGENTS.md`:
 
 ```bash
 mainsequence code-repository update-agent-skills --path .

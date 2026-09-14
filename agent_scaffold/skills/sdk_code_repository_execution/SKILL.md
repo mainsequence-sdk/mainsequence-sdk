@@ -1,17 +1,17 @@
 ---
 name: mainsequence-sdk-code-repository-execution
-description: Use the installed Main Sequence SDK and repository-local tools to verify CodeRepository context, apply local scaffold conventions, and route concrete implementation work after platform intent and ontology have been established.
+description: Use the installed Main Sequence SDK and repository-local tools to verify CodeRepository context, apply local scaffold conventions, and route concrete implementation work. Use a platform-owned design skill first only when architecture or ontology is unresolved.
 ---
 
 # Main Sequence SDK CodeRepository Execution
 
 ## Overview
 
-Use this SDK-owned execution skill after the platform `code-repository-design` skill
-has established intent, CodeRepository ontology, the connected CodeRepository Blueprint, and
-the observable definition of success. This file owns local SDK, CLI,
-filesystem, and repository mechanics; it does not define the platform ontology
-or replace `code-repository-design`.
+Use this SDK-owned skill for local SDK, CLI, filesystem, repository mechanics,
+and implementation routing. A platform-owned design skill is required first
+only when product architecture, ontology, or the CodeRepository Blueprint is
+unresolved. Maintenance, audits, and already-scoped implementation work do not
+require a design-first sequence.
 
 This skill is for:
 
@@ -70,7 +70,7 @@ Do not let this skill become a domain manual.
 ## Read First
 
 1. `AGENTS.md`
-2. the latest relevant Main Sequence docs for the task
+2. the relevant documentation for the installed SDK and current platform contract
 
 Canonical documentation root:
 `https://mainsequence-sdk.github.io/mainsequence-sdk/`
@@ -134,9 +134,14 @@ For every non-trivial task, decide:
 
 ## Build Rules
 
-### 1. The latest docs are the source of truth
+### 1. Use the authority that owns the contract
 
-Do not rely on memory or copied snippets when the current Main Sequence docs should be checked.
+Use installed SDK skills, CLI help, and version-matched documentation for
+client behavior. Use installed platform-owned skills and backend-advertised
+schemas, templates, and capabilities for platform behavior. Treat the public
+documentation site as supplemental when it describes another SDK version. If
+the client and platform contracts disagree, stop and route the evidence to the
+bug-auditor skill instead of guessing or updating automatically.
 
 ### 2. Maintain the standard Main Sequence CodeRepository structure
 

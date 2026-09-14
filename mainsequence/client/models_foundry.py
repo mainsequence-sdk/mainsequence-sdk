@@ -32,6 +32,7 @@ from .utils import (
 )
 
 if TYPE_CHECKING:
+    from .github_issues import GitHubIssueMutationResult, GitHubIssuePage, GitHubIssueState
     from .metatables import TimeIndexTableUpdate
 
 _default_data_source = None  # Module-level cache
@@ -571,6 +572,66 @@ class CodeRepositoryBranch(BasePydanticModel, BaseObjectOrm):
     def infra_graph(self, *, commit_sha: str | None = None, timeout=None) -> dict[str, Any]:
         params = {"commit_sha": commit_sha} if commit_sha else None
         return self._get_action("infra-graph", params=params, timeout=timeout)
+
+    def _resolved_github_issue_branch_uid(self, operation: str) -> str:
+        """Assert that this instance is the process-frozen Git branch."""
+
+        from mainsequence.code_repository_context import (
+            resolve_code_repository_branch_uid,
+            resolve_organization_environment_uid,
+        )
+
+        branch_uid = resolve_code_repository_branch_uid(operation, supplied_uid=self.uid)
+        # GitHub issues persist Environment ownership from the resolved branch. The
+        # backend derives it from the branch path; it is never a caller selector.
+        resolve_organization_environment_uid(operation)
+        return branch_uid
+
+    def list_github_issues(
+        self,
+        *,
+        state: GitHubIssueState | None = None,
+        updated_since: datetime.datetime | None = None,
+        cursor: str | None = None,
+        limit: int = 50,
+        timeout: int | float | tuple[float, float] | None = None,
+    ) -> GitHubIssuePage:
+        """List issues anchored to the process-frozen CodeRepositoryBranch."""
+
+        from .github_issues import _list_github_issues_for_branch
+
+        operation = "CodeRepositoryBranch.list_github_issues"
+        branch_uid = self._resolved_github_issue_branch_uid(operation)
+        return _list_github_issues_for_branch(
+            branch_uid=branch_uid,
+            state=state,
+            updated_since=updated_since,
+            cursor=cursor,
+            limit=limit,
+            timeout=timeout,
+        )
+
+    def create_github_issue(
+        self,
+        *,
+        title: str,
+        body: str = "",
+        idempotency_key: str,
+        timeout: int | float | tuple[float, float] | None = None,
+    ) -> GitHubIssueMutationResult:
+        """Create an issue for the process-frozen branch without branch selectors."""
+
+        from .github_issues import _create_github_issue_for_branch
+
+        operation = "CodeRepositoryBranch.create_github_issue"
+        branch_uid = self._resolved_github_issue_branch_uid(operation)
+        return _create_github_issue_for_branch(
+            branch_uid=branch_uid,
+            title=title,
+            body=body,
+            idempotency_key=idempotency_key,
+            timeout=timeout,
+        )
 
     def update_sdk(self, *, timeout=None) -> dict[str, Any]:
         r = make_request(

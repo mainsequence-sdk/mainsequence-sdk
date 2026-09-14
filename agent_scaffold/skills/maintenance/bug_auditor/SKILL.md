@@ -47,8 +47,11 @@ This skill audits. It does not implement by default.
 
 ## Route Adjacent Work
 
-- bootstrap, routing, and repo structure:
-  `.agents/skills/mainsequence/code_repository_design/SKILL.md`
+- Product architecture, platform ontology, and CodeRepository Blueprint work:
+  use the matching platform-owned design skill declared by the installed
+  platform catalog; do not assume its filesystem path
+- bootstrap, routing, and repository structure:
+  `.agents/skills/mainsequence/sdk_code_repository_execution/SKILL.md`
 - TimeIndexTableUpdater implementation issues:
   `.agents/skills/mainsequence/data_publishing/time_index_table_updates/SKILL.md`
 - MetaTable implementation issues:
@@ -66,8 +69,7 @@ This skill audits. It does not implement by default.
 ## Read First
 
 1. `AGENTS.md`
-2. `.agents/skills/mainsequence/code_repository_design/SKILL.md`
-3. the latest relevant Main Sequence docs for the failing workflow
+2. the relevant installed skill and version-aligned documentation for the failing workflow
 
 ## Inputs This Skill Needs
 

@@ -134,10 +134,18 @@ source is running.
 ### Branch-owned consumers
 
 Current-branch Job, CodeRepositoryImage, ResourceRelease, CodeRepositoryResource,
-CodeRepositoryExecutor, migration, platform-managed MetaTable, and
-TimeIndexTableUpdater workflows consume the frozen context. Ordinary branch-owned
-collections are scoped to the resolved CodeRepositoryBranch. Explicit administrative
-enumeration uses separately named admin APIs.
+CodeRepositoryExecutor, GitHub issue collection and creation, migration,
+platform-managed MetaTable, and TimeIndexTableUpdater workflows consume the
+frozen context. Ordinary branch-owned collections are scoped to the resolved
+CodeRepositoryBranch. Explicit administrative enumeration uses separately named
+admin APIs.
+
+An instance method does not make an arbitrary `CodeRepositoryBranch` instance
+routing authority. Branch-owned methods validate the instance UID against the
+UID returned by `get_code_repository_context()` and build their request from
+the resolved UID. GitHub issue endpoints derive persisted Environment ownership
+from that branch, so the SDK requires the Environment in the same frozen
+context but does not send a second Environment selector.
 
 Parent-derived operations retain the persisted parent's ownership instead of
 inventing another branch selector. Backend authorization remains the final

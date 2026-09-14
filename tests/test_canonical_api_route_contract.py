@@ -51,6 +51,7 @@ def test_cli_auth_and_resource_roots_match_backend_contract():
     from mainsequence.cli.api import AUTH_PATHS
     from mainsequence.client.agent_runtime_models import Agent, AgentSession, CodingAgentService
     from mainsequence.client.base import BaseObjectOrm
+    from mainsequence.client.github_issues import GitHubIssue, GitHubIssueOperation
     from mainsequence.client.metatables import MetaTable, TimeIndexMetaTable
     from mainsequence.client.models_user import Notification, Organization, Team
 
@@ -66,6 +67,8 @@ def test_cli_auth_and_resource_roots_match_backend_contract():
         Agent.ENDPOINT,
         AgentSession.ENDPOINT,
         CodingAgentService.ENDPOINT,
+        GitHubIssue.ENDPOINT,
+        GitHubIssueOperation.ENDPOINT,
         MetaTable.ENDPOINT,
         TimeIndexMetaTable.ENDPOINT,
         Notification.ENDPOINT,
@@ -82,6 +85,8 @@ def test_cli_auth_and_resource_roots_match_backend_contract():
         "data-sources",
         "deployment-runs",
         "github-organizations",
+        "github-issue-operations",
+        "github-issues",
         "job-runs",
         "jobs",
         "table-update-runs",
@@ -95,7 +100,6 @@ def test_cli_auth_and_resource_roots_match_backend_contract():
         "code-repository-resources",
         "code-repositories",
         "resource-releases",
-        "schedulers",
         "secrets",
         "time-index-meta-tables",
         "time-index-table-update-details",

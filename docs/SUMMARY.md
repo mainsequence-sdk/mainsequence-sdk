@@ -15,6 +15,7 @@
         - [Notifications](knowledge/infrastructure/notifications.md)
         - [Labels](knowledge/infrastructure/labels.md)
         - [Scheduling Jobs](knowledge/infrastructure/scheduling_jobs.md)
+        - [GitHub Issues](knowledge/infrastructure/github_issues.md)
         - [Owner-Scoped Runtime Observability](knowledge/infrastructure/owner_observability.md)
         - [Artifacts](knowledge/infrastructure/artifacts.md)
         - [Constants and Secrets](knowledge/infrastructure/constants_and_secrets.md)
