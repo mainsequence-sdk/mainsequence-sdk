@@ -598,6 +598,13 @@ class Agent(
         None,
         description="Service-level automatic deployment flag for the resolved typed coding-agent service.",
     )
+    runtime_release_uid: str | None = Field(
+        None,
+        description=(
+            "Read-only public UID of the ResourceRelease currently bound to this Agent, "
+            "or null when the Agent has no deployed runtime release."
+        ),
+    )
     code_repository_branch_uid: str | None = Field(
         None,
         description=(

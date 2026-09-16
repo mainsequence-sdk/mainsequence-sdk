@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [8.1.16] - 2026-09-16
+
+### Fixed
+
+- Accepted the canonical nullable `runtime_release_uid` projection returned for
+  Agents while retaining strict rejection of unknown response fields.
+
 ## [8.1.15] - 2026-09-14
 
 ### Added

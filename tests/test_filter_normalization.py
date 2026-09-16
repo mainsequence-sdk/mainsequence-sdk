@@ -2071,6 +2071,7 @@ def test_agent_filter_sends_environment_read_scope_and_parses_code_repositoryion
 def test_agent_get_parses_runtime_update_projection(monkeypatch):
     captured = {}
     agent_uid = "e0e75693-4110-464c-93e0-82c7fd9c9a23"
+    runtime_release_uid = "ee79fff7-813b-481b-8726-8a7e7a778862"
     environment_uid = uuid.UUID("22222222-2222-4222-8222-222222222222")
 
     class FakeResponse:
@@ -2082,6 +2083,7 @@ def test_agent_get_parses_runtime_update_projection(monkeypatch):
                 "uid": agent_uid,
                 "name": "CodeRepository Executor",
                 "llm_thinking": "medium",
+                "runtime_release_uid": runtime_release_uid,
                 "code_repository_branch_uid": "9d81d63f-b8c9-404d-9f1a-5f2ad29dbf16",
                 "repository_branch": "main",
                 "organization_environment_uid": str(environment_uid),
@@ -2119,9 +2121,21 @@ def test_agent_get_parses_runtime_update_projection(monkeypatch):
         "payload": {"params": {"organization_environment_uid": str(environment_uid)}},
         "timeout": 12,
     }
+    assert agent.runtime_release_uid == runtime_release_uid
     assert agent.runtime_update.state == "update_failed"
     assert agent.runtime_update.needs_redeploy is True
     assert agent.runtime_update.remediation.tool == "agent.update_runtime"
+    assert (
+        agent_models_mod.Agent.model_validate(
+            {**FakeResponse.json(), "runtime_release_uid": None}
+        ).runtime_release_uid
+        is None
+    )
+
+    with pytest.raises(ValidationError, match="unexpected_projection"):
+        agent_models_mod.Agent.model_validate(
+            {**FakeResponse.json(), "unexpected_projection": "still forbidden"}
+        )
 
 
 def test_agent_semantic_search_sends_environment_scope_and_parses_code_repositoryion(monkeypatch):
