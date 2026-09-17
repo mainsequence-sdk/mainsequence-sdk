@@ -43,10 +43,13 @@ specific update:
 - `mainsequence code-repository update-sdk --path .`
 - `mainsequence code-repository update-agent-skills --path .`
 - `mainsequence code-repository update AGENTS.md --path .`
+- `uv run ms-tau skills sync --path .`
 
 A missing or mismatched `.agents/skills/mainsequence/PINNED_FROM.txt` is state
-to report, not permission to mutate the repository. When an update is
-requested, use the `code_repository_maintenance` skill.
+to report, not permission to mutate the repository. The same rule applies to
+`.agents/skills/ms_tau_sdk/PINNED_FROM.txt`. When a Main Sequence update is
+requested, use the `code_repository_maintenance` skill. The `mainsequence` CLI
+never owns or updates the `ms_tau_sdk` namespace.
 
 ## Route By Task
 
@@ -80,6 +83,11 @@ requested, use the `code_repository_maintenance` skill.
 - Turning a CodeRepository into a platform coding agent or selecting other
   platform-owned capabilities: use the matching skill declared by the installed
   platform catalog. Do not hardcode a platform-owned skill path.
+- Implementing or debugging a TAU-based Harness Agent: after the platform skill
+  establishes the platform contract, use the version-matched skills under
+  `.agents/skills/ms_tau_sdk/`. If they are absent and the user requested the
+  update, run `uv run ms-tau skills sync --path .`; do not reconstruct those
+  SDK instructions from platform documentation.
 
 ## Core Working Rules
 

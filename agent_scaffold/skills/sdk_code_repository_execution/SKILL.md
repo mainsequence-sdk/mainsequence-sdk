@@ -66,6 +66,11 @@ Do not let this skill become a domain manual.
   `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
 - RBAC and sharing:
   `.agents/skills/mainsequence/platform_operations/access_control_and_sharing/SKILL.md`
+- TAU-based Harness Agent repository integration, local development, project
+  customization, and runtime A2A adaptation: use the version-matched skills in
+  `.agents/skills/ms_tau_sdk/` after the platform-owned skill defines the
+  platform contract. If the namespace is absent, report it; synchronize it with
+  `uv run ms-tau skills sync --path .` only when the user requests that update.
 
 ## Read First
 
@@ -142,6 +147,10 @@ schemas, templates, and capabilities for platform behavior. Treat the public
 documentation site as supplemental when it describes another SDK version. If
 the client and platform contracts disagree, stop and route the evidence to the
 bug-auditor skill instead of guessing or updating automatically.
+
+The `mainsequence` CLI owns `.agents/skills/mainsequence/`. It must not copy,
+refresh, or remove `.agents/skills/ms_tau_sdk/`; that independent namespace is
+owned by the installed `ms-tau-sdk` command.
 
 ### 2. Maintain the standard Main Sequence CodeRepository structure
 

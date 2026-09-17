@@ -202,8 +202,7 @@ def test_parse_platform_catalog_accepts_current_backend_skill_membership():
     assert len(catalog.resources) == 7
     assert [skill.name for skill in catalog.skills] == sorted(_CURRENT_BACKEND_SKILL_PATHS)
     assert {skill.name: skill.relative_path.as_posix() for skill in catalog.skills} == {
-        name: path.removeprefix("skills/")
-        for name, path in _CURRENT_BACKEND_SKILL_PATHS.items()
+        name: path.removeprefix("skills/") for name, path in _CURRENT_BACKEND_SKILL_PATHS.items()
     }
 
 
@@ -253,9 +252,7 @@ def test_parse_platform_catalog_rejects_undeclared_duplicate_and_unsafe_skills()
             source_url="https://platform.example.test/mcp",
         )
 
-    rows = _platform_rows(
-        skill_paths={"alpha_skill": "skills/invalid-group/alpha_skill/SKILL.md"}
-    )
+    rows = _platform_rows(skill_paths={"alpha_skill": "skills/invalid-group/alpha_skill/SKILL.md"})
     with pytest.raises(CodeRepositorySkillAssemblyError, match="safe lowercase snake case"):
         parse_platform_code_repository_skill_catalog(
             rows,
@@ -286,7 +283,9 @@ def test_parse_platform_catalog_rejects_invalid_front_matter_and_schema_version(
     for row in rows:
         row["_meta"]["manifest_version"] = 999
         row["_content"]["_meta"]["manifest_version"] = 999
-    with pytest.raises(CodeRepositorySkillAssemblyError, match="unsupported platform manifest version"):
+    with pytest.raises(
+        CodeRepositorySkillAssemblyError, match="unsupported platform manifest version"
+    ):
         parse_platform_code_repository_skill_catalog(
             rows,
             source_url="https://platform.example.test/mcp",
@@ -665,12 +664,33 @@ def test_sdk_source_tree_does_not_vendor_extension_library_routing_skills():
     sdk_root = Path(__file__).resolve().parents[1]
 
     assert not (sdk_root / "agent_scaffold" / "skills" / "ms-markets").exists()
+    assert not (sdk_root / "agent_scaffold" / "skills" / "ms_tau_sdk").exists()
+
+
+def test_scaffold_routes_tau_runtime_work_to_the_independent_sdk_namespace():
+    sdk_root = Path(__file__).resolve().parents[1]
+    agents = (sdk_root / "agent_scaffold" / "AGENTS.md").read_text(encoding="utf-8")
+    execution = (
+        sdk_root / "agent_scaffold" / "skills" / "sdk_code_repository_execution" / "SKILL.md"
+    ).read_text(encoding="utf-8")
+
+    for content in (agents, execution):
+        assert ".agents/skills/ms_tau_sdk/" in content
+        assert "uv run ms-tau skills sync --path ." in content
+        assert ".agents/skills/mainsequence/" in content
+    assert "never owns or updates the `ms_tau_sdk` namespace" in agents
+    assert "must not copy,\nrefresh, or remove `.agents/skills/ms_tau_sdk/`" in execution
 
 
 def test_code_repository_maintenance_is_sdk_owned_and_uses_canonical_cli_workflows():
     sdk_root = Path(__file__).resolve().parents[1]
     skill_path = (
-        sdk_root / "agent_scaffold" / "skills" / "maintenance" / "code_repository_maintenance" / "SKILL.md"
+        sdk_root
+        / "agent_scaffold"
+        / "skills"
+        / "maintenance"
+        / "code_repository_maintenance"
+        / "SKILL.md"
     )
     content = skill_path.read_text(encoding="utf-8")
 
