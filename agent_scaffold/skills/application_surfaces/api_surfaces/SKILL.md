@@ -164,6 +164,11 @@ validation against the authoritative Command Center SDK schema and fixtures.
 Run the FastAPI application locally and exercise it through the actual Command
 Center frontend flow, not only with isolated HTTP calls.
 
+Start the ASGI application with the local development runner, wait for its
+lifespan startup to complete, and run the repository-pinned contract tests
+against its local URL. This local process is the readiness source for local and
+debug execution.
+
 For Adapter From API development, use the direct transport mode defined by the
 selected Command Center SDK repository contract and expose the local API through
 a temporary authenticated Cloudflare tunnel. Exercise the actual frontend flow
@@ -206,10 +211,11 @@ syncs. Otherwise keep the release pinned and create deliberate replacements.
 
 ### 6. Verify the deployed API
 
-Do not treat local success or release creation as completion. Through the
-deployed platform route:
+Request runtime access for the deployed FastAPI `ResourceRelease` through
+Django and wait for Django's ready result. Use the returned access bundle for
+the deployed checks:
 
-1. verify health and authentication behavior
+1. verify authentication behavior
 2. execute representative contract-bearing requests
 3. validate returned JSON against the same repository-pinned schemas
 4. exercise the consuming Command Center frontend flow

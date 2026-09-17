@@ -85,6 +85,23 @@ def test_code_repository_context_adr_describes_the_current_cutover() -> None:
     assert "names below describe the pre-cutover contract" not in adr
 
 
+def test_api_surface_skill_separates_deployed_and_local_readiness() -> None:
+    skill = (
+        REPOSITORY_ROOT
+        / "agent_scaffold"
+        / "skills"
+        / "application_surfaces"
+        / "api_surfaces"
+        / "SKILL.md"
+    ).read_text(encoding="utf-8")
+    normalized_skill = " ".join(skill.split())
+
+    assert "Request runtime access" in normalized_skill
+    assert "through Django" in normalized_skill
+    assert "wait for Django's ready result" in normalized_skill
+    assert "wait for its lifespan startup to complete" in normalized_skill
+
+
 @pytest.mark.parametrize(
     "path",
     _documentation_files(),
