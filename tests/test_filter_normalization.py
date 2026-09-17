@@ -3145,6 +3145,139 @@ def test_resource_release_patch_supports_positive_revision_retention_count(monke
     assert captured["payload"]["json"] == {"revision_retention_count": 6}
 
 
+def _runtime_access_payload(*, state: str, can_request: bool, retry_after_ms=None):
+    release_uid = "2f4c4c3d-5669-4da5-9d86-b84633c1e6ed"
+    waking = state == "waking"
+    return {
+        "resource_release_uid": release_uid,
+        "release_kind": "fastapi",
+        "routing": {
+            "state": "routable",
+            "active_revision_uid": "19128ab6-d72f-460c-8525-d758fa92676a",
+        },
+        "runtime_access": {
+            "state": state,
+            "can_request": can_request,
+            "notice": (
+                {
+                    "code": "runtime_waking",
+                    "severity": "info",
+                    "title": "Starting deployed runtime",
+                    "message": "The deployed runtime is starting from idle.",
+                }
+                if waking
+                else None
+            ),
+            "operation": (
+                {
+                    "uid": "00000000-0000-4000-8000-000000000002",
+                    "status": "running",
+                    "created_at": "2026-09-17T12:00:00Z",
+                    "started_at": "2026-09-17T12:00:01Z",
+                    "finished_at": None,
+                    "support_reference": "00000000-0000-4000-8000-000000000002",
+                }
+                if waking
+                else None
+            ),
+            "retry_after_ms": retry_after_ms,
+        },
+        "runtime_presence": {
+            "phase": "starting" if waking else "serving",
+            "replicas": {"desired": 1, "actual": 1},
+            "detail": "Starting." if waking else "Ready.",
+            "observed_at": "2026-09-17T12:00:02Z",
+            "wake": (
+                {
+                    "operation_uid": "00000000-0000-4000-8000-000000000002",
+                    "state": "in_progress",
+                    "requested_at": "2026-09-17T12:00:00Z",
+                    "deadline_at": "2026-09-17T12:10:00Z",
+                }
+                if waking
+                else None
+            ),
+        },
+        "access": (
+            {
+                "release_kind": "fastapi",
+                "mode": "token",
+                "token": "runtime-token",
+                "rpc_url": "https://runtime.example.test/",
+                "resource_release_uid": release_uid,
+            }
+            if can_request
+            else None
+        ),
+    }
+
+
+def test_resource_release_resolve_runtime_access_posts_django_command(monkeypatch):
+    captured = {}
+    release = models_helpers_mod.ResourceRelease(
+        uid="2f4c4c3d-5669-4da5-9d86-b84633c1e6ed",
+        release_kind="fastapi",
+    )
+
+    class FakeResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return _runtime_access_payload(state="ready", can_request=True)
+
+    def _fake_make_request(**kwargs):
+        captured.update(kwargs)
+        return FakeResponse()
+
+    monkeypatch.setattr(models_helpers_mod, "make_request", _fake_make_request)
+    access = release.resolve_runtime_access(
+        static_site_release_uid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        timeout=9,
+    )
+
+    assert access.runtime_access.can_request is True
+    assert access.access["token"] == "runtime-token"
+    assert captured["r_type"] == "POST"
+    assert captured["url"].endswith(
+        "/resource-releases/2f4c4c3d-5669-4da5-9d86-b84633c1e6ed/resolve-runtime-access/"
+    )
+    assert captured["payload"]["json"] == {
+        "static_site_release_uid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    }
+
+
+def test_resource_release_waits_on_django_retry_after(monkeypatch):
+    release = models_helpers_mod.ResourceRelease(
+        uid="2f4c4c3d-5669-4da5-9d86-b84633c1e6ed",
+        release_kind="fastapi",
+    )
+    responses = iter(
+        [
+            _runtime_access_payload(
+                state="waking", can_request=False, retry_after_ms=2000
+            ),
+            _runtime_access_payload(state="ready", can_request=True),
+        ]
+    )
+    monkeypatch.setattr(
+        models_helpers_mod.ResourceRelease,
+        "resolve_runtime_access",
+        lambda self, **kwargs: models_helpers_mod.ResourceReleaseRuntimeAccess.model_validate(
+            next(responses)
+        ),
+    )
+    slept = []
+    monkeypatch.setattr(models_helpers_mod.time, "sleep", slept.append)
+    monotonic = iter([0.0, 0.0, 2.0])
+    monkeypatch.setattr(models_helpers_mod.time, "monotonic", lambda: next(monotonic))
+
+    access = release.wait_for_runtime_access(wait_timeout_seconds=10)
+
+    assert access.runtime_access.can_request is True
+    assert slept == [2.0]
+
+
 @pytest.mark.parametrize("invalid_value", [None, 0, -1, True, 1.5, "3"])
 def test_resource_release_patch_rejects_invalid_revision_retention_count(
     monkeypatch, invalid_value

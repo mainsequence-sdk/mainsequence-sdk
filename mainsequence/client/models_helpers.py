@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime
 import json
+import time
 from collections.abc import Collection
 from decimal import Decimal
 from enum import Enum
@@ -1151,6 +1152,76 @@ class ResourceReleaseKind(str, Enum):
     STATIC_SITE = "static_site"
 
 
+class ResourceReleaseRuntimeRouting(BasePydanticModel):
+    state: Literal["routable", "unavailable"]
+    active_revision_uid: str | None = None
+
+
+class ResourceReleaseRuntimeNotice(BasePydanticModel):
+    code: str
+    severity: Literal["info", "warning", "error"]
+    title: str
+    message: str
+
+
+class ResourceReleaseRuntimeOperation(BasePydanticModel):
+    uid: str
+    status: Literal["queued", "running", "succeeded", "failed", "superseded"]
+    created_at: datetime.datetime
+    started_at: datetime.datetime | None = None
+    finished_at: datetime.datetime | None = None
+    support_reference: str
+
+
+class ResourceReleaseRuntimeAdmission(BasePydanticModel):
+    state: Literal["ready", "waking", "unavailable"]
+    can_request: bool
+    notice: ResourceReleaseRuntimeNotice | None = None
+    operation: ResourceReleaseRuntimeOperation | None = None
+    retry_after_ms: int | None = Field(default=None, ge=0)
+
+
+class ResourceReleaseRuntimeReplicas(BasePydanticModel):
+    desired: int | None = Field(default=None, ge=0)
+    actual: int | None = Field(default=None, ge=0)
+
+
+class ResourceReleaseRuntimeWake(BasePydanticModel):
+    operation_uid: str
+    state: Literal[
+        "requested", "in_progress", "serving", "failed", "expired", "superseded"
+    ]
+    requested_at: datetime.datetime
+    deadline_at: datetime.datetime
+
+
+class ResourceReleaseRuntimePresence(BasePydanticModel):
+    phase: Literal[
+        "not_deployed",
+        "idle",
+        "observing",
+        "provisioning",
+        "pulling_image",
+        "starting",
+        "serving",
+        "redeploying",
+        "failed",
+    ]
+    replicas: ResourceReleaseRuntimeReplicas
+    detail: str
+    observed_at: datetime.datetime | None = None
+    wake: ResourceReleaseRuntimeWake | None = None
+
+
+class ResourceReleaseRuntimeAccess(BasePydanticModel):
+    resource_release_uid: str
+    release_kind: Literal["fastapi", "harness_agent"]
+    routing: ResourceReleaseRuntimeRouting
+    runtime_access: ResourceReleaseRuntimeAdmission
+    runtime_presence: ResourceReleaseRuntimePresence
+    access: dict[str, Any] | None = None
+
+
 class ResourceRelease(
     CurrentCodeRepositoryBranchCollectionMixin,
     EnvironmentLogSearchMixin,
@@ -1204,6 +1275,73 @@ class ResourceRelease(
             outcome=outcome,
             timeout=timeout,
         )
+
+    def resolve_runtime_access(
+        self,
+        *,
+        static_site_release_uid: str | UUID | None = None,
+        timeout: int | float | tuple[float, float] | None = None,
+    ) -> ResourceReleaseRuntimeAccess:
+        """Ask Django for the deployed runtime's current admission decision."""
+
+        if self.uid is None:
+            raise ValueError("ResourceRelease.uid is required to resolve runtime access")
+        body = {}
+        if static_site_release_uid is not None:
+            body["static_site_release_uid"] = str(static_site_release_uid)
+        payload = {"json": self.serialize_for_json(body)}
+        response = make_request(
+            s=self.build_session(),
+            loaders=self.LOADERS,
+            r_type="POST",
+            url=f"{self.get_detail_url()}resolve-runtime-access/",
+            payload=payload,
+            time_out=timeout,
+        )
+        if response.status_code != 200:
+            raise_for_response(response, payload=payload)
+        data = response.json()
+        if not isinstance(data, dict):
+            raise TypeError("ResourceRelease runtime access response must be a JSON object")
+        return ResourceReleaseRuntimeAccess.model_validate(data)
+
+    def wait_for_runtime_access(
+        self,
+        *,
+        static_site_release_uid: str | UUID | None = None,
+        wait_timeout_seconds: float = 600.0,
+        timeout: int | float | tuple[float, float] | None = None,
+    ) -> ResourceReleaseRuntimeAccess:
+        """Poll Django with backend-directed bounded backoff until admission settles."""
+
+        if wait_timeout_seconds <= 0:
+            raise ValueError("wait_timeout_seconds must be greater than 0")
+        deadline = time.monotonic() + wait_timeout_seconds
+        while True:
+            access = self.resolve_runtime_access(
+                static_site_release_uid=static_site_release_uid,
+                timeout=timeout,
+            )
+            if access.runtime_access.can_request:
+                return access
+            if access.runtime_access.state != "waking":
+                detail = (
+                    access.runtime_access.notice.message
+                    if access.runtime_access.notice is not None
+                    else access.runtime_presence.detail
+                )
+                raise RuntimeError(detail)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError(
+                    f"Timed out waiting for ResourceRelease {self.uid} runtime access"
+                )
+            retry_after_ms = access.runtime_access.retry_after_ms
+            if retry_after_ms is None:
+                raise RuntimeError(
+                    "Transient runtime access response is missing retry_after_ms."
+                )
+            time.sleep(min(remaining, max(0.1, retry_after_ms / 1000.0)))
 
     uid: str | None = Field(
         None,
