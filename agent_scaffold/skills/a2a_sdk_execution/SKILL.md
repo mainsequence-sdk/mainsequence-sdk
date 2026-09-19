@@ -43,14 +43,16 @@ internally and sends a standard A2A message.
 
 ```bash
 mainsequence agent search "<discoveryPrompt>" \
-  --environment-uid "<organizationEnvironmentUid>" \
   --limit 10 \
   --json
 ```
 
-Use the canonical Organization Environment UID associated with the target
-CodeRepositoryBranch. It scopes discovery only; it does not create, assign, or override an
-Agent's environment.
+The SDK resolves the active Git branch once for the process and scopes discovery
+to its Organization Environment. Do not supply a branch or Environment UID.
+An unregistered branch fails only when discovery is attempted.
+For an exact Python lookup, use `Agent.filter(name="SentinelExecutor")` and
+inspect the returned Agent UID and `code_repository_branch_uid`; names are not
+unique routing authority.
 
 4. Treat the CLI output as authoritative.
 5. Prefer the highest `combined_score` when present.
@@ -321,7 +323,7 @@ handle for a different task or conversation.
 ## Deterministic Execution Path
 
 1. Build the discovery prompt.
-2. Run `mainsequence agent search "<discoveryPrompt>" --environment-uid "<organizationEnvironmentUid>" --limit <n> --json`.
+2. Run `mainsequence agent search "<discoveryPrompt>" --limit <n> --json`.
 3. Select the target agent.
 4. Create or resolve the target session with `mainsequence agent session get_or_create`.
 5. Use the returned session `uid`.

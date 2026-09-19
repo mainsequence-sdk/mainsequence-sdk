@@ -12,7 +12,12 @@ from typing import Any, ClassVar, Literal
 import requests
 from pydantic import ConfigDict, Field, model_validator
 
-from .base import BaseObjectOrm, BasePydanticModel, ShareableObjectMixin
+from .base import (
+    BaseObjectOrm,
+    BasePydanticModel,
+    CurrentCodeRepositoryEnvironmentResourceMixin,
+    ShareableObjectMixin,
+)
 from .exceptions import ApiError, raise_for_response
 from .observability import (
     EnvironmentLogSearchMixin,
@@ -465,6 +470,7 @@ def _runtime_access_retry_seconds(access: AgentSessionRuntimeAccess) -> float:
 
 
 class Agent(
+    CurrentCodeRepositoryEnvironmentResourceMixin,
     EnvironmentLogSearchMixin,
     OwnerLogMixin,
     OwnerResourceUsageMixin,
@@ -482,13 +488,21 @@ class Agent(
 
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]] | None] = {
         "uid": ["exact", "in"],
+        "name": ["exact"],
         "search": ["exact"],
     }
     FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
         "uid": "uid",
         "uid__in": "uid",
+        "name": "str",
         "search": "str",
     }
+
+    @classmethod
+    def _sdk_owned_query_context(cls, operation: str) -> dict[str, str]:
+        if operation in {f"{cls.__name__}.filter", f"{cls.__name__}.semantic_search"}:
+            return super()._sdk_owned_query_context(operation)
+        return {}
 
     @classmethod
     def search_logs(
@@ -521,16 +535,6 @@ class Agent(
             outcome=outcome,
             timeout=timeout,
         )
-
-    READ_QUERY_PARAMS: ClassVar[dict[str, str]] = {
-        "organization_environment_uid": "uid",
-    }
-    READ_QUERY_PARAM_DESCRIPTIONS: ClassVar[dict[str, str]] = {
-        "organization_environment_uid": (
-            "Required Organization Environment boundary for Agent discovery. "
-            "This scopes reads and does not assign an environment to an Agent."
-        ),
-    }
 
     uid: str | None = Field(None, description="Public UID of the agent resource.")
     name: str = Field(
@@ -667,7 +671,6 @@ class Agent(
         cls,
         q: str,
         *,
-        organization_environment_uid: str,
         limit: int = 20,
         timeout=None,
     ) -> list[AgentSemanticSearchResult]:
@@ -688,12 +691,9 @@ class Agent(
             raise ValueError("limit must be between 1 and 100")
 
         body: dict[str, Any] = {
-            "organization_environment_uid": cls._coerce_filter_uid(
-                organization_environment_uid,
-                field_name="organization_environment_uid",
-            ),
             "q": q,
             "limit": limit,
+            **cls._sdk_owned_query_context(f"{cls.__name__}.semantic_search"),
         }
 
         payload = {"json": serialize_to_json(body)}

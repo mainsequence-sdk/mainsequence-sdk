@@ -1161,16 +1161,14 @@ def delete_organization_team(
 
 def list_agents(
     *,
-    organization_environment_uid: str,
     timeout: int | None = None,
     filters: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """
-    List agents in one Organization Environment via the SDK client model.
+    List agents in the Git-resolved Organization Environment via the SDK client model.
     """
     try:
         read_params = dict(filters or {})
-        read_params["organization_environment_uid"] = organization_environment_uid
         payload = _run_sdk_model_operation(
             module_name="mainsequence.client.agent_runtime_models",
             class_name="Agent",
@@ -1293,12 +1291,11 @@ def get_agent_resource_usage(
 def semantic_search_agents(
     q: str,
     *,
-    organization_environment_uid: str,
     limit: int = 20,
     timeout: int | None = None,
 ) -> list[dict[str, Any]]:
     """
-    Search agents in one Organization Environment via `Agent.semantic_search()`.
+    Search agents in the Git-resolved Organization Environment.
     """
     try:
         payload = _run_sdk_model_operation(
@@ -1306,7 +1303,6 @@ def semantic_search_agents(
             class_name="Agent",
             operation=lambda ClientAgent: ClientAgent.semantic_search(
                 q,
-                organization_environment_uid=organization_environment_uid,
                 limit=limit,
                 timeout=timeout,
             ),

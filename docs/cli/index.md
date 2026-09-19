@@ -67,7 +67,7 @@ The flag is global and can be placed after the command you are running, for exam
 
 ```bash
 mainsequence user --json
-mainsequence agent list --environment-uid <ORGANIZATION_ENVIRONMENT_UID> --json
+mainsequence agent list --json
 mainsequence code-repository images list --json
 mainsequence sdk latest --json
 mainsequence code-repository current --json
@@ -108,13 +108,14 @@ Most frequently used flows:
 Agents are created by Django when a CodeRepository branch reconciles a
 `harness_agent` workflow declaration with a valid indexed
 `.agents/agent_card.json`. The SDK does not create an Agent directly; the card's
-name and description become the Agent's identity. `agent list` supports UID
-filters and text search, not an `agent_type` filter.
+name and description become the Agent's display identity. `agent list` supports
+UID and exact `name` filters, plus broad text search; it does not support an
+`agent_type` filter. Names need not be unique across branches.
 
 ```bash
 # Agents
-mainsequence agent list --environment-uid <ORGANIZATION_ENVIRONMENT_UID>
-mainsequence agent search "data research copilot" --environment-uid <ORGANIZATION_ENVIRONMENT_UID>
+mainsequence agent list --filter name=SentinelExecutor
+mainsequence agent search "data research copilot"
 mainsequence agent detail e0e75693-4110-464c-93e0-82c7fd9c9a23
 mainsequence agent session list --agent-uid e0e75693-4110-464c-93e0-82c7fd9c9a23
 mainsequence agent session get_or_create e0e75693-4110-464c-93e0-82c7fd9c9a23 --handle-unique-id portfolio-review-q2-2026 --name "Quarterly portfolio review"
@@ -482,8 +483,9 @@ ontology and each installed platform skill.
 - `mainsequence organization teams create`, `edit`, and `delete` use the SDK client `Team.create()`, `Team.patch()`, and `Team.delete()` paths.
 - `mainsequence organization teams can_view` and `can_edit` inspect team access through the SDK `Team.can_view()` and `Team.can_edit()` paths.
 - `mainsequence organization teams add_to_view`, `add_to_edit`, `remove_from_view`, and `remove_from_edit` mutate explicit user access on teams through the SDK `Team` permission-action paths.
-- `mainsequence agent list` and `search` require `--environment-uid` to scope discovery to one Organization Environment. This is read context and does not assign an environment to an Agent.
-- `mainsequence agent list`, `detail`, `create`, and `delete` use the SDK client `mainsequence.client.agent_runtime_models.Agent` paths.
+- `mainsequence agent list` and `search` resolve their Organization Environment from the process-frozen Git branch. They do not accept a caller-selected Environment UID. An unregistered branch fails when discovery is attempted; `agent detail <UID>` remains a backend-authorized UID lookup.
+- `mainsequence agent list --filter name=<NAME>` matches the exact name. Text `search` remains broad; verify the returned UID and branch before acting on a result.
+- `mainsequence agent list`, `detail`, and `delete` use the SDK client `mainsequence.client.agent_runtime_models.Agent` paths. Agent creation is backend-owned.
 - `mainsequence agent session list` and `detail` use the SDK client `mainsequence.client.agent_runtime_models.AgentSession` path.
 - `mainsequence agent session list --agent-uid <AGENT_UID>` lists sessions for one agent directly.
 - `mainsequence agent session get_or_create <AGENT_UID> --session-uid <SESSION_UID>` resolves one existing session through `POST /api/v1/agents/{agent_uid}/sessions/get-or-create-session/`.

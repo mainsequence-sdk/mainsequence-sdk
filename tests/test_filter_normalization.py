@@ -1951,6 +1951,7 @@ def test_agent_client_contract_matches_backend_agent_serializer():
     }
     assert agent_models_mod.Agent.FILTERSET_FIELDS == {
         "uid": ["exact", "in"],
+        "name": ["exact"],
         "search": ["exact"],
     }
     assert "agent_type" not in agent_models_mod.AgentSemanticSearchResult.model_fields
@@ -2013,6 +2014,16 @@ def test_agent_scope_code_repositoryion_is_required_but_nullable():
 def test_agent_filter_sends_environment_read_scope_and_parses_code_repositoryion(monkeypatch):
     captured = {}
     environment_uid = uuid.UUID("22222222-2222-4222-8222-222222222222")
+    monkeypatch.setattr(
+        code_repository_context,
+        "resolve_organization_environment_uid",
+        lambda operation: str(environment_uid),
+    )
+    monkeypatch.setattr(
+        code_repository_context,
+        "is_authenticated_runtime_code_repository_context",
+        lambda: False,
+    )
 
     class FakeResponse:
         status_code = 200
@@ -2058,16 +2069,14 @@ def test_agent_filter_sends_environment_read_scope_and_parses_code_repositoryion
         classmethod(lambda cls: object()),
     )
 
-    agents = agent_models_mod.Agent.filter(
-        organization_environment_uid=environment_uid,
-        timeout=11,
-    )
+    agents = agent_models_mod.Agent.filter(name="CodeRepository Executor", timeout=11)
 
     assert captured == {
         "r_type": "GET",
         "url": f"{agent_models_mod.Agent.get_object_url()}/",
         "payload": {
             "params": {
+                "name": "CodeRepository Executor",
                 "organization_environment_uid": str(environment_uid),
             }
         },
@@ -2077,6 +2086,51 @@ def test_agent_filter_sends_environment_read_scope_and_parses_code_repositoryion
     assert agents[0].repository_branch == "main"
     assert agents[0].organization_environment_uid == str(environment_uid)
     assert agents[0].runtime_update.state == "current"
+
+    monkeypatch.setattr(
+        code_repository_context,
+        "is_authenticated_runtime_code_repository_context",
+        lambda: True,
+    )
+    agent_models_mod.Agent.filter(name="CodeRepository Executor")
+    assert captured["payload"]["params"] == {"name": "CodeRepository Executor"}
+
+
+def test_agent_discovery_rejects_caller_environment_and_unregistered_branch(monkeypatch):
+    with pytest.raises(ValueError, match="cannot override SDK-resolved context"):
+        agent_models_mod.Agent.filter(organization_environment_uid=ENVIRONMENT_UID)
+
+    def missing_branch(operation):
+        raise code_repository_context.CodeRepositoryBranchContextRequiredError(
+            f"{operation} requires a registered active CodeRepositoryBranch."
+        )
+
+    monkeypatch.setattr(
+        code_repository_context,
+        "resolve_organization_environment_uid",
+        missing_branch,
+    )
+    with pytest.raises(
+        code_repository_context.CodeRepositoryBranchContextRequiredError,
+        match="registered active CodeRepositoryBranch",
+    ):
+        agent_models_mod.Agent.filter(name="SentinelExecutor")
+
+
+def test_agent_runtime_discovery_uses_authenticated_backend_environment(monkeypatch):
+    monkeypatch.setattr(
+        code_repository_context,
+        "resolve_organization_environment_uid",
+        lambda operation: ENVIRONMENT_UID,
+    )
+    monkeypatch.setattr(
+        code_repository_context,
+        "is_authenticated_runtime_code_repository_context",
+        lambda: True,
+    )
+    assert agent_models_mod.Agent._sdk_owned_query_context("Agent.filter") == {}
+    assert agent_models_mod.Agent._sdk_owned_query_context("Agent.semantic_search") == {}
+    assert agent_models_mod.Agent._sdk_owned_query_context("Agent.get") == {}
 
 
 def test_agent_get_parses_runtime_update_projection(monkeypatch):
@@ -2127,20 +2181,24 @@ def test_agent_get_parses_runtime_update_projection(monkeypatch):
 
     agent = agent_models_mod.Agent.get(
         pk=agent_uid,
-        organization_environment_uid=environment_uid,
         timeout=12,
     )
 
     assert captured == {
         "r_type": "GET",
         "url": f"{agent_models_mod.Agent.get_object_url()}/{agent_uid}/",
-        "payload": {"params": {"organization_environment_uid": str(environment_uid)}},
+        "payload": {"params": {}},
         "timeout": 12,
     }
     assert agent.runtime_release_uid == runtime_release_uid
     assert agent.runtime_update.state == "update_failed"
     assert agent.runtime_update.needs_redeploy is True
     assert agent.runtime_update.remediation.tool == "agent.update_runtime"
+    with pytest.raises(ValueError, match="cannot override SDK-resolved context"):
+        agent_models_mod.Agent.get(
+            pk=agent_uid,
+            organization_environment_uid=environment_uid,
+        )
     assert (
         agent_models_mod.Agent.model_validate(
             {**FakeResponse.json(), "runtime_release_uid": None}
@@ -2157,6 +2215,16 @@ def test_agent_get_parses_runtime_update_projection(monkeypatch):
 def test_agent_semantic_search_sends_environment_scope_and_parses_code_repositoryion(monkeypatch):
     captured = {}
     environment_uid = uuid.UUID("22222222-2222-4222-8222-222222222222")
+    monkeypatch.setattr(
+        code_repository_context,
+        "resolve_organization_environment_uid",
+        lambda operation: str(environment_uid),
+    )
+    monkeypatch.setattr(
+        code_repository_context,
+        "is_authenticated_runtime_code_repository_context",
+        lambda: False,
+    )
 
     class FakeResponse:
         status_code = 200
@@ -2199,7 +2267,6 @@ def test_agent_semantic_search_sends_environment_scope_and_parses_code_repositor
 
     results = agent_models_mod.Agent.semantic_search(
         "repository coding",
-        organization_environment_uid=environment_uid,
         limit=7,
         timeout=13,
     )
@@ -2221,6 +2288,14 @@ def test_agent_semantic_search_sends_environment_scope_and_parses_code_repositor
     assert results[0].organization_environment_name == "production"
     assert results[0].runtime_update.state == "unknown"
     assert results[0].runtime_update.needs_redeploy is None
+
+    monkeypatch.setattr(
+        code_repository_context,
+        "is_authenticated_runtime_code_repository_context",
+        lambda: True,
+    )
+    agent_models_mod.Agent.semantic_search("repository coding", limit=7)
+    assert "organization_environment_uid" not in captured["payload"]["json"]
 
 
 def test_agent_session_filter_supports_archive_history_query(monkeypatch):

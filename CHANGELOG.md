@@ -4,6 +4,17 @@ All notable changes to this project should be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows versioned releases.
 
+## [8.1.19] - 2026-09-19
+
+### Fixed
+
+- Added exact Agent `name` filtering and resolved Agent discovery Environment scope
+  from the process-frozen Git branch for local credentials. Deployed runtimes
+  continue to use their authenticated backend Environment.
+- Removed caller-selected Environment inputs from Agent list and semantic search
+  SDK and CLI paths. Agent UID detail reads remain backend-authorized without
+  requiring Git context.
+
 ## [8.1.18] - 2026-09-19
 
 ### Removed

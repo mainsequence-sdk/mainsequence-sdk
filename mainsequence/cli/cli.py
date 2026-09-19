@@ -3541,7 +3541,6 @@ def _render_owner_resource_usage(payload: dict[str, object], *, title: str) -> N
 
 
 def _agent_list_impl(
-    organization_environment_uid: str,
     timeout: int | None,
     filter_entries: list[str] | None,
     show_filters: bool,
@@ -3556,7 +3555,6 @@ def _agent_list_impl(
 
     try:
         agents = list_agents(
-            organization_environment_uid=organization_environment_uid,
             timeout=timeout,
             filters=filters,
         )
@@ -3630,7 +3628,6 @@ def _agent_detail_impl(
 def _agent_search_impl(
     *,
     q: str,
-    organization_environment_uid: str,
     limit: int,
     timeout: int | None,
 ) -> None:
@@ -3639,7 +3636,6 @@ def _agent_search_impl(
     try:
         results = semantic_search_agents(
             q,
-            organization_environment_uid=organization_environment_uid,
             limit=limit,
             timeout=timeout,
         )
@@ -4697,11 +4693,6 @@ def _print_time_index_table_search_section(
 
 @agent.command("list")
 def agent_list_cmd(
-    organization_environment_uid: uuid.UUID = typer.Option(
-        ...,
-        "--environment-uid",
-        help="Organization Environment UID that scopes Agent discovery.",
-    ),
     filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
     show_filters: bool = typer.Option(
         False, "--show-filters", help="Show the filters supported by this list command and exit."
@@ -4712,7 +4703,6 @@ def agent_list_cmd(
     List agents visible to the authenticated user.
     """
     _agent_list_impl(
-        organization_environment_uid=str(organization_environment_uid),
         timeout=timeout,
         filter_entries=filter_entries,
         show_filters=show_filters,
@@ -4799,11 +4789,6 @@ def agent_resource_usage_cmd(
 @agent.command("search")
 def agent_search_cmd(
     q: str = typer.Argument(..., help="Natural-language query to match against agents."),
-    organization_environment_uid: uuid.UUID = typer.Option(
-        ...,
-        "--environment-uid",
-        help="Organization Environment UID that scopes Agent discovery.",
-    ),
     limit: int = typer.Option(
         20, "--limit", min=1, max=100, help="Maximum number of ranked agent matches to return."
     ),
@@ -4823,7 +4808,6 @@ def agent_search_cmd(
     """
     _agent_search_impl(
         q=q,
-        organization_environment_uid=str(organization_environment_uid),
         limit=limit,
         timeout=timeout,
     )
