@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Removed
+
+- Removed Agent-scoped one-shot `respond()`, `stream_response()`, and Agent-level runtime-access
+  helpers. Agent work uses an `AgentSession` and its chat or A2A methods; direct model inference is
+  not a TAU Agent client operation.
+
 ## [8.1.17] - 2026-09-19
 
 ### Added
