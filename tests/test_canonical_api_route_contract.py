@@ -49,7 +49,7 @@ def test_literal_action_path_segments_are_kebab_case():
 
 def test_cli_auth_and_resource_roots_match_backend_contract():
     from mainsequence.cli.api import AUTH_PATHS
-    from mainsequence.client.agent_runtime_models import Agent, AgentSession, CodingAgentService
+    from mainsequence.client.agent_runtime_models import Agent, AgentSession
     from mainsequence.client.base import BaseObjectOrm
     from mainsequence.client.github_issues import GitHubIssue, GitHubIssueOperation
     from mainsequence.client.metatables import MetaTable, TimeIndexMetaTable
@@ -66,7 +66,6 @@ def test_cli_auth_and_resource_roots_match_backend_contract():
     resource_endpoints = set(BaseObjectOrm.END_POINTS.values()) | {
         Agent.ENDPOINT,
         AgentSession.ENDPOINT,
-        CodingAgentService.ENDPOINT,
         GitHubIssue.ENDPOINT,
         GitHubIssueOperation.ENDPOINT,
         MetaTable.ENDPOINT,
@@ -80,7 +79,6 @@ def test_cli_auth_and_resource_roots_match_backend_contract():
         "agents",
         "artifacts",
         "buckets",
-        "coding-agent-services",
         "constants",
         "data-sources",
         "deployment-runs",
@@ -130,7 +128,6 @@ def test_client_auth_provider_routes_match_backend_contract(monkeypatch):
 
 
 def test_removed_backend_actions_are_not_exposed_by_client_models():
-    from mainsequence.client.agent_runtime_models import CodingAgentService
     from mainsequence.client.metatables import DataSource, TimeIndexTableUpdate
     from mainsequence.client.models_helpers import Job
 
@@ -138,7 +135,6 @@ def test_removed_backend_actions_are_not_exposed_by_client_models():
         DataSource: ("get_or_create_sqlite", "create_sqlite"),
         TimeIndexTableUpdate: ("add_tags", "filter_by_hash_id", "get_upstream_nodes"),
         Job: ("bulk_get_or_create", "create_from_configuration", "sync_jobs"),
-        CodingAgentService: ("reconcile_runtime",),
     }
     violations = [
         f"{model.__name__}.{method_name}"

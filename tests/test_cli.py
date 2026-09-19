@@ -17,12 +17,8 @@ TEAM_UID = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
 _REAL_SUBPROCESS_RUN = subprocess.run
 _REMOVED_DOMAIN_TOKEN = "PRO" + "JECT"
 _UNSUPPORTED_REPOSITORY_UID_ENV = "MAIN_SEQUENCE_" + _REMOVED_DOMAIN_TOKEN + "_UID"
-_UNSUPPORTED_REPOSITORY_BRANCH_UID_ENV = (
-    "MAIN_SEQUENCE_" + _REMOVED_DOMAIN_TOKEN + "_BRANCH_UID"
-)
-_UNSUPPORTED_REPOSITORY_NUMERIC_ID_ENV = (
-    "MAIN_SEQUENCE_" + _REMOVED_DOMAIN_TOKEN + "_ID"
-)
+_UNSUPPORTED_REPOSITORY_BRANCH_UID_ENV = "MAIN_SEQUENCE_" + _REMOVED_DOMAIN_TOKEN + "_BRANCH_UID"
+_UNSUPPORTED_REPOSITORY_NUMERIC_ID_ENV = "MAIN_SEQUENCE_" + _REMOVED_DOMAIN_TOKEN + "_ID"
 
 
 def _load_cli_module():
@@ -312,7 +308,9 @@ def test_code_repository_search_rejects_short_query(cli_mod, runner, monkeypatch
 
     result = runner.invoke(cli_mod.app, ["code-repository", "search", ".."])
     assert result.exit_code == 1
-    assert "CodeRepository search failed: Query must contain at least 3 characters." in result.output
+    assert (
+        "CodeRepository search failed: Query must contain at least 3 characters." in result.output
+    )
 
 
 def test_code_repository_search_json(cli_mod, runner, monkeypatch):
@@ -551,7 +549,9 @@ def test_list_organization_teams_uses_client_model(cli_mod, monkeypatch):
         def model_dump(self, mode="json"):
             return {"uid": self.uid, "name": self.name}
 
-    def _run_sdk_model_operation(*, module_name, class_name, operation, code_repository_id_env=None):
+    def _run_sdk_model_operation(
+        *, module_name, class_name, operation, code_repository_id_env=None
+    ):
         captured["module_name"] = module_name
         captured["class_name"] = class_name
 
@@ -589,7 +589,9 @@ def test_list_agents_uses_client_model(cli_mod, monkeypatch):
         def model_dump(self, mode="json"):
             return {"uid": self.uid, "name": self.name}
 
-    def _run_sdk_model_operation(*, module_name, class_name, operation, code_repository_id_env=None):
+    def _run_sdk_model_operation(
+        *, module_name, class_name, operation, code_repository_id_env=None
+    ):
         captured["module_name"] = module_name
         captured["class_name"] = class_name
 
@@ -607,14 +609,14 @@ def test_list_agents_uses_client_model(cli_mod, monkeypatch):
     out = api_mod.list_agents(
         organization_environment_uid=environment_uid,
         timeout=9,
-        filters={"agent_type": "custom"},
+        filters={"search": "Research"},
     )
     assert captured == {
         "module_name": "mainsequence.client.agent_runtime_models",
         "class_name": "Agent",
         "timeout": 9,
         "filters": {
-            "agent_type": "custom",
+            "search": "Research",
             "organization_environment_uid": environment_uid,
         },
     }
@@ -624,6 +626,12 @@ def test_list_agents_uses_client_model(cli_mod, monkeypatch):
             "name": "Research Copilot",
         }
     ]
+
+
+def test_agent_create_command_is_not_advertised(cli_mod):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    assert not hasattr(api_mod, "create_agent")
+    assert "create" not in {command.name for command in cli_mod.agent.registered_commands}
 
 
 def test_get_code_repository_repository_uses_public_client_model(cli_mod, monkeypatch):
@@ -690,7 +698,9 @@ def test_semantic_search_agents_uses_client_model(cli_mod, monkeypatch):
                 "combined_score": self.combined_score,
             }
 
-    def _run_sdk_model_operation(*, module_name, class_name, operation, code_repository_id_env=None):
+    def _run_sdk_model_operation(
+        *, module_name, class_name, operation, code_repository_id_env=None
+    ):
         captured["module_name"] = module_name
         captured["class_name"] = class_name
 
@@ -740,66 +750,6 @@ def test_semantic_search_agents_uses_client_model(cli_mod, monkeypatch):
     ]
 
 
-def test_create_agent_uses_client_model(cli_mod, monkeypatch):
-    api_mod = importlib.import_module("mainsequence.cli.api")
-    captured = {}
-
-    class FakeAgent:
-        @staticmethod
-        def model_dump(mode="json"):
-            return {
-                "uid": "e0e75693-4110-464c-93e0-82c7fd9c9a23",
-                "name": "Research Copilot",
-            }
-
-    def _run_sdk_model_operation(*, module_name, class_name, operation, code_repository_id_env=None):
-        captured["module_name"] = module_name
-        captured["class_name"] = class_name
-
-        class _ClientAgent:
-            @classmethod
-            def create(cls, timeout=None, **kwargs):
-                captured["timeout"] = timeout
-                captured["create_kwargs"] = kwargs
-                return FakeAgent()
-
-        return operation(_ClientAgent)
-
-    monkeypatch.setattr(api_mod, "_run_sdk_model_operation", _run_sdk_model_operation)
-
-    out = api_mod.create_agent(
-        name="Research Copilot",
-        description="Desk agent",
-        status="active",
-        labels=["research", "desk"],
-        llm_provider="openai",
-        llm_model="gpt-5.4",
-        engine_name="codex",
-        runtime_config={"temperature": 0},
-        configuration={"mode": "analysis"},
-        metadata={"owner": "quant"},
-        timeout=14,
-    )
-    assert captured == {
-        "module_name": "mainsequence.client.agent_runtime_models",
-        "class_name": "Agent",
-        "timeout": 14,
-        "create_kwargs": {
-            "name": "Research Copilot",
-            "description": "Desk agent",
-            "status": "active",
-            "labels": ["research", "desk"],
-            "llm_provider": "openai",
-            "llm_model": "gpt-5.4",
-            "engine_name": "codex",
-            "runtime_config": {"temperature": 0},
-            "configuration": {"mode": "analysis"},
-            "metadata": {"owner": "quant"},
-        },
-    }
-    assert out["uid"] == "e0e75693-4110-464c-93e0-82c7fd9c9a23"
-
-
 def test_get_agent_uses_agent_uid_detail_route(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
@@ -813,7 +763,9 @@ def test_get_agent_uses_agent_uid_detail_route(cli_mod, monkeypatch):
                 "name": "Research Copilot",
             }
 
-    def _run_sdk_model_operation(*, module_name, class_name, operation, code_repository_id_env=None):
+    def _run_sdk_model_operation(
+        *, module_name, class_name, operation, code_repository_id_env=None
+    ):
         captured["module_name"] = module_name
         captured["class_name"] = class_name
 
@@ -856,7 +808,9 @@ def test_list_agent_sessions_uses_client_model(cli_mod, monkeypatch):
                 "engine_name": "codex",
             }
 
-    def _run_sdk_model_operation(*, module_name, class_name, operation, code_repository_id_env=None):
+    def _run_sdk_model_operation(
+        *, module_name, class_name, operation, code_repository_id_env=None
+    ):
         captured["module_name"] = module_name
         captured["class_name"] = class_name
 
@@ -908,7 +862,9 @@ def test_get_or_create_agent_session_uses_client_model(cli_mod, monkeypatch):
                 "bound_handle": {"handle_unique_id": "portfolio-review-q2-2026"},
             }
 
-    def _run_sdk_model_operation(*, module_name, class_name, operation, code_repository_id_env=None):
+    def _run_sdk_model_operation(
+        *, module_name, class_name, operation, code_repository_id_env=None
+    ):
         captured["module_name"] = module_name
         captured["class_name"] = class_name
 
@@ -977,7 +933,9 @@ def test_get_agent_session_uses_client_model(cli_mod, monkeypatch):
                 "engine_name": "codex",
             }
 
-    def _run_sdk_model_operation(*, module_name, class_name, operation, code_repository_id_env=None):
+    def _run_sdk_model_operation(
+        *, module_name, class_name, operation, code_repository_id_env=None
+    ):
         captured["module_name"] = module_name
         captured["class_name"] = class_name
 
@@ -1027,7 +985,9 @@ def test_send_agent_session_a2a_message_uses_client_model(cli_mod, monkeypatch):
 
     monkeypatch.setattr(api_mod, "save_runtime_access_cache", _save_cache)
 
-    def _run_sdk_model_operation(*, module_name, class_name, operation, code_repository_id_env=None):
+    def _run_sdk_model_operation(
+        *, module_name, class_name, operation, code_repository_id_env=None
+    ):
         captured["module_name"] = module_name
         captured["class_name"] = class_name
 
@@ -1099,7 +1059,9 @@ def test_list_agent_users_can_view_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
 
-    def _run_sdk_model_operation(*, module_name, class_name, operation, code_repository_id_env=None):
+    def _run_sdk_model_operation(
+        *, module_name, class_name, operation, code_repository_id_env=None
+    ):
         captured["module_name"] = module_name
         captured["class_name"] = class_name
 
@@ -1729,7 +1691,9 @@ def test_login_with_different_backend_requires_code_repositories_base(cli_mod, r
     assert called["browser"] is False
 
 
-def test_login_with_different_backend_allows_current_code_repositories_base(cli_mod, runner, monkeypatch):
+def test_login_with_different_backend_allows_current_code_repositories_base(
+    cli_mod, runner, monkeypatch
+):
     called = {"browser": False}
 
     def _browser_login(no_open=False, on_authorize_url=None):
@@ -2752,7 +2716,11 @@ def test_add_deploy_key_uses_code_repository_route(cli_mod, monkeypatch):
         captured.update(method=method, path=path, body=body)
         return _Response()
 
-    monkeypatch.setattr(api_mod, "resolve_code_repository_uid", lambda code_repository_ref: "code-repository-uid-123")
+    monkeypatch.setattr(
+        api_mod,
+        "resolve_code_repository_uid",
+        lambda code_repository_ref: "code-repository-uid-123",
+    )
     monkeypatch.setattr(api_mod, "authed", _authed)
 
     api_mod.add_deploy_key("code-repository-uid-123", "workstation", "ssh-ed25519 AAA test")
@@ -2793,7 +2761,9 @@ def test_render_code_repository_branch_default_redeployment_tag_uses_backend_con
     assert tag_name == "v1.2.3-dev.1"
     assert captured == {
         "method": "POST",
-        "path": ("/api/v1/code-repository-branches/code-repository-branch-uid-123/default-redeployment-tag/"),
+        "path": (
+            "/api/v1/code-repository-branches/code-repository-branch-uid-123/default-redeployment-tag/"
+        ),
         "body": {"version": "1.2.3"},
     }
 
@@ -2902,7 +2872,9 @@ def test_code_repository_get_time_index_table_updates(cli_mod, runner, monkeypat
         lambda *args, **kwargs: "code-repository-branch-uid-123",
     )
 
-    result = runner.invoke(cli_mod.app, ["code-repository", "time-index-table-updates", "list", "123"])
+    result = runner.invoke(
+        cli_mod.app, ["code-repository", "time-index-table-updates", "list", "123"]
+    )
     assert result.exit_code == 0
     assert "CodeRepository Time-Index Table Updates" in result.output
     assert "abc123" in result.output
@@ -3055,7 +3027,9 @@ def test_code_repository_add_team_to_view(cli_mod, runner, monkeypatch):
     assert "Research" in result.output
 
 
-def test_get_code_repository_time_index_table_updates_sets_code_repository_env(cli_mod, monkeypatch):
+def test_get_code_repository_time_index_table_updates_sets_code_repository_env(
+    cli_mod, monkeypatch
+):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
 
@@ -3141,7 +3115,9 @@ def test_get_code_repository_time_index_table_updates_sets_code_repository_env(c
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
     monkeypatch.setitem(sys.modules, "mainsequence.client.models_foundry", fake_models)
 
-    out = api_mod.get_code_repository_time_index_table_updates("5a28020a-0f1b-47ee-aab8-334286234bea")
+    out = api_mod.get_code_repository_time_index_table_updates(
+        "5a28020a-0f1b-47ee-aab8-334286234bea"
+    )
     assert captured["code_repository_branch_uid_arg"] == "5a28020a-0f1b-47ee-aab8-334286234bea"
     assert captured["env_code_repository_uid"] is None
     assert captured["jwt"] == ("acc", "ref")
@@ -4401,7 +4377,9 @@ def test_create_code_repository_resource_release_rejects_retired_kind_before_aut
         )
 
 
-def test_create_code_repository_resource_release_uses_client_model_for_fastapi(cli_mod, monkeypatch):
+def test_create_code_repository_resource_release_uses_client_model_for_fastapi(
+    cli_mod, monkeypatch
+):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
 
@@ -5931,7 +5909,9 @@ def test_code_repository_get_table_updates_defaults_to_env_code_repository_uid(
     assert "storage-xyz" in result.output
 
 
-def test_code_repository_images_defaults_to_env_code_repository_id(cli_mod, runner, monkeypatch, tmp_path):
+def test_code_repository_images_defaults_to_env_code_repository_id(
+    cli_mod, runner, monkeypatch, tmp_path
+):
     target = tmp_path / "demo-123"
     target.mkdir(parents=True, exist_ok=True)
     (target / ".env").write_text("", encoding="utf-8")
@@ -6044,7 +6024,9 @@ def test_code_repository_images_delete_requires_confirmation(cli_mod, runner, mo
 
     monkeypatch.setattr(cli_mod, "delete_code_repository_image", _delete_code_repository_image)
 
-    result = runner.invoke(cli_mod.app, ["code-repository", "images", "delete", image_uid], input="y\n")
+    result = runner.invoke(
+        cli_mod.app, ["code-repository", "images", "delete", image_uid], input="y\n"
+    )
     assert result.exit_code == 0
     assert captured["image_uid"] == image_uid
     assert "CodeRepository Image Delete Preview" in result.output
@@ -6052,7 +6034,9 @@ def test_code_repository_images_delete_requires_confirmation(cli_mod, runner, mo
     assert f"CodeRepository image deleted: uid={image_uid}" in result.output
 
 
-def test_code_repository_jobs_list_defaults_to_env_code_repository_id(cli_mod, runner, monkeypatch, tmp_path):
+def test_code_repository_jobs_list_defaults_to_env_code_repository_id(
+    cli_mod, runner, monkeypatch, tmp_path
+):
     target = tmp_path / "demo-123"
     target.mkdir(parents=True, exist_ok=True)
     (target / ".env").write_text("", encoding="utf-8")
@@ -6095,7 +6079,9 @@ def test_code_repository_jobs_list_defaults_to_env_code_repository_id(cli_mod, r
     assert "Total jobs: 1" in result.output
 
 
-def test_code_repository_jobs_list_show_filters_mentions_code_repository_scope(cli_mod, runner, monkeypatch):
+def test_code_repository_jobs_list_show_filters_mentions_code_repository_scope(
+    cli_mod, runner, monkeypatch
+):
     monkeypatch.setattr(cli_mod, "build_cli_model_filter_rows", lambda model_ref: [])
 
     result = runner.invoke(cli_mod.app, ["code-repository", "jobs", "list", "--show-filters"])
@@ -6155,7 +6141,9 @@ def test_code_repository_code_repository_resource_list_defaults_to_remote_branch
     assert "Total code repository resources: 1" in result.output
 
 
-def test_code_repository_code_repository_resource_list_passes_extra_filters(cli_mod, runner, monkeypatch, tmp_path):
+def test_code_repository_code_repository_resource_list_passes_extra_filters(
+    cli_mod, runner, monkeypatch, tmp_path
+):
     target = tmp_path / "demo-123"
     target.mkdir(parents=True, exist_ok=True)
     (target / ".env").write_text("", encoding="utf-8")
@@ -6168,7 +6156,9 @@ def test_code_repository_code_repository_resource_list_passes_extra_filters(cli_
         lambda *args, **kwargs: "code-repository-branch-uid-123",
     )
     monkeypatch.setattr(
-        cli_mod, "_get_remote_branch_head_commit", lambda code_repository_dir: ("origin/main", "abc123")
+        cli_mod,
+        "_get_remote_branch_head_commit",
+        lambda code_repository_dir: ("origin/main", "abc123"),
     )
 
     def _parse(model_ref, entries):
@@ -6484,60 +6474,6 @@ def test_agent_search_json(cli_mod, runner, monkeypatch):
     payload = json.loads(result.output)
     assert payload[0]["uid"] == "e0e75693-4110-464c-93e0-82c7fd9c9a23"
     assert payload[0]["combined_score"] == 0.85
-
-
-def test_agent_create_parses_json_fields(cli_mod, runner, monkeypatch):
-    captured = {}
-    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
-
-    def _create(**kwargs):
-        captured.update(kwargs)
-        return {
-            "id": 12,
-            "name": kwargs["name"],
-            "status": kwargs.get("status") or "draft",
-            "labels": kwargs.get("labels") or [],
-            "llm_provider": kwargs.get("llm_provider") or "",
-            "llm_model": kwargs.get("llm_model") or "",
-            "engine_name": kwargs.get("engine_name") or "",
-        }
-
-    monkeypatch.setattr(cli_mod, "create_agent", _create)
-
-    result = runner.invoke(
-        cli_mod.app,
-        [
-            "agent",
-            "create",
-            "Research Copilot",
-            "--description",
-            "Desk agent",
-            "--status",
-            "active",
-            "--label",
-            "research,desk",
-            "--llm-provider",
-            "openai",
-            "--llm-model",
-            "gpt-5.4",
-            "--engine-name",
-            "codex",
-            "--runtime-config",
-            '{"temperature":0}',
-            "--configuration",
-            '{"mode":"analysis"}',
-            "--metadata",
-            '{"owner":"quant"}',
-        ],
-    )
-    assert result.exit_code == 0
-    assert captured["name"] == "Research Copilot"
-    assert captured["status"] == "active"
-    assert captured["labels"] == ["research", "desk"]
-    assert captured["runtime_config"] == {"temperature": 0}
-    assert captured["configuration"] == {"mode": "analysis"}
-    assert captured["metadata"] == {"owner": "quant"}
-    assert "Agent created: Research Copilot" in result.output
 
 
 def test_agent_detail_uses_agent_uid(cli_mod, runner, monkeypatch):
@@ -8135,7 +8071,9 @@ def test_run_time_index_table_query_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
 
-    def _run_sdk_model_operation(*, module_name, class_name, operation, code_repository_id_env=None):
+    def _run_sdk_model_operation(
+        *, module_name, class_name, operation, code_repository_id_env=None
+    ):
         captured["module_name"] = module_name
         captured["class_name"] = class_name
 
@@ -8186,7 +8124,9 @@ def test_run_meta_table_query_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
 
-    def _run_sdk_model_operation(*, module_name, class_name, operation, code_repository_id_env=None):
+    def _run_sdk_model_operation(
+        *, module_name, class_name, operation, code_repository_id_env=None
+    ):
         captured["module_name"] = module_name
         captured["class_name"] = class_name
 
@@ -9049,7 +8989,9 @@ def test_code_repository_jobs_create_rejects_image_with_automatic_deployment(
     assert "Do not provide --related-image-uid" in result.output
 
 
-def test_code_repository_jobs_create_derives_memory_from_cpu(cli_mod, runner, monkeypatch, tmp_path):
+def test_code_repository_jobs_create_derives_memory_from_cpu(
+    cli_mod, runner, monkeypatch, tmp_path
+):
     target = tmp_path / "demo-123"
     target.mkdir(parents=True, exist_ok=True)
     (target / ".env").write_text("", encoding="utf-8")
@@ -9114,7 +9056,9 @@ def test_code_repository_jobs_create_derives_memory_from_cpu(cli_mod, runner, mo
     )
 
 
-def test_code_repository_jobs_create_interactive_interval_schedule(cli_mod, runner, monkeypatch, tmp_path):
+def test_code_repository_jobs_create_interactive_interval_schedule(
+    cli_mod, runner, monkeypatch, tmp_path
+):
     target = tmp_path / "demo-123"
     target.mkdir(parents=True, exist_ok=True)
     (target / ".env").write_text("", encoding="utf-8")
@@ -9276,7 +9220,9 @@ def test_code_repository_create_image_rejects_unpushed_hash(cli_mod, runner, mon
         lambda *args, **kwargs: "code-repository-branch-uid-123",
     )
     monkeypatch.setattr(
-        cli_mod, "list_code_repository_images", lambda related_code_repository_branch_uid, timeout=None: []
+        cli_mod,
+        "list_code_repository_images",
+        lambda related_code_repository_branch_uid, timeout=None: [],
     )
 
     def _git_run(cmd, capture_output=None, text=None, **kwargs):
@@ -9408,7 +9354,9 @@ def test_code_repository_create_image_normalizes_short_hash_to_full_sha(
     )
     monkeypatch.setattr(cli_mod, "_list_unpushed_commits", lambda *_: [])
     monkeypatch.setattr(
-        cli_mod, "list_code_repository_images", lambda related_code_repository_branch_uid, timeout=None: []
+        cli_mod,
+        "list_code_repository_images",
+        lambda related_code_repository_branch_uid, timeout=None: [],
     )
 
     def _git_run(cmd, capture_output=None, text=None, **kwargs):
@@ -9473,7 +9421,9 @@ def test_code_repository_create_image_rejects_unresolvable_short_hash(
     )
     monkeypatch.setattr(cli_mod, "_list_unpushed_commits", lambda *_: [])
     monkeypatch.setattr(
-        cli_mod, "list_code_repository_images", lambda related_code_repository_branch_uid, timeout=None: []
+        cli_mod,
+        "list_code_repository_images",
+        lambda related_code_repository_branch_uid, timeout=None: [],
     )
 
     def _git_run(cmd, capture_output=None, text=None, **kwargs):
@@ -9628,7 +9578,9 @@ def test_code_repository_create_with_explicit_options_returns_logical_code_repos
 
     assert result.exit_code == 0
     assert "default_metatables_data_source_uid" not in captured
-    assert captured["bootstrap_organization_environment_uid"] == "44444444-4444-4444-8444-444444444444"
+    assert (
+        captured["bootstrap_organization_environment_uid"] == "44444444-4444-4444-8444-444444444444"
+    )
     assert "CodeRepository created: demo-repository" in result.output
 
 
@@ -9663,7 +9615,11 @@ def test_code_repository_delete_remote_yes(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(
         cli_mod,
         "resolve_code_repository",
-        lambda code_repository_id: {"id": 321, "uid": "code-repository-uid-321", "code_repository_name": "Demo CodeRepository"},
+        lambda code_repository_id: {
+            "id": 321,
+            "uid": "code-repository-uid-321",
+            "code_repository_name": "Demo CodeRepository",
+        },
     )
 
     captured = {}
@@ -9680,7 +9636,10 @@ def test_code_repository_delete_remote_yes(cli_mod, runner, monkeypatch):
     )
     assert result.exit_code == 0
     assert captured["uids"] == ["code-repository-uid-321"]
-    assert "CodeRepository deleted: Demo CodeRepository (uid=code-repository-uid-321; deleted=1)" in result.output
+    assert (
+        "CodeRepository deleted: Demo CodeRepository (uid=code-repository-uid-321; deleted=1)"
+        in result.output
+    )
 
 
 def test_resolve_code_repository_repository_ssh_url_uses_canonical_repository(
@@ -9700,13 +9659,17 @@ def test_resolve_code_repository_repository_ssh_url_uses_canonical_repository(
 
     monkeypatch.setattr(cli_mod, "get_code_repository_repository", _get_code_repository_repository)
 
-    result = cli_mod._resolve_code_repository_repository_ssh_url({"github_repository_binding_uid": repository_uid})
+    result = cli_mod._resolve_code_repository_repository_ssh_url(
+        {"github_repository_binding_uid": repository_uid}
+    )
 
     assert captured["uid"] == repository_uid
     assert result == "git@github.com:mainsequence-projects/tutorial.git"
 
 
-def test_resolve_code_repository_repository_ssh_url_requires_linked_repository(cli_mod, monkeypatch):
+def test_resolve_code_repository_repository_ssh_url_requires_linked_repository(
+    cli_mod, monkeypatch
+):
     monkeypatch.setattr(
         cli_mod,
         "get_code_repository_repository",
@@ -9729,7 +9692,9 @@ def test_resolve_code_repository_repository_ssh_url_requires_ssh_url(cli_mod, mo
     )
 
     with pytest.raises(cli_mod.ApiError, match="has no SSH clone URL"):
-        cli_mod._resolve_code_repository_repository_ssh_url({"github_repository_binding_uid": repository_uid})
+        cli_mod._resolve_code_repository_repository_ssh_url(
+            {"github_repository_binding_uid": repository_uid}
+        )
 
 
 def test_ensure_code_repository_repository_ssh_access_registers_new_key_before_verification(
@@ -10971,9 +10936,13 @@ def test_code_repository_build_docker_env(cli_mod, runner, monkeypatch, tmp_path
     monkeypatch.setattr(
         cli_mod,
         "write_devcontainer_config",
-        lambda code_repository_dir, image_ref: code_repository_dir / ".devcontainer" / "devcontainer.json",
+        lambda code_repository_dir, image_ref: code_repository_dir
+        / ".devcontainer"
+        / "devcontainer.json",
     )
-    monkeypatch.setattr(cli_mod, "build_docker_environment", lambda code_repository_dir, image_ref: 0)
+    monkeypatch.setattr(
+        cli_mod, "build_docker_environment", lambda code_repository_dir, image_ref: 0
+    )
 
     result = runner.invoke(
         cli_mod.app,
@@ -11003,7 +10972,9 @@ def test_code_repository_current(cli_mod, runner, monkeypatch, tmp_path):
         lambda: {"mainsequence_path": str(tmp_path)},
     )
     monkeypatch.setattr(
-        cli_mod, "detect_current_code_repository", lambda workspaces, base: (code_repository_info, debug)
+        cli_mod,
+        "detect_current_code_repository",
+        lambda workspaces, base: (code_repository_info, debug),
     )
     monkeypatch.setattr(cli_mod, "read_local_sdk_version", lambda req: "1.2.3")
     monkeypatch.setattr(cli_mod, "fetch_latest_sdk_version", lambda: "1.2.3")
@@ -11048,7 +11019,9 @@ def test_code_repository_current_json(cli_mod, runner, monkeypatch, tmp_path):
         lambda: {"mainsequence_path": str(tmp_path)},
     )
     monkeypatch.setattr(
-        cli_mod, "detect_current_code_repository", lambda workspaces, base: (code_repository_info, debug)
+        cli_mod,
+        "detect_current_code_repository",
+        lambda workspaces, base: (code_repository_info, debug),
     )
     monkeypatch.setattr(cli_mod, "read_local_sdk_version", lambda req: "1.2.3")
     monkeypatch.setattr(cli_mod, "fetch_latest_sdk_version", lambda: "1.2.3")
@@ -11071,7 +11044,9 @@ def test_code_repository_current_json(cli_mod, runner, monkeypatch, tmp_path):
     payload = json.loads(result.output)
     assert payload["code_repository"]["code_repository_uid"] == "code-repository-uid-123"
     assert payload["code_repository"]["git_branch"] == "main"
-    assert payload["code_repository"]["code_repository_branch_uid"] == "code-repository-branch-uid-123"
+    assert (
+        payload["code_repository"]["code_repository_branch_uid"] == "code-repository-branch-uid-123"
+    )
     assert payload["code_repository"]["code_repository_branch_status"] == "resolved"
     assert payload["code_repository"]["code_repository_branch_error"] is None
     assert payload["sdk_status"]["status"] == "match"
@@ -11538,7 +11513,9 @@ def test_code_repository_update_agent_skills_overwrites_matching_folders(
     (existing_mainsequence / "old.txt").write_text("stale mainsequence skill", encoding="utf-8")
 
     monkeypatch.setattr(
-        cli_mod, "_code_repository_agent_scaffold_bundle_dir", lambda code_repository_dir: bundle_dir
+        cli_mod,
+        "_code_repository_agent_scaffold_bundle_dir",
+        lambda code_repository_dir: bundle_dir,
     )
     monkeypatch.setattr(
         cli_mod,
@@ -11551,7 +11528,9 @@ def test_code_repository_update_agent_skills_overwrites_matching_folders(
         _cli_platform_skill_catalog,
     )
 
-    result = runner.invoke(cli_mod.app, ["code-repository", "update-agent-skills", "--path", str(target)])
+    result = runner.invoke(
+        cli_mod.app, ["code-repository", "update-agent-skills", "--path", str(target)]
+    )
     assert result.exit_code == 0
     assert (
         target / ".agents" / "skills" / "mainsequence" / "data_publishing" / "SKILL.md"
@@ -11597,7 +11576,9 @@ def test_code_repository_update_agent_skills_json_reports_pin_sentinel(
     target.mkdir()
 
     monkeypatch.setattr(
-        cli_mod, "_code_repository_agent_scaffold_bundle_dir", lambda code_repository_dir: bundle_dir
+        cli_mod,
+        "_code_repository_agent_scaffold_bundle_dir",
+        lambda code_repository_dir: bundle_dir,
     )
     monkeypatch.setattr(
         cli_mod,

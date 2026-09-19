@@ -269,6 +269,8 @@ def test_agent_logs_support_optional_session_filter_without_environment_override
     agent = agent_models.Agent(
         uid="e0e75693-4110-464c-93e0-82c7fd9c9a23",
         name="Research Copilot",
+        description="Research assistant.",
+        agent_card={"name": "Research Copilot", "description": "Research assistant."},
         llm_thinking="medium",
         repository_branch=None,
         organization_environment_uid=ENVIRONMENT_UID,

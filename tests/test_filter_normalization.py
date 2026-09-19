@@ -1798,7 +1798,6 @@ def test_agent_runtime_models_deserialize_backend_uid_payloads():
     agent_uid = "e0e75693-4110-464c-93e0-82c7fd9c9a23"
     session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
     user_uid = "fdf409f7-d16f-4f71-986b-9057db6c7eca"
-    service_uid = "ac9e221d-1cd6-464c-a253-e302754872c1"
     code_repository_branch_uid = "9d81d63f-b8c9-404d-9f1a-5f2ad29dbf16"
     environment_uid = "22222222-2222-4222-8222-222222222222"
 
@@ -1806,18 +1805,14 @@ def test_agent_runtime_models_deserialize_backend_uid_payloads():
         {
             "uid": agent_uid,
             "name": "Research Copilot",
-            "agent_type": "custom",
             "description": "Research assistant.",
-            "agent_card": {"name": "Research Copilot"},
+            "agent_card": {"name": "Research Copilot", "description": "Research assistant."},
             "llm_provider": "openai",
             "llm_model": "gpt-5.4",
             "llm_thinking": "medium",
             "runtime_config": {"temperature": 0},
             "configuration": {"mode": "analysis"},
             "last_session_at": "2026-01-01T00:00:00Z",
-            "has_agent_service": True,
-            "agent_service_uid": service_uid,
-            "agent_service_automatic_deployment": True,
             "code_repository_branch_uid": code_repository_branch_uid,
             "repository_branch": "main",
             "organization_environment_uid": environment_uid,
@@ -1826,9 +1821,6 @@ def test_agent_runtime_models_deserialize_backend_uid_payloads():
         }
     )
     assert agent.uid == agent_uid
-    assert agent.has_agent_service is True
-    assert agent.agent_service_uid == service_uid
-    assert agent.agent_service_automatic_deployment is True
     assert agent.code_repository_branch_uid == code_repository_branch_uid
     assert agent.repository_branch == "main"
     assert agent.organization_environment_uid == environment_uid
@@ -1841,7 +1833,6 @@ def test_agent_runtime_models_deserialize_backend_uid_payloads():
         {
             "uid": agent_uid,
             "name": "Research Copilot",
-            "agent_type": "custom",
             "description": "Research assistant.",
             "code_repository_branch_uid": code_repository_branch_uid,
             "repository_branch": "main",
@@ -1869,7 +1860,6 @@ def test_agent_runtime_models_deserialize_backend_uid_payloads():
             "uid": session_uid,
             "agent_uid": agent_uid,
             "agent_name": "Research Copilot",
-            "agent_type": "custom",
             "organization_environment_uid": environment_uid,
             "organization_environment_name": "production",
             "harness": "tau",
@@ -1936,53 +1926,71 @@ def test_agent_runtime_models_deserialize_backend_uid_payloads():
         "tau_turn_commit": "v1",
     }
 
-    service = agent_models_mod.CodingAgentService.model_validate(
-        {
-            "uid": service_uid,
-            "harness": "tau",
-            "agent_uid": agent_uid,
-            "agent_type": "code-repository-executor",
-            "scope": {
-                "kind": "code_repository_branch",
-                "code_repository_branch_uid": "code-repository-branch-uid",
-            },
-            "is_ready": True,
-            "image_drift": {"has_drift": False, "checks": []},
-            "llm_provider": "openai",
-            "llm_model": "gpt-5.4",
-            "llm_thinking": "medium",
-            "cpu_request": "250m",
-            "cpu_limit": "1000m",
-            "memory_request": "512Mi",
-            "memory_limit": "2Gi",
-            "gpu_request": None,
-            "gpu_type": None,
-            "spot": False,
-            "related_job_uid": "job-uid",
-            "service_runtime_uid": "runtime-uid",
-            "automatic_deployment": True,
-            "automatic_redeployment_policy": {
-                "tag_regex": None,
-                "policy_revision": 1,
-            },
-        }
-    )
-    assert service.uid == service_uid
-    assert service.agent_uid == agent_uid
-    assert service.agent_type == "code-repository-executor"
-    assert service.harness is agent_models_mod.AgentHarnessKind.TAU
-    assert service.scope["code_repository_branch_uid"] == "code-repository-branch-uid"
-    assert service.llm_model == "gpt-5.4"
-    assert service.cpu_request == "250m"
-    assert service.spot is False
-    assert service.service_runtime_uid == "runtime-uid"
-    assert service.automatic_redeployment_policy is not None
-    assert service.automatic_redeployment_policy.policy_revision == 1
+
+def test_agent_client_contract_matches_backend_agent_serializer():
+    agent_fields = set(agent_models_mod.Agent.model_fields) - {"orm_class"}
+    assert agent_fields == {
+        "uid",
+        "name",
+        "description",
+        "agent_card",
+        "a2a_profile",
+        "llm_provider",
+        "llm_model",
+        "llm_thinking",
+        "runtime_config",
+        "configuration",
+        "last_session_at",
+        "runtime_release_uid",
+        "code_repository_branch_uid",
+        "repository_branch",
+        "organization_environment_uid",
+        "organization_environment_name",
+        "runtime_update",
+        "observability",
+    }
+    assert agent_models_mod.Agent.FILTERSET_FIELDS == {
+        "uid": ["exact", "in"],
+        "search": ["exact"],
+    }
+    assert "agent_type" not in agent_models_mod.AgentSemanticSearchResult.model_fields
+    assert "agent_type" not in agent_models_mod.AgentSession.model_fields
+    assert not hasattr(agent_models_mod, "CodingAgentService")
+
+    payload = {
+        "name": "Research Copilot",
+        "description": "Research assistant.",
+        "agent_card": {"name": "Research Copilot", "description": "Research assistant."},
+        "llm_thinking": "medium",
+        "repository_branch": "main",
+        "organization_environment_uid": ENVIRONMENT_UID,
+        "organization_environment_name": "Development",
+        "runtime_update": _agent_runtime_update_contract(),
+    }
+    assert agent_models_mod.Agent.model_validate(payload).agent_card == payload["agent_card"]
+    for invalid_payload in (
+        {key: value for key, value in payload.items() if key != "agent_card"},
+        {**payload, "agent_card": None},
+        {**payload, "agent_card": {}},
+        {**payload, "name": "Unrelated label"},
+        {**payload, "agent_type": "custom"},
+        {**payload, "metadata": {}},
+        {**payload, "has_agent_service": False},
+    ):
+        with pytest.raises(ValidationError):
+            agent_models_mod.Agent.model_validate(invalid_payload)
+
+    with pytest.raises(agent_models_mod.ApiError, match="harness_agent workflow"):
+        agent_models_mod.Agent.create(name="Research Copilot")
+    with pytest.raises(ValueError, match="Unsupported Agent filter"):
+        agent_models_mod.Agent._normalize_filter_kwargs({"agent_type": "custom"})
 
 
 def test_agent_scope_code_repositoryion_is_required_but_nullable():
     payload = {
         "name": "Astro Orchestrator",
+        "description": "Helps with workflows.",
+        "agent_card": {"name": "Astro Orchestrator", "description": "Helps with workflows."},
         "llm_thinking": "medium",
         "repository_branch": None,
         "organization_environment_uid": None,
@@ -2016,6 +2024,11 @@ def test_agent_filter_sends_environment_read_scope_and_parses_code_repositoryion
                     {
                         "uid": "e0e75693-4110-464c-93e0-82c7fd9c9a23",
                         "name": "CodeRepository Executor",
+                        "description": "Runs the repository workflow.",
+                        "agent_card": {
+                            "name": "CodeRepository Executor",
+                            "description": "Runs the repository workflow.",
+                        },
                         "llm_thinking": "medium",
                         "code_repository_branch_uid": "9d81d63f-b8c9-404d-9f1a-5f2ad29dbf16",
                         "repository_branch": "main",
@@ -2047,7 +2060,6 @@ def test_agent_filter_sends_environment_read_scope_and_parses_code_repositoryion
 
     agents = agent_models_mod.Agent.filter(
         organization_environment_uid=environment_uid,
-        agent_type="code-repository-executor",
         timeout=11,
     )
 
@@ -2056,7 +2068,6 @@ def test_agent_filter_sends_environment_read_scope_and_parses_code_repositoryion
         "url": f"{agent_models_mod.Agent.get_object_url()}/",
         "payload": {
             "params": {
-                "agent_type": "code-repository-executor",
                 "organization_environment_uid": str(environment_uid),
             }
         },
@@ -2082,6 +2093,11 @@ def test_agent_get_parses_runtime_update_projection(monkeypatch):
             return {
                 "uid": agent_uid,
                 "name": "CodeRepository Executor",
+                "description": "Runs the repository workflow.",
+                "agent_card": {
+                    "name": "CodeRepository Executor",
+                    "description": "Runs the repository workflow.",
+                },
                 "llm_thinking": "medium",
                 "runtime_release_uid": runtime_release_uid,
                 "code_repository_branch_uid": "9d81d63f-b8c9-404d-9f1a-5f2ad29dbf16",
@@ -2151,7 +2167,6 @@ def test_agent_semantic_search_sends_environment_scope_and_parses_code_repositor
                 {
                     "uid": "e0e75693-4110-464c-93e0-82c7fd9c9a23",
                     "name": "CodeRepository Executor",
-                    "agent_type": "code-repository-executor",
                     "description": "CodeRepository coding agent.",
                     "code_repository_branch_uid": "9d81d63f-b8c9-404d-9f1a-5f2ad29dbf16",
                     "repository_branch": "main",
@@ -2265,7 +2280,6 @@ def test_agent_session_list_and_detail_parse_runtime_capabilities(monkeypatch):
         "uid": session_uid,
         "agent_uid": agent_uid,
         "agent_name": "Research Copilot",
-        "agent_type": "custom",
         "organization_environment_uid": ENVIRONMENT_UID,
         "organization_environment_name": "production",
         "harness": "tau",
@@ -2521,7 +2535,6 @@ def test_agent_session_archive_actions_return_current_session_contract(monkeypat
                 "uid": session_uid,
                 "agent_uid": "9d81d63f-b8c9-404d-9f1a-5f2ad29dbf16",
                 "agent_name": "Research Copilot",
-                "agent_type": "custom",
                 "organization_environment_uid": ENVIRONMENT_UID,
                 "organization_environment_name": "production",
                 "harness": "tau",
@@ -2743,10 +2756,7 @@ def test_job_create_requires_exact_image_and_does_not_send_commit(monkeypatch):
     assert job.automatic_deployment is True
     assert job.description == "Refresh the daily prices dataset."
     assert captured["r_type"] == "POST"
-    assert (
-        captured["payload"]["json"]["description"]
-        == "Refresh the daily prices dataset."
-    )
+    assert captured["payload"]["json"]["description"] == "Refresh the daily prices dataset."
     assert captured["payload"]["json"]["automatic_deployment"] is True
     assert captured["payload"]["json"]["automatic_redeployment_policy"] == {"tag_regex": None}
     assert "code_repository_commit_hash" not in captured["payload"]["json"]
@@ -2854,7 +2864,9 @@ def test_resource_release_model_supports_automatic_deployment_payloads():
     assert release.desired_revision == "2a9370a7-c07f-439c-bcd9-629e3e916699"
 
 
-def test_resource_release_filter_accepts_canonical_revision_lifecycle_code_repositoryion(monkeypatch):
+def test_resource_release_filter_accepts_canonical_revision_lifecycle_code_repositoryion(
+    monkeypatch,
+):
     release_uid = "2f4c4c3d-5669-4da5-9d86-b84633c1e6ed"
     desired_revision_uid = "2a9370a7-c07f-439c-bcd9-629e3e916699"
     response_payload = {
@@ -2881,7 +2893,9 @@ def test_resource_release_filter_accepts_canonical_revision_lifecycle_code_repos
 
     monkeypatch.setattr(base_mod, "make_request", lambda **kwargs: FakeResponse())
 
-    releases = models_helpers_mod.ResourceRelease.filter(code_repository_branch_uid=CODE_REPOSITORY_BRANCH_UID)
+    releases = models_helpers_mod.ResourceRelease.filter(
+        code_repository_branch_uid=CODE_REPOSITORY_BRANCH_UID
+    )
 
     assert len(releases) == 1
     assert releases[0].uid == release_uid
@@ -3254,9 +3268,7 @@ def test_resource_release_waits_on_django_retry_after(monkeypatch):
     )
     responses = iter(
         [
-            _runtime_access_payload(
-                state="waking", can_request=False, retry_after_ms=2000
-            ),
+            _runtime_access_payload(state="waking", can_request=False, retry_after_ms=2000),
             _runtime_access_payload(state="ready", can_request=True),
         ]
     )
@@ -3462,17 +3474,11 @@ def test_deployment_run_billing_contract_is_complete_and_closed():
 
     with pytest.raises(ValidationError, match="extra_forbidden"):
         models_helpers_mod.DeploymentRunBilling.model_validate(
-            payload
-            | {
-                "components": payload["components"]
-                | {"future_component": "0.000000"}
-            }
+            payload | {"components": payload["components"] | {"future_component": "0.000000"}}
         )
 
     with pytest.raises(ValidationError, match="greater_than_equal"):
-        models_helpers_mod.DeploymentRunBilling.model_validate(
-            payload | {"unpriced_rows": -1}
-        )
+        models_helpers_mod.DeploymentRunBilling.model_validate(payload | {"unpriced_rows": -1})
 
 
 @pytest.mark.parametrize(
@@ -3764,7 +3770,9 @@ def test_unified_deployment_run_models_and_filters(monkeypatch):
             "configuration_revision": None,
             "state": "running",
             "outcome": "",
-            "pipeline": _resource_release_pipeline_payload(running_step="build_code_repository_image"),
+            "pipeline": _resource_release_pipeline_payload(
+                running_step="build_code_repository_image"
+            ),
             "created_at": "2026-07-19T12:00:00Z",
             "started_at": "2026-07-19T12:00:01Z",
             "finished_at": None,
@@ -4040,9 +4048,7 @@ def test_agent_runtime_image_drift_parses_user_action_signal(requires_user_actio
     assert image_drift.requires_user_action is requires_user_action
 
     with pytest.raises(ValidationError, match="requires_user_action"):
-        agent_models_mod.AgentRuntimeImageDrift.model_validate(
-            {"requires_user_action": None}
-        )
+        agent_models_mod.AgentRuntimeImageDrift.model_validate({"requires_user_action": None})
 
 
 def test_agent_session_send_a2a_message_posts_standard_contract(monkeypatch):
@@ -4211,9 +4217,7 @@ def test_agent_session_send_rejects_mismatched_response_context(monkeypatch):
     monkeypatch.setattr(
         agent_models_mod.AgentSession,
         "_post_standard_a2a_message",
-        classmethod(
-            lambda cls, access, *, body, timeout=None: FakeResponse()
-        ),
+        classmethod(lambda cls, access, *, body, timeout=None: FakeResponse()),
     )
 
     with pytest.raises(agent_models_mod.ApiError, match="contextId"):
@@ -4683,9 +4687,8 @@ def test_agent_respond_uses_agent_scoped_sessionless_contract(monkeypatch):
     agent = agent_models_mod.Agent(
         uid=agent_uid,
         name="Research Copilot",
-        agent_type="custom",
         description="Research assistant.",
-        agent_card=None,
+        agent_card={"name": "Research Copilot", "description": "Research assistant."},
         llm_provider="openai",
         llm_model="gpt-5.4",
         llm_thinking="medium",
@@ -4791,9 +4794,8 @@ def test_agent_respond_waits_for_transient_runtime_interaction(monkeypatch):
     agent = agent_models_mod.Agent(
         uid=agent_uid,
         name="Research Copilot",
-        agent_type="custom",
         description="Research assistant.",
-        agent_card=None,
+        agent_card={"name": "Research Copilot", "description": "Research assistant."},
         llm_provider="openai",
         llm_model="gpt-5.4",
         llm_thinking="medium",
@@ -4882,9 +4884,8 @@ def test_agent_get_or_create_session_posts_new_contract(monkeypatch):
     agent = agent_models_mod.Agent(
         uid=agent_uid,
         name="Research Copilot",
-        agent_type="custom",
         description="Research assistant.",
-        agent_card=None,
+        agent_card={"name": "Research Copilot", "description": "Research assistant."},
         llm_provider="openai",
         llm_model="gpt-5.4",
         llm_thinking="medium",
@@ -4904,7 +4905,6 @@ def test_agent_get_or_create_session_posts_new_contract(monkeypatch):
                 "uid": session_uid,
                 "agent_uid": agent_uid,
                 "agent_name": "Research Copilot",
-                "agent_type": "custom",
                 "organization_environment_uid": ENVIRONMENT_UID,
                 "organization_environment_name": "production",
                 "created_by_user_uid": user_uid,
@@ -4982,9 +4982,8 @@ def test_agent_get_or_create_session_parses_reused_handle_capabilities(monkeypat
     agent = agent_models_mod.Agent(
         uid=agent_uid,
         name="Research Copilot",
-        agent_type="custom",
         description="Research assistant.",
-        agent_card=None,
+        agent_card={"name": "Research Copilot", "description": "Research assistant."},
         llm_provider="openai",
         llm_model="gpt-5.4",
         llm_thinking="medium",
@@ -5005,7 +5004,6 @@ def test_agent_get_or_create_session_parses_reused_handle_capabilities(monkeypat
                 "uid": session_uid,
                 "agent_uid": agent_uid,
                 "agent_name": "Research Copilot",
-                "agent_type": "custom",
                 "organization_environment_uid": ENVIRONMENT_UID,
                 "organization_environment_name": "production",
                 "harness": "tau",
@@ -5062,9 +5060,8 @@ def test_agent_get_or_create_session_by_uid_sends_only_session_uid(monkeypatch):
     agent = agent_models_mod.Agent(
         uid=agent_uid,
         name="Research Copilot",
-        agent_type="custom",
         description="Research assistant.",
-        agent_card=None,
+        agent_card={"name": "Research Copilot", "description": "Research assistant."},
         llm_provider="openai",
         llm_model="gpt-5.4",
         llm_thinking="medium",
@@ -5084,7 +5081,6 @@ def test_agent_get_or_create_session_by_uid_sends_only_session_uid(monkeypatch):
                 "uid": session_uid,
                 "agent_uid": agent_uid,
                 "agent_name": "Research Copilot",
-                "agent_type": "custom",
                 "organization_environment_uid": ENVIRONMENT_UID,
                 "organization_environment_name": "production",
                 "name": "Existing session",

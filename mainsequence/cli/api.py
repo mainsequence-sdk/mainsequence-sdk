@@ -848,7 +848,9 @@ def _normalize_code_repository_reference(code_repository_ref: int | str) -> str:
     return normalized
 
 
-def _code_repository_matches_reference(code_repository_payload: dict[str, Any], code_repository_ref: str) -> bool:
+def _code_repository_matches_reference(
+    code_repository_payload: dict[str, Any], code_repository_ref: str
+) -> bool:
     return str(code_repository_payload.get("uid") or "").strip() == code_repository_ref
 
 
@@ -876,9 +878,7 @@ def resolve_code_repository_uid(code_repository_ref: int | str) -> str:
     normalized_uid = str(payload.get("uid") or "").strip()
     if normalized_uid:
         return normalized_uid
-    raise ApiError(
-        f"CodeRepository UID is not available for reference: {code_repository_ref}"
-    )
+    raise ApiError(f"CodeRepository UID is not available for reference: {code_repository_ref}")
 
 
 def get_code_repository_branch(code_repository_branch_uid: str) -> dict[str, Any]:
@@ -1316,53 +1316,6 @@ def semantic_search_agents(
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
         raise ApiError(f"Agent search failed: {e}") from e
-
-
-def create_agent(
-    *,
-    name: str,
-    description: str | None = None,
-    status: str | None = None,
-    labels: list[str] | None = None,
-    llm_provider: str | None = None,
-    llm_model: str | None = None,
-    engine_name: str | None = None,
-    runtime_config: dict[str, Any] | None = None,
-    configuration: dict[str, Any] | None = None,
-    metadata: dict[str, Any] | None = None,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    """
-    Create one agent via SDK client model.
-    """
-    payload = {
-        key: value
-        for key, value in {
-            "name": name,
-            "description": description,
-            "status": status,
-            "labels": labels,
-            "llm_provider": llm_provider,
-            "llm_model": llm_model,
-            "engine_name": engine_name,
-            "runtime_config": runtime_config,
-            "configuration": configuration,
-            "metadata": metadata,
-        }.items()
-        if value is not None
-    }
-
-    try:
-        agent = _run_sdk_model_operation(
-            module_name="mainsequence.client.agent_runtime_models",
-            class_name="Agent",
-            operation=lambda ClientAgent: ClientAgent.create(timeout=timeout, **payload),
-        )
-        return _sdk_object_to_dict(agent)
-    except Exception as e:
-        if isinstance(e, (ApiError, NotLoggedIn)):
-            raise
-        raise ApiError(f"Agent creation failed: {e}") from e
 
 
 def delete_agent(
@@ -2301,7 +2254,9 @@ def create_code_repository_image(
         if err_name in {"AuthenticationError", "PermissionDeniedError"}:
             raise NotLoggedIn(str(e) or "Not logged in.") from e
         if err_name == "NotFoundError":
-            raise ApiError(f"CodeRepositoryBranch not found: {related_code_repository_branch_uid}") from e
+            raise ApiError(
+                f"CodeRepositoryBranch not found: {related_code_repository_branch_uid}"
+            ) from e
         raise ApiError(f"CodeRepository image create failed: {e}") from e
     finally:
         if client_utils is not None:
@@ -2413,7 +2368,9 @@ def list_code_repository_images(
         if err_name in {"AuthenticationError", "PermissionDeniedError"}:
             raise NotLoggedIn(str(e) or "Not logged in.") from e
         if err_name == "NotFoundError":
-            raise ApiError(f"CodeRepositoryBranch not found: {related_code_repository_branch_uid}") from e
+            raise ApiError(
+                f"CodeRepositoryBranch not found: {related_code_repository_branch_uid}"
+            ) from e
         raise ApiError(f"CodeRepository images fetch failed: {e}") from e
     finally:
         if client_utils is not None:
@@ -5259,7 +5216,9 @@ def create_code_repository(
     if github_org_uid not in (None, ""):
         payload["github_org_uid"] = str(github_org_uid)
     if bootstrap_organization_environment_uid not in (None, ""):
-        payload["bootstrap_organization_environment_uid"] = str(bootstrap_organization_environment_uid)
+        payload["bootstrap_organization_environment_uid"] = str(
+            bootstrap_organization_environment_uid
+        )
     if labels is not None:
         payload["labels"] = list(labels)
 
@@ -5323,7 +5282,9 @@ def bulk_delete_code_repositories(
     }
     r = authed("POST", "/api/v1/code-repositories/bulk-delete/", payload)
     if not r.ok:
-        raise ApiError(f"CodeRepository bulk delete failed ({r.status_code}). {(r.text or '').strip()}")
+        raise ApiError(
+            f"CodeRepository bulk delete failed ({r.status_code}). {(r.text or '').strip()}"
+        )
     data = r.json()
     if not isinstance(data, dict):
         raise ApiError("CodeRepository bulk delete returned an unexpected payload.")

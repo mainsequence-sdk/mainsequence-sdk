@@ -102,7 +102,6 @@ def test_backend_environment_response_contract_is_declared_by_strict_sdk_model(
     [
         agent_models.Agent,
         agent_models.AgentSession,
-        agent_models.CodingAgentService,
         helper_models.JobRun,
         helper_models.ResourceRelease,
     ],
@@ -114,4 +113,6 @@ def test_owner_observability_code_repositoryion_is_declared_by_strict_sdk_model(
 
 def test_agent_session_runtime_capabilities_code_repositoryion_is_declared_and_typed():
     assert agent_models.AgentSession.model_config.get("extra") == "forbid"
-    assert agent_models.AgentSession.model_fields["runtime_capabilities"].annotation == dict[str, str]
+    assert (
+        agent_models.AgentSession.model_fields["runtime_capabilities"].annotation == dict[str, str]
+    )

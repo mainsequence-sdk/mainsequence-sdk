@@ -15,7 +15,6 @@ from pydantic import ConfigDict, Field, model_validator
 
 from .base import BaseObjectOrm, BasePydanticModel, ShareableObjectMixin
 from .exceptions import ApiError, raise_for_response
-from .models_helpers import AutomaticRedeploymentPolicy
 from .observability import (
     EnvironmentLogSearchMixin,
     EnvironmentLogSearchPage,
@@ -43,9 +42,7 @@ STANDARD_A2A_OUTPUT_CONTRACT_METADATA_KEY = (
 )
 STANDARD_AGENT_INFERENCE_METADATA_KEY = "https://mainsequence.ai/a2a/extensions/agent-inference/v1"
 MAX_INLINE_A2A_FILE_BYTES = 15 * 1024 * 1024
-TRANSIENT_RUNTIME_INTERACTION_STATES = frozenset(
-    {"checking", "starting", "waking", "updating"}
-)
+TRANSIENT_RUNTIME_INTERACTION_STATES = frozenset({"checking", "starting", "waking", "updating"})
 MIN_RUNTIME_INTERACTION_RETRY_SECONDS = 0.5
 MAX_RUNTIME_INTERACTION_RETRY_SECONDS = 30.0
 
@@ -112,14 +109,8 @@ class A2AMessageSendResult(BasePydanticModel):
     def _require_exact_result(self) -> A2AMessageSendResult:
         if (self.message is None) == (self.task is None):
             raise ValueError("A2A message-send result must contain exactly one of message or task")
-        if (
-            self.message is not None
-            and self.message.get("role") != STANDARD_A2A_RESPONDER_ROLE
-        ):
-            raise ValueError(
-                "A2A message result role must be "
-                f"{STANDARD_A2A_RESPONDER_ROLE}."
-            )
+        if self.message is not None and self.message.get("role") != STANDARD_A2A_RESPONDER_ROLE:
+            raise ValueError(f"A2A message result role must be {STANDARD_A2A_RESPONDER_ROLE}.")
         return self
 
     @property
@@ -157,10 +148,6 @@ class AgentRuntimeUpdate(BasePydanticModel):
 class AgentSemanticSearchResult(BasePydanticModel):
     uid: str = Field(..., description="Public UID of the matched agent.")
     name: str = Field(..., description="Human-readable display name of the matched agent.")
-    agent_type: str = Field(
-        "",
-        description="Stable machine-readable runtime or workflow type of the matched agent.",
-    )
     description: str = Field(
         "",
         description="Short description returned by semantic search for the matched agent.",
@@ -488,15 +475,20 @@ class Agent(
     BasePydanticModel,
 ):
     ENDPOINT: ClassVar[str] = "agents"
+
+    @classmethod
+    def create(cls, *args: Any, **kwargs: Any) -> Agent:
+        raise ApiError(
+            "Agents are created by CodeRepository branch harness_agent workflow reconciliation."
+        )
+
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]] | None] = {
         "uid": ["exact", "in"],
-        "agent_type": ["exact"],
         "search": ["exact"],
     }
     FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
         "uid": "uid",
         "uid__in": "uid",
-        "agent_type": "str",
         "search": "str",
     }
 
@@ -546,16 +538,12 @@ class Agent(
     name: str = Field(
         ..., description="Human-readable display name for the agent inside the organization."
     )
-    agent_type: str = Field(
-        "custom",
-        description="Stable machine-readable runtime or workflow classifier for the agent. This is not the display name.",
-    )
     description: str = Field(
-        "", description="Optional long-form description explaining what the agent is for."
+        ..., description="Human-facing description synchronized from the required Agent Card."
     )
-    agent_card: dict[str, Any] | None = Field(
-        None,
-        description="Optional structured agent card payload.",
+    agent_card: dict[str, Any] = Field(
+        ...,
+        description="Required canonical Agent Card; its name and description define Agent identity.",
     )
     a2a_profile: AgentA2AProfile = Field(default_factory=AgentA2AProfile)
 
@@ -577,26 +565,10 @@ class Agent(
         default_factory=dict,
         description="Additional agent configuration unrelated to runtime resolution.",
     )
-    metadata: dict[str, Any] = Field(
-        default_factory=dict,
-        description="Additional backend metadata for the agent.",
-    )
 
     last_session_at: datetime.datetime | None = Field(
         None,
         description="Timestamp of the most recent session recorded for this agent.",
-    )
-    has_agent_service: bool = Field(
-        False,
-        description="Whether the backend resolved this agent to a typed coding-agent service.",
-    )
-    agent_service_uid: str | None = Field(
-        None,
-        description="Public UID of the resolved typed coding-agent service, if one exists.",
-    )
-    agent_service_automatic_deployment: bool | None = Field(
-        None,
-        description="Service-level automatic deployment flag for the resolved typed coding-agent service.",
     )
     runtime_release_uid: str | None = Field(
         None,
@@ -642,6 +614,22 @@ class Agent(
         default=None,
         description="Backend-owned runtime observability and related-resource capabilities.",
     )
+
+    @model_validator(mode="after")
+    def _require_card_identity(self) -> Agent:
+        if (
+            not isinstance(self.agent_card.get("name"), str)
+            or not self.agent_card["name"].strip()
+            or not isinstance(self.agent_card.get("description"), str)
+            or not self.agent_card["description"].strip()
+        ):
+            raise ValueError("Agent Card must have a name and description")
+        if (
+            self.name != self.agent_card["name"]
+            or self.description != self.agent_card["description"]
+        ):
+            raise ValueError("Agent name and description must match the Agent Card")
+        return self
 
     def get_logs(
         self,
@@ -1018,243 +1006,6 @@ class Agent(
         if not isinstance(session_payload, dict):
             raise TypeError("get_or_create_session response must be an AgentSession object")
         return AgentSession(**session_payload)
-
-
-class CodingAgentService(BaseObjectOrm, BasePydanticModel):
-    ENDPOINT: ClassVar[str] = "coding-agent-services"
-    FILTERSET_FIELDS: ClassVar[dict[str, list[str]] | None] = {
-        "uid": ["exact", "in"],
-        "agent_uid": ["exact"],
-        "agent_type": ["exact"],
-        "scope_kind": ["exact"],
-        "user_uid": ["exact"],
-        "code_repository_branch_uid": ["exact"],
-        "automatic_deployment": ["exact"],
-    }
-    FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
-        "uid": "uid",
-        "uid__in": "uid",
-        "agent_uid": "uid",
-        "agent_type": "str",
-        "scope_kind": "str",
-        "user_uid": "uid",
-        "code_repository_branch_uid": "uid",
-        "automatic_deployment": "bool",
-    }
-
-    uid: str | None = Field(None, description="Public UID of the coding-agent service.")
-    harness: AgentHarnessKind = Field(
-        ...,
-        description="Runtime harness deployed by this coding-agent service.",
-    )
-    agent_uid: str | None = Field(None, description="Public UID of the owning Agent.")
-    agent_type: str | None = Field(
-        None,
-        description="Agent runtime type, such as astro-orchestrator or code-repository-executor.",
-    )
-    scope: dict[str, Any] = Field(
-        default_factory=dict,
-        description=(
-            "Typed scope projection, for example {kind: user, user_uid} or "
-            "{kind: code_repository_branch, code_repository_branch_uid}."
-        ),
-    )
-    is_ready: bool = Field(False, description="Whether the service runtime is routable.")
-    automatic_deployment: bool = Field(
-        False,
-        description="Whether this coding-agent service is eligible for automatic deployment flows.",
-    )
-    image_drift: dict[str, Any] | None = Field(
-        None, description="Runtime image drift status payload."
-    )
-    llm_provider: str | None = Field(
-        ...,
-        description="Read-only LLM provider projected from the owning Agent.",
-    )
-    llm_model: str | None = Field(
-        ...,
-        description="Read-only LLM model projected from the owning Agent.",
-    )
-    llm_thinking: str | None = Field(
-        ...,
-        description="Read-only thinking level projected from the owning Agent.",
-    )
-    cpu_request: str | None = Field(
-        ...,
-        description="Read-only CPU request projected from the backing Job.",
-    )
-    cpu_limit: str | None = Field(
-        ...,
-        description="Read-only CPU limit projected from the backing Job.",
-    )
-    memory_request: str | None = Field(
-        ...,
-        description="Read-only memory request projected from the backing Job.",
-    )
-    memory_limit: str | None = Field(
-        ...,
-        description="Read-only memory limit projected from the backing Job.",
-    )
-    gpu_request: str | None = Field(
-        ...,
-        description="Read-only GPU request projected from the backing Job.",
-    )
-    gpu_type: str | None = Field(
-        ...,
-        description="Read-only GPU type projected from the backing Job.",
-    )
-    spot: bool | None = Field(
-        ...,
-        description="Read-only spot scheduling flag projected from the backing Job.",
-    )
-    related_job_uid: str | None = Field(
-        None, description="Public UID of the backing job, if attached."
-    )
-    service_runtime_uid: str | None = Field(
-        None, description="Public UID of the backing service runtime, if attached."
-    )
-    automatic_redeployment_policy: AutomaticRedeploymentPolicy | None = Field(
-        ...,
-        description="Automatic redeployment policy for a CodeRepository Executor service.",
-    )
-    observability: ObservabilityLinks | None = Field(
-        default=None,
-        description="Backend-owned observability capabilities projected from the owning Agent.",
-    )
-
-    @classmethod
-    def _post_collection_action(
-        cls,
-        action_name: str,
-        body: dict[str, Any],
-        *,
-        timeout=None,
-        expected_statuses: tuple[int, ...] = (200,),
-    ) -> Any:
-        payload = {"json": serialize_to_json(body)}
-        url = f"{cls.get_object_url().rstrip('/')}/{action_name.strip('/')}/"
-        response = make_request(
-            s=cls.build_session(),
-            loaders=cls.LOADERS,
-            r_type="POST",
-            url=url,
-            payload=payload,
-            time_out=timeout,
-        )
-        if response.status_code not in expected_statuses:
-            raise_for_response(response, payload=payload)
-        return response.json()
-
-    @classmethod
-    def resolve(
-        cls,
-        *,
-        agent_type: str,
-        user_uid: str | None = None,
-        code_repository_branch_uid: str | None = None,
-        timeout=None,
-    ) -> CodingAgentService:
-        body: dict[str, Any] = {"agent_type": str(agent_type)}
-        if user_uid is not None:
-            body["user_uid"] = cls._coerce_filter_uid(user_uid, field_name="user_uid")
-        if str(agent_type) == "code-repository-executor":
-            from mainsequence.code_repository_context import resolve_code_repository_branch_uid
-
-            body["code_repository_branch_uid"] = resolve_code_repository_branch_uid(
-                "CodingAgentService.resolve(code-repository-executor)",
-                supplied_uid=code_repository_branch_uid,
-            )
-        elif code_repository_branch_uid is not None:
-            raise ValueError(
-                "code_repository_branch_uid is only valid when resolving a code-repository-executor service."
-            )
-        rows = cls.filter(timeout=timeout, **body)
-        if len(rows) != 1:
-            raise ValueError(
-                f"Expected exactly one coding-agent service for {body!r}; found {len(rows)}."
-            )
-        return rows[0]
-
-    @classmethod
-    def resolve_user_orchestrator(
-        cls,
-        *,
-        user_uid: str,
-        timeout=None,
-    ) -> CodingAgentService:
-        return cls.resolve(
-            agent_type="astro-orchestrator",
-            user_uid=user_uid,
-            timeout=timeout,
-        )
-
-    @classmethod
-    def resolve_code_repository_executor(
-        cls,
-        *,
-        code_repository_branch_uid: str | None = None,
-        timeout=None,
-    ) -> CodingAgentService:
-        return cls.resolve(
-            agent_type="code-repository-executor",
-            code_repository_branch_uid=code_repository_branch_uid,
-            timeout=timeout,
-        )
-
-    @classmethod
-    def deploy_code_repository(
-        cls,
-        *,
-        code_repository_branch_uid: str | None = None,
-        llm_provider: str | None = None,
-        llm_model: str | None = None,
-        llm_thinking: str | None = None,
-        automatic_deployment: bool | None = None,
-        cpu_request: str | None = None,
-        cpu_limit: str | None = None,
-        memory_request: str | None = None,
-        memory_limit: str | None = None,
-        gpu_request: str | None = None,
-        gpu_type: str | None = None,
-        spot: bool | None = None,
-        timeout=None,
-        **extra: Any,
-    ) -> dict[str, Any]:
-        from mainsequence.code_repository_context import resolve_code_repository_branch_uid
-
-        resolved_code_repository_branch_uid = resolve_code_repository_branch_uid(
-            "CodingAgentService.deploy_code_repository",
-            supplied_uid=code_repository_branch_uid,
-        )
-        body: dict[str, Any] = {
-            key: value
-            for key, value in {
-                "llm_provider": llm_provider,
-                "llm_model": llm_model,
-                "llm_thinking": llm_thinking,
-                "automatic_deployment": automatic_deployment,
-                "cpu_request": cpu_request,
-                "cpu_limit": cpu_limit,
-                "memory_request": memory_request,
-                "memory_limit": memory_limit,
-                "gpu_request": gpu_request,
-                "gpu_type": gpu_type,
-                "spot": spot,
-                **extra,
-            }.items()
-            if value is not None
-        }
-        body["agent_type"] = "code-repository-executor"
-        body["scope"] = {
-            "kind": "code_repository_branch",
-            "code_repository_branch_uid": resolved_code_repository_branch_uid,
-        }
-        return cls._post_collection_action(
-            "deploy",
-            body,
-            timeout=timeout,
-            expected_statuses=(200, 201, 202),
-        )
 
 
 class AgentSessionInsightsBase(BasePydanticModel):
@@ -1832,13 +1583,9 @@ class AgentSession(
                 response=response,
                 payload=body,
             )
-        if (
-            result.message is not None
-            and result.message.get("contextId") != session_uid
-        ):
+        if result.message is not None and result.message.get("contextId") != session_uid:
             raise ApiError(
-                "Standard A2A message response contextId does not match the target "
-                "AgentSession.",
+                "Standard A2A message response contextId does not match the target AgentSession.",
                 response=response,
                 payload=body,
             )
@@ -2149,10 +1896,6 @@ class AgentSession(
         "",
         description="Read-only helper with the agent display name for rendering session results.",
     )
-    agent_type: str = Field(
-        "",
-        description="Read-only helper with the canonical machine-readable agent runtime or workflow type.",
-    )
     organization_environment_uid: str = Field(
         ...,
         description=(
@@ -2308,7 +2051,6 @@ __all__ = [
     "TauAgentSessionInsightsUsage",
     "AgentSemanticSearchResult",
     "AgentSessionRuntimeAccess",
-    "CodingAgentService",
     "AgentSession",
     "AgentSessionStatus",
 ]

@@ -91,7 +91,6 @@ from .api import (
     add_time_index_table_user_to_edit,
     add_time_index_table_user_to_view,
     bulk_delete_code_repositories,
-    create_agent,
     create_code_repository,
     create_code_repository_image,
     create_code_repository_job,
@@ -378,7 +377,9 @@ app.add_typer(time_index_table_group, name="time-index-table")
 app.add_typer(code_repository, name="code-repository")
 code_repository.add_typer(code_repository_list_group, name="list")
 code_repository.add_typer(code_repository_resources_group, name="resources")
-code_repository.add_typer(code_repository_time_index_table_updates_group, name="time-index-table-updates")
+code_repository.add_typer(
+    code_repository_time_index_table_updates_group, name="time-index-table-updates"
+)
 code_repository.add_typer(code_repository_images_group, name="images")
 code_repository.add_typer(code_repository_jobs_group, name="jobs")
 code_repository_jobs_group.add_typer(code_repository_job_runs_group, name="runs")
@@ -847,7 +848,9 @@ def _resolve_code_repository_dir(code_repository_id: str | None, path: str | Non
         raise typer.Exit(1)
     if code_repository_id:
         try:
-            get_code_repository_context(code_repository_uid=code_repository_id, code_repository_dir=p)
+            get_code_repository_context(
+                code_repository_uid=code_repository_id, code_repository_dir=p
+            )
         except CodeRepositoryContextError as exc:
             error(f"CodeRepository UID assertion failed: {exc}")
             raise typer.Exit(1) from exc
@@ -860,7 +863,9 @@ def _resolve_code_repository_branch(
     repository_branch: str | None = None,
     prompt_if_ambiguous: bool = False,
 ) -> dict:
-    branches = [item for item in list(code_repository.get("branches") or []) if isinstance(item, dict)]
+    branches = [
+        item for item in list(code_repository.get("branches") or []) if isinstance(item, dict)
+    ]
     if not branches:
         raise ApiError("This CodeRepository has no CodeRepositoryBranches.")
 
@@ -965,7 +970,9 @@ def _code_repository_agent_scaffold_bundle_dir(code_repository_dir: pathlib.Path
     return bundle_dir
 
 
-def _code_repository_installed_package_version(code_repository_dir: pathlib.Path, package_name: str) -> str:
+def _code_repository_installed_package_version(
+    code_repository_dir: pathlib.Path, package_name: str
+) -> str:
     """
     Resolve an installed package version from the target code repository's local `.venv`.
     """
@@ -1422,7 +1429,9 @@ def _format_resource_release_delete_preview(release: dict[str, object]) -> list[
     ]
 
 
-def _git_run(code_repository_dir: pathlib.Path, args: list[str]) -> subprocess.CompletedProcess[str]:
+def _git_run(
+    code_repository_dir: pathlib.Path, args: list[str]
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["git", "-C", str(code_repository_dir), *args],
         capture_output=True,
@@ -1478,7 +1487,9 @@ def _parse_git_log_rows(stdout: str) -> list[dict[str, str]]:
     return commits
 
 
-def _list_pushed_commits(code_repository_dir: pathlib.Path, limit: int = 20) -> list[dict[str, str]]:
+def _list_pushed_commits(
+    code_repository_dir: pathlib.Path, limit: int = 20
+) -> list[dict[str, str]]:
     """
     List commits already present on the remote-tracking branch.
 
@@ -1528,7 +1539,9 @@ def _list_pushed_commits(code_repository_dir: pathlib.Path, limit: int = 20) -> 
     return commits
 
 
-def _list_unpushed_commits(code_repository_dir: pathlib.Path, limit: int = 10) -> list[dict[str, str]]:
+def _list_unpushed_commits(
+    code_repository_dir: pathlib.Path, limit: int = 10
+) -> list[dict[str, str]]:
     """
     List local commits reachable from HEAD that are not present on any remote ref.
     """
@@ -1569,11 +1582,15 @@ def _resolve_full_commit_hash(code_repository_dir: pathlib.Path, commit_hash: st
     result = _git_run(code_repository_dir, ["rev-parse", "--verify", f"{normalized}^{{commit}}"])
     if result.returncode != 0:
         reason = (result.stderr or result.stdout or "").strip() or "git rev-parse failed"
-        raise RuntimeError(f"Could not resolve code_repository_commit_hash to a full commit SHA: {reason}")
+        raise RuntimeError(
+            f"Could not resolve code_repository_commit_hash to a full commit SHA: {reason}"
+        )
 
     full_hash = (result.stdout or "").strip()
     if not re.fullmatch(r"[0-9a-fA-F]{40}", full_hash):
-        raise RuntimeError("Resolved code_repository_commit_hash is not a full 40-character commit SHA.")
+        raise RuntimeError(
+            "Resolved code_repository_commit_hash is not a full 40-character commit SHA."
+        )
 
     return full_hash.lower()
 
@@ -2307,9 +2324,9 @@ def login(
     )
 
     if code_repositories_base and code_repositories_base_option:
-        if cfg.normalize_mainsequence_path(code_repositories_base) != cfg.normalize_mainsequence_path(
-            code_repositories_base_option
-        ):
+        if cfg.normalize_mainsequence_path(
+            code_repositories_base
+        ) != cfg.normalize_mainsequence_path(code_repositories_base_option):
             error(
                 "Pass the CodeRepositories base either positionally or with "
                 "--code-repositories-base/--base-folder, not both."
@@ -3402,28 +3419,27 @@ def _parse_text_option_or_file(
 
 
 def _format_agent_preview(agent_payload: dict[str, object]) -> list[tuple[str, str]]:
-    labels = agent_payload.get("labels")
+    runtime_update = agent_payload.get("runtime_update")
+    runtime_state = runtime_update.get("state") if isinstance(runtime_update, dict) else None
     return [
         ("UID", str(agent_payload.get("uid") or "-")),
         ("Name", str(agent_payload.get("name") or "-")),
         ("Description", str(agent_payload.get("description") or "-")),
-        ("Status", str(agent_payload.get("status") or "-")),
-        (
-            "Labels",
-            ", ".join(str(item) for item in labels) if isinstance(labels, list) and labels else "-",
-        ),
+        ("Repository Branch", str(agent_payload.get("repository_branch") or "-")),
+        ("Runtime Release UID", str(agent_payload.get("runtime_release_uid") or "-")),
+        ("Runtime Update", str(runtime_state or "-")),
         ("LLM Provider", str(agent_payload.get("llm_provider") or "-")),
         ("LLM Model", str(agent_payload.get("llm_model") or "-")),
-        ("Engine", str(agent_payload.get("engine_name") or "-")),
-        ("Last Run At", str(agent_payload.get("last_run_at") or "-")),
+        ("LLM Thinking", str(agent_payload.get("llm_thinking") or "-")),
+        ("Last Session At", str(agent_payload.get("last_session_at") or "-")),
     ]
 
 
 def _format_agent_details(agent_payload: dict[str, object]) -> list[tuple[str, str]]:
     return [
+        ("Agent Card", _format_json_value(agent_payload.get("agent_card"))),
         ("Runtime Config", _format_json_value(agent_payload.get("runtime_config"))),
         ("Configuration", _format_json_value(agent_payload.get("configuration"))),
-        ("Metadata", _format_json_value(agent_payload.get("metadata"))),
     ]
 
 
@@ -3664,74 +3680,6 @@ def _agent_search_impl(
     else:
         info("No agents matched the search.")
     info(f'Agent search matches for "{q}": {len(results)}')
-
-
-def _agent_create_impl(
-    *,
-    name: str | None,
-    description: str | None,
-    status_value: str | None,
-    labels: list[str] | None,
-    llm_provider: str | None,
-    llm_model: str | None,
-    engine_name: str | None,
-    runtime_config: str | None,
-    configuration: str | None,
-    metadata: str | None,
-    timeout: int | None,
-) -> None:
-    _require_login()
-
-    agent_name = (name or "").strip() or typer.prompt(
-        pydantic_prompt_text(AGENT_MODEL_REF, "name")
-    ).strip()
-    if not agent_name:
-        error("Agent name is required.")
-        raise typer.Exit(1)
-
-    try:
-        runtime_config_payload = (
-            _parse_json_dict_option(runtime_config, field_label="runtime_config")
-            if runtime_config is not None
-            else None
-        )
-        configuration_payload = (
-            _parse_json_dict_option(configuration, field_label="configuration")
-            if configuration is not None
-            else None
-        )
-        metadata_payload = (
-            _parse_json_dict_option(metadata, field_label="metadata")
-            if metadata is not None
-            else None
-        )
-    except ValueError as e:
-        error(str(e))
-        raise typer.Exit(1) from e
-
-    try:
-        created = create_agent(
-            name=agent_name,
-            description=description,
-            status=status_value,
-            labels=_parse_cli_csv_list(labels),
-            llm_provider=llm_provider,
-            llm_model=llm_model,
-            engine_name=engine_name,
-            runtime_config=runtime_config_payload,
-            configuration=configuration_payload,
-            metadata=metadata_payload,
-            timeout=timeout,
-        )
-    except ApiError as e:
-        error(f"Agent creation failed: {e}")
-        raise typer.Exit(1) from e
-
-    if _emit_json(created):
-        return
-
-    success(f"Agent created: {agent_name}")
-    print_kv("Created Agent", _format_agent_preview(created))
 
 
 def _agent_delete_impl(
@@ -4019,11 +3967,7 @@ def _agent_session_list_impl(
             [
                 str(agent_session_payload.get("uid") or "-"),
                 str(agent_session_payload.get("agent_uid") or "-"),
-                str(
-                    agent_session_payload.get("agent_name")
-                    or agent_session_payload.get("agent_type")
-                    or "-"
-                ),
+                str(agent_session_payload.get("agent_name") or "-"),
                 str(agent_session_payload.get("status") or "-"),
                 str(
                     agent_session_payload.get("runtime_state")
@@ -4881,64 +4825,6 @@ def agent_search_cmd(
         q=q,
         organization_environment_uid=str(organization_environment_uid),
         limit=limit,
-        timeout=timeout,
-    )
-
-
-@agent.command("create")
-def agent_create_cmd(
-    name: str | None = pydantic_argument(AGENT_MODEL_REF, "name", None),
-    description: str | None = pydantic_option(
-        AGENT_MODEL_REF, "description", None, "--description"
-    ),
-    status_value: str | None = typer.Option(
-        None,
-        "--status",
-        help="Lifecycle status for the agent. One of: draft, active, archived.",
-    ),
-    labels: list[str] | None = typer.Option(
-        None, "--label", help="Repeatable or comma-separated agent label."
-    ),
-    llm_provider: str | None = pydantic_option(
-        AGENT_MODEL_REF, "llm_provider", None, "--llm-provider"
-    ),
-    llm_model: str | None = pydantic_option(AGENT_MODEL_REF, "llm_model", None, "--llm-model"),
-    engine_name: str | None = typer.Option(
-        None,
-        "--engine-name",
-        help="Optional execution engine name to store on the agent.",
-    ),
-    runtime_config: str | None = typer.Option(
-        None,
-        "--runtime-config",
-        help="Runtime config JSON object to store on the agent.",
-    ),
-    configuration: str | None = typer.Option(
-        None,
-        "--configuration",
-        help="Additional configuration JSON object to store on the agent.",
-    ),
-    metadata: str | None = typer.Option(
-        None,
-        "--metadata",
-        help="Additional metadata JSON object to store on the agent.",
-    ),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    """
-    Create one agent.
-    """
-    _agent_create_impl(
-        name=name,
-        description=description,
-        status_value=status_value,
-        labels=labels,
-        llm_provider=llm_provider,
-        llm_model=llm_model,
-        engine_name=engine_name,
-        runtime_config=runtime_config,
-        configuration=configuration,
-        metadata=metadata,
         timeout=timeout,
     )
 
@@ -7230,8 +7116,12 @@ def _print_code_repository_time_index_table_updates(
 
     _require_login()
     try:
-        code_repository_branch_uid = _resolve_code_repository_branch_uid_for_command(code_repository_id)
-        updates = get_code_repository_time_index_table_updates(code_repository_branch_uid, timeout=timeout)
+        code_repository_branch_uid = _resolve_code_repository_branch_uid_for_command(
+            code_repository_id
+        )
+        updates = get_code_repository_time_index_table_updates(
+            code_repository_branch_uid, timeout=timeout
+        )
     except NotLoggedIn as e:
         error("Not logged in. Run: mainsequence login")
         raise typer.Exit(1) from e
@@ -7330,7 +7220,9 @@ def code_repository_validate_name_cmd(
         raise typer.Exit(1)
 
     try:
-        payload = validate_code_repository_name(code_repository_name=normalized_code_repository_name, timeout=timeout)
+        payload = validate_code_repository_name(
+            code_repository_name=normalized_code_repository_name, timeout=timeout
+        )
     except ApiError as e:
         error(f"CodeRepository name validation failed: {e}")
         raise typer.Exit(1) from e
@@ -7342,17 +7234,27 @@ def code_repository_validate_name_cmd(
     print_kv(
         "CodeRepository Name Validation",
         [
-            ("CodeRepository Name", str(payload.get("code_repository_name") or normalized_code_repository_name)),
+            (
+                "CodeRepository Name",
+                str(payload.get("code_repository_name") or normalized_code_repository_name),
+            ),
             ("Available", "yes" if payload.get("available") else "no"),
             ("Reason", str(payload.get("reason") or "-")),
-            ("Slugified CodeRepository Name", str(normalized.get("slugified_code_repository_name") or "-")),
+            (
+                "Slugified CodeRepository Name",
+                str(normalized.get("slugified_code_repository_name") or "-"),
+            ),
             ("CodeRepository Library Name", str(normalized.get("repository_library_name") or "-")),
         ],
     )
 
     suggestions = [str(item) for item in list(payload.get("suggestions") or []) if item is not None]
     if suggestions:
-        print_table("Suggested CodeRepository Names", ["CodeRepository Name"], [[item] for item in suggestions])
+        print_table(
+            "Suggested CodeRepository Names",
+            ["CodeRepository Name"],
+            [[item] for item in suggestions],
+        )
 
     if payload.get("available"):
         success(f"CodeRepository name is available: {normalized_code_repository_name}")
@@ -7419,7 +7321,9 @@ def code_repository_search_cmd(
 @code_repository.command("create")
 def code_repository_create_cmd(
     code_repository_name: str | None = typer.Argument(None, help="CodeRepository name"),
-    code_repository_type: str = typer.Option("python", "--code-repository-type", help="CodeRepository type"),
+    code_repository_type: str = typer.Option(
+        "python", "--code-repository-type", help="CodeRepository type"
+    ),
     default_base_image_uid: str | None = typer.Option(
         None, "--default-base-image-uid", help="Default base image UID"
     ),
@@ -7479,14 +7383,20 @@ def code_repository_create_cmd(
             print_kv(
                 "CodeRepository Name Validation",
                 [
-                    ("CodeRepository Name", str(name_validation.get("code_repository_name") or code_repository_name)),
+                    (
+                        "CodeRepository Name",
+                        str(name_validation.get("code_repository_name") or code_repository_name),
+                    ),
                     ("Available", "no"),
                     ("Reason", reason),
                     (
                         "Slugified CodeRepository Name",
                         str(normalized.get("slugified_code_repository_name") or "-"),
                     ),
-                    ("CodeRepository Library Name", str(normalized.get("repository_library_name") or "-")),
+                    (
+                        "CodeRepository Library Name",
+                        str(normalized.get("repository_library_name") or "-"),
+                    ),
                 ],
             )
             suggestions = [
@@ -7496,7 +7406,9 @@ def code_repository_create_cmd(
             ]
             if suggestions:
                 print_table(
-                    "Suggested CodeRepository Names", ["CodeRepository Name"], [[item] for item in suggestions]
+                    "Suggested CodeRepository Names",
+                    ["CodeRepository Name"],
+                    [[item] for item in suggestions],
                 )
             raise typer.Exit(1)
 
@@ -7570,7 +7482,10 @@ def code_repository_create_cmd(
         "CodeRepository",
         [
             ("UID", code_repository_uid or "-"),
-            ("CodeRepository Name", str(created.get("code_repository_name") or code_repository_name)),
+            (
+                "CodeRepository Name",
+                str(created.get("code_repository_name") or code_repository_name),
+            ),
             ("Branches", branch_names or "-"),
         ],
     )
@@ -7989,7 +7904,8 @@ def _code_repository_resources_list_impl(
 @code_repository_resources_group.command("list")
 def code_repository_code_repository_resource_list_cmd(
     code_repository_id: str | None = typer.Argument(
-        None, help="Optional CodeRepository UID assertion; Git repository identity is authoritative."
+        None,
+        help="Optional CodeRepository UID assertion; Git repository identity is authoritative.",
     ),
     path: str | None = typer.Option(
         None, "--path", help="CodeRepository repository path (default: current code repository)"
@@ -8212,9 +8128,12 @@ def _code_repository_resource_release_create_impl(
 @code_repository_resources_group.command("create_fastapi")
 def code_repository_code_repository_resource_create_fastapi_cmd(
     code_repository_id: str | None = typer.Argument(
-        None, help="Optional CodeRepository UID assertion; Git repository identity is authoritative."
+        None,
+        help="Optional CodeRepository UID assertion; Git repository identity is authoritative.",
     ),
-    resource_uid: str | None = typer.Option(None, "--resource-uid", help="CodeRepository resource UID."),
+    resource_uid: str | None = typer.Option(
+        None, "--resource-uid", help="CodeRepository resource UID."
+    ),
     path: str | None = typer.Option(
         None, "--path", help="CodeRepository repository path (default: current code repository)"
     ),
@@ -8305,7 +8224,9 @@ def _code_repository_resource_release_delete_impl(
         return
 
     success(f"CodeRepository resource release deleted: uid={release_uid}")
-    print_kv("Deleted CodeRepository Resource Release", _format_resource_release_delete_preview(deleted))
+    print_kv(
+        "Deleted CodeRepository Resource Release", _format_resource_release_delete_preview(deleted)
+    )
 
 
 @code_repository_resources_group.command("delete_fastapi")
@@ -8446,7 +8367,9 @@ def _code_repository_images_list_impl(
         )
 
     if rows:
-        print_table("CodeRepository Images", ["UID", "CodeRepository Repo Hash", "Base Image"], rows)
+        print_table(
+            "CodeRepository Images", ["UID", "CodeRepository Repo Hash", "Base Image"], rows
+        )
     else:
         info("No code repository images.")
     info(f"Total images: {len(images)}")
@@ -8455,7 +8378,8 @@ def _code_repository_images_list_impl(
 @code_repository_images_group.command("list")
 def code_repository_images_list_cmd(
     code_repository_id: str | None = typer.Argument(
-        None, help="Optional CodeRepository UID assertion; Git repository identity is authoritative."
+        None,
+        help="Optional CodeRepository UID assertion; Git repository identity is authoritative.",
     ),
     path: str | None = typer.Option(
         None, "--path", help="CodeRepository repository path (default: current code repository)"
@@ -8608,14 +8532,18 @@ def _code_repository_images_create_impl(
             for c in commits
         ]
         print_table("Pushed Commits", ["Hash", "Date/Time", "Subject", "Image UIDs"], rows)
-        code_repository_commit_hash = typer.prompt("code_repository_commit_hash", default=commits[0]["hash"]).strip()
+        code_repository_commit_hash = typer.prompt(
+            "code_repository_commit_hash", default=commits[0]["hash"]
+        ).strip()
 
     if not code_repository_commit_hash:
         error("code_repository_commit_hash is required.")
         raise typer.Exit(1)
 
     try:
-        code_repository_commit_hash = _resolve_full_commit_hash(code_repository_dir, code_repository_commit_hash)
+        code_repository_commit_hash = _resolve_full_commit_hash(
+            code_repository_dir, code_repository_commit_hash
+        )
     except RuntimeError as e:
         error(str(e))
         raise typer.Exit(1) from e
@@ -8628,7 +8556,10 @@ def _code_repository_images_create_impl(
 
     existing_for_hash = images_by_hash.get(code_repository_commit_hash, [])
     if existing_for_hash:
-        warn("This commit already has code repository image(s): " + _format_image_uids(existing_for_hash))
+        warn(
+            "This commit already has code repository image(s): "
+            + _format_image_uids(existing_for_hash)
+        )
 
     try:
         if base_image_uid is None:
@@ -8692,7 +8623,9 @@ def _code_repository_images_create_impl(
                 (img for img in polled_images if str(img.get("uid")) == str(image_uid)), None
             )
             if latest is None:
-                warn(f"CodeRepository image {image_uid} was not visible yet on poll attempt {attempt}.")
+                warn(
+                    f"CodeRepository image {image_uid} was not visible yet on poll attempt {attempt}."
+                )
                 continue
 
             created = latest
@@ -8734,7 +8667,8 @@ def _code_repository_images_create_impl(
 @code_repository_images_group.command("create")
 def code_repository_images_create_cmd(
     code_repository_id: str | None = typer.Argument(
-        None, help="Optional CodeRepository UID assertion; Git repository identity is authoritative."
+        None,
+        help="Optional CodeRepository UID assertion; Git repository identity is authoritative.",
     ),
     code_repository_commit_hash: str | None = typer.Argument(
         None,
@@ -8994,7 +8928,8 @@ def _print_job_run_logs_rows(rows, *, start_index: int = 0) -> int:
 @code_repository_jobs_group.command("list")
 def code_repository_jobs_list_cmd(
     code_repository_id: str | None = typer.Argument(
-        None, help="Optional CodeRepository UID assertion; Git repository identity is authoritative."
+        None,
+        help="Optional CodeRepository UID assertion; Git repository identity is authoritative.",
     ),
     path: str | None = typer.Option(
         None, "--path", help="CodeRepository repository path (default: current code repository)"
@@ -9551,9 +9486,7 @@ def _code_repository_jobs_create_impl(
             ),
             (
                 "Scheduled Args",
-                shlex.join(
-                    created.get("scheduled_command_args") or scheduled_command_args or []
-                )
+                shlex.join(created.get("scheduled_command_args") or scheduled_command_args or [])
                 or "None",
             ),
             ("CPU Request", str(created.get("cpu_request") or cpu_request)),
@@ -9583,7 +9516,8 @@ def _code_repository_jobs_create_impl(
 @code_repository_jobs_group.command("create")
 def code_repository_jobs_create_cmd(
     code_repository_id: str | None = typer.Argument(
-        None, help="Optional CodeRepository UID assertion; Git repository identity is authoritative."
+        None,
+        help="Optional CodeRepository UID assertion; Git repository identity is authoritative.",
     ),
     name: str | None = pydantic_option(JOB_MODEL_REF, "name", None, "--name"),
     path: str | None = typer.Option(
@@ -9826,9 +9760,7 @@ def code_repository_set_up_locally(
         error(str(e))
         raise typer.Exit(1) from e
 
-    name = safe_slug(
-        p.get("code_repository_name") or f"code-repository-{code_repository_uid}"
-    )
+    name = safe_slug(p.get("code_repository_name") or f"code-repository-{code_repository_uid}")
     code_repositories_root = _code_repositories_root(base, org_slug)
     target_dir = code_repositories_root / f"{name}-{code_repository_uid}"
     code_repositories_root.mkdir(parents=True, exist_ok=True)
@@ -10021,7 +9953,9 @@ def code_repository_open_signed_terminal(
     origin = git_origin(code_repository_dir)
     name = repo_name_from_git_url(origin) or code_repository_dir.name
     try:
-        context = get_code_repository_context(code_repository_uid=code_repository_id, code_repository_dir=code_repository_dir)
+        context = get_code_repository_context(
+            code_repository_uid=code_repository_id, code_repository_dir=code_repository_dir
+        )
         code_repository_ref = str(context.code_repository_uid or "").strip()
         key_path, _public_key, _git_env = _ensure_code_repository_repository_ssh_access(
             origin=origin,
@@ -10272,7 +10206,11 @@ def code_repository_freeze_env(
     code_repository_dir = _resolve_code_repository_dir(code_repository_id, path)
     ensure_venv(code_repository_dir)
 
-    uv = ensure_uv_installed(code_repository_dir) if ensure_uv else (ensure_venv(code_repository_dir).uv or None)
+    uv = (
+        ensure_uv_installed(code_repository_dir)
+        if ensure_uv
+        else (ensure_venv(code_repository_dir).uv or None)
+    )
     if not uv:
         error("uv not found in .venv and --no-ensure-uv was used.")
         raise typer.Exit(1)
@@ -10906,7 +10844,9 @@ def code_repository_update_agent_skills(
 
     pinned_version = _code_repository_installed_package_version(code_repository_dir, "mainsequence")
     source_checkout_root = _mainsequence_source_checkout_root()
-    protected_code_repository_roots = (source_checkout_root,) if source_checkout_root is not None else ()
+    protected_code_repository_roots = (
+        (source_checkout_root,) if source_checkout_root is not None else ()
+    )
     try:
         platform_catalog = fetch_platform_code_repository_skill_catalog()
         install_result = install_dual_source_code_repository_skills(

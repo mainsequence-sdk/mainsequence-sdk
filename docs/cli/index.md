@@ -105,12 +105,17 @@ mainsequence code-repository --help
 
 Most frequently used flows:
 
+Agents are created by Django when a CodeRepository branch reconciles a
+`harness_agent` workflow declaration with a valid indexed
+`.agents/agent_card.json`. The SDK does not create an Agent directly; the card's
+name and description become the Agent's identity. `agent list` supports UID
+filters and text search, not an `agent_type` filter.
+
 ```bash
 # Agents
 mainsequence agent list --environment-uid <ORGANIZATION_ENVIRONMENT_UID>
 mainsequence agent search "data research copilot" --environment-uid <ORGANIZATION_ENVIRONMENT_UID>
 mainsequence agent detail e0e75693-4110-464c-93e0-82c7fd9c9a23
-mainsequence agent create "Research Copilot" --description "Desk agent"
 mainsequence agent session list --agent-uid e0e75693-4110-464c-93e0-82c7fd9c9a23
 mainsequence agent session get_or_create e0e75693-4110-464c-93e0-82c7fd9c9a23 --handle-unique-id portfolio-review-q2-2026 --name "Quarterly portfolio review"
 mainsequence agent session get_or_create e0e75693-4110-464c-93e0-82c7fd9c9a23 --session-uid 3f1cc452-43ec-49cb-b2ba-87dbac164d29
