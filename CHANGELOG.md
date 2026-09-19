@@ -6,6 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [8.1.17] - 2026-09-19
+
+### Added
+
+- Added `ResourceRelease` support for waiting until a deployed runtime becomes
+  accessible.
+
+### Changed
+
+- Routed TAU Agent implementation guidance to the installed runtime SDK's skills
+  and distinguished local from deployed API readiness checks.
+
+### Fixed
+
+- Aligned the SDK Agent, semantic search, and session projections with Django's
+  canonical response contract. Agent Cards must supply the Agent's name and
+  description; retired `agent_type` and coding-agent service fields are no
+  longer advertised.
+- Removed the retired `CodingAgentService` client and unsupported direct Agent
+  creation CLI command.
+
 ## [8.1.16] - 2026-09-16
 
 ### Fixed
