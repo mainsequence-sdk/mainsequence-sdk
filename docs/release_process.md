@@ -110,9 +110,16 @@ These are configured outside the repository and are listed here so they are not
 lost:
 
 * **PyPI trusted publishers.** The project needs one entry per publishing
-  workflow, since an entry is keyed by workflow filename. `publish-to-pypi.yml`
-  (final releases) and `publish-dev-to-pypi.yml` (development releases), both
-  with environment `pypi`.
+  workflow, since an entry is keyed by workflow filename *and* environment. Both
+  are configured:
+
+  | Workflow | Publishes | Environment |
+  | --- | --- | --- |
+  | `publish-to-pypi.yml` | final releases | `pypi` |
+  | `publish-dev-to-pypi.yml` | development releases | `pypi-development` |
+
+  The `environment:` in a publishing workflow has to match its entry exactly, or
+  PyPI rejects the OIDC token and the upload fails.
 * **Branch `development` exists and shares history with `main`.** After the
   one-time cleanup of September 2026 both branches point at the same commit.
 
