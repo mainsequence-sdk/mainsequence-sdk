@@ -87,13 +87,13 @@ RUNTIME_UPDATE_FIELD = "runtime_update"
         ),
     ],
 )
-def test_backend_environment_response_contract_is_declared_by_strict_sdk_model(
+def test_backend_environment_response_contract_is_declared_by_sdk_model(
     serializer_names,
     model,
     expected_fields,
 ):
     """Keep SDK response models aligned with ADR-0036/ADR-0037 projections."""
-    assert model.model_config.get("extra") == "forbid", serializer_names
+    assert model.model_config.get("extra") == "ignore", serializer_names
     assert expected_fields <= set(model.model_fields), serializer_names
 
 
@@ -106,13 +106,13 @@ def test_backend_environment_response_contract_is_declared_by_strict_sdk_model(
         helper_models.ResourceRelease,
     ],
 )
-def test_owner_observability_code_repositoryion_is_declared_by_strict_sdk_model(model):
-    assert model.model_config.get("extra") == "forbid"
+def test_owner_observability_code_repositoryion_is_declared_by_sdk_model(model):
+    assert model.model_config.get("extra") == "ignore"
     assert "observability" in model.model_fields
 
 
 def test_agent_session_runtime_capabilities_code_repositoryion_is_declared_and_typed():
-    assert agent_models.AgentSession.model_config.get("extra") == "forbid"
+    assert agent_models.AgentSession.model_config.get("extra") == "ignore"
     assert (
         agent_models.AgentSession.model_fields["runtime_capabilities"].annotation == dict[str, str]
     )

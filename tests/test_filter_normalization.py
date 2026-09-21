@@ -67,7 +67,7 @@ def test_agent_runtime_update_parses_every_backend_state(
     ) == remediation_tool
 
 
-def test_agent_runtime_update_contract_is_complete_and_closed():
+def test_agent_runtime_update_contract_is_complete_and_read_tolerantly():
     payload = _agent_runtime_update_contract("unknown")
     for field_name in ("state", "needs_redeploy", "remediation"):
         incomplete = dict(payload)
@@ -75,8 +75,12 @@ def test_agent_runtime_update_contract_is_complete_and_closed():
         with pytest.raises(ValidationError, match=field_name):
             agent_models_mod.AgentRuntimeUpdate.model_validate(incomplete)
 
-    with pytest.raises(ValidationError, match="extra_forbidden"):
-        agent_models_mod.AgentRuntimeUpdate.model_validate(payload | {"future_state": "value"})
+    # Tolerant reading (ADR 0032): a field this release does not declare is dropped.
+    tolerated = agent_models_mod.AgentRuntimeUpdate.model_validate(
+        payload | {"future_state": "value"}
+    )
+    assert tolerated.state == payload["state"]
+    assert not hasattr(tolerated, "future_state")
 
     invalid_remediation = _agent_runtime_update_contract("update_required")
     invalid_remediation["remediation"] = {"tool": "agent.update_session"}
@@ -1178,7 +1182,7 @@ def test_get_by_uid_normalizes_read_query_params(monkeypatch):
     }
 
 
-def test_patch_by_uid_raises_with_context_for_unmapped_response_fields(monkeypatch):
+def test_patch_by_uid_ignores_unmapped_response_fields(monkeypatch):
     captured = {}
 
     class FakeResponse:
@@ -1201,14 +1205,15 @@ def test_patch_by_uid_raises_with_context_for_unmapped_response_fields(monkeypat
 
     monkeypatch.setattr(base_mod, "make_request", _fake_make_request)
 
-    with pytest.raises(ValueError) as exc_info:
-        DemoPatchModel.patch_by_uid("uid-9", _into=DemoPatchModel(id=9), label="patched")
+    instance = DemoPatchModel(id=9)
+    patched = DemoPatchModel.patch_by_uid("uid-9", _into=instance, label="patched")
 
-    assert str(exc_info.value) == (
-        "Failed to apply PATCH response to DemoPatchModel at field 'schema'. "
-        "Response fragment: {'schema': {'name': 'customers'}}. "
-        'Original error: "DemoPatchModel" object has no field "schema"'
-    )
+    # Tolerant reading (ADR 0032): a response key the model does not declare is
+    # dropped, exactly as parsing drops it.
+    assert patched is instance
+    assert patched.id == 9
+    assert "schema" not in DemoPatchModel.model_fields
+    assert "schema" not in patched.__dict__
     assert captured == {
         "r_type": "PATCH",
         "url": "https://backend.test/demo-patch/uid-9/",
@@ -1449,7 +1454,7 @@ def test_shareable_can_edit_parses_permission_state(monkeypatch):
     }
 
 
-def test_shareable_access_state_rejects_removed_internal_identity():
+def test_shareable_access_state_drops_removed_internal_identity():
     removed_field = "_".join(("object", "id"))
     payload = {
         "object_uid": "33333333-3333-4333-8333-333333333333",
@@ -1460,8 +1465,11 @@ def test_shareable_access_state_rejects_removed_internal_identity():
         removed_field: 17,
     }
 
-    with pytest.raises(ValidationError, match=removed_field):
-        models_user_mod.ShareableAccessState.model_validate(payload)
+    state = models_user_mod.ShareableAccessState.model_validate(payload)
+
+    # Tolerant reading (ADR 0032): the retired field is dropped, not declared.
+    assert removed_field not in models_user_mod.ShareableAccessState.model_fields
+    assert not hasattr(state, removed_field)
 
 
 @pytest.mark.parametrize(
@@ -1974,12 +1982,21 @@ def test_agent_client_contract_matches_backend_agent_serializer():
         {**payload, "agent_card": None},
         {**payload, "agent_card": {}},
         {**payload, "name": "Unrelated label"},
-        {**payload, "agent_type": "custom"},
-        {**payload, "metadata": {}},
-        {**payload, "has_agent_service": False},
     ):
         with pytest.raises(ValidationError):
             agent_models_mod.Agent.model_validate(invalid_payload)
+
+    # Tolerant reading (ADR 0032): retired keys are dropped, never declared.
+    for retired_field, retired_value in (
+        ("agent_type", "custom"),
+        ("metadata", {}),
+        ("has_agent_service", False),
+    ):
+        assert retired_field not in agent_models_mod.Agent.model_fields
+        assert not hasattr(
+            agent_models_mod.Agent.model_validate({**payload, retired_field: retired_value}),
+            retired_field,
+        )
 
     with pytest.raises(agent_models_mod.ApiError, match="harness_agent workflow"):
         agent_models_mod.Agent.create(name="Research Copilot")
@@ -2206,10 +2223,13 @@ def test_agent_get_parses_runtime_update_projection(monkeypatch):
         is None
     )
 
-    with pytest.raises(ValidationError, match="unexpected_projection"):
+    # Tolerant reading (ADR 0032): an undeclared projection is dropped.
+    assert not hasattr(
         agent_models_mod.Agent.model_validate(
-            {**FakeResponse.json(), "unexpected_projection": "still forbidden"}
-        )
+            {**FakeResponse.json(), "unexpected_projection": "ignored"}
+        ),
+        "unexpected_projection",
+    )
 
 
 def test_agent_semantic_search_sends_environment_scope_and_parses_code_repositoryion(monkeypatch):
@@ -2411,10 +2431,13 @@ def test_agent_session_list_and_detail_parse_runtime_capabilities(monkeypatch):
     assert detailed.organization_environment_name == "production"
     assert detailed.catalog_digest == "sha256:" + ("b" * 64)
 
-    with pytest.raises(ValidationError, match="unexpected_projection"):
+    # Tolerant reading (ADR 0032): an undeclared projection is dropped.
+    assert not hasattr(
         agent_models_mod.AgentSession.model_validate(
-            {**session_payload, "unexpected_projection": "still forbidden"}
-        )
+            {**session_payload, "unexpected_projection": "ignored"}
+        ),
+        "unexpected_projection",
+    )
 
 
 def test_agent_session_environment_and_catalog_projection_contract_is_strict():
@@ -3525,7 +3548,7 @@ def test_deployment_run_billing_parses_every_backend_pricing_state(pricing_state
     assert billing.components.image_build == billing.total_cost
 
 
-def test_deployment_run_billing_contract_is_complete_and_closed():
+def test_deployment_run_billing_contract_is_complete_and_read_tolerantly():
     payload = _deployment_run_billing_payload()
     for field_name in (
         "scope",
@@ -3542,15 +3565,20 @@ def test_deployment_run_billing_contract_is_complete_and_closed():
         with pytest.raises(ValidationError, match=field_name):
             models_helpers_mod.DeploymentRunBilling.model_validate(incomplete)
 
-    with pytest.raises(ValidationError, match="extra_forbidden"):
+    # Tolerant reading (ADR 0032): a billing field or component this release does
+    # not declare is dropped instead of failing the whole response.
+    assert not hasattr(
         models_helpers_mod.DeploymentRunBilling.model_validate(
             payload | {"future_billing_field": "value"}
-        )
-
-    with pytest.raises(ValidationError, match="extra_forbidden"):
+        ),
+        "future_billing_field",
+    )
+    assert not hasattr(
         models_helpers_mod.DeploymentRunBilling.model_validate(
             payload | {"components": payload["components"] | {"future_component": "0.000000"}}
-        )
+        ).components,
+        "future_component",
+    )
 
     with pytest.raises(ValidationError, match="greater_than_equal"):
         models_helpers_mod.DeploymentRunBilling.model_validate(payload | {"unpriced_rows": -1})
@@ -3618,7 +3646,7 @@ def test_deployment_run_cost_summary_parses_nullable_decimal(total_cost):
         ),
     ],
 )
-def test_deployment_run_additive_billing_contracts_are_complete_and_closed(
+def test_deployment_run_additive_billing_contracts_are_complete_and_read_tolerantly(
     model,
     payload,
     required_fields,
@@ -3629,8 +3657,11 @@ def test_deployment_run_additive_billing_contracts_are_complete_and_closed(
         with pytest.raises(ValidationError, match=field_name):
             model.model_validate(incomplete)
 
-    with pytest.raises(ValidationError, match="extra_forbidden"):
-        model.model_validate(payload | {"future_billing_field": "value"})
+    # Tolerant reading (ADR 0032): an undeclared billing field is dropped.
+    assert not hasattr(
+        model.model_validate(payload | {"future_billing_field": "value"}),
+        "future_billing_field",
+    )
 
 
 @pytest.mark.parametrize("field_name", ["priced_rows", "unpriced_rows"])

@@ -320,11 +320,12 @@ def test_agent_logs_support_optional_session_filter_without_environment_override
     )
 
 
-def test_owner_observability_models_remain_strict_except_enriched_rows():
-    assert observability_models.ObservabilityLinks.model_config["extra"] == "forbid"
-    assert observability_models.OwnerLogPage.model_config["extra"] == "forbid"
-    assert observability_models.EnvironmentLogSearchPage.model_config["extra"] == "forbid"
-    assert observability_models.ResourceUsagePage.model_config["extra"] == "forbid"
+def test_owner_observability_models_read_tolerantly_and_keep_enriched_rows():
+    # Tolerant reading (ADR 0032): pages drop undeclared fields, rows keep them.
+    assert observability_models.ObservabilityLinks.model_config["extra"] == "ignore"
+    assert observability_models.OwnerLogPage.model_config["extra"] == "ignore"
+    assert observability_models.EnvironmentLogSearchPage.model_config["extra"] == "ignore"
+    assert observability_models.ResourceUsagePage.model_config["extra"] == "ignore"
     assert observability_models.OwnerLogRow.model_config["extra"] == "allow"
     assert observability_models.EnvironmentLogSearchRow.model_config["extra"] == "allow"
 
