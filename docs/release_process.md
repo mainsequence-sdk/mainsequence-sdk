@@ -10,12 +10,12 @@ development release is decided.
 | --- | --- | --- |
 | `feat/*` | Work in progress. | Nothing. |
 | `development` | Where features land, by merge or by direct push. Nobody tags here. | `X.Y.Z.devN`, automatically, on every push. |
-| `main` | Receives `development` when a release is decided. `vX.Y.Z` is tagged here. | `X.Y.Z`, when the tag is pushed. |
+| `main` | Receives `development` when a release is decided, through a pull request. | `X.Y.Z`, automatically, when the pull request is merged. |
 
-**A release is a plain tag `vX.Y.Z` on `main`.** There is nothing else to it: no
-release branch, no manual upload step. The publish job refuses a tag whose
-commit is not contained in `main`, so a tag pushed from any other branch
-publishes nothing.
+**A merge to `main` is the release.** There is nothing else to it: no release
+branch, no manual upload step, and no tag to push. The release workflow
+publishes the version `pyproject.toml` declares, then creates the tag `vX.Y.Z`
+and the GitHub release itself. A tag pushed by hand publishes nothing.
 
 ## Development releases
 
@@ -50,15 +50,16 @@ pip install --pre mainsequence
 
 * **Base**: the version `pyproject.toml` declares on `development`, which is the
   release being worked toward. While it says `8.1.20`, development releases are
-  `8.1.20.devN` and the final release is the tag `v8.1.20`.
+  `8.1.20.devN` and the merge to `main` publishes `8.1.20`.
 * **Serial `N`**: the publishing workflow's run number. One push is one
   development release, however many commits that push carries.
 * **Guard**: PyPI is read only to refuse a declared version that is already
   released. The build then fails with "development must declare the next
   release" instead of publishing under a number the repository does not show.
 * **After a final release** the release workflow raises the patch number on
-  `development` by itself. A minor or major release is declared by hand, by
-  writing that version on `development`.
+  `development` by itself, so once `8.1.20` is released the next development
+  release is `8.1.21.devN` and there is no further `8.1.20.devN`. A minor or
+  major release is declared by hand, by writing that version on `development`.
 
 The logic lives in [`scripts/dev_release_version.py`][script] and is covered by
 `tests/test_dev_release_version.py`.
@@ -79,21 +80,33 @@ from PyPI anyway.
 
 ## Cutting a release
 
-1. Merge `development` into `main` with a **merge commit** (or a fast-forward).
-2. Tag the merge commit on `main` as `vX.Y.Z` and push the tag.
-3. Fast-forward `development` back to `main` so both branches start the next
-   cycle equal:
+Merge the pull request from `development` into `main` with a **merge commit**.
+That is the whole release. [`publish-to-pypi.yml`][release-workflow] then:
 
-   ```bash
-   git push origin origin/main:refs/heads/development
-   ```
+1. reads the version `pyproject.toml` declares and stops when PyPI already has
+   it ("A merge to main is a release and must carry the next version");
+2. stops when a tag `vX.Y.Z` already exists on another commit;
+3. builds and publishes `X.Y.Z` to PyPI;
+4. creates the tag `vX.Y.Z` and the GitHub release on the merge commit, after
+   the upload, so a tag always names code that is on PyPI;
+5. deploys the documentation site from the released commit;
+6. merges the release commit into `development`, raises the patch number there
+   and pushes both in one push.
+
+Do not push `main` back to `development` by hand. The workflow's push is made
+with the workflow token and starts no development release; a push by hand
+before the patch number is raised would publish one more `X.Y.Z.devN` of a
+version that is already final.
+
+`main` has no other way in: its ruleset accepts pull requests only. A pull
+request into `main` that does not raise the version, a hotfix for example,
+fails at step 1 and publishes nothing; raise the version in it.
 
 ### Never squash and never rebase a release merge
 
 Both create new commits, so `main` and `development` stop sharing history. Once
-that happens the next release conflicts with itself, and a tag made on one
-branch is not contained in the other — which the publish guard will (correctly)
-refuse.
+that happens the next release conflicts with itself, and the workflow can no
+longer merge the release commit back into `development`.
 
 ## Tests
 
@@ -125,7 +138,14 @@ lost:
 
   The `environment:` in a publishing workflow has to match its entry exactly, or
   PyPI rejects the OIDC token and the upload fails.
+* **The tag ruleset "release tags v\*: admins only" lists GitHub Actions as a
+  bypass actor.** The release workflow creates the tag with the workflow token.
+  Without the bypass the `tag` job fails after the upload: the release is on
+  PyPI, and the tag and the GitHub release are missing until the job is re-run.
+* **The `github-pages` environment accepts the branch `main`**, because the
+  documentation is deployed from the release run on `main`.
 * **Branch `development` exists and shares history with `main`.** After the
   one-time cleanup of September 2026 both branches point at the same commit.
 
 [script]: https://github.com/mainsequence-sdk/mainsequence-sdk/blob/main/scripts/dev_release_version.py
+[release-workflow]: https://github.com/mainsequence-sdk/mainsequence-sdk/blob/main/.github/workflows/publish-to-pypi.yml

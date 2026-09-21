@@ -1,21 +1,27 @@
 #publish-to-pypi.yml
 # This is a GitHub Actions workflow file that automates the process of
 # building and publishing your Python package to PyPI.
-# It is triggered automatically whenever you push a new git tag to your repository.
+# It is triggered automatically whenever `development` is merged into `main`.
 
 name: Publish Python Package to PyPI
 
 # This section defines the trigger for the workflow.
-# It runs on any push event that includes a new tag.
 #
-# A release is a plain tag vX.Y.Z on `main`. The job below refuses a tag whose
-# commit is not contained in `main`, so a tag made on any other branch publishes
+# A merge to `main` is the release. `main` only changes through a pull request,
+# so every push to it is a release merge: the job below publishes the version
+# pyproject.toml declares, tags it vX.Y.Z, and raises the patch number on
+# `development`. Nobody pushes a tag by hand, and a tag pushed by hand publishes
 # nothing. Development releases come from `publish-dev-to-pypi.yml` instead.
-# See docs/knowledge/release_process.md.
+# See docs/release_process.md.
 on:
   push:
-    tags:
-      - 'v*' # Trigger on tags that start with 'v', e.g., v2.0.1
+    branches:
+      - main
+
+# Two merges in a row release one after the other, never at the same time.
+concurrency:
+  group: publish-to-pypi
+  cancel-in-progress: false
 
 jobs:
   # The 'deploy' job contains all the steps for building and publishing.
@@ -23,6 +29,8 @@ jobs:
     # This job runs on the latest version of Ubuntu provided by GitHub.
     runs-on: ubuntu-latest
     environment: pypi
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     # This section is CRITICAL for trusted publishing.
     # It grants the necessary permission for the workflow to request an
     # OIDC token from GitHub, which PyPI will then verify.
@@ -32,63 +40,89 @@ jobs:
     # These are the individual steps the workflow will execute in order.
     steps:
       # Step 1: Check out the repository's code
-      # This downloads your source code into the runner environment.
-      # The full history is fetched so the next step can ask whether the tagged
-      # commit is contained in `main`.
+      # This downloads the merged commit into the runner environment.
       - name: Checkout repository
         uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
 
-      # Step 2: Refuse a tag that was not made on `main`
-      # A release tag on any other branch would otherwise publish a final
-      # version built from code that `main` never received.
-      - name: Verify the tag is on main
-        run: |
-          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
-          if ! git merge-base --is-ancestor "${GITHUB_SHA}" origin/main; then
-            echo "::error::Tag ${GITHUB_REF_NAME} points at ${GITHUB_SHA}, which is not contained in main. A release tag must be made on main; see docs/knowledge/release_process.md."
-            exit 1
-          fi
-          echo "Tag ${GITHUB_REF_NAME} is contained in main."
-
-      # Step 3: Set up a specific version of Python
+      # Step 2: Set up a specific version of Python
       # This ensures a consistent environment for building your package.
       - name: Set up Python
         uses: actions/setup-python@v7
         with:
           python-version: '3.13'
 
-      # The tag and pyproject.toml must name the same release. pyproject.toml is
-      # the only source of the version, so a tag that disagrees would publish
-      # a number nobody asked for, or fail at upload as a duplicate.
-      - name: Verify the tag matches the declared version
-        run: |
-          declared="$(python -c 'import tomllib, pathlib; print(tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]["version"])')"
-          if [ "v${declared}" != "${GITHUB_REF_NAME}" ]; then
-            echo "::error::Tag ${GITHUB_REF_NAME} does not match the version pyproject.toml declares (${declared})."
-            exit 1
-          fi
-
-      # Step 4: Install build dependencies
+      # Step 3: Install build dependencies
       # This step installs the 'build' package, which is the modern
       # standard for building Python packages.
       - name: Install dependencies
-        run: python -m pip install --upgrade build
+        run: python -m pip install --upgrade build packaging
 
-      # Step 5: Build the package
+      # pyproject.toml is the only source of the version. A merge that still
+      # declares a version PyPI has cannot be released, so it stops here instead
+      # of failing at upload as a duplicate.
+      - name: Read the version this merge releases
+        id: version
+        run: |
+          version="$(python scripts/dev_release_version.py --final)"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "Releasing ${version} from ${GITHUB_SHA}." >> "$GITHUB_STEP_SUMMARY"
+
+      # This repository's tag history contains tags that were never released. A
+      # tag vX.Y.Z on another commit would make the release tag name code that
+      # was not published, so it is refused before anything is built.
+      - name: Refuse a tag that already names another commit
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          tagged="$(git ls-remote --tags origin "refs/tags/v${VERSION}" "refs/tags/v${VERSION}^{}" | tail -n 1 | cut -f 1)"
+          if [ -n "${tagged}" ] && [ "${tagged}" != "${GITHUB_SHA}" ]; then
+            echo "::error::Tag v${VERSION} already exists and points at ${tagged}, not at the merge ${GITHUB_SHA}. Delete the tag or declare another version."
+            exit 1
+          fi
+
+      # Step 4: Build the package
       # This command creates the sdist (source distribution) and wheel
       # files in a 'dist/' directory.
       - name: Build package
         run: python -m build
 
-      # Step 6: Publish the package to PyPI
+      # Step 5: Publish the package to PyPI
       # This is the final step. It uses an official action from the Python
       # Packaging Authority (PyPA) to handle the upload. Because of the
       # 'permissions' key above, it will automatically handle the trusted
       # publishing authentication with PyPI.
       - name: Publish package to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+
+  # The tag and the GitHub release are made after the upload, so a tag vX.Y.Z
+  # always names code that is on PyPI. The ruleset "release tags v*" has to list
+  # GitHub Actions as a bypass actor; see docs/release_process.md.
+  tag:
+    needs: deploy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Tag the merge and create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: v${{ needs.deploy.outputs.version }}
+        run: |
+          if gh release view "${TAG}" > /dev/null 2>&1; then
+            echo "Release ${TAG} already exists; nothing to create."
+            exit 0
+          fi
+          gh release create "${TAG}" --target "${GITHUB_SHA}" --title "${TAG}" --generate-notes
+
+  # The documentation site is rebuilt from the released commit.
+  docs:
+    needs: deploy
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/docs.yml
 
   # pyproject.toml is the only source of the version. Once X.Y.Z is released,
   # `development` has to declare the next release, or its development builds
@@ -113,17 +147,23 @@ jobs:
       - name: Install the version tooling
         run: python -m pip install --upgrade packaging uv
 
-      - name: Raise the patch number when development still declares the released version
+      # `development` receives the release merge and the next version in one
+      # push made with the workflow token, which starts no development release.
+      # A push by hand in between would publish one more X.Y.Z.devN.
+      - name: Bring the release merge into development and raise the patch number
+        env:
+          RELEASED: ${{ needs.deploy.outputs.version }}
         run: |
-          declared="$(python -c 'import tomllib, pathlib; print(tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]["version"])')"
-          if [ "v${declared}" != "${GITHUB_REF_NAME}" ]; then
-            echo "development declares ${declared}, not the released ${GITHUB_REF_NAME#v}; nothing to raise."
-            exit 0
-          fi
-          next="$(python scripts/dev_release_version.py --bump-patch)"
-          uv lock
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -- pyproject.toml uv.lock
-          git commit -m "Declare ${next} as the next release after ${GITHUB_REF_NAME#v}"
+          git merge --no-edit "${GITHUB_SHA}"
+          declared="$(python -c 'import tomllib, pathlib; print(tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]["version"])')"
+          if [ "${declared}" != "${RELEASED}" ]; then
+            echo "development declares ${declared}, not the released ${RELEASED}; nothing to raise."
+          else
+            next="$(python scripts/dev_release_version.py --bump-patch)"
+            uv lock
+            git add -- pyproject.toml uv.lock
+            git commit -m "Declare ${next} as the next release after ${RELEASED}"
+          fi
           git push origin HEAD:development

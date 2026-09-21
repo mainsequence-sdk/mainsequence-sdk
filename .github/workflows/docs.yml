@@ -8,9 +8,10 @@ on:
         description: "Branch or tag to build"
         required: false
         default: main
-  push:
-    tags:
-      - 'v*'   # only run on version tags (e.g. v1.2.3)
+  # Called by publish-to-pypi.yml once a merge to `main` has been released. The
+  # release tag is made by that workflow with the workflow token, and a tag
+  # pushed that way starts no workflow, so a tag trigger here would never fire.
+  workflow_call:
 
 permissions:
   contents: read
@@ -23,8 +24,8 @@ concurrency:
 
 jobs:
   deploy-docs:
-    # extra safety so it never runs on non-tag refs
-    if: startsWith(github.ref, 'refs/tags/v')
+    # extra safety so it only runs for `main` (a release) or a version tag
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

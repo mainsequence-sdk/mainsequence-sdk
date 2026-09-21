@@ -4,7 +4,8 @@ The release standard (see `docs/release_process.md`) is:
 
 * `pyproject.toml` is the only source of the version. On `development` it
   declares the release being worked toward, `X.Y.Z`; development releases are
-  `X.Y.Z.devN` and the final release is the tag `vX.Y.Z` on `main`;
+  `X.Y.Z.devN` and the final release `X.Y.Z` is published when `development`
+  is merged into `main`;
 * the serial is the publishing workflow's run number, so one push produces one
   development release however many commits it holds;
 * PyPI is read only as a guard. A declared version that is already released
@@ -18,8 +19,10 @@ Used by `.github/workflows/publish-dev-to-pypi.yml`::
 
     python scripts/dev_release_version.py --run-number "$GITHUB_RUN_NUMBER" --write
 
-and by `.github/workflows/publish-to-pypi.yml` after a final release::
+and by `.github/workflows/publish-to-pypi.yml`, before a final release and
+after it::
 
+    python scripts/dev_release_version.py --final
     python scripts/dev_release_version.py --bump-patch
 
 """
@@ -118,6 +121,21 @@ def dev_version(declared: Version, latest: Version | None, run_number: int) -> s
     return f"{declared.major}.{declared.minor}.{declared.micro}.dev{run_number}"
 
 
+def final_version(declared: Version, latest: Version | None) -> str:
+    """Return the version a merge to `main` releases.
+
+    ``latest`` is the newest final release on PyPI, or ``None`` when there is
+    none. The declared release must be ahead of it: a merge to `main` is the
+    release, and PyPI accepts a version once.
+    """
+    if latest is not None and declared <= latest:
+        raise DevVersionError(
+            f"pyproject.toml declares {declared}, and {latest} is already released. "
+            "A merge to main is a release and must carry the next version."
+        )
+    return f"{declared.major}.{declared.minor}.{declared.micro}"
+
+
 def fetch_releases(url: str = PYPI_JSON_URL, timeout: float = 30.0) -> Mapping[str, Any]:
     """Fetch the package's release index from PyPI."""
     try:
@@ -164,6 +182,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Write the next patch version to pyproject.toml; run on development after a release.",
     )
+    parser.add_argument(
+        "--final",
+        action="store_true",
+        help="Print the version a merge to main releases; fails when PyPI already has it.",
+    )
     args = parser.parse_args(argv)
 
     pyproject_text = PYPROJECT.read_text(encoding="utf-8")
@@ -173,6 +196,14 @@ def main(argv: list[str] | None = None) -> int:
         bumped = next_patch(declared)
         PYPROJECT.write_text(apply_version(pyproject_text, bumped), encoding="utf-8")
         print(bumped)
+        return 0
+
+    if args.final:
+        latest = latest_final_version(fetch_releases())
+        version = final_version(declared, latest)
+        print(f"Declared in pyproject.toml:   {declared}", file=sys.stderr)
+        print(f"Newest final release on PyPI: {latest}", file=sys.stderr)
+        print(version)
         return 0
 
     if args.run_number is None:
