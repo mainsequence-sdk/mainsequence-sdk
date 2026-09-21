@@ -1,27 +1,58 @@
 version: 2
+
+# Dependabot reads this file from the default branch (`main`) only, which is why
+# it lives here rather than on `development`. The PRs it opens, however, target
+# `development`: that is the integration branch (pushes to it publish a dev
+# release), while `main` only moves through tagged releases.
 updates:
   - package-ecosystem: "uv"
     directory: "/"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "09:00"
-      timezone: "Etc/UTC"
-    open-pull-requests-limit: 10
-    versioning-strategy: "increase-if-necessary"
-    commit-message:
-      prefix: "deps"
-      prefix-development: "deps-dev"
-      include: "scope"
-
-  - package-ecosystem: "github-actions"
-    directory: "/"
+    target-branch: "development"
     schedule:
       interval: "weekly"
       day: "monday"
       time: "09:00"
       timezone: "Etc/UTC"
     open-pull-requests-limit: 5
+    versioning-strategy: "increase-if-necessary"
+    commit-message:
+      prefix: "deps"
+      prefix-development: "deps-dev"
+      include: "scope"
+    # Minor and patch bumps arrive as one PR per scope instead of one per
+    # package. Majors stay ungrouped on purpose -- those are the ones that
+    # actually need a human reading a changelog.
+    groups:
+      production-minor-and-patch:
+        applies-to: version-updates
+        dependency-type: "production"
+        update-types:
+          - "minor"
+          - "patch"
+      development-minor-and-patch:
+        applies-to: version-updates
+        dependency-type: "development"
+        update-types:
+          - "minor"
+          - "patch"
+      security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    target-branch: "development"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 3
     commit-message:
       prefix: "ci"
       include: "scope"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
