@@ -1904,35 +1904,18 @@ class MetaTable(
 
         cls = type(self)
         url = f"{cls.get_object_url().rstrip('/')}/{self._public_uid()}/run-query/"
-        if cls.ENDPOINT == "time-index-meta-tables":
-            session = cls.build_session()
-            old_content_type = session.headers.get("Content-Type")
-            session.headers["Content-Type"] = "text/plain"
-            try:
-                response = make_request(
-                    s=session,
-                    loaders=cls.LOADERS,
-                    r_type="POST",
-                    url=url,
-                    payload={"data": sql},
-                    time_out=timeout,
-                )
-            finally:
-                if old_content_type is None:
-                    session.headers.pop("Content-Type", None)
-                else:
-                    session.headers["Content-Type"] = old_content_type
-            error_payload = {"data": sql}
-        else:
-            response = make_request(
-                s=cls.build_session(),
-                loaders=cls.LOADERS,
-                r_type="POST",
-                url=url,
-                payload={"json": sql},
-                time_out=timeout,
-            )
-            error_payload = {"json": sql}
+        # The backend reads the request body as the raw SQL string and parses it with
+        # DRF's JSON parser, for every MetaTable endpoint. Sending a JSON string is the
+        # only transport it accepts; a text/plain body is rejected with HTTP 415.
+        payload = {"json": sql}
+        response = make_request(
+            s=cls.build_session(),
+            loaders=cls.LOADERS,
+            r_type="POST",
+            url=url,
+            payload=payload,
+            time_out=timeout,
+        )
 
         try:
             data = response.json()
@@ -1942,7 +1925,7 @@ class MetaTable(
         if isinstance(data, dict) and "ok" in data:
             return data
 
-        raise_for_response(response, payload=error_payload)
+        raise_for_response(response, payload=payload)
         return response.json()
 
     @classmethod
