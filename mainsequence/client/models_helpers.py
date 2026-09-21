@@ -5,7 +5,6 @@ import json
 import time
 from collections.abc import Collection
 from decimal import Decimal
-from enum import Enum
 from pathlib import PurePosixPath
 from typing import Any, ClassVar, Literal
 from uuid import UUID
@@ -41,6 +40,7 @@ from .observability import (
     PublicLogLevel,
 )
 from .utils import make_request
+from .value_sets import OpenStrEnum, OpenValueSet
 
 
 def get_model_class(model_class: str):
@@ -1156,27 +1156,34 @@ class CodeRepositoryResource(CurrentCodeRepositoryBranchCollectionMixin, BaseObj
         )
 
 
-class ResourceReleaseKind(str, Enum):
+class ResourceReleaseKind(OpenStrEnum):
+    """The backend's canonical release-kind vocabulary.
+
+    Open (ADR 0033): a kind a later backend adds is read as sent, rather than
+    failing the release that carries it and the listing that release is in.
+    """
+
     AGENT = "agent"
     FAST_API = "fastapi"
+    HARNESS_AGENT = "harness_agent"
     STATIC_SITE = "static_site"
 
 
 class ResourceReleaseRuntimeRouting(BasePydanticModel):
-    state: Literal["routable", "unavailable"]
+    state: OpenValueSet[Literal["routable", "unavailable"]]
     active_revision_uid: str | None = None
 
 
 class ResourceReleaseRuntimeNotice(BasePydanticModel):
     code: str
-    severity: Literal["info", "warning", "error"]
+    severity: OpenValueSet[Literal["info", "warning", "error"]]
     title: str
     message: str
 
 
 class ResourceReleaseRuntimeOperation(BasePydanticModel):
     uid: str
-    status: Literal["queued", "running", "succeeded", "failed", "superseded"]
+    status: OpenValueSet[Literal["queued", "running", "succeeded", "failed", "superseded"]]
     created_at: datetime.datetime
     started_at: datetime.datetime | None = None
     finished_at: datetime.datetime | None = None
@@ -1184,7 +1191,7 @@ class ResourceReleaseRuntimeOperation(BasePydanticModel):
 
 
 class ResourceReleaseRuntimeAdmission(BasePydanticModel):
-    state: Literal["ready", "waking", "unavailable"]
+    state: OpenValueSet[Literal["ready", "waking", "unavailable"]]
     can_request: bool
     notice: ResourceReleaseRuntimeNotice | None = None
     operation: ResourceReleaseRuntimeOperation | None = None
@@ -1198,24 +1205,28 @@ class ResourceReleaseRuntimeReplicas(BasePydanticModel):
 
 class ResourceReleaseRuntimeWake(BasePydanticModel):
     operation_uid: str
-    state: Literal[
-        "requested", "in_progress", "serving", "failed", "expired", "superseded"
+    state: OpenValueSet[
+        Literal[
+            "requested", "in_progress", "serving", "failed", "expired", "superseded"
+        ]
     ]
     requested_at: datetime.datetime
     deadline_at: datetime.datetime
 
 
 class ResourceReleaseRuntimePresence(BasePydanticModel):
-    phase: Literal[
-        "not_deployed",
-        "idle",
-        "observing",
-        "provisioning",
-        "pulling_image",
-        "starting",
-        "serving",
-        "redeploying",
-        "failed",
+    phase: OpenValueSet[
+        Literal[
+            "not_deployed",
+            "idle",
+            "observing",
+            "provisioning",
+            "pulling_image",
+            "starting",
+            "serving",
+            "redeploying",
+            "failed",
+        ]
     ]
     replicas: ResourceReleaseRuntimeReplicas
     detail: str
@@ -1225,7 +1236,9 @@ class ResourceReleaseRuntimePresence(BasePydanticModel):
 
 class ResourceReleaseRuntimeAccess(BasePydanticModel):
     resource_release_uid: str
-    release_kind: Literal["fastapi", "harness_agent"]
+    # The canonical vocabulary ResourceRelease.release_kind reads (#119): this
+    # payload names a release kind, so it names it the same way.
+    release_kind: ResourceReleaseKind
     routing: ResourceReleaseRuntimeRouting
     runtime_access: ResourceReleaseRuntimeAdmission
     runtime_presence: ResourceReleaseRuntimePresence
@@ -1512,11 +1525,14 @@ class ResourceRelease(
             normalized_release_kind = release_kind.value
         else:
             normalized_release_kind = Job._normalize_str(release_kind)
-            allowed_release_kinds = {kind.value for kind in ResourceReleaseKind}
-            if normalized_release_kind not in allowed_release_kinds:
-                raise ValueError(
-                    "release_kind must be one of: " + ", ".join(sorted(allowed_release_kinds)) + "."
-                )
+        # What the SDK sends stays closed (ADR 0033). ResourceReleaseKind reads an
+        # undeclared kind out of a response, but iterating it yields only the kinds
+        # this release declares, so a kind built here is still checked against them.
+        allowed_release_kinds = {kind.value for kind in ResourceReleaseKind}
+        if normalized_release_kind not in allowed_release_kinds:
+            raise ValueError(
+                "release_kind must be one of: " + ", ".join(sorted(allowed_release_kinds)) + "."
+            )
 
         normalized_compute = Job._validate_and_normalize_compute_fields(
             cpu_request=cpu_request,
@@ -1617,26 +1633,30 @@ class DeploymentRunStep(BaseModel):
     sequence: PositiveInt
     key: str
     name: str = ""
-    kind: Literal[
-        "source",
-        "image_build",
-        "validation",
-        "runtime_deploy",
-        "runtime_readiness",
-        "publish",
-        "cleanup",
-        "orchestration",
+    kind: OpenValueSet[
+        Literal[
+            "source",
+            "image_build",
+            "validation",
+            "runtime_deploy",
+            "runtime_readiness",
+            "publish",
+            "cleanup",
+            "orchestration",
+        ]
     ]
     required: bool = True
-    state: Literal[
-        "pending",
-        "running",
-        "succeeded",
-        "failed",
-        "cancelled",
-        "skipped",
-        "blocked",
-        "superseded",
+    state: OpenValueSet[
+        Literal[
+            "pending",
+            "running",
+            "succeeded",
+            "failed",
+            "cancelled",
+            "skipped",
+            "blocked",
+            "superseded",
+        ]
     ]
     outcome: str = ""
     artifact_context: dict[str, Any] = Field(default_factory=dict)
@@ -1658,12 +1678,14 @@ class DeploymentRunBillingComponents(BasePydanticModel):
     image_registry_service: Decimal | None = Field(max_digits=18, decimal_places=6)
 
 
-DeploymentRunPricingState = Literal[
-    "priced",
-    "partial",
-    "pending",
-    "unavailable",
-    "failed",
+DeploymentRunPricingState = OpenValueSet[
+    Literal[
+        "priced",
+        "partial",
+        "pending",
+        "unavailable",
+        "failed",
+    ]
 ]
 
 
@@ -1700,14 +1722,14 @@ class DeploymentRunLogEntry(BaseModel):
     timestamp: datetime.datetime | None = None
     step_uid: str | None = None
     source: str
-    stream: Literal["stdout", "stderr"]
-    level: Literal["debug", "info", "warning", "error"]
+    stream: OpenValueSet[Literal["stdout", "stderr"]]
+    level: OpenValueSet[Literal["debug", "info", "warning", "error"]]
     text: str = ""
 
 
 class DeploymentRunLogSource(BaseModel):
     source: str
-    state: Literal["pending", "available", "partial", "expired", "unavailable"]
+    state: OpenValueSet[Literal["pending", "available", "partial", "expired", "unavailable"]]
 
 
 class DeploymentRunLogPage(BaseModel):

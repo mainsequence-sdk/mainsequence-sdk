@@ -33,7 +33,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   recorded in `docs/adr/0032-tolerant-response-reading.md`. Because the same base
   class backs the models users fill in to send data, a misspelled keyword on those
   models is now dropped instead of raising; a model whose input must stay closed
-  declares `extra="forbid"` itself. Unknown enum and literal values still raise.
+  declares `extra="forbid"` itself.
+- Closed value sets are now read tolerantly too, completing the rule above: a response
+  enum or literal value this release does not declare is kept as the backend sent it
+  and reported once, instead of failing the row that carries it and the listing that
+  row is in. `ResourceReleaseKind` declares `harness_agent`, and
+  `ResourceReleaseRuntimeAccess.release_kind` reads that same enum, so a release and
+  its runtime access name a kind the same way. What the SDK sends stays closed: a
+  request parameter still rejects an undeclared value, and `ResourceRelease.create`
+  still refuses a release kind this release does not declare. The decision is recorded
+  in `docs/adr/0033-tolerant-value-set-reading.md`. Because an opened field now reads
+  as `str`, editors no longer complete its declared values at the field;
+  `mainsequence.client.value_sets.declared_values()` reads them back.
 - The final-release publish job now refuses a `v*` tag whose commit is not contained in
   `main`.
 - Tests that need a live backend and credentials carry a `live` marker and are deselected
