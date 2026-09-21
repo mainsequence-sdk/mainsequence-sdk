@@ -226,7 +226,9 @@ def test_set_start_of_execution_prefers_canonical_update_stats(monkeypatch):
                 "multi_index_column_stats": {},
                 "time_index_name": "time_index",
                 "index_names": ["time_index", "account_uid", "unique_identifier"],
-                "direct_dependency_uids": ["dependency-1", "dependency-2"],
+                # The key the backend actually sends (#135). Do not rename it to
+                # match the SDK: this payload is the contract the SDK reads.
+                "upstream_update_uids": ["dependency-1", "dependency-2"],
             }
 
     monkeypatch.setattr(models_metatables, "make_request", lambda **_kwargs: FakeResponse())
@@ -243,7 +245,7 @@ def test_set_start_of_execution_prefers_canonical_update_stats(monkeypatch):
     assert stats.max_time_index_value == _dt(3)
     assert stats.index_progress == {"account-a": {"asset-1": _dt(2)}}
     assert stats.index_min == {"account-a": {"asset-1": _dt(0)}}
-    assert table_update_run.direct_dependency_uids == ["dependency-1", "dependency-2"]
+    assert table_update_run.upstream_update_uids == ["dependency-1", "dependency-2"]
 
 
 def test_last_update_payload_model_accepts_top_level_and_nested_shapes():

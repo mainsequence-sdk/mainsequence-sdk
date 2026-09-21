@@ -2545,7 +2545,7 @@ class TimeIndexTableUpdate(TableUpdateNode, BaseObjectOrm):
                 index_min=index_min,
                 multi_index_column_stats=result.get("multi_index_column_stats"),
             ),
-            direct_dependency_uids=result.get("direct_dependency_uids"),
+            upstream_update_uids=result.get("upstream_update_uids"),
         )
         return table_update_run
 
@@ -4577,7 +4577,16 @@ class _TableUpdateRunFields:
     )
     # extra fields for local control
     update_statistics: BaseUpdateStatistics | None = None
-    direct_dependency_uids: list[str] | None = None
+    upstream_update_uids: list[str] | None = Field(
+        None,
+        description=(
+            "Uids of the update's direct upstream dependencies, as set-start-of-execution "
+            "reports them. The backend reads them off the update node's "
+            "`upstream_update_dependencies` edges, which the time-index table updater hard "
+            "cut renamed from `downstream_direct_dependencies`; this field carries that "
+            "canonical name rather than the pre-cut one."
+        ),
+    )
 
 
 class TableUpdateRun(_TableUpdateRunFields, BasePydanticModel, BaseObjectOrm):
