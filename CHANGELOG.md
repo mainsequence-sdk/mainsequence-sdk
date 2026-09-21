@@ -47,6 +47,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- `MetaTable.run_query()` sent the SQL as a `text/plain` body on the
+  `time-index-meta-tables` endpoint, which DRF rejects with HTTP 415, so every
+  `mainsequence time-index-table run_query` call failed. The endpoint-specific
+  Content-Type mutation is gone; every MetaTable endpoint now posts the SQL as a JSON
+  string, which is what the backend action parses.
+- The `run_query` CLI commands printed their failure prefix twice
+  (`Time-index table query failed: Time-index table query failed: ...`), because both
+  the api wrapper and the CLI wrapper added it. The CLI now prints the api layer's
+  message as-is.
 - Fixed test isolation so the suite runs offline and in any order: restored the
   `mainsequence` modules that the batch-jobs tests replace with stubs, and locked a Git
   CodeRepository context in the MetaTable client and time-index update tests, which

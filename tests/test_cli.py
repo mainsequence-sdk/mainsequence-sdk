@@ -8197,6 +8197,40 @@ def test_time_index_table_run_query(cli_mod, runner, monkeypatch):
     assert '"value": 1' in result.output
 
 
+def test_time_index_table_run_query_error_is_not_double_prefixed(cli_mod, runner, monkeypatch):
+    """The api layer already names the operation; the CLI must not prefix it again."""
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+
+    def _run_query(storage_uid, sql, *, timeout=None):
+        raise cli_mod.ApiError(
+            "Time-index table query failed: 415 POST "
+            "http://127.0.0.1:8000/api/v1/time-index-meta-tables/abc/run-query/: "
+            'Unsupported media type "text/plain" in request.'
+        )
+
+    monkeypatch.setattr(cli_mod, "run_time_index_table_query", _run_query)
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["time-index-table", "run_query", "abc", "SELECT 1 AS value"],
+    )
+    assert result.exit_code == 1
+    assert result.output.count("Time-index table query failed:") == 1
+
+
+def test_meta_table_run_query_error_is_not_double_prefixed(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+
+    def _run_query(meta_table_uid, sql, *, timeout=None):
+        raise cli_mod.ApiError("MetaTable query failed: boom")
+
+    monkeypatch.setattr(cli_mod, "run_meta_table_query", _run_query)
+
+    result = runner.invoke(cli_mod.app, ["meta-table", "run_query", "abc", "SELECT 1"])
+    assert result.exit_code == 1
+    assert result.output.count("MetaTable query failed:") == 1
+
+
 def test_meta_table_run_query(cli_mod, runner, monkeypatch):
     captured = {}
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})

@@ -803,7 +803,7 @@ def test_output_table_delete_after_date_accepts_index_coordinates(monkeypatch):
     }
 
 
-def test_output_table_run_query_posts_plain_text_sql(monkeypatch):
+def test_output_table_run_query_posts_json_sql(monkeypatch):
     from mainsequence.client import metatables as models_metatables
 
     captured = {}
@@ -858,10 +858,10 @@ def test_output_table_run_query_posts_plain_text_sql(monkeypatch):
     assert result["ok"] is True
     assert result["dynamic_table_id"] == 714
     assert captured == {
-        "headers": {"Content-Type": "text/plain"},
+        "headers": {"Content-Type": "application/json"},
         "r_type": "POST",
         "url": f"{models_metatables.TimeIndexMetaTable.get_object_url()}/714/run-query/",
-        "payload": {"data": "SELECT * FROM my_table LIMIT 100"},
+        "payload": {"json": "SELECT * FROM my_table LIMIT 100"},
         "timeout": 30,
     }
     assert session.headers == {"Content-Type": "application/json"}
