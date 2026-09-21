@@ -59,6 +59,17 @@ jobs:
         with:
           python-version: '3.13'
 
+      # The tag and pyproject.toml must name the same release. pyproject.toml is
+      # the only source of the version, so a tag that disagrees would publish
+      # a number nobody asked for, or fail at upload as a duplicate.
+      - name: Verify the tag matches the declared version
+        run: |
+          declared="$(python -c 'import tomllib, pathlib; print(tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]["version"])')"
+          if [ "v${declared}" != "${GITHUB_REF_NAME}" ]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} does not match the version pyproject.toml declares (${declared})."
+            exit 1
+          fi
+
       # Step 4: Install build dependencies
       # This step installs the 'build' package, which is the modern
       # standard for building Python packages.
@@ -78,3 +89,41 @@ jobs:
       # publishing authentication with PyPI.
       - name: Publish package to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+
+  # pyproject.toml is the only source of the version. Once X.Y.Z is released,
+  # `development` has to declare the next release, or its development builds
+  # would be refused as already released.
+  open-next-version:
+    needs: deploy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout development
+        uses: actions/checkout@v4
+        with:
+          ref: development
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install the version tooling
+        run: python -m pip install --upgrade packaging uv
+
+      - name: Raise the patch number when development still declares the released version
+        run: |
+          declared="$(python -c 'import tomllib, pathlib; print(tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]["version"])')"
+          if [ "v${declared}" != "${GITHUB_REF_NAME}" ]; then
+            echo "development declares ${declared}, not the released ${GITHUB_REF_NAME#v}; nothing to raise."
+            exit 0
+          fi
+          next="$(python scripts/dev_release_version.py --bump-patch)"
+          uv lock
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- pyproject.toml uv.lock
+          git commit -m "Declare ${next} as the next release after ${GITHUB_REF_NAME#v}"
+          git push origin HEAD:development
