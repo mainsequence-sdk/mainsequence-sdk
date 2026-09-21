@@ -21,6 +21,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   and every cross-skill `SKILL.md` reference must resolve. The page check is a pure
   URL-to-path transform, so it needs no network.
 
+### Removed
+
+- Removed `docs/CNAME`, which declared a `docs.main-sequence-sdk.main-sequence.io`
+  custom domain that was never set up: the domain does not resolve and GitHub Pages
+  has no custom domain configured. MkDocs was copying the file into every deployed
+  site. The documentation is served from GitHub Pages at
+  <https://mainsequence-sdk.github.io/mainsequence-sdk/>, which is the root the
+  shipped skills cite.
+
 ### Changed
 
 - Backend responses are now read tolerantly: `BasePydanticModel` ignores undeclared
