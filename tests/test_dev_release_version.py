@@ -66,25 +66,48 @@ def test_latest_final_requires_at_least_one_installable_release():
         dev_release_version.latest_final_version({"9.0.0": []})
 
 
-def test_dev_version_carries_the_next_patch_number():
-    assert dev_release_version.dev_version(Version("8.1.19"), 41) == "8.1.20.dev41"
+def test_dev_version_is_the_declared_version_with_a_dev_serial():
+    assert (
+        dev_release_version.dev_version(Version("8.1.20"), Version("8.1.19"), 41) == "8.1.20.dev41"
+    )
+
+
+def test_a_planned_minor_release_keeps_its_own_number():
+    assert dev_release_version.dev_version(Version("8.2.0"), Version("8.1.19"), 7) == "8.2.0.dev7"
+
+
+@pytest.mark.parametrize("declared", ["8.1.19", "8.1.18"])
+def test_a_declared_version_that_is_already_released_is_refused(declared):
+    # The repository once declared 8.1.19 while it published 8.1.20.devN, so no
+    # final 8.1.20 could be built from it. A missing bump now stops the build.
+    with pytest.raises(dev_release_version.DevVersionError, match="already released"):
+        dev_release_version.dev_version(Version(declared), Version("8.1.19"), 41)
 
 
 def test_dev_version_sorts_between_the_current_and_the_next_release():
-    computed = Version(dev_release_version.dev_version(Version("8.1.19"), 41))
+    computed = Version(dev_release_version.dev_version(Version("8.1.20"), Version("8.1.19"), 41))
 
     assert Version("8.1.19") < computed < Version("8.1.20")
 
 
 def test_dev_version_is_a_development_release_so_pip_skips_it_by_default():
-    computed = Version(dev_release_version.dev_version(Version("8.1.19"), 41))
+    computed = Version(dev_release_version.dev_version(Version("8.1.20"), Version("8.1.19"), 41))
 
     assert computed.is_devrelease
 
 
 def test_dev_version_rejects_a_negative_run_number():
     with pytest.raises(dev_release_version.DevVersionError):
-        dev_release_version.dev_version(Version("8.1.19"), -1)
+        dev_release_version.dev_version(Version("8.1.20"), Version("8.1.19"), -1)
+
+
+def test_the_version_after_a_release_is_the_next_patch():
+    assert dev_release_version.next_patch(Version("8.1.20")) == "8.1.21"
+
+
+def test_a_declared_development_version_is_refused():
+    with pytest.raises(dev_release_version.DevVersionError):
+        dev_release_version.declared_release("8.1.20.dev41")
 
 
 def test_apply_version_rewrites_only_the_project_version():

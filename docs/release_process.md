@@ -46,20 +46,25 @@ pip install --pre mainsequence
 
 ### How the version is computed
 
-Nothing is edited or tagged by hand.
+`pyproject.toml` is the only source of the version.
 
-* **Base** — the newest final release on PyPI, with its patch number raised by
-  one. If PyPI's newest final release is `8.1.19`, the base is `8.1.20`.
-* **Serial `N`** — the publishing workflow's run number. One push is one
+* **Base**: the version `pyproject.toml` declares on `development`, which is the
+  release being worked toward. While it says `8.1.20`, development releases are
+  `8.1.20.devN` and the final release is the tag `v8.1.20`.
+* **Serial `N`**: the publishing workflow's run number. One push is one
   development release, however many commits that push carries.
+* **Guard**: PyPI is read only to refuse a declared version that is already
+  released. The build then fails with "development must declare the next
+  release" instead of publishing under a number the repository does not show.
+* **After a final release** the release workflow raises the patch number on
+  `development` by itself. A minor or major release is declared by hand, by
+  writing that version on `development`.
 
 The logic lives in [`scripts/dev_release_version.py`][script] and is covered by
 `tests/test_dev_release_version.py`.
 
-Git tags are deliberately **not** used as the base. This repository's tag
-history contains tags that do not correspond to anything that was released — for
-example a `v9.0.0` tag that exists while PyPI's newest final release is `8.1.19`
-— so PyPI is the only trustworthy record of what the newest final release is.
+Git tags are not used: this repository's tag history contains tags that do not
+correspond to anything that was released, for example a `v9.0.0` tag.
 For the same reason, a version declared in `pyproject.toml` that is ahead of the
 computed base does not change the result; the workflow log notes it and counts
 from PyPI anyway.

@@ -1,19 +1,26 @@
 """Compute and apply the PEP 440 development version for a `development` build.
 
-The release standard (see `docs/knowledge/release_process.md`) is:
+The release standard (see `docs/release_process.md`) is:
 
-* the base is the newest **final** release on PyPI with its patch number raised
-  by one, so the development release carries the number of the *next* release;
+* `pyproject.toml` is the only source of the version. On `development` it
+  declares the release being worked toward, `X.Y.Z`; development releases are
+  `X.Y.Z.devN` and the final release is the tag `vX.Y.Z` on `main`;
 * the serial is the publishing workflow's run number, so one push produces one
-  development release however many commits it holds.
+  development release however many commits it holds;
+* PyPI is read only as a guard. A declared version that is already released
+  means the bump that follows every release is missing, and the build stops
+  instead of publishing under a number the repository does not show.
 
-Git tags are deliberately not consulted: this repository's tag history contains
-tags that were never released, so PyPI is the only trustworthy record of what
-the newest final release actually is.
+Git tags are not consulted: this repository's tag history contains tags that
+were never released.
 
 Used by `.github/workflows/publish-dev-to-pypi.yml`::
 
     python scripts/dev_release_version.py --run-number "$GITHUB_RUN_NUMBER" --write
+
+and by `.github/workflows/publish-to-pypi.yml` after a final release::
+
+    python scripts/dev_release_version.py --bump-patch
 
 """
 
@@ -75,16 +82,40 @@ def latest_final_version(releases: Mapping[str, Any]) -> Version:
     return finals[-1]
 
 
-def next_patch_base(latest: Version) -> str:
-    """Return the version a development release counts towards."""
-    return f"{latest.major}.{latest.minor}.{latest.micro + 1}"
+def next_patch(version: Version) -> str:
+    """Return the version `development` declares once ``version`` is released."""
+    return f"{version.major}.{version.minor}.{version.micro + 1}"
 
 
-def dev_version(latest: Version, run_number: int) -> str:
-    """Return the PEP 440 development version for ``run_number``."""
+def declared_release(declared: str | None) -> Version:
+    """Return the final ``X.Y.Z`` release that ``pyproject.toml`` declares."""
+    if declared is None:
+        raise DevVersionError("pyproject.toml declares no project version.")
+    try:
+        version = Version(declared)
+    except InvalidVersion as exc:
+        raise DevVersionError(f"pyproject.toml declares an invalid version {declared!r}.") from exc
+    if version.is_devrelease or version.is_prerelease or version.is_postrelease:
+        raise DevVersionError(
+            f"pyproject.toml must declare a final X.Y.Z version, found {declared!r}."
+        )
+    return version
+
+
+def dev_version(declared: Version, latest: Version | None, run_number: int) -> str:
+    """Return the PEP 440 development version of the declared release.
+
+    ``latest`` is the newest final release on PyPI, or ``None`` when there is
+    none. The declared release must be ahead of it.
+    """
     if run_number < 0:
         raise DevVersionError(f"Run number must not be negative, got {run_number}.")
-    return f"{next_patch_base(latest)}.dev{run_number}"
+    if latest is not None and declared <= latest:
+        raise DevVersionError(
+            f"pyproject.toml declares {declared}, and {latest} is already released. "
+            "development must declare the next release."
+        )
+    return f"{declared.major}.{declared.minor}.{declared.micro}.dev{run_number}"
 
 
 def fetch_releases(url: str = PYPI_JSON_URL, timeout: float = 30.0) -> Mapping[str, Any]:
@@ -121,7 +152,6 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--run-number",
         type=int,
-        required=True,
         help="Serial for this development release; the publishing workflow's run number.",
     )
     parser.add_argument(
@@ -129,32 +159,30 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Rewrite pyproject.toml's project version in place with the computed version.",
     )
+    parser.add_argument(
+        "--bump-patch",
+        action="store_true",
+        help="Write the next patch version to pyproject.toml; run on development after a release.",
+    )
     args = parser.parse_args(argv)
 
-    latest = latest_final_version(fetch_releases())
-    version = dev_version(latest, args.run_number)
-
     pyproject_text = PYPROJECT.read_text(encoding="utf-8")
-    declared = read_declared_version(pyproject_text)
+    declared = declared_release(read_declared_version(pyproject_text))
 
+    if args.bump_patch:
+        bumped = next_patch(declared)
+        PYPROJECT.write_text(apply_version(pyproject_text, bumped), encoding="utf-8")
+        print(bumped)
+        return 0
+
+    if args.run_number is None:
+        raise DevVersionError("--run-number is required.")
+    latest = latest_final_version(fetch_releases())
+    version = dev_version(declared, latest, args.run_number)
+
+    print(f"Declared in pyproject.toml:   {declared}", file=sys.stderr)
     print(f"Newest final release on PyPI: {latest}", file=sys.stderr)
     print(f"Development version:          {version}", file=sys.stderr)
-    if declared is not None:
-        print(f"Declared in pyproject.toml:   {declared}", file=sys.stderr)
-        try:
-            if Version(declared) > Version(next_patch_base(latest)):
-                # Not an error: the standard bases the number on PyPI precisely
-                # because pyproject.toml and the tag history cannot be trusted.
-                # Worth saying out loud, though, since the development release
-                # will then sort below the release being prepared.
-                print(
-                    f"Note: pyproject.toml declares {declared}, which is ahead of the computed "
-                    f"base {next_patch_base(latest)}. The development release still counts from "
-                    "PyPI, as the release standard requires.",
-                    file=sys.stderr,
-                )
-        except InvalidVersion:
-            pass
 
     if args.write:
         PYPROJECT.write_text(apply_version(pyproject_text, version), encoding="utf-8")
