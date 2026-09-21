@@ -6,7 +6,6 @@ import json
 import pathlib
 import time
 import uuid
-from enum import Enum
 from typing import Any, ClassVar, Literal
 
 import requests
@@ -31,6 +30,7 @@ from .observability import (
     PublicLogLevel,
 )
 from .utils import make_request, serialize_to_json
+from .value_sets import OpenStrEnum, OpenValueSet
 
 DEFAULT_AGENT_SESSION_LONG_REQUEST_TIMEOUT = (5.0, 900.0)
 DEFAULT_AGENT_RUNTIME_ACCESS_CACHE_TTL_SECONDS = 60.0
@@ -50,7 +50,7 @@ MIN_RUNTIME_INTERACTION_RETRY_SECONDS = 0.5
 MAX_RUNTIME_INTERACTION_RETRY_SECONDS = 30.0
 
 
-class AgentSessionStatus(str, Enum):
+class AgentSessionStatus(OpenStrEnum):
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
@@ -58,7 +58,7 @@ class AgentSessionStatus(str, Enum):
     CANCELED = "canceled"
 
 
-class A2AResponseKind(str, Enum):
+class A2AResponseKind(OpenStrEnum):
     MESSAGE = "message"
     TASK = "task"
 
@@ -121,12 +121,12 @@ class A2AMessageSendResult(BasePydanticModel):
         return A2AResponseKind.TASK if self.task is not None else A2AResponseKind.MESSAGE
 
 
-class AgentHarnessKind(str, Enum):
+class AgentHarnessKind(OpenStrEnum):
     PI = "pi"
     TAU = "tau"
 
 
-class AgentHarnessProtocol(str, Enum):
+class AgentHarnessProtocol(OpenStrEnum):
     PI_CHECKPOINT_V1 = "pi-checkpoint-v1"
     TAU_SESSION_V1 = "tau-session-v1"
 
@@ -136,13 +136,15 @@ class AgentRuntimeUpdateRemediation(BasePydanticModel):
 
 
 class AgentRuntimeUpdate(BasePydanticModel):
-    state: Literal[
-        "current",
-        "update_required",
-        "updating",
-        "update_failed",
-        "not_deployed",
-        "unknown",
+    state: OpenValueSet[
+        Literal[
+            "current",
+            "update_required",
+            "updating",
+            "update_failed",
+            "not_deployed",
+            "unknown",
+        ]
     ]
     needs_redeploy: bool | None
     remediation: AgentRuntimeUpdateRemediation | None
@@ -279,7 +281,7 @@ class AgentRuntimeInteractionNotice(BasePydanticModel):
 class AgentRuntimeInteractionAction(BasePydanticModel):
     model_config = ConfigDict(extra="allow")
 
-    type: Literal["update_agent_runtime", "retry_runtime_wake"]
+    type: OpenValueSet[Literal["update_agent_runtime", "retry_runtime_wake"]]
     label: str
     confirmation_message: str
     interaction_revision: str
@@ -299,16 +301,18 @@ class AgentRuntimeInteractionOperation(BasePydanticModel):
 class AgentRuntimeInteraction(BasePydanticModel):
     model_config = ConfigDict(extra="allow")
 
-    state: Literal[
-        "ready",
-        "warning",
-        "checking",
-        "starting",
-        "waking",
-        "update_required",
-        "updating",
-        "update_failed",
-        "unavailable",
+    state: OpenValueSet[
+        Literal[
+            "ready",
+            "warning",
+            "checking",
+            "starting",
+            "waking",
+            "update_required",
+            "updating",
+            "update_failed",
+            "unavailable",
+        ]
     ]
     can_submit: bool
     notice: AgentRuntimeInteractionNotice | None
@@ -324,29 +328,33 @@ class AgentRuntimePresenceReplicas(BasePydanticModel):
 
 class AgentRuntimePresenceWake(BasePydanticModel):
     operation_uid: str
-    state: Literal[
-        "requested",
-        "in_progress",
-        "serving",
-        "failed",
-        "expired",
-        "superseded",
+    state: OpenValueSet[
+        Literal[
+            "requested",
+            "in_progress",
+            "serving",
+            "failed",
+            "expired",
+            "superseded",
+        ]
     ]
     requested_at: str
     deadline_at: str
 
 
 class AgentRuntimePresence(BasePydanticModel):
-    phase: Literal[
-        "not_deployed",
-        "observing",
-        "idle",
-        "provisioning",
-        "pulling_image",
-        "starting",
-        "serving",
-        "redeploying",
-        "failed",
+    phase: OpenValueSet[
+        Literal[
+            "not_deployed",
+            "observing",
+            "idle",
+            "provisioning",
+            "pulling_image",
+            "starting",
+            "serving",
+            "redeploying",
+            "failed",
+        ]
     ]
     replicas: AgentRuntimePresenceReplicas
     detail: str
@@ -361,7 +369,7 @@ class AgentSessionRuntimeAccess(BasePydanticModel):
         None,
         description="Canonical public UID of the coding-agent service that owns the runtime.",
     )
-    mode: Literal["token", "unavailable"] = Field(
+    mode: OpenValueSet[Literal["token", "unavailable"]] = Field(
         "token",
         description="Runtime access mode returned by the backend.",
     )
@@ -862,7 +870,7 @@ class TauAgentSessionInsightsSession(BasePydanticModel):
     agent_session_id: str = Field(..., alias="agentSessionId")
     session_id: str | None = Field(None, alias="sessionId")
     thread_id: str | None = Field(None, alias="threadId")
-    status: Literal["running", "completed", "error"]
+    status: OpenValueSet[Literal["running", "completed", "error"]]
     started_at: datetime.datetime | None = Field(None, alias="startedAt")
     updated_at: datetime.datetime | None = Field(None, alias="updatedAt")
     last_error: str | None = Field(None, alias="lastError")

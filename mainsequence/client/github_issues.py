@@ -11,11 +11,16 @@ from . import utils as client_utils
 from .base import BasePydanticModel
 from .exceptions import raise_for_response
 from .utils import make_request
+from .value_sets import OpenValueSet
 
 GitHubIssueState = Literal["open", "closed"]
 GitHubIssueStateReason = Literal["completed", "not_planned", "reopened"]
-GitHubIssueOperationType = Literal["create_issue", "update_issue", "create_comment"]
-GitHubIssueOperationStatus = Literal["pending", "succeeded", "failed", "unknown"]
+GitHubIssueOperationType = OpenValueSet[
+    Literal["create_issue", "update_issue", "create_comment"]
+]
+GitHubIssueOperationStatus = OpenValueSet[
+    Literal["pending", "succeeded", "failed", "unknown"]
+]
 
 _IDEMPOTENCY_KEY_PATTERN = re.compile(r"^[A-Za-z0-9._:-]+$")
 
@@ -115,7 +120,7 @@ class _GitHubIssueProjection(BasePydanticModel):
     issue_number: int
     html_url: str
     title: str
-    state: GitHubIssueState
+    state: OpenValueSet[GitHubIssueState]
     state_reason: str | None
     created_at: datetime.datetime
     updated_at: datetime.datetime

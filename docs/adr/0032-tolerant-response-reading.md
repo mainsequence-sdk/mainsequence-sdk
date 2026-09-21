@@ -2,8 +2,9 @@
 
 Date: 2026-09-21
 
-Status: Accepted and implemented for undeclared fields; closed value sets
-(`Enum` and `Literal` members) stay strict and are tracked separately
+Status: Accepted and implemented for undeclared fields. Closed value sets
+(`Enum` and `Literal` members) were left strict here and are decided by
+[ADR 0033](0033-tolerant-value-set-reading.md)
 
 Issue: `mainsequence-sdk` #120, stable fingerprint
 `mainsequence-sdk|response-parsing|strict-reader-breaks-on-compatible-backend-change`
@@ -43,6 +44,9 @@ The SDK reads backend responses tolerantly.
    unknown discriminators, still raise. That is the other half of #120 and is
    tracked by #119; this ADR does not decide it.
 
+   Superseded by [ADR 0033](0033-tolerant-value-set-reading.md), which opens the
+   response vocabularies and closes #119.
+
 ## Consequences
 
 - A backend release that adds a response field no longer breaks installed SDKs.
@@ -60,7 +64,7 @@ The SDK reads backend responses tolerantly.
   ignored. Tests that guarded a retired field now assert that the model does not
   declare it and that a payload carrying it parses without the attribute.
 - A listing still fails as a whole on an unknown enum or literal value, which is
-  #119.
+  #119. ADR 0033 lifts this.
 
 ## Alternatives considered
 

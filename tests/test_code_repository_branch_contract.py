@@ -9,6 +9,7 @@ from pydantic import ValidationError
 from mainsequence.cli import cli as cli_mod
 from mainsequence.client import base as base_mod
 from mainsequence.client import models_foundry
+from mainsequence.client.value_sets import declared_values
 
 CODE_REPOSITORY_UID = "11111111-1111-4111-8111-111111111111"
 CODE_REPOSITORY_BRANCH_UID = "81111111-1111-4111-8111-111111111111"
@@ -193,12 +194,22 @@ def test_code_repository_branch_requires_canonical_provisioning_projection(field
         models_foundry.CodeRepositoryBranch.model_validate(payload)
 
 
-def test_code_repository_branch_rejects_unknown_provisioning_state():
+def test_code_repository_branch_keeps_undeclared_provisioning_state():
+    """ADR 0033: a provisioning state this release does not declare is read as sent.
+
+    The declared vocabulary is still the one this release knows; a backend that
+    adds a state no longer fails the branch that carries it.
+    """
+    assert declared_values(
+        models_foundry.CodeRepositoryBranch.model_fields["provisioning_status"]
+    ) == ("CREATING", "READY", "FAILED")
+
     payload = code_repository_branch_payload()
     payload["provisioning_status"] = "PENDING"
 
-    with pytest.raises(ValidationError, match="provisioning_status"):
-        models_foundry.CodeRepositoryBranch.model_validate(payload)
+    branch = models_foundry.CodeRepositoryBranch.model_validate(payload)
+
+    assert branch.provisioning_status == "PENDING"
 
 
 def test_code_repository_branch_list_and_detail_parse_provisioning_projection(
