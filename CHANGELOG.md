@@ -22,6 +22,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   `main`.
 - Tests that need a live backend and credentials carry a `live` marker and are deselected
   by default. `pytest` runs offline; `pytest -m live` runs the live tests.
+- `description_search(...)` moved from `MetaTable` to `TimeIndexMetaTable`. The backend
+  serves `description-search/` only for `time-index-meta-tables`, so the method now lives
+  on the only class whose URL it resolves to.
+
+### Removed
+
+- Removed `TimeIndexTableUpdate.verify_if_direct_dependencies_are_updated()`. The route
+  was dropped with the time-index table updater hard cut; `set_start_of_execution()`
+  already returns `direct_dependency_uids` in its response.
+- Removed `GitHubRepositoryBinding.import_branch()` and `GitHubRepositoryBranchImportResult`.
+  The backend no longer serves `import-branch/`.
 
 ### Fixed
 
