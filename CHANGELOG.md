@@ -69,6 +69,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- `set_start_of_execution()` read `direct_dependency_uids` from the
+  `set-start-of-execution/` response, a key the backend does not send: the time-index
+  table updater hard cut renamed that relation from `downstream_direct_dependencies` to
+  `upstream_update_dependencies`, and the response carries its uids as
+  `upstream_update_uids`. `TableUpdateRun` was therefore reporting `None` for every
+  update while the uids the backend sent were dropped. The field is renamed to
+  `TableUpdateRun.upstream_update_uids`, matching the vocabulary the rest of the SDK
+  already uses, and reads the key the backend sends.
+
 - Fixed four response fields the backend documents as nullable but the SDK typed as
   plain `str`, so a row carrying `null` raised `ValidationError` and failed the whole
   listing page: `Job.related_image_uid`, `JobRun.runtime_image_uid`,
