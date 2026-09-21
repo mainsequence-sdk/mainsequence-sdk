@@ -23,6 +23,14 @@ STREAMLIT_REMOVAL_LINK_PATHS = {
     Path("docs/SUMMARY.md"),
     Path("docs/index.md"),
 }
+SKILL_ROOT = REPOSITORY_ROOT / "agent_scaffold" / "skills"
+# Skills ship inside the wheel but reference repository documentation by its
+# repository-relative path, so every referenced path must exist in the tree that
+# produced the release.
+SKILL_DOCUMENTATION_REFERENCE = re.compile(r"`(docs/[A-Za-z0-9_./-]+\.md)`")
+# Skills are copied into a CodeRepository under `.agents/skills/<namespace>/`, so
+# a cross-skill reference maps back to a shipped `agent_scaffold/skills` path.
+SKILL_CROSS_REFERENCE = re.compile(r"`\.agents/skills/[A-Za-z0-9_]+/([A-Za-z0-9_./-]+/SKILL\.md)`")
 RETIRED_PUBLIC_IDENTIFIERS = {
     "project_context": re.compile(r"(?<![A-Za-z0-9_])project_context(?![A-Za-z0-9_])"),
     "project-context": re.compile(r"(?<![A-Za-z0-9_])project-context(?![A-Za-z0-9_])"),
@@ -44,6 +52,10 @@ RETIRED_PUBLIC_IDENTIFIERS = {
     "project-code": re.compile(r"\bproject-code\b"),
     "project-facing": re.compile(r"\bproject-facing\b"),
 }
+
+
+def _skill_files() -> tuple[Path, ...]:
+    return tuple(sorted(SKILL_ROOT.rglob("SKILL.md")))
 
 
 def _documentation_files() -> tuple[Path, ...]:
@@ -74,10 +86,7 @@ def test_current_documentation_excludes_retired_project_identifiers(path: Path) 
 
 def test_code_repository_context_adr_describes_the_current_cutover() -> None:
     adr = (
-        REPOSITORY_ROOT
-        / "docs"
-        / "adr"
-        / "0031-process-lifetime-code-repository-branch-context.md"
+        REPOSITORY_ROOT / "docs" / "adr" / "0031-process-lifetime-code-repository-branch-context.md"
     ).read_text(encoding="utf-8")
 
     assert "get_code_repository_context()" in adr
@@ -121,3 +130,43 @@ def test_current_documentation_does_not_advertise_streamlit_support(path: Path) 
     assert "streamlit" not in text.lower()
     assert "create_dashboard" not in text
     assert "delete_dashboard" not in text
+
+
+@pytest.mark.parametrize(
+    "path",
+    _skill_files(),
+    ids=lambda path: str(path.relative_to(REPOSITORY_ROOT)),
+)
+def test_skill_documentation_references_resolve(path: Path) -> None:
+    relative_path = path.relative_to(REPOSITORY_ROOT)
+    text = path.read_text(encoding="utf-8")
+
+    missing = sorted(
+        {
+            reference
+            for reference in SKILL_DOCUMENTATION_REFERENCE.findall(text)
+            if not (REPOSITORY_ROOT / reference).is_file()
+        }
+    )
+
+    assert not missing, f"{relative_path} references documentation that does not exist: {missing}"
+
+
+@pytest.mark.parametrize(
+    "path",
+    _skill_files(),
+    ids=lambda path: str(path.relative_to(REPOSITORY_ROOT)),
+)
+def test_skill_cross_references_resolve(path: Path) -> None:
+    relative_path = path.relative_to(REPOSITORY_ROOT)
+    text = path.read_text(encoding="utf-8")
+
+    missing = sorted(
+        {
+            reference
+            for reference in SKILL_CROSS_REFERENCE.findall(text)
+            if not (SKILL_ROOT / reference).is_file()
+        }
+    )
+
+    assert not missing, f"{relative_path} references skills that are not shipped: {missing}"

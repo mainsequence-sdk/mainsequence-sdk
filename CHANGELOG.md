@@ -15,6 +15,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Added a `Tests` workflow that runs the suite on pull requests and pushes. The
   development publish job calls the same workflow, so a development release cannot be
   published while the suite is failing.
+- Added a documentation-link check over the shipped skills: every `docs/...` page and
+  every cross-skill `SKILL.md` a skill names must exist in the repository that produced
+  the release.
 
 ### Changed
 
@@ -29,6 +32,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   `mainsequence` modules that the batch-jobs tests replace with stubs, and locked a Git
   CodeRepository context in the MetaTable client and time-index update tests, which
   otherwise reached the production backend.
+- Fixed the shipped skills' mandatory reading lists, which still required the removed
+  SDK-local `docs/tutorial/` pages. The MetaTable, MetaTable migration, and access
+  control skills now read the authoritative knowledge pages and link the separate
+  canonical tutorial CodeRepository for the runnable walkthrough; the MetaTable
+  migrations knowledge page carries that repository link too.
 
 ## [8.1.19] - 2026-09-19
 

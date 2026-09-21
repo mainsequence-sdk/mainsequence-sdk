@@ -49,15 +49,19 @@ If the user is still in the discovery process and does not yet know what data ex
 
 ## Read First
 
-1. `docs/tutorial/working_with_meta_tables.md`
-2. For migration work, use
+1. `docs/knowledge/meta_tables/index.md`
+2. `docs/knowledge/meta_tables/sqlalchemy.md`
+3. `docs/knowledge/meta_tables/compiled_sql.md`
+4. `docs/knowledge/meta_tables/migrations.md`
+5. `docs/knowledge/meta_tables/api.md`
+6. For migration work, use
    `.agents/skills/mainsequence/data_publishing/meta_table_migrations/SKILL.md`
-   and `docs/tutorial/metatable_migrations.md`
-3. `docs/knowledge/meta_tables/index.md`
-4. `docs/knowledge/meta_tables/sqlalchemy.md`
-5. `docs/knowledge/meta_tables/compiled_sql.md`
-6. `docs/knowledge/meta_tables/migrations.md`
-7. `docs/knowledge/meta_tables/api.md`
+
+The knowledge pages above are the authoritative SDK reference for MetaTables.
+The runnable beginner walkthrough is maintained in the separate canonical
+tutorial CodeRepository at
+<https://github.com/mainsequence-projects/mainsequence-sdk-tutorial>; read it
+only when a runnable end-to-end example is needed.
 
 ## Inputs This Skill Needs
 
@@ -310,7 +314,7 @@ asset_meta_table = MetaTable.register(asset_request)
 
 When doing migration work, use
 `.agents/skills/mainsequence/data_publishing/meta_table_migrations/SKILL.md`
-and read `docs/tutorial/metatable_migrations.md`. The migration skill owns the
+and read `docs/knowledge/meta_tables/migrations.md`. The migration skill owns the
 provider-based Alembic lifecycle.
 
 Do not apply in-place contract changes by changing a `PlatformManagedMetaTable`

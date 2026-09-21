@@ -17,11 +17,16 @@ platform-managed application tables outside the migration workflow.
 
 ## Read First
 
-1. `docs/tutorial/metatable_migrations.md`
-2. `docs/knowledge/meta_tables/migrations.md`
-3. `docs/knowledge/meta_tables/api.md`
-4. `docs/adr/0020-metatable-migration-artifact-registry.md`
-5. `docs/adr/0026-sdk-owned-migration-scaffolding.md`
+1. `docs/knowledge/meta_tables/migrations.md`
+2. `docs/knowledge/meta_tables/api.md`
+3. `docs/adr/0020-metatable-migration-artifact-registry.md`
+4. `docs/adr/0026-sdk-owned-migration-scaffolding.md`
+
+`docs/knowledge/meta_tables/migrations.md` is the authoritative SDK reference for
+provider behavior and migration contracts. The runnable beginner migration
+walkthrough is maintained in the separate canonical tutorial CodeRepository at
+<https://github.com/mainsequence-projects/mainsequence-sdk-tutorial>; read it
+only when a runnable end-to-end example is needed.
 
 ## Required Decisions
 
