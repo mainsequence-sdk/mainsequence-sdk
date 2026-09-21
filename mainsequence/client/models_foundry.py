@@ -697,13 +697,6 @@ class GitHubRepositoryBranchList(BasePydanticModel):
     results: list[GitHubRepositoryBranch]
 
 
-class GitHubRepositoryBranchImportResult(BasePydanticModel):
-    repository_uid: str
-    code_repository_branch_uid: str
-    repository_branch: str
-    is_initialized: bool
-
-
 class GitHubRepositoryBinding(BasePydanticModel, BaseObjectOrm):
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
         "uid": ["in", "exact"],
@@ -730,28 +723,6 @@ class GitHubRepositoryBinding(BasePydanticModel, BaseObjectOrm):
         )
         raise_for_response(r)
         return GitHubRepositoryBranchList.model_validate(r.json())
-
-    def import_branch(
-        self,
-        *,
-        repository_branch: str,
-        metatables_data_source_uid: str | None = None,
-        timeout=None,
-    ) -> GitHubRepositoryBranchImportResult:
-        body: dict[str, Any] = {"repository_branch": repository_branch}
-        if metatables_data_source_uid is not None:
-            body["metatables_data_source_uid"] = str(metatables_data_source_uid)
-        url = f"{type(self).get_object_url()}/{self._public_detail_reference()}/import-branch/"
-        r = make_request(
-            s=type(self).build_session(),
-            loaders=type(self).LOADERS,
-            r_type="POST",
-            url=url,
-            payload={"json": body},
-            time_out=timeout,
-        )
-        raise_for_response(r)
-        return GitHubRepositoryBranchImportResult.model_validate(r.json())
 
 
 class CodeRepositoryImageSourceProvenance(BasePydanticModel):

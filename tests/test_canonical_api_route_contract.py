@@ -129,11 +129,18 @@ def test_client_auth_provider_routes_match_backend_contract(monkeypatch):
 
 def test_removed_backend_actions_are_not_exposed_by_client_models():
     from mainsequence.client.metatables import DataSource, TimeIndexTableUpdate
+    from mainsequence.client.models_foundry import GitHubRepositoryBinding
     from mainsequence.client.models_helpers import Job
 
     removed_actions = {
         DataSource: ("get_or_create_sqlite", "create_sqlite"),
-        TimeIndexTableUpdate: ("add_tags", "filter_by_hash_id", "get_upstream_nodes"),
+        TimeIndexTableUpdate: (
+            "add_tags",
+            "filter_by_hash_id",
+            "get_upstream_nodes",
+            "verify_if_direct_dependencies_are_updated",
+        ),
+        GitHubRepositoryBinding: ("import_branch",),
         Job: ("bulk_get_or_create", "create_from_configuration", "sync_jobs"),
     }
     violations = [
@@ -144,6 +151,16 @@ def test_removed_backend_actions_are_not_exposed_by_client_models():
     ]
 
     assert violations == []
+
+
+def test_description_search_is_defined_only_where_the_backend_serves_it():
+    """`description-search/` is served for time-index-meta-tables only."""
+    from mainsequence.client.metatables import MetaTable, TimeIndexMetaTable
+
+    assert "description_search" not in vars(MetaTable)
+    assert not hasattr(MetaTable, "description_search")
+    assert "description_search" in vars(TimeIndexMetaTable)
+    assert TimeIndexMetaTable.get_object_url().endswith("/time-index-meta-tables")
 
 
 def test_cli_does_not_reintroduce_legacy_numeric_detail_routes_or_agent_runs():
