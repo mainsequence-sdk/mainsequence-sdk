@@ -30,3 +30,4 @@
     - [About](about.md)
     - [Changelog](changelog.md)
     - [Contributing](contributing.md)
+    - [Release Process](release_process.md)

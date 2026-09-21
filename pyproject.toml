@@ -96,6 +96,23 @@ explicit = true
 
 
 # --------------------
+# Testing (pytest)
+# --------------------
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Put the repository root on sys.path so tests can import `scripts`. `pytest`
+# invoked as `python -m pytest` gets this from the CWD, but the `pytest`
+# entrypoint (what `uv run pytest` and CI use) does not.
+pythonpath = ["."]
+# `live` tests talk to a real backend and need credentials, so they are
+# deselected by default. CI and a plain `pytest` therefore run offline.
+# Run them explicitly with `pytest -m live`.
+addopts = "-m 'not live'"
+markers = [
+  "live: talks to a live Main Sequence backend and needs credentials; deselected unless `-m live` is passed",
+]
+
+# --------------------
 # Formatting (Black)
 # --------------------
 [tool.black]
