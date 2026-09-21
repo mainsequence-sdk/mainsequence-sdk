@@ -57,10 +57,14 @@ This skill must not claim ownership of:
 
 ## Read First
 
-1. `docs/knowledge/infrastructure/scheduling_jobs.md`
-2. `docs/knowledge/infrastructure/artifacts.md`
-3. `docs/knowledge/infrastructure/owner_observability.md` when inspecting logs or resource usage
-If the task touches deployed FastAPI APIs, also read the relevant API skill/docs before changing the operational workflow.
+1. `AGENTS.md`
+2. <https://mainsequence-sdk.github.io/mainsequence-sdk/knowledge/infrastructure/scheduling_jobs/>
+3. <https://mainsequence-sdk.github.io/mainsequence-sdk/knowledge/infrastructure/artifacts/>
+4. <https://mainsequence-sdk.github.io/mainsequence-sdk/knowledge/infrastructure/owner_observability/> when inspecting logs or resource usage
+
+If the task touches deployed FastAPI APIs, also use
+`.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md` before
+changing the operational workflow.
 
 ## Inputs This Skill Needs
 

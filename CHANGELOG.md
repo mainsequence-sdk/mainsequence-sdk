@@ -15,20 +15,62 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Added a `Tests` workflow that runs the suite on pull requests and pushes. The
   development publish job calls the same workflow, so a development release cannot be
   published while the suite is failing.
+- Added a documentation-reference check over everything the wheel ships under
+  `agent_scaffold`: a skill must not cite SDK documentation by repository-relative
+  path, every documentation-site link must map to a page `docs/` actually renders,
+  and every cross-skill `SKILL.md` reference must resolve. The page check is a pure
+  URL-to-path transform, so it needs no network.
 
 ### Changed
 
+- Backend responses are now read tolerantly: `BasePydanticModel` ignores undeclared
+  fields instead of rejecting them, and a PATCH response applies only the keys the
+  model declares. A backend release that adds a response field no longer breaks
+  installed SDKs, and one such row no longer fails a whole listing. The decision is
+  recorded in `docs/adr/0032-tolerant-response-reading.md`. Because the same base
+  class backs the models users fill in to send data, a misspelled keyword on those
+  models is now dropped instead of raising; a model whose input must stay closed
+  declares `extra="forbid"` itself. Unknown enum and literal values still raise.
 - The final-release publish job now refuses a `v*` tag whose commit is not contained in
   `main`.
 - Tests that need a live backend and credentials carry a `live` marker and are deselected
   by default. `pytest` runs offline; `pytest -m live` runs the live tests.
+- `description_search(...)` moved from `MetaTable` to `TimeIndexMetaTable`. The backend
+  serves `description-search/` only for `time-index-meta-tables`, so the method now lives
+  on the only class whose URL it resolves to.
+
+### Removed
+
+- Removed `TimeIndexTableUpdate.verify_if_direct_dependencies_are_updated()`. The route
+  was dropped with the time-index table updater hard cut; `set_start_of_execution()`
+  already returns `direct_dependency_uids` in its response.
+- Removed `GitHubRepositoryBinding.import_branch()` and `GitHubRepositoryBranchImportResult`.
+  The backend no longer serves `import-branch/`.
 
 ### Fixed
 
+- `MetaTable.run_query()` sent the SQL as a `text/plain` body on the
+  `time-index-meta-tables` endpoint, which DRF rejects with HTTP 415, so every
+  `mainsequence time-index-table run_query` call failed. The endpoint-specific
+  Content-Type mutation is gone; every MetaTable endpoint now posts the SQL as a JSON
+  string, which is what the backend action parses.
+- The `run_query` CLI commands printed their failure prefix twice
+  (`Time-index table query failed: Time-index table query failed: ...`), because both
+  the api wrapper and the CLI wrapper added it. The CLI now prints the api layer's
+  message as-is.
 - Fixed test isolation so the suite runs offline and in any order: restored the
   `mainsequence` modules that the batch-jobs tests replace with stubs, and locked a Git
   CodeRepository context in the MetaTable client and time-index update tests, which
   otherwise reached the production backend.
+- Fixed the shipped skills' mandatory reading lists, which named documentation the
+  agent reading them cannot open. They required the removed SDK-local
+  `docs/tutorial/` pages, and the surviving `docs/...` paths were no better: the
+  wheel ships no `docs/`, and in the CodeRepository a skill is copied into, `docs/`
+  is that repository's own directory. The six affected skills now cite the published
+  documentation site, so a reference resolves wherever the skill runs, and they no
+  longer depend on the separate tutorial CodeRepository. The two mandatory ADR reads
+  in the migration skill are gone, with the retired migration APIs they were there to
+  rule out now stated in the skill itself.
 
 ## [8.1.19] - 2026-09-19
 

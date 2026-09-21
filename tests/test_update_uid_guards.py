@@ -27,7 +27,6 @@ def _table_update_without_uid() -> models_metatables.TimeIndexTableUpdate:
         ("set_end_of_execution", (), {"table_update_run_uid": "table-update-run-uid"}),
         ("set_last_update_index_time_from_update_stats", (), {}),
         ("get_all_dependencies_update_priority", (), {}),
-        ("verify_if_direct_dependencies_are_updated", (), {}),
     ],
 )
 def test_table_update_public_endpoints_require_uid_before_request(

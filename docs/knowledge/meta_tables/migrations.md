@@ -76,9 +76,10 @@ Alembic executes DDL through the provider migration credential. The backend owns
 catalog reservation and credential issuance; it does not own the Alembic
 migration lifecycle or FK/index naming.
 
-The canonical tutorial CodeRepository contains the runnable beginner migration flow.
-This page remains the SDK reference for provider behavior and migration
-contracts.
+The canonical tutorial CodeRepository at
+<https://github.com/mainsequence-projects/mainsequence-sdk-tutorial> contains the
+runnable beginner migration flow. This page remains the SDK reference for
+provider behavior and migration contracts.
 
 ## Provider Object
 

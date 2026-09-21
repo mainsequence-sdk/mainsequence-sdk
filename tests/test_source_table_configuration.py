@@ -1,7 +1,6 @@
 import datetime
 
 import pytest
-from pydantic import ValidationError
 
 from mainsequence.client import metatables as models_metatables
 
@@ -60,16 +59,20 @@ def test_time_indexed_profile_parses_canonical_response():
     assert config.earliest_index_value == datetime.datetime(2026, 5, 1, tzinfo=datetime.UTC)
 
 
-def test_time_indexed_profile_rejects_removed_legacy_profile_uid():
+def test_time_indexed_profile_drops_removed_legacy_profile_uid():
     payload = _source_config_payload()
     removed_field = "_".join(("dynamic", "table", "uid"))
-    payload[removed_field] = payload.pop("time_index_meta_table_uid")
+    payload[removed_field] = "legacy-uid-44"
 
-    with pytest.raises(ValidationError, match=removed_field):
-        models_metatables.TimeIndexedProfile(**payload)
+    profile = models_metatables.TimeIndexedProfile(**payload)
+
+    # Tolerant reading (ADR 0032): the legacy name is dropped, never honoured.
+    assert removed_field not in models_metatables.TimeIndexedProfile.model_fields
+    assert not hasattr(profile, removed_field)
+    assert profile.time_index_meta_table_uid == "storage-uid-44"
 
 
-def test_time_indexed_profile_rejects_foreign_keys():
+def test_time_indexed_profile_drops_foreign_keys():
     payload = _source_config_payload()
     payload["foreign_keys"] = [
         {
@@ -81,8 +84,11 @@ def test_time_indexed_profile_rejects_foreign_keys():
         }
     ]
 
-    with pytest.raises(ValidationError, match="foreign_keys"):
-        models_metatables.TimeIndexedProfile(**payload)
+    profile = models_metatables.TimeIndexedProfile(**payload)
+
+    # Tolerant reading (ADR 0032): foreign keys stay Alembic-owned and undeclared.
+    assert "foreign_keys" not in models_metatables.TimeIndexedProfile.model_fields
+    assert not hasattr(profile, "foreign_keys")
 
 
 def test_time_index_meta_table_contract_requires_registered_profile_index_names():

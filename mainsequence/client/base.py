@@ -58,7 +58,9 @@ class HtmlSaveException(Exception):
 
 
 class BasePydanticModel(BaseModel):
-    model_config = ConfigDict(extra="forbid")  # Forbid extra fields in v2
+    # Tolerant reading (ADR 0032): a backend response that carries a field this
+    # SDK release does not declare parses, and the undeclared field is dropped.
+    model_config = ConfigDict(extra="ignore")
     orm_class: str = None  # This will be set to the class that inherits
 
     @classmethod
@@ -780,10 +782,21 @@ class BaseObjectOrm:
 
             return raw_key
 
+        def _declares_field(obj, field_name: str) -> bool:
+            if not isinstance(obj, BaseModel):
+                return True
+            if field_name in type(obj).model_fields:
+                return True
+            # Tolerant reading (ADR 0032): a model that keeps undeclared keys can
+            # take them; every other model drops them, as parsing does.
+            return type(obj).model_config.get("extra") == "allow"
+
         def recursive_update(obj, update_dict, path=()):
             for k, v in update_dict.items():
                 current_path = (*path, k)
                 field_name = _resolve_model_field_name(obj, k)
+                if not _declares_field(obj, field_name):
+                    continue
                 # Get the existing nested object, defaulting to None if it doesn't exist
                 nested_obj = getattr(obj, field_name, None)
 

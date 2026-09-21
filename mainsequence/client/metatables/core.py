@@ -1904,35 +1904,18 @@ class MetaTable(
 
         cls = type(self)
         url = f"{cls.get_object_url().rstrip('/')}/{self._public_uid()}/run-query/"
-        if cls.ENDPOINT == "time-index-meta-tables":
-            session = cls.build_session()
-            old_content_type = session.headers.get("Content-Type")
-            session.headers["Content-Type"] = "text/plain"
-            try:
-                response = make_request(
-                    s=session,
-                    loaders=cls.LOADERS,
-                    r_type="POST",
-                    url=url,
-                    payload={"data": sql},
-                    time_out=timeout,
-                )
-            finally:
-                if old_content_type is None:
-                    session.headers.pop("Content-Type", None)
-                else:
-                    session.headers["Content-Type"] = old_content_type
-            error_payload = {"data": sql}
-        else:
-            response = make_request(
-                s=cls.build_session(),
-                loaders=cls.LOADERS,
-                r_type="POST",
-                url=url,
-                payload={"json": sql},
-                time_out=timeout,
-            )
-            error_payload = {"json": sql}
+        # The backend reads the request body as the raw SQL string and parses it with
+        # DRF's JSON parser, for every MetaTable endpoint. Sending a JSON string is the
+        # only transport it accepts; a text/plain body is rejected with HTTP 415.
+        payload = {"json": sql}
+        response = make_request(
+            s=cls.build_session(),
+            loaders=cls.LOADERS,
+            r_type="POST",
+            url=url,
+            payload=payload,
+            time_out=timeout,
+        )
 
         try:
             data = response.json()
@@ -1942,56 +1925,8 @@ class MetaTable(
         if isinstance(data, dict) and "ok" in data:
             return data
 
-        raise_for_response(response, payload=error_payload)
+        raise_for_response(response, payload=payload)
         return response.json()
-
-    @classmethod
-    def description_search(
-        cls,
-        q: str,
-        *,
-        q_embedding: Sequence[float] | None = None,
-        trigram_k: int = 200,
-        embed_k: int = 200,
-        w_trgm: float = 0.65,
-        w_emb: float = 0.35,
-        embedding_model: str = "default",
-        **filters,
-    ):
-        q = (q or "").strip()
-        if not q:
-            raise ValueError("q is required")
-        operation = f"{cls.__name__}.description_search"
-        cls._reject_sdk_context_overrides(filters, operation=operation)
-
-        body = {
-            "q": q,
-            "trigram_k": trigram_k,
-            "embed_k": embed_k,
-            "w_trgm": w_trgm,
-            "w_emb": w_emb,
-            "embedding_model": embedding_model,
-        }
-
-        if q_embedding is not None:
-            body["q_embedding"] = [float(x) for x in q_embedding]
-
-        if filters:
-            body.update(filters)
-        body.update(cls._sdk_owned_query_context(operation))
-
-        payload = {"params": serialize_to_json(body)}
-        response = make_request(
-            s=cls.build_session(),
-            loaders=cls.LOADERS,
-            r_type="GET",
-            url=f"{cls.get_object_url().rstrip('/')}/description-search/",
-            payload=payload,
-        )
-        if response.status_code != 200:
-            raise_for_response(response, payload=payload)
-
-        return cls._deserialize_search_response(response.json())
 
     @classmethod
     def column_search(cls, q: str, **filters):
@@ -2768,23 +2703,6 @@ class TimeIndexTableUpdate(TableUpdateNode, BaseObjectOrm):
             return None
         return r.json()
 
-    def verify_if_direct_dependencies_are_updated(self) -> dict:
-        """
-        Response({
-            "error_on_update_dependencies": False,
-            "updated": all_success,
-        })
-        """
-        s = self.build_session()
-        url = (
-            self.get_object_url()
-            + f"/{self._public_uid()}/verify-if-direct-dependencies-are-updated/"
-        )
-        r = make_request(s=s, loaders=None, r_type="GET", url=url)
-        if r.status_code != 200:
-            raise Exception(f"Error in request: {r.text}")
-        return r.json()
-
     def get_data_between_dates_from_api(self, *args, **kwargs):
         return self.output_table.get_data_between_dates_from_api(*args, **kwargs)
 
@@ -3258,6 +3176,54 @@ class TimeIndexMetaTable(MetaTable):
                 "time_indexed_profile.time_index_meta_table_uid must match TimeIndexMetaTable.uid."
             )
         return self
+
+    @classmethod
+    def description_search(
+        cls,
+        q: str,
+        *,
+        q_embedding: Sequence[float] | None = None,
+        trigram_k: int = 200,
+        embed_k: int = 200,
+        w_trgm: float = 0.65,
+        w_emb: float = 0.35,
+        embedding_model: str = "default",
+        **filters,
+    ):
+        q = (q or "").strip()
+        if not q:
+            raise ValueError("q is required")
+        operation = f"{cls.__name__}.description_search"
+        cls._reject_sdk_context_overrides(filters, operation=operation)
+
+        body = {
+            "q": q,
+            "trigram_k": trigram_k,
+            "embed_k": embed_k,
+            "w_trgm": w_trgm,
+            "w_emb": w_emb,
+            "embedding_model": embedding_model,
+        }
+
+        if q_embedding is not None:
+            body["q_embedding"] = [float(x) for x in q_embedding]
+
+        if filters:
+            body.update(filters)
+        body.update(cls._sdk_owned_query_context(operation))
+
+        payload = {"params": serialize_to_json(body)}
+        response = make_request(
+            s=cls.build_session(),
+            loaders=cls.LOADERS,
+            r_type="GET",
+            url=f"{cls.get_object_url().rstrip('/')}/description-search/",
+            payload=payload,
+        )
+        if response.status_code != 200:
+            raise_for_response(response, payload=payload)
+
+        return cls._deserialize_search_response(response.json())
 
     def _time_indexed_storage_layout(self) -> dict[str, Any]:
         profile = self.time_indexed_profile
