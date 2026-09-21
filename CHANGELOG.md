@@ -13,8 +13,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   pages as absolute URLs.
 - Adopted a branch and release standard, documented under `docs/release_process.md`.
   Work lands on `development`, which publishes a `X.Y.Z.devN` development release on
-  every push; a release stays a plain `vX.Y.Z` tag on `main`. `pip install mainsequence`
-  never resolves to a development release.
+  every push. `pip install mainsequence` never resolves to a development release.
+- A merge to `main` is the release. The release workflow runs on the merge, publishes
+  the version `pyproject.toml` declares, creates the tag `vX.Y.Z` and the GitHub
+  release, deploys the documentation, and raises the patch number on `development`, so
+  no `X.Y.Z.devN` can follow the final `X.Y.Z`. Nobody pushes a tag by hand any more.
 - Added a `Tests` workflow that runs the suite on pull requests and pushes. The
   development publish job calls the same workflow, so a development release cannot be
   published while the suite is failing.
