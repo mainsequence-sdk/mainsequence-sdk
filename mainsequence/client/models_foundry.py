@@ -30,6 +30,7 @@ from .metatables import DataSource as _DataSource
 from .utils import (
     make_request,
 )
+from .value_sets import OpenValueSet
 
 if TYPE_CHECKING:
     from .github_issues import GitHubIssueMutationResult, GitHubIssuePage, GitHubIssueState
@@ -508,7 +509,7 @@ class CodeRepositoryBranch(BasePydanticModel, BaseObjectOrm):
     github_repository_binding_uid: str | None = None
     latest_git_version: str = ""
     is_initialized: bool
-    provisioning_status: Literal["CREATING", "READY", "FAILED"]
+    provisioning_status: OpenValueSet[Literal["CREATING", "READY", "FAILED"]]
     provisioning_job_run_uid: str | None
     provisioning_error_code: str
     provisioning_error_detail: str
@@ -726,7 +727,7 @@ class GitHubRepositoryBinding(BasePydanticModel, BaseObjectOrm):
 
 
 class CodeRepositoryImageSourceProvenance(BasePydanticModel):
-    verification_state: Literal["verified", "unverified", "building", "failed"]
+    verification_state: OpenValueSet[Literal["verified", "unverified", "building", "failed"]]
     code_repository_uid: str | None = None
     code_repository_branch_uid: str | None = None
     github_repository_binding_uid: str | None = None

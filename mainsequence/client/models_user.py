@@ -22,6 +22,7 @@ from .utils import (
     DEFAULT_TIMEOUT,
     make_request,
 )
+from .value_sets import OpenValueSet
 
 _CURRENT_AUTH_HEADERS: ContextVar[Mapping[str, Any] | None] = ContextVar(
     "_CURRENT_AUTH_HEADERS",
@@ -525,7 +526,7 @@ class Notification(DetailActionObjectMixin, BasePydanticModel, UserApiBaseObject
         title="Notification UID",
         description="Stable public unique identifier of the notification.",
     )
-    source: Literal["system", "organization"] | None = Field(
+    source: OpenValueSet[Literal["system", "organization"]] | None = Field(
         None,
         title="Notification Source",
         description="Source scope of the notification.",
@@ -541,7 +542,7 @@ class Notification(DetailActionObjectMixin, BasePydanticModel, UserApiBaseObject
         title="Source Organization UID",
         description="Public UID of the organization that owns the notification.",
     )
-    type: Literal["UR", "IM", "IN"] = Field(
+    type: OpenValueSet[Literal["UR", "IM", "IN"]] = Field(
         "IN",
         title="Notification Type",
         description="Stored notification priority code.",
@@ -911,7 +912,7 @@ class ShareableAccessState(BasePydanticModel):
         description="Backend object type identifier for the shareable object.",
         examples=["tdag.constant"],
     )
-    access_level: Literal["view", "edit"] = Field(
+    access_level: OpenValueSet[Literal["view", "edit"]] = Field(
         ...,
         title="Access Level",
         description="Permission level represented by this access-state payload.",

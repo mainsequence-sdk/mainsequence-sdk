@@ -10,6 +10,7 @@ from pydantic import ConfigDict, Field
 from .base import BasePydanticModel
 from .exceptions import ApiError, raise_for_response
 from .utils import make_request
+from .value_sets import OpenValueSet
 
 PublicLogLevel = Literal[
     "debug",
@@ -55,7 +56,7 @@ class OwnerLogRow(BasePydanticModel):
     time: int | float | None = None
     timestamp: str | None = None
     severity: str | None = None
-    level: PublicLogLevel | None = None
+    level: OpenValueSet[PublicLogLevel] | None = None
     source: str | None = None
     event: str | None = None
     event_id: str | None = None
@@ -110,16 +111,18 @@ class OwnerLogPage(BasePydanticModel):
 class EnvironmentLogSearchRow(OwnerLogRow):
     """One sanitized row returned by an Environment-scoped collection search."""
 
-    owner_type: Literal[
-        "deployment_run",
-        "job_run",
-        "resource_release",
-        "agent",
-        "agent_session",
+    owner_type: OpenValueSet[
+        Literal[
+            "deployment_run",
+            "job_run",
+            "resource_release",
+            "agent",
+            "agent_session",
+        ]
     ]
     owner_uid: str
     occurred_at: datetime.datetime
-    level: PublicLogLevel
+    level: OpenValueSet[PublicLogLevel]
 
 
 class EnvironmentLogSearchPage(BasePydanticModel):
@@ -134,7 +137,9 @@ class EnvironmentLogSearchPage(BasePydanticModel):
     result_limit: int = Field(ge=0)
     next_cursor: str | None = None
     truncated: bool
-    truncation_reason: Literal["page_limit", "result_limit", "candidate_limit"] | None = None
+    truncation_reason: (
+        OpenValueSet[Literal["page_limit", "result_limit", "candidate_limit"]] | None
+    ) = None
     rows: list[EnvironmentLogSearchRow] = Field(default_factory=list)
 
 

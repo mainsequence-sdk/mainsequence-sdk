@@ -3112,12 +3112,25 @@ def test_streamlit_dashboard_contract_is_removed():
             }
         )
 
-    with pytest.raises(ValidationError):
-        models_helpers_mod.ResourceRelease.model_validate(
-            {
-                "uid": "2f4c4c3d-5669-4da5-9d86-b84633c1e6ed",
-                "release_kind": "streamlit_dashboard",
-            }
+    # ADR 0033: the retired kind is no longer declared, so a response carrying it
+    # is read as sent rather than failing the release and the listing it is in.
+    retired = models_helpers_mod.ResourceRelease.model_validate(
+        {
+            "uid": "2f4c4c3d-5669-4da5-9d86-b84633c1e6ed",
+            "release_kind": "streamlit_dashboard",
+        }
+    )
+    assert retired.release_kind == "streamlit_dashboard"
+    assert retired.release_kind not in set(models_helpers_mod.ResourceReleaseKind)
+
+    # What the SDK sends stays closed: the retired kind cannot be created.
+    with pytest.raises(ValueError, match="release_kind must be one of"):
+        models_helpers_mod.ResourceRelease.create(
+            resource_uid="857bec7b-dd77-4272-aecd-13fc2138eacc",
+            release_kind="streamlit_dashboard",
+            related_image_uid="1f0f6a54-1f4f-4f6b-9a3a-2f1d0c9b8a77",
+            cpu_request="500m",
+            memory_request="1Gi",
         )
 
     with pytest.raises(ValidationError):

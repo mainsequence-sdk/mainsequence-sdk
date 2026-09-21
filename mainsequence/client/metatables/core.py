@@ -61,6 +61,7 @@ from ..utils import (
     make_request,
     serialize_to_json,
 )
+from ..value_sets import OpenValueSet
 
 DUCK_DB = "duck_db"
 SQLITE = "sqlite"
@@ -1059,7 +1060,7 @@ class MetaTableCascadeDeletedMetaTable(BasePydanticModel):
     meta_table_uid: str
     physical_schema: str | None = None
     physical_table_name: str | None = None
-    management_mode: MetaTableManagementMode
+    management_mode: OpenValueSet[MetaTableManagementMode]
     physical_table_drop_scheduled: bool
     physical_table_drop_cascade: bool
     schema_management_protection_overridden: bool
@@ -1109,7 +1110,7 @@ class DataSource(BasePydanticModel, BaseObjectOrm):
     )
     class_type: str | None = None
     status: str | None = None
-    storage_access_mode: StorageAccessMode | None = Field(
+    storage_access_mode: OpenValueSet[StorageAccessMode] | None = Field(
         default="read_write",
         description="Runtime storage access gate: read_write, read_only, or disabled.",
     )
@@ -1369,9 +1370,9 @@ class MetaTable(
     namespace: str | None = None
     description: str | None = None
     labels: list[str] = Field(default_factory=list)
-    management_mode: MetaTableManagementMode
-    provisioning_status: Literal["reserved", "active"] = "active"
-    schema_management_mode: MetaTableSchemaManagementMode = "backend_managed"
+    management_mode: OpenValueSet[MetaTableManagementMode]
+    provisioning_status: OpenValueSet[Literal["reserved", "active"]] = "active"
+    schema_management_mode: OpenValueSet[MetaTableSchemaManagementMode] = "backend_managed"
     schema_management: dict[str, Any] = Field(default_factory=dict)
     migration_package: str | None = None
     migration_namespace: str | None = None
