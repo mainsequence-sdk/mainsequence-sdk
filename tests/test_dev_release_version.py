@@ -101,6 +101,30 @@ def test_dev_version_rejects_a_negative_run_number():
         dev_release_version.dev_version(Version("8.1.20"), Version("8.1.19"), -1)
 
 
+def test_a_merge_to_main_releases_the_declared_version():
+    assert dev_release_version.final_version(Version("8.1.20"), Version("8.1.19")) == "8.1.20"
+
+
+@pytest.mark.parametrize("declared", ["8.1.19", "8.1.18"])
+def test_a_merge_to_main_that_carries_a_released_version_is_refused(declared):
+    # A merge to `main` is the release. One that still declares a version PyPI
+    # has publishes nothing, instead of failing at upload as a duplicate.
+    with pytest.raises(dev_release_version.DevVersionError, match="already released"):
+        dev_release_version.final_version(Version(declared), Version("8.1.19"))
+
+
+def test_the_final_mode_prints_the_declared_version(monkeypatch, capsys):
+    monkeypatch.setattr(
+        dev_release_version,
+        "fetch_releases",
+        lambda: {"8.1.19": _files(), "8.1.20.dev41": _files()},
+    )
+    monkeypatch.setattr(dev_release_version, "read_declared_version", lambda text: "8.1.20")
+
+    assert dev_release_version.main(["--final"]) == 0
+    assert capsys.readouterr().out == "8.1.20\n"
+
+
 def test_the_version_after_a_release_is_the_next_patch():
     assert dev_release_version.next_patch(Version("8.1.20")) == "8.1.21"
 
