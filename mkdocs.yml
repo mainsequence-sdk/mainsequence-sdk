@@ -1,4 +1,7 @@
 site_name: Main Sequence SDK
+# The documentation is served from GitHub Pages. Declaring the canonical root
+# gives the sitemap absolute URLs and every page a correct canonical link.
+site_url: https://mainsequence-sdk.github.io/mainsequence-sdk/
 
 
 dev_addr: 127.0.0.1:8003

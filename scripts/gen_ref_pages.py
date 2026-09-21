@@ -12,12 +12,11 @@ prefix = [package_name]
 
 root = Path(__file__).parent.parent
 src = root / package_name
-docs_folder = root / "docs"
 
 for path in sorted(src.rglob("*.py")):
     module_path = path.relative_to(src).with_suffix("")
     doc_path = path.relative_to(src).with_suffix(".md")
-    full_doc_path = Path(f"{docs_folder}/reference", doc_path)
+    full_doc_path = Path("reference", doc_path)
 
     parts = tuple(module_path.parts)
     # ───►  ignore every module under mainsequence.reportbuilder.*
