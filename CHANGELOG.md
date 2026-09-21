@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- Declared `site_url` so the documentation site has a canonical root. The sitemap
+  was previously empty and no page carried a canonical link; it now lists all 108
+  pages as absolute URLs.
 - Adopted a branch and release standard, documented under `docs/release_process.md`.
   Work lands on `development`, which publishes a `X.Y.Z.devN` development release on
   every push; a release stays a plain `vX.Y.Z` tag on `main`. `pip install mainsequence`
@@ -41,6 +44,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Removed
 
+- Removed `docs/CNAME`, which declared a `docs.main-sequence-sdk.main-sequence.io`
+  custom domain that was never set up: the domain does not resolve and GitHub Pages
+  has no custom domain configured. MkDocs was copying the file into every deployed
+  site. The documentation is served from GitHub Pages at
+  <https://mainsequence-sdk.github.io/mainsequence-sdk/>, which is the root the
+  shipped skills cite.
 - Removed `TimeIndexTableUpdate.verify_if_direct_dependencies_are_updated()`. The route
   was dropped with the time-index table updater hard cut; `set_start_of_execution()`
   already returns `direct_dependency_uids` in its response.
@@ -49,6 +58,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- Fixed four response fields the backend documents as nullable but the SDK typed as
+  plain `str`, so a row carrying `null` raised `ValidationError` and failed the whole
+  listing page: `Job.related_image_uid`, `JobRun.runtime_image_uid`,
+  `JobRun.runtime_image_digest` and `Organization.organization_domain` (also reached
+  through `User.organization`). Each now accepts `None` while staying required in the
+  payload, matching the neighbouring nullable fields on the same models.
+- Fixed the generated API reference, which was absent from the published site:
+  `/reference/` returned 404. The generator passed `mkdocs_gen_files.open()` an
+  absolute path, so each page was written into the source tree mid-build, too late
+  for MkDocs to serve, and registered under a URL built from the checkout's
+  filesystem path. All 59 reference pages now build under `/reference/`, and the
+  build no longer writes into `docs/`.
 - `MetaTable.run_query()` sent the SQL as a `text/plain` body on the
   `time-index-meta-tables` endpoint, which DRF rejects with HTTP 415, so every
   `mainsequence time-index-table run_query` call failed. The endpoint-specific
