@@ -7,6 +7,11 @@ name: Publish Python Package to PyPI
 
 # This section defines the trigger for the workflow.
 # It runs on any push event that includes a new tag.
+#
+# A release is a plain tag vX.Y.Z on `main`. The job below refuses a tag whose
+# commit is not contained in `main`, so a tag made on any other branch publishes
+# nothing. Development releases come from `publish-dev-to-pypi.yml` instead.
+# See docs/knowledge/release_process.md.
 on:
   push:
     tags:
@@ -28,29 +33,45 @@ jobs:
     steps:
       # Step 1: Check out the repository's code
       # This downloads your source code into the runner environment.
+      # The full history is fetched so the next step can ask whether the tagged
+      # commit is contained in `main`.
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      # Step 2: Set up a specific version of Python
+      # Step 2: Refuse a tag that was not made on `main`
+      # A release tag on any other branch would otherwise publish a final
+      # version built from code that `main` never received.
+      - name: Verify the tag is on main
+        run: |
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          if ! git merge-base --is-ancestor "${GITHUB_SHA}" origin/main; then
+            echo "::error::Tag ${GITHUB_REF_NAME} points at ${GITHUB_SHA}, which is not contained in main. A release tag must be made on main; see docs/knowledge/release_process.md."
+            exit 1
+          fi
+          echo "Tag ${GITHUB_REF_NAME} is contained in main."
+
+      # Step 3: Set up a specific version of Python
       # This ensures a consistent environment for building your package.
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.13'
 
-      # Step 3: Install build dependencies
+      # Step 4: Install build dependencies
       # This step installs the 'build' package, which is the modern
       # standard for building Python packages.
       - name: Install dependencies
         run: python -m pip install --upgrade build
 
-      # Step 4: Build the package
+      # Step 5: Build the package
       # This command creates the sdist (source distribution) and wheel
       # files in a 'dist/' directory.
       - name: Build package
         run: python -m build
 
-      # Step 5: Publish the package to PyPI
+      # Step 6: Publish the package to PyPI
       # This is the final step. It uses an official action from the Python
       # Packaging Authority (PyPA) to handle the upload. Because of the
       # 'permissions' key above, it will automatically handle the trusted

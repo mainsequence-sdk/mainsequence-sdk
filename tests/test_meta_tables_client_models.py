@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime
+import pathlib
 from types import SimpleNamespace
 
 import pytest
@@ -12,6 +13,8 @@ from mainsequence.client.exceptions import ConflictError, PermissionDeniedError
 from mainsequence.meta_tables.compiled_sql.v1 import build_operation, compile_sqlalchemy_statement
 
 ENVIRONMENT_UID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+CODE_REPOSITORY_UID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+CODE_REPOSITORY_BRANCH_UID = "22222222-2222-4222-8222-222222222222"
 
 
 @pytest.fixture(autouse=True)
@@ -21,6 +24,47 @@ def _resolved_environment(monkeypatch):
         "resolve_organization_environment_uid",
         lambda operation: ENVIRONMENT_UID,
     )
+
+
+@pytest.fixture(autouse=True)
+def _resolved_code_repository_context(monkeypatch):
+    """Lock a Git CodeRepository context so client calls never reach the backend.
+
+    ``MetaTable`` write paths ask ``get_code_repository_context()`` whether they
+    run on an authenticated runtime before they build a payload. Left alone that
+    resolves the real Git context by POSTing to the backend, so these tests hang
+    on request retries instead of exercising the payload they assert on.
+    """
+    code_repository_context._reset_code_repository_context()
+    source = code_repository_context.GitCodeRepositorySourceContext(
+        repository_root=pathlib.Path.cwd().resolve(),
+        canonical_repository_identity="github.com/mainsequence-sdk/meta-tables-client-models",
+        repository_branch="main",
+        repository_ref="refs/heads/main",
+        commit_sha="a" * 40,
+    )
+    monkeypatch.setattr(
+        code_repository_context,
+        "_resolve_git_source_context",
+        lambda code_repository_dir: source,
+    )
+    code_repository_context.get_code_repository_context(
+        _code_repository_branch_context_loader=lambda resolved_source: SimpleNamespace(
+            canonical_repository_identity=resolved_source.canonical_repository_identity,
+            repository_branch=resolved_source.repository_branch,
+            repository_ref=resolved_source.repository_ref,
+            commit_sha=resolved_source.commit_sha,
+            code_repository_branch=SimpleNamespace(
+                uid=CODE_REPOSITORY_BRANCH_UID,
+                code_repository_uid=CODE_REPOSITORY_UID,
+                repository_branch=resolved_source.repository_branch,
+                organization_environment_uid=None,
+                metatables_data_source=None,
+            ),
+        ),
+    )
+    yield
+    code_repository_context._reset_code_repository_context()
 
 
 class _Response:
@@ -85,7 +129,7 @@ def _meta_table_response(**overrides):
 
 def _code_repository_context():
     return meta_table_models.MetaTableCodeRepositoryContextRequest(
-        code_repository_branch_uid="22222222-2222-4222-8222-222222222222",
+        code_repository_branch_uid=CODE_REPOSITORY_BRANCH_UID,
     )
 
 
