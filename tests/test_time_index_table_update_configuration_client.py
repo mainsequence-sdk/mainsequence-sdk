@@ -354,7 +354,7 @@ def test_output_table_accepts_namespace():
         "table_name",
     ],
 )
-def test_output_table_rejects_removed_backend_fields(removed_field):
+def test_output_table_drops_removed_backend_fields(removed_field):
     payload = {
         "uid": "time-index-table-storage-1",
         "storage_hash": "hash",
@@ -370,8 +370,11 @@ def test_output_table_rejects_removed_backend_fields(removed_field):
         removed_field: "removed",
     }
 
-    with pytest.raises(ValidationError):
-        TimeIndexMetaTable(**payload)
+    table = TimeIndexMetaTable(**payload)
+
+    # Tolerant reading (ADR 0032): a retired field is dropped, not declared.
+    assert removed_field not in TimeIndexMetaTable.model_fields
+    assert not hasattr(table, removed_field)
 
 
 def test_update_manager_requires_output_table_constructor_argument():

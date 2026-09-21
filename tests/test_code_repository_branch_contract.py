@@ -82,11 +82,15 @@ def test_code_repository_is_only_the_logical_aggregate_contract():
     assert not hasattr(code_repository.branches[0], "code_repository_type")
     assert not hasattr(code_repository, "repository_branch")
 
-    with pytest.raises(ValidationError):
+    # Tolerant reading (ADR 0032): the retired field is dropped, not declared.
+    assert "repository_branch" not in models_foundry.CodeRepository.model_fields
+    assert not hasattr(
         models_foundry.CodeRepository(
             **logical_code_repository_payload(),
             repository_branch="main",
-        )
+        ),
+        "repository_branch",
+    )
 
 
 def test_code_repository_requires_canonical_type_and_derived_technology():

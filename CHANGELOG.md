@@ -18,6 +18,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- Backend responses are now read tolerantly: `BasePydanticModel` ignores undeclared
+  fields instead of rejecting them, and a PATCH response applies only the keys the
+  model declares. A backend release that adds a response field no longer breaks
+  installed SDKs, and one such row no longer fails a whole listing. The decision is
+  recorded in `docs/adr/0032-tolerant-response-reading.md`. Because the same base
+  class backs the models users fill in to send data, a misspelled keyword on those
+  models is now dropped instead of raising; a model whose input must stay closed
+  declares `extra="forbid"` itself. Unknown enum and literal values still raise.
 - The final-release publish job now refuses a `v*` tag whose commit is not contained in
   `main`.
 - Tests that need a live backend and credentials carry a `live` marker and are deselected

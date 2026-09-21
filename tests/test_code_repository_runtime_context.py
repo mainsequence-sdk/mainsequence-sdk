@@ -722,7 +722,7 @@ def test_metatable_request_always_submits_git_resolved_context(monkeypatch):
     }
 
 
-def test_code_repository_model_rejects_removed_default_data_source_fields():
+def test_code_repository_model_drops_removed_default_data_source_fields():
     payload = {
         "uid": CODE_REPOSITORY_UID,
         "code_repository_name": "Example CodeRepository",
@@ -737,5 +737,9 @@ def test_code_repository_model_rejects_removed_default_data_source_fields():
         "default_metatables_data_source_uid": DATA_SOURCE_UID,
     }
 
-    with pytest.raises(ValueError, match="default_metatables_data_source_uid"):
-        models_foundry.CodeRepository.model_validate(payload)
+    # Tolerant reading (ADR 0032): the retired field is dropped, not declared.
+    assert "default_metatables_data_source_uid" not in models_foundry.CodeRepository.model_fields
+    assert not hasattr(
+        models_foundry.CodeRepository.model_validate(payload),
+        "default_metatables_data_source_uid",
+    )
