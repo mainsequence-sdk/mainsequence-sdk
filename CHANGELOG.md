@@ -4,6 +4,32 @@ All notable changes to this project should be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows versioned releases.
 
+## [Unreleased]
+
+### Added
+
+- Adopted a branch and release standard, documented under `docs/release_process.md`.
+  Work lands on `development`, which publishes a `X.Y.Z.devN` development release on
+  every push; a release stays a plain `vX.Y.Z` tag on `main`. `pip install mainsequence`
+  never resolves to a development release.
+- Added a `Tests` workflow that runs the suite on pull requests and pushes. The
+  development publish job calls the same workflow, so a development release cannot be
+  published while the suite is failing.
+
+### Changed
+
+- The final-release publish job now refuses a `v*` tag whose commit is not contained in
+  `main`.
+- Tests that need a live backend and credentials carry a `live` marker and are deselected
+  by default. `pytest` runs offline; `pytest -m live` runs the live tests.
+
+### Fixed
+
+- Fixed test isolation so the suite runs offline and in any order: restored the
+  `mainsequence` modules that the batch-jobs tests replace with stubs, and locked a Git
+  CodeRepository context in the MetaTable client and time-index update tests, which
+  otherwise reached the production backend.
+
 ## [8.1.19] - 2026-09-19
 
 ### Fixed

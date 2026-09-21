@@ -6,6 +6,32 @@ import types
 import pytest
 
 
+def _snapshot_mainsequence_modules() -> dict[str, types.ModuleType]:
+    return {
+        name: module
+        for name, module in sys.modules.items()
+        if name == "mainsequence" or name.startswith("mainsequence.")
+    }
+
+
+@pytest.fixture(autouse=True)
+def _restore_mainsequence_modules():
+    """Undo the stub packages this module installs into ``sys.modules``.
+
+    ``_load_models_helpers_module`` replaces the real ``mainsequence`` packages
+    with stubs so ``models_helpers`` can be imported without the heavy client
+    stack. Without this fixture the stubs leak into every test module that runs
+    afterwards, and ``monkeypatch.setattr("mainsequence.client....")`` there
+    fails with ``module 'mainsequence' has no attribute 'client'``.
+    """
+    snapshot = _snapshot_mainsequence_modules()
+    yield
+    for name in tuple(sys.modules):
+        if name == "mainsequence" or name.startswith("mainsequence."):
+            sys.modules.pop(name, None)
+    sys.modules.update(snapshot)
+
+
 def _load_models_helpers_module():
     repo_root = pathlib.Path(__file__).resolve().parents[1]
     pkg_root = repo_root / "mainsequence"
