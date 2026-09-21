@@ -17,11 +17,13 @@ platform-managed application tables outside the migration workflow.
 
 ## Read First
 
-1. `docs/tutorial/metatable_migrations.md`
-2. `docs/knowledge/meta_tables/migrations.md`
-3. `docs/knowledge/meta_tables/api.md`
-4. `docs/adr/0020-metatable-migration-artifact-registry.md`
-5. `docs/adr/0026-sdk-owned-migration-scaffolding.md`
+1. `AGENTS.md`
+2. <https://mainsequence-sdk.github.io/mainsequence-sdk/knowledge/meta_tables/migrations/>
+3. <https://mainsequence-sdk.github.io/mainsequence-sdk/knowledge/meta_tables/api/>
+
+The pages above are the authoritative reference for provider behavior and
+migration contracts. This skill states the contract it needs; read those pages
+for the full provider and catalog-binding detail.
 
 ## Required Decisions
 
@@ -98,6 +100,12 @@ platform-managed, Alembic-managed reservations and are validated before HTTP.
 
 - Keep Alembic as the schema migration engine; do not build custom operation
   lists or fake migration payload formats.
+- These are intentionally unsupported and must not be reintroduced: SDK-managed
+  migration artifact table models, packaged migration rows,
+  `load_packaged_migration`, `sync_packaged_migration`,
+  `build_migration_registry_row`, custom `operations()` migration modules, and
+  operation names such as `add_column` or `create_index`. Use provider-selected
+  Alembic revisions and Alembic-rendered SQL only.
 - Keep provider scope explicit. Do not scan all imported models or installed
   packages.
 - For one-model or configured dynamic providers, use `metadata_for_models(...)`

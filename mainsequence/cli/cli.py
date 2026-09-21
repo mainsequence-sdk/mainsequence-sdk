@@ -5912,7 +5912,9 @@ def _meta_table_run_query_impl(
     try:
         payload = run_meta_table_query(meta_table_uid, sql, timeout=timeout)
     except ApiError as e:
-        error(f"MetaTable query failed: {e}")
+        # The api layer already names the operation in the message; prefixing again
+        # produces "MetaTable query failed: MetaTable query failed: ...".
+        error(str(e))
         raise typer.Exit(1) from e
 
     ok = bool(payload.get("ok"))
@@ -5941,7 +5943,9 @@ def _time_index_table_run_query_impl(
     try:
         payload = run_time_index_table_query(table_uid, sql, timeout=timeout)
     except ApiError as e:
-        error(f"Time-index table query failed: {e}")
+        # The api layer already names the operation in the message; prefixing again
+        # produces "Time-index table query failed: Time-index table query failed: ...".
+        error(str(e))
         raise typer.Exit(1) from e
 
     ok = bool(payload.get("ok"))

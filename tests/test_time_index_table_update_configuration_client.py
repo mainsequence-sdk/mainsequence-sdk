@@ -1,5 +1,6 @@
 import inspect
 import os
+import pathlib
 import threading
 from types import SimpleNamespace
 
@@ -12,6 +13,7 @@ from pydantic import ValidationError
 
 import mainsequence.client.metatables as models_metatables
 import mainsequence.client.models_foundry as models_foundry
+import mainsequence.code_repository_context as code_repository_context
 import mainsequence.meta_tables.time_index_table_updates.updaters as updaters_module
 from mainsequence.client.metatables import (
     MetaTable,
@@ -31,6 +33,47 @@ from mainsequence.meta_tables.time_index_table_updates.managers import (
     BaseTimeIndexTableUpdateManager,
 )
 from mainsequence.meta_tables.time_index_table_updates.runner import UpdateRunner
+
+
+@pytest.fixture(autouse=True)
+def _resolved_code_repository_context(monkeypatch):
+    """Lock a Git CodeRepository context so these tests never reach the backend.
+
+    Building an update manager asks ``get_code_repository_context()`` for the
+    current Git context, which otherwise POSTs to the real backend and retries.
+    The resolution is cached per process, so exactly one test paid for it — but
+    that one test made a live outbound request from an offline suite.
+    """
+    code_repository_context._reset_code_repository_context()
+    source = code_repository_context.GitCodeRepositorySourceContext(
+        repository_root=pathlib.Path.cwd().resolve(),
+        canonical_repository_identity="github.com/mainsequence-sdk/time-index-table-updates",
+        repository_branch="main",
+        repository_ref="refs/heads/main",
+        commit_sha="a" * 40,
+    )
+    monkeypatch.setattr(
+        code_repository_context,
+        "_resolve_git_source_context",
+        lambda code_repository_dir: source,
+    )
+    code_repository_context.get_code_repository_context(
+        _code_repository_branch_context_loader=lambda resolved_source: SimpleNamespace(
+            canonical_repository_identity=resolved_source.canonical_repository_identity,
+            repository_branch=resolved_source.repository_branch,
+            repository_ref=resolved_source.repository_ref,
+            commit_sha=resolved_source.commit_sha,
+            code_repository_branch=SimpleNamespace(
+                uid="22222222-2222-4222-8222-222222222222",
+                code_repository_uid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                repository_branch=resolved_source.repository_branch,
+                organization_environment_uid=None,
+                metatables_data_source=None,
+            ),
+        ),
+    )
+    yield
+    code_repository_context._reset_code_repository_context()
 
 
 def _canonical_build_configuration(**values: object) -> dict[str, object]:
@@ -311,7 +354,7 @@ def test_output_table_accepts_namespace():
         "table_name",
     ],
 )
-def test_output_table_rejects_removed_backend_fields(removed_field):
+def test_output_table_drops_removed_backend_fields(removed_field):
     payload = {
         "uid": "time-index-table-storage-1",
         "storage_hash": "hash",
@@ -327,8 +370,11 @@ def test_output_table_rejects_removed_backend_fields(removed_field):
         removed_field: "removed",
     }
 
-    with pytest.raises(ValidationError):
-        TimeIndexMetaTable(**payload)
+    table = TimeIndexMetaTable(**payload)
+
+    # Tolerant reading (ADR 0032): a retired field is dropped, not declared.
+    assert removed_field not in TimeIndexMetaTable.model_fields
+    assert not hasattr(table, removed_field)
 
 
 def test_update_manager_requires_output_table_constructor_argument():

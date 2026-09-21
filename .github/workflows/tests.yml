@@ -1,0 +1,52 @@
+name: Tests
+
+# The repository's test check. It is also a reusable workflow so that
+# `publish-dev-to-pypi.yml` gates its release on exactly this suite rather than
+# on a second copy of it that could drift.
+
+on:
+  pull_request:
+  push:
+    branches-ignore:
+      # Pushes to `development` already run this workflow through
+      # `publish-dev-to-pypi.yml`, which calls it. Triggering here as well would
+      # run the suite twice for every push.
+      - development
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pytest:
+    name: pytest
+    runs-on: ubuntu-latest
+    # Declared per job rather than on the workflow: a reusable workflow that
+    # shares a concurrency group with the workflow calling it cancels its own
+    # caller.
+    concurrency:
+      group: tests-${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+
+      - name: Install uv
+        run: python -m pip install --upgrade uv
+
+      - name: Install the project with every extra and dependency group
+        # `--all-extras` matters: tests/test_duckdb_interface_dimensions.py
+        # imports the `local-data` extra at module scope.
+        run: uv sync --frozen --all-extras --all-groups
+
+      - name: Run the test suite
+        # `live` tests are deselected by pyproject.toml's addopts, so this runs
+        # offline and needs no backend credentials.
+        run: uv run pytest

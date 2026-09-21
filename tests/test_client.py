@@ -4,6 +4,11 @@ import pytest
 
 import mainsequence.client as msc
 
+# Every test in this module drives a real backend over the network and needs
+# SDK credentials, so none of them can run in CI. See `[tool.pytest.ini_options]`
+# in pyproject.toml: `pytest` deselects them, `pytest -m live` runs them.
+pytestmark = pytest.mark.live
+
 
 def test_create_code_repository():
     ds = msc.DataSource.filter(status=msc.DataSource.STATUS_AVAILABLE)[0]

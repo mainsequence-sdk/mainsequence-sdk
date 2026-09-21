@@ -60,9 +60,9 @@ This skill discovers and identifies data. It does not publish, redesign, or defi
 ## Read First
 
 1. `AGENTS.md`
-2. `docs/cli/index.md`
-3. `docs/knowledge/time_index_table_updates.md`
-4. `docs/knowledge/meta_tables/index.md` when the exploration touches row-oriented storage
+2. <https://mainsequence-sdk.github.io/mainsequence-sdk/cli/>
+3. <https://mainsequence-sdk.github.io/mainsequence-sdk/knowledge/time_index_table_updates/>
+4. <https://mainsequence-sdk.github.io/mainsequence-sdk/knowledge/meta_tables/> when the exploration touches row-oriented storage
 
 ## Inputs This Skill Needs
 
