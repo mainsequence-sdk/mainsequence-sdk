@@ -9,7 +9,7 @@ updates:
     directory: "/"
     target-branch: "development"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
       day: "monday"
       time: "09:00"
       timezone: "Etc/UTC"
@@ -19,20 +19,26 @@ updates:
       prefix: "deps"
       prefix-development: "deps-dev"
       include: "scope"
-    # Minor and patch bumps arrive as one PR per scope instead of one per
-    # package. Majors stay ungrouped on purpose -- those are the ones that
-    # actually need a human reading a changelog.
+    # One version-update PR per scope, majors included. Splitting majors out
+    # produced a PR per package per week, and most of them were dev tooling a
+    # consumer of this library never resolves: what they install is decided by
+    # the ranges in `pyproject.toml`, not by this lock file. Vulnerabilities do
+    # not wait for the monthly run -- security updates ignore `interval`, and
+    # `dependency-audit.yml` audits both scopes on every dependency-touching PR
+    # and on its own weekly cron.
     groups:
-      production-minor-and-patch:
+      production:
         applies-to: version-updates
         dependency-type: "production"
         update-types:
+          - "major"
           - "minor"
           - "patch"
-      development-minor-and-patch:
+      development:
         applies-to: version-updates
         dependency-type: "development"
         update-types:
+          - "major"
           - "minor"
           - "patch"
       security:
@@ -44,7 +50,7 @@ updates:
     directory: "/"
     target-branch: "development"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
       day: "monday"
       time: "09:00"
       timezone: "Etc/UTC"
