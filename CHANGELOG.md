@@ -58,6 +58,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- Fixed four response fields the backend documents as nullable but the SDK typed as
+  plain `str`, so a row carrying `null` raised `ValidationError` and failed the whole
+  listing page: `Job.related_image_uid`, `JobRun.runtime_image_uid`,
+  `JobRun.runtime_image_digest` and `Organization.organization_domain` (also reached
+  through `User.organization`). Each now accepts `None` while staying required in the
+  payload, matching the neighbouring nullable fields on the same models.
 - Fixed the generated API reference, which was absent from the published site:
   `/reference/` returned 404. The generator passed `mkdocs_gen_files.open()` an
   absolute path, so each page was written into the source tree mid-build, too late

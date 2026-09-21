@@ -287,10 +287,13 @@ class Job(CurrentCodeRepositoryBranchCollectionMixin, BaseObjectOrm, BasePydanti
         examples=[3600, 14400],
     )
 
-    related_image_uid: str = Field(
+    related_image_uid: str | None = Field(
         ...,
-        description="Public UID of the exact persisted execution image.",
-        examples=["f3cb8477-df47-49cb-a151-80b746fb1243"],
+        description=(
+            "Public UID of the exact persisted execution image. Null while the "
+            "backend has not bound one to the job."
+        ),
+        examples=["f3cb8477-df47-49cb-a151-80b746fb1243", None],
     )
     image_status: str = Field(
         ...,
@@ -952,14 +955,21 @@ class JobRun(
         description="The commit hash associated with the code version used for this run.",
         examples=["a1b2c3d4e5f6g7h8i9j0"],
     )
-    runtime_image_uid: str = Field(
+    runtime_image_uid: str | None = Field(
         ...,
-        description="Public UID of the immutable image snapshot executed by this run.",
+        description=(
+            "Public UID of the immutable image snapshot executed by this run. "
+            "Null for a run the backend has not resolved an image for."
+        ),
+        examples=["6cfdb152-923e-45b9-a150-c4541c68b0d1", None],
     )
-    runtime_image_digest: str = Field(
+    runtime_image_digest: str | None = Field(
         ...,
-        description="Immutable digest of the image snapshot executed by this run.",
-        examples=["sha256:" + "a" * 64],
+        description=(
+            "Immutable digest of the image snapshot executed by this run. Null "
+            "for a run the backend has not resolved an image for."
+        ),
+        examples=["sha256:" + "a" * 64, None],
     )
 
     command_args: list[str] = Field(

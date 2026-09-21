@@ -123,11 +123,14 @@ class Organization(UserApiBaseObjectOrm, BasePydanticModel):
         description="Optional public or internal URL for the organization.",
         examples=[STANDARD_BACKEND_URL],
     )
-    organization_domain: str = Field(
+    organization_domain: str | None = Field(
         ...,
         title="Organization Domain",
-        description="Primary email or identity domain associated with the organization.",
-        examples=["main-sequence.io"],
+        description=(
+            "Primary email or identity domain associated with the organization. "
+            "Null for an organization that has no domain set."
+        ),
+        examples=["main-sequence.io", None],
     )
     identity_platform_tenant_id: str | None = Field(
         None,
