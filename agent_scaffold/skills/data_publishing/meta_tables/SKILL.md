@@ -49,19 +49,16 @@ If the user is still in the discovery process and does not yet know what data ex
 
 ## Read First
 
-1. `docs/knowledge/meta_tables/index.md`
-2. `docs/knowledge/meta_tables/sqlalchemy.md`
-3. `docs/knowledge/meta_tables/compiled_sql.md`
-4. `docs/knowledge/meta_tables/migrations.md`
-5. `docs/knowledge/meta_tables/api.md`
-6. For migration work, use
+1. `AGENTS.md`
+2. <https://mainsequence-sdk.github.io/mainsequence-sdk/knowledge/meta_tables/>
+3. <https://mainsequence-sdk.github.io/mainsequence-sdk/knowledge/meta_tables/sqlalchemy/>
+4. <https://mainsequence-sdk.github.io/mainsequence-sdk/knowledge/meta_tables/compiled_sql/>
+5. <https://mainsequence-sdk.github.io/mainsequence-sdk/knowledge/meta_tables/migrations/>
+6. <https://mainsequence-sdk.github.io/mainsequence-sdk/knowledge/meta_tables/api/>
+7. For migration work, use
    `.agents/skills/mainsequence/data_publishing/meta_table_migrations/SKILL.md`
 
-The knowledge pages above are the authoritative SDK reference for MetaTables.
-The runnable beginner walkthrough is maintained in the separate canonical
-tutorial CodeRepository at
-<https://github.com/mainsequence-projects/mainsequence-sdk-tutorial>; read it
-only when a runnable end-to-end example is needed.
+The pages above are the authoritative reference for MetaTables.
 
 ## Inputs This Skill Needs
 
@@ -313,9 +310,9 @@ asset_meta_table = MetaTable.register(asset_request)
 ### 4. Schema changes use Alembic
 
 When doing migration work, use
-`.agents/skills/mainsequence/data_publishing/meta_table_migrations/SKILL.md`
-and read `docs/knowledge/meta_tables/migrations.md`. The migration skill owns the
-provider-based Alembic lifecycle.
+`.agents/skills/mainsequence/data_publishing/meta_table_migrations/SKILL.md`,
+which owns the provider-based Alembic lifecycle and carries the migration
+reading list.
 
 Do not apply in-place contract changes by changing a `PlatformManagedMetaTable`
 SQLAlchemy class and calling normal registration again. Shape-addressed
@@ -355,8 +352,8 @@ physical table and Alembic version table names. Use `suffix` for a namespace or
 variant, for example `schema_table_name("msm", "positions", suffix="broker")`.
 
 Do not ask users to construct backend migration payloads or call low-level
-migration request models. The backend request shape is reference material in
-the tutorial; the user-facing path is:
+migration request models. The backend request shape is internal; the
+user-facing path is:
 
 ```bash
 mainsequence migrations current --provider sdk_examples.migrations:migration

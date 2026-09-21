@@ -61,16 +61,13 @@ This skill only reasons about access to deployed resources such as `ResourceRele
 
 ## Read First
 
-1. `docs/knowledge/infrastructure/users_and_access.md`
-2. `docs/knowledge/infrastructure/constants_and_secrets.md`
+1. `AGENTS.md`
+2. <https://mainsequence-sdk.github.io/mainsequence-sdk/knowledge/infrastructure/users_and_access/>
+3. <https://mainsequence-sdk.github.io/mainsequence-sdk/knowledge/infrastructure/constants_and_secrets/>
 
-If the task is specifically about a resource type, also read the corresponding knowledge or CLI page for that resource.
-
-The knowledge pages above are the authoritative SDK reference for access control
-and sharing. The runnable beginner walkthrough is maintained in the separate
-canonical tutorial CodeRepository at
-<https://github.com/mainsequence-projects/mainsequence-sdk-tutorial>; read it
-only when a runnable end-to-end example is needed.
+The pages above are the authoritative reference for access control and sharing.
+If the task is specifically about a resource type, also read that resource's own
+page from the documentation root at <https://mainsequence-sdk.github.io/mainsequence-sdk/>.
 
 ## Inputs This Skill Needs
 

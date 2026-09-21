@@ -15,9 +15,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Added a `Tests` workflow that runs the suite on pull requests and pushes. The
   development publish job calls the same workflow, so a development release cannot be
   published while the suite is failing.
-- Added a documentation-link check over the shipped skills: every `docs/...` page and
-  every cross-skill `SKILL.md` a skill names must exist in the repository that produced
-  the release.
+- Added a documentation-reference check over everything the wheel ships under
+  `agent_scaffold`: a skill must not cite SDK documentation by repository-relative
+  path, every documentation-site link must map to a page `docs/` actually renders,
+  and every cross-skill `SKILL.md` reference must resolve. The page check is a pure
+  URL-to-path transform, so it needs no network.
 
 ### Changed
 
@@ -60,11 +62,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   `mainsequence` modules that the batch-jobs tests replace with stubs, and locked a Git
   CodeRepository context in the MetaTable client and time-index update tests, which
   otherwise reached the production backend.
-- Fixed the shipped skills' mandatory reading lists, which still required the removed
-  SDK-local `docs/tutorial/` pages. The MetaTable, MetaTable migration, and access
-  control skills now read the authoritative knowledge pages and link the separate
-  canonical tutorial CodeRepository for the runnable walkthrough; the MetaTable
-  migrations knowledge page carries that repository link too.
+- Fixed the shipped skills' mandatory reading lists, which named documentation the
+  agent reading them cannot open. They required the removed SDK-local
+  `docs/tutorial/` pages, and the surviving `docs/...` paths were no better: the
+  wheel ships no `docs/`, and in the CodeRepository a skill is copied into, `docs/`
+  is that repository's own directory. The six affected skills now cite the published
+  documentation site, so a reference resolves wherever the skill runs, and they no
+  longer depend on the separate tutorial CodeRepository. The two mandatory ADR reads
+  in the migration skill are gone, with the retired migration APIs they were there to
+  rule out now stated in the skill itself.
 
 ## [8.1.19] - 2026-09-19
 

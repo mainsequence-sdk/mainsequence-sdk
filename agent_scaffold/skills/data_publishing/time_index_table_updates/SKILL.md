@@ -64,8 +64,9 @@ If the task depends on one of those areas, route it explicitly instead of guessi
 
 ## Read First
 
-1. `docs/knowledge/time_index_table_updates.md`
-2. `docs/knowledge/meta_tables/sqlalchemy.md`
+1. `AGENTS.md`
+2. <https://mainsequence-sdk.github.io/mainsequence-sdk/knowledge/time_index_table_updates/>
+3. <https://mainsequence-sdk.github.io/mainsequence-sdk/knowledge/meta_tables/sqlalchemy/>
 
 ## Inputs This Skill Needs
 
