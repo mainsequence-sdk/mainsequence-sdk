@@ -138,10 +138,11 @@ lost:
 
   The `environment:` in a publishing workflow has to match its entry exactly, or
   PyPI rejects the OIDC token and the upload fails.
-* **The tag ruleset "release tags v\*: admins only" lists GitHub Actions as a
-  bypass actor.** The release workflow creates the tag with the workflow token.
-  Without the bypass the `tag` job fails after the upload: the release is on
-  PyPI, and the tag and the GitHub release are missing until the job is re-run.
+* **The tag ruleset "release tags v\*: immutable after creation" permits new
+  tags and restricts updates and deletion to administrators.** The release
+  workflow creates the tag with its workflow token after the PyPI upload. Other
+  repository writers can also create new `v*` tags, but only a merge into `main`
+  triggers publication of a package.
 * **The `github-pages` environment accepts the branch `main`**, because the
   documentation is deployed from the release run on `main`.
 * **Branch `development` exists and shares history with `main`.** After the
