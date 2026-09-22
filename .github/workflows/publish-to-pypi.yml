@@ -95,8 +95,8 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
 
   # The tag and the GitHub release are made after the upload, so a tag vX.Y.Z
-  # always names code that is on PyPI. The ruleset "release tags v*" has to list
-  # GitHub Actions as a bypass actor; see docs/release_process.md.
+  # always names code that is on PyPI. The v* tag ruleset permits creation by
+  # this workflow, then restricts updates and deletion; see docs/release_process.md.
   tag:
     needs: deploy
     runs-on: ubuntu-latest
