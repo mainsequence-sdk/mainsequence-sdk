@@ -223,10 +223,6 @@ mainsequence code-repository images list --show-filters
 mainsequence code-repository images list --filter code_repository_commit_hash__in=4a1b2c3d,5e6f7a8b
 mainsequence code-repository create tutorial-repository
 mainsequence code-repository create tutorial-repository --default-base-image-uid <base_image_uid> --github-org-uid <github_org_uid>
-mainsequence code-repository images create
-mainsequence code-repository images create <CODE_REPOSITORY_UID>
-mainsequence code-repository images create <CODE_REPOSITORY_UID> 4a1b2c3d
-mainsequence code-repository images create <CODE_REPOSITORY_UID> --timeout 600 --poll-interval 15
 mainsequence code-repository jobs list
 mainsequence code-repository jobs runs list <JOB_UID>
 mainsequence code-repository jobs runs logs <JOB_RUN_UID>
@@ -234,16 +230,11 @@ mainsequence code-repository jobs runs logs <JOB_RUN_UID> --max-wait-seconds 900
 mainsequence code-repository jobs run <JOB_UID>
 mainsequence code-repository jobs run <JOB_UID> --arg demo-from-cli
 mainsequence code-repository jobs run <JOB_UID> -- --name demo-from-cli
-mainsequence code-repository jobs create --name daily-run --execution-path scripts/test.py --related-image-uid <IMAGE_UID>
-mainsequence code-repository jobs create --name promoted-run --execution-path scripts/test.py --automatic-deployment
 mainsequence code-repository time-index-table-updates list
 mainsequence code-repository time-index-table-updates list <CODE_REPOSITORY_UID>
 mainsequence code-repository resources list
 mainsequence code-repository resources list --show-filters
 mainsequence code-repository resources list --filter resource_type=fastapi
-mainsequence code-repository resources list --filter resource_type=fastapi
-mainsequence code-repository resources create_fastapi
-mainsequence code-repository resources create_fastapi <CODE_REPOSITORY_UID>
 mainsequence code-repository resources delete_fastapi <RELEASE_UID>
 mainsequence code-repository resources delete_fastapi <RELEASE_UID> --yes
 mainsequence code-repository validate-name "Rates Platform"
@@ -543,7 +534,6 @@ ontology and each installed platform skill.
 - `mainsequence code-repository images list` lists code repository images using the SDK client `CodeRepositoryImage.filter()` path.
 - `CodeRepositoryImage` responses include backend metadata such as `creation_date` and the required boolean `build_error` build-status flag.
 - All list commands share the same `--filter KEY=VALUE` and `--show-filters` pattern. Commands that already enforce scoping filters reject overriding those keys.
-- `mainsequence code-repository images create` only accepts pushed commits for `code_repository_commit_hash`. If omitted, it lists commits from the current branch upstream (or remote refs as fallback), shows which commits already have image ids, and waits until `is_ready=true` by polling every 30 seconds for up to 5 minutes by default.
 - `mainsequence code-repository jobs list` lists CodeRepository jobs through the SDK client `Job.filter()` path.
 - `mainsequence code-repository jobs list` shows a human-readable schedule summary from `task_schedule`.
 - `mainsequence code-repository time-index-table-updates list` lists persisted table
@@ -565,7 +555,6 @@ ontology and each installed platform skill.
 - `mainsequence code-repository jobs run` triggers a manual run through the SDK client `Job.run_job()` path.
 - `mainsequence code-repository jobs run --arg ...` appends per-run args to the saved job entrypoint; it does not replace the saved `execution_path`.
 - `mainsequence code-repository jobs run -- --name demo-from-cli` is the preferred form when an appended arg itself starts with `-`.
-- `mainsequence code-repository jobs create` creates jobs through the SDK client `Job.create()` path. A manually pinned Job requires one exact ready `--related-image-uid`. An automatically deployed Job uses `--automatic-deployment` and must omit the image UID; the backend derives and prepares the exact initial image from the CodeRepositoryBranch's persisted synchronized commit. Use `--automatic-redeployment-tag-regex` to restrict later qualifying tags. Repeat `--scheduled-arg` to persist exact argv entries for future scheduler-created runs. The command expects `execution_path` relative to the content root, for example `scripts/test.py`, builds interval or crontab schedules interactively when requested, and defaults compute settings to `cpu_request=0.25`, `memory_request=0.5`, `spot=false`, `max_runtime_seconds=86400` when omitted.
 - `mainsequence code-repository jobs update <JOB_UID> --scheduled-arg ...` replaces the ordered arguments copied into future scheduler-created runs; `--clear-scheduled-args` replaces them with `[]`. Existing JobRun snapshots and manual-run arguments are unchanged.
 - `mainsequence code-repository jobs list` reports each job's exact image, commit, readiness, automatic-deployment state, and effective tag policy.
 - `mainsequence code-repository jobs runs list` reports the immutable runtime image UID, digest, and commit snapshot used by each run.

@@ -441,35 +441,6 @@ def test_code_repository_image_accepts_boolean_build_error(build_error):
 
 
 @pytest.mark.parametrize("build_error", [False, True])
-def test_code_repository_image_create_accepts_boolean_build_error(monkeypatch, build_error):
-    payload = _code_repository_image_response(
-        uid="f3cb8477-df47-49cb-a151-80b746fb1243",
-        build_error=build_error,
-    )
-
-    class FakeResponse:
-        status_code = 202
-
-        @staticmethod
-        def json():
-            return payload
-
-    monkeypatch.setattr(
-        models_foundry_mod.CodeRepositoryImage,
-        "build_session",
-        classmethod(lambda cls: object()),
-    )
-    monkeypatch.setattr(models_foundry_mod, "make_request", lambda **kwargs: FakeResponse())
-
-    image = models_foundry_mod.CodeRepositoryImage.create(
-        code_repository_commit_hash=payload["code_repository_commit_hash"],
-        related_code_repository_branch_uid=payload["related_code_repository_branch_uid"],
-    )
-
-    assert image.build_error is build_error
-
-
-@pytest.mark.parametrize("build_error", [False, True])
 def test_code_repository_image_get_accepts_boolean_build_error(monkeypatch, build_error):
     payload = _code_repository_image_response(
         uid="f3cb8477-df47-49cb-a151-80b746fb1243",
@@ -2798,91 +2769,6 @@ def test_job_filter_parses_backend_derived_environment_uid(monkeypatch):
     }
 
 
-def test_job_create_requires_exact_image_and_does_not_send_commit(monkeypatch):
-    captured = {}
-
-    class FakeResponse:
-        status_code = 201
-
-        @staticmethod
-        def json():
-            return {
-                "uid": "7d0ab07c-d1c0-4b7f-9c69-3c1a41c0a4da",
-                "name": "Daily prices",
-                "description": "Refresh the daily prices dataset.",
-                "code_repository_branch_uid": "5a28020a-0f1b-47ee-aab8-334286234bea",
-                "related_image_uid": "6cfdb152-923e-45b9-a150-c4541c68b0d1",
-                "code_repository_commit_hash": "a" * 40,
-                "image_status": "ready",
-                "automatic_deployment": True,
-                "automatic_redeployment_policy": {
-                    "tag_regex": None,
-                    "policy_revision": 1,
-                },
-            }
-
-    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
-        captured.update({"r_type": r_type, "payload": payload})
-        return FakeResponse()
-
-    monkeypatch.setattr(models_helpers_mod, "make_request", _fake_make_request)
-
-    assert "app_name" not in models_helpers_mod.Job.model_fields
-    with pytest.raises(ValueError, match="execution_path is required"):
-        models_helpers_mod.Job._build_target_payload()
-
-    with pytest.raises(ValueError, match="related_image_uid is required"):
-        models_helpers_mod.Job.create(
-            name="Daily prices",
-            code_repository_branch_uid="5a28020a-0f1b-47ee-aab8-334286234bea",
-            execution_path="jobs/daily_prices.py",
-            cpu_request="1",
-            memory_request="2",
-        )
-
-    job = models_helpers_mod.Job.create(
-        name="Daily prices",
-        description="  Refresh the daily prices dataset.  ",
-        code_repository_branch_uid="5a28020a-0f1b-47ee-aab8-334286234bea",
-        execution_path="jobs/daily_prices.py",
-        cpu_request="1",
-        memory_request="2",
-        automatic_deployment=True,
-        automatic_redeployment_policy={"tag_regex": None},
-    )
-
-    assert job.automatic_deployment is True
-    assert job.description == "Refresh the daily prices dataset."
-    assert captured["r_type"] == "POST"
-    assert captured["payload"]["json"]["description"] == "Refresh the daily prices dataset."
-    assert captured["payload"]["json"]["automatic_deployment"] is True
-    assert captured["payload"]["json"]["automatic_redeployment_policy"] == {"tag_regex": None}
-    assert "code_repository_commit_hash" not in captured["payload"]["json"]
-    assert "related_image_uid" not in captured["payload"]["json"]
-
-    with pytest.raises(TypeError, match="description must be a string"):
-        models_helpers_mod.Job._build_create_payload(
-            name="Daily prices",
-            description=17,
-            code_repository_branch_uid="5a28020a-0f1b-47ee-aab8-334286234bea",
-            execution_path="jobs/daily_prices.py",
-            cpu_request="1",
-            memory_request="2",
-            automatic_deployment=True,
-        )
-
-    with pytest.raises(ValueError, match="must be omitted"):
-        models_helpers_mod.Job.create(
-            name="Invalid auto job",
-            code_repository_branch_uid="5a28020a-0f1b-47ee-aab8-334286234bea",
-            execution_path="jobs/daily_prices.py",
-            related_image_uid="6cfdb152-923e-45b9-a150-c4541c68b0d1",
-            cpu_request="1",
-            memory_request="2",
-            automatic_deployment=True,
-        )
-
-
 def test_job_run_requires_immutable_runtime_image_snapshot():
     payload = {
         "uid": "4c1d77c8-8a42-42b8-a9c1-06be9a336e5d",
@@ -3077,93 +2963,6 @@ def test_legacy_resource_release_deployment_run_model_is_not_exported():
         models_helpers_mod.get_model_class(legacy_name)
 
 
-def test_resource_release_create_sends_automatic_deployment(monkeypatch):
-    captured = {}
-    release_uid = "2f4c4c3d-5669-4da5-9d86-b84633c1e6ed"
-    resource_uid = "857bec7b-dd77-4272-aecd-13fc2138eacc"
-    image_uid = "6cfdb152-923e-45b9-a150-c4541c68b0d1"
-
-    class FakeResponse:
-        status_code = 201
-
-        @staticmethod
-        def json():
-            return {
-                "uid": release_uid,
-                "resource_uid": resource_uid,
-                "readme_resource_uid": None,
-                "related_job_uid": "7d0ab07c-d1c0-4b7f-9c69-3c1a41c0a4da",
-                "release_kind": "fastapi",
-                "automatic_deployment": True,
-                "automatic_redeployment_policy": {
-                    "tag_regex": "^v[0-9]+\\.[0-9]+\\.[0-9]+$",
-                    "policy_revision": 1,
-                },
-                "revision_retention_count": 5,
-                "active_revision": "19128ab6-d72f-460c-8525-d758fa92676a",
-                "desired_revision": "2a9370a7-c07f-439c-bcd9-629e3e916699",
-            }
-
-    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
-        captured["r_type"] = r_type
-        captured["url"] = url
-        captured["payload"] = payload
-        captured["timeout"] = time_out
-        return FakeResponse()
-
-    monkeypatch.setattr(models_helpers_mod, "make_request", _fake_make_request)
-
-    release = models_helpers_mod.ResourceRelease.create(
-        resource_uid=resource_uid,
-        related_image_uid=image_uid,
-        release_kind=models_helpers_mod.ResourceReleaseKind.FAST_API,
-        cpu_request="500m",
-        memory_request="1Gi",
-        automatic_deployment=True,
-        revision_retention_count=5,
-        timeout=11,
-    )
-
-    assert release.automatic_deployment is True
-    assert release.automatic_redeployment_policy is not None
-    assert release.automatic_redeployment_policy.tag_regex == "^v[0-9]+\\.[0-9]+\\.[0-9]+$"
-    assert release.automatic_redeployment_policy.policy_revision == 1
-    assert release.revision_retention_count == 5
-    assert release.active_revision == "19128ab6-d72f-460c-8525-d758fa92676a"
-    assert release.desired_revision == "2a9370a7-c07f-439c-bcd9-629e3e916699"
-    assert captured["r_type"] == "POST"
-    assert str(captured["url"]).endswith("/api/v1/resource-releases/")
-    assert captured["payload"]["json"]["automatic_deployment"] is True
-    assert captured["payload"]["json"]["revision_retention_count"] == 5
-    assert captured["payload"]["json"]["resource_uid"] == resource_uid
-    assert captured["payload"]["json"]["related_image_uid"] == image_uid
-    assert captured["timeout"] == 11
-
-
-@pytest.mark.parametrize("invalid_value", [0, -1, True, 1.5, "3"])
-def test_resource_release_create_rejects_invalid_revision_retention_count(
-    monkeypatch, invalid_value
-):
-    monkeypatch.setattr(
-        models_helpers_mod,
-        "make_request",
-        lambda **kwargs: pytest.fail("invalid retention must fail before the request"),
-    )
-
-    with pytest.raises(
-        ValueError,
-        match="revision_retention_count must be a positive integer",
-    ):
-        models_helpers_mod.ResourceRelease.create(
-            resource_uid="857bec7b-dd77-4272-aecd-13fc2138eacc",
-            related_image_uid="6cfdb152-923e-45b9-a150-c4541c68b0d1",
-            release_kind=models_helpers_mod.ResourceReleaseKind.FAST_API,
-            cpu_request="500m",
-            memory_request="1Gi",
-            revision_retention_count=invalid_value,
-        )
-
-
 def test_streamlit_dashboard_contract_is_removed():
     assert not hasattr(models_helpers_mod.ResourceReleaseKind, "STREAMLIT_DASHBOARD")
     assert not hasattr(models_helpers_mod.CodeRepositoryResource, "create_dashboard")
@@ -3187,36 +2986,9 @@ def test_streamlit_dashboard_contract_is_removed():
     assert retired.release_kind == "streamlit_dashboard"
     assert retired.release_kind not in set(models_helpers_mod.ResourceReleaseKind)
 
-    # What the SDK sends stays closed: the retired kind cannot be created.
-    with pytest.raises(ValueError, match="release_kind must be one of"):
-        models_helpers_mod.ResourceRelease.create(
-            resource_uid="857bec7b-dd77-4272-aecd-13fc2138eacc",
-            release_kind="streamlit_dashboard",
-            related_image_uid="1f0f6a54-1f4f-4f6b-9a3a-2f1d0c9b8a77",
-            cpu_request="500m",
-            memory_request="1Gi",
-        )
-
     with pytest.raises(ValidationError):
         models_helpers_mod.ResourceRelease.model_validate(
             {"uid": "2f4c4c3d-5669-4da5-9d86-b84633c1e6ed"}
-        )
-
-
-def test_resource_release_create_rejects_retired_kind_before_request(monkeypatch):
-    monkeypatch.setattr(
-        models_helpers_mod,
-        "make_request",
-        lambda **kwargs: pytest.fail("retired kind must fail before the request"),
-    )
-
-    with pytest.raises(ValueError, match="release_kind must be one of"):
-        models_helpers_mod.ResourceRelease.create(
-            resource_uid="857bec7b-dd77-4272-aecd-13fc2138eacc",
-            related_image_uid="6cfdb152-923e-45b9-a150-c4541c68b0d1",
-            release_kind="streamlit_dashboard",
-            cpu_request="500m",
-            memory_request="1Gi",
         )
 
 
@@ -3749,87 +3521,6 @@ def test_deployment_run_runtime_billing_rejects_negative_counters(field_name):
         )
 
 
-def test_resource_release_deploy_current_version_posts_detail_action(monkeypatch):
-    captured = {}
-    release_uid = "2f4c4c3d-5669-4da5-9d86-b84633c1e6ed"
-    run_uid = "11111111-1111-4111-8111-111111111111"
-    release = models_helpers_mod.ResourceRelease(
-        uid=release_uid,
-        release_kind="fastapi",
-        automatic_deployment=True,
-    )
-
-    class FakeResponse:
-        status_code = 202
-        content = b'{"uid": "run"}'
-
-        @staticmethod
-        def json():
-            return {
-                "uid": run_uid,
-                "target_type": "resource_release",
-                "target": {"uid": release_uid, "name": "analytics-123", "kind": "fastapi"},
-                "code_repository_branch_uid": "33333333-3333-4333-8333-333333333333",
-                "operation": "build_and_deploy",
-                "source": "manual",
-                "commit_sha": "a" * 40,
-                "configuration_revision": 4,
-                "state": "succeeded",
-                "outcome": "deployed",
-                "pipeline": _resource_release_pipeline_payload(),
-                "created_at": "2026-07-19T12:00:00Z",
-                "started_at": "2026-07-19T12:00:01Z",
-                "finished_at": "2026-07-19T12:00:05Z",
-                "revision_context": {},
-                "trigger_context": {},
-                "artifact_context": {},
-                "cleanup_context": {},
-                "result": {},
-                "builder_image": "",
-                "builder_runtime": "",
-                "logs": {
-                    "state": "available",
-                    "url": f"/api/v1/deployment-runs/{run_uid}/logs/",
-                    "retention_expires_at": None,
-                },
-                "error": None,
-                **_deployment_run_cost_projections(),
-            }
-
-    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
-        captured["r_type"] = r_type
-        captured["url"] = url
-        captured["payload"] = payload
-        captured["timeout"] = time_out
-        return FakeResponse()
-
-    monkeypatch.setattr(base_mod, "make_request", _fake_make_request)
-
-    run = release.deploy_current_version(timeout=9)
-
-    assert run.uid == run_uid
-    assert isinstance(run, models_helpers_mod.DeploymentRun)
-    assert run.target.uid == release_uid
-    assert run.state == "succeeded"
-    assert run.outcome == "deployed"
-    assert run.pipeline.current_step_key is None
-    assert len(run.pipeline.steps) == 6
-    assert run.builder_image == ""
-    assert run.builder_runtime == ""
-    assert run.logs.state == "available"
-    assert run.error is None
-    assert run.billing.total_cost == Decimal("0.000000")
-    assert run.runtime_billing.scope == "knative_runtime"
-    assert run.cost_summary.is_complete is True
-    assert captured == {
-        "r_type": "POST",
-        "url": (
-            f"{models_helpers_mod.ResourceRelease.get_object_url()}/{release_uid}/"
-            "deploy-current-version/"
-        ),
-        "payload": {},
-        "timeout": 9,
-    }
 
 
 def test_deployment_run_collection_and_detail_use_unified_resource_release_contract(monkeypatch):
@@ -5188,3 +4879,26 @@ def test_team_uses_permission_managed_object_mixin():
     assert "ShareableObjectMixin" not in models_user_bases["Team"], (
         "Team should not inherit ShareableObjectMixin directly"
     )
+
+
+@pytest.mark.parametrize(
+    "model",
+    [
+        models_foundry_mod.CodeRepositoryImage,
+        models_helpers_mod.Job,
+        models_helpers_mod.ResourceRelease,
+    ],
+)
+def test_retired_collection_create_fails_before_http(monkeypatch, model):
+    monkeypatch.setattr(
+        base_mod,
+        "make_request",
+        lambda **kwargs: pytest.fail("retired collection create must not send HTTP"),
+    )
+
+    with pytest.raises(NotImplementedError, match="repository workflow declarations"):
+        model.create()
+
+
+def test_resource_release_does_not_offer_manual_deployment():
+    assert not hasattr(models_helpers_mod.ResourceRelease, "deploy_current_version")

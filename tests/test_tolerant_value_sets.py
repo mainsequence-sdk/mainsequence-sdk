@@ -2,7 +2,7 @@
 
 A response value this SDK release does not declare — an enum member, a literal
 member — is kept as the backend wrote it instead of failing the row that carries
-it and the listing that row is in. What the SDK *sends* stays closed.
+it and the listing that row is in. Direct release creation is retired; value-set tolerance applies to reads.
 
 `ResourceRelease.filter(...)` returning a `harness_agent` release is the
 reproduction from #119; the rest holds the rule for the models around it.
@@ -211,31 +211,6 @@ def test_undeclared_literal_value_does_not_fail_the_row_around_it():
 
 
 # --- what the SDK sends stays closed ------------------------------------------
-
-
-def test_creating_a_release_still_rejects_an_undeclared_kind():
-    with pytest.raises(ValueError, match="release_kind must be one of"):
-        models_helpers_mod.ResourceRelease.create(
-            resource_uid="857bec7b-dd77-4272-aecd-13fc2138eacc",
-            release_kind="quantum_agent",
-            related_image_uid="1f0f6a54-1f4f-4f6b-9a3a-2f1d0c9b8a77",
-            cpu_request="500m",
-            memory_request="1Gi",
-        )
-
-
-def test_creating_a_release_rejects_an_undeclared_kind_built_as_a_member():
-    """A member built from an undeclared value must not open the request path."""
-    undeclared = models_helpers_mod.ResourceReleaseKind("quantum_agent")
-
-    with pytest.raises(ValueError, match="release_kind must be one of"):
-        models_helpers_mod.ResourceRelease.create(
-            resource_uid="857bec7b-dd77-4272-aecd-13fc2138eacc",
-            release_kind=undeclared,
-            related_image_uid="1f0f6a54-1f4f-4f6b-9a3a-2f1d0c9b8a77",
-            cpu_request="500m",
-            memory_request="1Gi",
-        )
 
 
 # --- the report ---------------------------------------------------------------

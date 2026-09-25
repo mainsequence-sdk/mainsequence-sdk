@@ -134,6 +134,7 @@ class BaseObjectOrm:
     SDK_OWNED_CONTEXT_FIELDS: ClassVar[frozenset[str]] = frozenset()
     # Opt in when collection responses intentionally omit detail-only fields.
     HYDRATE_FILTER_GET_FROM_DETAIL: ClassVar[bool] = False
+    COLLECTION_CREATE_SUPPORTED: ClassVar[bool] = True
 
     END_POINTS = {
         "User": "users",
@@ -663,6 +664,10 @@ class BaseObjectOrm:
 
     @classmethod
     def create(cls, timeout=None, files=None, *args, **kwargs):
+        if not cls.COLLECTION_CREATE_SUPPORTED:
+            raise NotImplementedError(
+                f"{cls.__name__} creation is owned by repository workflow declarations."
+            )
         base_url = cls.get_object_url()
         operation = f"{cls.__name__}.create"
         data = cls.serialize_for_json(cls._with_sdk_owned_create_context(operation, dict(kwargs)))
