@@ -441,35 +441,6 @@ def test_code_repository_image_accepts_boolean_build_error(build_error):
 
 
 @pytest.mark.parametrize("build_error", [False, True])
-def test_code_repository_image_create_accepts_boolean_build_error(monkeypatch, build_error):
-    payload = _code_repository_image_response(
-        uid="f3cb8477-df47-49cb-a151-80b746fb1243",
-        build_error=build_error,
-    )
-
-    class FakeResponse:
-        status_code = 202
-
-        @staticmethod
-        def json():
-            return payload
-
-    monkeypatch.setattr(
-        models_foundry_mod.CodeRepositoryImage,
-        "build_session",
-        classmethod(lambda cls: object()),
-    )
-    monkeypatch.setattr(models_foundry_mod, "make_request", lambda **kwargs: FakeResponse())
-
-    image = models_foundry_mod.CodeRepositoryImage.create(
-        code_repository_commit_hash=payload["code_repository_commit_hash"],
-        related_code_repository_branch_uid=payload["related_code_repository_branch_uid"],
-    )
-
-    assert image.build_error is build_error
-
-
-@pytest.mark.parametrize("build_error", [False, True])
 def test_code_repository_image_get_accepts_boolean_build_error(monkeypatch, build_error):
     payload = _code_repository_image_response(
         uid="f3cb8477-df47-49cb-a151-80b746fb1243",
@@ -493,6 +464,10 @@ def test_code_repository_image_get_accepts_boolean_build_error(monkeypatch, buil
     image = models_foundry_mod.CodeRepositoryImage.get(pk=payload["uid"])
 
     assert image.build_error is build_error
+
+
+def test_code_repository_image_cannot_inherit_collection_create():
+    assert not callable(models_foundry_mod.CodeRepositoryImage.create)
 
 
 def test_code_repository_image_filter_accepts_boolean_build_error(monkeypatch):

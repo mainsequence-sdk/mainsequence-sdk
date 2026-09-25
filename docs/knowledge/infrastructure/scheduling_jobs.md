@@ -283,11 +283,12 @@ mainsequence code-repository jobs runs logs <JOB_RUN_UID> --max-wait-seconds 900
 
 The logs command polls while the run is still `PENDING` or `RUNNING`, so it works well as a simple live tail for operational checks.
 
-### Bind a job to an exact code repository image
+### Observe a job's exact code repository image
 
-Every job requires this binding. The image represents one pushed, exact commit
-and remains the job's current image until an explicit image change or a
-qualifying backend-owned promotion succeeds.
+Repository workflow application selects or builds the image for the exact
+synchronized commit. The workflow author declares a Job under
+`.mainsequence/workflows/`; no CLI command selects a commit or base image for
+direct image creation.
 
 List existing images:
 
@@ -295,26 +296,13 @@ List existing images:
 mainsequence code-repository images list
 ```
 
-Create a new image:
-
-```bash
-mainsequence code-repository images create
-```
-
-Then create the job against that image:
-
-```bash
-mainsequence code-repository jobs create \
-  --name "Simulated Prices - Frozen" \
-  --execution-path scripts/simulated_prices_launcher.py \
-  --related-image-uid <IMAGE_UID>
-```
-
-This is the only supported creation pattern. There is no dynamic, blank-image,
-branch-tip, or `latest` job mode.
+Inspect the workflow-created Job and its runs with the Job commands above.
+There is no dynamic, blank-image, branch-tip, or `latest` job mode.
 
 !!! note "Important"
-    CodeRepository images are built from pushed commits. If a commit does not exist on the remote, it cannot be turned into a code repository image.
+    CodeRepository images are built from synchronized commits. A commit that
+    has not reached the remote cannot be selected by repository workflow
+    application.
 
 ## Working from the Python client
 

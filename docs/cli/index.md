@@ -223,10 +223,6 @@ mainsequence code-repository images list --show-filters
 mainsequence code-repository images list --filter code_repository_commit_hash__in=4a1b2c3d,5e6f7a8b
 mainsequence code-repository create tutorial-repository
 mainsequence code-repository create tutorial-repository --default-base-image-uid <base_image_uid> --github-org-uid <github_org_uid>
-mainsequence code-repository images create
-mainsequence code-repository images create <CODE_REPOSITORY_UID>
-mainsequence code-repository images create <CODE_REPOSITORY_UID> 4a1b2c3d
-mainsequence code-repository images create <CODE_REPOSITORY_UID> --timeout 600 --poll-interval 15
 mainsequence code-repository jobs list
 mainsequence code-repository jobs runs list <JOB_UID>
 mainsequence code-repository jobs runs logs <JOB_RUN_UID>
@@ -543,7 +539,7 @@ ontology and each installed platform skill.
 - `mainsequence code-repository images list` lists code repository images using the SDK client `CodeRepositoryImage.filter()` path.
 - `CodeRepositoryImage` responses include backend metadata such as `creation_date` and the required boolean `build_error` build-status flag.
 - All list commands share the same `--filter KEY=VALUE` and `--show-filters` pattern. Commands that already enforce scoping filters reject overriding those keys.
-- `mainsequence code-repository images create` only accepts pushed commits for `code_repository_commit_hash`. If omitted, it lists commits from the current branch upstream (or remote refs as fallback), shows which commits already have image ids, and waits until `is_ready=true` by polling every 30 seconds for up to 5 minutes by default.
+- CodeRepository images are created by repository workflow application from the exact synchronized commit. The CLI lists and deletes images; it does not offer direct image creation or base-image selection for a build.
 - `mainsequence code-repository jobs list` lists CodeRepository jobs through the SDK client `Job.filter()` path.
 - `mainsequence code-repository jobs list` shows a human-readable schedule summary from `task_schedule`.
 - `mainsequence code-repository time-index-table-updates list` lists persisted table

@@ -187,27 +187,28 @@ Before release, verify local CodeRepository resolution:
 mainsequence code-repository current --debug --json
 ```
 
-Then move the tested code through the canonical lifecycle:
+Before syncing, add the FastAPI declaration and repository-native source path
+under `.mainsequence/workflows/`. Then move the tested code through the
+canonical lifecycle:
 
 ```bash
 mainsequence code-repository sync -m "Release Command Center API"
-mainsequence code-repository images create
 mainsequence code-repository resources list --filter resource_type=fastapi
-mainsequence code-repository resources create_fastapi
 ```
 
 Verify that:
 
 - code-repository sync used the intended Git branch
-- the selected image contains the exact tested commit
+- the workflow declaration under `.mainsequence/workflows/` identifies the intended FastAPI source path
+- the backend-created image contains the exact tested commit
 - resource discovery found the expected FastAPI path at that commit
-- the selected resource UID and image UID refer to the same commit
+- the indexed resource and backend-created image refer to the same commit
 - the created release kind is `fastapi`
 - compute and spot settings are intentional
 
-Use `--automatic-deployment` only after the route paths, resource path, and
-frontend contracts are stable and the release should follow future repository
-syncs. Otherwise keep the release pinned and create deliberate replacements.
+Enable automatic redeployment in the workflow declaration only after the route
+paths, source path, and frontend contracts are stable. Otherwise keep the
+declared release pinned until a deliberate repository change is ready.
 
 ### 6. Verify the deployed API
 
