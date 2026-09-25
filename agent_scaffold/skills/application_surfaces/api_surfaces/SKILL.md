@@ -265,8 +265,8 @@ events to promote exact images.
 
 ### 6. Verify the deployed API
 
-For protected routes, request runtime access for the deployed FastAPI
-`ResourceRelease` through Django and wait for its ready result. Use the
+Request runtime access for protected routes on the deployed FastAPI
+`ResourceRelease` through Django and wait for Django's ready result. Use the
 returned access bundle for authenticated checks. For declared public routes,
 use the provider URI without a Main Sequence Bearer token:
 
