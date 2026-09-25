@@ -187,27 +187,27 @@ Before release, verify local CodeRepository resolution:
 mainsequence code-repository current --debug --json
 ```
 
-Then move the tested code through the canonical lifecycle:
+Declare the FastAPI resource in `.mainsequence/workflows/`, validate the
+workflow against the backend template, then move the tested commit through the
+canonical lifecycle:
 
 ```bash
 mainsequence code-repository sync -m "Release Command Center API"
-mainsequence code-repository images create
 mainsequence code-repository resources list --filter resource_type=fastapi
-mainsequence code-repository resources create_fastapi
 ```
 
 Verify that:
 
 - code-repository sync used the intended Git branch
-- the selected image contains the exact tested commit
-- resource discovery found the expected FastAPI path at that commit
-- the selected resource UID and image UID refer to the same commit
-- the created release kind is `fastapi`
+- the workflow declaration identifies the tested FastAPI source path
+- resource discovery found that path at the exact deployed commit
+- Django resolved and built the exact image for the workflow event
+- the resulting release kind is `fastapi`
 - compute and spot settings are intentional
 
-Use `--automatic-deployment` only after the route paths, resource path, and
-frontend contracts are stable and the release should follow future repository
-syncs. Otherwise keep the release pinned and create deliberate replacements.
+Enable automatic deployment in the repository workflow when the route paths,
+resource path, and frontend contracts are stable enough for future repository
+events to promote exact images.
 
 ### 6. Verify the deployed API
 

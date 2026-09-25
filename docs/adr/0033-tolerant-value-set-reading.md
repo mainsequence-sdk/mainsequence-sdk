@@ -1,5 +1,11 @@
 # ADR 0033: Read Closed Value Sets Tolerantly
 
+Amended 2026-09-25 for [SDK issue #162](https://github.com/mainsequence-sdk/mainsequence-sdk/issues/162):
+public ResourceRelease collection creation is retired. The historical
+`ResourceRelease.create` sending examples below are superseded; the SDK now
+blocks inherited create calls before HTTP. Tolerant response reading and
+closed request parameter validation remain in force for supported operations.
+
 Date: 2026-09-21
 
 Status: Accepted and implemented
@@ -63,10 +69,8 @@ backend, and keeps it closed when the value goes to the backend.
    way (#119).
 6. **What the SDK sends stays closed.** A request parameter typed `Literal[...]`
    still rejects an undeclared value, because there the mistake is the caller's
-   and raising is what catches it. `ResourceRelease.create` checks its
-   `release_kind` against the declared members even when it is handed an enum
-   member, so a member built from an undeclared value cannot open the request
-   path.
+   and raising is what catches it. Direct ResourceRelease creation is retired;
+   repository workflows provide the creation input.
 7. **An unknown discriminator is unchanged.** `AgentSession.get_insights`
    dispatches on `harness` and raises for a harness it cannot place. That is one
    object, fetched by itself, so the error is already scoped to the object that
@@ -142,7 +146,7 @@ safe from that, and reuses a `Literal` alias directly.
 ### Register the undeclared value on the enum
 
 Rejected. Iterating the enum would then list values that depend on what the
-process happened to read, and `create` validates against exactly that iteration.
+process happened to read, so declared membership stays stable.
 
 ## Required Invariants
 
@@ -153,7 +157,6 @@ process happened to read, and `create` validates against exactly that iteration.
 - `ResourceRelease` and `ResourceReleaseRuntimeAccess` read the same release-kind
   vocabulary.
 - Reading an undeclared value does not add it to the enum.
-- `ResourceRelease.create` rejects a `release_kind` this release does not
-  declare, including one handed to it as an enum member.
+- Direct ResourceRelease collection creation is blocked before an HTTP request.
 - An undeclared value is reported once, naming the model, the field and the value.
 - `tests/test_tolerant_value_sets.py` holds these rules.

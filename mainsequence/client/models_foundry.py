@@ -741,9 +741,9 @@ class CodeRepositoryImageSourceProvenance(BasePydanticModel):
 
 
 class CodeRepositoryImage(CurrentCodeRepositoryBranchCollectionMixin, BasePydanticModel, BaseObjectOrm):
-    """
-    Image build from a code repository
-    """
+    """Image build from a code repository."""
+
+    COLLECTION_CREATE_SUPPORTED: ClassVar[bool] = False
 
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
         "search": ["exact"],
@@ -779,74 +779,6 @@ class CodeRepositoryImage(CurrentCodeRepositoryBranchCollectionMixin, BasePydant
     build_error: bool = Field(..., description="Whether the backend image build failed")
     is_ready: bool = Field(..., description="Whether the image is ready in Artifact Registry")
     creation_date: datetime.datetime | None = Field(None, description="Creation timestamp")
-
-    @staticmethod
-    def _coerce_uid(obj: Any, *, field_name: str) -> str | None:
-        if obj is None:
-            return None
-        if isinstance(obj, UUID):
-            return str(obj)
-        if isinstance(obj, str):
-            normalized = obj.strip()
-            if normalized:
-                return normalized
-        if hasattr(obj, "uid") and obj.uid not in (None, ""):
-            return str(obj.uid).strip()
-        if isinstance(obj, dict) and obj.get("uid") not in (None, ""):
-            return str(obj["uid"]).strip()
-        raise TypeError(
-            f"{field_name} must be a uid string, an object with .uid, a dict with 'uid', or None. "
-            f"Got: {type(obj)!r}"
-        )
-
-    @classmethod
-    def create(
-        cls,
-        *,
-        code_repository_commit_hash: str,
-        related_code_repository_branch_uid: str | CodeRepositoryBranch | dict[str, Any] | None = None,
-        base_image_uid: str | CodeRepositoryBaseImage | dict[str, Any] | None = None,
-        timeout=None,
-        files=None,
-        **kwargs,
-    ) -> CodeRepositoryImage:
-        """
-        Create a code repository image.
-        """
-        payload: dict[str, Any] = {"code_repository_commit_hash": code_repository_commit_hash}
-
-        supplied_code_repository_branch_uid = cls._coerce_uid(
-            related_code_repository_branch_uid,
-            field_name="related_code_repository_branch_uid",
-        )
-        from mainsequence.code_repository_context import resolve_code_repository_branch_uid
-
-        payload["related_code_repository_branch_uid"] = resolve_code_repository_branch_uid(
-            "CodeRepositoryImage.create",
-            supplied_uid=supplied_code_repository_branch_uid,
-        )
-
-        image_uid = cls._coerce_uid(base_image_uid, field_name="base_image_uid")
-        if image_uid is not None:
-            payload["base_image_uid"] = image_uid
-
-        payload.update(kwargs)
-        data = cls.serialize_for_json(payload)
-        request_payload = {"json": data}
-        if files:
-            request_payload["files"] = files
-
-        r = make_request(
-            s=cls.build_session(),
-            loaders=cls.LOADERS,
-            r_type="POST",
-            url=f"{cls.get_object_url()}/",
-            payload=request_payload,
-            time_out=timeout,
-        )
-        if r.status_code not in (200, 201, 202):
-            raise_for_response(r, payload=request_payload)
-        return cls(**r.json())
 
 
 class TimeScaleDB(_DataSource):

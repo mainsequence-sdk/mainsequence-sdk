@@ -169,7 +169,7 @@ def test_job_run_job_rejects_non_list_string_argv(command_args):
         job.run_job(command_args=command_args)
 
 
-def test_job_models_scheduled_command_args_from_read_create_and_patch_serializers(monkeypatch):
+def test_job_models_scheduled_command_args_from_read_and_patch_serializers(monkeypatch):
     models_helpers = _load_models_helpers_module()
     Job = models_helpers.Job
     job_uid = "7d0ab07c-d1c0-4b7f-9c69-3c1a41c0a4da"
@@ -186,23 +186,6 @@ def test_job_models_scheduled_command_args_from_read_create_and_patch_serializer
         image_status="ready",
     )
     assert job.scheduled_command_args == scheduled_args
-
-    monkeypatch.setattr(
-        Job,
-        "_resolve_code_repository_branch_uid",
-        classmethod(lambda cls, code_repository_branch_uid=None: code_repository_branch_uid),
-    )
-    create_payload = Job._build_create_payload(
-        name="Simulated Prices",
-        code_repository_branch_uid="5a28020a-0f1b-47ee-aab8-334286234bea",
-        execution_path="scripts/simulated_prices_launcher.py",
-        scheduled_command_args=scheduled_args,
-        cpu_request="0.25",
-        memory_request="0.5",
-        related_image_uid="f3cb8477-df47-49cb-a151-80b746fb1243",
-    )
-    assert create_payload["scheduled_command_args"] == scheduled_args
-    assert create_payload["scheduled_command_args"] is not scheduled_args
 
     class FakeResponse:
         status_code = 200

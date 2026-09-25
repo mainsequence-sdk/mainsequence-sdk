@@ -1,17 +1,12 @@
 from __future__ import annotations
 
 import datetime
-import json
 import time
-from collections.abc import Collection
 from decimal import Decimal
-from pathlib import PurePosixPath
 from typing import Any, ClassVar, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field, PositiveInt
-
-from mainsequence.code_repository_context import resolve_code_repository_branch_uid
 
 from .base import (
     BaseObjectOrm,
@@ -19,16 +14,7 @@ from .base import (
     CurrentCodeRepositoryBranchCollectionMixin,
     ShareableObjectMixin,
 )
-from .compute_validation import (
-    decimal_to_storage,
-    normalize_string,
-    validate_and_normalize_compute_fields,
-)
 from .exceptions import raise_for_response
-from .models_foundry import (
-    CodeRepositoryBranch,
-    CodeRepositoryImage,
-)
 from .observability import (
     EnvironmentLogSearchMixin,
     EnvironmentLogSearchPage,
@@ -133,6 +119,7 @@ class AutomaticRedeploymentPolicy(BaseModel):
 
 
 class Job(CurrentCodeRepositoryBranchCollectionMixin, BaseObjectOrm, BasePydanticModel):
+    COLLECTION_CREATE_SUPPORTED: ClassVar[bool] = False
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
         "uid": ["in", "exact"],
         "code_repository_branch_uid": ["in", "exact"],
@@ -147,18 +134,6 @@ class Job(CurrentCodeRepositoryBranchCollectionMixin, BaseObjectOrm, BasePydanti
         "name__in": "str",
         "name__contains": "str",
     }
-
-    CPU_MIN: ClassVar[Decimal] = Decimal("0.25")
-    CPU_MAX: ClassVar[Decimal] = Decimal("30")
-    MEMORY_MIN: ClassVar[Decimal] = Decimal("0.5")
-    MEMORY_MAX: ClassVar[Decimal] = Decimal("110")
-    MEMORY_PER_CPU_MIN: ClassVar[Decimal] = Decimal("1")
-    MEMORY_PER_CPU_MAX: ClassVar[Decimal] = Decimal("6.5")
-    GPU_MIN: ClassVar[int] = 1
-    GPU_MAX: ClassVar[int] = 8
-    DEFAULT_ALLOWED_EXECUTION_EXTENSIONS: ClassVar[frozenset[str]] = frozenset(
-        {".py", ".yaml"}
-    )
 
     uid: str | None = Field(
         default=None,
@@ -312,28 +287,6 @@ class Job(CurrentCodeRepositoryBranchCollectionMixin, BaseObjectOrm, BasePydanti
         description=("Standalone Job promotion policy. Target-owned backing Jobs return null."),
     )
 
-    @staticmethod
-    def _coerce_uid(obj: Any, *, field_name: str) -> str | None:
-        if obj is None:
-            return None
-        if isinstance(obj, UUID):
-            return str(obj)
-        if isinstance(obj, str):
-            normalized = obj.strip()
-            if normalized:
-                return normalized
-        if hasattr(obj, "uid") and obj.uid not in (None, ""):
-            return str(obj.uid).strip()
-        if isinstance(obj, dict) and obj.get("uid") not in (None, ""):
-            return str(obj["uid"]).strip()
-        raise TypeError(
-            f"{field_name} must be a uid string, an object with .uid, a dict with 'uid', or None. "
-            f"Got: {type(obj)!r}"
-        )
-
-    @staticmethod
-    def _normalize_str(value: Any) -> str | None:
-        return normalize_string(value)
 
     @staticmethod
     def _normalize_command_args(value: Any, *, field_name: str) -> list[str]:
@@ -341,372 +294,6 @@ class Job(CurrentCodeRepositoryBranchCollectionMixin, BaseObjectOrm, BasePydanti
             raise TypeError(f"{field_name} must be a list of strings.")
         return list(value)
 
-    @staticmethod
-    def _decimal_to_storage(value: Decimal | None) -> str | None:
-        return decimal_to_storage(value)
-
-    @classmethod
-    def _resolve_code_repository_branch_uid(
-        cls,
-        code_repository_branch_uid: str | CodeRepositoryBranch | dict[str, Any] | None = None,
-    ) -> str:
-        return resolve_code_repository_branch_uid(
-            "Job.create",
-            supplied_uid=code_repository_branch_uid,
-        )
-
-    @classmethod
-    def _normalize_allowed_execution_extensions(
-        cls,
-        allowed_execution_extensions: Collection[str] | str | None,
-    ) -> set[str]:
-        if allowed_execution_extensions is None:
-            return set(cls.DEFAULT_ALLOWED_EXECUTION_EXTENSIONS)
-
-        raw_values = (
-            [allowed_execution_extensions]
-            if isinstance(allowed_execution_extensions, str)
-            else list(allowed_execution_extensions)
-        )
-
-        normalized: set[str] = set()
-        for raw in raw_values:
-            ext = str(raw).strip().lower()
-            if not ext:
-                raise ValueError("allowed_execution_extensions cannot contain empty values.")
-            if not ext.startswith("."):
-                ext = f".{ext}"
-            if ext not in cls.DEFAULT_ALLOWED_EXECUTION_EXTENSIONS:
-                raise ValueError(
-                    f"Unsupported extension {ext!r}. "
-                    f"Allowed extensions: {', '.join(sorted(cls.DEFAULT_ALLOWED_EXECUTION_EXTENSIONS))}."
-                )
-            normalized.add(ext)
-
-        if not normalized:
-            raise ValueError("allowed_execution_extensions cannot be empty.")
-
-        return normalized
-
-    @classmethod
-    def _build_target_payload(
-        cls,
-        *,
-        execution_path: str | None = None,
-        allowed_execution_extensions: Collection[str] | str | None = None,
-    ) -> dict[str, Any]:
-        execution_path = cls._normalize_str(execution_path)
-
-        if execution_path is None:
-            raise ValueError("execution_path is required.")
-
-        payload: dict[str, Any] = {}
-
-        if execution_path is not None:
-            execution_path = execution_path.replace("\\", "/")
-            path_obj = PurePosixPath(execution_path)
-            allowed_extensions = cls._normalize_allowed_execution_extensions(
-                allowed_execution_extensions
-            )
-
-            if execution_path.endswith("/"):
-                raise ValueError("execution_path must point to a file, not a directory.")
-            if path_obj.is_absolute():
-                raise ValueError("execution_path must be repository-relative.")
-            if ".." in path_obj.parts:
-                raise ValueError("execution_path cannot contain '..' path traversal.")
-
-            suffix = path_obj.suffix.lower()
-            if suffix not in allowed_extensions:
-                raise ValueError(
-                    f"Invalid file type. Allowed extensions: {', '.join(sorted(allowed_extensions))}."
-                )
-
-            payload["execution_path"] = execution_path
-
-        return payload
-
-    @classmethod
-    def _validate_and_normalize_compute_fields(
-        cls,
-        *,
-        cpu_request: Any,
-        memory_request: Any,
-        gpu_request: Any,
-        gpu_type: Any,
-        require_cpu_and_memory: bool = True,
-        output_format: Literal["decimal", "k8s"] = "decimal",
-    ) -> dict[str, str | None]:
-        return validate_and_normalize_compute_fields(
-            cpu_request=cpu_request,
-            memory_request=memory_request,
-            gpu_request=gpu_request,
-            gpu_type=gpu_type,
-            require_cpu_and_memory=require_cpu_and_memory,
-            output_format=output_format,
-        )
-
-    @classmethod
-    def _normalize_task_schedule_payload(
-        cls,
-        *,
-        task_schedule: Any = None,
-        task_schedule_id: int | None = None,
-    ) -> dict[str, Any] | None:
-        if task_schedule is not None and task_schedule_id is not None:
-            raise ValueError("Pass only one of task_schedule or task_schedule_id.")
-
-        if task_schedule_id is not None:
-            raise ValueError(
-                "task_schedule_id is not supported by the current backend. Pass task_schedule instead."
-            )
-
-        if task_schedule in (None, "", {}):
-            return None
-
-        if isinstance(task_schedule, str):
-            raw_value = task_schedule.strip()
-            if not raw_value:
-                return None
-            try:
-                task_schedule = json.loads(raw_value)
-            except json.JSONDecodeError as exc:
-                raise ValueError("task_schedule must be a valid JSON object.") from exc
-
-        if hasattr(task_schedule, "model_dump"):
-            payload = task_schedule.model_dump(mode="json", exclude_none=True)
-        elif isinstance(task_schedule, dict):
-            payload = dict(task_schedule)
-        else:
-            raise TypeError(
-                "task_schedule must be a dict, JSON object string, CrontabSchedule, IntervalSchedule, or PeriodicTask."
-            )
-
-        if not isinstance(payload, dict):
-            raise ValueError("task_schedule must serialize to an object.")
-
-        schedule_payload = payload.get("schedule")
-        if schedule_payload is None:
-            schedule_payload = payload
-            payload = {"schedule": dict(schedule_payload)}
-        elif not isinstance(schedule_payload, dict):
-            raise ValueError("task_schedule.schedule must be an object.")
-        else:
-            payload["schedule"] = dict(schedule_payload)
-
-        schedule_type = str(payload["schedule"].get("type") or "").strip().lower()
-        if not schedule_type:
-            raise ValueError("task_schedule.schedule.type is required.")
-
-        if schedule_type == "interval":
-            every = payload["schedule"].get("every")
-            try:
-                every_int = int(every)
-            except (TypeError, ValueError) as exc:
-                raise ValueError(
-                    "task_schedule.schedule.every must be a positive integer."
-                ) from exc
-            if every_int <= 0:
-                raise ValueError("task_schedule.schedule.every must be a positive integer.")
-
-            period = str(payload["schedule"].get("period") or "").strip().lower()
-            allowed_periods = {"seconds", "minutes", "hours", "days"}
-            if period not in allowed_periods:
-                raise ValueError(
-                    f"task_schedule.schedule.period must be one of: {', '.join(sorted(allowed_periods))}."
-                )
-
-            payload["schedule"]["type"] = "interval"
-            payload["schedule"]["every"] = every_int
-            payload["schedule"]["period"] = period
-        elif schedule_type == "crontab":
-            expression = str(payload["schedule"].get("expression") or "").strip()
-            if not expression:
-                raise ValueError(
-                    "task_schedule.schedule.expression is required for crontab schedules."
-                )
-            if len(expression.split()) != 5:
-                raise ValueError(
-                    "task_schedule.schedule.expression must have 5 crontab fields: "
-                    "minute hour day_of_month month_of_year day_of_week."
-                )
-
-            payload["schedule"]["type"] = "crontab"
-            payload["schedule"]["expression"] = expression
-        else:
-            raise ValueError("task_schedule.schedule.type must be either 'interval' or 'crontab'.")
-
-        return payload
-
-    @classmethod
-    def _build_create_payload(
-        cls,
-        *,
-        name: str,
-        description: str | None = None,
-        code_repository_branch_uid: str | CodeRepositoryBranch | dict[str, Any] | None = None,
-        execution_path: str | None = None,
-        task_schedule: PeriodicTask | Schedule | dict[str, Any] | str | None = None,
-        task_schedule_id: int | None = None,
-        scheduled_command_args: list[str] | None = None,
-        cpu_request: str | int | float | Decimal | None = None,
-        memory_request: str | int | float | Decimal | None = None,
-        gpu_request: str | int | None = None,
-        gpu_type: str | None = None,
-        spot: bool | None = None,
-        max_runtime_seconds: int | None = None,
-        related_image_uid: str | CodeRepositoryImage | dict[str, Any] | None = None,
-        automatic_deployment: bool = False,
-        automatic_redeployment_policy: AutomaticRedeploymentPolicy | dict[str, Any] | None = None,
-        allowed_execution_extensions: Collection[str] | str | None = None,
-    ) -> dict[str, Any]:
-        normalized_name = cls._normalize_str(name)
-        if not normalized_name:
-            raise ValueError("name is required.")
-
-        payload: dict[str, Any] = {
-            "name": normalized_name,
-            "code_repository_branch_uid": cls._resolve_code_repository_branch_uid(
-                code_repository_branch_uid=code_repository_branch_uid
-            ),
-        }
-        if description is not None:
-            if not isinstance(description, str):
-                raise TypeError("description must be a string or None.")
-            payload["description"] = description.strip()
-
-        payload.update(
-            cls._build_target_payload(
-                execution_path=execution_path,
-                allowed_execution_extensions=allowed_execution_extensions,
-            )
-        )
-
-        normalized_compute = cls._validate_and_normalize_compute_fields(
-            cpu_request=cpu_request,
-            memory_request=memory_request,
-            gpu_request=gpu_request,
-            gpu_type=gpu_type,
-            require_cpu_and_memory=True,
-        )
-
-        payload["cpu_request"] = normalized_compute["cpu_request"]
-        payload["memory_request"] = normalized_compute["memory_request"]
-
-        if normalized_compute["gpu_request"] is not None:
-            payload["gpu_request"] = normalized_compute["gpu_request"]
-        if normalized_compute["gpu_type"] is not None:
-            payload["gpu_type"] = normalized_compute["gpu_type"]
-
-        normalized_task_schedule = cls._normalize_task_schedule_payload(
-            task_schedule=task_schedule,
-            task_schedule_id=task_schedule_id,
-        )
-        if normalized_task_schedule is not None:
-            payload["task_schedule"] = normalized_task_schedule
-
-        if scheduled_command_args is not None:
-            payload["scheduled_command_args"] = cls._normalize_command_args(
-                scheduled_command_args,
-                field_name="scheduled_command_args",
-            )
-
-        if spot is not None:
-            payload["spot"] = bool(spot)
-
-        if max_runtime_seconds is not None:
-            max_runtime_seconds = int(max_runtime_seconds)
-            if max_runtime_seconds <= 0:
-                raise ValueError("max_runtime_seconds must be a positive integer.")
-            payload["max_runtime_seconds"] = max_runtime_seconds
-
-        payload["automatic_deployment"] = bool(automatic_deployment)
-        image_uid = cls._coerce_uid(related_image_uid, field_name="related_image_uid")
-        if automatic_deployment:
-            if image_uid is not None:
-                raise ValueError(
-                    "related_image_uid must be omitted when automatic_deployment is enabled; "
-                    "the backend derives the initial exact image."
-                )
-        else:
-            if image_uid is None:
-                raise ValueError(
-                    "related_image_uid is required when automatic_deployment is disabled."
-                )
-            payload["related_image_uid"] = image_uid
-        if automatic_redeployment_policy is not None:
-            policy_payload = (
-                automatic_redeployment_policy.model_dump(exclude_none=False)
-                if isinstance(automatic_redeployment_policy, BaseModel)
-                else dict(automatic_redeployment_policy)
-            )
-            policy_payload.pop("policy_revision", None)
-            if "tag_regex" not in policy_payload:
-                raise ValueError(
-                    "automatic_redeployment_policy.tag_regex is required; use None for every qualifying exact event."
-                )
-            payload["automatic_redeployment_policy"] = policy_payload
-
-        return payload
-
-    @classmethod
-    def create(
-        cls,
-        *,
-        name: str,
-        description: str | None = None,
-        code_repository_branch_uid: str | CodeRepositoryBranch | dict[str, Any] | None = None,
-        execution_path: str | None = None,
-        task_schedule: PeriodicTask | Schedule | dict[str, Any] | str | None = None,
-        task_schedule_id: int | None = None,
-        scheduled_command_args: list[str] | None = None,
-        cpu_request: str | int | float | Decimal | None = None,
-        memory_request: str | int | float | Decimal | None = None,
-        gpu_request: str | int | None = None,
-        gpu_type: str | None = None,
-        spot: bool | None = None,
-        max_runtime_seconds: int | None = None,
-        related_image_uid: str | CodeRepositoryImage | dict[str, Any] | None = None,
-        automatic_deployment: bool = False,
-        automatic_redeployment_policy: AutomaticRedeploymentPolicy | dict[str, Any] | None = None,
-        allowed_execution_extensions: Collection[str] | str | None = None,
-        timeout: int | None = None,
-    ) -> Job:
-        payload = cls._build_create_payload(
-            name=name,
-            description=description,
-            code_repository_branch_uid=code_repository_branch_uid,
-            execution_path=execution_path,
-            task_schedule=task_schedule,
-            task_schedule_id=task_schedule_id,
-            scheduled_command_args=scheduled_command_args,
-            cpu_request=cpu_request,
-            memory_request=memory_request,
-            gpu_request=gpu_request,
-            gpu_type=gpu_type,
-            spot=spot,
-            max_runtime_seconds=max_runtime_seconds,
-            related_image_uid=related_image_uid,
-            automatic_deployment=automatic_deployment,
-            automatic_redeployment_policy=automatic_redeployment_policy,
-            allowed_execution_extensions=allowed_execution_extensions,
-        )
-
-        request_payload = {"json": cls.serialize_for_json(payload)}
-
-        r = make_request(
-            s=cls.build_session(),
-            loaders=cls.LOADERS,
-            r_type="POST",
-            url=f"{cls.get_object_url()}/",
-            payload=request_payload,
-            time_out=timeout,
-        )
-
-        if r.status_code not in (200, 201, 202):
-            raise_for_response(r, payload=request_payload)
-
-        return cls(**r.json())
 
     @classmethod
     def patch_by_uid(cls, uid: str, *args, _into=None, **kwargs):
@@ -1124,37 +711,6 @@ class CodeRepositoryResource(CurrentCodeRepositoryBranchCollectionMixin, BaseObj
         examples=["a1b2c3d4e5f678901234567890abcdef12345678"],
     )
 
-    def _create_release(
-        self,
-        release_kind: ResourceReleaseKind,
-        timeout=None,
-        files=None,
-        *args,
-        **kwargs,
-    ) -> ResourceRelease:
-        resource_uid = self._public_detail_reference()
-        kwargs["resource_uid"] = resource_uid
-        kwargs["release_kind"] = release_kind.value
-        return ResourceRelease.create(*args, timeout=timeout, files=files, **kwargs)
-
-    def create_fastapi(self, timeout=None, files=None, *args, **kwargs) -> ResourceRelease:
-        return self._create_release(
-            ResourceReleaseKind.FAST_API,
-            timeout,
-            files,
-            *args,
-            **kwargs,
-        )
-
-    def create_agent(self, timeout=None, files=None, *args, **kwargs) -> ResourceRelease:
-        return self._create_release(
-            ResourceReleaseKind.AGENT,
-            timeout,
-            files,
-            *args,
-            **kwargs,
-        )
-
 
 class ResourceReleaseKind(OpenStrEnum):
     """The backend's canonical release-kind vocabulary.
@@ -1459,12 +1015,14 @@ class ResourceRelease(
             "The revision is returned by the API and is not part of create requests."
         ),
     )
+    COLLECTION_CREATE_SUPPORTED: ClassVar[bool] = False
+
     revision_retention_count: PositiveInt = Field(
         default=3,
         title="Revision Retention Count",
         description=(
             "Number of immutable release revisions retained by the platform. "
-            "This positive release setting can be supplied on create or patch."
+            "This positive release setting can be supplied in a workflow or patch."
         ),
         examples=[3],
     )
@@ -1496,91 +1054,6 @@ class ResourceRelease(
         examples=[["https://app.example.com", "https://*.site-dev.main-sequence.app"]],
     )
 
-    @classmethod
-    def create(
-        cls,
-        *,
-        resource_uid: str | CodeRepositoryResource | dict[str, Any],
-        release_kind: ResourceReleaseKind | str,
-        related_image_uid: str | CodeRepositoryImage | dict[str, Any],
-        cpu_request: str | int | float | Decimal | None = None,
-        memory_request: str | int | float | Decimal | None = None,
-        gpu_request: str | int | None = None,
-        gpu_type: str | None = None,
-        spot: bool | None = None,
-        automatic_deployment: bool | None = None,
-        revision_retention_count: int | None = None,
-        timeout: int | None = None,
-        files=None,
-    ) -> ResourceRelease:
-        resolved_resource_uid = Job._coerce_uid(resource_uid, field_name="resource_uid")
-        if resolved_resource_uid is None:
-            raise ValueError("resource_uid is required.")
-
-        resolved_image_uid = Job._coerce_uid(related_image_uid, field_name="related_image_uid")
-        if resolved_image_uid is None:
-            raise ValueError("related_image_uid is required.")
-
-        if isinstance(release_kind, ResourceReleaseKind):
-            normalized_release_kind = release_kind.value
-        else:
-            normalized_release_kind = Job._normalize_str(release_kind)
-        # What the SDK sends stays closed (ADR 0033). ResourceReleaseKind reads an
-        # undeclared kind out of a response, but iterating it yields only the kinds
-        # this release declares, so a kind built here is still checked against them.
-        allowed_release_kinds = {kind.value for kind in ResourceReleaseKind}
-        if normalized_release_kind not in allowed_release_kinds:
-            raise ValueError(
-                "release_kind must be one of: " + ", ".join(sorted(allowed_release_kinds)) + "."
-            )
-
-        normalized_compute = Job._validate_and_normalize_compute_fields(
-            cpu_request=cpu_request,
-            memory_request=memory_request,
-            gpu_request=gpu_request,
-            gpu_type=gpu_type,
-            require_cpu_and_memory=True,
-            output_format="k8s",
-        )
-
-        payload: dict[str, Any] = {
-            "resource_uid": resolved_resource_uid,
-            "related_image_uid": resolved_image_uid,
-            "release_kind": normalized_release_kind,
-            "cpu_request": normalized_compute["cpu_request"],
-            "memory_request": normalized_compute["memory_request"],
-        }
-
-        if normalized_compute["gpu_request"] is not None:
-            payload["gpu_request"] = normalized_compute["gpu_request"]
-        if normalized_compute["gpu_type"] is not None:
-            payload["gpu_type"] = normalized_compute["gpu_type"]
-        if spot is not None:
-            payload["spot"] = bool(spot)
-        if automatic_deployment is not None:
-            payload["automatic_deployment"] = bool(automatic_deployment)
-        if revision_retention_count is not None:
-            payload["revision_retention_count"] = cls._normalize_revision_retention_count(
-                revision_retention_count
-            )
-
-        request_payload = {"json": cls.serialize_for_json(payload)}
-        if files:
-            request_payload["files"] = files
-
-        r = make_request(
-            s=cls.build_session(),
-            loaders=cls.LOADERS,
-            r_type="POST",
-            url=f"{cls.get_object_url()}/",
-            payload=request_payload,
-            time_out=timeout,
-        )
-
-        if r.status_code not in (200, 201, 202):
-            raise_for_response(r, payload=request_payload)
-
-        return cls(**r.json())
 
     @staticmethod
     def _normalize_revision_retention_count(value: int) -> int:
@@ -1596,19 +1069,6 @@ class ResourceRelease(
             )
         return super().patch_by_uid(uid, *args, _into=_into, **kwargs)
 
-    def deploy_current_version(
-        self,
-        *,
-        timeout: int | float | tuple[float, float] | None = None,
-    ) -> DeploymentRun:
-        data = self._request_detail_action(
-            r_type="POST",
-            action_name="deploy-current-version",
-            payload={},
-            timeout=timeout,
-            expected_statuses=(200, 202),
-        )
-        return DeploymentRun(**data)
 
 
 class DeploymentRunTarget(BaseModel):
