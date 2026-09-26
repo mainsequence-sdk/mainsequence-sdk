@@ -1,15 +1,14 @@
 # GitHub Issues
 
 The SDK exposes GitHub issues through Main Sequence backend resources. It does
-not call GitHub directly, read GitHub credentials, or let application code
-select a repository, provider installation, branch, or Organization
-Environment.
+not call GitHub directly, read GitHub credentials, or accept raw repository,
+provider installation, or Organization Environment selectors.
 
 ## Branch Context
 
-Issue creation and collection listing are anchored to the Git branch executing
-the current process. Obtain the branch from the SDK's process-frozen
-CodeRepository context:
+Issue collection listing is anchored to the Git branch executing the current
+process. Obtain that branch from the SDK's process-frozen CodeRepository
+context:
 
 ```python
 from mainsequence.code_repository_context import get_code_repository_context
@@ -25,29 +24,40 @@ and commit through the canonical backend Git-context endpoint. That response
 also supplies the `CodeRepositoryBranch` and its Organization Environment. The
 complete result is locked and cached for the lifetime of the process.
 
-`list_github_issues()` and `create_github_issue()` verify that the receiving
-branch instance has the same UID as the process-frozen branch. An arbitrary or
-stale `CodeRepositoryBranch` cannot redirect the operation. The methods expose
-no branch or Environment argument.
+`list_github_issues()` verifies that the receiving branch instance has the same
+UID as the process-frozen branch. An arbitrary or stale
+`CodeRepositoryBranch` cannot redirect collection listing.
 
-The nested backend endpoint derives Environment ownership from the validated
-branch. The SDK therefore does not transmit an Environment selector. This is
-still the same single resolution path: branch and Environment were resolved
-together and cached before the issue request.
+Issue creation has different semantics: the receiving `CodeRepositoryBranch`
+is the explicit target resource and does not have to be the process-frozen
+branch. The nested backend endpoint derives ownership from that target branch
+and authorizes the operation. The SDK does not accept or transmit a separate
+Environment, repository, or provider-binding selector.
 
 An unregistered local branch remains usable for unrelated development. GitHub
-issue listing or creation fails before making its request because those
-operations require a registered current branch and its derived Environment.
+issue listing requires a registered current branch and its derived Environment.
+Creating an issue for an existing branch resource does not turn that target
+into runtime routing authority; backend authorization determines whether the
+caller may act on it.
 
 ## Create An Issue
 
 ```python
+from mainsequence.client import CodeRepositoryBranch
+
+branch = CodeRepositoryBranch.get_by_uid("<TARGET_BRANCH_UID>")
+
 result = branch.create_github_issue(
     title="Deployment failure",
     body="Sanitized reproduction.",
     idempotency_key="agent-run-123-create",
 )
 ```
+
+The target may differ from the branch executing the current process. This is a
+target-resource operation, not a way to replace the process-frozen Git context.
+The backend enforces that the target is authorized for the caller, including
+its Organization Environment boundary.
 
 The caller must provide a stable idempotency key. Reuse the same key only when
 reconciling the same intended mutation. The SDK never generates a random key
