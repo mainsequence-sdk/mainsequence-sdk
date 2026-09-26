@@ -574,20 +574,6 @@ class CodeRepositoryBranch(BasePydanticModel, BaseObjectOrm):
         params = {"commit_sha": commit_sha} if commit_sha else None
         return self._get_action("infra-graph", params=params, timeout=timeout)
 
-    def _resolved_github_issue_branch_uid(self, operation: str) -> str:
-        """Assert that this instance is the process-frozen Git branch."""
-
-        from mainsequence.code_repository_context import (
-            resolve_code_repository_branch_uid,
-            resolve_organization_environment_uid,
-        )
-
-        branch_uid = resolve_code_repository_branch_uid(operation, supplied_uid=self.uid)
-        # GitHub issues persist Environment ownership from the resolved branch. The
-        # backend derives it from the branch path; it is never a caller selector.
-        resolve_organization_environment_uid(operation)
-        return branch_uid
-
     def list_github_issues(
         self,
         *,
@@ -597,14 +583,12 @@ class CodeRepositoryBranch(BasePydanticModel, BaseObjectOrm):
         limit: int = 50,
         timeout: int | float | tuple[float, float] | None = None,
     ) -> GitHubIssuePage:
-        """List issues anchored to the process-frozen CodeRepositoryBranch."""
+        """List issues for this branch, subject to backend authorization."""
 
         from .github_issues import _list_github_issues_for_branch
 
-        operation = "CodeRepositoryBranch.list_github_issues"
-        branch_uid = self._resolved_github_issue_branch_uid(operation)
         return _list_github_issues_for_branch(
-            branch_uid=branch_uid,
+            branch_uid=self.uid,
             state=state,
             updated_since=updated_since,
             cursor=cursor,

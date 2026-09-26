@@ -29,6 +29,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- `CodeRepositoryBranch.list_github_issues()` now treats its receiving branch
+  as the target resource, matching issue creation. It no longer requires that
+  target to equal the process-frozen branch; the backend enforces the runtime
+  Environment and responsible-user branch permissions.
 - `CodeRepositoryBranch.create_github_issue()` now treats its receiving branch
   as the target resource instead of requiring it to match the process-frozen
   branch. The backend remains responsible for authorizing the target's
