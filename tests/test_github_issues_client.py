@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import datetime
 import inspect
-import pathlib
-import types
 
 import pytest
 
@@ -116,54 +114,11 @@ def _reset_context(monkeypatch):
     code_repository_context._reset_code_repository_context()
 
 
-def _configure_context(monkeypatch, *, registered=True, environment_uid=ENVIRONMENT_UID):
-    calls = {"source": 0, "backend": 0}
-    source = code_repository_context.GitCodeRepositorySourceContext(
-        repository_root=pathlib.Path.cwd().resolve(),
-        canonical_repository_identity="github.com/mainsequence-sdk/example",
-        repository_branch="main",
-        repository_ref="refs/heads/main",
-        commit_sha=COMMIT_SHA,
-    )
-
-    def load_source(path):
-        calls["source"] += 1
-        return source
-
-    def load_branch(resolved_source):
-        calls["backend"] += 1
-        if not registered:
-            return None
-        branch = types.SimpleNamespace(
-            uid=BRANCH_UID,
-            code_repository_uid=CODE_REPOSITORY_UID,
-            repository_branch="main",
-            organization_environment_uid=environment_uid,
-            metatables_data_source=None,
-        )
-        return types.SimpleNamespace(
-            canonical_repository_identity=resolved_source.canonical_repository_identity,
-            repository_branch=resolved_source.repository_branch,
-            repository_ref=resolved_source.repository_ref,
-            commit_sha=resolved_source.commit_sha,
-            code_repository_branch=branch,
-        )
-
-    monkeypatch.setattr(code_repository_context, "_resolve_git_source_context", load_source)
-    monkeypatch.setattr(
-        code_repository_context,
-        "_default_code_repository_branch_context_loader",
-        load_branch,
-    )
-    return calls
-
-
 def _branch(uid=BRANCH_UID):
     return CodeRepositoryBranch.model_construct(uid=uid)
 
 
-def test_branch_issue_list_uses_one_frozen_context_and_no_environment_selector(monkeypatch):
-    context_calls = _configure_context(monkeypatch)
+def test_branch_issue_list_uses_target_branch_and_no_environment_selector(monkeypatch):
     requests = []
 
     def fake_make_request(**kwargs):
@@ -176,20 +131,20 @@ def test_branch_issue_list_uses_one_frozen_context_and_no_environment_selector(m
     monkeypatch.setattr(github_issues, "make_request", fake_make_request)
     updated_since = datetime.datetime(2026, 9, 14, 10, tzinfo=datetime.UTC)
 
-    first = _branch().list_github_issues(
+    first = _branch(OTHER_BRANCH_UID).list_github_issues(
         state="open",
         updated_since=updated_since,
         cursor="input-cursor",
         limit=25,
     )
-    second = _branch().list_github_issues(limit=50)
+    second = _branch(OTHER_BRANCH_UID).list_github_issues(limit=50)
 
     assert first.next_cursor == "opaque-cursor"
     assert first.results[0].uid == ISSUE_UID
     assert second.results[0].issue_number == 17
-    assert context_calls == {"source": 1, "backend": 1}
     assert requests[0]["url"] == (
-        f"https://backend.example/api/v1/code-repository-branches/{BRANCH_UID}/github-issues/"
+        "https://backend.example/api/v1/code-repository-branches/"
+        f"{OTHER_BRANCH_UID}/github-issues/"
     )
     assert requests[0]["payload"]["params"] == {
         "limit": 25,
@@ -200,52 +155,33 @@ def test_branch_issue_list_uses_one_frozen_context_and_no_environment_selector(m
     assert "organization_environment_uid" not in requests[0]["payload"]["params"]
 
 
-def test_branch_instance_cannot_override_frozen_branch(monkeypatch):
-    _configure_context(monkeypatch)
-    requested = False
+def test_list_issues_does_not_resolve_process_branch(monkeypatch):
+    captured = {}
 
-    def fake_make_request(**kwargs):
-        nonlocal requested
-        requested = True
-        return Response(200, {})
+    def fail_context_resolution(*args, **kwargs):
+        pytest.fail("targeted issue listing must not resolve the process branch")
 
-    monkeypatch.setattr(github_issues, "make_request", fake_make_request)
-
-    with pytest.raises(
-        code_repository_context.CodeRepositoryBranchContextRequiredError,
-        match="cannot override",
-    ):
-        _branch(OTHER_BRANCH_UID).list_github_issues()
-
-    assert requested is False
-
-
-@pytest.mark.parametrize(
-    ("registered", "environment_uid", "message"),
-    [
-        (False, ENVIRONMENT_UID, "requires a registered active CodeRepositoryBranch"),
-        (True, None, "requires an Organization Environment"),
-    ],
-)
-def test_branch_issue_listing_requires_registered_branch_environment(
-    monkeypatch,
-    registered,
-    environment_uid,
-    message,
-):
-    _configure_context(
-        monkeypatch,
-        registered=registered,
-        environment_uid=environment_uid,
+    monkeypatch.setattr(
+        code_repository_context,
+        "resolve_code_repository_branch_uid",
+        fail_context_resolution,
+    )
+    monkeypatch.setattr(
+        code_repository_context,
+        "resolve_organization_environment_uid",
+        fail_context_resolution,
     )
     monkeypatch.setattr(
         github_issues,
         "make_request",
-        lambda **kwargs: pytest.fail("HTTP must not run without complete branch context"),
+        lambda **kwargs: captured.update(kwargs)
+        or Response(200, {"next_cursor": None, "results": []}),
     )
 
-    with pytest.raises(code_repository_context.CodeRepositoryContextError, match=message):
-        _branch().list_github_issues()
+    result = _branch(OTHER_BRANCH_UID).list_github_issues()
+
+    assert result.results == []
+    assert captured["url"].endswith(f"/{OTHER_BRANCH_UID}/github-issues/")
 
 
 def test_create_issue_uses_target_branch_without_process_branch_resolution(monkeypatch):
@@ -283,7 +219,6 @@ def test_create_issue_uses_target_branch_without_process_branch_resolution(monke
 
 
 def test_create_issue_preserves_body_and_parses_synchronous_response(monkeypatch):
-    _configure_context(monkeypatch)
     captured = {}
     monkeypatch.setattr(
         github_issues,
@@ -310,7 +245,6 @@ def test_create_issue_preserves_body_and_parses_synchronous_response(monkeypatch
 
 
 def test_accepted_mutation_returns_operation_without_retry(monkeypatch):
-    _configure_context(monkeypatch)
     calls = []
 
     def fake_make_request(**kwargs):
@@ -330,7 +264,6 @@ def test_accepted_mutation_returns_operation_without_retry(monkeypatch):
 
 
 def test_replayed_issue_create_http_200_returns_issue(monkeypatch):
-    _configure_context(monkeypatch)
     monkeypatch.setattr(
         github_issues,
         "make_request",
@@ -462,7 +395,6 @@ def test_synchronous_comment_create_returns_comment(monkeypatch):
     ],
 )
 def test_request_validation_matches_backend_contract(monkeypatch, operation, message):
-    _configure_context(monkeypatch)
     monkeypatch.setattr(
         github_issues,
         "make_request",

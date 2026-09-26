@@ -134,29 +134,31 @@ source is running.
 ### Branch-owned consumers
 
 Current-branch Job, CodeRepositoryImage, ResourceRelease, CodeRepositoryResource,
-CodeRepositoryExecutor, GitHub issue collection, migration, platform-managed
-MetaTable, and TimeIndexTableUpdater workflows consume the frozen context.
-Ordinary branch-owned collections are scoped to the resolved
-CodeRepositoryBranch. Explicit administrative enumeration uses separately named
-admin APIs.
+CodeRepositoryExecutor, migration, platform-managed MetaTable, and
+TimeIndexTableUpdater workflows consume the frozen context. Ordinary
+branch-owned collections are scoped to the resolved CodeRepositoryBranch.
+Explicit administrative enumeration uses separately named admin APIs.
 
 An instance method does not make an arbitrary `CodeRepositoryBranch` instance
 runtime routing authority. Current-branch methods validate the instance UID
 against the UID returned by `get_code_repository_context()` and build their
 request from the resolved UID.
 
-An explicitly targeted operation is different. GitHub issue creation uses the
-receiving `CodeRepositoryBranch` as the target resource, which may differ from
-the process-frozen branch. The SDK sends that target UID through the nested
-route without accepting a separate Environment, repository, or provider-binding
-selector. The backend derives ownership from the target and remains the
-authorization boundary. Targeting a resource does not replace or mutate the
-process-frozen runtime context.
+An explicitly targeted operation is different. GitHub issue listing and
+creation use the receiving `CodeRepositoryBranch` as the target resource, which
+may differ from the process-frozen branch. The SDK sends that target UID through
+the nested route without accepting a separate Environment, repository, or
+provider-binding selector. The backend derives ownership from the target and
+remains the authorization boundary. For runtime credentials, it constrains the
+target to the authenticated runtime's Organization Environment and intersects
+that boundary with the responsible user's branch permissions. Targeting a
+resource does not replace or mutate the process-frozen runtime context.
 
 Parent-derived operations retain the persisted parent's ownership instead of
 inventing another branch selector. Backend authorization remains the final
-enforcement boundary and deployed runtime endpoints must require the
-Git-resolved CodeRepositoryBranch to equal the authenticated runtime target.
+enforcement boundary. Current-branch operations require the Git-resolved branch
+to equal the authenticated runtime target; explicitly targeted operations must
+enforce their documented target and Environment boundary instead.
 
 ### Environment-owned resources resolved from the current CodeRepositoryBranch
 
