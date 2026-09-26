@@ -1,5 +1,9 @@
 # ADR 0033: Read Closed Value Sets Tolerantly
 
+Amended 2026-09-26: `runtime_interaction.action` was retired by the backend.
+The SDK no longer declares its response field or action type; the historical
+value-set decision below still applies to the remaining response fields.
+
 Amended 2026-09-25 for [SDK issue #162](https://github.com/mainsequence-sdk/mainsequence-sdk/issues/162):
 public ResourceRelease collection creation is retired. The historical
 `ResourceRelease.create` sending examples below are superseded; the SDK now
@@ -81,7 +85,7 @@ backend, and keeps it closed when the value goes to the backend.
 Opened: the response vocabularies — release kind, runtime state, phase, wake
 state, admission state, severity, deployment-run step kind and state, pricing
 state, log stream and level, log-source state, agent runtime state, interaction
-state and action type, runtime access mode, streaming status, environment log
+state, runtime access mode, streaming status, environment log
 owner type and truncation reason, public log level, GitHub issue state and
 operation type and status, image provisioning and verification state,
 notification source and type, access level, MetaTable management,

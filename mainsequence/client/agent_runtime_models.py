@@ -278,15 +278,6 @@ class AgentRuntimeInteractionNotice(BasePydanticModel):
     message: str
 
 
-class AgentRuntimeInteractionAction(BasePydanticModel):
-    model_config = ConfigDict(extra="allow")
-
-    type: OpenValueSet[Literal["update_agent_runtime", "retry_runtime_wake"]]
-    label: str
-    confirmation_message: str
-    interaction_revision: str
-
-
 class AgentRuntimeInteractionOperation(BasePydanticModel):
     model_config = ConfigDict(extra="allow")
 
@@ -316,7 +307,6 @@ class AgentRuntimeInteraction(BasePydanticModel):
     ]
     can_submit: bool
     notice: AgentRuntimeInteractionNotice | None
-    action: AgentRuntimeInteractionAction | None
     operation: AgentRuntimeInteractionOperation | None
     retry_after_ms: int | None = Field(None, ge=0)
 

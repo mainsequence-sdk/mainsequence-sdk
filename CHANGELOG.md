@@ -81,6 +81,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- AgentSession runtime-access parsing no longer requires the retired
+  `runtime_interaction.action` key. The backend omits it, but the SDK previously
+  raised a validation error. Removed the obsolete response field and action model.
+
 - `set_start_of_execution()` read `direct_dependency_uids` from the
   `set-start-of-execution/` response, a key the backend does not send: the time-index
   table updater hard cut renamed that relation from `downstream_direct_dependencies` to
