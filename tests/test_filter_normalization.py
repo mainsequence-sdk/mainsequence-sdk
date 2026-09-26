@@ -3765,7 +3765,6 @@ def _ready_runtime_contract():
             "state": "ready",
             "can_submit": True,
             "notice": None,
-            "action": None,
             "operation": None,
             "retry_after_ms": None,
         },
@@ -3856,6 +3855,8 @@ def test_agent_session_runtime_access_uses_session_uid_route(monkeypatch):
     assert "coding_agent_service_id" not in agent_models_mod.AgentSessionRuntimeAccess.model_fields
     assert "coding_agent_id" not in agent_models_mod.AgentSessionRuntimeAccess.model_fields
     assert access.is_ready is True
+    assert access.runtime_interaction.can_submit is True
+    assert "action" not in access.runtime_interaction.model_dump()
     assert access.service_runtime_uid == "70c6efb9-8e80-4051-ad3a-f432b2c37f5a"
     assert access.knative_service_runtime_uid == "70c6efb9-8e80-4051-ad3a-f432b2c37f5a"
     assert access.image_drift is not None
@@ -4116,7 +4117,6 @@ def test_agent_session_send_waits_only_while_runtime_interaction_is_transient(
                     "state": "waking",
                     "can_submit": False,
                     "notice": None,
-                    "action": None,
                     "operation": None,
                     "retry_after_ms": 1500,
                 },
@@ -4375,7 +4375,6 @@ def test_agent_session_send_a2a_message_reports_unavailable_runtime_without_post
                     "state": "unavailable",
                     "can_submit": False,
                     "notice": None,
-                    "action": None,
                     "operation": None,
                     "retry_after_ms": None,
                 },
