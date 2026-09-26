@@ -227,7 +227,7 @@ def test_branch_instance_cannot_override_frozen_branch(monkeypatch):
         (True, None, "requires an Organization Environment"),
     ],
 )
-def test_branch_issue_operations_require_registered_branch_environment(
+def test_branch_issue_listing_requires_registered_branch_environment(
     monkeypatch,
     registered,
     environment_uid,
@@ -245,10 +245,41 @@ def test_branch_issue_operations_require_registered_branch_environment(
     )
 
     with pytest.raises(code_repository_context.CodeRepositoryContextError, match=message):
-        _branch().create_github_issue(
-            title="Failure",
-            idempotency_key="create-1",
-        )
+        _branch().list_github_issues()
+
+
+def test_create_issue_uses_target_branch_without_process_branch_resolution(monkeypatch):
+    captured = {}
+
+    def fail_context_resolution(*args, **kwargs):
+        pytest.fail("targeted issue creation must not resolve the process branch")
+
+    monkeypatch.setattr(
+        code_repository_context,
+        "resolve_code_repository_branch_uid",
+        fail_context_resolution,
+    )
+    monkeypatch.setattr(
+        code_repository_context,
+        "resolve_organization_environment_uid",
+        fail_context_resolution,
+    )
+    monkeypatch.setattr(
+        github_issues,
+        "make_request",
+        lambda **kwargs: captured.update(kwargs) or Response(201, _issue_payload()),
+    )
+
+    result = _branch(OTHER_BRANCH_UID).create_github_issue(
+        title="Deployment failure",
+        idempotency_key="cross-branch-create",
+    )
+
+    assert isinstance(result, GitHubIssue)
+    assert captured["url"] == (
+        "https://backend.example/api/v1/code-repository-branches/"
+        f"{OTHER_BRANCH_UID}/github-issues/"
+    )
 
 
 def test_create_issue_preserves_body_and_parses_synchronous_response(monkeypatch):

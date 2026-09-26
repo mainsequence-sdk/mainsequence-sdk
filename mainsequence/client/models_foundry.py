@@ -620,14 +620,12 @@ class CodeRepositoryBranch(BasePydanticModel, BaseObjectOrm):
         idempotency_key: str,
         timeout: int | float | tuple[float, float] | None = None,
     ) -> GitHubIssueMutationResult:
-        """Create an issue for the process-frozen branch without branch selectors."""
+        """Create an issue for this branch, subject to backend authorization."""
 
         from .github_issues import _create_github_issue_for_branch
 
-        operation = "CodeRepositoryBranch.create_github_issue"
-        branch_uid = self._resolved_github_issue_branch_uid(operation)
         return _create_github_issue_for_branch(
-            branch_uid=branch_uid,
+            branch_uid=self.uid,
             title=title,
             body=body,
             idempotency_key=idempotency_key,

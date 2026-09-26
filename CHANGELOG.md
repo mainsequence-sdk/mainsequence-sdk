@@ -29,6 +29,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- `CodeRepositoryBranch.create_github_issue()` now treats its receiving branch
+  as the target resource instead of requiring it to match the process-frozen
+  branch. The backend remains responsible for authorizing the target's
+  Organization Environment; the SDK exposes no Environment, repository, or
+  provider-binding selector.
 - Backend responses are now read tolerantly: `BasePydanticModel` ignores undeclared
   fields instead of rejecting them, and a PATCH response applies only the keys the
   model declares. A backend release that adds a response field no longer breaks
