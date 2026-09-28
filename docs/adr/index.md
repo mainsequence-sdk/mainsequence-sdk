@@ -31,3 +31,5 @@ ownership boundary is recorded in [ADR 0034](0034-remove-metatables-from-sdk.md)
 - [ADR 0033: Read Closed Value Sets Tolerantly](0033-tolerant-value-set-reading.md)
 - [ADR 0034: Remove MetaTables and leave a thin `mainsequence` SDK](0034-remove-metatables-from-sdk.md)
 - [ADR 0035: Independent Git source and platform execution context](0035-independent-git-source-and-platform-context.md)
+
+- [ADR-0036: Request-scoped logged user](0036-request-scoped-logged-user.md)

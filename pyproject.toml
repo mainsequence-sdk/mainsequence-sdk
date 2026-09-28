@@ -47,6 +47,8 @@ ms = "mainsequence.cli.cli:app"
 # PEP 621 dependencies (published requirements)
 [dependency-groups]
 dev = [
+  "fastapi>=0.110,<1",
+  "httpx>=0.27,<1",
   "black>=26.3.1",
   "mkdocs",
   "mkdocs-autorefs",

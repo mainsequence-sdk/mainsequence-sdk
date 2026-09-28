@@ -121,32 +121,11 @@ Functionally this is the same token model as CLI-managed JWT auth:
 
 This mode is useful when a launcher, signed terminal, or controlled runtime injects tokens into the environment instead of relying on persisted CLI storage.
 
-## Request-Bound Access-Token Auth
+## Request-bound caller identity
 
-Request-bound access-token auth is for code running inside an authenticated platform request.
+FastAPI applications install the [SDK request identity integration](../fastapi/index.md) once. Handlers and services call `User.get_logged_user()`. The integration verifies the platform assertion and binds a request scope; it never changes process credentials.
 
-In this mode, the runtime already has the identity for the current request. The SDK should use that request's access token to make backend calls as the same user.
-
-Functionally:
-
-- the access token belongs to the current request context
-- the token is used as `Authorization: Bearer <token>`
-- there is no refresh token
-- if the request token expires or is rejected, the request should fail instead of silently becoming a different identity
-
-When this is configured explicitly for a process, use:
-
-```bash
-MAINSEQUENCE_AUTH_MODE=session_jwt
-MAINSEQUENCE_ACCESS_TOKEN=<request or session access token>
-```
-
-Use this for:
-
-- FastAPI request handlers running behind the platform
-- code that explicitly binds request headers into the SDK auth context
-
-Do not use this mode for standalone scripts that need to run independently for a long time.
+The gateway consumes the original release Bearer token. Do not put an inbound token into process `MAINSEQUENCE_ACCESS_TOKEN` or select `session_jwt` for each HTTP caller. The runtime's SDK authentication remains independent.
 
 ## Runtime Credential Auth
 
@@ -244,11 +223,7 @@ Use `User.get_authenticated_user_details()` in standalone CLI or script code tha
 making the current request. It does not return a full `User` account and it does
 not identify the release owner or runtime workload principal.
 
-For FastAPI releases, the Main Sequence platform injects the authenticated
-human into `request.state.user` and `request.state.user_uid`. Handlers read that
-state and pass the identity explicitly to shared code. Do not use
-`User.get_logged_user()` as the FastAPI handler entry point; route-level
-authorization remains application-owned.
+For FastAPI releases, install SDK request identity once and use `User.get_logged_user()` in handlers and services. Request-state fields are compatibility projections of that same identity; resource policy remains application-owned.
 
 The distinction matters because request-bound code resolves the human caller
 from the active request identity, while standalone code resolves the account

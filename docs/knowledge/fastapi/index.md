@@ -1,93 +1,51 @@
-# FastAPI Request Context And Public Ingress
+# FastAPI requesting-user identity
 
-Protected FastAPI routes receive the authenticated human making the current
-HTTP request through state injected by the Main Sequence platform. No SDK
-authentication setup is required in application code.
+Install the optional server dependencies in the application's environment:
 
-Protected route code does not detect whether it is running locally or
-deployed, parse authentication headers, or resolve the user itself. It consumes
-the same platform-injected request state in every environment.
-
-For protected requests, the result identifies the human making the current
-request. It does not identify the deployment owner, release creator, or runtime
-workload credential.
-
-## Route Usage
-
-```python
-from fastapi import FastAPI, Request
-
-app = FastAPI(title="My API", version="0.1.0")
-
-
-@app.get("/me")
-def get_me(request: Request) -> dict[str, str | None]:
-    request_user = request.state.user
-    return {
-        "uid": request.state.user_uid,
-        "username": request_user.username,
-    }
+```bash
+pip install 'mainsequence[server]'
 ```
 
-For protected routes, the Main Sequence platform injects:
+Install request identity once when creating the application:
 
-- `request.state.user`: a minimal runtime identity containing `uid` and optional
-  `username`
-- `request.state.user_uid`: the same canonical user UUID as a string
+```python
+from fastapi import FastAPI
+from mainsequence.client import User
+from mainsequence.server.fastapi import install_request_identity
 
-Protected routes use these values identically in local and deployed execution.
-They must not inspect authentication headers to select a mode.
+app = FastAPI()
+install_request_identity(app)
 
-There is no `request.state.user_id`. Request identity never uses a numeric
-database ID.
+@app.get("/me")
+def me():
+    user = User.get_logged_user()
+    return {"uid": user.uid}
+```
 
-The request-user projection describes the human making this request. It is not the
-release creator, deployment owner, runtime workload principal, CodeRepositoryBranch,
-ResourceRelease, or hostname-selected runtime target. It is intentionally not a
-full account profile and has no email, organization, plan, or permission fields.
+`User.get_logged_user()` is the single application caller lookup. The integration verifies the caller before the handler, binds one isolated request scope, and resets it on completion, exceptions, or cancellation. Both synchronous and asynchronous handlers and their service functions use the same getter. It performs no extra lookup each time.
 
-## Passing Identity To Shared Code
+The result contains a canonical User `uid` and optional `username`. Signed HTTP proofs contain no username, so it is null. Outside an authenticated request, including public routes, the getter raises `RequestIdentityError`. A copied task context cannot retain the user after its owning request ends.
 
-FastAPI route handlers use `request.state.user` or
-`request.state.user_uid`. Pass that value explicitly to shared application
-services that need the caller. `User.get_logged_user()` is not the FastAPI
-entry point, and the SDK no longer installs or exports FastAPI middleware.
+## Platform and SDK responsibilities
 
-Use `User.get_authenticated_user_details()` instead when a standalone CLI,
-notebook, or script needs the full user profile associated with its SDK login.
-That method calls `/api/v1/users/me/` using the process authentication session;
-it does not mean "the human calling this FastAPI endpoint."
+Django authenticates and signs. The gateway forwards the proof. The application's SDK integration verifies it using deployment-owned trust configuration. PodDeploymentOrchestrator validates that the integration is installed and serves the app without importing or depending on the SDK.
 
-## Authorization Boundary
+The existing `request.state.user` and `request.state.user_uid` fields are compatibility projections of the same identity. New code uses the getter. There is one resolver and no UID-header fallback for hosted HTTP.
 
-The Main Sequence platform injects authenticated request identity. That
-identity alone does not decide whether the user may read, mutate, or administer
-a resource.
-Every protected endpoint must still perform its resource-level authorization
-using `request.state.user_uid` and the authoritative application/backend policy.
+`User.get_authenticated_user_details()` identifies the account associated with the process's SDK authentication. Its workload credential is unchanged by incoming callers and is never a fallback caller.
 
-## Public Provider Callbacks And Webhooks
+## Local development
 
-An ordinary FastAPI release may expose exact `GET` or `POST` paths to external
-OAuth providers or webhook senders through the release's `public_ingress`
-policy. A FastAPI decorator or CORS setting alone does not bypass the platform
-Bearer check. Declare each literal method/path pair under the `kind: fastapi`
-resource's `spec.public_ingress` in `.mainsequence/workflows/`; fetch and
-validate the current branch workflow template before committing. The default
-empty policy exposes no public paths. Do not put query strings, route
-parameters, wildcards, provider secrets, or the reserved
-`FASTAPI_PUBLIC_INGRESS` value in that policy.
+Without hosted deployment markers, the integration uses a direct incoming Bearer token and validates it against `MAINSEQUENCE_ENDPOINT/api/v1/users/me/`. The handler still calls the same getter. Local mode cannot override a deployed target or replace a failed assertion. Missing local identity returns 401; an unavailable authenticator returns 503.
 
-After the repository event deploys a ready active revision, read the release
-detail and confirm the pair is in both `public_ingress` and
-`effective_public_ingress`. Use the returned `public_url` plus that literal
-path when registering the provider URI. An added pair is private until the
-active revision includes it; removing a desired pair denies it immediately.
+## Public ingress, preflight and WebSockets
 
-An admitted request has `request.state.user is None`,
-`request.state.user_uid is None`, and
-`request.state.auth_outcome == "public_ingress"`. The application must verify
-OAuth state or the webhook signature and replay identity before acting. An
-unlisted path or wrong method remains protected. See the installed
-`mainsequence-command-center-fastapi` skill for the deployment and verification
-procedure.
+Exact public method/path pairs require the backend-owned `FASTAPI_PUBLIC_INGRESS` declaration and the gateway's matching admission marker. Anonymous requests have no logged user, and credential/identity headers are stripped. Unlisted routes and methods require authentication. Applications still validate provider callback state or webhook signatures.
+
+OPTIONS receives an anonymous context. Platform health is handled by the launcher's external health wrapper. WebSockets preserve the existing gateway ticket/header contract, use the same getter while the connection is active, and reset identity on disconnect; HTTP caller assertions do not replace their transport contract.
+
+## Migration
+
+Existing application factories must add the installer before adopting the corresponding launcher. Replace direct verifier calls, private ContextVar manipulation, or caller lookups through process authentication with `User.get_logged_user()`. The launcher rejects missing/mismatched integration at startup. Keep Django signing, key discovery and gateway forwarding available before deploying proof-required applications.
+
+The identity answers who called. Application resource policy stays in the application. See [server verification](../server/caller_assertions.md) and [ADR-0036](../../adr/0036-request-scoped-logged-user.md).

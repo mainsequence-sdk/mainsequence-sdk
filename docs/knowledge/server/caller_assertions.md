@@ -1,72 +1,23 @@
-# Verify platform caller assertions
+# Caller verification inside request identity
 
-Server integrations that receive `X-MainSequence-Caller-Assertion` can use the SDK
-to verify the platform's signed proof of caller identity. The verifier is a
-framework-independent authentication primitive in the optional server extra:
+Application handlers use `User.get_logged_user()`. Install request identity once in the application as described in [FastAPI request identity](../fastapi/index.md). Handler code does not parse headers, call the verifier, or bind ContextVars.
 
-```bash
-pip install 'mainsequence[server]'
-```
+The integration uses the existing framework-independent caller verifier internally. It checks RS256 signature, purpose, issuer, audience, target release/Environment, canonical User UID and validity times. The maximum lifetime is five minutes. The immutable internal result does not retain the raw proof.
 
-Ordinary protected FastAPI handlers continue to use the
-[platform-injected request context](../fastapi/index.md). This module is for the
-server integration that consumes signed assertions at its request boundary; it
-does not install middleware or replace the application's authorization rules.
+## Trusted hosted configuration
 
-## Configuration and use
-
-Configure these values through trusted deployment configuration:
+Django projects these values into a deployed application:
 
 | Variable | Meaning |
 | --- | --- |
-| `MAINSEQUENCE_CALLER_ASSERTION_ISSUER` | Expected assertion issuer. |
-| `MAINSEQUENCE_CALLER_ASSERTION_JWKS_URL` | HTTPS URL for the platform's public signing keys. |
-| `APP_NAME` | Target ResourceRelease UID, as a canonical lowercase UUID. |
-| `MAINSEQUENCE_ORGANIZATION_ENVIRONMENT_UID` | Target Environment UID, as a canonical lowercase UUID. |
+| MAINSEQUENCE_CALLER_AUTH_MODE | assertion for deployed HTTP |
+| MAINSEQUENCE_CALLER_ASSERTION_ISSUER | Expected issuer |
+| MAINSEQUENCE_CALLER_ASSERTION_JWKS_URL | Trusted HTTPS public-key URL |
+| APP_NAME | Exact release UID |
+| MAINSEQUENCE_ORGANIZATION_ENVIRONMENT_UID | Exact Environment UID |
 
-Create one verifier for the server process and call it at the request boundary:
+Missing configuration fails setup. UID headers and the SDK process account cannot replace invalid/missing proof. Local execution without hosted markers retains explicit incoming Bearer validation through the same integration.
 
-```python
-from mainsequence.server.caller_assertions import (
-    ASSERTION_HEADER,
-    CallerAssertionUnavailable,
-    CallerAssertionVerifier,
-    InvalidCallerAssertion,
-)
+Public keys use bounded HTTPS retrieval without process credentials or redirects. Discovery has a two-second timeout and a 64 KiB response bound. Keys are cached for 60 seconds; unknown keys or expired cache require refresh. Failure denies verification. Blocking discovery runs outside the event loop.
 
-verifier = CallerAssertionVerifier.from_environment()
-
-def verified_caller(headers):
-    try:
-        return verifier.verify(headers.get(ASSERTION_HEADER, ""))
-    except InvalidCallerAssertion:
-        # Reject the request as unauthenticated (for HTTP servers, typically 401).
-        raise
-    except CallerAssertionUnavailable:
-        # Fail closed (for HTTP servers, typically 503).
-        raise
-```
-
-Alternatively, pass `issuer`, `jwks_url`, `release_uid`, and `environment_uid` to
-the constructor explicitly. Never derive these expected values from request
-headers or unverified assertion claims. Configuration errors raise
-`CallerAssertionUnavailable` when constructing the verifier.
-
-Verification checks the exact assertion header and claim contract, RS256
-signature, issuer, release audience, release and Environment UIDs, canonical user
-UID, and validity times. The assertion lifetime may not exceed five minutes.
-The returned immutable `AuthenticatedCaller` contains `user_uid`, `release_uid`,
-`environment_uid`, `issued_at`, and `expires_at`; it does not retain the token.
-Authorize the caller's intended operation separately using `user_uid`.
-
-Public-key responses are limited to 64 KiB, fetched without SDK credentials, and
-must contain the platform's bounded RSA signing-key set. Discovery uses a
-two-second timeout and does not follow redirects. Keys are cached for 60 seconds;
-an expired cache or unknown key ID requires a refresh. Failed discovery discards
-the cache and fails closed. A successful refresh without the requested key makes
-the assertion invalid.
-
-Applications choose their HTTP error mapping and request-state integration. The
-verifier performs synchronous I/O, so async servers should invoke it through
-their normal synchronous dependency or thread-pool mechanism. `fetch_jwks=` accepts
-an injected discovery function for testing or an application-owned transport.
+The low-level verifier module remains importable for compatibility and infrastructure tests. It does not bind a request scope and is not an alternative application caller API. See [ADR-0036](../../adr/0036-request-scoped-logged-user.md).
