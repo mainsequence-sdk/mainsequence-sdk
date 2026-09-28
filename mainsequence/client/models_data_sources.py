@@ -63,7 +63,7 @@ class RuntimeDataSource(BaseModel):
     model_config = ConfigDict(extra="ignore", frozen=True, hide_input_in_errors=True)
 
     uid: UUID = Field(alias="data_source_uid")
-    organization_uid: UUID
+    organization_uid: UUID | None = None
     environment_uid: UUID = Field(alias="organization_environment_uid")
     class_type: NonemptyString
     status: NonemptyString
@@ -83,18 +83,14 @@ def _scope_uid(value: UUID | str) -> UUID:
 
 
 def _parse_runtime_source(
-    payload: Any, *, uid: UUID, organization_uid: UUID, environment_uid: UUID
+    payload: Any, *, uid: UUID
 ) -> RuntimeDataSource:
     try:
         source = RuntimeDataSource.model_validate(payload)
     except ValidationError:
         raise DataSourceRuntimeError("invalid_runtime_data_source_response") from None
-    if (source.uid, source.organization_uid, source.environment_uid) != (
-        uid,
-        organization_uid,
-        environment_uid,
-    ):
-        raise DataSourceRuntimeError("data_source_scope_mismatch")
+    if source.uid != uid:
+        raise DataSourceRuntimeError("data_source_identity_mismatch")
     return source
 
 
@@ -118,25 +114,30 @@ class DataSource(BasePydanticModel, BaseObjectOrm):
     status: str | None = None
     storage_access_mode: OpenValueSet[StorageAccessMode] | None = None
 
+    @property
+    def environment_uid(self) -> str | None:
+        """Environment identity using the SDK's neutral public vocabulary."""
+        return self.organization_environment_uid
+
+    @property
+    def environment_name(self) -> str | None:
+        return self.organization_environment_name
+
     @classmethod
     def get_runtime_connection(
         cls,
         uid: UUID | str,
         *,
-        expected_organization_uid: UUID | str,
-        expected_environment_uid: UUID | str,
         timeout: float | tuple[float, float] = (5.0, 5.0),
     ) -> RuntimeDataSource:
         """Fetch current workload-granted material without caching the response.
 
-        Requires runtime-credential authentication. Expected scope must come from
-        trusted application context, after the application authorizes its caller.
+        Requires runtime-credential authentication. The backend authorizes the
+        connection request; the SDK validates response shape and source identity.
         One rejected access token triggers one forced SDK refresh; other failures
         do not retry. Redirects are not followed. No credentials enter exceptions.
         """
         source_uid = _scope_uid(uid)
-        organization_uid = _scope_uid(expected_organization_uid)
-        environment_uid = _scope_uid(expected_environment_uid)
         if (os.getenv("MAINSEQUENCE_AUTH_MODE") or "").strip() != "runtime_credential":
             raise DataSourceRuntimeError("runtime_credential_not_configured")
         url = f"{cls.get_object_url()}/{source_uid}/runtime-connection/"
@@ -185,8 +186,6 @@ class DataSource(BasePydanticModel, BaseObjectOrm):
         return _parse_runtime_source(
             payload,
             uid=source_uid,
-            organization_uid=organization_uid,
-            environment_uid=environment_uid,
         )
 
 

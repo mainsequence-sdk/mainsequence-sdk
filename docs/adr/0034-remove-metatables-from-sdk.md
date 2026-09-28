@@ -49,7 +49,14 @@ MetaTables-specific SQLAlchemy, compiled SQL, DataFrame/dtype conversion, local 
 
 Platform-owned DataSource directory responses or read-only branch fields may remain where a non-MetaTables platform API still returns them. They must be represented without importing MetaTables models or running table-specific logic. In particular, retaining a CodeRepositoryBranch model does not retain `get_time_index_table_updates()` as an SDK MetaTables operation, and retaining a DataSource summary does not retain `TimeScaleDB` table methods.
 
-The generic `mainsequence.client.DataSource` adapter exposes directory reads and runtime-credential connection lookup, including typed connection material and scope validation. It reuses SDK authentication and leaves connection use and capability policy to the application. Platform caller assertion verification lives in the optional `mainsequence.server.caller_assertions` module with the `server` extra; it supplies verified identity without framework middleware or application authorization. Neither interface imports domain packages or local database engines.
+The generic `mainsequence.client.DataSource` adapter exposes directory reads and runtime-credential connection lookup, including typed connection material and requested-resource validation. It reuses SDK authentication and leaves connection use and capability policy to the application. Platform caller assertion verification lives in the optional `mainsequence.server.caller_assertions` module with the `server` extra; it supplies verified identity without framework middleware or application authorization. Neither interface imports domain packages or local database engines.
+
+Organization membership, ownership, and platform access decisions belong only to
+the platform backend. The SDK must not require an expected Organization, compare
+response ownership to the logged-in User, or perform permission preflight requests.
+Platform resource fields may mirror the backend response without becoming SDK
+policy. Authentication, response shape/resource identity checks, and backend error
+propagation remain SDK responsibilities.
 
 ## Removal work on `metatables_removal`
 

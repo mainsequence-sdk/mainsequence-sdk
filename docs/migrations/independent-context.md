@@ -8,7 +8,7 @@ containing these interfaces is published.
 | Existing use | Migration |
 | --- | --- |
 | Read Git facts through `get_code_repository_context()` | Use `get_git_source_context()` to avoid authentication and directory lookup. Keep the original function when platform branch metadata is needed. |
-| Environment resources from a registered branch | Existing calls keep their branch default; the SDK now verifies authenticated Organization and Environment access. |
+| Environment resources from a registered branch | Existing calls keep their branch default; platform resource requests enforce access in the backend. |
 | Environment resources on an unregistered branch | Configure `DevelopmentEnvironmentSelection` before the first scoped operation. The resource clients and transport are unchanged. |
 | Catch missing Environment as `CodeRepositoryBranchContextRequiredError` | Catch `CodeRepositoryEnvironmentContextRequiredError` explicitly, or their common `CodeRepositoryContextError` base. The Environment error is no longer a branch-error subclass. |
 | Retry a failed directory lookup by restarting | A restart still works; `retry_failed_context_resolution()` also clears failed optional lookups while preserving source and any established scope. |

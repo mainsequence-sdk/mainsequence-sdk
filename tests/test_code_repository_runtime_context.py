@@ -37,7 +37,7 @@ def _reset_context(monkeypatch):
     code_repository_context._reset_code_repository_context()
     monkeypatch.setattr(
         code_repository_context, "_authenticated_platform_identity",
-        lambda: ("user-uid", "organization-uid", "https://api.example.test/api/v1"),
+        lambda: ("user-uid", "https://api.example.test/api/v1"),
     )
     yield
     code_repository_context._reset_code_repository_context()
@@ -439,9 +439,8 @@ def test_code_repository_environment_uid_comes_from_frozen_branch_context(monkey
     _resolve(monkeypatch)
     monkeypatch.setattr(
         code_repository_context, "_authenticated_platform_identity",
-        lambda: ("user-uid", "organization-uid", "https://api.example.test/api/v1"),
+        lambda: ("user-uid", "https://api.example.test/api/v1"),
     )
-    monkeypatch.setattr(code_repository_context, "_verify_environment_access", lambda uid, org: None)
 
     assert code_repository_context.resolve_organization_environment_uid("Create Secret") == ENVIRONMENT_UID
 

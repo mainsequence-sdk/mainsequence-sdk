@@ -77,7 +77,7 @@ def runtime(monkeypatch):
 
     def fetch():
         return DataSource.get_runtime_connection(
-            ids[0], expected_organization_uid=ids[1], expected_environment_uid=ids[2]
+            ids[0]
         )
 
     return payload, calls, fetch, provider
@@ -172,12 +172,12 @@ def test_revocation_is_observed_on_next_lookup(runtime, monkeypatch):
 
 
 @pytest.mark.parametrize(
-    "field", ["data_source_uid", "organization_uid", "organization_environment_uid"]
+    "field", ["data_source_uid"]
 )
 def test_scope_mismatch_is_rejected(runtime, field):
     payload, _, fetch, _ = runtime
     payload[field] = str(uuid4())
-    with pytest.raises(DataSourceRuntimeError, match="data_source_scope_mismatch"):
+    with pytest.raises(DataSourceRuntimeError, match="data_source_identity_mismatch"):
         fetch()
 
 
@@ -235,7 +235,7 @@ def test_bad_input_scope_is_rejected_before_transport(runtime):
     _, calls, _, _ = runtime
     with pytest.raises(DataSourceRuntimeError, match="invalid_data_source_scope"):
         DataSource.get_runtime_connection(
-            "../other", expected_organization_uid=uuid4(), expected_environment_uid=uuid4()
+            "../other"
         )
     assert calls == []
 
@@ -257,3 +257,14 @@ assert not hasattr(DataSource, 'execute_query')
     subprocess.run(
         [sys.executable, "-c", script], cwd=Path(__file__).resolve().parents[1], check=True
     )
+
+
+@pytest.mark.parametrize("ownership", [None, str(uuid4())])
+def test_backend_approved_source_needs_no_expected_ownership(runtime, ownership):
+    payload, _, fetch, _ = runtime
+    if ownership is None:
+        payload.pop("organization_uid")
+    else:
+        payload["organization_uid"] = ownership
+    payload["organization_environment_uid"] = str(uuid4())
+    assert str(fetch().uid) == payload["data_source_uid"]

@@ -27,7 +27,7 @@ platform's `resolve-git-context` API. A branch with no visible registration retu
 `status == "code_repository_branch_not_registered"` and absent platform UIDs.
 Authentication failures, permission failures, and service outages raise their
 own lookup errors. They do not invalidate the local source snapshot. Enrichment
-records `principal_uid`, `organization_uid`, and `api_url`; subsequent lookups
+records `principal_uid` and `api_url`; subsequent lookups
 revalidate identity without repeating branch discovery.
 
 ## Select a development Environment
@@ -40,7 +40,7 @@ from mainsequence.client import OrganizationEnvironment, User
 user = User.get_authenticated_user_details()
 environments = OrganizationEnvironment.filter()
 for environment in environments:
-    print(environment.uid, environment.name, environment.organization_owner_uid)
+    print(environment.uid, environment.name)
 ```
 
 Choose an existing Environment explicitly. The SDK never chooses the first
@@ -71,11 +71,10 @@ CLI flag. Listing Environments and reading the authenticated user do not require
 Git discovery or branch registration.
 
 On first Environment resolution, the SDK checks the current branch's optional
-platform registration, verifies the authenticated User and Organization using
-`users/me`, and retrieves the selected Environment through the public
-`organization-environments/{uid}/` endpoint. That endpoint enforces visibility;
-the SDK also requires the Environment's owner to match the authenticated
-Organization. Later resource requests remain subject to platform authorization.
+platform registration and verifies the authenticated User using `users/me`.
+It selects the Environment without a separate ownership or access preflight.
+Every resource request is authorized by the platform backend. Selecting an
+Environment is not itself an authorization grant.
 
 The selection does not change the Git branch. If that branch is registered and
 already has an Environment, the explicit selection must match it. A failed
@@ -87,13 +86,13 @@ the failure and retry. A local source-only consumer can continue using
 
 | Process | Environment resolution |
 | --- | --- |
-| Human, registered branch, no selection | Use the branch's Environment after access and Organization verification. |
-| Human, unregistered branch, explicit selection | Use the selected authorized Environment. |
+| Human, registered branch, no selection | Use the branch's Environment; the backend authorizes resource requests. |
+| Human, unregistered branch, explicit selection | Use the selected Environment; the backend authorizes resource requests. |
 | Human, no selected or branch-derived Environment | Raise `CodeRepositoryEnvironmentContextRequiredError` only for Environment-dependent operations. |
 | Authenticated runtime | Use the authenticated target, with source/target checks; development selection is rejected. |
 
 `get_organization_environment_context()` returns an immutable snapshot containing
-`organization_environment_uid`, `organization_uid`, `principal_uid`, `api_url`,
+`organization_environment_uid`, `principal_uid`, `api_url`,
 `process_id`, and provenance in `source`: `authenticated_runtime`,
 `explicit_development`, or `registered_branch`.
 
@@ -116,12 +115,12 @@ locks and empty state; configure their development selection again.
 
 Each platform-context resolution rechecks `users/me` through the existing transport;
 Environment resolution uses that same verified identity. This adds one identity
-request per successful platform/Environment resolver call and detects a changed account or
-Organization without trusting unverified token contents. Refreshing a token for
-the same principal preserves the cached scope. A principal, Organization,
-endpoint, or scope change raises `AuthenticatedContextChangedError`; it cannot
-reuse the previous account's scope. The Environment detail lookup is cached;
-resource authorization is enforced again by the server on every request.
+request per successful platform/Environment resolver call and detects a changed
+account without trusting unverified token contents. Refreshing a token for the
+same principal preserves the cached scope. A principal, endpoint, authentication
+mode, or scope change raises `AuthenticatedContextChangedError`; it cannot reuse
+the previous account's scope. Organization fields are not execution context or
+cache identity. The backend enforces its policy on every resource request.
 
 Failed optional lookups are cached. After fixing a temporary failure:
 

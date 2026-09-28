@@ -103,7 +103,7 @@ def _resolved_code_repository_context(monkeypatch):
     )
     monkeypatch.setattr(
         code_repository_context, "_authenticated_platform_identity",
-        lambda: ("user-uid", "organization-uid", "https://api.example.test/api/v1"),
+        lambda: ("user-uid", "https://api.example.test/api/v1"),
     )
     code_repository_context.get_code_repository_context(
         _code_repository_branch_context_loader=lambda resolved_source: SimpleNamespace(

@@ -196,16 +196,16 @@ def test_unregistered_branch_with_explicit_environment_uses_same_resource_path(
     monkeypatch.setattr(base, "make_request", lambda **kw: requests.append(kw) or Response([]))
     assert foundry.Secret.filter(name="API_KEY") == []
     scope = ctx.get_organization_environment_context()
-    assert (scope.principal_uid, scope.organization_uid, scope.source) == (
+    assert (scope.principal_uid, scope.source) == (
         USER,
-        ORG,
         "explicit_development",
     )
     assert requests[0]["payload"]["params"] == {
         "name": "API_KEY",
         "organization_environment_uid": ENV,
     }
-    assert platform["lookups"] == platform["environments"] == 1
+    assert platform["lookups"] == 1
+    assert platform["environments"] == 0
     with pytest.raises(ctx.CodeRepositoryBranchContextRequiredError):
         ctx.require_code_repository_branch_context("Create Job")
 
@@ -224,11 +224,11 @@ def test_missing_environment_error_is_distinct_and_does_not_block_unrelated_call
 
 
 @pytest.mark.parametrize("registered", [False, True])
-def test_selection_authorized_through_public_environment_detail(platform, registered):
+def test_selection_needs_no_environment_permission_preflight(platform, registered):
     platform["registered"] = registered
     select()
     assert ctx.get_organization_environment_context().organization_environment_uid == ENV
-    assert platform["environments"] == 1
+    assert platform["environments"] == 0
 
 
 def test_registered_branch_default_is_preserved(platform):
@@ -250,22 +250,23 @@ def test_explicit_selection_conflicting_with_registered_branch_fails(platform):
     "error",
     [NotFoundError("not visible"), PermissionDeniedError("denied"), AuthenticationError("expired")],
 )
-def test_inaccessible_environment_does_not_become_missing_branch(platform, error):
+def test_selection_does_not_make_permission_preflight(platform, error):
     select()
     platform["environment_error"] = error
-    with pytest.raises(type(error)):
-        ctx.get_organization_environment_context()
-    assert ctx.get_git_source_context() is platform["source"]
+    assert ctx.get_organization_environment_context().organization_environment_uid == ENV
+    assert platform["environments"] == 0
 
 
-def test_wrong_organization_environment_is_rejected(platform):
+def test_backend_owned_organization_does_not_change_sdk_scope(platform):
     select()
-    platform["environment_owner"] = "other-organization"
-    with pytest.raises(ctx.OrganizationEnvironmentContextError, match="authenticated Organization"):
-        ctx.get_organization_environment_context()
+    original = ctx.get_organization_environment_context()
+    platform["organization"] = "another-organization"
+    platform["environment_owner"] = "different-owner"
+    assert ctx.get_organization_environment_context() is original
+    assert platform["environments"] == 0
 
 
-@pytest.mark.parametrize("field", ["user", "organization"])
+@pytest.mark.parametrize("field", ["user"])
 def test_identity_change_requires_reset_and_retry_cannot_retarget(platform, field):
     select()
     original = ctx.get_organization_environment_context()
@@ -275,7 +276,6 @@ def test_identity_change_requires_reset_and_retry_cannot_retarget(platform, fiel
             ctx.get_organization_environment_context()
         ctx.retry_failed_context_resolution()
     assert original.principal_uid == USER
-    assert original.organization_uid == ORG
     ctx.reset_development_context()
     platform["environment_owner"] = platform["organization"]
     select()
@@ -288,7 +288,7 @@ def test_same_principal_token_refresh_keeps_identical_scope(platform, monkeypatc
     monkeypatch.setenv("MAINSEQUENCE_ACCESS_TOKEN", "new-token-same-principal")
     assert ctx.get_organization_environment_context() is original
     assert platform["identities"] == 2
-    assert platform["environments"] == 1
+    assert platform["environments"] == 0
 
 
 def test_selection_is_typed_validated_and_frozen(platform):
@@ -358,20 +358,21 @@ def test_concurrent_source_and_scope_resolution_use_shared_snapshots(platform):
         scopes = list(pool.map(lambda _: ctx.get_organization_environment_context(), range(16)))
     assert all(source is sources[0] for source in sources)
     assert all(scope is scopes[0] for scope in scopes)
-    assert platform["lookups"] == platform["environments"] == 1
+    assert platform["lookups"] == 1
+    assert platform["environments"] == 0
 
 
 def test_reset_and_selection_rejected_during_environment_resolution(platform, monkeypatch):
     select()
     entered, proceed = threading.Event(), threading.Event()
-    original = ctx._verify_environment_access
+    original = ctx.get_code_repository_context
 
-    def slow_verify(uid, org):
+    def slow_verify():
         entered.set()
         assert proceed.wait(5)
-        original(uid, org)
+        return original()
 
-    monkeypatch.setattr(ctx, "_verify_environment_access", slow_verify)
+    monkeypatch.setattr(ctx, "get_code_repository_context", slow_verify)
     with concurrent.futures.ThreadPoolExecutor() as pool:
         pending = pool.submit(ctx.get_organization_environment_context)
         assert entered.wait(5)
@@ -480,8 +481,7 @@ def test_public_environment_contract_and_resource_transport_on_unregistered_bran
     select()
     result = foundry.Secret.create(name="TEST", value="test-value")
     assert result.organization_environment_uid == ENV
-    assert requests[1]["url"].endswith(f"/organization-environments/{ENV}/")
-    assert requests[1]["payload"]["params"] == {}
+    assert not any("/organization-environments/" in request["url"] for request in requests)
     assert requests[-1]["payload"]["json"]["organization_environment_uid"] == ENV
     assert all(kw["loaders"] is utils.loaders for kw in requests)
 
@@ -529,17 +529,17 @@ def test_runtime_auth_switch_cannot_reuse_development_branch_snapshot(platform, 
         ctx.get_organization_environment_context()
 
 
-def test_environment_lookup_outage_requires_retry_and_keeps_source(platform):
+def test_resource_denial_is_decided_by_backend(platform, monkeypatch):
     select()
-    source = ctx.get_git_source_context()
-    platform["environment_error"] = RuntimeError("temporary outage")
-    with pytest.raises(RuntimeError, match="temporary outage"):
-        ctx.get_organization_environment_context()
-    platform["environment_error"] = None
-    with pytest.raises(RuntimeError, match="temporary outage"):
-        ctx.get_organization_environment_context()
-    ctx.retry_failed_context_resolution()
-    assert ctx.get_git_source_context() is source
+    calls = []
+    def denied(**kwargs):
+        calls.append(kwargs)
+        raise PermissionDeniedError("backend denied", response=Response({}, 403))
+    monkeypatch.setattr(base, "make_request", denied)
+    with pytest.raises(PermissionDeniedError):
+        foundry.Secret.filter()
+    assert len(calls) == 1
+    assert platform["environments"] == 0
     assert ctx.get_organization_environment_context().organization_environment_uid == ENV
 
 
@@ -570,7 +570,7 @@ def test_runtime_label_cannot_supply_context_without_platform_verification(platf
     assert platform["environments"] == 0
 
 
-@pytest.mark.parametrize("field", ["user", "organization"])
+@pytest.mark.parametrize("field", ["user"])
 def test_platform_branch_cache_cannot_cross_identity_before_environment_use(platform, field):
     original = ctx.get_code_repository_context()
     platform[field] = "changed-identity"
@@ -583,12 +583,11 @@ def test_platform_branch_cache_cannot_cross_identity_before_environment_use(plat
     assert ctx.get_git_source_context() is original.source_context
 
 
-def test_principal_without_organization_can_read_source_but_not_environment(platform):
+def test_principal_without_organization_can_select_environment(platform):
     platform["organization"] = None
     select()
-    assert ctx.get_code_repository_context().organization_uid is None
-    with pytest.raises(ctx.OrganizationEnvironmentContextError, match="User and Organization"):
-        ctx.get_organization_environment_context()
+    assert not hasattr(ctx.get_code_repository_context(), "organization_uid")
+    assert ctx.get_organization_environment_context().organization_environment_uid == ENV
     assert ctx.get_git_source_context().repository_branch == "test"
 
 

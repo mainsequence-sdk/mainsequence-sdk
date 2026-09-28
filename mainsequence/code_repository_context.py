@@ -41,7 +41,7 @@ class OrganizationEnvironmentContextError(CodeRepositoryContextError):
 
 
 class AuthenticatedContextChangedError(CodeRepositoryContextError):
-    """Raised when an authenticated principal or Organization changes within a context."""
+    """Raised when an authenticated principal changes within a context."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,7 +61,6 @@ class DevelopmentEnvironmentSelection:
 @dataclass(frozen=True, slots=True)
 class OrganizationEnvironmentContext:
     organization_environment_uid: str
-    organization_uid: str
     principal_uid: str
     source: Literal["authenticated_runtime", "explicit_development", "registered_branch"]
     process_id: int
@@ -92,7 +91,6 @@ class CodeRepositoryContext:
     detail: str = ""
     context_source: CodeRepositoryContextSource = "git"
     principal_uid: str | None = None
-    organization_uid: str | None = None
     api_url: str | None = None
 
     @property
@@ -665,16 +663,15 @@ def get_code_repository_context(
     try:
         authenticated_context = _authenticated_runtime_context_for_process()
         runtime_expected = _runtime_auth_requested() or authenticated_context is not None
-        principal_uid, organization_uid, api_url = _authenticated_platform_identity()
+        principal_uid, api_url = _authenticated_platform_identity()
         if previous is not None:
             assert isinstance(previous, CodeRepositoryContext)
-            if (previous.principal_uid, previous.organization_uid, previous.api_url) != (
+            if (previous.principal_uid, previous.api_url) != (
                 principal_uid,
-                organization_uid,
                 api_url,
             ) or previous.is_authenticated_runtime != runtime_expected:
                 raise AuthenticatedContextChangedError(
-                    "Authenticated principal, Organization, endpoint, or authentication mode changed; "
+                    "Authenticated principal, endpoint, or authentication mode changed; "
                     "reset the development context or start a fresh runtime process."
                 )
             context = previous
@@ -702,7 +699,6 @@ def get_code_repository_context(
             context = replace(
                 context,
                 principal_uid=principal_uid,
-                organization_uid=organization_uid,
                 api_url=api_url,
             )
         if code_repository_uid and str(code_repository_uid).strip() != context.code_repository_uid:
@@ -784,39 +780,23 @@ def configure_development_environment(selection: DevelopmentEnvironmentSelection
         _DEVELOPMENT_ENVIRONMENT = selection
 
 
-def _authenticated_platform_identity() -> tuple[str, str | None, str]:
+def _authenticated_platform_identity() -> tuple[str, str]:
     from mainsequence.client.models_user import User
 
     user = User.get_authenticated_user_details()
     principal_uid = _normalized_value(user, "uid")
-    organization_uid = _normalized_value(_object_value(user, "organization"), "uid")
     if not principal_uid:
         raise CodeRepositoryContextError("The authenticated principal must have a public User UID.")
-    return principal_uid, organization_uid or None, User._user_api_root()
-
-
-def _verify_environment_access(environment_uid: str, organization_uid: str) -> None:
-    from mainsequence.client.models_user import OrganizationEnvironment
-
-    # This public detail route applies the platform's visibility policy. Never
-    # infer access from source facts, unverified JWT claims, or a list position.
-    environment = OrganizationEnvironment.get_by_uid(environment_uid)
-    if (
-        str(environment.uid) != environment_uid
-        or str(environment.organization_owner_uid) != organization_uid
-    ):
-        raise OrganizationEnvironmentContextError(
-            "The selected Environment does not belong to the authenticated Organization."
-        )
+    return principal_uid, User._user_api_root()
 
 
 def get_organization_environment_context(
     operation: str = "Environment-scoped operation",
 ) -> OrganizationEnvironmentContext:
-    """Resolve one authorized Environment through the shared SDK request pipeline.
+    """Resolve one selected Environment through the shared SDK request pipeline.
 
     Identity is revalidated through users/me on each call. This keeps a token
-    refresh for the same principal stable and detects account/Organization
+    refresh for the same principal stable and detects account
     changes without trusting token contents. Resource authorization remains
     server-owned on every subsequent request.
     """
@@ -858,18 +838,16 @@ def get_organization_environment_context(
                 "Configure DevelopmentEnvironmentSelection before use, or use a registered branch "
                 "with an Environment. Git source discovery and unrelated SDK calls remain available."
             )
-        principal_uid, organization_uid, api_url = (
+        principal_uid, api_url = (
             context.principal_uid,
-            context.organization_uid,
             context.api_url,
         )
-        if not principal_uid or not organization_uid or not api_url:
+        if not principal_uid or not api_url:
             raise OrganizationEnvironmentContextError(
-                "Environment operations require an authenticated User and Organization."
+                "Environment operations require an authenticated User."
             )
         resolved = OrganizationEnvironmentContext(
             organization_environment_uid=environment_uid,
-            organization_uid=organization_uid,
             principal_uid=principal_uid,
             source=provenance,
             process_id=os.getpid(),
@@ -878,12 +856,10 @@ def get_organization_environment_context(
         if previous is not None:
             if previous != resolved:
                 raise AuthenticatedContextChangedError(
-                    "Authenticated principal, Organization, or Environment changed; "
+                    "Authenticated principal or Environment changed; "
                     "reset the development context or start a fresh runtime process."
                 )
             resolved = previous
-        else:
-            _verify_environment_access(environment_uid, organization_uid)
     except Exception as exc:
         with _STATE_CONDITION:
             _ENVIRONMENT_STATE = _ContextState(os.getpid(), "failed", context=previous, error=exc)

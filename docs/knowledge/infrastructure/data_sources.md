@@ -19,7 +19,8 @@ sources = DataSource.filter(organization_environment_uid=environment_uid)
 ```
 
 The platform decides which resources the authenticated principal can discover.
-The metadata adapter tolerates additional response fields. It does not expose
+The metadata adapter exposes neutral `environment_uid` and `environment_name`
+properties while retaining the platform response field names. It tolerates additional response fields. It does not expose
 connection credentials through directory reads or implement collection creation.
 
 ## Runtime connection material
@@ -34,8 +35,8 @@ MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET=<workload credential secret>
 
 Configure the SDK endpoint through its normal authentication configuration. The
 existing runtime credential provider exchanges and refreshes the access token.
-Call the connection method after authorizing the application operation, using
-organization and Environment UIDs from trusted application context:
+Call the connection method after authorizing the application operation. The
+platform backend authorizes access to the requested source:
 
 ```python
 from mainsequence.client import DataSource
@@ -44,8 +45,6 @@ from mainsequence.client.models_data_sources import DataSourceRuntimeError
 try:
     source = DataSource.get_runtime_connection(
         data_source_uid,
-        expected_organization_uid=organization_uid,
-        expected_environment_uid=environment_uid,
     )
 except DataSourceRuntimeError as error:
     handle_connection_failure(error.code)
@@ -61,7 +60,9 @@ else:
 
 The result is a `RuntimeDataSource` with source, organization, and Environment
 UUIDs, status, class type, access mode, a boolean capability map, and a typed
-`DataSourceConnection`. The response must match all three requested scope UIDs.
+`DataSourceConnection`. Organization metadata is optional response data, never
+a client-side authorization requirement. The response must identify the requested
+DataSource UID; the SDK does not compare ownership or expected Environment fields.
 The consuming application interprets `status`, `storage_access_mode`, and the
 capabilities required by its operation before opening a connection.
 
@@ -86,7 +87,7 @@ connect and read timeouts, configurable with `timeout=`.
 | `data_source_unavailable` | Transport failed or the platform returned another unsuccessful status. |
 | `invalid_data_source_scope` | An input UID is invalid. |
 | `invalid_runtime_data_source_response` | The response is malformed or required connection fields are invalid. |
-| `data_source_scope_mismatch` | The response identifies a different source, organization, or Environment. |
+| `data_source_identity_mismatch` | The response identifies a different DataSource. |
 
 Errors contain the code only, without response bodies or connection credentials.
 Workload access to a DataSource does not authorize the human calling an application;
