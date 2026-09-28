@@ -1,53 +1,5 @@
-# Main Sequence Documentation
+# Main Sequence SDK
 
-Main Sequence is a platform for building data products, deploying workflows, and exposing them as reusable platform resources.
+The Python SDK authenticates with the Main Sequence platform and exposes direct API adapters. It includes generic HTTP request handling, typed platform responses, source identity checks for CodeRepositories, and optional logging and tracing. Domain packages own domain contracts and workflows.
 
-The Main Sequence platform allows you to:
-
-1. rapidly build and deploy data products with normalized `MetaTable` contracts and `TimeIndexTableUpdater` producer workflows
-2. deploy FastAPI services and supported application surfaces on the platform
-3. rapidly deploy agents using the Google Agent SDK
-
-The key idea is that you can focus on development and deployment, while the platform handles the DevOps layer.
-
-## Choose a reading path
-
-### Knowledge
-
-Use the Knowledge section if you already know the workflow you are building and want the deeper conceptual guide.
-
-Key entry points:
-
-- [Time-Index Table Updaters](knowledge/time_index_table_updates.md)
-- [MetaTables](knowledge/meta_tables/index.md)
-- [Migrating from 7.x to 8.0](migrations/v8-code-repository-ontology.md)
-- [Migrating from 6.x to 7.0](migrations/v7-time-index-table-updater-hard-cut.md)
-- [Constants and Secrets](knowledge/infrastructure/constants_and_secrets.md)
-- [Scheduling Jobs](knowledge/infrastructure/scheduling_jobs.md)
-- [Streamlit dashboard support removal](migrations/streamlit-dashboard-removal.md)
-
-### CLI
-
-Use the CLI section for command-focused operational work:
-
-- [CLI Overview](cli/index.md)
-
-### Reference
-
-Use the generated reference when you need the API surface directly:
-
-- [Reference Index](reference/index.md)
-
-## What this SDK covers
-
-The SDK is organized around a few main areas:
-
-- `mainsequence.meta_tables`: `TimeIndexTableUpdater`s, persistence, orchestration, and update workflows
-- `mainsequence.client`: API client models for CodeRepositories, jobs, tables, platform resources, and sharing
-- `mainsequence.cli`: the `mainsequence` command-line interface
-
-## Tutorial ownership
-
-The beginner tutorial is maintained in its own self-contained CodeRepository rather
-than inside this SDK reference site. This repository remains the source of truth
-for SDK APIs, concepts, CLI behavior, and generated reference documentation.
+Start with [authentication](knowledge/infrastructure/auth.md), the [minimal CLI](cli/index.md), or the [generated API reference](reference/index.md). For the MetaTables removal and consumer migration, see [the migration guide](migrations/metatables-sdk-removal.md) and [ADR 0034](adr/0034-remove-metatables-from-sdk.md).

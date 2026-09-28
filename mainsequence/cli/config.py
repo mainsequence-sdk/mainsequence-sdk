@@ -21,7 +21,6 @@ import shutil
 import subprocess
 import sys
 import time
-from datetime import UTC
 
 from mainsequence.defaults import CANONICAL_BACKEND_ENV, STANDARD_BACKEND_URL
 
@@ -54,8 +53,6 @@ SESSION_OVERRIDES_DIR = CFG_DIR / "session_overrides"
 # Deprecated compatibility constant kept for cleanup of legacy installs.
 TOKENS_JSON = CFG_DIR / "token.json"
 AUTH_JSON = CFG_DIR / "auth.json"
-RUNTIME_ACCESS_CACHE_JSON = CFG_DIR / "runtime_access_cache.json"
-A2A_HANDLE_CACHE_JSON = CFG_DIR / "a2a_handle_cache.json"
 
 # Session-scoped auth environment variables (no token file persistence).
 ENV_USERNAME = "MAINSEQUENCE_USERNAME"
@@ -66,8 +63,6 @@ LEGACY_ENV_ACCESS = "MAIN_SEQUENCE_USER_TOKEN"
 LEGACY_ENV_REFRESH = "MAIN_SEQUENCE_REFRESH_TOKEN"
 KEYCHAIN_SERVICE = "MainSequenceCLI.auth"
 KEYCHAIN_ACCOUNT = "default"
-DEFAULT_RUNTIME_ACCESS_CACHE_TTL_SECONDS = 60
-RUNTIME_ACCESS_CACHE_EXPIRY_SKEW_SECONDS = 30
 
 DEFAULTS = {
     "backend_url": os.environ.get(CANONICAL_BACKEND_ENV, f"{STANDARD_BACKEND_URL}/"),
@@ -305,241 +300,6 @@ def _auth_backend_key(backend: str | None = None) -> str:
     Return the normalized backend key used for auth persistence scoping.
     """
     return normalize_backend_url(backend or backend_url())
-
-
-def _runtime_access_user_key() -> str:
-    tokens = get_tokens()
-    username = str(tokens.get("username") or "").strip()
-    if username:
-        return f"username:{username}"
-    access = str(tokens.get("access") or "").strip()
-    if access:
-        return f"access:{hashlib.sha256(access.encode('utf-8')).hexdigest()}"
-    return "anonymous"
-
-
-def _runtime_access_cache_key(agent_session_uid: str, backend: str | None = None) -> str:
-    backend_key = _auth_backend_key(backend)
-    raw = f"{backend_key}|{_runtime_access_user_key()}|{str(agent_session_uid).strip()}"
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
-
-
-def _read_runtime_access_cache() -> dict:
-    data = read_json(RUNTIME_ACCESS_CACHE_JSON, {})
-    if not isinstance(data, dict):
-        return {"version": 1, "entries": {}}
-    entries = data.get("entries")
-    if not isinstance(entries, dict):
-        entries = {}
-    return {"version": 1, "entries": entries}
-
-
-def _write_runtime_access_cache(data: dict) -> None:
-    write_json(RUNTIME_ACCESS_CACHE_JSON, data)
-    if os.name == "posix":
-        try:
-            os.chmod(RUNTIME_ACCESS_CACHE_JSON, 0o600)
-        except Exception:
-            pass
-
-
-def _iso_utc_from_epoch(value: float) -> str:
-    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(value))
-
-
-def _parse_iso_utc_to_epoch(value: object) -> float | None:
-    if not isinstance(value, str):
-        return None
-    raw = value.strip()
-    if not raw:
-        return None
-    if raw.endswith("Z"):
-        raw = f"{raw[:-1]}+00:00"
-    try:
-        # Imported as module-free parsing to keep config.py dependency-light.
-        from datetime import datetime
-
-        parsed = datetime.fromisoformat(raw)
-        if parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=UTC)
-        return parsed.timestamp()
-    except Exception:
-        return None
-
-
-def get_runtime_access_cache_entry(
-    agent_session_uid: str,
-    *,
-    backend: str | None = None,
-) -> dict | None:
-    """
-    Return a non-expired cached runtime-access entry for one agent session.
-    """
-    key = _runtime_access_cache_key(agent_session_uid, backend)
-    cache = _read_runtime_access_cache()
-    entry = cache["entries"].get(key)
-    if not isinstance(entry, dict):
-        return None
-
-    expires_at = entry.get("expires_at_epoch")
-    if isinstance(expires_at, (int, float)) and expires_at <= time.time():
-        cache["entries"].pop(key, None)
-        _write_runtime_access_cache(cache)
-        return None
-
-    access = entry.get("access")
-    if not isinstance(access, dict):
-        cache["entries"].pop(key, None)
-        _write_runtime_access_cache(cache)
-        return None
-
-    return dict(entry)
-
-
-def get_runtime_access_cache(
-    agent_session_uid: str,
-    *,
-    backend: str | None = None,
-) -> dict | None:
-    """
-    Return only the cached runtime-access payload for one agent session.
-    """
-    entry = get_runtime_access_cache_entry(agent_session_uid, backend=backend)
-    if not entry:
-        return None
-    access = entry.get("access")
-    return dict(access) if isinstance(access, dict) else None
-
-
-def save_runtime_access_cache(
-    agent_session_uid: str,
-    access_payload: dict,
-    *,
-    backend: str | None = None,
-    ttl_seconds: int | float | None = DEFAULT_RUNTIME_ACCESS_CACHE_TTL_SECONDS,
-) -> dict:
-    """
-    Cache runtime access for repeated CLI sends to the same agent session.
-    """
-    if not isinstance(access_payload, dict):
-        raise TypeError("access_payload must be a dict")
-
-    now = time.time()
-    payload_expires_at = _parse_iso_utc_to_epoch(access_payload.get("expires_at"))
-    if payload_expires_at is not None:
-        expires_at_epoch = max(now, payload_expires_at - RUNTIME_ACCESS_CACHE_EXPIRY_SKEW_SECONDS)
-    else:
-        expires_at_epoch = None if ttl_seconds is None else now + float(ttl_seconds)
-    entry = {
-        "backend_url": _auth_backend_key(backend),
-        "agent_session_uid": str(agent_session_uid),
-        "cached_at_epoch": now,
-        "cached_at": _iso_utc_from_epoch(now),
-        "expires_at_epoch": expires_at_epoch,
-        "expires_at": _iso_utc_from_epoch(expires_at_epoch) if expires_at_epoch else None,
-        "access": dict(access_payload),
-    }
-    cache = _read_runtime_access_cache()
-    cache["entries"][_runtime_access_cache_key(agent_session_uid, backend)] = entry
-    _write_runtime_access_cache(cache)
-    return dict(entry)
-
-
-def clear_runtime_access_cache(
-    agent_session_uid: str | None = None,
-    *,
-    backend: str | None = None,
-) -> bool:
-    """
-    Clear cached runtime access for one session, or all cached runtime access.
-    """
-    try:
-        if not RUNTIME_ACCESS_CACHE_JSON.exists():
-            return True
-        if agent_session_uid is None:
-            RUNTIME_ACCESS_CACHE_JSON.unlink()
-            return True
-        cache = _read_runtime_access_cache()
-        cache["entries"].pop(_runtime_access_cache_key(agent_session_uid, backend), None)
-        if cache["entries"]:
-            _write_runtime_access_cache(cache)
-        else:
-            RUNTIME_ACCESS_CACHE_JSON.unlink()
-        return True
-    except Exception:
-        return False
-
-
-def _a2a_handle_cache_key(handle_unique_id: str, backend: str | None = None) -> str:
-    backend_key = _auth_backend_key(backend)
-    raw = f"{backend_key}|{_runtime_access_user_key()}|{str(handle_unique_id).strip()}"
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
-
-
-def _read_a2a_handle_cache() -> dict:
-    data = read_json(A2A_HANDLE_CACHE_JSON, {})
-    if not isinstance(data, dict):
-        return {"version": 1, "entries": {}}
-    entries = data.get("entries")
-    if not isinstance(entries, dict):
-        entries = {}
-    return {"version": 1, "entries": entries}
-
-
-def _write_a2a_handle_cache(data: dict) -> None:
-    write_json(A2A_HANDLE_CACHE_JSON, data)
-    if os.name == "posix":
-        try:
-            os.chmod(A2A_HANDLE_CACHE_JSON, 0o600)
-        except Exception:
-            pass
-
-
-def get_a2a_handle_cache(
-    handle_unique_id: str,
-    *,
-    backend: str | None = None,
-) -> dict | None:
-    """
-    Return a cached A2A handle mapping scoped by backend and current user.
-    """
-    handle = str(handle_unique_id or "").strip()
-    if not handle:
-        return None
-    cache = _read_a2a_handle_cache()
-    entry = cache["entries"].get(_a2a_handle_cache_key(handle, backend))
-    return dict(entry) if isinstance(entry, dict) else None
-
-
-def save_a2a_handle_cache(
-    handle_unique_id: str,
-    *,
-    agent_uid: str,
-    agent_session_uid: str,
-    name: str | None = None,
-    backend: str | None = None,
-) -> dict:
-    """
-    Cache an A2A handle to the backend AgentSession UID it resolves to.
-    """
-    handle = str(handle_unique_id or "").strip()
-    if not handle:
-        raise ValueError("handle_unique_id is required")
-
-    now = time.time()
-    entry = {
-        "backend_url": _auth_backend_key(backend),
-        "handle_unique_id": handle,
-        "agent_uid": str(agent_uid),
-        "agent_session_uid": str(agent_session_uid),
-        "name": str(name) if name is not None else None,
-        "cached_at_epoch": now,
-        "cached_at": _iso_utc_from_epoch(now),
-    }
-    cache = _read_a2a_handle_cache()
-    cache["entries"][_a2a_handle_cache_key(handle, backend)] = entry
-    _write_a2a_handle_cache(cache)
-    return dict(entry)
 
 
 def _keychain_account_for_backend(backend: str | None = None) -> str:

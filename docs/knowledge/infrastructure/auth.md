@@ -180,31 +180,6 @@ If the parent shell needs the exchanged token, use:
 eval "$(mainsequence login --export)"
 ```
 
-Local CodeRepository provisioning is also runtime-credential aware:
-
-```bash
-mainsequence code-repository set-up-locally <CODE_REPOSITORY_UID>
-mainsequence code-repository refresh-token --path .
-```
-
-When an already authenticated coding-agent runtime uses
-`MAINSEQUENCE_AUTH_MODE=runtime_credential`, these commands preserve the
-backend-injected runtime credential auth shape in the CodeRepository `.env`:
-
-```bash
-MAINSEQUENCE_AUTH_MODE=runtime_credential
-MAINSEQUENCE_ACCESS_TOKEN=<exchanged short-lived access token>
-MAINSEQUENCE_RUNTIME_CREDENTIAL_ID=<credential id>
-MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET=<credential secret>
-MAINSEQUENCE_ENDPOINT=<platform API origin>
-```
-
-They do not require or write `MAINSEQUENCE_REFRESH_TOKEN` in runtime credential mode.
-Both local CodeRepository commands preserve unrelated `.env` entries while rendering
-the current supported authentication shape. They remove obsolete token aliases
-and superseded repository, branch, and Environment identity
-entries.
-
 CodeRepository source identity is separate from authentication. In local and deployed
 code repository images, the SDK reads the containing sanitized Git checkout, attached
 branch, and exact HEAD commit, then maps that source to CodeRepository and

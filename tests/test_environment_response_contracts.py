@@ -1,7 +1,6 @@
 import pytest
 
 import mainsequence.client.agent_runtime_models as agent_models
-import mainsequence.client.metatables.core as metatable_models
 import mainsequence.client.models_foundry as foundry_models
 import mainsequence.client.models_helpers as helper_models
 
@@ -72,18 +71,6 @@ RUNTIME_UPDATE_FIELD = "runtime_update"
             foundry_models.Constant,
             {ENVIRONMENT_UID_FIELD, ENVIRONMENT_NAME_FIELD},
             id="constant",
-        ),
-        pytest.param(
-            ("MetaTableSerializer",),
-            metatable_models.MetaTable,
-            {ENVIRONMENT_UID_FIELD, ENVIRONMENT_NAME_FIELD},
-            id="meta-table",
-        ),
-        pytest.param(
-            ("MetaTableSerializer",),
-            metatable_models.TimeIndexMetaTable,
-            {ENVIRONMENT_UID_FIELD, ENVIRONMENT_NAME_FIELD},
-            id="time-index-meta-table",
         ),
     ],
 )

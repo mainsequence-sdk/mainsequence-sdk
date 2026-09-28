@@ -93,7 +93,6 @@ Main Sequence applies resource-level access control, so the real operational que
 In practice, the current SDK exposes sharing behavior across several resource types:
 
 - `CodeRepository`
-- `TimeIndexMetaTable`
 - `Constant`
 - `Secret`
 - `Bucket`
@@ -103,7 +102,6 @@ In practice, the current SDK exposes sharing behavior across several resource ty
 Why these matter:
 
 - `CodeRepository` defines an important collaboration and execution boundary
-- `TimeIndexMetaTable` is the published table boundary for shared datasets
 - `Constant` stores shareable, non-sensitive runtime configuration
 - `Secret` stores protected credentials
 - `Bucket` holds artifacts and files that may themselves contain sensitive or controlled content
@@ -112,7 +110,7 @@ Why these matter:
 
 !!! warning "IMPORTANT"
     `Constant` and `Secret` are not the only shareable resources in the SDK.
-    `CodeRepository`, `TimeIndexMetaTable`, `Bucket`, `Artifact`, and `ResourceRelease` also participate in the same shareable-object model.
+    `CodeRepository`, `Bucket`, `Artifact`, and `ResourceRelease` also participate in the same shareable-object model.
     This guide focuses on constants and secrets because they are the simplest place to learn the pattern.
 
 That is the practical reason this topic matters early:
@@ -410,53 +408,6 @@ Use secrets for:
 - API secret
 - refresh token
 - signing private key
-
-## CLI Usage
-
-The CLI exposes both resources directly.
-
-Constants:
-
-```bash
-mainsequence constants list
-mainsequence constants create MODEL__DEFAULT_WINDOW 252
-mainsequence constants create BROKER__DEFAULTS '{"mode":"paper"}'
-mainsequence constants delete <CONSTANT_UID>
-```
-
-Secrets:
-
-```bash
-mainsequence secrets list
-mainsequence secrets create POLYGON_API_KEY your-secret-value
-mainsequence secrets delete <SECRET_UID>
-```
-
-Important behavior:
-
-- constants display the category derived from the prefix before `__`
-- secrets are shown by metadata only in CLI tables and delete previews
-- delete commands require typed verification
-
-### CLI sharing examples for constants
-
-These commands show the resource-level sharing model directly:
-
-```bash
-mainsequence constants can_view <CONSTANT_UID>
-mainsequence constants can_edit <CONSTANT_UID>
-mainsequence constants add_to_view <CONSTANT_UID> <USER_UID>
-mainsequence constants add_to_edit <CONSTANT_UID> <USER_UID>
-mainsequence constants remove_from_view <CONSTANT_UID> <USER_UID>
-mainsequence constants remove_from_edit <CONSTANT_UID> <USER_UID>
-```
-
-Interpretation:
-
-- `<CONSTANT_UID>` is the constant public UID
-- `<USER_UID>` is the public UUID of the user receiving or losing access
-
-This is the most concrete CLI example of Main Sequence RBAC at the resource level.
 
 ## Recommended Practice
 

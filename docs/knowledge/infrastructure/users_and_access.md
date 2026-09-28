@@ -33,7 +33,7 @@ graph TD
     Org["Organization"] --> Users["Users"]
     Org --> Teams["Teams"]
     Users -->|membership| Teams
-    Users -->|direct access| Resources["CodeRepositories, TimeIndexMetaTable, Constants, Secrets, Buckets, Artifacts, Releases"]
+    Users -->|direct access| Resources["CodeRepositories, Constants, Secrets, Buckets, Artifacts, Releases"]
     Teams -->|team access| Resources
 ```
 
@@ -149,7 +149,6 @@ That is the practical layer that answers:
 This model appears across resources such as:
 
 - `CodeRepository`
-- `TimeIndexMetaTable`
 - `Constant`
 - `Secret`
 - `Bucket`
@@ -195,8 +194,6 @@ Most of the time, the practical distinction is simple:
 
 For example:
 
-- on a `TimeIndexMetaTable`, `view` means reading the published dataset
-- on a `TimeIndexMetaTable`, `edit` means maintaining or administrating the published dataset
 - on a supported application release, `view` means opening or calling it
 - on a constant, `edit` means changing the runtime value
 
@@ -222,7 +219,7 @@ This is why "team membership" and "team administration" should be thought of as 
 
 ### Example 1: Share a dataset to a team
 
-If a `TimeIndexMetaTable` is shared to `Research` with `view` access:
+If an `Artifact` is shared to `Research` with `view` access:
 
 - current members of `Research` can read the dataset
 - future members of `Research` will also inherit that read access
@@ -232,7 +229,7 @@ If a `TimeIndexMetaTable` is shared to `Research` with `view` access:
 
 If one workflow maintainer needs to manage a dataset directly:
 
-- share the `TimeIndexMetaTable` to that user with `edit`
+- share the `Artifact` to that user with `edit`
 - do not widen access for the whole team unless that is actually intended
 
 ### Example 3: Team membership is not team administration
@@ -256,7 +253,6 @@ Keep your thinking resource by resource.
 
 The same resource-scoped pattern applies across the platform:
 
-- `TimeIndexMetaTable` controls access to published data
 - `Constant` and `Secret` control access to runtime configuration
 - `Bucket` and `Artifact` control access to stored files
 - `ResourceRelease` controls access to supported deployed experiences such as APIs

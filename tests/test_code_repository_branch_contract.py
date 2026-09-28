@@ -1,12 +1,10 @@
 from __future__ import annotations
 
 import datetime
-from types import SimpleNamespace
 
 import pytest
 from pydantic import ValidationError
 
-from mainsequence.cli import cli as cli_mod
 from mainsequence.client import base as base_mod
 from mainsequence.client import models_foundry
 from mainsequence.client.value_sets import declared_values
@@ -40,8 +38,6 @@ def code_repository_branch_payload() -> dict:
         "code_repository_name": "Analytics",
         "code_repository_type": "python",
         "repository_branch": "main",
-        "metatables_data_source": None,
-        "metatables_data_source_uid": None,
         "default_base_image": {
             "uid": "61111111-1111-4111-8111-111111111111",
             "title": "Python",
@@ -399,17 +395,3 @@ def test_code_repository_branch_summary_uses_branch_route(monkeypatch):
 
     assert branch.summary() == {"uid": CODE_REPOSITORY_BRANCH_UID}
     assert captured["url"] == (f"https://api/code-repository-branches/{CODE_REPOSITORY_BRANCH_UID}/summary/")
-
-
-def test_local_branch_resolution_does_not_infer_the_only_branch(monkeypatch):
-    monkeypatch.setattr(
-        cli_mod,
-        "get_code_repository_branch",
-        lambda uid: SimpleNamespace(uid=uid),
-    )
-
-    with pytest.raises(cli_mod.ApiError, match="No repository branch was selected"):
-        cli_mod._resolve_code_repository_branch(
-            logical_code_repository_payload(),
-            prompt_if_ambiguous=False,
-        )

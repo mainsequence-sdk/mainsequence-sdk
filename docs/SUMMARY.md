@@ -1,16 +1,12 @@
 - [Home](index.md)
 - Knowledge
-    - [Time-Index Table Updaters](knowledge/time_index_table_updates.md)
-    - MetaTables
-        - [Overview](knowledge/meta_tables/index.md)
-        - [SDK API And Backend Contract](knowledge/meta_tables/api.md)
-        - [Registering SQLAlchemy Tables](knowledge/meta_tables/sqlalchemy.md)
-        - [Compiled SQL Execution](knowledge/meta_tables/compiled_sql.md)
-        - [MetaTable Migrations](knowledge/meta_tables/migrations.md)
-    - [CLI Deep Dive](knowledge/cli.md)
+    - [CLI usage](knowledge/cli.md)
     - FastAPI
         - [Request User Context](knowledge/fastapi/index.md)
+    - Server integrations
+        - [Caller assertions](knowledge/server/caller_assertions.md)
     - Infrastructure
+        - [DataSource access](knowledge/infrastructure/data_sources.md)
         - [Users and Access](knowledge/infrastructure/users_and_access.md)
         - [Notifications](knowledge/infrastructure/notifications.md)
         - [Labels](knowledge/infrastructure/labels.md)
@@ -22,7 +18,8 @@
 - Migrations
     - [Streamlit dashboard support removal](migrations/streamlit-dashboard-removal.md)
     - [7.x to 8.0: CodeRepository Ontology Hard Cut](migrations/v8-code-repository-ontology.md)
-    - [6.x to 7.0: Time-Index Table Updater Hard Cut](migrations/v7-time-index-table-updater-hard-cut.md)
+    - [MetaTables SDK removal](migrations/metatables-sdk-removal.md)
+    - [6.x to 7.0: Time-Index Table Updater Hard Cut (history)](migrations/v7-time-index-table-updater-hard-cut.md)
 - CLI
     - [Overview](cli/index.md)
 - [Reference](reference/index.md)

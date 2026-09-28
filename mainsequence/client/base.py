@@ -138,11 +138,6 @@ class BaseObjectOrm:
 
     END_POINTS = {
         "User": "users",
-        # TDAG
-        "TimeIndexMetaTable": "time-index-meta-tables",
-        "TimeIndexTableUpdate": "time-index-table-updates",
-        "TimeIndexTableUpdateDetails": "time-index-table-update-details",
-        "TableUpdateRun": "table-update-runs",
         "DataSource": "data-sources",
         "CodeRepository": "code-repositories",
         "CodeRepositoryBranch": "code-repository-branches",

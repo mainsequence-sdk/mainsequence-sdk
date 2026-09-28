@@ -1,5 +1,7 @@
 # ADR 0026: SDK-Owned Migration Scaffolding And Helpers
 
+> Historical decision: SDK-owned MetaTables functionality described here was superseded by [ADR 0034](0034-remove-metatables-from-sdk.md). Follow the current [removal migration guide](../migrations/metatables-sdk-removal.md) for supported imports and commands.
+
 Date: 2026-06-07
 
 Status: Proposed

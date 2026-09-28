@@ -1,17 +1,13 @@
 from __future__ import annotations
 
 import datetime
-from collections.abc import Mapping
 from threading import RLock
 from typing import TYPE_CHECKING, Any, ClassVar, Literal
 from uuid import UUID
 
-import pandas as pd
 import yaml
 from cachetools import TTLCache, cachedmethod
 from pydantic import Field, SecretStr
-
-from mainsequence.logconf import logger
 
 from .base import (
     BaseObjectOrm,
@@ -21,12 +17,7 @@ from .base import (
     LabelableObjectMixin,
     ShareableObjectMixin,
 )
-from .dtype_codec import (
-    TIMESTAMP_TZ,
-    token_to_pandas_series,
-)
 from .exceptions import raise_for_response
-from .metatables import DataSource as _DataSource
 from .utils import (
     make_request,
 )
@@ -34,9 +25,6 @@ from .value_sets import OpenValueSet
 
 if TYPE_CHECKING:
     from .github_issues import GitHubIssueMutationResult, GitHubIssuePage, GitHubIssueState
-    from .metatables import TimeIndexTableUpdate
-
-_default_data_source = None  # Module-level cache
 
 JSON_COMPRESSED_PREFIX = ["json_compressed", "jcomp_"]
 
@@ -500,7 +488,6 @@ class CodeRepositoryBranch(BasePydanticModel, BaseObjectOrm):
         ),
     )
     repository_branch: str
-    metatables_data_source: _DataSource | None = None
     metatables_data_source_uid: str | None = None
     organization_environment_uid: str | None = None
     organization_environment_name: str | None = None
@@ -628,34 +615,6 @@ class CodeRepositoryBranch(BasePydanticModel, BaseObjectOrm):
         raise_for_response(r)
         return r.json()
 
-    def get_time_index_table_updates(self, *, timeout: int | None = None) -> list[Any]:
-        from .metatables import TimeIndexTableUpdate
-
-        payload = self._get_action("get-time-index-table-updates", timeout=timeout)
-        if isinstance(payload, list):
-            raw_updates = payload
-        elif isinstance(payload, dict):
-            if "time_index_table_updates" in payload:
-                raw_updates = payload["time_index_table_updates"]
-            elif "results" in payload:
-                raw_updates = payload["results"]
-            else:
-                raise ValueError(
-                    "CodeRepositoryBranch time-index table update response requires "
-                    "time_index_table_updates or results."
-                )
-        else:
-            raise ValueError(
-                "Unexpected response type for CodeRepositoryBranch time-index table updates: "
-                f"{type(payload)!r}"
-            )
-        if not isinstance(raw_updates, list):
-            raise ValueError("CodeRepositoryBranch time-index table updates must be a list.")
-        return [
-            update if isinstance(update, TimeIndexTableUpdate) else TimeIndexTableUpdate(**update)
-            for update in raw_updates
-        ]
-
     def __str__(self):
         return yaml.safe_dump(self.model_dump(), sort_keys=False, default_flow_style=False)
 
@@ -761,85 +720,6 @@ class CodeRepositoryImage(CurrentCodeRepositoryBranchCollectionMixin, BasePydant
     build_error: bool = Field(..., description="Whether the backend image build failed")
     is_ready: bool = Field(..., description="Whether the image is ready in Artifact Registry")
     creation_date: datetime.datetime | None = Field(None, description="Creation timestamp")
-
-
-class TimeScaleDB(_DataSource):
-    database_user: str
-    password: str
-    host: str
-    database_name: str
-    port: int
-
-    def get_connection_uri(self):
-        password = self.password  # Decrypt password if necessary
-        return f"postgresql://{self.database_user}:{password}@{self.host}:{self.port}/{self.database_name}"
-
-    def insert_data_into_table(
-        self,
-        serialized_data_frame: pd.DataFrame,
-        table_update: TimeIndexTableUpdate,
-        overwrite: bool,
-        time_index_name: str,
-        index_names: list,
-        grouped_dates: dict,
-        column_dtypes_map: Mapping[str, Any] | None = None,
-    ):
-        from .metatables import TimeIndexTableUpdate
-
-        TimeIndexTableUpdate.post_data_frame_in_chunks(
-            serialized_data_frame=serialized_data_frame,
-            table_update=table_update,
-            data_source=self,
-            index_names=index_names,
-            time_index_name=time_index_name,
-            overwrite=overwrite,
-            column_dtypes_map=column_dtypes_map,
-        )
-
-    def get_data_by_time_index(
-        self,
-        table_update: TimeIndexTableUpdate,
-        start_date: datetime.datetime | None = None,
-        end_date: datetime.datetime | None = None,
-        great_or_equal: bool = True,
-        less_or_equal: bool = True,
-        columns: list[str] | None = None,
-        dimension_filters: dict[str, list[Any]] | None = None,
-        index_coordinates: list[dict[str, Any]] | None = None,
-        dimension_range_map: list[dict[str, Any]] | None = None,
-    ) -> pd.DataFrame:
-        df = table_update.get_data_between_dates_from_api(
-            start_date=start_date,
-            end_date=end_date,
-            great_or_equal=great_or_equal,
-            less_or_equal=less_or_equal,
-            dimension_filters=dimension_filters,
-            index_coordinates=index_coordinates,
-            dimension_range_map=dimension_range_map,
-            columns=columns,
-        )
-        if len(df) == 0:
-            if logger:
-                logger.warning(f"No data returned from remote API for {table_update.update_hash}")
-            return df
-
-        time_index_name, index_names, column_dtypes_map = (
-            table_update.output_table._require_time_indexed_table_contract()
-        )
-        df[time_index_name] = token_to_pandas_series(
-            df[time_index_name],
-            TIMESTAMP_TZ,
-            is_time_index=True,
-        )
-        for c, c_type in column_dtypes_map.items():
-            if c in df.columns:
-                df[c] = token_to_pandas_series(
-                    df[c],
-                    c_type,
-                    is_time_index=c == time_index_name,
-                )
-        df = df.set_index(index_names)
-        return df
 
 
 class DynamicResource(BasePydanticModel, BaseObjectOrm):
@@ -1188,18 +1068,3 @@ class Constant(
     @classmethod
     def invalidate_filter_cache(cls) -> None:
         cls._filter_cache.clear()
-
-    @classmethod
-    def create_constants_if_not_exist(cls, constants_to_create: dict):
-        # crete global constants if not exist in  backed
-
-        existing_constants = cls.filter(name__in=list(constants_to_create.keys()))
-        existing_constants_names = [c.name for c in existing_constants]
-        constants_to_register = {
-            k: v for k, v in constants_to_create.items() if k not in existing_constants_names
-        }
-        created_constants = []
-        for k, v in constants_to_register.items():
-            new_constant = cls.create(name=k, value=v)
-            created_constants.append(new_constant)
-        return created_constants

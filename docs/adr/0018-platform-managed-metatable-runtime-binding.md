@@ -1,5 +1,7 @@
 # ADR 0018: Platform-Managed MetaTable Runtime Physical Binding
 
+> Historical decision: SDK-owned MetaTables functionality described here was superseded by [ADR 0034](0034-remove-metatables-from-sdk.md). Follow the current [removal migration guide](../migrations/metatables-sdk-removal.md) for supported imports and commands.
+
 ## Status
 
 Superseded by ADR 0022 for Alembic-managed platform MetaTables and by ADR 0028

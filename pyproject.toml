@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "mainsequence"
 version = "8.1.25"
-description = "Main Sequence SDK "
+description = "Main Sequence SDK"
 readme = "README.md"
 requires-python = ">=3.13"
 authors = [{ name = "Main Sequence GmbH", email = "dev@main-sequence.io" }]
@@ -22,35 +22,21 @@ classifiers = [
 # PEP 621 dependencies (published requirements)
 
 dependencies = [
-  "alembic>=1.18.4",
   "cachetools",
-  "click>=8.3.3",
   "concurrent-log-handler",
-  "numpy",
   "opentelemetry-api",
-  "opentelemetry-exporter-otlp",
-  "opentelemetry-sdk",
-  "packaging>=24.2",
-  "pandas",
-  "protobuf>=6.33.5",
-  "psutil",
-  "psycopg2-binary>=2.9.12",
   "pydantic>=2.11,<3",
-  "pygments>=2.20.0",
   "pyyaml",
   "requests>=2.33.0",
-  "sqlalchemy>=2,<3",
   "structlog",
-  "tqdm",
   "typer",
   "urllib3>=2.7.0",
 ]
 
 [project.optional-dependencies]
-"local-data" = [
-  "duckdb>=1.4.2",
-  "pyarrow>=23.0.1",
-]
+server = ["PyJWT[crypto]>=2.10,<3"]
+tracing = ["opentelemetry-sdk", "opentelemetry-exporter-otlp"]
+
 [project.urls]
 Homepage = "https://github.com/mainsequence-sdk/mainsequence-sdk"
 Issues = "https://github.com/mainsequence-sdk/mainsequence-sdk/issues"
@@ -62,7 +48,6 @@ ms = "mainsequence.cli.cli:app"
 [dependency-groups]
 dev = [
   "black>=26.3.1",
-  "IPython",
   "mkdocs",
   "mkdocs-autorefs",
   "mkdocs-gen-files",
@@ -70,29 +55,18 @@ dev = [
   "mkdocs-material",
   "mkdocs-mermaid2-plugin",
   "mkdocstrings[python]",
-  "pipdeptree",
+  "opentelemetry-sdk",
+  "packaging>=24.2",
   "pre-commit",
   "pymdown-extensions>=11.0.1",
   "pytest>=9.0.3",
   "ruff>=0.14.0",
-  "twine",
 ]
 
 # Package discovery equivalent to find_packages(include=['mainsequence','mainsequence.*'])
 [tool.setuptools.packages.find]
-namespaces = true
-include = ["mainsequence", "mainsequence.*", "agent_scaffold", "agent_scaffold.*"]
-
-# Include your non-.py assets in wheels/sdists
-[tool.setuptools.package-data]
-"mainsequence" = ["**/*.html", "**/*.css", "**/*.png", "**/*.toml", "**/*.json", "**/*.mako"]
-"agent_scaffold" = ["*.md", "**/*.md"]
-
-[[tool.uv.index]]
-name = "testpypi"
-url = "https://test.pypi.org/simple/"
-publish-url = "https://test.pypi.org/legacy/"
-explicit = true
+namespaces = false
+include = ["mainsequence", "mainsequence.*"]
 
 
 # --------------------
@@ -104,13 +78,6 @@ testpaths = ["tests"]
 # invoked as `python -m pytest` gets this from the CWD, but the `pytest`
 # entrypoint (what `uv run pytest` and CI use) does not.
 pythonpath = ["."]
-# `live` tests talk to a real backend and need credentials, so they are
-# deselected by default. CI and a plain `pytest` therefore run offline.
-# Run them explicitly with `pytest -m live`.
-addopts = "-m 'not live'"
-markers = [
-  "live: talks to a live Main Sequence backend and needs credentials; deselected unless `-m live` is passed",
-]
 
 # --------------------
 # Formatting (Black)
@@ -126,7 +93,6 @@ target-version = ["py313"]
 line-length = 100
 target-version = "py313"
 extend-exclude = ["build", "dist", ".venv", ".tox", ".mypy_cache", ".ruff_cache"]
-fix = true                    # <-- move fix here
 
 [tool.ruff.lint]
 # E/F: pycodestyle/pyflakes, I: import order, B: bugbear, UP: pyupgrade
@@ -137,4 +103,4 @@ ignore = ["E203", "E501"]     # let Black handle these
 "mainsequence/cli/cli.py" = ["B008"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["mainsequence", "agent_scaffold"]
+known-first-party = ["mainsequence"]

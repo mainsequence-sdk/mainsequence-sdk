@@ -33,10 +33,6 @@ class CodeRepositoryEnvironmentContextRequiredError(CodeRepositoryBranchContextR
     """Raised when the current CodeRepositoryBranch has no resolved Environment."""
 
 
-class CodeRepositoryDataSourceContextRequiredError(CodeRepositoryContextError):
-    """Raised when branch-derived data access has no usable DataSource."""
-
-
 @dataclass(frozen=True, slots=True)
 class GitCodeRepositorySourceContext:
     repository_root: pathlib.Path
@@ -55,7 +51,6 @@ class CodeRepositoryContext:
     code_repository_uid: str | None
     code_repository_branch_uid: str | None
     organization_environment_uid: str | None
-    metatables_data_source: Any | None
     status: CodeRepositoryContextStatus
     process_id: int
     code_repository_branch: Any | None
@@ -374,7 +369,6 @@ def _build_code_repository_context(
             code_repository_uid=None,
             code_repository_branch_uid=None,
             organization_environment_uid=None,
-            metatables_data_source=None,
             status="code_repository_branch_not_registered",
             process_id=os.getpid(),
             code_repository_branch=None,
@@ -419,7 +413,6 @@ def _build_code_repository_context(
         organization_environment_uid=(
             _normalized_value(code_repository_branch, "organization_environment_uid") or None
         ),
-        metatables_data_source=_object_value(code_repository_branch, "metatables_data_source"),
         status="resolved",
         process_id=os.getpid(),
         code_repository_branch=code_repository_branch,
@@ -611,27 +604,6 @@ def scope_current_code_repository_branch_filters(
     return scoped
 
 
-def require_code_repository_metatables_data_source(
-    operation: str,
-    *,
-    context: CodeRepositoryContext | None = None,
-) -> Any:
-    resolved = require_code_repository_branch_context(operation, context=context)
-    data_source = resolved.metatables_data_source
-    if data_source is None:
-        raise CodeRepositoryDataSourceContextRequiredError(
-            f"{operation} requires CodeRepositoryBranch.metatables_data_source, but "
-            f"CodeRepositoryBranch {resolved.code_repository_branch_uid!r} has none configured."
-        )
-    status = str(_object_value(data_source, "status", "") or "")
-    if status != "AVAILABLE":
-        raise CodeRepositoryDataSourceContextRequiredError(
-            f"{operation} requires an AVAILABLE CodeRepositoryBranch MetaTables DataSource; "
-            f"got status {status or 'unknown'!r}."
-        )
-    return data_source
-
-
 def _reset_code_repository_context() -> None:
     """Reset call-once state for isolated SDK tests."""
 
@@ -645,7 +617,6 @@ def _reset_code_repository_context() -> None:
 __all__ = [
     "GitCodeRepositorySourceContext",
     "CodeRepositoryBranchContextRequiredError",
-    "CodeRepositoryDataSourceContextRequiredError",
     "CodeRepositoryEnvironmentContextRequiredError",
     "CodeRepositoryContext",
     "CodeRepositoryContextError",
@@ -654,7 +625,6 @@ __all__ = [
     "is_authenticated_runtime_code_repository_context",
     "normalize_github_repository_binding_identity",
     "require_code_repository_branch_context",
-    "require_code_repository_metatables_data_source",
     "resolve_organization_environment_uid",
     "resolve_code_repository_branch_uid",
     "scope_current_code_repository_branch_filters",

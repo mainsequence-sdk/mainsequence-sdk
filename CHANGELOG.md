@@ -6,8 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+ADR 0034 removes the SDK-owned MetaTables and workflow surface described in earlier
+entries below. See the [migration guide](docs/migrations/metatables-sdk-removal.md)
+for the final package boundary and breaking changes.
+
 ### Added
 
+- Added a generic platform `DataSource` adapter for directory reads and uncached,
+  scope-validated runtime connection lookup using the existing SDK credential
+  provider. Connection secrets are excluded from model representations and serialization.
+- Added framework-independent caller assertion verification in the optional
+  `mainsequence[server]` extra, with release/Environment checks and bounded public-key discovery.
 - Declared `site_url` so the documentation site has a canonical root. The sitemap
   was previously empty and no page carried a canonical link; it now lists all 108
   pages as absolute URLs.
@@ -21,14 +30,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Added a `Tests` workflow that runs the suite on pull requests and pushes. The
   development publish job calls the same workflow, so a development release cannot be
   published while the suite is failing.
-- Added a documentation-reference check over everything the wheel ships under
-  `agent_scaffold`: a skill must not cite SDK documentation by repository-relative
-  path, every documentation-site link must map to a page `docs/` actually renders,
-  and every cross-skill `SKILL.md` reference must resolve. The page check is a pure
-  URL-to-path transform, so it needs no network.
 
 ### Changed
 
+- Runtime credential exchange no longer follows redirects.
+- Trimmed the base SDK install to its retained adapter and logging imports. Tracing
+  setup and OTLP export now require `mainsequence[tracing]`; package discovery and
+  the development dependency list no longer include removed workflows and tools.
 - `CodeRepositoryBranch.list_github_issues()` now treats its receiving branch
   as the target resource, matching issue creation. It no longer requires that
   target to equal the process-frozen branch; the backend enforces the runtime
@@ -59,20 +67,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   `mainsequence.client.value_sets.declared_values()` reads them back.
 - The final-release publish job now refuses a `v*` tag whose commit is not contained in
   `main`.
-- Tests that need a live backend and credentials carry a `live` marker and are deselected
-  by default. `pytest` runs offline; `pytest -m live` runs the live tests.
-- `description_search(...)` moved from `MetaTable` to `TimeIndexMetaTable`. The backend
-  serves `description-search/` only for `time-index-meta-tables`, so the method now lives
-  on the only class whose URL it resolves to.
+- The SDK test suite runs offline; the obsolete live-backend tests for removed
+  contracts have been deleted.
 
 ### Removed
+
+- Removed SDK-owned MetaTables, updater and migration modules, local database and
+  DataFrame helpers, their CLI commands, docs, packaged skills, and domain-only
+  dependencies. The CLI now handles authentication, endpoint settings, version,
+  and diagnostics. Agent A2A message orchestration and repository deployment/skill
+  assembly also leave the thin SDK. The independent `metatables` package port is
+  separate from this SDK change; confirm its compatible version before release.
 
 - Removed `docs/CNAME`, which declared a `docs.main-sequence-sdk.main-sequence.io`
   custom domain that was never set up: the domain does not resolve and GitHub Pages
   has no custom domain configured. MkDocs was copying the file into every deployed
   site. The documentation is served from GitHub Pages at
   <https://mainsequence-sdk.github.io/mainsequence-sdk/>, which is the root the
-  shipped skills cite.
+  historical guides cited.
 - Removed `TimeIndexTableUpdate.verify_if_direct_dependencies_are_updated()`. The route
   was dropped with the time-index table updater hard cut; `set_start_of_execution()`
   already returns `direct_dependency_uids` in its response.

@@ -145,7 +145,8 @@ def test_logconf_refreshes_jwt_before_startup_state_request(monkeypatch):
     monkeypatch.setattr(requests, "get", _fake_get)
     monkeypatch.setattr(requests, "post", _fake_post)
 
-    _load_mainsequence_submodule("mainsequence.logconf")
+    logconf = _load_mainsequence_submodule("mainsequence.logconf")
+    logconf.refresh_application_logger_bindings()
 
     assert post_calls
     assert get_calls
@@ -181,7 +182,8 @@ def test_logconf_runtime_credential_exchanges_before_startup_state_request(monke
     monkeypatch.setattr(requests, "get", _fake_get)
     monkeypatch.setattr(requests, "post", _fake_post)
 
-    _load_mainsequence_submodule("mainsequence.logconf")
+    logconf = _load_mainsequence_submodule("mainsequence.logconf")
+    logconf.refresh_application_logger_bindings()
 
     assert post_calls == [
         {
@@ -229,7 +231,8 @@ def test_logconf_runtime_credential_retries_after_auth_failure(monkeypatch):
     monkeypatch.setattr(requests, "get", _fake_get)
     monkeypatch.setattr(requests, "post", _fake_post)
 
-    _load_mainsequence_submodule("mainsequence.logconf")
+    logconf = _load_mainsequence_submodule("mainsequence.logconf")
+    logconf.refresh_application_logger_bindings()
 
     assert len(get_calls) == 2
     assert len(post_calls) == 1
@@ -628,7 +631,8 @@ def test_logconf_session_jwt_does_not_refresh(monkeypatch):
     monkeypatch.setattr(requests, "get", _fake_get)
     monkeypatch.setattr(requests, "post", _fake_post)
 
-    _load_mainsequence_submodule("mainsequence.logconf")
+    logconf = _load_mainsequence_submodule("mainsequence.logconf")
+    logconf.refresh_application_logger_bindings()
 
     assert get_calls
     assert post_calls == []
@@ -642,7 +646,8 @@ def test_logconf_session_jwt_rejects_refresh_token(monkeypatch):
     monkeypatch.setenv("JOB_RUN_UID", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
 
     try:
-        _load_mainsequence_submodule("mainsequence.logconf")
+        logconf = _load_mainsequence_submodule("mainsequence.logconf")
+        logconf.refresh_application_logger_bindings()
         raise AssertionError("Expected RuntimeError")
     except RuntimeError as exc:
         assert "MAINSEQUENCE_REFRESH_TOKEN is not allowed" in str(exc)

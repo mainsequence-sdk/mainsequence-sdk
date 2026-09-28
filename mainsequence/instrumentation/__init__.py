@@ -1,5 +1,11 @@
-from .utils import *
+"""Optional OpenTelemetry integration; importing the SDK does not configure tracing."""
 
-if "tracer" not in locals():
-    tracer_instrumentator = TracerInstrumentator()
-    tracer = tracer_instrumentator.build_tracer()
+from .utils import OTelJSONRenderer, TracerInstrumentator, add_otel_trace_context
+
+
+def setup_tracing():
+    """Configure and return a tracer when the application explicitly opts in."""
+    return TracerInstrumentator().build_tracer()
+
+
+__all__ = ["OTelJSONRenderer", "TracerInstrumentator", "add_otel_trace_context", "setup_tracing"]

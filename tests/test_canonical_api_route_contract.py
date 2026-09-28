@@ -5,7 +5,6 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 ROUTE_SOURCE_FILES = [
     *sorted((REPO_ROOT / "mainsequence" / "client").rglob("*.py")),
     REPO_ROOT / "mainsequence" / "cli" / "api.py",
-    REPO_ROOT / "mainsequence" / "cli" / "migrations.py",
     REPO_ROOT / "mainsequence" / "logconf.py",
 ]
 REMOVED_API_ROOTS = (
@@ -52,7 +51,6 @@ def test_cli_auth_and_resource_roots_match_backend_contract():
     from mainsequence.client.agent_runtime_models import Agent, AgentSession
     from mainsequence.client.base import BaseObjectOrm
     from mainsequence.client.github_issues import GitHubIssue, GitHubIssueOperation
-    from mainsequence.client.metatables import MetaTable, TimeIndexMetaTable
     from mainsequence.client.models_user import Notification, Organization, Team
 
     assert AUTH_PATHS == {
@@ -68,8 +66,6 @@ def test_cli_auth_and_resource_roots_match_backend_contract():
         AgentSession.ENDPOINT,
         GitHubIssue.ENDPOINT,
         GitHubIssueOperation.ENDPOINT,
-        MetaTable.ENDPOINT,
-        TimeIndexMetaTable.ENDPOINT,
         Notification.ENDPOINT,
         Organization.ENDPOINT,
         Team.ENDPOINT,
@@ -87,8 +83,6 @@ def test_cli_auth_and_resource_roots_match_backend_contract():
         "github-issues",
         "job-runs",
         "jobs",
-        "table-update-runs",
-        "meta-tables",
         "notifications",
         "organizations",
         "code-repository-base-images",
@@ -99,9 +93,6 @@ def test_cli_auth_and_resource_roots_match_backend_contract():
         "code-repositories",
         "resource-releases",
         "secrets",
-        "time-index-meta-tables",
-        "time-index-table-update-details",
-        "time-index-table-updates",
         "teams",
         "users",
     }
@@ -128,18 +119,10 @@ def test_client_auth_provider_routes_match_backend_contract(monkeypatch):
 
 
 def test_removed_backend_actions_are_not_exposed_by_client_models():
-    from mainsequence.client.metatables import DataSource, TimeIndexTableUpdate
     from mainsequence.client.models_foundry import GitHubRepositoryBinding
     from mainsequence.client.models_helpers import Job
 
     removed_actions = {
-        DataSource: ("get_or_create_sqlite", "create_sqlite"),
-        TimeIndexTableUpdate: (
-            "add_tags",
-            "filter_by_hash_id",
-            "get_upstream_nodes",
-            "verify_if_direct_dependencies_are_updated",
-        ),
         GitHubRepositoryBinding: ("import_branch",),
         Job: ("bulk_get_or_create", "create_from_configuration", "sync_jobs"),
     }
@@ -151,16 +134,6 @@ def test_removed_backend_actions_are_not_exposed_by_client_models():
     ]
 
     assert violations == []
-
-
-def test_description_search_is_defined_only_where_the_backend_serves_it():
-    """`description-search/` is served for time-index-meta-tables only."""
-    from mainsequence.client.metatables import MetaTable, TimeIndexMetaTable
-
-    assert "description_search" not in vars(MetaTable)
-    assert not hasattr(MetaTable, "description_search")
-    assert "description_search" in vars(TimeIndexMetaTable)
-    assert TimeIndexMetaTable.get_object_url().endswith("/time-index-meta-tables")
 
 
 def test_cli_does_not_reintroduce_legacy_numeric_detail_routes_or_agent_runs():

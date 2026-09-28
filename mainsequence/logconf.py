@@ -4,8 +4,6 @@ import inspect
 import logging
 import logging.config
 import os
-import sys
-import traceback
 from collections.abc import Mapping
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as package_version
@@ -277,11 +275,9 @@ def build_application_logger(application_name: str = "ms-sdk", **metadata):
     run time
     """
 
-    # do initial request when on logger initialization
-    json_response = _request_job_startup_state()
-
-    # set additional args from backend
-    _apply_additional_environment(json_response)
+    # Logger configuration is local. Runtime state can be bound explicitly via
+    # refresh_application_logger_bindings after authentication is available.
+    json_response: dict[str, Any] = {}
 
     # Get logger path in home directory if no path is set in environemnt
     tdag_base_path = Path(os.getenv("TDAG_ROOT_PATH", Path.home() / ".tdag"))
@@ -503,10 +499,7 @@ def load_structlog_bound_logger(dump: dict[str, Any]) -> BoundLogger:
     return base.bind(**bound_context)
 
 
-logger = build_application_logger()
-
-# create a new system exection hook to also log terminating exceptions
-original_hook = sys.excepthook
+logger = structlog.get_logger("mainsequence")
 
 
 def set_local_run_app(local_model: str) -> BoundLogger:
@@ -528,24 +521,3 @@ def set_local_run_app(local_model: str) -> BoundLogger:
 def clear_local_run_app() -> None:
     """Remove the local_model key from the logging context."""
     unbind_contextvars("local_model")
-
-
-def handle_exception(exc_type, exc_value, exc_traceback):
-    """
-    A custom exception handler that logs any uncaught exception.
-    """
-    tb = "".join(traceback.format_exception(exc_type, exc_value, exc_traceback))
-
-    logger.error(
-        "Uncaught exception",
-        exception_type=getattr(exc_type, "__name__", str(exc_type)),
-        exception_message=str(exc_value),
-        exception_stacktrace=tb,  # <-- guaranteed JSON-serializable
-        # keep this too if you want:
-        exc_info=(exc_type, exc_value, exc_traceback),
-    )
-
-    original_hook(exc_type, exc_value, exc_traceback)
-
-
-sys.excepthook = handle_exception

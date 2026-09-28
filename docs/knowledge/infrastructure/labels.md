@@ -5,8 +5,6 @@ Some SDK objects expose a `labels` field together with the client `LabelableObje
 Current examples include:
 
 - `CodeRepository`
-- `TimeIndexMetaTable`
-- `MetaTable`
 
 ## What Labels Are For
 
@@ -48,17 +46,3 @@ code_repository = CodeRepository.get_by_uid("<CODE_REPOSITORY_UID>")
 code_repository.add_label(["rates", "research"])
 code_repository.remove_label("archive")
 ```
-
-## CLI Usage
-
-The CLI exposes the same verbs on the object groups that support labels:
-
-```bash
-mainsequence code-repository add-label <CODE_REPOSITORY_UID> --label rates --label research
-mainsequence code-repository remove-label <CODE_REPOSITORY_UID> --label archive
-
-mainsequence time-index-table add-label <TIME_INDEX_META_TABLE_UID> --label curated
-mainsequence time-index-table remove-label <TIME_INDEX_META_TABLE_UID> --label archive
-```
-
-Each command calls the SDK model method for that object. The label mutation updates organizational metadata only.
