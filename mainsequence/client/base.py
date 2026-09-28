@@ -102,7 +102,7 @@ class CurrentCodeRepositoryBranchCollectionMixin:
 
 
 class CurrentCodeRepositoryEnvironmentResourceMixin:
-    """Scope CodeRepository-facing Environment resources to the frozen Git context."""
+    """Scope Environment resources through the shared authorized Environment context."""
 
     SDK_OWNED_CONTEXT_FIELDS: ClassVar[frozenset[str]] = frozenset({"organization_environment_uid"})
 

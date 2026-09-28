@@ -54,11 +54,13 @@ A useful mental split is:
 
 That keeps the repository cleaner and reduces the amount of environment-specific data hardcoded into scripts and jobs.
 
-Constants and Secrets are owned by an Organization Environment. CodeRepository-facing
-SDK operations resolve that Environment from the process-frozen current Git
-branch and its registered `CodeRepositoryBranch`. Users do not pass an Environment UID
-or branch UID. CodeRepositories and branches mapped to the same Environment can use the
-same configuration identities.
+Constants and Secrets are owned by an Organization Environment. SDK operations use
+the shared [Environment context](context.md): an authenticated runtime target,
+an authorized explicit development selection, or the registered branch's default.
+An unregistered development branch works after configuring a selection. Configure
+scope once through `DevelopmentEnvironmentSelection`; resource methods do not
+accept per-call Environment or branch overrides. CodeRepositories and branches
+using the same authorized Environment can use the same configuration identities.
 
 ## Names Are Unique Identities
 

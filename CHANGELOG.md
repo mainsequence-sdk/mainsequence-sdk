@@ -12,6 +12,12 @@ for the final package boundary and breaking changes.
 
 ### Added
 
+- ADR 0035: network-free `get_git_source_context()`, authorized typed development
+  Environment selection on unregistered branches, provenance-aware Environment
+  context, and explicit retry/reset APIs. See the
+  [context migration note](docs/migrations/independent-context.md) for the new
+  Environment error hierarchy, identity checks, and retained runtime/branch guards.
+
 - Added a generic platform `DataSource` adapter for directory reads and uncached,
   scope-validated runtime connection lookup using the existing SDK credential
   provider. Connection secrets are excluded from model representations and serialization.

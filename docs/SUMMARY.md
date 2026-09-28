@@ -6,6 +6,8 @@
     - Server integrations
         - [Caller assertions](knowledge/server/caller_assertions.md)
     - Infrastructure
+        - [Authentication](knowledge/infrastructure/auth.md)
+        - [Git source and Environment context](knowledge/infrastructure/context.md)
         - [DataSource access](knowledge/infrastructure/data_sources.md)
         - [Users and Access](knowledge/infrastructure/users_and_access.md)
         - [Notifications](knowledge/infrastructure/notifications.md)
@@ -16,6 +18,7 @@
         - [Artifacts](knowledge/infrastructure/artifacts.md)
         - [Constants and Secrets](knowledge/infrastructure/constants_and_secrets.md)
 - Migrations
+    - [Independent Git and Environment context](migrations/independent-context.md)
     - [Streamlit dashboard support removal](migrations/streamlit-dashboard-removal.md)
     - [7.x to 8.0: CodeRepository Ontology Hard Cut](migrations/v8-code-repository-ontology.md)
     - [MetaTables SDK removal](migrations/metatables-sdk-removal.md)
@@ -23,6 +26,9 @@
 - CLI
     - [Overview](cli/index.md)
 - [Reference](reference/index.md)
+- Architecture decisions
+    - [Decision index](adr/index.md)
+    - [0035: Independent Git and platform context](adr/0035-independent-git-source-and-platform-context.md)
 - Repository
     - [About](about.md)
     - [Changelog](changelog.md)

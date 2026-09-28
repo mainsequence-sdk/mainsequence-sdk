@@ -35,6 +35,10 @@ _UNSUPPORTED_ENVIRONMENT_UID_ENV = (
 @pytest.fixture(autouse=True)
 def _reset_context(monkeypatch):
     code_repository_context._reset_code_repository_context()
+    monkeypatch.setattr(
+        code_repository_context, "_authenticated_platform_identity",
+        lambda: ("user-uid", "organization-uid", "https://api.example.test/api/v1"),
+    )
     yield
     code_repository_context._reset_code_repository_context()
 
@@ -406,7 +410,7 @@ def test_configured_runtime_credential_exchanges_context_before_resolution(monke
     assert context.is_authenticated_runtime is True
     assert context.source_context == _source()
     assert exchange_calls == [(True, None)]
-    assert events == ["exchange", "git", "backend"]
+    assert events == ["git", "exchange", "backend"]
 
 
 def test_unregistered_git_context_is_nonfatal_until_branch_context_is_required(monkeypatch):
@@ -433,6 +437,11 @@ def test_unregistered_branch_is_nonfatal_until_branch_context_is_required(monkey
 
 def test_code_repository_environment_uid_comes_from_frozen_branch_context(monkeypatch):
     _resolve(monkeypatch)
+    monkeypatch.setattr(
+        code_repository_context, "_authenticated_platform_identity",
+        lambda: ("user-uid", "organization-uid", "https://api.example.test/api/v1"),
+    )
+    monkeypatch.setattr(code_repository_context, "_verify_environment_access", lambda uid, org: None)
 
     assert code_repository_context.resolve_organization_environment_uid("Create Secret") == ENVIRONMENT_UID
 
@@ -451,13 +460,13 @@ def test_code_repository_environment_operation_fails_when_branch_has_no_environm
     )
     monkeypatch.setattr(
         code_repository_context,
-        "require_code_repository_branch_context",
-        lambda operation: missing_environment_context,
+        "get_code_repository_context",
+        lambda: missing_environment_context,
     )
 
     with pytest.raises(
         code_repository_context.CodeRepositoryEnvironmentContextRequiredError,
-        match="none was returned",
+        match="requires an authorized Organization Environment",
     ):
         code_repository_context.resolve_organization_environment_uid("Create Secret")
 

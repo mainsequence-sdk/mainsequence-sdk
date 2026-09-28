@@ -96,6 +96,18 @@ def _normalize_request_headers(headers: Mapping[str, Any]) -> dict[str, Any]:
     return normalized
 
 
+class OrganizationEnvironment(UserApiBaseObjectOrm, BasePydanticModel):
+    """Public Environment metadata, scoped by authenticated platform visibility."""
+
+    ENDPOINT: ClassVar[str] = "organization-environments"
+
+    uid: str
+    name: str
+    organization_owner_uid: str
+    required_repository_branch: str
+    is_production: bool
+
+
 class Organization(UserApiBaseObjectOrm, BasePydanticModel):
     ENDPOINT: ClassVar[str] = "organizations"
 

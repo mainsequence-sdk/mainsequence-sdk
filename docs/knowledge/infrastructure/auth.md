@@ -180,12 +180,14 @@ If the parent shell needs the exchanged token, use:
 eval "$(mainsequence login --export)"
 ```
 
-CodeRepository source identity is separate from authentication. In local and deployed
-code repository images, the SDK reads the containing sanitized Git checkout, attached
-branch, and exact HEAD commit, then maps that source to CodeRepository and
-CodeRepositoryBranch through the platform API. Switching branches does not rewrite
-credentials and takes effect in the next process. Runtime credentials authorize
-the deployed target but do not select repository or branch identity.
+CodeRepository source identity is separate from authentication. The network-free
+`get_git_source_context()` reads the actual checkout, attached branch, and HEAD.
+`get_code_repository_context()` optionally maps those same facts to a registered
+platform branch. Login and User/Organization requests do not require registration.
+Human developers can configure an authorized Environment on an unregistered
+branch; runtime credentials keep their authenticated target scope. See
+[Git source and Environment context](context.md) for selection, validation,
+identity checks, and the fresh-process/development-reset workflow.
 
 Functionally:
 
@@ -204,8 +206,8 @@ Important constraints:
 - runtime credential mode wins when `MAINSEQUENCE_AUTH_MODE=runtime_credential`
 - the exchanged access token should be treated as short-lived runtime material
 - CodeRepository `.env` files may contain runtime credential material; keep `.env` out of version control
-- users and application code never set CodeRepository, CodeRepositoryBranch, repository
-  branch, or Organization Environment values to choose context
+- deployed processes cannot override CodeRepository, branch, or Environment scope;
+  typed Environment selection is available only for human development
 - deployed branch-owned SDK requests carry the Git-resolved CodeRepositoryBranch; the
   backend requires equality with the authenticated JobRun, CodeRepository Executor, or
   ResourceRelease target
