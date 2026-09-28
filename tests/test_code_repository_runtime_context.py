@@ -35,10 +35,6 @@ _UNSUPPORTED_ENVIRONMENT_UID_ENV = (
 @pytest.fixture(autouse=True)
 def _reset_context(monkeypatch):
     code_repository_context._reset_code_repository_context()
-    monkeypatch.setattr(
-        code_repository_context, "_authenticated_platform_identity",
-        lambda: ("user-uid", "https://api.example.test/api/v1"),
-    )
     yield
     code_repository_context._reset_code_repository_context()
 
@@ -437,10 +433,6 @@ def test_unregistered_branch_is_nonfatal_until_branch_context_is_required(monkey
 
 def test_code_repository_environment_uid_comes_from_frozen_branch_context(monkeypatch):
     _resolve(monkeypatch)
-    monkeypatch.setattr(
-        code_repository_context, "_authenticated_platform_identity",
-        lambda: ("user-uid", "https://api.example.test/api/v1"),
-    )
 
     assert code_repository_context.resolve_organization_environment_uid("Create Secret") == ENVIRONMENT_UID
 
@@ -465,7 +457,7 @@ def test_code_repository_environment_operation_fails_when_branch_has_no_environm
 
     with pytest.raises(
         code_repository_context.CodeRepositoryEnvironmentContextRequiredError,
-        match="requires an authorized Organization Environment",
+        match="requires an Organization Environment",
     ):
         code_repository_context.resolve_organization_environment_uid("Create Secret")
 

@@ -1,6 +1,6 @@
 # Artifacts
 
-An `Artifact` is a platform file with a stable bucket, name, content, and creation timestamp. Use it for source files, reports, model binaries, and other payloads whose natural unit is a file. Buckets and Artifacts belong to an Organization Environment; SDK operations use the shared [Environment context](context.md): the authenticated runtime target, an authorized development selection, or a registered branch default. Unregistered development branches can use these same clients after configuring `DevelopmentEnvironmentSelection`.
+An `Artifact` is a platform file with a stable bucket, name, content, and creation timestamp. Use it for source files, reports, model binaries, and other payloads whose natural unit is a file. Buckets and Artifacts belong to an Organization Environment; SDK operations use the shared [Environment context](context.md): the Environment of the current registered branch, with existing authenticated runtime target checks. Operations raise a missing-Environment error if the branch has no Environment; unrelated SDK operations remain available.
 
 ```python
 from mainsequence.client import Artifact

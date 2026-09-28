@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import base64
-import json
 import os
 import pathlib
 import re
@@ -11,7 +9,6 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from typing import Any, Literal
 from urllib.parse import urlsplit
-from uuid import UUID
 
 CodeRepositoryContextStatus = Literal[
     "resolved",
@@ -32,39 +29,8 @@ class CodeRepositoryBranchContextRequiredError(CodeRepositoryContextError):
     """Raised when an operation requires a registered current CodeRepositoryBranch."""
 
 
-class CodeRepositoryEnvironmentContextRequiredError(CodeRepositoryContextError):
+class CodeRepositoryEnvironmentContextRequiredError(CodeRepositoryBranchContextRequiredError):
     """Raised only when an operation needs an unavailable Environment."""
-
-
-class OrganizationEnvironmentContextError(CodeRepositoryContextError):
-    """Raised when an Environment selection cannot be verified or conflicts with scope."""
-
-
-class AuthenticatedContextChangedError(CodeRepositoryContextError):
-    """Raised when an authenticated principal changes within a context."""
-
-
-@dataclass(frozen=True, slots=True)
-class DevelopmentEnvironmentSelection:
-    """Explicit human development scope; access is verified on first resolution."""
-
-    organization_environment_uid: str
-
-    def __post_init__(self) -> None:
-        try:
-            value = str(UUID(str(self.organization_environment_uid).strip()))
-        except (ValueError, TypeError, AttributeError) as exc:
-            raise ValueError("organization_environment_uid must be a valid UUID.") from exc
-        object.__setattr__(self, "organization_environment_uid", value)
-
-
-@dataclass(frozen=True, slots=True)
-class OrganizationEnvironmentContext:
-    organization_environment_uid: str
-    principal_uid: str
-    source: Literal["authenticated_runtime", "explicit_development", "registered_branch"]
-    process_id: int
-    api_url: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,8 +56,6 @@ class CodeRepositoryContext:
     code_repository_branch: Any | None
     detail: str = ""
     context_source: CodeRepositoryContextSource = "git"
-    principal_uid: str | None = None
-    api_url: str | None = None
 
     @property
     def is_authenticated_runtime(self) -> bool:
@@ -122,12 +86,7 @@ class CodeRepositoryContext:
 class _ContextState:
     process_id: int
     phase: Literal["uninitialized", "resolving", "resolved", "failed"]
-    context: (
-        CodeRepositoryContext
-        | GitCodeRepositorySourceContext
-        | OrganizationEnvironmentContext
-        | None
-    ) = None
+    context: CodeRepositoryContext | GitCodeRepositorySourceContext | None = None
     error: Exception | None = None
 
 
@@ -135,19 +94,14 @@ _STATE_CONDITION = threading.Condition(threading.RLock())
 _STATE = _ContextState(process_id=os.getpid(), phase="uninitialized")
 _AUTHENTICATED_RUNTIME_CONTEXT: tuple[int, dict[str, str]] | None = None
 _SOURCE_STATE = _ContextState(process_id=os.getpid(), phase="uninitialized")
-_ENVIRONMENT_STATE = _ContextState(process_id=os.getpid(), phase="uninitialized")
-_DEVELOPMENT_ENVIRONMENT: DevelopmentEnvironmentSelection | None = None
 
 
 def _clear_context_states() -> None:
     # Caller owns the condition, or is the sole thread after fork.
-    global _STATE, _SOURCE_STATE, _ENVIRONMENT_STATE
-    global _AUTHENTICATED_RUNTIME_CONTEXT, _DEVELOPMENT_ENVIRONMENT
+    global _STATE, _SOURCE_STATE, _AUTHENTICATED_RUNTIME_CONTEXT
     _STATE = _ContextState(process_id=os.getpid(), phase="uninitialized")
     _SOURCE_STATE = _ContextState(process_id=os.getpid(), phase="uninitialized")
-    _ENVIRONMENT_STATE = _ContextState(process_id=os.getpid(), phase="uninitialized")
     _AUTHENTICATED_RUNTIME_CONTEXT = None
-    _DEVELOPMENT_ENVIRONMENT = None
 
 
 def _ensure_current_process() -> None:
@@ -164,40 +118,6 @@ def _after_fork() -> None:
 
 if hasattr(os, "register_at_fork"):
     os.register_at_fork(after_in_child=_after_fork)
-
-
-def _runtime_auth_requested() -> bool:
-    from mainsequence.client.utils import RuntimeCredentialAuthProvider, loaders
-
-    if (
-        os.getenv("MAINSEQUENCE_AUTH_MODE") or ""
-    ).strip().lower() == "runtime_credential" or isinstance(
-        loaders.provider, RuntimeCredentialAuthProvider
-    ):
-        return True
-    # session_jwt is also used for forwarded human tokens. Token labels only
-    # tighten local guards; they never supply identity, UIDs, or permission.
-    # Runtime provenance is recorded only after the platform authenticates the
-    # request and validates the Git source against the token's runtime target.
-    token = (
-        getattr(loaders.provider, "access_token", None)
-        if loaders.provider is not None
-        else os.getenv("MAINSEQUENCE_ACCESS_TOKEN")
-    )
-    try:
-        payload = str(token or "").split(".")[1]
-        claims = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
-        if not isinstance(claims, dict):
-            return False
-        return claims.get("runtime_auth_mode") in (
-            "runtime_credential",
-            "session_jwt",
-        ) or claims.get("scope") in (
-            "job_run_runtime",
-            "knative_runtime",
-        )
-    except (ValueError, IndexError, TypeError):
-        return False
 
 
 def _normalize_authenticated_runtime_context(
@@ -228,18 +148,8 @@ def _install_authenticated_runtime_code_repository_context(value: Mapping[str, A
     normalized = _normalize_authenticated_runtime_context(value)
     process_id = os.getpid()
     with _STATE_CONDITION:
-        _ensure_current_process()
-        if _DEVELOPMENT_ENVIRONMENT is not None:
-            raise OrganizationEnvironmentContextError(
-                "A development Environment selection cannot be used in an authenticated runtime."
-            )
-        if (
-            _ENVIRONMENT_STATE.context is not None
-            and _ENVIRONMENT_STATE.context.source != "authenticated_runtime"
-        ):
-            raise AuthenticatedContextChangedError(
-                "Cannot switch a development context to runtime authentication; start a fresh process."
-            )
+        if _STATE.process_id != process_id:
+            _STATE = _ContextState(process_id=process_id, phase="uninitialized")
         if _STATE.phase == "resolving":
             installed = _authenticated_runtime_context_for_process()
             if installed is not None and installed != normalized:
@@ -265,7 +175,7 @@ def _install_authenticated_runtime_code_repository_context(value: Mapping[str, A
                     "Authenticated runtime CodeRepository context changed after process initialization."
                 )
         _AUTHENTICATED_RUNTIME_CONTEXT = (process_id, normalized)
-        if _STATE.phase == "failed" and _STATE.context is None:
+        if _STATE.phase == "failed":
             _STATE = _ContextState(process_id=process_id, phase="uninitialized")
         _STATE_CONDITION.notify_all()
 
@@ -589,7 +499,7 @@ def get_git_source_context(
                 source.repository_root
             ):
                 raise CodeRepositorySourceContextDriftError(
-                    "Requested directory is outside the frozen repository; reset the development context."
+                    "Requested directory is outside the frozen repository; start a fresh process."
                 )
             if code_repository_dir is not None and directory != source.repository_root:
                 if _resolve_git_source_context(directory) != source:
@@ -631,8 +541,11 @@ def get_code_repository_context(
     code_repository_uid: str | None = None,
     _code_repository_branch_context_loader: CodeRepositoryBranchContextLoader | None = None,
 ) -> CodeRepositoryContext:
-    """Resolve and freeze Git-native context, then verify any runtime target."""
+    """Freeze optional platform metadata for the current Git source once per process.
 
+    Missing registration or Environment metadata is valid here. Operations that
+    require those prerequisites enforce them through their resource guards.
+    """
     global _STATE
 
     source = get_git_source_context(code_repository_dir=code_repository_dir)
@@ -642,64 +555,34 @@ def get_code_repository_context(
         _ensure_current_process()
         while _STATE.phase == "resolving":
             _STATE_CONDITION.wait()
-        if _SOURCE_STATE.context is not source:
-            raise CodeRepositoryContextError(
-                "Source context was reset during platform resolution; retry in the new context."
-            )
+        if _STATE.phase == "resolved":
+            context = _STATE.context
+            assert isinstance(context, CodeRepositoryContext)
+            if (
+                code_repository_uid
+                and str(code_repository_uid).strip() != context.code_repository_uid
+            ):
+                raise CodeRepositoryContextError(
+                    "Requested CodeRepository does not match the Git context locked for this run."
+                )
+            return context
         if _STATE.phase == "failed":
             assert _STATE.error is not None
             raise _STATE.error
-        previous = _STATE.context
-        if (
-            previous is not None
-            and code_repository_uid
-            and str(code_repository_uid).strip() != previous.code_repository_uid
-        ):
-            raise CodeRepositoryContextError(
-                "Requested CodeRepository does not match the Git context locked for this run."
-            )
-        _STATE = _ContextState(process_id=process_id, phase="resolving", context=previous)
+        _STATE = _ContextState(process_id=process_id, phase="resolving")
 
     try:
         authenticated_context = _authenticated_runtime_context_for_process()
-        runtime_expected = _runtime_auth_requested() or authenticated_context is not None
-        principal_uid, api_url = _authenticated_platform_identity()
-        if previous is not None:
-            assert isinstance(previous, CodeRepositoryContext)
-            if (previous.principal_uid, previous.api_url) != (
-                principal_uid,
-                api_url,
-            ) or previous.is_authenticated_runtime != runtime_expected:
-                raise AuthenticatedContextChangedError(
-                    "Authenticated principal, endpoint, or authentication mode changed; "
-                    "reset the development context or start a fresh runtime process."
-                )
-            context = previous
-        else:
-            context = _build_code_repository_context(
-                source=source,
-                code_repository_branch_context_loader=(
-                    _code_repository_branch_context_loader
-                    or _default_code_repository_branch_context_loader
-                ),
-            )
-            if authenticated_context is not None:
-                context = _verify_authenticated_runtime_code_repository_context(
-                    context,
-                    authenticated_context,
-                )
-            if authenticated_context is None and runtime_expected:
-                # The platform validates runtime-scoped tokens against their
-                # authenticated target and immutable commit on this route.
-                if context.status != "resolved":
-                    raise CodeRepositoryContextError(
-                        "Authenticated runtime has no matching Git target."
-                    )
-                context = replace(context, context_source="authenticated_runtime")
-            context = replace(
-                context,
-                principal_uid=principal_uid,
-                api_url=api_url,
+        context = _build_code_repository_context(
+            source=source,
+            code_repository_branch_context_loader=(
+                _code_repository_branch_context_loader
+                or _default_code_repository_branch_context_loader
+            ),
+        )
+        if authenticated_context is not None:
+            context = _verify_authenticated_runtime_code_repository_context(
+                context, authenticated_context
             )
         if code_repository_uid and str(code_repository_uid).strip() != context.code_repository_uid:
             raise CodeRepositoryContextError(
@@ -707,12 +590,9 @@ def get_code_repository_context(
             )
     except Exception as exc:
         with _STATE_CONDITION:
-            _STATE = _ContextState(
-                process_id=process_id, phase="failed", context=previous, error=exc
-            )
+            _STATE = _ContextState(process_id=process_id, phase="failed", error=exc)
             _STATE_CONDITION.notify_all()
         raise
-
     with _STATE_CONDITION:
         _STATE = _ContextState(process_id=process_id, phase="resolved", context=context)
         _STATE_CONDITION.notify_all()
@@ -761,120 +641,17 @@ def resolve_code_repository_branch_uid(operation: str, supplied_uid: Any = None)
     return resolved_uid
 
 
-def configure_development_environment(selection: DevelopmentEnvironmentSelection) -> None:
-    """Select human development scope before the first Environment resolution attempt."""
-
-    global _DEVELOPMENT_ENVIRONMENT
-    if not isinstance(selection, DevelopmentEnvironmentSelection):
-        raise TypeError("Use DevelopmentEnvironmentSelection to configure SDK Environment scope.")
-    with _STATE_CONDITION:
-        _ensure_current_process()
-        if _runtime_auth_requested() or is_authenticated_runtime_code_repository_context():
-            raise OrganizationEnvironmentContextError(
-                "Development Environment selection is not allowed in an authenticated runtime."
-            )
-        if _ENVIRONMENT_STATE.phase != "uninitialized":
-            raise OrganizationEnvironmentContextError(
-                "Configure the Environment before resolving it; reset the development context to change scope."
-            )
-        _DEVELOPMENT_ENVIRONMENT = selection
-
-
-def _authenticated_platform_identity() -> tuple[str, str]:
-    from mainsequence.client.models_user import User
-
-    user = User.get_authenticated_user_details()
-    principal_uid = _normalized_value(user, "uid")
-    if not principal_uid:
-        raise CodeRepositoryContextError("The authenticated principal must have a public User UID.")
-    return principal_uid, User._user_api_root()
-
-
-def get_organization_environment_context(
-    operation: str = "Environment-scoped operation",
-) -> OrganizationEnvironmentContext:
-    """Resolve one selected Environment through the shared SDK request pipeline.
-
-    Identity is revalidated through users/me on each call. This keeps a token
-    refresh for the same principal stable and detects account
-    changes without trusting token contents. Resource authorization remains
-    server-owned on every subsequent request.
-    """
-
-    global _ENVIRONMENT_STATE
-    with _STATE_CONDITION:
-        _ensure_current_process()
-        while _ENVIRONMENT_STATE.phase == "resolving":
-            _STATE_CONDITION.wait()
-        if _ENVIRONMENT_STATE.phase == "failed":
-            assert _ENVIRONMENT_STATE.error is not None
-            raise _ENVIRONMENT_STATE.error
-        previous = _ENVIRONMENT_STATE.context
-        selection = _DEVELOPMENT_ENVIRONMENT
-        _ENVIRONMENT_STATE = _ContextState(os.getpid(), "resolving", context=previous)
-    try:
-        context = get_code_repository_context()
-        branch_environment = context.organization_environment_uid
-        if context.is_authenticated_runtime:
-            if selection is not None:
-                raise OrganizationEnvironmentContextError(
-                    "Development Environment selection is not allowed in an authenticated runtime."
-                )
-            environment_uid = branch_environment
-            provenance = "authenticated_runtime"
-        elif selection is not None:
-            environment_uid = selection.organization_environment_uid
-            provenance = "explicit_development"
-            if branch_environment and branch_environment != environment_uid:
-                raise OrganizationEnvironmentContextError(
-                    "The selected Environment conflicts with the registered branch Environment."
-                )
-        else:
-            environment_uid = branch_environment
-            provenance = "registered_branch"
-        if not environment_uid:
-            raise CodeRepositoryEnvironmentContextRequiredError(
-                f"{operation} requires an authorized Organization Environment. "
-                "Configure DevelopmentEnvironmentSelection before use, or use a registered branch "
-                "with an Environment. Git source discovery and unrelated SDK calls remain available."
-            )
-        principal_uid, api_url = (
-            context.principal_uid,
-            context.api_url,
-        )
-        if not principal_uid or not api_url:
-            raise OrganizationEnvironmentContextError(
-                "Environment operations require an authenticated User."
-            )
-        resolved = OrganizationEnvironmentContext(
-            organization_environment_uid=environment_uid,
-            principal_uid=principal_uid,
-            source=provenance,
-            process_id=os.getpid(),
-            api_url=api_url,
-        )
-        if previous is not None:
-            if previous != resolved:
-                raise AuthenticatedContextChangedError(
-                    "Authenticated principal or Environment changed; "
-                    "reset the development context or start a fresh runtime process."
-                )
-            resolved = previous
-    except Exception as exc:
-        with _STATE_CONDITION:
-            _ENVIRONMENT_STATE = _ContextState(os.getpid(), "failed", context=previous, error=exc)
-            _STATE_CONDITION.notify_all()
-        raise
-    with _STATE_CONDITION:
-        _ENVIRONMENT_STATE = _ContextState(os.getpid(), "resolved", context=resolved)
-        _STATE_CONDITION.notify_all()
-    return resolved
-
-
 def resolve_organization_environment_uid(operation: str) -> str:
-    """Return the verified runtime, explicit development, or branch-derived Environment."""
-
-    return get_organization_environment_context(operation).organization_environment_uid
+    """Require the current branch's Environment only for an operation that needs it."""
+    context = get_code_repository_context()
+    environment_uid = str(context.organization_environment_uid or "").strip()
+    if not environment_uid:
+        raise CodeRepositoryEnvironmentContextRequiredError(
+            f"{operation} requires an Organization Environment, but the current Git branch "
+            f"{context.repository_branch!r} has no registered Environment. "
+            "Git discovery and operations that do not require an Environment remain available."
+        )
+    return environment_uid
 
 
 def scope_current_code_repository_branch_filters(
@@ -915,75 +692,15 @@ def scope_current_code_repository_branch_filters(
     return scoped
 
 
-def retry_failed_context_resolution() -> None:
-    """Clear failed optional lookups; retain frozen source and any resolved scope.
-
-    This does not refresh a resolved unregistered result. To observe a newly
-    registered branch, use a fresh development context or process.
-    """
-
-    global _STATE, _ENVIRONMENT_STATE
-    with _STATE_CONDITION:
-        _ensure_current_process()
-        _require_idle_context()
-        if _STATE.phase == "failed":
-            previous = _STATE.context
-            _STATE = _ContextState(
-                os.getpid(),
-                "resolved" if previous is not None else "uninitialized",
-                context=previous,
-            )
-        if _ENVIRONMENT_STATE.phase == "failed":
-            previous = _ENVIRONMENT_STATE.context
-            _ENVIRONMENT_STATE = _ContextState(
-                os.getpid(),
-                "resolved" if previous is not None else "uninitialized",
-                context=previous,
-            )
-
-
-def _require_idle_context() -> None:
-    if any(state.phase == "resolving" for state in (_SOURCE_STATE, _STATE, _ENVIRONMENT_STATE)):
-        raise CodeRepositoryContextError(
-            "Cannot reset or retry while context resolution is in progress."
-        )
-
-
-def reset_development_context() -> None:
-    """Start a new human development context; call only after stopping current work.
-
-    Clears source, enrichment, scope, and the explicit selection, but retains
-    SDK authentication. Deployed runtimes must start a fresh process instead.
-    """
-
-    with _STATE_CONDITION:
-        _ensure_current_process()
-        _require_idle_context()
-        if _runtime_auth_requested() or is_authenticated_runtime_code_repository_context():
-            raise CodeRepositoryContextError(
-                "Authenticated runtimes require a fresh process, not a context reset."
-            )
-        _clear_context_states()
-
-
 def _reset_code_repository_context() -> None:
-    """Unconditionally clear process state for isolated SDK tests."""
-
+    """Reset process-owned context for isolated SDK tests."""
     with _STATE_CONDITION:
         _clear_context_states()
         _STATE_CONDITION.notify_all()
 
 
 __all__ = [
-    "AuthenticatedContextChangedError",
-    "DevelopmentEnvironmentSelection",
-    "OrganizationEnvironmentContext",
-    "OrganizationEnvironmentContextError",
-    "configure_development_environment",
     "get_git_source_context",
-    "get_organization_environment_context",
-    "reset_development_context",
-    "retry_failed_context_resolution",
     "validate_git_source_context",
     "GitCodeRepositorySourceContext",
     "CodeRepositoryBranchContextRequiredError",

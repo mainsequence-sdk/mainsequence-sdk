@@ -431,3 +431,34 @@ def authed(method: str, api_path: str, body: dict | None = None) -> requests.Res
     if r.status_code == 401:
         raise NotLoggedIn("Not logged in.")
     return r
+
+
+def get_current_user_profile() -> dict:
+    """
+    Return current user profile (username + organization name) via the canonical user-details endpoint.
+
+    Returns:
+        dict: {"username": "...", "organization": "..."} or {}
+    """
+    details = authed("GET", "/api/v1/users/me/")
+    payload = details.json() if details.ok else {}
+    user = payload.get("user") if isinstance(payload, dict) else {}
+    if not isinstance(user, dict):
+        user = {}
+    organization = user.get("organization") if isinstance(user, dict) else {}
+    if not isinstance(organization, dict):
+        organization = {}
+    payload_organization = payload.get("organization") if isinstance(payload, dict) else {}
+    if not isinstance(payload_organization, dict):
+        payload_organization = {}
+    org_name = (
+        organization.get("name")
+        or payload_organization.get("name")
+        or payload.get("organization_name")
+        or payload.get("organization")
+        or ""
+    )
+    return {
+        "username": user.get("username") or payload.get("username") or "",
+        "organization": org_name,
+    }

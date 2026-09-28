@@ -1,7 +1,6 @@
 from mainsequence.logconf import logger as logger
 
 from .github_issues import *  # noqa: F403
-from .models_data_sources import DataSource as DataSource
 from .models_foundry import *  # noqa: F403
 from .models_helpers import *  # noqa: F403
 from .models_user import *  # noqa: F403

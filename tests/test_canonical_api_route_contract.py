@@ -76,7 +76,6 @@ def test_cli_auth_and_resource_roots_match_backend_contract():
         "artifacts",
         "buckets",
         "constants",
-        "data-sources",
         "deployment-runs",
         "github-organizations",
         "github-issue-operations",

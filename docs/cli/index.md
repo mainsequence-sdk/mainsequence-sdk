@@ -3,7 +3,7 @@
 The SDK CLI manages authentication and backend endpoint settings. Its current commands are:
 
 ```text
-mainsequence login [--backend URL] [--no-open | --mcp | --access-token TOKEN --refresh-token TOKEN]
+mainsequence login [BACKEND] [CODE_REPOSITORIES_BASE] [--backend URL] [--no-open | --mcp | --access-token TOKEN --refresh-token TOKEN]
 mainsequence logout
 mainsequence settings show
 mainsequence settings set-backend URL
@@ -21,8 +21,13 @@ The previous MetaTables, table-update, migrations, CodeRepository deployment, Do
 
 ## Development context
 
-Login does not require a registered Git branch. To use Environment-owned SDK
-resources from an unregistered development branch, configure the typed Python
-`DevelopmentEnvironmentSelection` before the first scoped operation. This
-process-local selection is separate from CLI login; no CLI flag or persisted
-Environment setting is added. See [Git source and Environment context](../knowledge/infrastructure/context.md).
+Login does not require a registered Git branch or an Environment. A branch without
+an Environment supports source discovery and unscoped SDK operations. Constants,
+Secrets, Buckets, and Artifacts require the registered branch's Environment and
+raise when it is missing. There is no Environment override or fallback. See
+[Git source and Environment context](../knowledge/infrastructure/context.md).
+
+Login preserves `--code-repositories-base` / `--base-folder` and `--export` /
+`--export-env`; logout preserves both export spellings. Login exports the existing
+`MAINSEQUENCE_AUTH_MODE` with its tokens. SDK import bootstraps missing endpoint and
+credentials from the checkout/CLI configuration without replacing explicit values.

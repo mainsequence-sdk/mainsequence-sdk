@@ -60,7 +60,7 @@ The user signs in with:
 mainsequence login
 ```
 
-After login, the CLI has enough information to authenticate later commands without asking for the password again.
+After login, the CLI has enough information to authenticate later commands without asking for the password again. On import, the SDK also bootstraps missing access/refresh tokens from that persisted CLI session. Endpoint resolution preserves explicit process values, then uses the checkout `.env` endpoint or saved CLI configuration. This local bootstrap does not authenticate against the network.
 
 Functionally:
 
@@ -163,10 +163,9 @@ CodeRepository source identity is separate from authentication. The network-free
 `get_git_source_context()` reads the actual checkout, attached branch, and HEAD.
 `get_code_repository_context()` optionally maps those same facts to a registered
 platform branch. Login and User/Organization requests do not require registration.
-Human developers can configure an authorized Environment on an unregistered
-branch; runtime credentials keep their authenticated target scope. See
-[Git source and Environment context](context.md) for selection, validation,
-identity checks, and the fresh-process/development-reset workflow.
+Missing Environment metadata is allowed during context discovery. Operations that
+require an Environment raise if the current branch has none. Runtime credentials
+keep their authenticated target scope. See [Git source and Environment context](context.md).
 
 Functionally:
 
@@ -185,8 +184,8 @@ Important constraints:
 - runtime credential mode wins when `MAINSEQUENCE_AUTH_MODE=runtime_credential`
 - the exchanged access token should be treated as short-lived runtime material
 - CodeRepository `.env` files may contain runtime credential material; keep `.env` out of version control
-- deployed processes cannot override CodeRepository, branch, or Environment scope;
-  typed Environment selection is available only for human development
+- repository and branch context come from Git; Environment context comes from the
+  registered branch, with no developer override or fallback
 - deployed branch-owned SDK requests carry the Git-resolved CodeRepositoryBranch; the
   backend requires equality with the authenticated JobRun, CodeRepository Executor, or
   ResourceRelease target

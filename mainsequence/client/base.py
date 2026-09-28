@@ -102,7 +102,7 @@ class CurrentCodeRepositoryBranchCollectionMixin:
 
 
 class CurrentCodeRepositoryEnvironmentResourceMixin:
-    """Scope Environment resources through the shared authorized Environment context."""
+    """Scope Environment resources through the current branch's Environment."""
 
     SDK_OWNED_CONTEXT_FIELDS: ClassVar[frozenset[str]] = frozenset({"organization_environment_uid"})
 
@@ -138,7 +138,6 @@ class BaseObjectOrm:
 
     END_POINTS = {
         "User": "users",
-        "DataSource": "data-sources",
         "CodeRepository": "code-repositories",
         "CodeRepositoryBranch": "code-repository-branches",
         "GitHubRepositoryBinding": "github-repository-bindings",

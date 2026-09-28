@@ -6,8 +6,9 @@ Status: Accepted and implemented; aligned with platform ADR-046 for the
 immediate CodeRepository cutover
 
 Partially superseded by [ADR 0035: Independent Git source and platform execution context](0035-independent-git-source-and-platform-context.md), accepted and implemented on `metatables_removal`.
-Network-free source discovery and authorized development Environment selection
-replace the mandatory enrichment and branch-only Environment prerequisites below.
+Network-free source discovery removes mandatory platform enrichment for local
+Git facts. Missing Environment errors are deferred to operations that require one;
+Environment scope remains derived from the registered current branch.
 Canonical Git facts, source drift checks, runtime target verification, and real
 branch-owned operation guards remain in force. ADR 0034 separately removes the
 historical MetaTables/DataSource implementation described in this record.
@@ -179,10 +180,10 @@ enforce their documented target and Environment boundary instead.
 
 ### Environment-owned resources resolved from the current CodeRepositoryBranch
 
-> Superseded by ADR 0035 for human development: an authorized explicit Environment
-> can be selected on an unregistered branch. A registered branch supplies the
-> default, and conflicting selections fail. Runtime target authority and SDK-owned
-> wire fields are preserved. The original decision follows for historical context.
+> ADR 0035 preserves this branch-derived Environment contract. A missing
+> Environment is valid during general source/context discovery and raises only
+> when an Environment-owned operation requires it. Runtime target authority and
+> SDK-owned wire fields are preserved.
 
 Object ownership and operation context are separate concerns. `Secret`,
 `Constant`, logical `Bucket`, `Artifact`, and `MetaTable` belong to one

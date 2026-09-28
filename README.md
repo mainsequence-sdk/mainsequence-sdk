@@ -22,9 +22,9 @@ The CLI now contains `login`, `logout`, `settings`, `version`, and `doctor`. Use
 
 ## Python client
 
-`mainsequence.client` provides `AuthLoaders`, `MainSequenceClient`, generic request and response helpers, and typed adapters for platform resources such as users, CodeRepositories, jobs, agents, artifacts, constants, secrets, and DataSources. The platform owns authorization and lifecycle policy. The SDK resolves CodeRepository source identity from the current Git checkout when a platform API needs that context.
+`mainsequence.client` provides `AuthLoaders`, `MainSequenceClient`, generic request and response helpers, and typed adapters for platform resources such as users, CodeRepositories, jobs, agents, artifacts, constants, and secrets. The platform owns authorization and lifecycle policy. The SDK resolves CodeRepository source identity from the current Git checkout when a platform API needs that context.
 
-[DataSource access](docs/knowledge/infrastructure/data_sources.md) covers directory metadata and runtime-granted connection material. Server integrations can install `mainsequence[server]` for the framework-independent [caller assertion verifier](docs/knowledge/server/caller_assertions.md). These interfaces use platform identity and authentication; applications own resource authorization and storage operations.
+Server integrations can install `mainsequence[server]` for the framework-independent [caller assertion verifier](docs/knowledge/server/caller_assertions.md). Applications own resource authorization and storage operations.
 
 MetaTables, time-index table updates, SQLAlchemy schemas, local database interfaces, and Alembic migrations are no longer included. Use the independently ported `metatables` package for that domain. See [the removal migration guide](docs/migrations/metatables-sdk-removal.md) for old and new imports, retired CLI commands, and the legacy SDK option.
 

@@ -12,15 +12,13 @@ for the final package boundary and breaking changes.
 
 ### Added
 
-- ADR 0035: network-free `get_git_source_context()`, authorized typed development
-  Environment selection on unregistered branches, provenance-aware Environment
-  context, and explicit retry/reset APIs. See the
-  [context migration note](docs/migrations/independent-context.md) for the new
-  Environment error hierarchy, identity checks, and retained runtime/branch guards.
+- ADR 0035: network-free `get_git_source_context()` and optional platform metadata.
+  Missing Environment errors occur only in operations requiring the current
+  branch's Environment. Existing context caching and authentication are preserved;
+  there is no Environment override, account binding, or identity preflight.
 
-- Added a generic platform `DataSource` adapter for directory reads and uncached,
-  scope-validated runtime connection lookup using the existing SDK credential
-  provider. Connection secrets are excluded from model representations and serialization.
+- Removed application DataSource adapters; database registration belongs to MetaTables and credentials use platform Secrets.
+
 - Added framework-independent caller assertion verification in the optional
   `mainsequence[server]` extra, with release/Environment checks and bounded public-key discovery.
 - Declared `site_url` so the documentation site has a canonical root. The sitemap

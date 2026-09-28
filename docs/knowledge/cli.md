@@ -5,8 +5,8 @@ The SDK CLI now handles login, logout, backend settings, version, and connection
 
 ## Development context
 
-Login does not require a registered Git branch. To use Environment-owned SDK
-resources from an unregistered development branch, configure the typed Python
-`DevelopmentEnvironmentSelection` before the first scoped operation. This
-process-local selection is separate from CLI login; no CLI flag or persisted
-Environment setting is added. See [Git source and Environment context](infrastructure/context.md).
+Login does not require a registered Git branch or an Environment. A branch without
+an Environment supports source discovery and unscoped SDK operations. Constants,
+Secrets, Buckets, and Artifacts require the registered branch's Environment and
+raise when it is missing. There is no Environment override or fallback. See
+[Git source and Environment context](infrastructure/context.md).

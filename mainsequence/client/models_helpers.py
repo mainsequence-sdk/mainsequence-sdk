@@ -14,7 +14,6 @@ from .base import (
     ShareableObjectMixin,
 )
 from .exceptions import raise_for_response
-from .models_data_sources import DataSource as DataSource
 from .observability import (
     EnvironmentLogSearchMixin,
     EnvironmentLogSearchPage,

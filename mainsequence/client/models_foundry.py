@@ -488,7 +488,6 @@ class CodeRepositoryBranch(BasePydanticModel, BaseObjectOrm):
         ),
     )
     repository_branch: str
-    metatables_data_source_uid: str | None = None
     organization_environment_uid: str | None = None
     organization_environment_name: str | None = None
     default_base_image: CodeRepositoryBaseImage

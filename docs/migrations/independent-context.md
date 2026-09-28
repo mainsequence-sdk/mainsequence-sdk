@@ -1,29 +1,23 @@
-# Independent Git source and Environment context
+# Independent Git source and optional platform context
 
-ADR 0035 separates local source discovery from optional platform registration and
-adds authorized development Environment selection. It is implemented on
-`metatables_removal`; consumers need this local SDK checkout until a release
-containing these interfaces is published.
+ADR 0035 adds independent local source discovery and defers missing Environment
+errors until a scoped operation. It preserves branch-derived Environment semantics
+and existing SDK authentication.
 
-| Existing use | Migration |
+| Existing use | Behavior |
 | --- | --- |
-| Read Git facts through `get_code_repository_context()` | Use `get_git_source_context()` to avoid authentication and directory lookup. Keep the original function when platform branch metadata is needed. |
-| Environment resources from a registered branch | Existing calls keep their branch default; platform resource requests enforce access in the backend. |
-| Environment resources on an unregistered branch | Configure `DevelopmentEnvironmentSelection` before the first scoped operation. The resource clients and transport are unchanged. |
-| Catch missing Environment as `CodeRepositoryBranchContextRequiredError` | Catch `CodeRepositoryEnvironmentContextRequiredError` explicitly, or their common `CodeRepositoryContextError` base. The Environment error is no longer a branch-error subclass. |
-| Retry a failed directory lookup by restarting | A restart still works; `retry_failed_context_resolution()` also clears failed optional lookups while preserving source and any established scope. |
-| Change Git branch or account in a long-lived developer process | Stop existing work, call `reset_development_context()`, and configure scope again, or start a fresh process. |
+| Read local Git facts | Use `get_git_source_context()` without authentication or platform lookup. |
+| Read platform branch metadata | Keep `get_code_repository_context()`. Missing registration or Environment is a valid result. |
+| Environment resources from a registered branch | Existing calls use that branch's Environment and normal backend authorization. |
+| Environment resources from a branch without an Environment | The operation raises `CodeRepositoryEnvironmentContextRequiredError`. No override or fallback is available. |
+| Branch-owned operation on an unregistered branch | The existing registered-branch prerequisite still applies. |
+| Change checkout or branch registration | Start a fresh process, as with the existing process snapshot. |
 
-Configuration is through Python, not a new environment variable or CLI flag.
-Per-resource Environment overrides remain unsupported. A selection conflicting
-with a registered branch fails; runtime scope cannot be overridden. Branch-owned
-operations retain their real branch prerequisites.
+Missing Environment errors retain the existing
+`CodeRepositoryBranchContextRequiredError` / `CodeRepositoryContextError` hierarchy. Catch `CodeRepositoryEnvironmentContextRequiredError`
+when handling that specific prerequisite.
 
-Platform-context and Environment resolution perform an authenticated identity request on each call
-and a public Environment detail lookup on first resolution. This detects account
-changes and verifies scope; offline consumers needing only source facts should
-use `get_git_source_context()` instead.
-
-See [Git source and Environment context](../knowledge/infrastructure/context.md)
-for examples, failure behavior, reset semantics, and runtime constraints. The
-SDK package boundary remains defined by [ADR 0034](../adr/0034-remove-metatables-from-sdk.md).
+CLI credential bootstrap, credential provider selection, and authentication remain
+unchanged. Context lookup adds no `/users/me/` revalidation or Organization ownership
+preflight. [The context guide](../knowledge/infrastructure/context.md) describes
+the operation boundaries and retained runtime target checks.

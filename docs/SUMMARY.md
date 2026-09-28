@@ -8,7 +8,6 @@
     - Infrastructure
         - [Authentication](knowledge/infrastructure/auth.md)
         - [Git source and Environment context](knowledge/infrastructure/context.md)
-        - [DataSource access](knowledge/infrastructure/data_sources.md)
         - [Users and Access](knowledge/infrastructure/users_and_access.md)
         - [Notifications](knowledge/infrastructure/notifications.md)
         - [Labels](knowledge/infrastructure/labels.md)

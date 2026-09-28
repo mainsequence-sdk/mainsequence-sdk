@@ -47,9 +47,13 @@ Existing entry points to preserve by capability include `AuthLoaders` and the JW
 
 MetaTables-specific SQLAlchemy, compiled SQL, DataFrame/dtype conversion, local DuckDB/SQLite access, updater execution, and client-side Alembic code belong to the independent `metatables` package. CodeRepository environment building, Docker/Git/SSH deployment work, agent-skill assembly, scaffold installation, and agent/A2A workflow composition beyond direct API adaptation also leave the thin SDK. This ADR removes those SDK implementations and documents retired interfaces; it does not implement their replacements. Backend authorization, scheduling, catalog, and lifecycle policy remain server responsibilities.
 
-Platform-owned DataSource directory responses or read-only branch fields may remain where a non-MetaTables platform API still returns them. They must be represented without importing MetaTables models or running table-specific logic. In particular, retaining a CodeRepositoryBranch model does not retain `get_time_index_table_updates()` as an SDK MetaTables operation, and retaining a DataSource summary does not retain `TimeScaleDB` table methods.
+Amended 2026-09-28 by the owner-approved DataSource extraction: DataSource is
+owned entirely by MetaTables. Remove its SDK directory adapter, connection models,
+runtime-connection method, route mapping and branch projections. Ordinary platform
+Secrets provide credential values using their existing branch-derived Environment
+contract. No DataSource-specific transport or authentication mechanism remains.
+Caller assertion verification and independent Git discovery remain unchanged.
 
-The generic `mainsequence.client.DataSource` adapter exposes directory reads and runtime-credential connection lookup, including typed connection material and requested-resource validation. It reuses SDK authentication and leaves connection use and capability policy to the application. Platform caller assertion verification lives in the optional `mainsequence.server.caller_assertions` module with the `server` extra; it supplies verified identity without framework middleware or application authorization. Neither interface imports domain packages or local database engines.
 
 Organization membership, ownership, and platform access decisions belong only to
 the platform backend. The SDK must not require an expected Organization, compare
@@ -57,6 +61,12 @@ response ownership to the logged-in User, or perform permission preflight reques
 Platform resource fields may mirror the backend response without becoming SDK
 policy. Authentication, response shape/resource identity checks, and backend error
 propagation remain SDK responsibilities.
+
+Credential and endpoint initialization through `prime_runtime_env()` remains part
+of SDK authentication. Preserve the existing login arguments and token exports.
+Missing branch/Environment prerequisites are enforced only by operations that
+require them, as specified in ADR 0035. No account-binding cache or identity
+preflight is introduced by extraction.
 
 ## Removal work on `metatables_removal`
 

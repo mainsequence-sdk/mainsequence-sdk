@@ -101,10 +101,6 @@ def _resolved_code_repository_context(monkeypatch):
         "_resolve_git_source_context",
         lambda code_repository_dir: source,
     )
-    monkeypatch.setattr(
-        code_repository_context, "_authenticated_platform_identity",
-        lambda: ("user-uid", "https://api.example.test/api/v1"),
-    )
     code_repository_context.get_code_repository_context(
         _code_repository_branch_context_loader=lambda resolved_source: SimpleNamespace(
             canonical_repository_identity=(resolved_source.canonical_repository_identity),

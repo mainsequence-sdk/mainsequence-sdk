@@ -1,160 +1,61 @@
 # Git source and Environment context
 
-Source identity, authentication, and resource scope are separate SDK concerns.
-An attached Git branch such as `test` does not need a platform registration for
-local source discovery, login, or Organization-level requests. Environment-owned
-resources use the same clients and request transport on registered and
-unregistered branches.
+The SDK reads Git source facts independently of platform branch registration.
+A missing Environment is allowed until an operation actually requires one.
 
-## Read local source without contacting the platform
+## Local source discovery
 
 ```python
 from mainsequence.code_repository_context import get_git_source_context
 
 source = get_git_source_context()
-print(source.canonical_repository_identity)
-print(source.repository_branch, source.commit_sha)
+print(source.canonical_repository_identity, source.repository_branch, source.commit_sha)
 ```
 
-This reads the actual checkout and freezes its repository root, normalized remote,
-attached branch/ref, and full commit SHA. It makes no authentication, branch
-directory, or DataSource request. The checkout needs a commit, an attached branch,
-and an unambiguous remote; detached HEAD and an unidentified remote fail explicitly.
-Pass `code_repository_dir` when the checkout is outside the working directory.
+This reads the actual checkout without network calls, login, or platform
+registration. `validate_git_source_context()` detects changes to the frozen
+repository, branch, or commit. It never substitutes another branch.
 
-`get_code_repository_context()` enriches that same source snapshot through the
-platform's `resolve-git-context` API. A branch with no visible registration returns
-`status == "code_repository_branch_not_registered"` and absent platform UIDs.
-Authentication failures, permission failures, and service outages raise their
-own lookup errors. They do not invalidate the local source snapshot. Enrichment
-records `principal_uid` and `api_url`; subsequent lookups
-revalidate identity without repeating branch discovery.
-
-## Select a development Environment
-
-Authenticate normally, then inspect the Environments visible to the account:
+## Optional platform metadata
 
 ```python
-from mainsequence.client import OrganizationEnvironment, User
+from mainsequence.code_repository_context import get_code_repository_context
 
-user = User.get_authenticated_user_details()
-environments = OrganizationEnvironment.filter()
-for environment in environments:
-    print(environment.uid, environment.name)
+context = get_code_repository_context()
+print(context.status, context.organization_environment_uid)
 ```
 
-Choose an existing Environment explicitly. The SDK never chooses the first
-result, substitutes another branch, or creates an Environment or branch as a
-side effect. Configure the selection once, before the first Environment-scoped
-operation:
+This uses the normal SDK session to resolve the source through the platform.
+An unregistered branch has status `code_repository_branch_not_registered` and no
+platform branch or Environment UID. A registered branch may also have no
+Environment. Both are valid results. Authentication, permission, and backend
+failures are reported rather than treated as missing registration.
 
-```python
-from mainsequence.client import Secret
-from mainsequence.code_repository_context import (
-    DevelopmentEnvironmentSelection,
-    configure_development_environment,
-    get_organization_environment_context,
-)
+The platform result is cached for the process. Reading it again does not perform
+an identity preflight or compare the authenticated account or Organization.
+Start a fresh process after changing checkout or platform registration. Forked
+processes resolve their own context.
 
-configure_development_environment(
-    DevelopmentEnvironmentSelection(
-        organization_environment_uid="58218213-5e4e-43de-a5bd-6757f4e1c8f6",
-    )
-)
-scope = get_organization_environment_context()
-secret = Secret.get(name="VENDOR_API_KEY")
-```
+## Operations that require scope
 
-Replace the example UUID with one available to your account. Selection is typed
-and process-local; it is not a login setting, an environment variable, or a new
-CLI flag. Listing Environments and reading the authenticated user do not require
-Git discovery or branch registration.
+Constants, Secrets, Buckets, and Artifacts use the current registered branch's
+Environment. If it has none, these operations raise
+`CodeRepositoryEnvironmentContextRequiredError`. Operations requiring a registered
+branch raise `CodeRepositoryBranchContextRequiredError` when it is unavailable.
+The Environment error retains its existing branch-error superclass; both can be
+caught through `CodeRepositoryContextError`.
 
-On first Environment resolution, the SDK checks the current branch's optional
-platform registration and verifies the authenticated User using `users/me`.
-It selects the Environment without a separate ownership or access preflight.
-Every resource request is authorized by the platform backend. Selecting an
-Environment is not itself an authorization grant.
+For example, on an unregistered `test` branch, `get_git_source_context()` works and
+`get_code_repository_context()` can return the unregistered snapshot.
+`Secret.filter()` raises a missing-Environment error. Login, User directory calls,
+and other unscoped operations remain available.
 
-The selection does not change the Git branch. If that branch is registered and
-already has an Environment, the explicit selection must match it. A failed
-branch lookup is not treated as proof that the branch is unregistered; resolve
-the failure and retry. A local source-only consumer can continue using
-`get_git_source_context()` independently.
+There is no Environment selection API or per-call Environment override. The SDK
+does not choose another branch's Environment. Authenticated runtimes preserve the
+existing checks against their backend-authenticated target.
 
-## Scope rules
+Organization access decisions remain in the backend. Selecting a resource through
+the SDK's normal context does not replace backend authorization. Local application
+storage can use the Git source context without invoking platform-scoped resources.
 
-| Process | Environment resolution |
-| --- | --- |
-| Human, registered branch, no selection | Use the branch's Environment; the backend authorizes resource requests. |
-| Human, unregistered branch, explicit selection | Use the selected Environment; the backend authorizes resource requests. |
-| Human, no selected or branch-derived Environment | Raise `CodeRepositoryEnvironmentContextRequiredError` only for Environment-dependent operations. |
-| Authenticated runtime | Use the authenticated target, with source/target checks; development selection is rejected. |
-
-`get_organization_environment_context()` returns an immutable snapshot containing
-`organization_environment_uid`, `principal_uid`, `api_url`,
-`process_id`, and provenance in `source`: `authenticated_runtime`,
-`explicit_development`, or `registered_branch`.
-
-Secrets, Constants, Buckets, and Artifacts consume this shared resolver. Their
-methods still reject per-call Environment overrides. Human requests carry the
-SDK-owned `organization_environment_uid` in the normal body/query field; runtime
-requests omit that selector and the platform derives scope from the credential.
-
-Current-branch collection operations on Jobs, CodeRepositoryImages,
-CodeRepositoryResources, ResourceReleases, and DeploymentRuns still require a
-registered branch. Explicit target-resource operations retain their existing
-ownership and authorization rules.
-
-## Lifetime, failures, and reset
-
-Source discovery, optional platform enrichment, and Environment scope have
-separate synchronized state. Concurrent first calls share immutable snapshots.
-Importing the SDK does not resolve any of them. Forked children receive fresh
-locks and empty state; configure their development selection again.
-
-Each platform-context resolution rechecks `users/me` through the existing transport;
-Environment resolution uses that same verified identity. This adds one identity
-request per successful platform/Environment resolver call and detects a changed
-account without trusting unverified token contents. Refreshing a token for the
-same principal preserves the cached scope. A principal, endpoint, authentication
-mode, or scope change raises `AuthenticatedContextChangedError`; it cannot reuse
-the previous account's scope. Organization fields are not execution context or
-cache identity. The backend enforces its policy on every resource request.
-
-Failed optional lookups are cached. After fixing a temporary failure:
-
-```python
-from mainsequence.code_repository_context import retry_failed_context_resolution
-
-retry_failed_context_resolution()
-```
-
-This clears failed enrichment/Environment attempts and preserves frozen source
-and any previously resolved scope. It cannot switch identity, refresh an already
-resolved unregistered result, or recover changed Git facts. An Environment
-attempt that failed before establishing scope can be retried after configuring
-a selection.
-
-After stopping current development work, use a fresh process or explicitly reset:
-
-```python
-from mainsequence.code_repository_context import (
-    reset_development_context,
-    validate_git_source_context,
-)
-
-validate_git_source_context()  # Network-free; raises if checkout, branch, or HEAD changed.
-# Once the previous work is stopped:
-reset_development_context()
-# Configure the next selection and resolve the new checkout when needed.
-```
-
-Reset clears source, enrichment, Environment, and explicit selection; it retains
-authentication. Reset/retry is rejected while a resolver is running. Do not change
-credentials or reset while resource requests are in flight. Deployed runtimes
-must start a fresh process and cannot use the development reset API.
-
-The SDK does not implement local catalogs, SQLite/DuckDB storage, or a local
-DataSource override. Consumers such as MetaTables use the public Git and User
-interfaces and own their local workspace and storage behavior.
+See [ADR 0035](../../adr/0035-independent-git-source-and-platform-context.md).

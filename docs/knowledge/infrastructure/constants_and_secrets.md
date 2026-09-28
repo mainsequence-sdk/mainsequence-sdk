@@ -55,12 +55,11 @@ A useful mental split is:
 That keeps the repository cleaner and reduces the amount of environment-specific data hardcoded into scripts and jobs.
 
 Constants and Secrets are owned by an Organization Environment. SDK operations use
-the shared [Environment context](context.md): an authenticated runtime target,
-an authorized explicit development selection, or the registered branch's default.
-An unregistered development branch works after configuring a selection. Configure
-scope once through `DevelopmentEnvironmentSelection`; resource methods do not
-accept per-call Environment or branch overrides. CodeRepositories and branches
-using the same authorized Environment can use the same configuration identities.
+the current registered branch's [Environment context](context.md), with existing
+authenticated runtime target checks. A branch without an Environment raises only
+when a scoped operation needs one. There are no Environment overrides or fallback
+selections. Branches in the same Environment can use the same configuration
+identities, subject to backend authorization.
 
 ## Names Are Unique Identities
 

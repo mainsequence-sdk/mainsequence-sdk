@@ -1,3 +1,9 @@
+# ruff: noqa: E402
+from .bootstrap import prime_runtime_env
+
+# Restore CLI credentials before any client module freezes its endpoint/provider.
+prime_runtime_env()
+
 from .logconf import (
     logger as logger,
 )
