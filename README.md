@@ -37,4 +37,4 @@ MetaTables, time-index table updates, SQLAlchemy schemas, local database interfa
 
 The project requires Python 3.13 or newer. Development dependencies are in `pyproject.toml`; run `uv sync --group dev`, `pytest`, and `mkdocs build` from the checkout.
 
-This repository is distributed under the terms in [LICENSE](LICENSE).
+This repository is licensed under the MIT License. See [LICENSE](LICENSE) for the complete terms.
