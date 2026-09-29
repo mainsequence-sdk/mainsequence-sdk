@@ -811,6 +811,7 @@ class ResourceRelease(
 ):
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
         "uid": ["exact", "in"],
+        "name": ["exact"],
         "code_repository_branch_uid": ["exact"],
         "resource__uid": ["exact", "in"],
         "related_job__uid": ["exact", "in"],
@@ -818,6 +819,7 @@ class ResourceRelease(
     }
     FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
         "uid": "uid",
+        "name": "str",
         "code_repository_branch_uid": "uid",
         "resource__uid": "uid",
         "related_job__uid": "uid",

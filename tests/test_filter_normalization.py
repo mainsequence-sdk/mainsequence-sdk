@@ -3762,3 +3762,69 @@ def test_retired_collection_create_fails_before_http(monkeypatch, model):
 
 def test_resource_release_does_not_offer_manual_deployment():
     assert not hasattr(models_helpers_mod.ResourceRelease, "deploy_current_version")
+
+
+@pytest.mark.parametrize("method_name", ["filter", "get"])
+def test_resource_release_name_lookup_keeps_current_branch_scope(monkeypatch, method_name):
+    captured = {}
+    release_uid = "2f4c4c3d-5669-4da5-9d86-b84633c1e6ed"
+
+    class FakeResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return [{
+                "uid": release_uid,
+                "name": "Shared MetaTables",
+                "code_repository_branch_uid": CODE_REPOSITORY_BRANCH_UID,
+                "release_kind": "fastapi",
+                "automatic_deployment": True,
+            }]
+
+    def fake_make_request(**kwargs):
+        captured.update(kwargs)
+        return FakeResponse()
+
+    monkeypatch.setattr(base_mod, "make_request", fake_make_request)
+    result = getattr(models_helpers_mod.ResourceRelease, method_name)(name="Shared MetaTables")
+
+    assert captured["payload"]["params"] == {
+        "name": "Shared MetaTables",
+        "code_repository_branch_uid": CODE_REPOSITORY_BRANCH_UID,
+    }
+    release = result[0] if method_name == "filter" else result
+    assert release.uid == release_uid
+
+
+def test_resource_release_name_admin_filter_uses_the_explicit_owning_branch(monkeypatch):
+    owning_branch_uid = "42c4b562-4da5-49bb-a3b4-1372c9491738"
+    captured = {}
+
+    class FakeResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return []
+
+    def fake_make_request(**kwargs):
+        captured.update(kwargs)
+        return FakeResponse()
+
+    monkeypatch.setattr(base_mod, "make_request", fake_make_request)
+    assert models_helpers_mod.ResourceRelease.filter_admin(
+        name="Shared MetaTables",
+        code_repository_branch_uid=owning_branch_uid,
+        release_kind="fastapi",
+    ) == []
+    assert captured["payload"]["params"] == {
+        "name": "Shared MetaTables",
+        "code_repository_branch_uid": owning_branch_uid,
+        "release_kind": "fastapi",
+    }
+
+
+def test_resource_release_name_filter_supports_only_exact_matching():
+    with pytest.raises(ValueError, match="Unsupported ResourceRelease filter"):
+        models_helpers_mod.ResourceRelease._normalize_filter_kwargs({"name__contains": "MetaTables"})
