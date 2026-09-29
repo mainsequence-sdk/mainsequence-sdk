@@ -809,6 +809,21 @@ class ResourceRelease(
     BaseObjectOrm,
     BasePydanticModel,
 ):
+    """Discover deployment releases by public UID or exact name.
+
+    ``filter(name=...)`` and ``get(name=...)`` retain the current
+    CodeRepositoryBranch context. Names can repeat across branches and release
+    kinds; filtered ``get`` requires exactly one match.
+
+    For a shared deployment owned by another repository, use the existing
+    ``filter_admin(name=..., code_repository_branch_uid=..., release_kind=...)``
+    path with its owning branch UID. This explicit query scope does not expand
+    server authorization. Retrieve the returned UID with ``get(pk=...)`` when
+    full release details are needed.
+
+    See the SDK's Resource releases guide for supported filters and examples.
+    """
+
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
         "uid": ["exact", "in"],
         "name": ["exact"],

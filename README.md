@@ -28,6 +28,12 @@ Server integrations can install `mainsequence[server]` for the framework-indepen
 
 MetaTables, time-index table updates, SQLAlchemy schemas, local database interfaces, and Alembic migrations are no longer included. Use the independently ported `metatables` package for that domain. See [the removal migration guide](docs/migrations/metatables-sdk-removal.md) for old and new imports, retired CLI commands, and the legacy SDK option.
 
+Discover deployments with `ResourceRelease.filter(name=...)` or resolve a
+known release UID with `ResourceRelease.get(pk=...)`. For shared deployments
+owned by another repository, use the explicitly scoped `filter_admin` path.
+See [Resource releases](docs/knowledge/infrastructure/resource_releases.md)
+for supported filters and examples.
+
 ## Documentation and development
 
 - [Documentation index](docs/index.md)

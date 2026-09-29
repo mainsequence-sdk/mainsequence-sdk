@@ -60,30 +60,11 @@ storage can use the Git source context without invoking platform-scoped resource
 
 See [ADR 0035](../../adr/0035-independent-git-source-and-platform-context.md).
 
-
 ## Release discovery by name
 
-`ResourceRelease.filter(name="Shared MetaTables")` and
-`ResourceRelease.get(name="Shared MetaTables")` accept an exact release name.
-The existing string normalizer trims surrounding whitespace. Ordinary collection
-reads keep the current CodeRepositoryBranch scope; `get` requires exactly one
-match. Release names can repeat across branches and release kinds.
-
-A shared deployment can belong to a different repository than its consumer.
-For an intentional administrative discovery query, use the existing explicit
-collection path and the deployment's owning branch:
-
-```python
-from mainsequence.client import ResourceRelease
-
-releases = ResourceRelease.filter_admin(
-    name="Shared MetaTables",
-    code_repository_branch_uid="<OWNING_CODE_REPOSITORY_BRANCH_UID>",
-    release_kind="fastapi",
-)
-```
-
-Use the returned release UID for subsequent detail or runtime access. If the UID
-is already known, `ResourceRelease.get(pk="<RESOURCE_RELEASE_UID>")` performs a
-direct detail lookup. Administrative collection scope does not expand object
-permissions or an authenticated runtime's Environment boundary.
+`ResourceRelease.filter(name=...)` and filtered `ResourceRelease.get(name=...)`
+accept exact names while retaining the current CodeRepositoryBranch context.
+For a shared deployment in another repository, use the existing explicit
+`filter_admin` path with its owning branch, or retrieve a known release UID.
+See [Resource releases](resource_releases.md) for supported filters, examples,
+and the difference between collection rows and full release details.
