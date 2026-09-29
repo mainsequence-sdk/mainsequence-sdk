@@ -37,6 +37,10 @@ for the final package boundary and breaking changes.
 
 ### Changed
 
+- Restored the reusable scaffold-skill copier and packaged `agent_scaffold` after
+  the MetaTables extraction incorrectly removed the entire scaffold. The retained
+  bundle now documents only thin-SDK capabilities and routes MetaTables work to
+  its owning package.
 - CLI login credentials now persist through the operating system credential store
   on Windows, Linux, and macOS. Legacy `auth.json` credentials are migrated only
   when a recommended secure backend is available; plaintext file persistence is
@@ -83,9 +87,10 @@ for the final package boundary and breaking changes.
 - Removed SDK-owned MetaTables, updater and migration modules, local database and
   DataFrame helpers, their CLI commands, docs, packaged skills, and domain-only
   dependencies. The CLI now handles authentication, endpoint settings, version,
-  and diagnostics. Agent A2A message orchestration and repository deployment/skill
-  assembly also leave the thin SDK. The independent `metatables` package port is
-  separate from this SDK change; confirm its compatible version before release.
+  and diagnostics. Agent A2A message orchestration, repository deployment, and
+  dynamic platform-skill assembly also leave the thin SDK. The independent
+  `metatables` package port is separate from this SDK change; confirm its
+  compatible version before release.
 
 - Removed `docs/CNAME`, which declared a `docs.main-sequence-sdk.main-sequence.io`
   custom domain that was never set up: the domain does not resolve and GitHub Pages

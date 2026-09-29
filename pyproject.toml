@@ -66,10 +66,13 @@ dev = [
   "ruff>=0.14.0",
 ]
 
-# Package discovery equivalent to find_packages(include=['mainsequence','mainsequence.*'])
+# Package discovery for SDK code and the Markdown-only scaffold namespace.
 [tool.setuptools.packages.find]
-namespaces = false
-include = ["mainsequence", "mainsequence.*"]
+namespaces = true
+include = ["mainsequence", "mainsequence.*", "agent_scaffold", "agent_scaffold.*"]
+
+[tool.setuptools.package-data]
+"agent_scaffold" = ["*.md", "**/*.md"]
 
 
 # --------------------
@@ -106,4 +109,4 @@ ignore = ["E203", "E501"]     # let Black handle these
 "mainsequence/cli/cli.py" = ["B008"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["mainsequence"]
+known-first-party = ["mainsequence", "agent_scaffold"]
