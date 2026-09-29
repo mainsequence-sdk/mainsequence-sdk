@@ -62,6 +62,13 @@ mainsequence login
 
 After login, the CLI has enough information to authenticate later commands without asking for the password again. On import, the SDK also bootstraps missing access/refresh tokens from that persisted CLI session. Endpoint resolution preserves explicit process values, then uses the checkout `.env` endpoint or saved CLI configuration. This local bootstrap does not authenticate against the network.
 
+Persistent CLI credentials use the operating system credential store: macOS
+Keychain, Windows Credential Locker, or Linux Secret Service/KWallet. Linux
+requires an available, unlocked desktop keyring. If no recommended secure store
+is available, login remains valid only for the current process and the CLI does
+not fall back to a plaintext token file. Existing `auth.json` credentials are
+migrated and removed only after secure-store write and readback succeed.
+
 Functionally:
 
 - the access token is sent as `Authorization: Bearer <token>`

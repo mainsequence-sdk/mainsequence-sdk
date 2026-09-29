@@ -5,8 +5,7 @@ mainsequence.cli.config
 Configuration and auth handling for the MainSequence CLI.
 
 This module stores non-secret config on disk and keeps auth tokens in env,
-with persistent storage via OS keychain on supported platforms and a
-CLI-managed local auth store elsewhere.
+with persistent storage in the operating system credential store.
 """
 
 from __future__ import annotations
@@ -16,11 +15,12 @@ import ipaddress
 import json
 import os
 import pathlib
-import shlex
-import shutil
-import subprocess
 import sys
 import time
+
+import keyring
+from keyring import core as keyring_core
+from keyring import errors as keyring_errors
 
 from mainsequence.defaults import CANONICAL_BACKEND_ENV, STANDARD_BACKEND_URL
 
@@ -147,7 +147,9 @@ def get_session_overrides() -> dict:
     return data if isinstance(data, dict) else {}
 
 
-def set_session_overrides(*, backend_url: str | None = None, mainsequence_path: str | None = None) -> dict:
+def set_session_overrides(
+    *, backend_url: str | None = None, mainsequence_path: str | None = None
+) -> dict:
     """
     Persist backend/path overrides for the current terminal session only.
     """
@@ -323,40 +325,9 @@ def _read_local_tokens(backend: str | None = None) -> dict:
         return {}
 
 
-def _write_local_tokens(*, username: str, access: str, refresh: str, backend: str | None = None) -> bool:
-    """
-    Persist tokens in the CLI-managed local auth store.
-    """
-    try:
-        data = read_json(AUTH_JSON, {})
-        by_backend = data.get("by_backend") if isinstance(data, dict) else None
-        if not isinstance(by_backend, dict):
-            by_backend = {}
-        by_backend[_auth_backend_key(backend)] = {
-            "username": username or "",
-            "access": access or "",
-            "refresh": refresh or "",
-        }
-        write_json(
-            AUTH_JSON,
-            {
-                "version": 2,
-                "by_backend": by_backend,
-            },
-        )
-        if os.name == "posix":
-            try:
-                os.chmod(AUTH_JSON, 0o600)
-            except Exception:
-                pass
-        return True
-    except Exception:
-        return False
-
-
 def _clear_local_tokens(backend: str | None = None) -> bool:
     """
-    Delete the CLI-managed local auth store. Missing file is treated as success.
+    Delete legacy file-based auth for one backend. Missing state is success.
     """
     try:
         if not AUTH_JSON.exists():
@@ -385,16 +356,19 @@ def auth_persistence_label() -> str:
     """
     Return the human-readable auth persistence backend label.
     """
-    if _macos_security_exists() and _read_secure_tokens():
-        return "secure OS storage"
-    return "local CLI auth storage"
+    secure_backend = _secure_keyring_backend()
+    if secure_backend is None:
+        return "process environment only (secure OS credential storage unavailable)"
+    return f"secure OS credential storage ({secure_backend.name})"
 
 
 def get_tokens() -> dict:
     """
     Return auth tokens from environment variables, with persistent-store fallback.
     """
-    runtime_mode = (os.environ.get("MAINSEQUENCE_AUTH_MODE") or "").strip().lower() == "runtime_credential"
+    runtime_mode = (
+        os.environ.get("MAINSEQUENCE_AUTH_MODE") or ""
+    ).strip().lower() == "runtime_credential"
     tokens = {
         "username": os.environ.get(ENV_USERNAME) or os.environ.get(LEGACY_ENV_USERNAME, ""),
         "access": os.environ.get(ENV_ACCESS) or os.environ.get(LEGACY_ENV_ACCESS, ""),
@@ -403,16 +377,15 @@ def get_tokens() -> dict:
     if tokens["access"] and (tokens["refresh"] or runtime_mode):
         return tokens
 
-    for secret in (_read_secure_tokens(), _read_local_tokens()):
-        if not secret:
-            continue
+    secret = _read_secure_tokens()
+    if not secret:
+        secret = _migrate_local_tokens_to_secure_store()
+    if secret and secret.get("access") and (secret.get("refresh") or runtime_mode):
         tokens = {
             "username": tokens["username"] or secret.get("username", ""),
             "access": tokens["access"] or secret.get("access", ""),
             "refresh": tokens["refresh"] or secret.get("refresh", ""),
         }
-        if tokens["access"] and (tokens["refresh"] or runtime_mode):
-            break
     return tokens
 
 
@@ -434,13 +407,13 @@ def save_tokens(username: str, access: str, refresh: str) -> bool:
     os.environ.pop(LEGACY_ENV_USERNAME, None)
     os.environ.pop(LEGACY_ENV_ACCESS, None)
     os.environ.pop(LEGACY_ENV_REFRESH, None)
-    if _macos_security_exists():
-        if _write_secure_tokens(username=username, access=access, refresh=refresh):
-            readback = _read_secure_tokens()
-            if readback.get("access") == access and readback.get("refresh") == refresh:
-                return True
-        return _write_local_tokens(username=username, access=access, refresh=refresh)
-    return _write_local_tokens(username=username, access=access, refresh=refresh)
+    if not _write_secure_tokens(username=username, access=access, refresh=refresh):
+        return False
+    readback = _read_secure_tokens()
+    persisted = readback.get("access") == access and readback.get("refresh") == refresh
+    if persisted:
+        _clear_local_tokens()
+    return persisted
 
 
 def clear_tokens() -> bool:
@@ -471,94 +444,79 @@ def clear_tokens() -> bool:
     return ok
 
 
-def _macos_security_exists() -> bool:
-    return sys.platform == "darwin" and bool(shutil.which("security"))
-
-
 def secure_store_available() -> bool:
     """
     Return whether a secure token store is available on this platform.
     """
-    return _macos_security_exists()
+    return _secure_keyring_backend() is not None
 
 
-def _run_security_shell_command(args: list[str]) -> subprocess.CompletedProcess[str]:
+def _secure_keyring_backend():
     """
-    Execute `security` through the interactive shell path that matches terminal behavior on macOS.
+    Return a recommended OS credential backend, never a plaintext fallback.
     """
-    cmd = " ".join(shlex.quote(part) for part in ["/usr/bin/security", *args])
-    return subprocess.run(
-        ["/bin/zsh", "-lc", cmd],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    try:
+        keyring_core.init_backend(limit=keyring_core.recommended)
+        backend = keyring.get_keyring()
+        if float(backend.priority) < 1:
+            return None
+        return backend
+    except Exception:
+        return None
 
 
 def _read_secure_tokens(backend: str | None = None) -> dict:
     """
-    Read persisted tokens from OS keychain (macOS) when available.
+    Read persisted tokens from the recommended OS credential store.
     """
-    if not _macos_security_exists():
+    secure_backend = _secure_keyring_backend()
+    if secure_backend is None:
         return {}
     try:
         accounts = [_keychain_account_for_backend(backend)]
         if KEYCHAIN_ACCOUNT not in accounts:
             accounts.append(KEYCHAIN_ACCOUNT)
         for account in accounts:
-            proc = _run_security_shell_command(
-                [
-                    "find-generic-password",
-                    "-s",
-                    KEYCHAIN_SERVICE,
-                    "-a",
-                    account,
-                    "-w",
-                ]
-            )
-            if proc.returncode != 0:
-                continue
-            raw = (proc.stdout or "").strip()
+            raw = secure_backend.get_password(KEYCHAIN_SERVICE, account)
             if not raw:
                 continue
             payload = _normalize_token_payload(json.loads(raw))
-            if payload.get("access") and payload.get("refresh"):
+            if payload.get("access"):
                 return payload
         return {}
-    except Exception:
+    except (keyring_errors.KeyringError, json.JSONDecodeError, TypeError, ValueError):
         return {}
 
 
-def _write_secure_tokens(*, username: str, access: str, refresh: str, backend: str | None = None) -> bool:
+def _write_secure_tokens(
+    *, username: str, access: str, refresh: str, backend: str | None = None
+) -> bool:
     """
-    Persist tokens in OS keychain (macOS) without writing plain token files.
+    Persist tokens in the recommended OS credential store.
     """
-    if not _macos_security_exists():
-        return True
-    payload = json.dumps({"username": username or "", "access": access or "", "refresh": refresh or ""})
+    secure_backend = _secure_keyring_backend()
+    if secure_backend is None:
+        return False
+    payload = json.dumps(
+        {"username": username or "", "access": access or "", "refresh": refresh or ""}
+    )
     try:
-        proc = _run_security_shell_command(
-            [
-                "add-generic-password",
-                "-s",
-                KEYCHAIN_SERVICE,
-                "-a",
-                _keychain_account_for_backend(backend),
-                "-w",
-                payload,
-                "-U",
-            ]
+        secure_backend.set_password(
+            KEYCHAIN_SERVICE,
+            _keychain_account_for_backend(backend),
+            payload,
         )
-        return proc.returncode == 0
-    except Exception:
+        return True
+    except keyring_errors.KeyringError:
         return False
 
 
 def _clear_secure_tokens(backend: str | None = None) -> bool:
     """
-    Delete persisted tokens from OS keychain (macOS). Missing entry is treated as success.
+    Delete persisted tokens from the OS credential store. Missing state is success.
     """
-    if not _macos_security_exists():
+    secure_backend = _secure_keyring_backend()
+    if secure_backend is None:
         return True
     try:
         accounts = [_keychain_account_for_backend(backend)]
@@ -567,21 +525,42 @@ def _clear_secure_tokens(backend: str | None = None) -> bool:
 
         ok = True
         for account in accounts:
-            proc = _run_security_shell_command(
-                [
-                    "delete-generic-password",
-                    "-s",
-                    KEYCHAIN_SERVICE,
-                    "-a",
-                    account,
-                ]
-            )
-            err = (proc.stderr or "").lower()
-            if not (proc.returncode == 0 or "could not be found" in err):
+            try:
+                secure_backend.delete_password(KEYCHAIN_SERVICE, account)
+            except keyring_errors.PasswordDeleteError:
+                pass
+            except keyring_errors.KeyringError:
                 ok = False
         return ok
-    except Exception:
+    except keyring_errors.KeyringError:
         return False
+
+
+def _migrate_local_tokens_to_secure_store(backend: str | None = None) -> dict:
+    """
+    Move legacy auth.json credentials into secure storage when available.
+
+    The legacy file is never used as an ongoing authentication source. If the
+    platform has no secure credential backend, it remains untouched and the CLI
+    behaves as unauthenticated outside the current process.
+    """
+    legacy = _read_local_tokens(backend)
+    if not legacy.get("access") or _secure_keyring_backend() is None:
+        return {}
+    if not _write_secure_tokens(
+        username=legacy.get("username", ""),
+        access=legacy["access"],
+        refresh=legacy.get("refresh", ""),
+        backend=backend,
+    ):
+        return {}
+    migrated = _read_secure_tokens(backend)
+    if migrated.get("access") != legacy["access"]:
+        return {}
+    if migrated.get("refresh", "") != legacy.get("refresh", ""):
+        return {}
+    _clear_local_tokens(backend)
+    return migrated
 
 
 def backend_url() -> str:

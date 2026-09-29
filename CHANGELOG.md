@@ -37,6 +37,10 @@ for the final package boundary and breaking changes.
 
 ### Changed
 
+- CLI login credentials now persist through the operating system credential store
+  on Windows, Linux, and macOS. Legacy `auth.json` credentials are migrated only
+  when a recommended secure backend is available; plaintext file persistence is
+  no longer used as a fallback.
 - Runtime credential exchange no longer follows redirects.
 - Trimmed the base SDK install to its retained adapter and logging imports. Tracing
   setup and OTLP export now require `mainsequence[tracing]`; package discovery and
