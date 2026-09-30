@@ -170,7 +170,6 @@ def test_code_repository_branch_git_context_uses_canonical_backend_action(monkey
                     "organization_environment_uid": ENVIRONMENT_UID,
                     "organization_environment_name": "Development",
                     "default_base_image": {"uid": "base-image-uid"},
-                    "sdks": [],
                     "github_repository_binding_uid": "repository-uid",
                     "latest_git_version": COMMIT_SHA,
                     "is_initialized": True,

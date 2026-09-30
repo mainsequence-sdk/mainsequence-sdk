@@ -136,17 +136,6 @@ class CodeRepositoryBranchLight(BasePydanticModel):
     repository_branch: str
 
 
-class CodeRepositorySDKObservation(BasePydanticModel):
-    sdk_type: str
-    package_name: str
-    status: str
-    version: str | None = None
-    repository_path: str = ""
-    observed_commit_sha: str = ""
-    observed_at: datetime.datetime | None = None
-    is_current: bool = False
-
-
 class CodeRepositoryBulkDeleteResponse(BasePydanticModel):
     detail: str
     matched_count: int
@@ -491,7 +480,6 @@ class CodeRepositoryBranch(BasePydanticModel, BaseObjectOrm):
     organization_environment_uid: str | None = None
     organization_environment_name: str | None = None
     default_base_image: CodeRepositoryBaseImage
-    sdks: list[CodeRepositorySDKObservation] = Field(default_factory=list)
     github_repository_binding_uid: str | None = None
     latest_git_version: str = ""
     is_initialized: bool
@@ -601,18 +589,6 @@ class CodeRepositoryBranch(BasePydanticModel, BaseObjectOrm):
             idempotency_key=idempotency_key,
             timeout=timeout,
         )
-
-    def update_sdk(self, *, timeout=None) -> dict[str, Any]:
-        r = make_request(
-            s=type(self).build_session(),
-            loaders=type(self).LOADERS,
-            r_type="POST",
-            url=self._action_url("update-sdk"),
-            payload={"json": {}},
-            time_out=timeout,
-        )
-        raise_for_response(r)
-        return r.json()
 
     def __str__(self):
         return yaml.safe_dump(self.model_dump(), sort_keys=False, default_flow_style=False)

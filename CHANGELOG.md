@@ -62,6 +62,10 @@ boundary and breaking changes.
 
 ### Changed
 
+- Removed the remote `CodeRepositoryBranch.update_sdk()` action and retired
+  SDK observation response fields. The local
+  `mainsequence code-repository update-sdk --path .` command remains supported
+  and updates only the checkout's lockfile and environment.
 - Amended ADR 0034 and restored the CodeRepository local-development CLI that
   the MetaTables extraction removed by mistake: `set-up-locally`,
   `refresh-token`, `sync`, `update-sdk`, `update AGENTS.md`,
@@ -164,6 +168,13 @@ boundary and breaking changes.
   The backend no longer serves `import-branch/`.
 
 ### Fixed
+
+- A CLI command that checks the session before it runs no longer ends in a
+  Python traceback when the backend cannot be reached. A connection error or a
+  timeout during that check prints one line that names the backend URL and the
+  kind of failure, and the command exits with code `1`. The line does not say
+  "Not logged in", because the backend never judged the session, and it does
+  not echo the transport error.
 
 - A saved session keeps its user name. A new process took the session's tokens
   from the credential store without the name, so `mainsequence auth status`

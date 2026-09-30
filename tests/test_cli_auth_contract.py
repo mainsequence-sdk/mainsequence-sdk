@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 import pytest
+import requests
 from typer.testing import CliRunner
 
 from mainsequence.cli import cli as cli_mod
@@ -362,6 +363,31 @@ def test_auth_status_check_asks_the_backend(monkeypatch):
 
     assert refused.exit_code == 1
     assert json.loads(refused.output)["authenticated"] is False
+
+
+@pytest.mark.parametrize(
+    "failure", [requests.exceptions.ConnectionError, requests.exceptions.ReadTimeout]
+)
+def test_login_check_says_when_the_backend_could_not_be_reached(monkeypatch, failure):
+    def unreachable():
+        raise failure(
+            "HTTPSConnectionPool(host='backend.example', port=443): Max retries exceeded "
+            "with url: /api/v1/users/me/"
+        )
+
+    monkeypatch.setattr(cli_mod.cfg, "backend_url", lambda: "https://backend.example")
+    monkeypatch.setattr(cli_mod, "get_current_user_profile", unreachable)
+
+    result = runner.invoke(cli_mod.app, ["code-repository", "list"])
+
+    assert result.exit_code == 1
+    # The command ended itself; an exception that escapes it is what prints a traceback.
+    assert isinstance(result.exception, SystemExit)
+    assert "Traceback" not in result.output
+    # One line, and no "Not logged in": the backend never judged the session.
+    assert result.output == (
+        f"The backend at https://backend.example could not be reached ({failure.__name__}).\n"
+    )
 
 
 def _now() -> int:
