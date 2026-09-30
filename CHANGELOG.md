@@ -6,12 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
-ADR 0034 removes the SDK-owned MetaTables and workflow surface described in earlier
-entries below. See the [migration guide](docs/migrations/metatables-sdk-removal.md)
-for the final package boundary and breaking changes.
+ADR 0034 removes the SDK-owned MetaTables implementation and domain workflow
+surface described in earlier entries below. See the
+[migration guide](docs/migrations/metatables-sdk-removal.md) for the final package
+boundary and breaking changes.
 
 ### Added
 
+- Restored the SDK-owned MetaTable migration workflow skill with the current
+  `metatables` provider, offline revision, and approved API execution boundary.
+  MetaTable implementation and domain guidance remain in the independent package.
 - ADR 0035: network-free `get_git_source_context()` and optional platform metadata.
   Missing Environment errors occur only in operations requiring the current
   branch's Environment. Existing context caching and authentication are preserved;
@@ -39,8 +43,8 @@ for the final package boundary and breaking changes.
 
 - Restored the reusable scaffold-skill copier and packaged `agent_scaffold` after
   the MetaTables extraction incorrectly removed the entire scaffold. The retained
-  bundle now documents only thin-SDK capabilities and routes MetaTables work to
-  its owning package.
+  bundle now documents thin-SDK capabilities, owns the cross-component migration
+  workflow, and routes other MetaTables work to its owning package.
 - CLI login credentials now persist through the operating system credential store
   on Windows, Linux, and macOS. Legacy `auth.json` credentials are migrated only
   when a recommended secure backend is available; plaintext file persistence is
@@ -85,12 +89,12 @@ for the final package boundary and breaking changes.
 ### Removed
 
 - Removed SDK-owned MetaTables, updater and migration modules, local database and
-  DataFrame helpers, their CLI commands, docs, packaged skills, and domain-only
-  dependencies. The CLI now handles authentication, endpoint settings, version,
-  and diagnostics. Agent A2A message orchestration, repository deployment, and
-  dynamic platform-skill assembly also leave the thin SDK. The independent
-  `metatables` package port is separate from this SDK change; confirm its
-  compatible version before release.
+  DataFrame helpers, their CLI commands, implementation docs, packaged table and
+  updater skills, and domain-only dependencies. The CLI now handles
+  authentication, endpoint settings, version, and diagnostics. Agent A2A message
+  orchestration, repository deployment, and dynamic platform-skill assembly also
+  leave the thin SDK. The independent `metatables` package port is separate from
+  this SDK change; confirm its compatible version before release.
 
 - Removed `docs/CNAME`, which declared a `docs.main-sequence-sdk.main-sequence.io`
   custom domain that was never set up: the domain does not resolve and GitHub Pages

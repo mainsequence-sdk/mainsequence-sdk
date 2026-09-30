@@ -193,6 +193,7 @@ def test_packaged_scaffold_keeps_only_thin_sdk_skills():
     assert skill_paths == {
         "a2a_sdk_execution/SKILL.md",
         "application_surfaces/api_surfaces/SKILL.md",
+        "data_publishing/meta_table_migrations/SKILL.md",
         "maintenance/bug_auditor/SKILL.md",
         "maintenance/code_repository_maintenance/SKILL.md",
         "platform_operations/access_control_and_sharing/SKILL.md",

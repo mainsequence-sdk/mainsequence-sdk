@@ -89,6 +89,7 @@ def test_owner_logs_follow_authenticated_backend_capability_and_preserve_enrichm
     page = _owner().get_logs(
         start_time="2026-09-13T10:00:00Z",
         end_time="2026-09-13T11:00:00Z",
+        operation_uid="operation-123",
         limit=25,
         level="info",
         timeout=8,
@@ -99,6 +100,7 @@ def test_owner_logs_follow_authenticated_backend_capability_and_preserve_enrichm
         "organization_environment_uid": ENVIRONMENT_UID,
         "start_time": "2026-09-13T10:00:00Z",
         "end_time": "2026-09-13T11:00:00Z",
+        "operation_uid": "operation-123",
         "limit": 25,
         "level": "info",
     }

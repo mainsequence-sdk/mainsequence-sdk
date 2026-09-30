@@ -44,8 +44,11 @@ them to update only the managed section.
   `.agents/skills/mainsequence/platform_operations/access_control_and_sharing/SKILL.md`
 - Agent discovery, sessions, runtime access, and handoff to the runtime protocol:
   `.agents/skills/mainsequence/a2a_sdk_execution/SKILL.md`
-- MetaTables, table updates, schemas, and migrations: use the installed
-  `metatables` package skills and documentation, not this SDK scaffold.
+- MetaTable migration providers, Alembic revisions, approved execution, and
+  migration recovery:
+  `.agents/skills/mainsequence/data_publishing/meta_table_migrations/SKILL.md`
+- MetaTable modeling, queries, external registration, and table updates: use
+  the installed `metatables` package skills and documentation.
 - Architecture, ontology, CodeRepository workflow declarations, deployment
   policy, and other platform-owned workflows: use the matching skill from the
   authenticated platform catalog.

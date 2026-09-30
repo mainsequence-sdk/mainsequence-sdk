@@ -4,7 +4,7 @@ import datetime
 from typing import Any, ClassVar, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator, model_validator
 
 from mainsequence._request_identity import RequestIdentityError, _get_request_identity
 from mainsequence.defaults import STANDARD_BACKEND_URL
@@ -930,6 +930,11 @@ class ShareableAccessState(BasePydanticModel):
 
 
 class User(UserApiBaseObjectOrm, BasePydanticModel):
+    # Platform facts, not application authorization policy. None means the
+    # connected platform has not supplied the versioned additive contract.
+    is_organization_admin: StrictBool | None = None
+    active_team_uids: list[UUID] | None = None
+
     ENDPOINT: ClassVar[str] = "users"
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]] | None] = {
         "uid": ["exact", "in"],

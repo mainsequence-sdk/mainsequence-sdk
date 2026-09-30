@@ -33,3 +33,5 @@ ownership boundary is recorded in [ADR 0034](0034-remove-metatables-from-sdk.md)
 - [ADR 0035: Independent Git source and platform execution context](0035-independent-git-source-and-platform-context.md)
 
 - [ADR-0036: Request-scoped logged user](0036-request-scoped-logged-user.md)
+
+- [0036: Generic operation correlation in owner logs](0036-generic-operation-log-filter.md)

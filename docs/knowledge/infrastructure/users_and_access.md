@@ -271,3 +271,18 @@ That is why RBAC appears early in the Main Sequence workflow. The moment a resou
 
 For related configuration guidance, see
 [Constants and Secrets](./constants_and_secrets.md).
+
+
+## Identity facts for application authorization
+
+User detail and current-user responses may supply `is_organization_admin`
+(a strict boolean) and `active_team_uids` (active Team UUIDs). They are facts
+computed by the platform; the SDK does not infer roles from group names or
+implement an application's resource grants. Missing fields remain `None`, so
+applications requiring these facts must fail closed rather than assume access.
+
+Use `User.get_authenticated_user_details()` for the process user and
+`User.get_by_uid(uid)` for an already verified application caller, subject to the
+existing platform directory permissions. These are ordinary User reads; they do
+not change the process identity or caller assertion contract. Refresh facts at
+the application's authorization boundary to apply Team/admin changes.
