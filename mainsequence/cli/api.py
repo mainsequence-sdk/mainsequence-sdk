@@ -42,6 +42,7 @@ from .config import (
     get_tokens,
     save_runtime_access_cache,
     save_tokens,
+    saved_username_for,
     token_expiry,
 )
 
@@ -412,7 +413,8 @@ def refresh_access() -> str:
 
     new_refresh = data.get("refresh") or refresh
     tokens = get_tokens()
-    save_tokens(tokens.get("username") or "", access, new_refresh)
+    # The renewed session is the one `refresh` belongs to, so it keeps its user name.
+    save_tokens(tokens.get("username") or saved_username_for(refresh), access, new_refresh)
     return access
 
 

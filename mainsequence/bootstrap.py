@@ -86,6 +86,9 @@ def prime_runtime_env() -> None:
     refresh = (tokens.get("refresh") or "").strip()
     if not had_tokens and (access or refresh):
         _credential_source = CREDENTIALS_FROM_STORE
+        # The saved session's user name goes with its tokens. A renewal saves the
+        # session again, and without the name it would save it nameless.
+        _set_if_missing("MAINSEQUENCE_USERNAME", (tokens.get("username") or "").strip())
 
     _set_if_missing("MAINSEQUENCE_ACCESS_TOKEN", access)
     _set_if_missing("MAINSEQUENCE_REFRESH_TOKEN", refresh)

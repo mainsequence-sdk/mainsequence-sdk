@@ -680,6 +680,20 @@ def get_tokens() -> dict:
     return tokens
 
 
+def saved_username_for(refresh: str) -> str:
+    """
+    Return the user name saved with the session a refresh token belongs to.
+
+    A process that was handed only tokens, without the user they belong to, renews
+    the session without knowing its user. The name the session was saved with is
+    kept when the saved record holds the same refresh token, and is "" otherwise.
+    """
+    if not refresh:
+        return ""
+    saved = _read_secure_tokens()
+    return str(saved.get("username") or "") if saved.get("refresh") == refresh else ""
+
+
 def save_tokens(username: str, access: str, refresh: str) -> bool:
     """
     Save auth tokens in process environment and the active persistent store.

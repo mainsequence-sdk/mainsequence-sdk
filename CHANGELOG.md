@@ -165,6 +165,10 @@ boundary and breaking changes.
 
 ### Fixed
 
+- A saved session keeps its user name. A new process took the session's tokens
+  from the credential store without the name, so `mainsequence auth status`
+  showed no user, and the first renewal saved the session again without it.
+
 - AgentSession runtime-access parsing no longer requires the retired
   `runtime_interaction.action` key. The backend omits it, but the SDK previously
   raised a validation error. Removed the obsolete response field and action model.

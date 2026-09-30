@@ -65,6 +65,114 @@ def test_save_tokens_uses_secure_store_without_auth_json(monkeypatch, tmp_path):
     }
 
 
+class _RefreshResponse:
+    ok = True
+    headers = {"content-type": "application/json"}
+
+    def __init__(self, payload: dict) -> None:
+        self._payload = payload
+
+    def json(self) -> dict:
+        return self._payload
+
+
+def _saved_session(monkeypatch, tmp_path) -> MemoryKeyring:
+    """A session saved by a login, seen from a process that has not read it yet."""
+    from mainsequence import bootstrap
+
+    secure_backend = MemoryKeyring()
+    _isolate_auth(monkeypatch, tmp_path, secure_backend)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(bootstrap, "_credential_source", None)
+    for name in (
+        "MAINSEQUENCE_ENDPOINT",
+        config.ENV_USERNAME,
+        config.ENV_ACCESS,
+        config.ENV_REFRESH,
+    ):
+        # Set first, so the values the code under test exports are undone after the test.
+        monkeypatch.setenv(name, "")
+    assert config.save_tokens("ada@example.com", "access-1", "refresh-1") is True
+    for name in (config.ENV_USERNAME, config.ENV_ACCESS, config.ENV_REFRESH):
+        monkeypatch.setenv(name, "")
+    return secure_backend
+
+
+def _saved_record(secure_backend: MemoryKeyring) -> dict:
+    account = config._keychain_account_for_backend()
+    return json.loads(secure_backend.get_password(config.KEYCHAIN_SERVICE, account))
+
+
+def test_a_new_process_reports_the_user_of_the_saved_session(monkeypatch, tmp_path):
+    from mainsequence import bootstrap
+
+    _saved_session(monkeypatch, tmp_path)
+
+    bootstrap.prime_runtime_env()
+
+    report = config.session_report()
+    assert report["source"] == "store"
+    assert report["username"] == "ada@example.com"
+
+
+def test_a_renewal_keeps_the_user_name_of_the_saved_session(monkeypatch, tmp_path):
+    from mainsequence import bootstrap
+    from mainsequence.cli import api
+
+    secure_backend = _saved_session(monkeypatch, tmp_path)
+    bootstrap.prime_runtime_env()
+    monkeypatch.setattr(
+        api.S, "post", lambda url, data=None: _RefreshResponse({"access": "access-2"})
+    )
+
+    assert api.refresh_access() == "access-2"
+
+    assert _saved_record(secure_backend) == {
+        "v": 1,
+        "backend": "https://backend.example",
+        "username": "ada@example.com",
+        "access": "access-2",
+        "refresh": "refresh-1",
+    }
+
+
+def test_a_renewal_by_a_process_given_only_the_tokens_keeps_the_user_name(monkeypatch, tmp_path):
+    from mainsequence.cli import api
+
+    secure_backend = _saved_session(monkeypatch, tmp_path)
+    # A launcher passed the saved session's tokens, and not whose they are.
+    monkeypatch.setenv(config.ENV_ACCESS, "access-1")
+    monkeypatch.setenv(config.ENV_REFRESH, "refresh-1")
+    monkeypatch.setattr(
+        api.S,
+        "post",
+        lambda url, data=None: _RefreshResponse({"access": "access-2", "refresh": "refresh-2"}),
+    )
+
+    assert api.refresh_access() == "access-2"
+
+    record = _saved_record(secure_backend)
+    assert record["username"] == "ada@example.com"
+    assert record["refresh"] == "refresh-2"
+
+
+def test_a_renewal_of_another_session_does_not_take_the_saved_user_name(monkeypatch, tmp_path):
+    from mainsequence.cli import api
+
+    secure_backend = _saved_session(monkeypatch, tmp_path)
+    monkeypatch.setenv(config.ENV_ACCESS, "other-access")
+    monkeypatch.setenv(config.ENV_REFRESH, "other-refresh")
+    monkeypatch.setattr(
+        api.S, "post", lambda url, data=None: _RefreshResponse({"access": "other-access-2"})
+    )
+
+    assert api.refresh_access() == "other-access-2"
+
+    record = _saved_record(secure_backend)
+    assert record["refresh"] == "other-refresh"
+    assert record["username"] == ""
+
+
 def test_save_tokens_is_process_only_without_secure_store(monkeypatch, tmp_path):
     _isolate_auth(monkeypatch, tmp_path, None)
 

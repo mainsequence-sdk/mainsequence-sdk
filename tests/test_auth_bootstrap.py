@@ -32,6 +32,34 @@ def test_saved_cli_session_is_available_to_sdk_process(bootstrap):
     assert os.environ["MAINSEQUENCE_REFRESH_TOKEN"] == "saved-refresh"
 
 
+def test_saved_session_brings_its_user_name_with_its_tokens(bootstrap, monkeypatch):
+    monkeypatch.setenv("MAINSEQUENCE_USERNAME", "")
+    monkeypatch.setattr(
+        config,
+        "get_tokens",
+        lambda: {
+            "username": "ada@example.com",
+            "access": "saved-access",
+            "refresh": "saved-refresh",
+        },
+    )
+    prime_runtime_env()
+    assert os.environ["MAINSEQUENCE_USERNAME"] == "ada@example.com"
+
+
+def test_explicit_process_credentials_are_not_given_the_saved_user_name(bootstrap, monkeypatch):
+    monkeypatch.setenv("MAINSEQUENCE_USERNAME", "")
+    monkeypatch.setenv("MAINSEQUENCE_ACCESS_TOKEN", "explicit")
+    monkeypatch.setattr(
+        config,
+        "get_tokens",
+        lambda: {"username": "ada@example.com", "access": "explicit", "refresh": ""},
+    )
+    prime_runtime_env()
+    # Whose token the environment carries is not known.
+    assert os.environ["MAINSEQUENCE_USERNAME"] == ""
+
+
 def test_bootstrap_preserves_explicit_process_credentials_and_endpoint(bootstrap, monkeypatch):
     for key in ("MAINSEQUENCE_ENDPOINT", "MAINSEQUENCE_ACCESS_TOKEN", "MAINSEQUENCE_REFRESH_TOKEN"):
         monkeypatch.setenv(key, "explicit")
