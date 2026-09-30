@@ -368,6 +368,32 @@ def project_env_credential_keys(env_text: str) -> list[str]:
     return [key for key in PROJECT_ENV_CREDENTIAL_KEYS if key in assigned]
 
 
+def strip_env_credentials(env_text: str) -> tuple[str, list[str]]:
+    """
+    Return `.env` text without its credential entries, and the names removed.
+
+    Every other line is kept exactly as it is, the endpoint included. A
+    `MAINSEQUENCE_AUTH_MODE=runtime_credential` line goes with the runtime
+    credential it announced; any other mode is the developer's own setting.
+    """
+    kept: list[str] = []
+    dropped_mode = False
+    for line in (env_text or "").splitlines(keepends=True):
+        key = env_line_key(line)
+        if key in PROJECT_ENV_CREDENTIAL_KEYS:
+            continue
+        if key == "MAINSEQUENCE_AUTH_MODE":
+            value = line.split("=", 1)[1].split("#", 1)[0]
+            if value.strip().strip("\"'").lower() == "runtime_credential":
+                dropped_mode = True
+                continue
+        kept.append(line)
+    removed = project_env_credential_keys(env_text)
+    if dropped_mode:
+        removed.append("MAINSEQUENCE_AUTH_MODE")
+    return ("".join(kept) if removed else env_text or ""), removed
+
+
 def _runtime_access_user_key() -> str:
     tokens = get_tokens()
     username = str(tokens.get("username") or "").strip()

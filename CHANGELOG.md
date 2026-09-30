@@ -23,6 +23,11 @@ boundary and breaking changes.
   from the environment or from the saved session, when it expires, and why the
   credential store could not be read when it could not. `--check` also asks the
   backend.
+- `mainsequence refresh-token` renews the saved session and says whether it
+  works. It is a top-level command without a path, because the session belongs
+  to the machine and not to a checkout. Run in a directory whose `.env` still
+  holds an access token, a refresh token or a runtime credential from an
+  earlier version, it removes those entries and names them.
 - ADR 0037: the session is one record per backend in the operating system
   credential store, and a CodeRepository `.env` holds no credential.
 
@@ -72,12 +77,9 @@ boundary and breaking changes.
   no longer used as a fallback.
 - The CLI no longer writes credentials into a CodeRepository `.env`.
   `mainsequence code-repository set-up-locally` writes the backend endpoint
-  only. `mainsequence code-repository refresh-token` keeps its name and now
-  removes an access token, a refresh token or a runtime credential left in
-  `.env`, reports the removed entries by name, and confirms that the saved
-  session works. The SDK already read the saved session on import, so a login
-  made from one CodeRepository serves every other one on the machine. A tool
-  that read the token pair from `.env` takes it from its environment or asks
+  only. The SDK already read the saved session on import, so a login made from
+  one CodeRepository serves every other one on the machine. A tool that read
+  the token pair from `.env` takes it from its environment or asks
   `mainsequence auth token`. See ADR 0037.
 - The saved session is reached the same way from every interpreter on the
   machine. On macOS the CLI uses Apple's `security` program under the entry
@@ -132,6 +134,10 @@ boundary and breaking changes.
   deselected by default. The normal test run remains offline.
 
 ### Removed
+
+- Removed `mainsequence code-repository refresh-token`. It rewrote tokens in the
+  `.env` of one checkout, and no checkout holds a credential any more. Use
+  `mainsequence refresh-token`, which renews the machine's session.
 
 - Removed SDK-owned MetaTables, updater and migration modules, local database and
   DataFrame helpers, their CLI commands, implementation docs, packaged table and

@@ -127,6 +127,6 @@ def run_doctor() -> None:
             [
                 ("Entries", ", ".join(leftover)),
                 ("Needed", "no: the session is read from the credential store"),
-                ("Remove with", "mainsequence code-repository refresh-token"),
+                ("Remove with", "mainsequence refresh-token, run in this directory"),
             ],
         )

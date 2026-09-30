@@ -681,7 +681,8 @@ def test_code_repository_maintenance_is_sdk_owned_and_uses_canonical_cli_workflo
 
     assert "name: mainsequence-code-repository-maintenance" in content
     assert "mainsequence code-repository build-local-venv --path ." in content
-    assert "mainsequence code-repository refresh-token --path ." in content
+    assert "\nmainsequence refresh-token\n" in content
+    assert "code-repository refresh-token" not in content
     assert "mainsequence code-repository update-sdk --path ." in content
     assert "mainsequence code-repository sync --path . -m" in content
     assert "mainsequence code-repository update-agent-skills --path ." in content

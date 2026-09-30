@@ -1,5 +1,11 @@
 # ADR 0037: The session lives in the operating system credential store
 
+Amended 2026-09-30: `mainsequence code-repository refresh-token` is removed. Once
+no checkout holds a credential, a token command that takes a checkout has no
+purpose. `mainsequence refresh-token` renews the session for the machine.
+Decision 2, the refresh command and the consequences below are edited
+accordingly.
+
 Date: 2026-09-30
 
 Status: Accepted. Implemented for macOS and Linux. Windows keeps the behaviour
@@ -65,17 +71,10 @@ CodeRepository has its own virtual environment. These are the observations of
    session lasts for the current process only.
 2. A CodeRepository `.env` holds the backend endpoint and no credential.
    `set-up-locally` writes the endpoint only, in every authentication mode.
-   `refresh-token` keeps its name and removes `MAINSEQUENCE_ACCESS_TOKEN`,
-   `MAINSEQUENCE_REFRESH_TOKEN`, `MAINSEQUENCE_RUNTIME_CREDENTIAL_ID`,
-   `MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET` and the unsupported
-   `MAINSEQUENCE_TOKEN` from `.env`, together with a
-   `MAINSEQUENCE_AUTH_MODE=runtime_credential` line. It reports the removed
-   entries by name only, keeps unrelated lines, sets the endpoint, and then
-   confirms with the backend that the saved session works. It cleans the file
-   before it checks the session, and creates no `.env` when the checkout has
-   none. An entry counts in the forms the tools that load a `.env` accept:
-   leading whitespace, an `export` prefix, and whitespace before the equals
-   sign.
+   No command takes a checkout to refresh its tokens:
+   `code-repository refresh-token` is removed, and `mainsequence refresh-token`
+   renews the one session of the machine. See
+   [The refresh command](#the-refresh-command).
 3. A local tool that does not read the credential store obtains a short-lived
    access token with `mainsequence auth token`. The refresh token never leaves
    the store through that command. `mainsequence auth status` reports the
@@ -209,13 +208,36 @@ it does not. Without `--check` it judges the session by the tokens' own expiry
 and uses no network. Its `store_error` field is `null`, or the reason the
 credential store could not be read.
 
+## The refresh command
+
+`mainsequence refresh-token` renews the saved session: it obtains a new access
+token from the refresh token, or from the runtime credential of a platform
+runtime, saves it, and reports the backend, the user and the session's expiry.
+It takes no path and no CodeRepository. It prints no token value, asks nothing
+and opens no browser. With `--json` it prints the report of
+`mainsequence auth status` plus `removed_env_entries`. Its exit codes are those
+of the token command.
+
+Tokens that an earlier version or another tool left in a checkout would be
+used, by any tool that loads that `.env`, instead of the saved session. When
+the directory the command runs in has a `.env`, the command therefore removes
+`MAINSEQUENCE_ACCESS_TOKEN`, `MAINSEQUENCE_REFRESH_TOKEN`,
+`MAINSEQUENCE_RUNTIME_CREDENTIAL_ID`, `MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET`
+and the unsupported `MAINSEQUENCE_TOKEN` from it, together with a
+`MAINSEQUENCE_AUTH_MODE=runtime_credential` line. It names the removed entries
+and never their values, changes no other line, and creates no file. It does
+this before it renews the session, so a stale entry goes even on a machine
+that is not logged in. An entry counts in the forms the tools that load a
+`.env` accept: leading whitespace, an `export` prefix, and whitespace before
+the equals sign.
+
 ## Consequences
 
 - A tool that read the token pair from `.env` no longer finds it there. It
   receives the pair from the environment it is started in, for example after
   `eval "$(mainsequence login --export)"`, or it asks `mainsequence auth token`.
 - A `.env` written by an earlier version keeps its tokens until
-  `mainsequence code-repository refresh-token` runs in that checkout.
+  `mainsequence refresh-token` runs in that checkout.
   `mainsequence doctor` names the credential entries it finds in the current
   checkout's `.env`.
 - The CLI still passes the session to the child processes it starts through
@@ -225,8 +247,9 @@ credential store could not be read.
 
 Unit tests cover the per-system store selection, the record rules, the macOS
 adapter against a stand-in for `security`, the Secret Service adapter against a
-store that keeps the items of other programs, the `.env` rendering, both `auth`
-commands and the environment-source error.
+store that keeps the items of other programs, the removal of credential
+entries from a `.env`, the refresh command, both `auth` commands and the
+environment-source error.
 
 The store functions were also run against real stores with test entry names and
 dummy values:

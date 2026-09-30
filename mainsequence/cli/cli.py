@@ -12,6 +12,7 @@ Parity with VS Code extension:
 - code-repository sync (uv bump + lock/sync/export + git commit/push)
 - code-repository build-docker-env (docker build + devcontainer config)
 - local `.env` provisioning during set-up-locally writes the backend endpoint and no credential
+- refresh-token (renew the saved session; it belongs to the machine, not to a checkout)
 - auth token / auth status (hand the saved session to other local tools)
 - code-repository current (detect current code repository + venv/python info)
 - sdk latest + code-repository sdk-status + code-repository update-sdk
@@ -40,6 +41,7 @@ import time
 import uuid
 from enum import Enum as PyEnum
 from textwrap import dedent
+from typing import NoReturn
 
 import click
 import typer
@@ -135,6 +137,7 @@ from .api import (
     list_team_users_can_edit,
     list_team_users_can_view,
     logout_cli_session,
+    refresh_access,
     remove_agent_team_from_edit,
     remove_agent_team_from_view,
     remove_agent_user_from_edit,
@@ -1623,45 +1626,35 @@ def _install_uv() -> tuple[bool, str]:
     return False, "; ".join(reasons)
 
 
-def _render_code_repository_runtime_env_text(env_text: str, *, backend_url: str) -> str:
+def _code_repository_env_text(backend_url: str) -> str:
     """
-    Return `.env` text that holds the backend endpoint and no credential.
+    Return the `.env` of a new checkout: the backend endpoint and no credential.
 
-    Credential entries are removed, whoever wrote them: the session lives in the
-    operating system credential store, and a platform runtime receives its
-    credential in its own environment. Obsolete local CodeRepository aliases are
-    not carried into the rendered file. Every other line is kept.
+    The session lives in the operating system credential store, and a platform
+    runtime receives its credential in its own environment.
     """
-    from mainsequence.repository_identity_security import (
-        UNSUPPORTED_SOURCE_IDENTITY_ENV_NAMES,
-    )
+    return f"MAINSEQUENCE_ENDPOINT={backend_url}\n"
 
-    removed_keys = (
-        set(cfg.PROJECT_ENV_CREDENTIAL_KEYS)
-        | {"MAINSEQUENCE_ENDPOINT"}
-        | set(UNSUPPORTED_SOURCE_IDENTITY_ENV_NAMES)
-    )
 
-    def _kept(line: str) -> bool:
-        key = cfg.env_line_key(line)
-        if key in removed_keys:
-            return False
-        # The CLI wrote this mode beside the runtime credential it no longer
-        # writes. Any other mode is the developer's own setting and stays.
-        if key == "MAINSEQUENCE_AUTH_MODE":
-            value = line.split("=", 1)[1].split("#", 1)[0]
-            return value.strip().strip("\"'").lower() != "runtime_credential"
-        return True
+def _remove_env_credentials(directory: pathlib.Path) -> list[str]:
+    """
+    Remove credential entries from `directory/.env` and return their names.
 
-    lines = [ln for ln in (env_text or "").replace("\r", "").splitlines() if _kept(ln)]
-
-    if lines and lines[-1] != "":
-        lines.append("")
-
-    lines.append(f"MAINSEQUENCE_ENDPOINT={backend_url}")
-
-    final_env = "\n".join(lines).replace("\r", "")
-    return final_env + ("\n" if not final_env.endswith("\n") else "")
+    An earlier version, or another tool, may have left tokens there. A tool that
+    loads the file would use them instead of the saved session. Values are never
+    read out, and a file that cannot be changed is reported and left alone.
+    """
+    env_path = directory / ".env"
+    if not env_path.is_file():
+        return []
+    try:
+        cleaned, removed = cfg.strip_env_credentials(env_path.read_text(encoding="utf-8"))
+        if removed:
+            env_path.write_text(cleaned, encoding="utf-8")
+    except (OSError, UnicodeError) as e:
+        warn(f"Could not clean {env_path} ({type(e).__name__}).")
+        return []
+    return removed
 
 
 # ---------- top-level commands ----------
@@ -2102,6 +2095,86 @@ def _format_epoch(value: int | None) -> str:
     return datetime.datetime.fromtimestamp(value, datetime.UTC).strftime("%Y-%m-%d %H:%M UTC")
 
 
+def _exit_without_session(exc: Exception) -> NoReturn:
+    """
+    Say why there is no usable session, and exit with the matching code.
+    """
+    from mainsequence import bootstrap
+
+    if not isinstance(exc, NotLoggedIn):
+        # Never echo the exception: a transport error can carry request details.
+        error(f"The session could not be renewed ({type(exc).__name__}).")
+        raise typer.Exit(AUTH_EXIT_NOT_LOGGED_IN) from exc
+    if bootstrap.credential_source() is None and not cfg.secure_store_available():
+        error(
+            "No credential store is available on this machine, and the environment "
+            "carries no credentials. Log in for this shell with: "
+            'eval "$(mainsequence login --export)"'
+        )
+        raise typer.Exit(AUTH_EXIT_NO_CREDENTIAL_STORE) from exc
+    store_error = cfg.store_read_error()
+    if store_error:
+        error(f"The saved session could not be read. {store_error} Run: mainsequence login")
+    else:
+        error("Not logged in. Run: mainsequence login")
+    raise typer.Exit(AUTH_EXIT_NOT_LOGGED_IN) from exc
+
+
+@app.command("refresh-token")
+@app.command("refresh_token", hidden=True)
+def refresh_saved_session():
+    """
+    Renew the saved session and say whether it works.
+
+    The session is one record per backend in the operating system credential
+    store, and no CodeRepository holds a copy of it. This command renews the
+    access token from the refresh token, or from the runtime credential of a
+    platform runtime, saves it, and reports the session. It prints no token
+    value, asks nothing and opens no browser.
+
+    When the current directory has a `.env` with credential entries that an
+    earlier version or another tool left there, they are removed and named:
+    a tool that loads that file would use them instead of the saved session.
+
+    With the global `--json` flag the output is the session report of
+    `mainsequence auth status` plus `removed_env_entries`.
+
+    Exit codes: 0 when the session was renewed; 1 when there is no session, the
+    credential store could not be read, or the backend refused the session (run
+    `mainsequence login`); 3 when this machine has no credential store and the
+    environment carries no credentials.
+
+    Examples
+    --------
+    ```bash
+    mainsequence refresh-token
+    mainsequence refresh-token --json
+    ```
+    """
+    removed = _remove_env_credentials(pathlib.Path.cwd())
+
+    try:
+        refresh_access()
+    except Exception as e:
+        if removed and not _json_output_enabled():
+            info(f"Removed credential entries from ./.env: {', '.join(removed)}")
+        _exit_without_session(e)
+
+    report = cfg.session_report()
+    report["removed_env_entries"] = removed
+    if _emit_json(report):
+        return
+    if removed:
+        info(f"Removed credential entries from ./.env: {', '.join(removed)}")
+    who = f" for {report['username']}" if report["username"] else ""
+    until = (
+        f", valid until {_format_epoch(report['session_expires_at'])}"
+        if report["session_expires_at"] is not None
+        else ""
+    )
+    success(f"Session renewed{who} on {report['endpoint']}{until}.")
+
+
 @auth.command("token")
 def auth_token():
     """
@@ -2129,28 +2202,10 @@ def auth_token():
     curl -H "Authorization: Bearer $(mainsequence auth token)" "$MAINSEQUENCE_ENDPOINT/api/v1/users/me/"
     ```
     """
-    from mainsequence import bootstrap
-
     try:
         access, expires_at = current_access_token()
-    except NotLoggedIn as e:
-        if bootstrap.credential_source() is None and not cfg.secure_store_available():
-            error(
-                "No credential store is available on this machine, and the environment "
-                "carries no credentials. Log in for this shell with: "
-                'eval "$(mainsequence login --export)"'
-            )
-            raise typer.Exit(AUTH_EXIT_NO_CREDENTIAL_STORE) from e
-        store_error = cfg.store_read_error()
-        if store_error:
-            error(f"The saved session could not be read. {store_error} Run: mainsequence login")
-        else:
-            error("Not logged in. Run: mainsequence login")
-        raise typer.Exit(AUTH_EXIT_NOT_LOGGED_IN) from e
     except Exception as e:
-        # Never echo the exception: a transport error can carry request details.
-        error(f"The session could not be renewed ({type(e).__name__}).")
-        raise typer.Exit(AUTH_EXIT_NOT_LOGGED_IN) from e
+        _exit_without_session(e)
 
     payload = {
         "endpoint": cfg.backend_url(),
@@ -6936,8 +6991,7 @@ def code_repository_set_up_locally(
 
     # The checkout gets the backend endpoint and no credential: the SDK reads the
     # saved CLI session on import, and other tools ask `mainsequence auth token`.
-    final_env = _render_code_repository_runtime_env_text("", backend_url=cfg.backend_url())
-    (target_dir / ".env").write_text(final_env, encoding="utf-8")
+    (target_dir / ".env").write_text(_code_repository_env_text(cfg.backend_url()), encoding="utf-8")
 
     success(f"Local folder: {target_dir}")
     info(f"Repo URL: {repo}")
@@ -7224,72 +7278,6 @@ def code_repository_build_local_venv(
             raise typer.Exit(1)
 
     success(f"Local .venv built for Python requirement {python_request}.")
-
-
-@code_repository.command("refresh-token")
-def code_repository_refresh_token(
-    code_repository_id: str | None = typer.Argument(
-        None, help="Optional CodeRepository UID assertion against the current Git worktree"
-    ),
-    path: str | None = typer.Option(None, "--path", help="CodeRepository directory"),
-):
-    """
-    Remove credential entries from the CodeRepository `.env` and check the session.
-
-    A CodeRepository `.env` holds the backend endpoint and no credential. The
-    session lives in the operating system credential store: the SDK reads it on
-    import, and other local tools obtain a token with `mainsequence auth token`.
-
-    This command keeps its name from the time it rewrote tokens in `.env`. It now
-    removes any access token, refresh token or runtime credential left there by
-    an earlier version or another tool, keeps every other line, sets the
-    endpoint, and then confirms with the backend that the saved session works.
-
-    Parameters
-    ----------
-    code_repository_id:
-        Optional CodeRepository UID assertion against the current Git worktree.
-    path:
-        Explicit local path. If omitted, the current directory is used.
-
-    Examples
-    --------
-    ```bash
-    mainsequence code-repository refresh-token
-    mainsequence code-repository refresh-token code-repository-uid-123
-    mainsequence code-repository refresh-token --path .
-    ```
-    """
-    code_repository_dir = _resolve_code_repository_dir(code_repository_id, path)
-    env_path = code_repository_dir / ".env"
-
-    # The file is cleaned before the session is checked: credentials do not belong
-    # in it whether or not this machine is logged in.
-    if env_path.is_file():
-        try:
-            env_text = env_path.read_text(encoding="utf-8")
-        except Exception as e:
-            error(f"Could not read .env: {e}")
-            raise typer.Exit(1) from e
-
-        removed = cfg.project_env_credential_keys(env_text)
-        final_env = _render_code_repository_runtime_env_text(
-            env_text, backend_url=cfg.backend_url()
-        )
-        if final_env != env_text:
-            env_path.write_text(final_env, encoding="utf-8")
-        if removed:
-            success(f"Removed credential entries from {env_path}: {', '.join(removed)}")
-        else:
-            info(f"No credential entries in {env_path}.")
-    else:
-        info(f"No .env in {code_repository_dir}; nothing to remove.")
-
-    profile = _require_login()
-    success(
-        f"Signed in as {profile.get('username') or 'the current user'}. "
-        "Local tools use the saved CLI session; `.env` holds no credential."
-    )
 
 
 @code_repository.command("freeze-env")

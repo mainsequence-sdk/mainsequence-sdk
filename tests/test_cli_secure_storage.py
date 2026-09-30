@@ -771,6 +771,45 @@ def test_project_env_credential_keys_reads_the_forms_a_dotenv_loader_accepts():
     ]
 
 
+def test_strip_env_credentials_removes_credentials_and_keeps_every_other_line():
+    text = (
+        "FOO=bar\r\n"
+        "export MAINSEQUENCE_ACCESS_TOKEN=secret-access\r\n"
+        "  MAINSEQUENCE_REFRESH_TOKEN = secret-refresh\n"
+        "MAINSEQUENCE_AUTH_MODE='runtime_credential'  # written by an old setup\n"
+        "MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET=secret\n"
+        "MAINSEQUENCE_ENDPOINT=https://backend.example\n"
+        "# MAINSEQUENCE_TOKEN=commented\n"
+        "export KEEP_ME=1"
+    )
+
+    cleaned, removed = config.strip_env_credentials(text)
+
+    # Line endings and the missing final newline are kept as they were.
+    assert cleaned == (
+        "FOO=bar\r\n"
+        "MAINSEQUENCE_ENDPOINT=https://backend.example\n"
+        "# MAINSEQUENCE_TOKEN=commented\n"
+        "export KEEP_ME=1"
+    )
+    assert removed == [
+        "MAINSEQUENCE_ACCESS_TOKEN",
+        "MAINSEQUENCE_REFRESH_TOKEN",
+        "MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET",
+        "MAINSEQUENCE_AUTH_MODE",
+    ]
+    assert not any("secret" in name for name in removed)
+
+
+def test_strip_env_credentials_leaves_a_clean_file_and_a_developer_mode_alone():
+    text = (
+        "MAINSEQUENCE_AUTH_MODE=jwt\nTAU_LOCAL_MODE=true\nMAINSEQUENCE_ENDPOINT=https://b.example\n"
+    )
+
+    assert config.strip_env_credentials(text) == (text, [])
+    assert config.strip_env_credentials("") == ("", [])
+
+
 def test_env_line_key_names_the_assigned_variable_only():
     assert config.env_line_key("FOO=bar") == "FOO"
     assert config.env_line_key("  export FOO = bar") == "FOO"

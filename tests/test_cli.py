@@ -6973,189 +6973,175 @@ def test_code_repository_open(cli_mod, runner, monkeypatch, tmp_path):
     assert opened["path"] == str(target.resolve())
 
 
-def test_code_repository_refresh_token(cli_mod, runner, monkeypatch, tmp_path):
-    target = tmp_path / "demo-code-repository-uid-123"
-    target.mkdir(parents=True, exist_ok=True)
-    env_path = target / ".env"
+def _session_report(**overrides):
+    report = {
+        "endpoint": "https://backend.test",
+        "authenticated": True,
+        "checked_with_backend": False,
+        "auth_mode": "jwt",
+        "username": "u@example.com",
+        "source": "store",
+        "storage": "test store",
+        "store_error": None,
+        "session_expires_at": 1_900_000_000,
+        "access_expires_at": 1_899_000_000,
+    }
+    report.update(overrides)
+    return report
+
+
+def test_refresh_token_renews_the_saved_session(cli_mod, runner, monkeypatch, tmp_path):
+    renewals = []
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli_mod, "refresh_access", lambda: renewals.append(1) or "new-access")
+    monkeypatch.setattr(cli_mod.cfg, "session_report", _session_report)
+
+    result = runner.invoke(cli_mod.app, ["refresh-token"])
+
+    assert result.exit_code == 0, result.output
+    assert renewals == [1]
+    assert "Session renewed for u@example.com on https://backend.test" in result.output
+    assert "valid until 2030-03-17 17:46 UTC" in result.output
+    assert "new-access" not in result.output
+    # It works anywhere: no checkout, no `.env`, and none is created.
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_refresh_token_is_also_reachable_with_an_underscore(cli_mod, runner, monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli_mod, "refresh_access", lambda: "new-access")
+    monkeypatch.setattr(cli_mod.cfg, "session_report", _session_report)
+
+    result = runner.invoke(cli_mod.app, ["refresh_token"])
+
+    assert result.exit_code == 0, result.output
+    assert "Session renewed" in result.output
+    assert "refresh_token" not in runner.invoke(cli_mod.app, ["--help"]).output
+
+
+def test_refresh_token_removes_credentials_left_in_the_env_file(
+    cli_mod, runner, monkeypatch, tmp_path
+):
+    env_path = tmp_path / ".env"
     env_path.write_text(
         "FOO=bar\n"
         f"{_UNSUPPORTED_REPOSITORY_UID_ENV}=code-repository-uid-123\n"
-        f"{_UNSUPPORTED_REPOSITORY_NUMERIC_ID_ENV}=123\n"
         "MAINSEQUENCE_ACCESS_TOKEN=old-access\n"
-        "MAINSEQUENCE_REFRESH_TOKEN=old-refresh\n"
-        "MAINSEQUENCE_ENDPOINT=https://old-backend.test\n"
-        "MAINSEQUENCE_TOKEN=legacy-token\n",
+        "export MAINSEQUENCE_REFRESH_TOKEN=old-refresh\n"
+        "MAINSEQUENCE_ENDPOINT=https://other-backend.test\n"
+        "MAINSEQUENCE_TOKEN=legacy-token\n"
+        "TAU_LOCAL_MODE=true\n",
         encoding="utf-8",
     )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli_mod, "refresh_access", lambda: "new-access")
+    monkeypatch.setattr(cli_mod.cfg, "session_report", _session_report)
 
-    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
-    monkeypatch.setattr(
-        cli_mod.cfg,
-        "get_tokens",
-        lambda: {"username": "u", "access": "new-access", "refresh": "new-refresh"},
-    )
-    monkeypatch.setattr(cli_mod.cfg, "backend_url", lambda: "https://backend.test")
+    result = runner.invoke(cli_mod.app, ["refresh-token"])
 
-    result = runner.invoke(cli_mod.app, ["code-repository", "refresh-token", "--path", str(target)])
-    assert result.exit_code == 0
-
-    # The old entries are removed and the session's tokens are not written in
-    # their place: `.env` keeps the developer's own lines and the endpoint.
+    assert result.exit_code == 0, result.output
+    # Only the credential entries go. Every other line stays as it was, the
+    # endpoint included: the command does not manage the checkout.
     assert env_path.read_text(encoding="utf-8") == (
-        "FOO=bar\n\nMAINSEQUENCE_ENDPOINT=https://backend.test\n"
+        "FOO=bar\n"
+        f"{_UNSUPPORTED_REPOSITORY_UID_ENV}=code-repository-uid-123\n"
+        "MAINSEQUENCE_ENDPOINT=https://other-backend.test\n"
+        "TAU_LOCAL_MODE=true\n"
     )
     assert "MAINSEQUENCE_ACCESS_TOKEN, MAINSEQUENCE_REFRESH_TOKEN, MAINSEQUENCE_TOKEN" in (
         result.output
     )
-    for secret in ("old-access", "old-refresh", "legacy-token", "new-access", "new-refresh"):
+    for secret in ("old-access", "old-refresh", "legacy-token", "new-access"):
         assert secret not in result.output
 
 
-def test_code_repository_refresh_token_cleans_before_it_checks_the_session(
-    cli_mod, runner, monkeypatch, tmp_path
-):
-    import typer
-
-    target = tmp_path / "demo-code-repository-uid-123"
-    target.mkdir(parents=True, exist_ok=True)
-    env_path = target / ".env"
-    env_path.write_text(
-        "FOO=bar\nMAINSEQUENCE_ACCESS_TOKEN=old-access\nMAINSEQUENCE_REFRESH_TOKEN=old-refresh\n",
-        encoding="utf-8",
-    )
-
-    def _not_logged_in():
-        raise typer.Exit(1)
-
-    monkeypatch.setattr(cli_mod, "_require_login", _not_logged_in)
-    monkeypatch.setattr(cli_mod.cfg, "backend_url", lambda: "https://backend.test")
-
-    result = runner.invoke(cli_mod.app, ["code-repository", "refresh-token", "--path", str(target)])
-
-    assert result.exit_code == 1
-    assert env_path.read_text(encoding="utf-8") == (
-        "FOO=bar\n\nMAINSEQUENCE_ENDPOINT=https://backend.test\n"
-    )
-
-
-def test_code_repository_refresh_token_without_env_file_creates_none(
-    cli_mod, runner, monkeypatch, tmp_path
-):
-    target = tmp_path / "demo-code-repository-uid-123"
-    target.mkdir(parents=True, exist_ok=True)
-    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
-    monkeypatch.setattr(cli_mod.cfg, "backend_url", lambda: "https://backend.test")
-
-    result = runner.invoke(cli_mod.app, ["code-repository", "refresh-token", "--path", str(target)])
-
-    assert result.exit_code == 0
-    assert not (target / ".env").exists()
-    assert "Signed in as u" in result.output
-
-
-def test_code_repository_env_render_keeps_a_developer_auth_mode(cli_mod):
-    rendered = cli_mod._render_code_repository_runtime_env_text(
-        "MAINSEQUENCE_AUTH_MODE=jwt\nTAU_LOCAL_MODE=true\nMAINSEQUENCE_REFRESH_TOKEN=r\n",
-        backend_url="https://backend.test",
-    )
-
-    assert rendered == (
-        "MAINSEQUENCE_AUTH_MODE=jwt\nTAU_LOCAL_MODE=true\n\n"
-        "MAINSEQUENCE_ENDPOINT=https://backend.test\n"
-    )
-
-
-def test_code_repository_env_render_removes_hand_written_credential_forms(cli_mod):
-    rendered = cli_mod._render_code_repository_runtime_env_text(
-        "export MAINSEQUENCE_ACCESS_TOKEN=a\n"
-        "  MAINSEQUENCE_REFRESH_TOKEN = r\n"
-        "export MAINSEQUENCE_AUTH_MODE='runtime_credential'  # written by an old setup\n"
-        "export MAINSEQUENCE_ENDPOINT=https://old-backend.test\n"
-        "# MAINSEQUENCE_ENDPOINT=https://commented.test\n"
-        "export KEEP_ME=1\n",
-        backend_url="https://backend.test",
-    )
-
-    assert rendered == (
-        "# MAINSEQUENCE_ENDPOINT=https://commented.test\n"
-        "export KEEP_ME=1\n\n"
-        "MAINSEQUENCE_ENDPOINT=https://backend.test\n"
-    )
-
-
-def test_code_repository_refresh_token_runtime_credential(cli_mod, runner, monkeypatch, tmp_path):
-    target = tmp_path / "demo-code-repository-uid-123"
-    target.mkdir(parents=True, exist_ok=True)
-    env_path = target / ".env"
+def test_refresh_token_removes_the_runtime_credential_block(cli_mod, runner, monkeypatch, tmp_path):
+    env_path = tmp_path / ".env"
     env_path.write_text(
         "FOO=bar\n"
-        f"{_UNSUPPORTED_REPOSITORY_UID_ENV}=code-repository-uid-123\n"
-        f"{_UNSUPPORTED_REPOSITORY_NUMERIC_ID_ENV}=123\n"
         "MAINSEQUENCE_AUTH_MODE=runtime_credential\n"
         "MAINSEQUENCE_ACCESS_TOKEN=old-access\n"
         "MAINSEQUENCE_RUNTIME_CREDENTIAL_ID=old-cred-id\n"
         "MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET=old-cred-secret\n"
-        "MAINSEQUENCE_TOKEN=legacy-token\n",
+        "MAINSEQUENCE_ENDPOINT=https://backend.test\n",
         encoding="utf-8",
     )
-
+    monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("MAINSEQUENCE_AUTH_MODE", "runtime_credential")
-    monkeypatch.setenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_ID", "cred-id")
-    monkeypatch.setenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET", "cred-secret")
-    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(cli_mod, "refresh_access", lambda: "exchanged-access")
     monkeypatch.setattr(
         cli_mod.cfg,
-        "get_tokens",
-        lambda: (_ for _ in ()).throw(AssertionError("JWT tokens should not be used")),
-    )
-    monkeypatch.setattr(cli_mod.cfg, "backend_url", lambda: "https://backend.test")
-    monkeypatch.setattr(
-        cli_mod,
-        "_exchange_runtime_credential_for_cli_login",
-        lambda backend_url: (_ for _ in ()).throw(
-            AssertionError("The runtime credential should not be exchanged to write .env")
-        ),
+        "session_report",
+        lambda: _session_report(auth_mode="runtime_credential", username=None, source=None),
     )
 
-    result = runner.invoke(cli_mod.app, ["code-repository", "refresh-token", "--path", str(target)])
-    assert result.exit_code == 0
+    result = runner.invoke(cli_mod.app, ["refresh-token"])
 
-    # The runtime credential block an earlier version wrote is removed with its
-    # mode line, and the injected credential is not copied back in.
+    assert result.exit_code == 0, result.output
     assert env_path.read_text(encoding="utf-8") == (
-        "FOO=bar\n\nMAINSEQUENCE_ENDPOINT=https://backend.test\n"
+        "FOO=bar\nMAINSEQUENCE_ENDPOINT=https://backend.test\n"
     )
-    for secret in ("old-access", "old-cred-secret", "cred-secret", "legacy-token"):
+    assert "Session renewed on https://backend.test" in result.output
+    for secret in ("old-access", "old-cred-secret", "exchanged-access"):
         assert secret not in result.output
 
 
-def test_code_repository_refresh_token_defaults_to_cwd(cli_mod, runner, monkeypatch, tmp_path):
-    target = tmp_path / "demo-code-repository-uid-123"
-    target.mkdir(parents=True, exist_ok=True)
-    env_path = target / ".env"
-    env_path.write_text(
-        "FOO=bar\n"
-        f"{_UNSUPPORTED_REPOSITORY_UID_ENV}=code-repository-uid-123\n"
-        "MAINSEQUENCE_ACCESS_TOKEN=old-access\n"
-        "MAINSEQUENCE_REFRESH_TOKEN=old-refresh\n",
-        encoding="utf-8",
-    )
+def test_refresh_token_without_a_session_asks_for_a_login(cli_mod, runner, monkeypatch, tmp_path):
+    env_path = tmp_path / ".env"
+    env_path.write_text("FOO=bar\nMAINSEQUENCE_REFRESH_TOKEN=old-refresh\n", encoding="utf-8")
 
-    monkeypatch.chdir(target)
-    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
-    monkeypatch.setattr(
-        cli_mod.cfg,
-        "get_tokens",
-        lambda: {"username": "u", "access": "new-access", "refresh": "new-refresh"},
-    )
-    monkeypatch.setattr(cli_mod.cfg, "backend_url", lambda: "https://backend.test")
+    def no_session():
+        raise cli_mod.NotLoggedIn("Not logged in. Run `mainsequence login`.")
 
-    result = runner.invoke(cli_mod.app, ["code-repository", "refresh-token"])
-    assert result.exit_code == 0
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli_mod, "refresh_access", no_session)
+    monkeypatch.setattr(cli_mod.cfg, "secure_store_available", lambda: True)
+    monkeypatch.setattr(cli_mod.cfg, "store_read_error", lambda: None)
 
-    assert env_path.read_text(encoding="utf-8") == (
-        "FOO=bar\n\nMAINSEQUENCE_ENDPOINT=https://backend.test\n"
-    )
+    result = runner.invoke(cli_mod.app, ["refresh-token"])
+
+    assert result.exit_code == cli_mod.AUTH_EXIT_NOT_LOGGED_IN == 1
+    assert "Not logged in. Run: mainsequence login" in result.output
+    # The stale entry is removed either way: it would hide the session a login saves.
+    assert env_path.read_text(encoding="utf-8") == "FOO=bar\n"
+    assert "old-refresh" not in result.output
+
+
+def test_refresh_token_does_not_echo_a_transport_failure(cli_mod, runner, monkeypatch, tmp_path):
+    def unreachable():
+        raise ConnectionError("https://backend.test/auth/?refresh=refresh-value")
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli_mod, "refresh_access", unreachable)
+
+    result = runner.invoke(cli_mod.app, ["refresh-token"])
+
+    assert result.exit_code == 1
+    assert "The session could not be renewed (ConnectionError)." in result.output
+    assert "refresh-value" not in result.output
+    assert "Traceback" not in result.output
+
+
+def test_refresh_token_json_is_the_session_report(cli_mod, runner, monkeypatch, tmp_path):
+    (tmp_path / ".env").write_text("MAINSEQUENCE_ACCESS_TOKEN=old-access\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli_mod, "refresh_access", lambda: "new-access")
+    monkeypatch.setattr(cli_mod.cfg, "session_report", _session_report)
+
+    result = runner.invoke(cli_mod.app, ["refresh-token", "--json"])
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output) == {
+        **_session_report(),
+        "removed_env_entries": ["MAINSEQUENCE_ACCESS_TOKEN"],
+    }
+
+
+def test_the_per_checkout_refresh_token_command_is_gone(cli_mod, runner):
+    result = runner.invoke(cli_mod.app, ["code-repository", "refresh-token", "--path", "."])
+
+    assert result.exit_code == 2
+    assert "No such command" in result.output
 
 
 def test_code_repository_delete_local(cli_mod, runner, monkeypatch, tmp_path):

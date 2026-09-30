@@ -91,10 +91,10 @@ mainsequence code-repository build-local-venv --path . --recreate
 Treat `.venv` as generated state, never as source code or durable repository
 documentation.
 
-## Refresh CodeRepository Authentication
+## Refresh Authentication
 
-Establish CLI authentication before refreshing a CodeRepository. Select exactly one
-existing authentication lane:
+Authentication belongs to the machine, not to a CodeRepository. Establish the
+CLI session through exactly one existing authentication lane:
 
 - When `MAINSEQUENCE_AUTH_MODE=runtime_credential`, run `mainsequence login`.
   The CLI exchanges the injected runtime credential without a browser or a
@@ -116,20 +116,21 @@ handoffs blindly.
 
 The session is one record per backend in the operating system credential
 store. A login made from any CodeRepository serves every other one on the
-machine, and the SDK reads the saved session when it is imported. The
-CodeRepository `.env` holds the backend endpoint and no credential.
+machine, and the SDK reads the saved session when it is imported. No
+CodeRepository holds a copy: `.env` has the backend endpoint and no credential.
 
-Clean the CodeRepository `.env` and confirm the saved session:
+Renew the saved session and confirm that it works:
 
 ```bash
-mainsequence code-repository refresh-token --path .
+mainsequence refresh-token
 ```
 
-The command keeps its name from the time it rewrote tokens in `.env`. It now
-removes an access token, a refresh token, or a runtime credential that an
-earlier version or another tool left there, reports the removed entries by
-name only, and then confirms with the backend that the saved session works. It
-creates no `.env` when the checkout has none.
+The command takes no path, because the session does not belong to a checkout.
+It renews the access token, saves it, and reports the session without printing
+a token value. When the directory it runs in has a `.env` with an access token,
+a refresh token, or a runtime credential left by an earlier version or another
+tool, it removes those entries and reports them by name only; it changes
+nothing else in that file.
 
 Require one supported Main Sequence CLI login lane first. Never print,
 inspect, summarize, copy, or return access and refresh token values. Do not
@@ -144,11 +145,8 @@ prints no token value. `mainsequence auth token` exists for local tools that
 consume a short-lived access token programmatically. Do not run it to read a
 token into the conversation.
 
-The command preserves unrelated repository configuration, including a
-`MAINSEQUENCE_AUTH_MODE` the developer set. It removes legacy token aliases and
-all retired repository, branch, and environment identity entries. The Git
-checkout supplies source identity; switching branches changes
-context on the next process run without rewriting `.env`.
+The Git checkout supplies source identity; switching branches changes context
+on the next process run without rewriting `.env`.
 
 ## Update The CodeRepository SDK
 

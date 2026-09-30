@@ -77,18 +77,19 @@ combined with `--export`.
 
 `mainsequence logout` now performs a hard CLI logout when the session came from browser-based CLI login and a refresh token is available. It revokes the tracked CLI login session server-side through `/auth/cli/revoke/`, falls back to JWT logout on older backends that do not implement that endpoint, and otherwise clears only local CLI auth state.
 
-`mainsequence code-repository set-up-locally` and `mainsequence code-repository refresh-token`
-write the backend endpoint into the CodeRepository `.env` and no credential, in
-every auth mode. A backend-launched runtime credential process already has its
-credential in its own environment; nothing of it is copied into the checkout.
-`refresh-token` removes an access token, a refresh token or a runtime
-credential that an earlier version or another tool left in `.env`, and then
-confirms with the backend that the saved session works. Both commands preserve
-unrelated `.env` entries, including a `MAINSEQUENCE_AUTH_MODE` the developer set,
-and do not carry obsolete `MAINSEQUENCE_TOKEN` or
-superseded numeric repository-identity entries into the rendered file. They never write a
+`mainsequence code-repository set-up-locally` writes the backend endpoint into
+the CodeRepository `.env` and no credential, in every auth mode. A
+backend-launched runtime credential process already has its credential in its
+own environment; nothing of it is copied into the checkout. It never writes a
 CodeRepositoryBranch UID, repository branch, Organization Environment UID, or another
 caller-selected deployed runtime context.
+
+`mainsequence refresh-token` renews the saved session. It is a top-level command
+without a path, because the session belongs to the machine and not to a
+checkout. When the directory it runs in has a `.env` with an access token, a
+refresh token or a runtime credential that an earlier version or another tool
+left there, it removes those entries, names them, and changes nothing else in
+the file.
 
 Local setup registers a new or inaccessible deploy key against the logical CodeRepository at
 `/api/v1/code-repositories/{code_repository_uid}/add-deploy-key/` and verifies repository access with that forced

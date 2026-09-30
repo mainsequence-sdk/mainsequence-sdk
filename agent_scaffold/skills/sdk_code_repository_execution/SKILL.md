@@ -190,12 +190,12 @@ Typical bootstrap checks:
 
 - `mainsequence code-repository current --debug`
 - `mainsequence auth status --check`
-- `mainsequence code-repository refresh-token --path .`
+- `mainsequence refresh-token`
 
-The session lives in the operating system credential store, not in `.env`.
-`auth status` reports it without printing a token value. `refresh-token`
-removes credential entries an earlier version left in `.env` and then confirms
-the session.
+The session lives in the operating system credential store, not in `.env`, and
+belongs to the machine, not to a checkout. `auth status` reports it without
+printing a token value. `refresh-token` renews it; run in a checkout, it also
+removes credential entries an earlier version left in `.env`.
 
 Do not proceed with a live branch-owned check unless `code-repository current` reports
 the current Git branch and a resolved CodeRepositoryBranch UID.

@@ -41,6 +41,31 @@ A CodeRepository `.env` holds the backend endpoint and no credential. See
 You only need `--export` if you explicitly want shell-managed environment variables.
 `--export` cannot be combined with `--mcp`.
 
+### Renewing the session
+
+```bash
+mainsequence refresh-token
+```
+
+`mainsequence refresh-token` renews the saved session and says whether it works.
+It takes no path, because the session is one record per backend on the machine
+and no CodeRepository holds a copy. It renews the access token from the refresh
+token, or from the runtime credential of a platform runtime, saves it, and
+reports the backend, the user and the session's expiry. It prints no token
+value, asks nothing and opens no browser. `--json` prints the session report of
+`mainsequence auth status` plus `removed_env_entries`.
+
+When the directory it runs in has a `.env` with an access token, a refresh
+token or a runtime credential that an earlier version or another tool left
+there, the command removes those entries and names them. A tool that loads that
+file would otherwise use them instead of the saved session. Nothing else in the
+file changes.
+
+It exits `0` when the session was renewed, `1` when there is no session, the
+credential store could not be read, or the backend refused the session, and `3`
+when the machine has no credential store and the environment carries no
+credentials. After `1`, run `mainsequence login`.
+
 ### Handing the session to another local tool
 
 ```bash
@@ -262,7 +287,6 @@ mainsequence code-repository validate-name "Rates Platform"
 
 # 2) Set up locally
 mainsequence code-repository set-up-locally <CODE_REPOSITORY_UID>
-mainsequence code-repository refresh-token
 
 # 3) Environment setup
 mainsequence code-repository build-local-venv
@@ -289,11 +313,8 @@ mainsequence code-repository update-sdk --path .
 ```
 
 `set-up-locally` writes `.env` with the backend endpoint and no credential.
-`refresh-token` keeps its name from the time it rewrote tokens in `.env`: it now
-removes any access token, refresh token or runtime credential left there, keeps
-every other line, sets the endpoint, and confirms with the backend that the
-saved session works. Run `mainsequence login` when it reports that you are not
-logged in.
+There is no per-checkout token command: the session belongs to the machine, and
+`mainsequence refresh-token` renews it from any directory.
 
 During `set-up-locally`, the CLI registers a new or inaccessible deploy key through
 `/api/v1/code-repositories/{code_repository_uid}/add-deploy-key/` and verifies repository access with the forced

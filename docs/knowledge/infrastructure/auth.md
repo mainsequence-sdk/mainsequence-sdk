@@ -102,8 +102,9 @@ another backend is refused. See
 [ADR 0037](../../adr/0037-machine-session-in-the-os-credential-store.md).
 
 A CodeRepository `.env` holds the backend endpoint and no credential. The CLI
-does not write a token there, and `mainsequence code-repository refresh-token`
-removes one that an earlier version or another tool left.
+does not write a token there. `mainsequence refresh-token` renews the saved
+session from any directory, and removes a credential that an earlier version
+or another tool left in the `.env` of the directory it runs in.
 
 Functionally:
 
@@ -246,7 +247,7 @@ Important constraints:
 - `MAINSEQUENCE_REFRESH_TOKEN` is not used in this mode
 - runtime credential mode wins when `MAINSEQUENCE_AUTH_MODE=runtime_credential`
 - the exchanged access token should be treated as short-lived runtime material
-- the CLI does not write the runtime credential or an exchanged token into a CodeRepository `.env`; a `.env` written by an earlier version may still contain them, so keep `.env` out of version control and remove them with `mainsequence code-repository refresh-token`
+- the CLI does not write the runtime credential or an exchanged token into a CodeRepository `.env`; a `.env` written by an earlier version may still contain them, so keep `.env` out of version control and remove them by running `mainsequence refresh-token` in that checkout
 - repository and branch context come from Git; Environment context comes from the
   registered branch, with no developer override or fallback
 - deployed branch-owned SDK requests carry the Git-resolved CodeRepositoryBranch; the
