@@ -62,12 +62,48 @@ mainsequence login
 
 After login, the CLI has enough information to authenticate later commands without asking for the password again. On import, the SDK also bootstraps missing access/refresh tokens from that persisted CLI session. Endpoint resolution preserves explicit process values, then uses the checkout `.env` endpoint or saved CLI configuration. This local bootstrap does not authenticate against the network.
 
-Persistent CLI credentials use the operating system credential store: macOS
-Keychain, Windows Credential Locker, or Linux Secret Service/KWallet. Linux
-requires an available, unlocked desktop keyring. If no recommended secure store
-is available, login remains valid only for the current process and the CLI does
-not fall back to a plaintext token file. Existing `auth.json` credentials are
-migrated and removed only after secure-store write and readback succeed.
+Persistent CLI credentials use the operating system credential store, one
+record per backend:
+
+| System | Store | How it is reached |
+| --- | --- | --- |
+| macOS | Login Keychain | Apple's `security` program, with the secret on standard input |
+| Linux | Secret Service | The `keyring` library's Secret Service backend, named explicitly |
+| Windows | Credential Manager | The `keyring` library's recommended backend |
+
+On macOS the Keychain grants access per program. An entry written through the
+Security framework belongs to the interpreter that wrote it, and every other
+interpreter build, including the same one after an upgrade, waits on a consent
+dialog when it reads that entry. `security` is one program for every
+interpreter, so a login made from one CodeRepository is read from another
+without a dialog. The cost is that any program of the same user can read the
+entry the same way.
+
+Released versions reached the same Keychain entry through `security` as well.
+A session saved by one of them is used without a new login, and a released
+version installed in another CodeRepository shares the session.
+
+When the Keychain cannot answer without the user, because the Keychain is
+locked or the entry belongs to another program, the CLI waits at most 10
+seconds and continues without a saved session. `mainsequence doctor` and
+`mainsequence auth status` then say that the credential store could not be
+read. `mainsequence login` replaces an entry that belongs to another program.
+
+Linux requires an available, unlocked desktop keyring that implements Secret
+Service. If no store is available, login remains valid only for the current
+process and the CLI does not fall back to a plaintext token file. Existing
+`auth.json` credentials are migrated and removed only after secure-store write
+and readback succeed.
+
+The record is ASCII JSON with a version, the backend it belongs to, the
+username, and the tokens. A record with a refresh token and no access token is
+a complete session: the access token is renewed from it. A record that names
+another backend is refused. See
+[ADR 0037](../../adr/0037-machine-session-in-the-os-credential-store.md).
+
+A CodeRepository `.env` holds the backend endpoint and no credential. The CLI
+does not write a token there, and `mainsequence code-repository refresh-token`
+removes one that an earlier version or another tool left.
 
 Functionally:
 
@@ -110,6 +146,19 @@ authentication lane; the CLI rejects `--mcp` in that mode, so run ordinary
 
 If a local shell, IDE, or subprocess cannot see auth credentials, refresh or export them with the CLI login flow used by your environment.
 
+### Other Local Tools
+
+A local tool that does not read the credential store itself obtains a
+short-lived access token from the CLI:
+
+```bash
+mainsequence auth token --json
+```
+
+The refresh token never leaves the store through this command. The output and
+exit codes are in the [CLI reference](../../cli/index.md#handing-the-session-to-another-local-tool).
+`mainsequence auth status` reports the session without any token value.
+
 ## Environment JWT Auth
 
 Some processes receive JWT tokens through environment variables:
@@ -127,6 +176,13 @@ Functionally this is the same token model as CLI-managed JWT auth:
 - the process can survive access-token expiration as long as the refresh token remains valid
 
 This mode is useful when a launcher, signed terminal, or controlled runtime injects tokens into the environment instead of relying on persisted CLI storage.
+
+Credentials already in the process environment win over the saved CLI session.
+When the backend rejects that pair, the SDK does not try the saved session,
+because the pair may belong to another user or backend. The error says that the
+rejected credentials came from the environment, and whether a saved session
+exists for the backend. A stale pair usually comes from a shell export, an IDE
+run configuration, or a `.env` file that the tooling loads into the process.
 
 ## Request-bound caller identity
 
@@ -190,7 +246,7 @@ Important constraints:
 - `MAINSEQUENCE_REFRESH_TOKEN` is not used in this mode
 - runtime credential mode wins when `MAINSEQUENCE_AUTH_MODE=runtime_credential`
 - the exchanged access token should be treated as short-lived runtime material
-- CodeRepository `.env` files may contain runtime credential material; keep `.env` out of version control
+- the CLI does not write the runtime credential or an exchanged token into a CodeRepository `.env`; a `.env` written by an earlier version may still contain them, so keep `.env` out of version control and remove them with `mainsequence code-repository refresh-token`
 - repository and branch context come from Git; Environment context comes from the
   registered branch, with no developer override or fallback
 - deployed branch-owned SDK requests carry the Git-resolved CodeRepositoryBranch; the

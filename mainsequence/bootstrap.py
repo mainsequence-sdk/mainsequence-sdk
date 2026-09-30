@@ -4,6 +4,26 @@ import os
 import pathlib
 import re
 
+CREDENTIALS_FROM_ENVIRONMENT = "environment"
+CREDENTIALS_FROM_STORE = "store"
+_TOKEN_ENVIRONMENT_NAMES = (
+    "MAINSEQUENCE_ACCESS_TOKEN",
+    "MAINSEQUENCE_REFRESH_TOKEN",
+    "MAIN_SEQUENCE_USER_TOKEN",
+    "MAIN_SEQUENCE_REFRESH_TOKEN",
+)
+_credential_source: str | None = None
+
+
+def credential_source() -> str | None:
+    """
+    Say where this process's JWT credentials came from.
+
+    `environment` when a token was already set before the SDK started, `store`
+    when the SDK filled it from the saved CLI session, None when it found neither.
+    """
+    return _credential_source
+
 
 def _set_if_missing(key: str, value: str | None) -> None:
     if value and not os.environ.get(key):
@@ -31,7 +51,16 @@ def prime_runtime_env() -> None:
     """
     Best-effort bootstrap so CLI/SDK imports can discover runtime config without
     requiring the user to source the checkout `.env` manually.
+
+    Only the endpoint is read from the checkout `.env`. Credentials come from the
+    process environment when it already has them, and otherwise from the saved
+    CLI session.
     """
+    global _credential_source
+
+    had_tokens = any((os.environ.get(name) or "").strip() for name in _TOKEN_ENVIRONMENT_NAMES)
+    _credential_source = CREDENTIALS_FROM_ENVIRONMENT if had_tokens else None
+
     local_values = _read_local_env_values(pathlib.Path.cwd() / ".env")
 
     _set_if_missing("MAINSEQUENCE_ENDPOINT", local_values.get("MAINSEQUENCE_ENDPOINT"))
@@ -53,5 +82,10 @@ def prime_runtime_env() -> None:
     except Exception:
         tokens = {}
 
-    _set_if_missing("MAINSEQUENCE_ACCESS_TOKEN", (tokens.get("access") or "").strip())
-    _set_if_missing("MAINSEQUENCE_REFRESH_TOKEN", (tokens.get("refresh") or "").strip())
+    access = (tokens.get("access") or "").strip()
+    refresh = (tokens.get("refresh") or "").strip()
+    if not had_tokens and (access or refresh):
+        _credential_source = CREDENTIALS_FROM_STORE
+
+    _set_if_missing("MAINSEQUENCE_ACCESS_TOKEN", access)
+    _set_if_missing("MAINSEQUENCE_REFRESH_TOKEN", refresh)

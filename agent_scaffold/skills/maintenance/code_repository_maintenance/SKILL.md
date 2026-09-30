@@ -114,12 +114,22 @@ terminal. If `auth.cli_authorize` returns an error, preserve the pending local
 workflow output and report that exact error rather than starting multiple
 handoffs blindly.
 
-Refresh only the CLI-managed runtime authentication entries in the CodeRepository
-`.env`:
+The session is one record per backend in the operating system credential
+store. A login made from any CodeRepository serves every other one on the
+machine, and the SDK reads the saved session when it is imported. The
+CodeRepository `.env` holds the backend endpoint and no credential.
+
+Clean the CodeRepository `.env` and confirm the saved session:
 
 ```bash
 mainsequence code-repository refresh-token --path .
 ```
+
+The command keeps its name from the time it rewrote tokens in `.env`. It now
+removes an access token, a refresh token, or a runtime credential that an
+earlier version or another tool left there, reports the removed entries by
+name only, and then confirms with the backend that the saved session works. It
+creates no `.env` when the checkout has none.
 
 Require one supported Main Sequence CLI login lane first. Never print,
 inspect, summarize, copy, or return access and refresh token values. Do not
@@ -127,8 +137,15 @@ attempt to extract the calling MCP host's protected bearer token: the handoff
 authorizes a new PKCE grant and the backend returns credentials directly to
 the waiting CLI process.
 
-The command preserves unrelated repository configuration and renders only the
-current supported authentication shape. It removes legacy token aliases and
+Never write a token into `.env` to make a tool work. `mainsequence auth status`
+reports whether a session exists, when it expires, and whether the process
+takes its credentials from its environment or from the saved session; it
+prints no token value. `mainsequence auth token` exists for local tools that
+consume a short-lived access token programmatically. Do not run it to read a
+token into the conversation.
+
+The command preserves unrelated repository configuration, including a
+`MAINSEQUENCE_AUTH_MODE` the developer set. It removes legacy token aliases and
 all retired repository, branch, and environment identity entries. The Git
 checkout supplies source identity; switching branches changes
 context on the next process run without rewriting `.env`.

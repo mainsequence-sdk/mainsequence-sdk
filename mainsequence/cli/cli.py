@@ -11,7 +11,8 @@ Parity with VS Code extension:
 - code-repository build_local_venv (create local .venv from pyproject + uv sync)
 - code-repository sync (uv bump + lock/sync/export + git commit/push)
 - code-repository build-docker-env (docker build + devcontainer config)
-- local `.env` provisioning during set-up-locally uses only CLI-managed runtime values
+- local `.env` provisioning during set-up-locally writes the backend endpoint and no credential
+- auth token / auth status (hand the saved session to other local tools)
 - code-repository current (detect current code repository + venv/python info)
 - sdk latest + code-repository sdk-status + code-repository update-sdk
 - doctor diagnostics
@@ -83,6 +84,7 @@ from .api import (
     create_constant,
     create_organization_team,
     create_secret,
+    current_access_token,
     delete_agent,
     delete_code_repository_image,
     delete_constant,
@@ -314,7 +316,9 @@ code_repository_job_runs_group = typer.Typer(help="CodeRepository job run comman
 settings = typer.Typer(help="Settings (base folder, backend, etc.)")
 sdk = typer.Typer(help="SDK utilities (latest version, status)")
 skills = typer.Typer(help="Installed scaffold skill commands")
+auth = typer.Typer(help="Saved session commands for other local tools", no_args_is_help=True)
 
+app.add_typer(auth, name="auth")
 app.add_typer(agent, name="agent")
 agent.add_typer(agent_session_group, name="session")
 agent_session_group.add_typer(agent_session_a2a_group, name="a2a")
@@ -1619,92 +1623,42 @@ def _install_uv() -> tuple[bool, str]:
     return False, "; ".join(reasons)
 
 
-def _current_session_jwt_tokens() -> tuple[str, str]:
+def _render_code_repository_runtime_env_text(env_text: str, *, backend_url: str) -> str:
     """
-    Return access/refresh JWTs from the current CLI session.
+    Return `.env` text that holds the backend endpoint and no credential.
 
-    Raises:
-        RuntimeError: if the CLI session does not currently expose both tokens.
-    """
-    tokens = cfg.get_tokens()
-    access_token = (tokens.get("access") or "").strip()
-    refresh_token = (tokens.get("refresh") or "").strip()
-    if not access_token or not refresh_token:
-        raise RuntimeError("JWT session tokens are missing. Run: mainsequence login")
-    return access_token, refresh_token
-
-
-def _current_code_repository_runtime_auth_env(backend_url: str) -> dict[str, str]:
-    """
-    Return auth environment entries for local CodeRepository `.env` provisioning.
-
-    The output follows the active auth mode:
-    - a backend-injected runtime credential mode preserves its credential keys
-      and an exchanged access token
-    - default JWT mode writes the current CLI session access/refresh token pair
-    """
-    if _runtime_credential_mode_enabled():
-        credential_id = (os.environ.get("MAINSEQUENCE_RUNTIME_CREDENTIAL_ID") or "").strip()
-        credential_secret = (os.environ.get("MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET") or "").strip()
-        if not credential_id or not credential_secret:
-            raise RuntimeError(
-                "Runtime credential mode requires MAINSEQUENCE_RUNTIME_CREDENTIAL_ID "
-                "and MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET."
-            )
-
-        access_token = _exchange_runtime_credential_for_cli_login(backend_url)
-        return {
-            "MAINSEQUENCE_AUTH_MODE": "runtime_credential",
-            "MAINSEQUENCE_ACCESS_TOKEN": access_token,
-            "MAINSEQUENCE_RUNTIME_CREDENTIAL_ID": credential_id,
-            "MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET": credential_secret,
-        }
-
-    access_token, refresh_token = _current_session_jwt_tokens()
-    return {
-        "MAINSEQUENCE_ACCESS_TOKEN": access_token,
-        "MAINSEQUENCE_REFRESH_TOKEN": refresh_token,
-    }
-
-
-def _render_code_repository_runtime_env_text(
-    env_text: str,
-    *,
-    auth_env: dict[str, str],
-    backend_url: str,
-) -> str:
-    """
-    Return `.env` text with managed runtime auth keys refreshed.
-
-    Managed keys are rewritten from scratch to avoid duplicate stale entries.
-    Obsolete local CodeRepository aliases are not carried into the rendered file.
+    Credential entries are removed, whoever wrote them: the session lives in the
+    operating system credential store, and a platform runtime receives its
+    credential in its own environment. Obsolete local CodeRepository aliases are
+    not carried into the rendered file. Every other line is kept.
     """
     from mainsequence.repository_identity_security import (
         UNSUPPORTED_SOURCE_IDENTITY_ENV_NAMES,
     )
 
-    managed_prefixes = (
-        "MAINSEQUENCE_AUTH_MODE=",
-        "MAINSEQUENCE_ACCESS_TOKEN=",
-        "MAINSEQUENCE_REFRESH_TOKEN=",
-        "MAINSEQUENCE_RUNTIME_CREDENTIAL_ID=",
-        "MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET=",
-        "MAINSEQUENCE_ENDPOINT=",
-        "MAINSEQUENCE_TOKEN=",
-    ) + tuple(f"{name}=" for name in UNSUPPORTED_SOURCE_IDENTITY_ENV_NAMES)
-    lines = [
-        ln
-        for ln in (env_text or "").replace("\r", "").splitlines()
-        if not any(ln.startswith(prefix) for prefix in managed_prefixes)
-    ]
+    removed_keys = (
+        set(cfg.PROJECT_ENV_CREDENTIAL_KEYS)
+        | {"MAINSEQUENCE_ENDPOINT"}
+        | set(UNSUPPORTED_SOURCE_IDENTITY_ENV_NAMES)
+    )
+
+    def _kept(line: str) -> bool:
+        key = cfg.env_line_key(line)
+        if key in removed_keys:
+            return False
+        # The CLI wrote this mode beside the runtime credential it no longer
+        # writes. Any other mode is the developer's own setting and stays.
+        if key == "MAINSEQUENCE_AUTH_MODE":
+            value = line.split("=", 1)[1].split("#", 1)[0]
+            return value.strip().strip("\"'").lower() != "runtime_credential"
+        return True
+
+    lines = [ln for ln in (env_text or "").replace("\r", "").splitlines() if _kept(ln)]
 
     if lines and lines[-1] != "":
         lines.append("")
 
-    lines.extend(
-        [f"{key}={value}" for key, value in auth_env.items() if value]
-        + [f"MAINSEQUENCE_ENDPOINT={backend_url}"]
-    )
+    lines.append(f"MAINSEQUENCE_ENDPOINT={backend_url}")
 
     final_env = "\n".join(lines).replace("\r", "")
     return final_env + ("\n" if not final_env.endswith("\n") else "")
@@ -2136,6 +2090,132 @@ def doctor():
     ```
     """
     run_doctor()
+
+
+AUTH_EXIT_NOT_LOGGED_IN = 1
+AUTH_EXIT_NO_CREDENTIAL_STORE = 3
+
+
+def _format_epoch(value: int | None) -> str:
+    if value is None:
+        return "-"
+    return datetime.datetime.fromtimestamp(value, datetime.UTC).strftime("%Y-%m-%d %H:%M UTC")
+
+
+@auth.command("token")
+def auth_token():
+    """
+    Print a short-lived access token for another local tool.
+
+    The token comes from the session this process would use: credentials set in
+    the environment, otherwise the saved CLI session. It is renewed first when
+    it would expire within a minute. The refresh token is never printed, nothing
+    is asked and no browser is opened: without a usable session the command
+    fails.
+
+    With the global `--json` flag the output is one object with `endpoint`,
+    `access_token`, `token_type` and `expires_at` (epoch seconds, or null when
+    the token carries no expiry). Without it, the access token alone is printed.
+
+    Exit codes: 0 on success; 1 when there is no session, the credential store
+    could not be read, or the backend did not renew the session (run
+    `mainsequence login`); 3 when this machine has no credential store and the
+    environment carries no credentials.
+
+    Examples
+    --------
+    ```bash
+    mainsequence auth token --json
+    curl -H "Authorization: Bearer $(mainsequence auth token)" "$MAINSEQUENCE_ENDPOINT/api/v1/users/me/"
+    ```
+    """
+    from mainsequence import bootstrap
+
+    try:
+        access, expires_at = current_access_token()
+    except NotLoggedIn as e:
+        if bootstrap.credential_source() is None and not cfg.secure_store_available():
+            error(
+                "No credential store is available on this machine, and the environment "
+                "carries no credentials. Log in for this shell with: "
+                'eval "$(mainsequence login --export)"'
+            )
+            raise typer.Exit(AUTH_EXIT_NO_CREDENTIAL_STORE) from e
+        store_error = cfg.store_read_error()
+        if store_error:
+            error(f"The saved session could not be read. {store_error} Run: mainsequence login")
+        else:
+            error("Not logged in. Run: mainsequence login")
+        raise typer.Exit(AUTH_EXIT_NOT_LOGGED_IN) from e
+    except Exception as e:
+        # Never echo the exception: a transport error can carry request details.
+        error(f"The session could not be renewed ({type(e).__name__}).")
+        raise typer.Exit(AUTH_EXIT_NOT_LOGGED_IN) from e
+
+    payload = {
+        "endpoint": cfg.backend_url(),
+        "access_token": access,
+        "token_type": "Bearer",
+        "expires_at": expires_at,
+    }
+    if _emit_json(payload):
+        return
+    typer.echo(access)
+
+
+@auth.command("status")
+def auth_status(
+    check: bool = typer.Option(
+        False,
+        "--check",
+        help="Also ask the backend whether it accepts the session.",
+    ),
+):
+    """
+    Report the session other local tools would use. No token value is printed.
+
+    Without `--check` the answer comes from the tokens' own expiry and needs no
+    network. With `--check` the backend is asked as well.
+
+    Exit codes: 0 when a usable session exists, 1 when it does not.
+
+    Examples
+    --------
+    ```bash
+    mainsequence auth status
+    mainsequence auth status --check --json
+    ```
+    """
+    report = cfg.session_report()
+    if check and report["authenticated"]:
+        report["checked_with_backend"] = True
+        try:
+            profile = get_current_user_profile()
+        except Exception:
+            profile = None
+        username = str((profile or {}).get("username") or "").strip()
+        report["authenticated"] = bool(username)
+        if username:
+            report["username"] = username
+
+    if not _emit_json(report):
+        rows = [
+            ("Backend", report["endpoint"]),
+            ("Authenticated", "yes" if report["authenticated"] else "no"),
+            ("Checked with backend", "yes" if report["checked_with_backend"] else "no"),
+            ("Auth mode", report["auth_mode"]),
+            ("User", report["username"] or "-"),
+            ("Credentials from", report["source"] or "-"),
+            ("Auth storage", report["storage"]),
+            ("Session expires", _format_epoch(report["session_expires_at"])),
+            ("Access token expires", _format_epoch(report["access_expires_at"])),
+        ]
+        if report["store_error"]:
+            # A store that cannot be read looks like a machine that is not logged in.
+            rows.append(("Credential store error", report["store_error"]))
+        print_kv("MainSequence session", rows)
+    if not report["authenticated"]:
+        raise typer.Exit(AUTH_EXIT_NOT_LOGGED_IN)
 
 
 @app.command("user")
@@ -6752,8 +6832,10 @@ def code_repository_set_up_locally(
     Workflow:
     - ensure, register when needed, and verify a repository-specific SSH key,
     - clone the repository into the local CodeRepositories root,
-    - build local runtime auth/backend entries for the active auth mode,
-    - write/update `.env` with local runtime values.
+    - write `.env` with the backend endpoint.
+
+    `.env` receives no credential. The SDK reads the saved CLI session when it is
+    imported, and other local tools obtain a token with `mainsequence auth token`.
 
     Parameters
     ----------
@@ -6852,21 +6934,9 @@ def code_repository_set_up_locally(
         error("git clone failed")
         raise typer.Exit(3)
 
-    backend_url = cfg.backend_url()
-    try:
-        auth_env = _current_code_repository_runtime_auth_env(backend_url)
-    except RuntimeError as e:
-        error(str(e))
-        raise typer.Exit(1) from e
-    except ApiError as e:
-        error(str(e))
-        raise typer.Exit(1) from e
-
-    final_env = _render_code_repository_runtime_env_text(
-        "",
-        auth_env=auth_env,
-        backend_url=backend_url,
-    )
+    # The checkout gets the backend endpoint and no credential: the SDK reads the
+    # saved CLI session on import, and other tools ask `mainsequence auth token`.
+    final_env = _render_code_repository_runtime_env_text("", backend_url=cfg.backend_url())
     (target_dir / ".env").write_text(final_env, encoding="utf-8")
 
     success(f"Local folder: {target_dir}")
@@ -7164,11 +7234,16 @@ def code_repository_refresh_token(
     path: str | None = typer.Option(None, "--path", help="CodeRepository directory"),
 ):
     """
-    Refresh local CodeRepository auth entries in `.env` from the active auth mode.
+    Remove credential entries from the CodeRepository `.env` and check the session.
 
-    Use this when a CodeRepository has been idle long enough for the previously injected
-    auth token to expire. The command preserves the rest of the `.env` file and
-    only rewrites the runtime auth keys managed by the CLI.
+    A CodeRepository `.env` holds the backend endpoint and no credential. The
+    session lives in the operating system credential store: the SDK reads it on
+    import, and other local tools obtain a token with `mainsequence auth token`.
+
+    This command keeps its name from the time it rewrote tokens in `.env`. It now
+    removes any access token, refresh token or runtime credential left there by
+    an earlier version or another tool, keeps every other line, sets the
+    endpoint, and then confirms with the backend that the saved session works.
 
     Parameters
     ----------
@@ -7185,39 +7260,36 @@ def code_repository_refresh_token(
     mainsequence code-repository refresh-token --path .
     ```
     """
-    _require_login()
     code_repository_dir = _resolve_code_repository_dir(code_repository_id, path)
     env_path = code_repository_dir / ".env"
-    if not env_path.is_file():
-        error(f".env not found in CodeRepository root: {env_path}")
-        info(
-            "Run: mainsequence code-repository set-up-locally <code_repository_uid> to provision the local runtime first."
+
+    # The file is cleaned before the session is checked: credentials do not belong
+    # in it whether or not this machine is logged in.
+    if env_path.is_file():
+        try:
+            env_text = env_path.read_text(encoding="utf-8")
+        except Exception as e:
+            error(f"Could not read .env: {e}")
+            raise typer.Exit(1) from e
+
+        removed = cfg.project_env_credential_keys(env_text)
+        final_env = _render_code_repository_runtime_env_text(
+            env_text, backend_url=cfg.backend_url()
         )
-        raise typer.Exit(1)
+        if final_env != env_text:
+            env_path.write_text(final_env, encoding="utf-8")
+        if removed:
+            success(f"Removed credential entries from {env_path}: {', '.join(removed)}")
+        else:
+            info(f"No credential entries in {env_path}.")
+    else:
+        info(f"No .env in {code_repository_dir}; nothing to remove.")
 
-    backend_url = cfg.backend_url()
-    try:
-        auth_env = _current_code_repository_runtime_auth_env(backend_url)
-    except RuntimeError as e:
-        error(str(e))
-        raise typer.Exit(1) from e
-    except ApiError as e:
-        error(str(e))
-        raise typer.Exit(1) from e
-
-    try:
-        env_text = env_path.read_text(encoding="utf-8")
-    except Exception as e:
-        error(f"Could not read .env: {e}")
-        raise typer.Exit(1) from e
-
-    final_env = _render_code_repository_runtime_env_text(
-        env_text,
-        auth_env=auth_env,
-        backend_url=backend_url,
+    profile = _require_login()
+    success(
+        f"Signed in as {profile.get('username') or 'the current user'}. "
+        "Local tools use the saved CLI session; `.env` holds no credential."
     )
-    env_path.write_text(final_env, encoding="utf-8")
-    success(f"Refreshed auth entries in: {env_path}")
 
 
 @code_repository.command("freeze-env")

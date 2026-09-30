@@ -5,16 +5,22 @@ mainsequence.cli.config
 Configuration and auth handling for the MainSequence CLI.
 
 This module stores non-secret config on disk and keeps auth tokens in env,
-with persistent storage in the operating system credential store.
+with persistent storage in the operating system credential store. A project
+directory never holds a credential: the session is one record per backend in
+that store, and `.env` keeps only non-secret settings such as the endpoint.
 """
 
 from __future__ import annotations
 
+import base64
+import contextlib
 import hashlib
 import ipaddress
 import json
 import os
 import pathlib
+import re
+import subprocess
 import sys
 import time
 
@@ -65,6 +71,16 @@ LEGACY_ENV_ACCESS = "MAIN_SEQUENCE_USER_TOKEN"
 LEGACY_ENV_REFRESH = "MAIN_SEQUENCE_REFRESH_TOKEN"
 KEYCHAIN_SERVICE = "MainSequenceCLI.auth"
 KEYCHAIN_ACCOUNT = "default"
+AUTH_RECORD_VERSION = 1
+# Credential entries a project `.env` must not hold. The CLI removes them and
+# never writes them; the session lives in the operating system credential store.
+PROJECT_ENV_CREDENTIAL_KEYS = (
+    "MAINSEQUENCE_ACCESS_TOKEN",
+    "MAINSEQUENCE_REFRESH_TOKEN",
+    "MAINSEQUENCE_RUNTIME_CREDENTIAL_ID",
+    "MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET",
+    "MAINSEQUENCE_TOKEN",
+)
 DEFAULT_RUNTIME_ACCESS_CACHE_TTL_SECONDS = 60
 RUNTIME_ACCESS_CACHE_EXPIRY_SKEW_SECONDS = 30
 
@@ -306,6 +322,50 @@ def _auth_backend_key(backend: str | None = None) -> str:
     Return the normalized backend key used for auth persistence scoping.
     """
     return normalize_backend_url(backend or backend_url())
+
+
+def token_expiry(token: str | None) -> int | None:
+    """
+    Return the `exp` claim of a JWT as epoch seconds, without verifying the token.
+
+    Used only to decide whether a token is still worth sending. Returns None when
+    the value is not a JWT or carries no expiry.
+    """
+    if not token:
+        return None
+    try:
+        parts = token.split(".")
+        if len(parts) != 3:
+            return None
+        payload = parts[1] + "=" * (-len(parts[1]) % 4)
+        claims = json.loads(base64.urlsafe_b64decode(payload.encode("ascii")).decode("utf-8"))
+        expiry = claims.get("exp")
+        return int(expiry) if expiry is not None else None
+    except Exception:
+        return None
+
+
+_ENV_ASSIGNMENT = re.compile(r"\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=")
+
+
+def env_line_key(line: str) -> str | None:
+    """
+    Return the variable a `.env` line assigns, or None for any other line.
+
+    The forms are the ones the tools that load a `.env` accept: leading
+    whitespace, an `export` prefix, and whitespace before the equals sign. A
+    commented line assigns nothing.
+    """
+    match = _ENV_ASSIGNMENT.match(line)
+    return match.group(1) if match else None
+
+
+def project_env_credential_keys(env_text: str) -> list[str]:
+    """
+    Return the credential entries present in a project `.env`, by name only.
+    """
+    assigned = {env_line_key(line) for line in (env_text or "").replace("\r", "").splitlines()}
+    return [key for key in PROJECT_ENV_CREDENTIAL_KEYS if key in assigned]
 
 
 def _runtime_access_user_key() -> str:
@@ -578,9 +638,14 @@ def get_tokens() -> dict:
         return tokens
 
     secret = _read_secure_tokens()
-    if not secret:
+    # A store that could not be read is not an empty store: moving the old plain
+    # file's session into it would replace the entry that could not be read.
+    if not secret and store_read_error() is None:
         secret = _migrate_local_tokens_to_secure_store()
-    if secret and secret.get("access") and (secret.get("refresh") or runtime_mode):
+    # A stored session is usable with a refresh token alone: the access token is
+    # short-lived and is renewed from it. An access token alone is a session only
+    # for a runtime credential, which has no refresh token.
+    if secret and (secret.get("refresh") or (runtime_mode and secret.get("access"))):
         tokens = {
             "username": tokens["username"] or secret.get("username", ""),
             "access": tokens["access"] or secret.get("access", ""),
@@ -651,9 +716,295 @@ def secure_store_available() -> bool:
     return _secure_keyring_backend() is not None
 
 
-def _secure_keyring_backend():
+def stored_session_available(backend: str | None = None) -> bool:
     """
-    Return a recommended OS credential backend, never a plaintext fallback.
+    Return whether the credential store holds a renewable session for a backend.
+
+    This reads the store only; it says nothing about the process environment.
+    """
+    return bool(_read_secure_tokens(backend).get("refresh"))
+
+
+def session_report() -> dict:
+    """
+    Describe the session this process would use, without any token value.
+
+    `authenticated` is judged from the tokens' own expiry and asks nothing of the
+    backend. A runtime credential renews by a new exchange, so it has no session
+    expiry. `source` says whether the credentials were already in the process
+    environment or came from the saved CLI session. `store_error` says why the
+    credential store could not be read, when it could not.
+    """
+    from mainsequence import bootstrap
+
+    tokens = get_tokens()
+    access = (tokens.get("access") or "").strip()
+    refresh = (tokens.get("refresh") or "").strip()
+    auth_mode = (os.environ.get("MAINSEQUENCE_AUTH_MODE") or "jwt").strip().lower()
+    now = int(time.time())
+    access_expires_at = token_expiry(access)
+    refresh_expires_at = token_expiry(refresh)
+
+    if auth_mode == "runtime_credential":
+        authenticated = bool(
+            access
+            or (
+                (os.environ.get("MAINSEQUENCE_RUNTIME_CREDENTIAL_ID") or "").strip()
+                and (os.environ.get("MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET") or "").strip()
+            )
+        )
+        session_expires_at = None
+    elif refresh:
+        authenticated = refresh_expires_at is None or refresh_expires_at > now
+        session_expires_at = refresh_expires_at
+    else:
+        authenticated = bool(access) and (access_expires_at is None or access_expires_at > now)
+        session_expires_at = access_expires_at
+
+    return {
+        "endpoint": backend_url(),
+        "authenticated": authenticated,
+        "checked_with_backend": False,
+        "auth_mode": auth_mode,
+        "username": (tokens.get("username") or "").strip() or None,
+        "source": bootstrap.credential_source(),
+        "storage": auth_persistence_label(),
+        "store_error": store_read_error(),
+        "session_expires_at": session_expires_at,
+        "access_expires_at": access_expires_at,
+    }
+
+
+_SECURITY_PROGRAM = "/usr/bin/security"
+_SECURITY_ITEM_NOT_FOUND = 44
+_SECURITY_TIMEOUT_SECONDS = 10
+_SECURITY_RETRY_AFTER_SECONDS = 60
+# `security -i` reads one command per line into a 4,096-character buffer. It cuts
+# a longer line there: the first part runs with a truncated secret and the rest
+# runs as another command. Stay below the buffer instead of storing half a record.
+_SECURITY_STDIN_LINE_LIMIT = 4000
+_SECURITY_SAFE_NAME = re.compile(r"[A-Za-z0-9._@-]+")
+_MAX_DUPLICATE_ENTRIES = 16
+
+
+class _MacOSKeychain:
+    """
+    The login Keychain, through Apple's `security` program.
+
+    The Keychain grants access per program. An entry written through the Security
+    framework belongs to the interpreter that wrote it; every other interpreter
+    build, and the same one after an upgrade, blocks on a consent dialog when it
+    reads that entry. `security` is one program for every interpreter, so a login
+    made from one CodeRepository is readable from another without a dialog. The
+    cost is that any program of the same user can read the entry the same way.
+
+    The secret reaches `security` on standard input, never on a command line.
+    """
+
+    name = "macOS Keychain"
+
+    # What this process learned about entries, by (service, account). An entry
+    # `security` read is one it may update in place. An entry whose read waited
+    # for the user or was refused is not asked for again for a while: one command
+    # would otherwise wait once per read.
+    _readable: set[tuple[str, str]] = set()
+    _unreadable: dict[tuple[str, str], tuple[str, float]] = {}
+
+    @staticmethod
+    def available() -> bool:
+        return os.access(_SECURITY_PROGRAM, os.X_OK)
+
+    @staticmethod
+    def _run(arguments: list[str], *, stdin: str | None = None) -> subprocess.CompletedProcess:
+        try:
+            return subprocess.run(
+                [_SECURITY_PROGRAM, *arguments],
+                input=stdin,
+                stdin=subprocess.DEVNULL if stdin is None else None,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=_SECURITY_TIMEOUT_SECONDS,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise keyring_errors.KeyringError(
+                f"The Keychain did not answer within {_SECURITY_TIMEOUT_SECONDS} seconds. "
+                "It was waiting for the user: the entry belongs to another program, "
+                "or the Keychain is locked."
+            ) from exc
+        except OSError as exc:
+            raise keyring_errors.KeyringError(
+                f"The `security` program could not be run ({type(exc).__name__})."
+            ) from exc
+
+    def get_password(self, service: str, account: str) -> str | None:
+        key = (service, account)
+        remembered = self._unreadable.get(key)
+        if remembered is not None:
+            if time.monotonic() < remembered[1]:
+                raise keyring_errors.KeyringError(remembered[0])
+            del self._unreadable[key]
+        try:
+            done = self._run(["find-generic-password", "-s", service, "-a", account, "-w"])
+            if done.returncode not in (0, _SECURITY_ITEM_NOT_FOUND):
+                raise keyring_errors.KeyringError(
+                    f"The Keychain entry could not be read (security exit {done.returncode})."
+                )
+        except keyring_errors.KeyringError as exc:
+            self._readable.discard(key)
+            self._unreadable[key] = (str(exc), time.monotonic() + _SECURITY_RETRY_AFTER_SECONDS)
+            raise
+        if done.returncode == _SECURITY_ITEM_NOT_FOUND:
+            self._readable.discard(key)
+            return None
+        self._readable.add(key)
+        return _decode_security_secret(done.stdout)
+
+    def set_password(self, service: str, account: str, password: str) -> None:
+        if not (_SECURITY_SAFE_NAME.fullmatch(service) and _SECURITY_SAFE_NAME.fullmatch(account)):
+            raise keyring_errors.PasswordSetError("Unsupported Keychain entry name.")
+        line = (
+            f"add-generic-password -U -s {service} -a {account} "
+            f"-X {password.encode('utf-8').hex()}\n"
+        )
+        if len(line) > _SECURITY_STDIN_LINE_LIMIT:
+            raise keyring_errors.PasswordSetError(
+                "The session record is too long to store through the Keychain helper."
+            )
+        key = (service, account)
+        # An entry `security` read in this process is updated in place, so another
+        # process never finds it missing.
+        if key in self._readable:
+            try:
+                if self._run(["-i"], stdin=line).returncode == 0:
+                    return
+            except keyring_errors.KeyringError:
+                pass
+            self._readable.discard(key)
+        # Any other entry is removed first. Updating one that another program
+        # created would make `security` wait for consent; removing it does not,
+        # and the new entry then belongs to `security`.
+        self._delete(service, account)
+        done = self._run(["-i"], stdin=line)
+        # Never report this call's output: on a parse error it echoes the line.
+        if done.returncode != 0:
+            raise keyring_errors.PasswordSetError(
+                f"The Keychain entry could not be written (security exit {done.returncode})."
+            )
+        self._readable.add(key)
+
+    def delete_password(self, service: str, account: str) -> None:
+        if not self._delete(service, account):
+            raise keyring_errors.PasswordDeleteError("No Keychain entry to delete.")
+
+    def _delete(self, service: str, account: str) -> bool:
+        done = self._run(["delete-generic-password", "-s", service, "-a", account])
+        if done.returncode == _SECURITY_ITEM_NOT_FOUND:
+            self._forget(service, account)
+            return False
+        if done.returncode != 0:
+            raise keyring_errors.KeyringError(
+                f"The Keychain entry could not be deleted (security exit {done.returncode})."
+            )
+        self._forget(service, account)
+        return True
+
+    def _forget(self, service: str, account: str) -> None:
+        self._readable.discard((service, account))
+        self._unreadable.pop((service, account), None)
+
+
+def _decode_security_secret(output: str) -> str:
+    """
+    Return the secret `security find-generic-password -w` printed.
+
+    It prints printable ASCII as it is and anything else as hexadecimal. The
+    session record is JSON, so a value made only of hexadecimal digits is the
+    second form.
+    """
+    value = output[:-1] if output.endswith("\n") else output
+    if value and len(value) % 2 == 0 and re.fullmatch(r"[0-9a-fA-F]+", value):
+        try:
+            return bytes.fromhex(value).decode("utf-8")
+        except (ValueError, UnicodeDecodeError):
+            return value
+    return value
+
+
+class _SecretServiceStore:
+    """
+    Secret Service, through the keyring library's backend for it.
+
+    The backend is named explicitly instead of taking the library's
+    highest-priority one, so the record is in the same store on every Linux
+    desktop. The library replaces its own item in place, so another process never
+    finds the record missing during a write. It knows its own item by an
+    `application` attribute: an item for the same service and account that
+    another program stored would stay next to the new one and make the record
+    ambiguous. Writing therefore removes such items first, and deleting removes
+    every match.
+    """
+
+    name = "Secret Service"
+
+    def __init__(self, backend) -> None:
+        self._backend = backend
+
+    def get_password(self, service: str, account: str) -> str | None:
+        return self._backend.get_password(service, account)
+
+    def set_password(self, service: str, account: str, password: str) -> None:
+        self._remove_items_of_other_programs(service, account)
+        self._backend.set_password(service, account, password)
+
+    def delete_password(self, service: str, account: str) -> None:
+        if not self._remove_every_match(service, account):
+            raise keyring_errors.PasswordDeleteError("No Secret Service entry to delete.")
+
+    def _remove_every_match(self, service: str, account: str) -> int:
+        removed = 0
+        for _ in range(_MAX_DUPLICATE_ENTRIES):
+            try:
+                self._backend.delete_password(service, account)
+            except keyring_errors.PasswordDeleteError:
+                break
+            removed += 1
+        return removed
+
+    def _remove_items_of_other_programs(self, service: str, account: str) -> None:
+        try:
+            collection = self._backend.get_preferred_collection()
+            with contextlib.closing(collection.connection):
+                for item in collection.search_items({"username": account, "service": service}):
+                    if item.get_attributes().get("application") == self._backend.appid:
+                        continue
+                    self._backend.unlock(item)
+                    item.delete()
+        except keyring_errors.KeyringError:
+            raise
+        except Exception as exc:
+            # The Secret Service client raises its own errors for a lost bus or a
+            # dismissed prompt.
+            raise keyring_errors.KeyringError(
+                f"Secret Service items could not be cleaned up ({type(exc).__name__})."
+            ) from exc
+
+
+def _secret_service_store():
+    try:
+        from keyring.backends import SecretService
+
+        # The priority property raises when no Secret Service is reachable.
+        if float(SecretService.Keyring.priority) < 1:
+            return None
+        return _SecretServiceStore(SecretService.Keyring())
+    except Exception:
+        return None
+
+
+def _recommended_keyring_backend():
+    """
+    Return the keyring library's recommended backend, never a plaintext fallback.
     """
     try:
         keyring_core.init_backend(limit=keyring_core.recommended)
@@ -665,14 +1016,66 @@ def _secure_keyring_backend():
         return None
 
 
+def _secure_keyring_backend():
+    """
+    Return this system's credential store, never a plaintext fallback.
+
+    macOS and Linux each use one named store, for the reasons given on the two
+    classes above. Every other system, Windows included, keeps the keyring
+    library's recommended backend.
+    """
+    if sys.platform == "darwin":
+        return _MacOSKeychain() if _MacOSKeychain.available() else None
+    if sys.platform.startswith("linux"):
+        return _secret_service_store()
+    return _recommended_keyring_backend()
+
+
+def _token_record(*, username: str, access: str, refresh: str, backend: str | None = None) -> str:
+    """
+    Serialize one session record.
+
+    The record names its backend, so a reader can refuse an entry that is not the
+    one it asked for. `json.dumps` escapes non-ASCII, so every store and every
+    reader sees the same bytes.
+    """
+    return json.dumps(
+        {
+            "v": AUTH_RECORD_VERSION,
+            "backend": _auth_backend_key(backend),
+            "username": username or "",
+            "access": access or "",
+            "refresh": refresh or "",
+        }
+    )
+
+
+_store_read_error: str | None = None
+
+
+def store_read_error() -> str | None:
+    """
+    Say why the last read of the credential store failed, or None when it did not.
+
+    A store that cannot be read looks like a machine with no saved session. This
+    keeps the two apart for `mainsequence doctor` and `mainsequence auth status`.
+    The text never contains a credential.
+    """
+    return _store_read_error
+
+
 def _read_secure_tokens(backend: str | None = None) -> dict:
     """
-    Read persisted tokens from the recommended OS credential store.
+    Read the session record for one backend from the OS credential store.
     """
+    global _store_read_error
+
+    _store_read_error = None
     secure_backend = _secure_keyring_backend()
     if secure_backend is None:
         return {}
     try:
+        backend_key = _auth_backend_key(backend)
         accounts = [_keychain_account_for_backend(backend)]
         if KEYCHAIN_ACCOUNT not in accounts:
             accounts.append(KEYCHAIN_ACCOUNT)
@@ -680,11 +1083,22 @@ def _read_secure_tokens(backend: str | None = None) -> dict:
             raw = secure_backend.get_password(KEYCHAIN_SERVICE, account)
             if not raw:
                 continue
-            payload = _normalize_token_payload(json.loads(raw))
-            if payload.get("access"):
+            record = json.loads(raw)
+            if not isinstance(record, dict):
+                continue
+            # Records written before the backend was part of the record carry none.
+            recorded_backend = str(record.get("backend") or "").strip()
+            if recorded_backend and normalize_backend_url(recorded_backend) != backend_key:
+                continue
+            payload = _normalize_token_payload(record)
+            if payload.get("access") or payload.get("refresh"):
                 return payload
         return {}
-    except (keyring_errors.KeyringError, json.JSONDecodeError, TypeError, ValueError):
+    except keyring_errors.KeyringError as exc:
+        _store_read_error = str(exc) or type(exc).__name__
+        return {}
+    except (json.JSONDecodeError, TypeError, ValueError):
+        _store_read_error = "The saved session record is not valid."
         return {}
 
 
@@ -692,14 +1106,12 @@ def _write_secure_tokens(
     *, username: str, access: str, refresh: str, backend: str | None = None
 ) -> bool:
     """
-    Persist tokens in the recommended OS credential store.
+    Persist the session record for one backend in the OS credential store.
     """
     secure_backend = _secure_keyring_backend()
     if secure_backend is None:
         return False
-    payload = json.dumps(
-        {"username": username or "", "access": access or "", "refresh": refresh or ""}
-    )
+    payload = _token_record(username=username, access=access, refresh=refresh, backend=backend)
     try:
         secure_backend.set_password(
             KEYCHAIN_SERVICE,

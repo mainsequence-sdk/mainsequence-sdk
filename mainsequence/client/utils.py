@@ -71,6 +71,36 @@ def set_mainsequence_endpoint(endpoint: str) -> None:
 
 
 def _jwt_reauth_hint() -> str:
+    """
+    Say how to repair rejected JWT credentials, according to where they came from.
+
+    A pair that was already in the process environment wins over the saved CLI
+    session. When that pair is stale the saved session is not tried, because the
+    pair may belong to another user or backend; the message names it instead.
+    """
+    try:
+        from mainsequence import bootstrap
+        from mainsequence.cli import config as cli_config
+
+        from_environment = bootstrap.credential_source() == bootstrap.CREDENTIALS_FROM_ENVIRONMENT
+        saved_session = from_environment and cli_config.stored_session_available()
+    except Exception:
+        from_environment, saved_session = False, False
+
+    if from_environment:
+        return (
+            " The rejected credentials were set in this process's environment "
+            "(MAINSEQUENCE_ACCESS_TOKEN / MAINSEQUENCE_REFRESH_TOKEN) before the SDK "
+            "started: a shell export, an IDE run configuration, or a `.env` file that "
+            "your tooling loads. "
+            + (
+                "A saved CLI session exists for this backend and was not used. Remove "
+                "those variables to use it."
+                if saved_session
+                else "No saved CLI session exists for this backend. Remove those "
+                "variables and run `mainsequence login`."
+            )
+        )
     return (
         " Refresh your credentials with `mainsequence logout` and "
         "`mainsequence login`. If this code runs in a separate shell or IDE, "

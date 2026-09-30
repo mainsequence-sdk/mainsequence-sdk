@@ -35,3 +35,5 @@ ownership boundary is recorded in [ADR 0034](0034-extract-metatables-python-pack
 - [ADR-0036: Request-scoped logged user](0036-request-scoped-logged-user.md)
 
 - [0036: Generic operation correlation in owner logs](0036-generic-operation-log-filter.md)
+
+- [ADR 0037: The session lives in the operating system credential store](0037-machine-session-in-the-os-credential-store.md)

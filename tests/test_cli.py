@@ -6800,15 +6800,8 @@ def test_code_repository_set_up_locally(cli_mod, runner, monkeypatch, tmp_path):
 
     env_file = base / "org" / "code-repositories" / "demo-code-repository-uid-123" / ".env"
     assert env_file.exists()
-    env_text = env_file.read_text(encoding="utf-8")
-    assert "MAINSEQUENCE_ACCESS_TOKEN=access-123" in env_text
-    assert "MAINSEQUENCE_REFRESH_TOKEN=refresh-456" in env_text
-    assert "MAINSEQUENCE_ENDPOINT=https://backend.test" in env_text
-    assert _UNSUPPORTED_REPOSITORY_UID_ENV not in env_text
-    assert _UNSUPPORTED_REPOSITORY_NUMERIC_ID_ENV not in env_text
-    assert "DEFAULT_BASE_IMAGE" not in env_text
-    assert "FOO=bar" not in env_text
-    assert "MAINSEQUENCE_TOKEN=legacy-token" not in env_text
+    # The checkout gets the endpoint and no credential, even though a session exists.
+    assert env_file.read_text(encoding="utf-8") == "MAINSEQUENCE_ENDPOINT=https://backend.test\n"
 
 
 def test_code_repository_set_up_locally_runtime_credential(cli_mod, runner, monkeypatch, tmp_path):
@@ -6891,7 +6884,9 @@ def test_code_repository_set_up_locally_runtime_credential(cli_mod, runner, monk
     monkeypatch.setattr(
         cli_mod,
         "_exchange_runtime_credential_for_cli_login",
-        lambda backend_url: "runtime-access",
+        lambda backend_url: (_ for _ in ()).throw(
+            AssertionError("The runtime credential should not be exchanged to write .env")
+        ),
     )
 
     result = runner.invoke(
@@ -6905,20 +6900,10 @@ def test_code_repository_set_up_locally_runtime_credential(cli_mod, runner, monk
     assert deploy_key_requests[0][0][2] == "ssh-ed25519 AAA test"
     assert deploy_key_requests[0][1] == {}
 
+    # A runtime receives its credential in its own environment. None of it, and
+    # no exchanged token, is copied into the checkout.
     env_file = base / "org" / "code-repositories" / "demo-code-repository-uid-123" / ".env"
-    env_text = env_file.read_text(encoding="utf-8")
-    assert "MAINSEQUENCE_AUTH_MODE=runtime_credential" in env_text
-    assert "MAINSEQUENCE_ACCESS_TOKEN=runtime-access" in env_text
-    assert "MAINSEQUENCE_RUNTIME_CREDENTIAL_ID=cred-id" in env_text
-    assert "MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET=cred-secret" in env_text
-    assert "MAINSEQUENCE_ENDPOINT=https://backend.test" in env_text
-    assert _UNSUPPORTED_REPOSITORY_UID_ENV not in env_text
-    assert _UNSUPPORTED_REPOSITORY_NUMERIC_ID_ENV not in env_text
-    assert "MAINSEQUENCE_REFRESH_TOKEN" not in env_text
-    assert "DEFAULT_BASE_IMAGE" not in env_text
-    assert "FOO=bar" not in env_text
-    assert "old-access" not in env_text
-    assert "old-refresh" not in env_text
+    assert env_file.read_text(encoding="utf-8") == "MAINSEQUENCE_ENDPOINT=https://backend.test\n"
 
 
 def test_code_repository_set_up_locally_rejects_uninitialized_code_repository(
@@ -7014,16 +6999,88 @@ def test_code_repository_refresh_token(cli_mod, runner, monkeypatch, tmp_path):
     result = runner.invoke(cli_mod.app, ["code-repository", "refresh-token", "--path", str(target)])
     assert result.exit_code == 0
 
-    env_text = env_path.read_text(encoding="utf-8")
-    assert "FOO=bar" in env_text
-    assert "MAINSEQUENCE_ACCESS_TOKEN=new-access" in env_text
-    assert "MAINSEQUENCE_REFRESH_TOKEN=new-refresh" in env_text
-    assert "MAINSEQUENCE_ENDPOINT=https://backend.test" in env_text
-    assert _UNSUPPORTED_REPOSITORY_UID_ENV not in env_text
-    assert _UNSUPPORTED_REPOSITORY_NUMERIC_ID_ENV not in env_text
-    assert "MAINSEQUENCE_TOKEN" not in env_text
-    assert "old-access" not in env_text
-    assert "old-refresh" not in env_text
+    # The old entries are removed and the session's tokens are not written in
+    # their place: `.env` keeps the developer's own lines and the endpoint.
+    assert env_path.read_text(encoding="utf-8") == (
+        "FOO=bar\n\nMAINSEQUENCE_ENDPOINT=https://backend.test\n"
+    )
+    assert "MAINSEQUENCE_ACCESS_TOKEN, MAINSEQUENCE_REFRESH_TOKEN, MAINSEQUENCE_TOKEN" in (
+        result.output
+    )
+    for secret in ("old-access", "old-refresh", "legacy-token", "new-access", "new-refresh"):
+        assert secret not in result.output
+
+
+def test_code_repository_refresh_token_cleans_before_it_checks_the_session(
+    cli_mod, runner, monkeypatch, tmp_path
+):
+    import typer
+
+    target = tmp_path / "demo-code-repository-uid-123"
+    target.mkdir(parents=True, exist_ok=True)
+    env_path = target / ".env"
+    env_path.write_text(
+        "FOO=bar\nMAINSEQUENCE_ACCESS_TOKEN=old-access\nMAINSEQUENCE_REFRESH_TOKEN=old-refresh\n",
+        encoding="utf-8",
+    )
+
+    def _not_logged_in():
+        raise typer.Exit(1)
+
+    monkeypatch.setattr(cli_mod, "_require_login", _not_logged_in)
+    monkeypatch.setattr(cli_mod.cfg, "backend_url", lambda: "https://backend.test")
+
+    result = runner.invoke(cli_mod.app, ["code-repository", "refresh-token", "--path", str(target)])
+
+    assert result.exit_code == 1
+    assert env_path.read_text(encoding="utf-8") == (
+        "FOO=bar\n\nMAINSEQUENCE_ENDPOINT=https://backend.test\n"
+    )
+
+
+def test_code_repository_refresh_token_without_env_file_creates_none(
+    cli_mod, runner, monkeypatch, tmp_path
+):
+    target = tmp_path / "demo-code-repository-uid-123"
+    target.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(cli_mod.cfg, "backend_url", lambda: "https://backend.test")
+
+    result = runner.invoke(cli_mod.app, ["code-repository", "refresh-token", "--path", str(target)])
+
+    assert result.exit_code == 0
+    assert not (target / ".env").exists()
+    assert "Signed in as u" in result.output
+
+
+def test_code_repository_env_render_keeps_a_developer_auth_mode(cli_mod):
+    rendered = cli_mod._render_code_repository_runtime_env_text(
+        "MAINSEQUENCE_AUTH_MODE=jwt\nTAU_LOCAL_MODE=true\nMAINSEQUENCE_REFRESH_TOKEN=r\n",
+        backend_url="https://backend.test",
+    )
+
+    assert rendered == (
+        "MAINSEQUENCE_AUTH_MODE=jwt\nTAU_LOCAL_MODE=true\n\n"
+        "MAINSEQUENCE_ENDPOINT=https://backend.test\n"
+    )
+
+
+def test_code_repository_env_render_removes_hand_written_credential_forms(cli_mod):
+    rendered = cli_mod._render_code_repository_runtime_env_text(
+        "export MAINSEQUENCE_ACCESS_TOKEN=a\n"
+        "  MAINSEQUENCE_REFRESH_TOKEN = r\n"
+        "export MAINSEQUENCE_AUTH_MODE='runtime_credential'  # written by an old setup\n"
+        "export MAINSEQUENCE_ENDPOINT=https://old-backend.test\n"
+        "# MAINSEQUENCE_ENDPOINT=https://commented.test\n"
+        "export KEEP_ME=1\n",
+        backend_url="https://backend.test",
+    )
+
+    assert rendered == (
+        "# MAINSEQUENCE_ENDPOINT=https://commented.test\n"
+        "export KEEP_ME=1\n\n"
+        "MAINSEQUENCE_ENDPOINT=https://backend.test\n"
+    )
 
 
 def test_code_repository_refresh_token_runtime_credential(cli_mod, runner, monkeypatch, tmp_path):
@@ -7034,9 +7091,10 @@ def test_code_repository_refresh_token_runtime_credential(cli_mod, runner, monke
         "FOO=bar\n"
         f"{_UNSUPPORTED_REPOSITORY_UID_ENV}=code-repository-uid-123\n"
         f"{_UNSUPPORTED_REPOSITORY_NUMERIC_ID_ENV}=123\n"
-        "MAINSEQUENCE_AUTH_MODE=jwt\n"
+        "MAINSEQUENCE_AUTH_MODE=runtime_credential\n"
         "MAINSEQUENCE_ACCESS_TOKEN=old-access\n"
-        "MAINSEQUENCE_REFRESH_TOKEN=old-refresh\n"
+        "MAINSEQUENCE_RUNTIME_CREDENTIAL_ID=old-cred-id\n"
+        "MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET=old-cred-secret\n"
         "MAINSEQUENCE_TOKEN=legacy-token\n",
         encoding="utf-8",
     )
@@ -7054,25 +7112,21 @@ def test_code_repository_refresh_token_runtime_credential(cli_mod, runner, monke
     monkeypatch.setattr(
         cli_mod,
         "_exchange_runtime_credential_for_cli_login",
-        lambda backend_url: "runtime-new-access",
+        lambda backend_url: (_ for _ in ()).throw(
+            AssertionError("The runtime credential should not be exchanged to write .env")
+        ),
     )
 
     result = runner.invoke(cli_mod.app, ["code-repository", "refresh-token", "--path", str(target)])
     assert result.exit_code == 0
 
-    env_text = env_path.read_text(encoding="utf-8")
-    assert "FOO=bar" in env_text
-    assert "MAINSEQUENCE_AUTH_MODE=runtime_credential" in env_text
-    assert "MAINSEQUENCE_ACCESS_TOKEN=runtime-new-access" in env_text
-    assert "MAINSEQUENCE_RUNTIME_CREDENTIAL_ID=cred-id" in env_text
-    assert "MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET=cred-secret" in env_text
-    assert "MAINSEQUENCE_ENDPOINT=https://backend.test" in env_text
-    assert _UNSUPPORTED_REPOSITORY_UID_ENV not in env_text
-    assert _UNSUPPORTED_REPOSITORY_NUMERIC_ID_ENV not in env_text
-    assert "MAINSEQUENCE_TOKEN" not in env_text
-    assert "MAINSEQUENCE_REFRESH_TOKEN" not in env_text
-    assert "old-access" not in env_text
-    assert "old-refresh" not in env_text
+    # The runtime credential block an earlier version wrote is removed with its
+    # mode line, and the injected credential is not copied back in.
+    assert env_path.read_text(encoding="utf-8") == (
+        "FOO=bar\n\nMAINSEQUENCE_ENDPOINT=https://backend.test\n"
+    )
+    for secret in ("old-access", "old-cred-secret", "cred-secret", "legacy-token"):
+        assert secret not in result.output
 
 
 def test_code_repository_refresh_token_defaults_to_cwd(cli_mod, runner, monkeypatch, tmp_path):
@@ -7099,11 +7153,9 @@ def test_code_repository_refresh_token_defaults_to_cwd(cli_mod, runner, monkeypa
     result = runner.invoke(cli_mod.app, ["code-repository", "refresh-token"])
     assert result.exit_code == 0
 
-    env_text = env_path.read_text(encoding="utf-8")
-    assert "MAINSEQUENCE_ACCESS_TOKEN=new-access" in env_text
-    assert "MAINSEQUENCE_REFRESH_TOKEN=new-refresh" in env_text
-    assert "MAINSEQUENCE_ENDPOINT=https://backend.test" in env_text
-    assert _UNSUPPORTED_REPOSITORY_UID_ENV not in env_text
+    assert env_path.read_text(encoding="utf-8") == (
+        "FOO=bar\n\nMAINSEQUENCE_ENDPOINT=https://backend.test\n"
+    )
 
 
 def test_code_repository_delete_local(cli_mod, runner, monkeypatch, tmp_path):

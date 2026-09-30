@@ -182,14 +182,20 @@ Do not start domain work with a vague target.
 
 ### 4. Verify code repository context before making platform claims
 
-Use the CLI to confirm the active CodeRepository and refresh credentials before live checks when needed.
+Use the CLI to confirm the active CodeRepository and the saved session before live checks when needed.
 
 When the result will be consumed programmatically or used as machine-readable evidence, prefer the CLI `--json` flag.
 
 Typical bootstrap checks:
 
 - `mainsequence code-repository current --debug`
+- `mainsequence auth status --check`
 - `mainsequence code-repository refresh-token --path .`
+
+The session lives in the operating system credential store, not in `.env`.
+`auth status` reports it without printing a token value. `refresh-token`
+removes credential entries an earlier version left in `.env` and then confirms
+the session.
 
 Do not proceed with a live branch-owned check unless `code-repository current` reports
 the current Git branch and a resolved CodeRepositoryBranch UID.

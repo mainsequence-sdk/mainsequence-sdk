@@ -63,6 +63,65 @@ def test_unavailable_login_store_does_not_block_unauthenticated_source_import(
     assert "MAINSEQUENCE_ACCESS_TOKEN" not in os.environ
 
 
+@pytest.fixture
+def credential_source(bootstrap, monkeypatch):
+    from mainsequence import bootstrap as bootstrap_module
+
+    monkeypatch.setattr(bootstrap_module, "_credential_source", None)
+    for key in ("MAIN_SEQUENCE_USER_TOKEN", "MAIN_SEQUENCE_REFRESH_TOKEN"):
+        monkeypatch.delenv(key, raising=False)
+    return bootstrap_module.credential_source
+
+
+def test_bootstrap_records_credentials_taken_from_the_saved_session(credential_source):
+    prime_runtime_env()
+    assert credential_source() == "store"
+
+
+def test_bootstrap_records_credentials_already_in_the_environment(credential_source, monkeypatch):
+    monkeypatch.setenv("MAINSEQUENCE_REFRESH_TOKEN", "explicit")
+    prime_runtime_env()
+    assert credential_source() == "environment"
+
+
+def test_bootstrap_records_that_no_credentials_were_found(credential_source, monkeypatch):
+    monkeypatch.setattr(config, "get_tokens", lambda: {})
+    prime_runtime_env()
+    assert credential_source() is None
+
+
+def test_rejected_environment_pair_is_named_instead_of_the_saved_session(monkeypatch):
+    from mainsequence import bootstrap as bootstrap_module
+    from mainsequence.client import utils
+
+    monkeypatch.setattr(bootstrap_module, "_credential_source", "environment")
+    monkeypatch.setattr(config, "stored_session_available", lambda backend=None: True)
+    hint = utils._jwt_reauth_hint()
+    assert "MAINSEQUENCE_ACCESS_TOKEN / MAINSEQUENCE_REFRESH_TOKEN" in hint
+    assert "A saved CLI session exists for this backend and was not used." in hint
+
+    monkeypatch.setattr(config, "stored_session_available", lambda backend=None: False)
+    hint = utils._jwt_reauth_hint()
+    assert "No saved CLI session exists for this backend." in hint
+    assert "mainsequence login" in hint
+
+
+def test_rejected_saved_session_keeps_the_login_hint_and_does_not_read_the_store(monkeypatch):
+    from mainsequence import bootstrap as bootstrap_module
+    from mainsequence.client import utils
+
+    store_reads = []
+    monkeypatch.setattr(bootstrap_module, "_credential_source", "store")
+    monkeypatch.setattr(
+        config, "stored_session_available", lambda backend=None: store_reads.append(1) or True
+    )
+
+    hint = utils._jwt_reauth_hint()
+
+    assert "`mainsequence logout` and `mainsequence login`" in hint
+    assert store_reads == []
+
+
 def test_package_import_bootstraps_before_client_endpoint_and_provider_initialization(tmp_path):
     script = """
 import sys

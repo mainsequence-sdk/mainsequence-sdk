@@ -27,13 +27,64 @@ mainsequence logout
 Backend/base-folder overrides passed to `login` are terminal-session only. They do not rewrite the persisted CLI settings for other terminals.
 When no backend is provided, `mainsequence login` targets the currently configured backend shown by `mainsequence doctor`. An explicit `--backend` takes precedence; the standard production backend is used only when no other backend is configured.
 
-By default, `mainsequence login` persists auth tokens in the operating system
-credential store. If no secure credential backend is available, the CLI keeps
-the session only in the process environment and reports that persistence was
-unavailable; it does not write new plaintext token files.
+By default, `mainsequence login` persists the session in the operating system
+credential store, one record per backend: the login Keychain on macOS, Secret
+Service on Linux, and Credential Manager on Windows. A session saved from one
+CodeRepository is read from every other one on the machine. If no credential
+store is available, the CLI keeps the session only in the process environment
+and reports that persistence was unavailable; it does not write new plaintext
+token files.
+
+A CodeRepository `.env` holds the backend endpoint and no credential. See
+[ADR 0037](../adr/0037-machine-session-in-the-os-credential-store.md).
 
 You only need `--export` if you explicitly want shell-managed environment variables.
 `--export` cannot be combined with `--mcp`.
+
+### Handing the session to another local tool
+
+```bash
+mainsequence auth token --json
+mainsequence auth status
+mainsequence auth status --check --json
+```
+
+`mainsequence auth token` prints a short-lived access token for the session this
+process would use: credentials set in the environment, otherwise the saved
+session. It renews the token first when it would expire within a minute. It
+never prints the refresh token, asks nothing and opens no browser.
+
+With `--json` the output is one object:
+
+| Field | Meaning |
+| --- | --- |
+| `endpoint` | The backend the token is for |
+| `access_token` | The token to send as `Authorization: Bearer ...` |
+| `token_type` | Always `Bearer` |
+| `expires_at` | Expiry in epoch seconds, or `null` when the token carries none |
+
+Without `--json` the access token alone is printed. A caller keeps the token in
+memory until shortly before `expires_at` and runs the command again after that,
+or after a `401`.
+
+| Exit code | Meaning |
+| --- | --- |
+| `0` | A token was printed |
+| `1` | There is no session, the credential store could not be read, or the backend did not renew the session. Run `mainsequence login` |
+| `3` | This machine has no credential store and the environment carries no credentials |
+
+`mainsequence auth status` reports whether a usable session exists, for which
+backend and user, where it is stored, whether its credentials came from the
+environment or from the saved session, and when it expires. It prints no token
+value. Without `--check` the answer comes from the tokens' own expiry and needs
+no network; `--check` also asks the backend. It exits `0` when a usable session
+exists and `1` when it does not.
+
+A credential store that cannot be read looks like a machine that is not logged
+in. `auth status` therefore reports the reason in `store_error` (`null` when the
+store was read), and `mainsequence doctor` shows it as well. On macOS the usual
+reason is a locked Keychain, or a Keychain entry that belongs to another
+program, which `mainsequence login` replaces.
 
 `mainsequence login --mcp` is for a coding agent that already has an
 authenticated Main Sequence MCP connection. The CLI creates PKCE state and a
@@ -236,6 +287,13 @@ mainsequence code-repository build-docker-env --path .
 mainsequence code-repository sdk-status --path .
 mainsequence code-repository update-sdk --path .
 ```
+
+`set-up-locally` writes `.env` with the backend endpoint and no credential.
+`refresh-token` keeps its name from the time it rewrote tokens in `.env`: it now
+removes any access token, refresh token or runtime credential left there, keeps
+every other line, sets the endpoint, and confirms with the backend that the
+saved session works. Run `mainsequence login` when it reports that you are not
+logged in.
 
 During `set-up-locally`, the CLI registers a new or inaccessible deploy key through
 `/api/v1/code-repositories/{code_repository_uid}/add-deploy-key/` and verifies repository access with the forced

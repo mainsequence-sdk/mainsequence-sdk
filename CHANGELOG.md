@@ -13,6 +13,19 @@ boundary and breaking changes.
 
 ### Added
 
+- `mainsequence auth token` hands a short-lived access token to a local tool
+  that does not read the credential store. It renews the token when it is about
+  to expire, never prints the refresh token, and with `--json` prints
+  `endpoint`, `access_token`, `token_type` and `expires_at`. Exit code `1` means
+  no usable session and `3` means no credential store.
+- `mainsequence auth status` reports the session without any token value: the
+  backend, the user, where the session is stored, whether its credentials came
+  from the environment or from the saved session, when it expires, and why the
+  credential store could not be read when it could not. `--check` also asks the
+  backend.
+- ADR 0037: the session is one record per backend in the operating system
+  credential store, and a CodeRepository `.env` holds no credential.
+
 - Restored the SDK-owned MetaTable migration workflow skill with the current
   `metatables` provider, offline revision, and approved API execution boundary.
   MetaTable implementation and domain guidance remain in the independent package.
@@ -57,6 +70,33 @@ boundary and breaking changes.
   on Windows, Linux, and macOS. Legacy `auth.json` credentials are migrated only
   when a recommended secure backend is available; plaintext file persistence is
   no longer used as a fallback.
+- The CLI no longer writes credentials into a CodeRepository `.env`.
+  `mainsequence code-repository set-up-locally` writes the backend endpoint
+  only. `mainsequence code-repository refresh-token` keeps its name and now
+  removes an access token, a refresh token or a runtime credential left in
+  `.env`, reports the removed entries by name, and confirms that the saved
+  session works. The SDK already read the saved session on import, so a login
+  made from one CodeRepository serves every other one on the machine. A tool
+  that read the token pair from `.env` takes it from its environment or asks
+  `mainsequence auth token`. See ADR 0037.
+- The saved session is reached the same way from every interpreter on the
+  machine. On macOS the CLI uses Apple's `security` program under the entry
+  name released versions used, so their saved session is kept and shared; the
+  record now travels on standard input instead of a command line, without a
+  login shell, and a call that waits for the user is cut off after 10 seconds.
+  On Linux the Secret Service backend is named explicitly and items that other
+  programs stored for the same entry are removed on a write. Windows is
+  unchanged. The record gains a version and the backend it belongs to, a record
+  for another backend is refused, and a record with a refresh token alone is a
+  session.
+- A JWT pair rejected by the backend is reported with its source. When the pair
+  was set in the process environment, the error says so and says whether a
+  saved session exists, instead of advising a logout and login that would not
+  change that pair.
+- `mainsequence doctor` shows whether the session is valid, whether the
+  credentials came from the environment or from the saved session, why the
+  credential store could not be read, and the credential entries found in the
+  current checkout's `.env`.
 - Runtime credential exchange no longer follows redirects.
 - `CodeRepositoryBranch.list_github_issues()` now treats its receiving branch
   as the target resource, matching issue creation. It no longer requires that

@@ -20,6 +20,7 @@ import json
 import os
 import re
 import shlex
+import time
 from typing import Any
 from urllib.parse import urlencode
 
@@ -41,7 +42,11 @@ from .config import (
     get_tokens,
     save_runtime_access_cache,
     save_tokens,
+    token_expiry,
 )
+
+# An access token handed to another program must outlive the request it is for.
+ACCESS_TOKEN_MIN_VALIDITY_SECONDS = 60
 
 AUTH_PATHS = {
     "authorize": "/auth/cli/authorize/",
@@ -409,6 +414,28 @@ def refresh_access() -> str:
     tokens = get_tokens()
     save_tokens(tokens.get("username") or "", access, new_refresh)
     return access
+
+
+def current_access_token(
+    *, min_validity_seconds: int = ACCESS_TOKEN_MIN_VALIDITY_SECONDS
+) -> tuple[str, int | None]:
+    """
+    Return an access token for the current session, and its expiry in epoch seconds.
+
+    The session's token is returned while it stays valid for `min_validity_seconds`;
+    otherwise it is renewed first, through the refresh token or, in runtime
+    credential mode, through a new exchange. The expiry is None when the token
+    carries none.
+
+    Raises:
+        NotLoggedIn: when there is no session or it cannot be renewed.
+    """
+    access = (_access_token() or "").strip()
+    expiry = token_expiry(access)
+    if not access or (expiry is not None and expiry <= time.time() + min_validity_seconds):
+        access = refresh_access()
+        expiry = token_expiry(access)
+    return access, expiry
 
 
 def authed(method: str, api_path: str, body: dict | None = None) -> requests.Response:
