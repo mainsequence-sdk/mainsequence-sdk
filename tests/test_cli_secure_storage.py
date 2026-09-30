@@ -407,14 +407,23 @@ def test_secret_service_delete_removes_every_match_and_reports_a_missing_entry()
 
 
 class FakeSecurity:
-    """Stands in for `/usr/bin/security`: one generic-password table and a call log."""
+    """Stands in for `/usr/bin/security`: generic passwords with a comment, and a call log."""
 
     def __init__(self) -> None:
         self.entries: dict[tuple[str, str], str] = {}
+        self.comments: dict[tuple[str, str], str] = {}
         self.calls: list[tuple[list[str], str | None]] = []
         self.fail_with: int | None = None
         self.hang = False
         self.add_exit_codes: list[int] = []
+
+    def put(self, service: str, account: str, secret: str, *, ours: bool = True) -> None:
+        """An entry this code wrote carries its mark; any other program's entry does not."""
+        self.entries[(service, account)] = secret
+        if ours:
+            self.comments[(service, account)] = config._SECURITY_ENTRY_MARK
+        else:
+            self.comments.pop((service, account), None)
 
     def __call__(self, argv, *, input=None, stdin=None, capture_output, text, check, timeout):
         assert argv[0] == config._SECURITY_PROGRAM
@@ -431,17 +440,31 @@ class FakeSecurity:
             assert words[0] == "add-generic-password"
             key = (words[words.index("-s") + 1], words[words.index("-a") + 1])
             self.entries[key] = bytes.fromhex(words[words.index("-X") + 1]).decode("utf-8")
+            if "-j" in words:
+                self.comments[key] = words[words.index("-j") + 1]
             return config.subprocess.CompletedProcess(argv, 0, "", "")
         key = (argv[argv.index("-s") + 1], argv[argv.index("-a") + 1])
         if key not in self.entries:
             return config.subprocess.CompletedProcess(argv, 44, "", "not found")
         if argv[1] == "delete-generic-password":
             del self.entries[key]
+            self.comments.pop(key, None)
             return config.subprocess.CompletedProcess(argv, 0, "", "")
-        return config.subprocess.CompletedProcess(argv, 0, self.entries[key] + "\n", "")
+        if "-w" in argv:
+            return config.subprocess.CompletedProcess(argv, 0, self.entries[key] + "\n", "")
+        comment = f'"{self.comments[key]}"' if key in self.comments else "<NULL>"
+        attributes = (
+            'keychain: "/Users/someone/Library/Keychains/login.keychain-db"\n'
+            'class: "genp"\nattributes:\n'
+            f'    "acct"<blob>="{key[1]}"\n    "icmt"<blob>={comment}\n    "svce"<blob>="{key[0]}"\n'
+        )
+        return config.subprocess.CompletedProcess(argv, 0, attributes, "")
 
     def commands(self) -> list[str]:
-        return [arguments[0] for arguments, _stdin in self.calls]
+        """Each call by name. A read of the secret is told apart from a look at the attributes."""
+        return [
+            "read-secret" if "-w" in arguments else arguments[0] for arguments, _stdin in self.calls
+        ]
 
 
 def _fake_security(monkeypatch) -> FakeSecurity:
@@ -461,6 +484,7 @@ def test_macos_secret_travels_on_standard_input_not_on_a_command_line(monkeypatc
     config._MacOSKeychain().set_password("MainSequenceCLI.auth", "default.0123", record)
 
     assert fake.entries == {("MainSequenceCLI.auth", "default.0123"): record}
+    assert fake.comments == {("MainSequenceCLI.auth", "default.0123"): config._SECURITY_ENTRY_MARK}
     for arguments, _stdin in fake.calls:
         assert "refresh-token-value" not in " ".join(arguments)
         assert record.encode().hex() not in " ".join(arguments)
@@ -468,50 +492,71 @@ def test_macos_secret_travels_on_standard_input_not_on_a_command_line(monkeypatc
     assert record.encode().hex() in fake.calls[-1][1]
 
 
+def test_macos_never_asks_for_the_secret_of_an_entry_it_did_not_write(monkeypatch):
+    fake = _fake_security(monkeypatch)
+    store = config._MacOSKeychain()
+    # What a released version, or the keyring library, leaves: an entry without the mark.
+    fake.put("svc", "acct", "written by another program", ours=False)
+
+    for _ in range(3):
+        try:
+            store.get_password("svc", "acct")
+        except keyring_errors.KeyringError as exc:
+            assert "another version of the CLI" in str(exc)
+        else:
+            raise AssertionError("an entry without the mark must not be read")
+
+    # The attributes were looked at once and the secret was never requested: asking
+    # `security` for it would show a consent dialog in every process.
+    assert fake.commands() == ["find-generic-password"]
+    assert "read-secret" not in fake.commands()
+
+
 def test_macos_write_replaces_an_entry_left_by_another_program(monkeypatch):
     fake = _fake_security(monkeypatch)
-    fake.entries[("svc", "acct")] = "left by another program"
+    fake.put("svc", "acct", "left by another program", ours=False)
 
     config._MacOSKeychain().set_password("svc", "acct", "new")
 
     # Removed first, then added: updating in place would wait for the user's consent.
     assert fake.commands() == ["delete-generic-password", "-i"]
     assert fake.entries == {("svc", "acct"): "new"}
+    assert config._MacOSKeychain().get_password("svc", "acct") == "new"
 
 
 def test_macos_write_updates_in_place_an_entry_this_process_read(monkeypatch):
     fake = _fake_security(monkeypatch)
-    fake.entries[("svc", "acct")] = "read before"
+    fake.put("svc", "acct", "read before")
 
     assert config._MacOSKeychain().get_password("svc", "acct") == "read before"
     config._MacOSKeychain().set_password("svc", "acct", "new")
     config._MacOSKeychain().set_password("svc", "acct", "newer")
 
     # Never removed: another process reading at that moment would find no session.
-    assert fake.commands() == ["find-generic-password", "-i", "-i"]
+    assert fake.commands() == ["find-generic-password", "read-secret", "-i", "-i"]
     assert fake.entries == {("svc", "acct"): "newer"}
 
 
 def test_macos_write_removes_and_adds_when_the_update_in_place_fails(monkeypatch):
     fake = _fake_security(monkeypatch)
-    fake.entries[("svc", "acct")] = "read before"
+    fake.put("svc", "acct", "read before")
     store = config._MacOSKeychain()
     assert store.get_password("svc", "acct") == "read before"
 
     fake.add_exit_codes = [36]
     store.set_password("svc", "acct", "new")
 
-    assert fake.commands() == ["find-generic-password", "-i", "delete-generic-password", "-i"]
+    assert fake.commands()[2:] == ["-i", "delete-generic-password", "-i"]
     assert fake.entries == {("svc", "acct"): "new"}
 
 
 def test_macos_write_after_a_delete_does_not_update_in_place(monkeypatch):
     fake = _fake_security(monkeypatch)
-    fake.entries[("svc", "acct")] = "read before"
+    fake.put("svc", "acct", "read before")
     store = config._MacOSKeychain()
     assert store.get_password("svc", "acct") == "read before"
     store.delete_password("svc", "acct")
-    fake.entries[("svc", "acct")] = "left by another program since"
+    fake.put("svc", "acct", "left by another program since", ours=False)
 
     store.set_password("svc", "acct", "new")
 
@@ -525,11 +570,11 @@ def test_macos_read_handles_a_missing_entry_and_hexadecimal_output(monkeypatch):
 
     assert store.get_password("svc", "acct") is None
 
-    fake.entries[("svc", "acct")] = '{"username": "plain"}'
+    fake.put("svc", "acct", '{"username": "plain"}')
     assert store.get_password("svc", "acct") == '{"username": "plain"}'
 
     # `security -w` prints a secret that is not printable ASCII as hexadecimal.
-    fake.entries[("svc", "acct")] = '{"username": "josé"}'.encode().hex()
+    fake.put("svc", "acct", '{"username": "josé"}'.encode().hex())
     assert store.get_password("svc", "acct") == '{"username": "josé"}'
 
 
@@ -605,7 +650,7 @@ def test_macos_entry_that_could_not_be_read_is_not_asked_for_again_at_once(monke
 
     # A long-lived process asks again once the wait is over, and a readable entry is then used.
     fake.hang = False
-    fake.entries[("svc", "acct")] = "readable now"
+    fake.put("svc", "acct", "readable now")
     message, retry_at = config._MacOSKeychain._unreadable[("svc", "acct")]
     assert retry_at > config.time.monotonic()
     config._MacOSKeychain._unreadable[("svc", "acct")] = (message, config.time.monotonic() - 1)
@@ -616,13 +661,11 @@ def test_macos_entry_that_could_not_be_read_is_not_asked_for_again_at_once(monke
 def test_macos_write_replaces_an_entry_that_could_not_be_read(monkeypatch):
     fake = _fake_security(monkeypatch)
     store = config._MacOSKeychain()
-    fake.entries[("svc", "acct")] = "owned by another program"
-    fake.fail_with = 128
+    fake.put("svc", "acct", "owned by another program", ours=False)
     try:
         store.get_password("svc", "acct")
     except keyring_errors.KeyringError:
         pass
-    fake.fail_with = None
 
     # A login: the entry is removed without asking for it, added, and readable at once.
     store.set_password("svc", "acct", "new")
@@ -652,8 +695,7 @@ def test_unreadable_store_is_not_overwritten_from_the_old_plain_file(monkeypatch
     _isolate_auth(monkeypatch, tmp_path, config._MacOSKeychain())
     fake = _fake_security(monkeypatch)
     entry = (config.KEYCHAIN_SERVICE, config._keychain_account_for_backend())
-    fake.entries[entry] = "owned by another program"
-    fake.fail_with = 128
+    fake.put(*entry, "owned by another program", ours=False)
     plain_file = {
         "version": 2,
         "by_backend": {
@@ -693,32 +735,56 @@ def test_macos_round_trip_through_the_store_functions(monkeypatch, tmp_path):
     assert fake.entries == {}
 
 
-def test_macos_reads_the_record_a_released_version_saved(monkeypatch, tmp_path):
+def test_macos_session_of_another_version_needs_one_login(monkeypatch, tmp_path):
     _isolate_auth(monkeypatch, tmp_path, config._MacOSKeychain())
     fake = _fake_security(monkeypatch)
+    entry = (config.KEYCHAIN_SERVICE, config._keychain_account_for_backend())
     released_record = json.dumps(
         {"username": "user@example.com", "access": "released-access", "refresh": "released-r"}
     )
+    fake.put(*entry, released_record, ours=False)
 
-    # Released versions reached the same entry through `security`, without the
-    # version and backend fields, first under one account and later per backend.
-    for account in (config.KEYCHAIN_ACCOUNT, config._keychain_account_for_backend()):
-        fake.entries = {(config.KEYCHAIN_SERVICE, account): released_record}
-        assert config.get_tokens() == {
-            "username": "user@example.com",
-            "access": "released-access",
-            "refresh": "released-r",
-        }
+    # Not read, and said so: it looks like a machine that is not logged in otherwise.
+    assert config.get_tokens() == {"username": "", "access": "", "refresh": ""}
+    assert "another version of the CLI" in config.store_read_error()
+    assert config.stored_session_available() is False
+    assert "read-secret" not in fake.commands()
 
-    # The record this version saves keeps the three fields those versions read.
+    # The login replaces it, and the entry is then this code's own.
     assert config.save_tokens("user@example.com", "new-access", "new-refresh") is True
-    saved = json.loads(
-        fake.entries[(config.KEYCHAIN_SERVICE, config._keychain_account_for_backend())]
+    assert fake.comments == {entry: config._SECURITY_ENTRY_MARK}
+    assert config.store_read_error() is None
+    monkeypatch.delenv(config.ENV_ACCESS)
+    monkeypatch.delenv(config.ENV_REFRESH)
+    monkeypatch.delenv(config.ENV_USERNAME)
+    assert config.get_tokens()["refresh"] == "new-refresh"
+    assert config.clear_tokens() is True
+
+
+def test_macos_record_updated_by_a_released_version_is_still_read(monkeypatch, tmp_path):
+    _isolate_auth(monkeypatch, tmp_path, config._MacOSKeychain())
+    fake = _fake_security(monkeypatch)
+    entry = (config.KEYCHAIN_SERVICE, config._keychain_account_for_backend())
+    assert config.save_tokens("user@example.com", "access", "refresh") is True
+    for name in (config.ENV_ACCESS, config.ENV_REFRESH, config.ENV_USERNAME):
+        monkeypatch.delenv(name)
+
+    # A released version updates the entry in place: its own record shape, the mark kept.
+    fake.entries[entry] = json.dumps(
+        {"username": "user@example.com", "access": "released-access", "refresh": "released-r"}
     )
-    assert {name: saved[name] for name in ("username", "access", "refresh")} == {
+
+    assert config.get_tokens() == {
         "username": "user@example.com",
-        "access": "new-access",
-        "refresh": "new-refresh",
+        "access": "released-access",
+        "refresh": "released-r",
+    }
+    # The record this version saves keeps the three fields those versions read.
+    saved = json.loads(config._token_record(username="u", access="a", refresh="r"))
+    assert {name: saved[name] for name in ("username", "access", "refresh")} == {
+        "username": "u",
+        "access": "a",
+        "refresh": "r",
     }
     assert config.clear_tokens() is True
 

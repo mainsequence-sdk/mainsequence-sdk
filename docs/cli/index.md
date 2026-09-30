@@ -108,8 +108,8 @@ exists and `1` when it does not.
 A credential store that cannot be read looks like a machine that is not logged
 in. `auth status` therefore reports the reason in `store_error` (`null` when the
 store was read), and `mainsequence doctor` shows it as well. On macOS the usual
-reason is a locked Keychain, or a Keychain entry that belongs to another
-program, which `mainsequence login` replaces.
+reason is a session that another version of the CLI saved, which is not read
+and which `mainsequence login` replaces, or a locked Keychain.
 
 `mainsequence login --mcp` is for a coding agent that already has an
 authenticated Main Sequence MCP connection. The CLI creates PKCE state and a

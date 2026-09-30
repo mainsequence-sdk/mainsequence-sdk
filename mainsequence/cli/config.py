@@ -810,6 +810,11 @@ _SECURITY_RETRY_AFTER_SECONDS = 60
 # runs as another command. Stay below the buffer instead of storing half a record.
 _SECURITY_STDIN_LINE_LIMIT = 4000
 _SECURITY_SAFE_NAME = re.compile(r"[A-Za-z0-9._@-]+")
+# The comment attribute of every entry this code writes. Attributes are readable
+# without consent, the secret is not: the mark tells, before the secret is asked
+# for, that `security` wrote the entry and may read it without a dialog.
+_SECURITY_ENTRY_MARK = "MainSequenceCLI.session.v1"
+_SECURITY_COMMENT_ATTRIBUTE = re.compile(r'^\s*"icmt"<blob>="([^"]*)"\s*$', re.MULTILINE)
 _MAX_DUPLICATE_ENTRIES = 16
 
 
@@ -824,15 +829,21 @@ class _MacOSKeychain:
     made from one CodeRepository is readable from another without a dialog. The
     cost is that any program of the same user can read the entry the same way.
 
+    Asking `security` for the secret of an entry that another program wrote shows
+    that dialog too, in every process that starts. The secret is therefore asked
+    for only when the entry carries this code's mark in its comment attribute,
+    which is read without consent. Any other entry is left alone until a login
+    replaces it.
+
     The secret reaches `security` on standard input, never on a command line.
     """
 
     name = "macOS Keychain"
 
     # What this process learned about entries, by (service, account). An entry
-    # `security` read is one it may update in place. An entry whose read waited
-    # for the user or was refused is not asked for again for a while: one command
-    # would otherwise wait once per read.
+    # `security` read is one it may update in place. An entry that could not be
+    # read is not asked for again for a while: one command would otherwise repeat
+    # the same calls, or the same wait, once per read.
     _readable: set[tuple[str, str]] = set()
     _unreadable: dict[tuple[str, str], tuple[str, float]] = {}
 
@@ -871,6 +882,16 @@ class _MacOSKeychain:
                 raise keyring_errors.KeyringError(remembered[0])
             del self._unreadable[key]
         try:
+            mark = self._entry_mark(service, account)
+            if mark is None:
+                self._readable.discard(key)
+                return None
+            if mark != _SECURITY_ENTRY_MARK:
+                raise keyring_errors.KeyringError(
+                    "The Keychain entry was written by another version of the CLI. "
+                    "Asking for it would show a consent dialog in every process, "
+                    "so it is not read."
+                )
             done = self._run(["find-generic-password", "-s", service, "-a", account, "-w"])
             if done.returncode not in (0, _SECURITY_ITEM_NOT_FOUND):
                 raise keyring_errors.KeyringError(
@@ -886,12 +907,29 @@ class _MacOSKeychain:
         self._readable.add(key)
         return _decode_security_secret(done.stdout)
 
+    def _entry_mark(self, service: str, account: str) -> str | None:
+        """
+        Return the comment attribute of an entry, or None when there is no entry.
+
+        Only attributes are asked for, never the secret, so this shows no dialog
+        whoever wrote the entry.
+        """
+        done = self._run(["find-generic-password", "-s", service, "-a", account])
+        if done.returncode == _SECURITY_ITEM_NOT_FOUND:
+            return None
+        if done.returncode != 0:
+            raise keyring_errors.KeyringError(
+                f"The Keychain entry could not be inspected (security exit {done.returncode})."
+            )
+        comment = _SECURITY_COMMENT_ATTRIBUTE.search(done.stdout)
+        return comment.group(1) if comment else ""
+
     def set_password(self, service: str, account: str, password: str) -> None:
         if not (_SECURITY_SAFE_NAME.fullmatch(service) and _SECURITY_SAFE_NAME.fullmatch(account)):
             raise keyring_errors.PasswordSetError("Unsupported Keychain entry name.")
         line = (
             f"add-generic-password -U -s {service} -a {account} "
-            f"-X {password.encode('utf-8').hex()}\n"
+            f"-j {_SECURITY_ENTRY_MARK} -X {password.encode('utf-8').hex()}\n"
         )
         if len(line) > _SECURITY_STDIN_LINE_LIMIT:
             raise keyring_errors.PasswordSetError(
@@ -909,7 +947,7 @@ class _MacOSKeychain:
             self._readable.discard(key)
         # Any other entry is removed first. Updating one that another program
         # created would make `security` wait for consent; removing it does not,
-        # and the new entry then belongs to `security`.
+        # and the new entry then belongs to `security` and carries the mark.
         self._delete(service, account)
         done = self._run(["-i"], stdin=line)
         # Never report this call's output: on a parse error it echoes the line.

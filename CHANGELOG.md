@@ -83,9 +83,12 @@ boundary and breaking changes.
   `mainsequence auth token`. See ADR 0037.
 - The saved session is reached the same way from every interpreter on the
   machine. On macOS the CLI uses Apple's `security` program under the entry
-  name released versions used, so their saved session is kept and shared; the
-  record now travels on standard input instead of a command line, without a
-  login shell, and a call that waits for the user is cut off after 10 seconds.
+  name released versions used. It marks the entries it writes and asks for the
+  secret of a marked entry only, so no consent dialog appears for an entry
+  another program wrote; a session saved by another version needs one login.
+  The record now travels on standard input instead of a command line, without
+  a login shell, and a call that waits for the user is cut off after 10
+  seconds.
   On Linux the Secret Service backend is named explicitly and items that other
   programs stored for the same entry are removed on a write. Windows is
   unchanged. The record gains a version and the backend it belongs to, a record

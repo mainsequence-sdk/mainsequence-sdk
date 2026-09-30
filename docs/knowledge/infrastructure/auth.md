@@ -79,15 +79,18 @@ interpreter, so a login made from one CodeRepository is read from another
 without a dialog. The cost is that any program of the same user can read the
 entry the same way.
 
-Released versions reached the same Keychain entry through `security` as well.
-A session saved by one of them is used without a new login, and a released
-version installed in another CodeRepository shares the session.
+The CLI marks every Keychain entry it writes, and asks for the secret only of
+an entry that carries its mark. Asking `security` for an entry that another
+program wrote would show the consent dialog in every process, so such an entry
+is never asked for. A session that another version of the CLI saved is
+therefore not read: `mainsequence doctor` and `mainsequence auth status` say
+so, and one `mainsequence login` replaces it. A released version installed in
+another CodeRepository reads the new entry and keeps the mark when it updates
+it, so the two share the session.
 
-When the Keychain cannot answer without the user, because the Keychain is
-locked or the entry belongs to another program, the CLI waits at most 10
-seconds and continues without a saved session. `mainsequence doctor` and
-`mainsequence auth status` then say that the credential store could not be
-read. `mainsequence login` replaces an entry that belongs to another program.
+When the Keychain is locked, the CLI waits at most 10 seconds and continues
+without a saved session, and the same two commands say that the credential
+store could not be read.
 
 Linux requires an available, unlocked desktop keyring that implements Secret
 Service. If no store is available, login remains valid only for the current

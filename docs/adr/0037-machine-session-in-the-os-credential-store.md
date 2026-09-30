@@ -1,5 +1,11 @@
 # ADR 0037: The session lives in the operating system credential store
 
+Amended 2026-09-30: on macOS the CLI asks for the secret of a Keychain entry
+only when the entry carries the CLI's own mark. The first implementation read
+any entry under the name, and an entry that another program had written made
+every process show a consent dialog. A session saved by another version is no
+longer read; one login replaces it. See [macOS](#macos).
+
 Amended 2026-09-30: `mainsequence code-repository refresh-token` is removed. Once
 no checkout holds a credential, a token command that takes a checkout has no
 purpose. `mainsequence refresh-token` renews the session for the machine.
@@ -124,10 +130,23 @@ be read is not replaced by an older session.
 ### macOS
 
 macOS returns to `security`, which every released version used, under the same
-entry name. `security` is one program for every interpreter, so the entry is
-read from every CodeRepository without a dialog. A session that a released
-version saved is used without a new login, and a released version installed in
-another CodeRepository shares the session in both directions.
+entry name. `security` is one program for every interpreter, so an entry it
+wrote is read from every CodeRepository without a dialog.
+
+An entry that another program wrote is different: asking `security` for its
+secret shows the consent dialog, in every process that starts. Such an entry
+exists where the unreleased `keyring` build of this line saved a session, and
+its attributes are the same as those of an entry `security` wrote, so the two
+cannot be told apart. The CLI therefore marks every entry it writes with the
+comment attribute `MainSequenceCLI.session.v1`, and asks for the secret only
+after it has seen that mark. Attributes are read without consent, whoever
+wrote the entry. An entry without the mark is never asked for: the CLI reports
+that a session of another version is present and not read, and one login
+replaces it. That holds for a session a released version saved as well, so an
+upgrade on macOS needs one login.
+
+A released version installed in another CodeRepository still shares the
+session. It reads the entry this code wrote, and its update keeps the mark.
 
 Three things differ from the released path.
 
@@ -146,18 +165,13 @@ so a long record cannot be stored as a truncated one. A session record of 800
 characters makes a line of about 1,700; the limit leaves room for a record of
 about 1,950.
 
-A read can wait for the user: the entry belongs to another program, or the
-Keychain is locked. The call is cut off at the limit and reported as a store
-error, and the process continues without a saved session. The same entry is not
-asked for again for 60 seconds in that process, so one command waits once.
-`mainsequence doctor`, `mainsequence auth status` and `mainsequence auth token`
-say that the store could not be read, which otherwise looks like a machine that
-is not logged in. `mainsequence login` replaces an entry that belongs to
-another program.
-
-An entry that belongs to another program exists where the unreleased `keyring`
-build of this line saved a session. That is the one case in which a login is
-needed after this change on macOS.
+A read can still wait for the user when the Keychain is locked. The call is cut
+off at the limit and reported as a store error, and the process continues
+without a saved session. An entry that could not be read, or that carries no
+mark, is not looked at again for 60 seconds in that process. `mainsequence
+doctor`, `mainsequence auth status`, `mainsequence auth token` and
+`mainsequence refresh-token` say why the store could not be read, which
+otherwise looks like a machine that is not logged in.
 
 The cost of this arrangement is that any program running as the same user can
 read the entry through `security` without a dialog. That was already so in the
@@ -258,11 +272,11 @@ dummy values:
   identifier. With an item from another program present, a save left one item.
   The library alone left two.
 - The login Keychain on macOS 26.4 from Python 3.12.8 and 3.13.11, together
-  with the store code of the released 8.1.25. The new code read a session the
-  released code saved, from both interpreters. The released code read a session
-  the new code saved, and saved over it. A save after a read kept the entry's
-  creation date; a save without a read replaced the entry. A too-long record
-  was refused with the earlier session intact. After the `keyring` library had
-  written the entry from one interpreter, a save from the other succeeded, and
-  both then read it. No step waited for consent: each step, a whole process,
-  took less than 0.2 seconds.
+  with the store code of the released 8.1.25. An entry the `keyring` library
+  had written, and an entry the released code had written, were not asked for:
+  both interpreters reported no session and the reason. A save replaced such an
+  entry and both then read it. The released code read a session the new code
+  saved and saved over it; the mark stayed and the new code read that session.
+  A save after a read updated the entry in place. A too-long record was refused
+  with the earlier session intact. No step waited for consent: each step, a
+  whole process, took less than 0.4 seconds.
