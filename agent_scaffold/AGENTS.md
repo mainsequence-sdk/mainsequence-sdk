@@ -1,75 +1,108 @@
 # AGENTS.md
 
-Follow the repository-specific instructions in this file and load the relevant
-Main Sequence skill when the task touches the platform or SDK.
+You are a dual-mandate agent. Follow the repository-specific instructions in this file and the
+relevant skills, while also keeping in mind that application surfaces, data, and implementation
+operate within the Main Sequence platform and must follow Main Sequence platform instructions.
 
 ## Repository-Specific Instructions
 
-[ REPLACE THIS LINE WITH REPOSITORY-SPECIFIC RULES, CONTEXT, AND COMMANDS. ]
+[ HERE SHOULD BE THE REPOSITORY-SPECIFIC ACTIONS, RULES, CONTEXT, AND LOCAL NOTES. DO NOT REMOVE
+THIS LINE UNLESS YOU REPLACE IT WITH REAL REPOSITORY-SPECIFIC CONTENT. ]
 
 Do not remove the `<!-- mainsequence-agent-scaffold:start schema=1 source=agent_scaffold -->`
-or `<!-- mainsequence-agent-scaffold:end -->` markers. Scaffold tooling may use
-them to update only the managed section.
+or `<!-- mainsequence-agent-scaffold:end -->` markers. `mainsequence code-repository update AGENTS.md`
+uses them to update only the Main Sequence section below.
+
 
 <!-- mainsequence-agent-scaffold:start schema=1 source=agent_scaffold -->
 ## Main Sequence Instructions
 
-### Authority
+Use this managed section to select the correct Main Sequence skill. Detailed
+procedures belong in those skills and their referenced documentation.
 
-- Repository instructions define local intent and conventions.
-- Installed SDK code, SDK-owned skills, and version-matched SDK documentation
-  define Python client behavior.
-- Installed platform-owned skills and backend-advertised schemas define current
-  platform workflows and policy.
-- Domain packages such as `metatables` own their own contracts and skills. Do
-  not infer those contracts from this SDK scaffold.
-- When client and platform contracts disagree, preserve the evidence and use
-  the bug-auditor skill. Do not invent compatibility behavior.
+## Authority
 
-### Route By Task
+- Repository-specific instructions above this block define local intent and
+  repository conventions.
+- The installed SDK code, CLI help, SDK-owned skills, and version-matched SDK
+  documentation define client behavior.
+- Installed platform-owned skills and backend-advertised schemas, templates,
+  and capabilities define the current platform contract.
+- The public documentation site is supplemental when its SDK version differs
+  from the installed package:
+  `https://mainsequence-sdk.github.io/mainsequence-sdk/`
+- If the installed client and platform contract disagree, do not guess or
+  update automatically. Use the bug-auditor skill to record the evidence and
+  identify the owning side.
 
-- SDK authentication, Git source context, direct platform adapters, and local
+## Updates Are Explicit
+
+Do not run any of these commands unless the user explicitly requests that
+specific update:
+
+- `mainsequence code-repository update-sdk --path .`
+- `mainsequence code-repository update-agent-skills --path .`
+- `mainsequence code-repository update AGENTS.md --path .`
+- `uv run ms-tau skills sync --path .`
+
+A missing or mismatched `.agents/skills/mainsequence/PINNED_FROM.txt` is state
+to report, not permission to mutate the repository. The same rule applies to
+`.agents/skills/ms_tau_sdk/PINNED_FROM.txt`. When a Main Sequence update is
+requested, use the `code_repository_maintenance` skill. The `mainsequence` CLI
+never owns or updates the `ms_tau_sdk` namespace.
+
+## Route By Task
+
+- Product architecture, platform ontology, and CodeRepository Blueprint work:
+  use the matching platform-owned design skill declared by the installed
+  platform catalog. Do not assume its filesystem path.
+- CodeRepository context, local SDK execution, repository structure, and
   implementation routing:
   `.agents/skills/mainsequence/sdk_code_repository_execution/SKILL.md`
-- CLI login, endpoint configuration, diagnostics, and explicitly requested local
-  CodeRepository setup, environment, synchronization, SDK, and scaffold updates:
+- Local environment repair, authentication, explicitly requested updates, and
+  canonical CodeRepository sync:
   `.agents/skills/mainsequence/maintenance/code_repository_maintenance/SKILL.md`
-- Failure classification and SDK/backend contract mismatches:
+- Blocker analysis, failure classification, and SDK/platform contract mismatches:
   `.agents/skills/mainsequence/maintenance/bug_auditor/SKILL.md`
-- FastAPI endpoints serving a Command Center frontend:
-  `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
-- Jobs, runs, Artifacts, resources, releases, and deployment observations:
-  `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
-- Teams, sharing, constants, secrets, and access verification:
-  `.agents/skills/mainsequence/platform_operations/access_control_and_sharing/SKILL.md`
-- Agent discovery, sessions, runtime access, and handoff to the runtime protocol:
-  `.agents/skills/mainsequence/a2a_sdk_execution/SKILL.md`
-- MetaTable migration providers, Alembic revisions, approved execution, and
-  migration recovery:
+- MetaTable modeling, queries, external registration, table updates, and data
+  discovery: use the installed `metatables` package skills and documentation.
+- Alembic-managed MetaTable schema changes:
   `.agents/skills/mainsequence/data_publishing/meta_table_migrations/SKILL.md`
-- MetaTable modeling, queries, external registration, and table updates: use
-  the installed `metatables` package skills and documentation.
-- Architecture, ontology, CodeRepository workflow declarations, deployment
-  policy, and other platform-owned workflows: use the matching skill from the
-  authenticated platform catalog.
+- FastAPI APIs serving the Command Center frontend:
+  `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
+- Jobs, schedules, images, resources, releases, and Artifacts:
+  `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
+- RBAC, sharing, constants, secrets, and access verification:
+  `.agents/skills/mainsequence/platform_operations/access_control_and_sharing/SKILL.md`
+- A2A session discovery, messages, files, and SDK response handling:
+  `.agents/skills/mainsequence/a2a_sdk_execution/SKILL.md`
+- Turning a CodeRepository into a platform coding agent or selecting other
+  platform-owned capabilities: use the matching skill declared by the installed
+  platform catalog. Do not hardcode a platform-owned skill path.
+- Implementing or debugging a TAU-based Harness Agent: after the platform skill
+  establishes the platform contract, use the version-matched skills under
+  `.agents/skills/ms_tau_sdk/`. If they are absent and the user requested the
+  update, run `uv run ms-tau skills sync --path .`; do not reconstruct those
+  SDK instructions from platform documentation.
 
-### Working Rules
+## Core Working Rules
 
-- Read only the skills relevant to the request.
-- The current Git checkout is source identity. Never ask a user to inject a
-  CodeRepositoryBranch or Organization Environment selector.
-- The core `mainsequence` CLI is an authentication and diagnostics surface. Do
-  not assume retired deployment, table, agent-message, or scaffold commands.
-- Use direct typed SDK adapters for retained platform API operations. Let the
-  backend enforce permissions, defaults, and lifecycle policy.
-- Do not update SDK dependencies or installed skills unless the user explicitly
-  requests that update.
-- Separate verified facts from assumptions and report the exact failed
-  operation when blocked.
+- Read the relevant skill before acting on a Main Sequence domain.
+- Use the current Git checkout as repository, branch, and commit identity. Do
+  not ask users to inject CodeRepositoryBranch or Environment identity.
+- Use the `mainsequence` CLI as the default platform control surface. Prefer
+  `--json` when output will be parsed or used as evidence.
+- Use the owning domain package before designing against an unfamiliar domain contract.
+- Keep reusable business logic under `src/` and keep API, job, and other
+  integration layers thin.
+- Verify only the platform objects relevant to the requested outcome.
+- Separate verified facts from assumptions and report blockers with the exact
+  failing operation.
 
-### Completion
+## Completion
 
-Define observable completion before implementation. Verify the relevant local
-checks and platform state before claiming success; identify anything that could
-not be verified live.
+Before implementation, identify the requested end state and the evidence that
+will prove it. Do not claim completion until the relevant code or documentation
+checks pass and any required platform state has been verified. If live
+verification is unavailable, state what remains unverified.
 <!-- mainsequence-agent-scaffold:end -->

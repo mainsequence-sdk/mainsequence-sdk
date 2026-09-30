@@ -234,15 +234,24 @@ Adapter From API schema and fixtures at the selected repository commit.
 
 ### 5. Release the tested commit
 
-Before release, verify the local checkout with the SDK's Git-native source
-context and load the platform-owned CodeRepository workflow skill. Declare the
-FastAPI resource in `.mainsequence/workflows/`, validate it against the current
-backend template, and use the platform workflow to reconcile the tested commit.
-The thin SDK CLI does not own repository synchronization or release commands.
+Before release, verify local CodeRepository resolution:
+
+```bash
+mainsequence code-repository current --debug --json
+```
+
+Declare the FastAPI resource in `.mainsequence/workflows/`, validate the
+workflow against the backend template, then move the tested commit through the
+canonical lifecycle:
+
+```bash
+mainsequence code-repository sync -m "Release Command Center API"
+mainsequence code-repository resources list --filter resource_type=fastapi
+```
 
 Verify that:
 
-- platform reconciliation used the intended Git branch
+- code-repository sync used the intended Git branch
 - the workflow declaration identifies the tested FastAPI source path
 - resource discovery found that path at the exact deployed commit
 - Django resolved and built the exact image for the workflow event

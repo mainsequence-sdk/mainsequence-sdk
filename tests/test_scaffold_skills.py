@@ -184,7 +184,7 @@ def test_normalize_scaffold_skill_namespace_derives_package_style_name():
     assert normalize_scaffold_skill_namespace("ms-markets") == "ms_markets"
 
 
-def test_packaged_scaffold_keeps_only_thin_sdk_skills():
+def test_packaged_scaffold_keeps_retained_sdk_skills():
     skill_paths = {
         path.relative_to(SCAFFOLD_ROOT / "skills").as_posix()
         for path in (SCAFFOLD_ROOT / "skills").rglob("SKILL.md")

@@ -21,7 +21,8 @@ boundary and breaking changes.
   branch's Environment. Existing context caching and authentication are preserved;
   there is no Environment override, account binding, or identity preflight.
 
-- Removed application DataSource adapters; database registration belongs to MetaTables and credentials use platform Secrets.
+- Moved application DataSource adapters to MetaTables; database registration
+  belongs to that package and credentials use platform Secrets.
 
 - Added framework-independent caller assertion verification in the optional
   `mainsequence[server]` extra, with release/Environment checks and bounded public-key discovery.
@@ -46,19 +47,17 @@ boundary and breaking changes.
   `refresh-token`, `sync`, `update-sdk`, `update AGENTS.md`,
   `update-agent-skills`, `freeze-env`, `build-local-venv`, and
   `open-signed-terminal`. These commands retain Git-native branch authority and
-  do not restore MetaTables or deployment orchestration.
+  remain independent of the removed MetaTables implementation.
 - Restored the reusable scaffold-skill copier and packaged `agent_scaffold` after
   the MetaTables extraction incorrectly removed the entire scaffold. The retained
-  bundle now documents thin-SDK capabilities, owns the cross-component migration
-  workflow, and routes other MetaTables work to its owning package.
+  bundle documents the SDK's full retained capabilities, owns the cross-component
+  MetaTable migration workflow, and routes other MetaTables work to its owning
+  package.
 - CLI login credentials now persist through the operating system credential store
   on Windows, Linux, and macOS. Legacy `auth.json` credentials are migrated only
   when a recommended secure backend is available; plaintext file persistence is
   no longer used as a fallback.
 - Runtime credential exchange no longer follows redirects.
-- Trimmed the base SDK install to its retained adapter and logging imports. Tracing
-  setup and OTLP export now require `mainsequence[tracing]`; package discovery and
-  the development dependency list no longer include removed workflows and tools.
 - `CodeRepositoryBranch.list_github_issues()` now treats its receiving branch
   as the target resource, matching issue creation. It no longer requires that
   target to equal the process-frozen branch; the backend enforces the runtime
@@ -89,16 +88,16 @@ boundary and breaking changes.
   `mainsequence.client.value_sets.declared_values()` reads them back.
 - The final-release publish job now refuses a `v*` tag whose commit is not contained in
   `main`.
-- The SDK test suite runs offline; the obsolete live-backend tests for removed
-  contracts have been deleted.
+- Tests that need a live backend and credentials remain marked `live` and are
+  deselected by default. The normal test run remains offline.
 
 ### Removed
 
 - Removed SDK-owned MetaTables, updater and migration modules, local database and
   DataFrame helpers, their CLI commands, implementation docs, packaged table and
-  updater skills, and domain-only dependencies. Agent A2A message orchestration
-  and repository Docker/deployment commands also leave the SDK. CodeRepository
-  local development and dynamic SDK/platform skill assembly remain supported.
+  updater skills, and domain-only dependencies. Agent A2A orchestration,
+  CodeRepository development, Docker/deployment commands, observability,
+  instrumentation, and dynamic SDK/platform skill assembly remain supported.
   The independent `metatables` package port is separate from this SDK change;
   confirm its compatible version before release.
 

@@ -6,7 +6,7 @@ for its status and any superseding decisions.
 
 The implemented context change is [ADR 0035](0035-independent-git-source-and-platform-context.md), a partial successor
 to [ADR 0031](0031-process-lifetime-code-repository-branch-context.md). The SDK
-ownership boundary is recorded in [ADR 0034](0034-remove-metatables-from-sdk.md).
+ownership boundary is recorded in [ADR 0034](0034-extract-metatables-python-package.md).
 
 ## Records
 
@@ -29,7 +29,7 @@ ownership boundary is recorded in [ADR 0034](0034-remove-metatables-from-sdk.md)
 - [ADR 0031: Git-Native Process CodeRepositoryBranch Context](0031-process-lifetime-code-repository-branch-context.md)
 - [ADR 0032: Read Backend Responses Tolerantly](0032-tolerant-response-reading.md)
 - [ADR 0033: Read Closed Value Sets Tolerantly](0033-tolerant-value-set-reading.md)
-- [ADR 0034: Remove MetaTables and leave a thin `mainsequence` SDK](0034-remove-metatables-from-sdk.md)
+- [ADR 0034: Extract the MetaTables Python API from `mainsequence`](0034-extract-metatables-python-package.md)
 - [ADR 0035: Independent Git source and platform execution context](0035-independent-git-source-and-platform-context.md)
 
 - [ADR-0036: Request-scoped logged user](0036-request-scoped-logged-user.md)

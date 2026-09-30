@@ -23,11 +23,17 @@ classifiers = [
 
 dependencies = [
   "cachetools",
+  "click>=8.3.3",
   "concurrent-log-handler",
   "keyring>=25.7.0,<26",
   "opentelemetry-api",
+  "opentelemetry-exporter-otlp",
+  "opentelemetry-sdk",
   "packaging>=24.2",
+  "protobuf>=6.33.5",
+  "psutil",
   "pydantic>=2.11,<3",
+  "pygments>=2.20.0",
   "pyyaml",
   "requests>=2.33.0",
   "structlog",
@@ -37,7 +43,6 @@ dependencies = [
 
 [project.optional-dependencies]
 server = ["PyJWT[crypto]>=2.10,<3"]
-tracing = ["opentelemetry-sdk", "opentelemetry-exporter-otlp"]
 
 [project.urls]
 Homepage = "https://github.com/mainsequence-sdk/mainsequence-sdk"
@@ -51,7 +56,9 @@ ms = "mainsequence.cli.cli:app"
 dev = [
   "fastapi>=0.110,<1",
   "httpx>=0.27,<1",
+  "PyJWT[crypto]>=2.10,<3",
   "black>=26.3.1",
+  "IPython",
   "mkdocs",
   "mkdocs-autorefs",
   "mkdocs-gen-files",
@@ -61,10 +68,12 @@ dev = [
   "mkdocstrings[python]",
   "opentelemetry-sdk",
   "packaging>=24.2",
+  "pipdeptree",
   "pre-commit",
   "pymdown-extensions>=11.0.1",
   "pytest>=9.0.3",
   "ruff>=0.14.0",
+  "twine",
 ]
 
 # Package discovery for SDK code and the Markdown-only scaffold namespace.
@@ -73,7 +82,14 @@ namespaces = true
 include = ["mainsequence", "mainsequence.*", "agent_scaffold", "agent_scaffold.*"]
 
 [tool.setuptools.package-data]
+"mainsequence" = ["**/*.html", "**/*.css", "**/*.png", "**/*.toml", "**/*.json", "**/*.mako"]
 "agent_scaffold" = ["*.md", "**/*.md"]
+
+[[tool.uv.index]]
+name = "testpypi"
+url = "https://test.pypi.org/simple/"
+publish-url = "https://test.pypi.org/legacy/"
+explicit = true
 
 
 # --------------------
@@ -85,6 +101,10 @@ testpaths = ["tests"]
 # invoked as `python -m pytest` gets this from the CWD, but the `pytest`
 # entrypoint (what `uv run pytest` and CI use) does not.
 pythonpath = ["."]
+addopts = "-m 'not live'"
+markers = [
+  "live: talks to a live Main Sequence backend and needs credentials; deselected unless `-m live` is passed",
+]
 
 # --------------------
 # Formatting (Black)
@@ -100,6 +120,7 @@ target-version = ["py313"]
 line-length = 100
 target-version = "py313"
 extend-exclude = ["build", "dist", ".venv", ".tox", ".mypy_cache", ".ruff_cache"]
+fix = true
 
 [tool.ruff.lint]
 # E/F: pycodestyle/pyflakes, I: import order, B: bugbear, UP: pyupgrade

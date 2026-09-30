@@ -46,3 +46,14 @@ code_repository = CodeRepository.get_by_uid("<CODE_REPOSITORY_UID>")
 code_repository.add_label(["rates", "research"])
 code_repository.remove_label("archive")
 ```
+
+## CLI Usage
+
+The CLI exposes the same verbs on the object groups that support labels:
+
+```bash
+mainsequence code-repository add-label <CODE_REPOSITORY_UID> --label rates --label research
+mainsequence code-repository remove-label <CODE_REPOSITORY_UID> --label archive
+```
+
+Each command calls the SDK model method for that object. The label mutation updates organizational metadata only.

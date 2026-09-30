@@ -44,7 +44,7 @@ In practice:
 
 Think of constants and secrets as runtime inputs, not workflow outputs.
 
-Jobs, resources, dashboards, agents, and notebooks often need configuration that should not live directly inside code. Constants and secrets give you a place to store that configuration in the platform.
+Jobs, resources, APIs, agents, and notebooks often need configuration that should not live directly inside code. Constants and secrets give you a place to store that configuration in the platform.
 
 A useful mental split is:
 
@@ -54,12 +54,11 @@ A useful mental split is:
 
 That keeps the repository cleaner and reduces the amount of environment-specific data hardcoded into scripts and jobs.
 
-Constants and Secrets are owned by an Organization Environment. SDK operations use
-the current registered branch's [Environment context](context.md), with existing
-authenticated runtime target checks. A branch without an Environment raises only
-when a scoped operation needs one. There are no Environment overrides or fallback
-selections. Branches in the same Environment can use the same configuration
-identities, subject to backend authorization.
+Constants and Secrets are owned by an Organization Environment. SDK operations
+use the current registered branch's [Environment context](context.md), with
+authenticated runtime target checks when deployed. A branch without an
+Environment raises only when a scoped operation needs one. Users do not pass an
+Environment UID or branch UID.
 
 ## Names Are Unique Identities
 
@@ -117,7 +116,7 @@ Why these matter:
 That is the practical reason this topic matters early:
 
 - constants and secrets teach the access-control model in its simplest form
-- the same idea scales later to CodeRepositories, shared tables, buckets, artifacts, and deployed resources
+- the same idea scales later to CodeRepositories, buckets, artifacts, and deployed resources
 
 ## Constants
 
@@ -345,7 +344,7 @@ Secrets need a different operational standard than constants:
 - do not commit them to the repository
 - do not copy them into constants
 - do not print them in logs
-- do not paste them into dashboards or notebooks casually
+- do not paste them into application UIs or notebooks casually
 - rotate them when external systems require it
 
 A good working rule is:
@@ -409,6 +408,53 @@ Use secrets for:
 - API secret
 - refresh token
 - signing private key
+
+## CLI Usage
+
+The CLI exposes both resources directly.
+
+Constants:
+
+```bash
+mainsequence constants list
+mainsequence constants create MODEL__DEFAULT_WINDOW 252
+mainsequence constants create BROKER__DEFAULTS '{"mode":"paper"}'
+mainsequence constants delete <CONSTANT_UID>
+```
+
+Secrets:
+
+```bash
+mainsequence secrets list
+mainsequence secrets create POLYGON_API_KEY your-secret-value
+mainsequence secrets delete <SECRET_UID>
+```
+
+Important behavior:
+
+- constants display the category derived from the prefix before `__`
+- secrets are shown by metadata only in CLI tables and delete previews
+- delete commands require typed verification
+
+### CLI sharing examples for constants
+
+These commands show the resource-level sharing model directly:
+
+```bash
+mainsequence constants can_view <CONSTANT_UID>
+mainsequence constants can_edit <CONSTANT_UID>
+mainsequence constants add_to_view <CONSTANT_UID> <USER_UID>
+mainsequence constants add_to_edit <CONSTANT_UID> <USER_UID>
+mainsequence constants remove_from_view <CONSTANT_UID> <USER_UID>
+mainsequence constants remove_from_edit <CONSTANT_UID> <USER_UID>
+```
+
+Interpretation:
+
+- `<CONSTANT_UID>` is the constant public UID
+- `<USER_UID>` is the public UUID of the user receiving or losing access
+
+This is the most concrete CLI example of Main Sequence RBAC at the resource level.
 
 ## Recommended Practice
 

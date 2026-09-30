@@ -110,11 +110,17 @@ longer merge the release commit back into `development`.
 
 ## Tests
 
-The retained SDK suite runs offline and needs no backend credentials:
+The suite runs offline. Tests that need a live Main Sequence backend and
+credentials carry the `live` marker and are deselected by default, through
+`addopts` in `pyproject.toml`:
 
 ```bash
-pytest            # the suite CI runs
+pytest            # the offline suite; what CI runs
+pytest -m live    # only the live-backend tests; needs credentials
 ```
+
+Mark a new backend-driven test with `@pytest.mark.live`, or a whole module with
+`pytestmark = pytest.mark.live`.
 
 ## Repository setup this depends on
 

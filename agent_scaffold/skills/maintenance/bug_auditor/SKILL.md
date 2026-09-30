@@ -52,16 +52,16 @@ This skill audits. It does not implement by default.
   platform catalog; do not assume its filesystem path
 - bootstrap, routing, and repository structure:
   `.agents/skills/mainsequence/sdk_code_repository_execution/SKILL.md`
-- domain-package implementation issues: use the installed skill supplied by
-  the package that owns that contract
+- MetaTable and table-update implementation issues: use the installed
+  `metatables` package skill that owns the affected contract
 - Command Center FastAPI contract or release issues:
   `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
 - jobs, images, releases, and runtime environment issues:
   `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
 - RBAC and access issues:
   `.agents/skills/mainsequence/platform_operations/access_control_and_sharing/SKILL.md`
-- authentication, endpoint diagnostics, and explicitly requested SDK dependency
-  updates after the failure is classified:
+- environment repair, authentication refresh, SDK updates, managed skill
+  refresh, and CodeRepository sync after the failure is classified:
   `.agents/skills/mainsequence/maintenance/code_repository_maintenance/SKILL.md`
 
 ## Read First

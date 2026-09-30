@@ -99,8 +99,7 @@ def test_logconf_binds_sdk_version(monkeypatch):
 
     logconf = _load_mainsequence_submodule("mainsequence.logconf")
 
-    configured_logger = logconf.build_application_logger()
-    bound_context = logconf.dump_structlog_bound_logger(configured_logger)["bound_context"]
+    bound_context = logconf.dump_structlog_bound_logger(logconf.logger)["bound_context"]
 
     assert bound_context["application_name"] == "ms-sdk"
     assert bound_context["sdk_version"] == logconf._get_sdk_version()
@@ -145,13 +144,12 @@ def test_logconf_import_skips_job_startup_state_request_without_job_run_uid(monk
     assert logconf._request_job_startup_state() == {}
 
 
-def test_logconf_explicit_refresh_requests_job_run_detail_startup_state(monkeypatch):
+def test_logconf_import_requests_job_run_detail_startup_state(monkeypatch):
     monkeypatch.setenv("MAINSEQUENCE_ACCESS_TOKEN", "access-token")
     monkeypatch.delenv("MAINSEQUENCE_REFRESH_TOKEN", raising=False)
     monkeypatch.setenv("JOB_RUN_UID", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
     monkeypatch.setenv("COMMAND_ID", "12")
     monkeypatch.setenv("MAINSEQUENCE_ENDPOINT", "https://backend.example")
-    original_exception_hook = sys.excepthook
 
     captured: list[dict[str, object]] = []
 
@@ -180,9 +178,6 @@ def test_logconf_explicit_refresh_requests_job_run_detail_startup_state(monkeypa
 
     logconf = _load_mainsequence_submodule("mainsequence.logconf")
 
-    assert captured == []
-    assert sys.excepthook is original_exception_hook
-    logconf.refresh_application_logger_bindings()
     assert captured
     assert (
         captured[0]["url"]

@@ -109,3 +109,21 @@ logs. It returns deployment pipeline entries and sources, accepting
 DeploymentRun path fixes the owner and the backend derives its persisted
 Environment. `organization_environment_uid` is optional and, when supplied,
 acts only as a consistency check.
+
+## CLI
+
+The corresponding commands are:
+
+```bash
+mainsequence code-repository jobs runs logs <JOB_RUN_UID>
+mainsequence code-repository jobs runs resource-usage <JOB_RUN_UID>
+mainsequence code-repository resources logs <RESOURCE_RELEASE_UID>
+mainsequence code-repository resources resource-usage <RESOURCE_RELEASE_UID>
+mainsequence agent logs <AGENT_UID>
+mainsequence agent resource-usage <AGENT_UID>
+mainsequence agent session logs <AGENT_SESSION_UID>
+```
+
+Log commands accept bounded time-window and normalized filters such as
+`--start`, `--end`, `--limit`, `--severity`, `--request-id`, `--event`, and
+`--outcome`. Agent logs additionally accept `--agent-session-uid`.

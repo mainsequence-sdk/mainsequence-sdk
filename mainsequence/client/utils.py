@@ -5,6 +5,7 @@ import json
 import os
 import pathlib
 import shutil
+import socket
 import subprocess
 import threading
 import time
@@ -14,6 +15,7 @@ from enum import Enum
 from typing import TypedDict
 from uuid import UUID, getnode
 
+import psutil
 import requests
 from requests.adapters import HTTPAdapter
 from requests.structures import CaseInsensitiveDict
@@ -660,6 +662,24 @@ def build_session(
 # ---- Shared backend (import this in base/models) ----
 loaders = AuthLoaders()
 session = build_session(loaders=loaders)
+
+
+def get_network_ip() -> str:
+    """Return the local address selected for an outbound network route."""
+
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+        sock.connect(("8.8.8.8", 80))
+        return sock.getsockname()[0]
+
+
+def is_process_running(pid: int) -> bool:
+    """Return whether ``pid`` identifies a live, non-zombie process."""
+
+    try:
+        process = psutil.Process(pid)
+        return process.is_running() and process.status() != psutil.STATUS_ZOMBIE
+    except psutil.NoSuchProcess:
+        return False
 
 
 def serialize_to_json(kwargs):

@@ -42,9 +42,10 @@ jobs:
         run: python -m pip install --upgrade uv
 
       - name: Install the project with every extra and dependency group
-        # Include the optional tracing stack for instrumentation coverage.
+        # `--all-extras` covers optional server integration tests.
         run: uv sync --frozen --all-extras --all-groups
 
       - name: Run the test suite
-        # The retained suite runs offline and needs no backend credentials.
+        # `live` tests are deselected by pyproject.toml's addopts, so this runs
+        # offline and needs no backend credentials.
         run: uv run pytest

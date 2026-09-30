@@ -1,6 +1,6 @@
 ---
 name: mainsequence-access-control-and-sharing
-description: Use this skill when the task is about RBAC, resource sharing, or access verification through Main Sequence SDK adapters for CodeRepositories, constants, secrets, buckets, artifacts, and releases.
+description: Use this skill when the task is about RBAC, resource sharing, or access verification in a Main Sequence CodeRepository. This skill owns organization and team access concepts, view and edit semantics, choosing the correct shareable resource boundary, and access checks across CodeRepositories, constants, secrets, buckets, artifacts, and releases. It does not own job scheduling, domain-package data behavior, or API route design.
 ---
 
 # Main Sequence Access Control And Sharing
@@ -32,7 +32,7 @@ This skill is for:
   - `Artifact`
   - `ResourceRelease`
 - choose whether configuration belongs in a `Constant` or a `Secret`
-- review SDK sharing flows for existing resources
+- review CLI sharing flows for existing resources
 - verify access assumptions before claiming a workflow is shareable
 
 ## This Skill Must Not Claim
@@ -40,7 +40,7 @@ This skill is for:
 This skill must not claim ownership of:
 
 - job scheduling or image pinning
-- domain-package resource semantics
+- domain-package data production and schema design
 - FastAPI route design
 - application UI design or implementation
 
@@ -48,8 +48,8 @@ This skill must not claim ownership of:
 
 - jobs, schedules, images, code repository resources, releases, and Artifacts as operational workflows:
   `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
-- domain-owned resource sharing: use the installed skill supplied by the package
-  that owns that resource type
+- MetaTables and table updates: use the installed `metatables` package skills
+  and documentation
 - Command Center-serving FastAPI providers:
   `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
 This skill only reasons about access to deployed resources such as `ResourceRelease`.
@@ -165,24 +165,30 @@ For creation or sync tasks:
 
 If the task is phrased as "ensure this constant/secret exists", search first and make the workflow idempotent.
 
-Use the typed client directly: `Constant.get(name=...)`, `Secret.get(name=...)`,
-or `filter(name__in=[...])` for reconciliation. The thin SDK CLI does not expose
-constant or secret commands.
+Current CLI note:
+
+- there is no dedicated public `constants get/detail` command
+- there is no dedicated public `secrets get/detail` command
+- the current CLI workaround is name-filtered list
+- use:
+  - `mainsequence constants list --filter name=MODEL__DEFAULT_WINDOW`
+  - `mainsequence secrets list --filter name=POLYGON_API_KEY`
 
 ### 7. Public principal identity is UID-only
 
-All SDK sharing mutations identify users and teams by public UUID:
+All SDK and CLI sharing mutations identify users and teams by public UUID:
 
 - `add_to_view(user_uid)` and `add_to_edit(user_uid)`
 - `remove_from_view(user_uid)` and `remove_from_edit(user_uid)`
 - the corresponding team methods use `team_uid`
 
-Never pass or request a numeric user or team database ID. Access-state output is
-interpreted through public UID fields.
+Never pass or request a numeric user or team database ID. CLI sharing commands
+take `<USER_UID>` or `<TEAM_UID>`, and access-state output is interpreted through
+public UID fields.
 
 ### 8. Access assumptions must be verified
 
-If the task claims a resource is shareable, readable, or maintainable by another actor, verify that path explicitly with the relevant client workflow.
+If the task claims a resource is shareable, readable, or maintainable by another actor, verify that path explicitly with the relevant CLI or client workflow.
 
 Do not claim access based only on naming, role titles, or intuition.
 

@@ -2,6 +2,10 @@ import os
 
 import structlog
 from opentelemetry import trace
+from opentelemetry.sdk.trace import (
+    TracerProvider,
+)
+from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
 from opentelemetry.trace import (
     ProxyTracerProvider,
     get_current_span,
@@ -12,19 +16,20 @@ from opentelemetry.trace import (
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
 
+def is_port_in_use(port: int, agent_host: str) -> bool:
+    import socket
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        return s.connect_ex((agent_host, port)) == 0
+
+
 class TracerInstrumentator:
     __doc__ = """
         Main instrumentator class controlls building and exporting of traces 
     """
 
-    def build_tracer(self) -> trace.Tracer:
-        try:
-            from opentelemetry.sdk.trace import TracerProvider
-            from opentelemetry.sdk.trace.export import BatchSpanProcessor
-        except ModuleNotFoundError as exc:
-            if exc.name and exc.name.startswith("opentelemetry.sdk"):
-                raise ImportError("Install mainsequence[tracing] to configure tracing.") from exc
-            raise
+    def build_tracer(self) -> TraceContextTextMapPropagator:
+        from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
         from opentelemetry.sdk.resources import SERVICE_NAME, Resource
 
         provider = get_tracer_provider()
@@ -36,15 +41,11 @@ class TracerInstrumentator:
         end_point = os.environ.get("OTLP_ENDPOINT")
 
         if end_point is not None:
-            try:
-                from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
-            except ModuleNotFoundError as exc:
-                if exc.name and exc.name.startswith("opentelemetry.exporter"):
-                    raise ImportError("Install mainsequence[tracing] to export traces.") from exc
-                raise
-            get_tracer_provider().add_span_processor(
-                BatchSpanProcessor(OTLPSpanExporter(endpoint=end_point))
-            )
+            otlp_exporter = OTLPSpanExporter(endpoint=end_point)
+            if is_port_in_use(4317, agent_host=self.agent_host):
+                get_tracer_provider().add_span_processor(BatchSpanProcessor(otlp_exporter))
+            else:
+                get_tracer_provider().add_span_processor(BatchSpanProcessor(ConsoleSpanExporter()))
         tracer = get_tracer("tdag")
         return tracer
 

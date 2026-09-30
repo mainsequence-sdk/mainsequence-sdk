@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime
+import time
 from decimal import Decimal
 from typing import Any, ClassVar, Literal
 from uuid import UUID
@@ -899,6 +900,42 @@ class ResourceRelease(
         if not isinstance(data, dict):
             raise TypeError("ResourceRelease runtime access response must be a JSON object")
         return ResourceReleaseRuntimeAccess.model_validate(data)
+
+    def wait_for_runtime_access(
+        self,
+        *,
+        static_site_release_uid: str | UUID | None = None,
+        wait_timeout_seconds: float = 600.0,
+        timeout: int | float | tuple[float, float] | None = None,
+    ) -> ResourceReleaseRuntimeAccess:
+        """Poll until backend-directed runtime admission reaches a terminal state."""
+
+        if wait_timeout_seconds <= 0:
+            raise ValueError("wait_timeout_seconds must be greater than 0")
+        deadline = time.monotonic() + wait_timeout_seconds
+        while True:
+            access = self.resolve_runtime_access(
+                static_site_release_uid=static_site_release_uid,
+                timeout=timeout,
+            )
+            if access.runtime_access.can_request:
+                return access
+            if access.runtime_access.state != "waking":
+                detail = (
+                    access.runtime_access.notice.message
+                    if access.runtime_access.notice is not None
+                    else access.runtime_presence.detail
+                )
+                raise RuntimeError(detail)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError(
+                    f"Timed out waiting for ResourceRelease {self.uid} runtime access"
+                )
+            retry_after_ms = access.runtime_access.retry_after_ms
+            if retry_after_ms is None:
+                raise RuntimeError("Transient runtime access response is missing retry_after_ms.")
+            time.sleep(min(remaining, max(0.1, retry_after_ms / 1000.0)))
 
 
     uid: str | None = Field(

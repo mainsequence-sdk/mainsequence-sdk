@@ -2,7 +2,7 @@
 
 Implementation record 2026-09-28 for the owner's instruction to implement and commit the reviewed platform authentication plan.
 
-This extends the retained authentication ownership in [ADR-0034](0034-remove-metatables-from-sdk.md). The existing low-level verifier remains framework-independent; this integration supplies its request lifetime.
+This extends the retained authentication ownership in [ADR-0034](0034-extract-metatables-python-package.md). The existing low-level verifier remains framework-independent; this integration supplies its request lifetime.
 
 ## Contract
 

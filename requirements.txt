@@ -13,12 +13,20 @@ cffi==2.1.1 ; platform_python_implementation != 'PyPy' and sys_platform == 'linu
     # via cryptography
 charset-normalizer==3.4.3
     # via requests
+click==8.5.0
+    # via mainsequence
 colorama==0.4.6 ; sys_platform == 'win32'
     # via typer
 concurrent-log-handler==0.9.29
     # via mainsequence
 cryptography==50.0.1 ; sys_platform == 'linux'
     # via secretstorage
+googleapis-common-protos==1.75.3
+    # via
+    #   opentelemetry-exporter-otlp-proto-grpc
+    #   opentelemetry-exporter-otlp-proto-http
+grpcio==1.75.1
+    # via opentelemetry-exporter-otlp-proto-grpc
 idna==3.15
     # via requests
 jaraco-classes==3.4.0
@@ -42,11 +50,45 @@ more-itertools==11.1.0
     #   jaraco-classes
     #   jaraco-functools
 opentelemetry-api==1.44.0
+    # via
+    #   mainsequence
+    #   opentelemetry-exporter-otlp-proto-grpc
+    #   opentelemetry-exporter-otlp-proto-http
+    #   opentelemetry-sdk
+    #   opentelemetry-semantic-conventions
+opentelemetry-exporter-otlp==1.44.0
     # via mainsequence
+opentelemetry-exporter-otlp-proto-common==1.44.0
+    # via
+    #   opentelemetry-exporter-otlp-proto-grpc
+    #   opentelemetry-exporter-otlp-proto-http
+opentelemetry-exporter-otlp-proto-grpc==1.44.0
+    # via opentelemetry-exporter-otlp
+opentelemetry-exporter-otlp-proto-http==1.44.0
+    # via opentelemetry-exporter-otlp
+opentelemetry-proto==1.44.0
+    # via
+    #   opentelemetry-exporter-otlp-proto-common
+    #   opentelemetry-exporter-otlp-proto-grpc
+    #   opentelemetry-exporter-otlp-proto-http
+opentelemetry-sdk==1.44.0
+    # via
+    #   mainsequence
+    #   opentelemetry-exporter-otlp-proto-grpc
+    #   opentelemetry-exporter-otlp-proto-http
+opentelemetry-semantic-conventions==0.65b0
+    # via opentelemetry-sdk
 packaging==26.3
     # via mainsequence
 portalocker==3.2.0
     # via concurrent-log-handler
+protobuf==7.36.2
+    # via
+    #   googleapis-common-protos
+    #   mainsequence
+    #   opentelemetry-proto
+psutil==7.2.2
+    # via mainsequence
 pycparser==3.0 ; implementation_name != 'PyPy' and platform_python_implementation != 'PyPy' and sys_platform == 'linux'
     # via cffi
 pydantic==2.13.5
@@ -54,7 +96,9 @@ pydantic==2.13.5
 pydantic-core==2.46.5
     # via pydantic
 pygments==2.21.0
-    # via rich
+    # via
+    #   mainsequence
+    #   rich
 pywin32==312 ; sys_platform == 'win32'
     # via portalocker
 pywin32-ctypes==0.2.3 ; sys_platform == 'win32'
@@ -62,8 +106,10 @@ pywin32-ctypes==0.2.3 ; sys_platform == 'win32'
 pyyaml==6.0.3
     # via mainsequence
 requests==2.34.2
-    # via mainsequence
-rich==14.2.0
+    # via
+    #   mainsequence
+    #   opentelemetry-exporter-otlp-proto-http
+rich==15.0.0
     # via typer
 secretstorage==3.5.0 ; sys_platform == 'linux'
     # via keyring
@@ -75,7 +121,12 @@ typer==0.27.2
     # via mainsequence
 typing-extensions==4.15.0
     # via
+    #   grpcio
     #   opentelemetry-api
+    #   opentelemetry-exporter-otlp-proto-grpc
+    #   opentelemetry-exporter-otlp-proto-http
+    #   opentelemetry-sdk
+    #   opentelemetry-semantic-conventions
     #   pydantic
     #   pydantic-core
     #   typing-inspection

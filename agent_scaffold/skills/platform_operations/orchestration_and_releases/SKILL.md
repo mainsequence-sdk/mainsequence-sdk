@@ -1,6 +1,6 @@
 ---
 name: mainsequence-orchestration-and-releases
-description: Use this skill for Main Sequence jobs, schedules, backend-managed CodeRepository workflow files, images, run inspection, resources, releases, and operational Artifacts.
+description: Use this skill for Main Sequence jobs, schedules, backend-managed code-repository workflow files, code repository images, run inspection, resources, releases, and operational Artifacts. It does not own TimeIndexTableUpdater behavior, MetaTable schemas, API contracts, application UI design, or RBAC policy.
 ---
 
 # Main Sequence Orchestration And Releases
@@ -39,8 +39,8 @@ This skill must not claim ownership of:
 
 ## Route Adjacent Work
 
-- domain data production and schemas: use the installed skill supplied by the
-  package that owns that contract
+- MetaTables, table updates, and table schemas: use the installed `metatables`
+  package skills and documentation
 - Command Center FastAPI provider implementation and contract validation:
   `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
 - RBAC and sharing:
@@ -108,12 +108,18 @@ A caller does not create an image or Job by selecting a stored image UID.
 
 Do not stop at creation.
 
-Use the typed Python adapters when execution success matters. Resolve the Job
-with `Job.get(...)` or `Job.filter(...)`, trigger one manual run with
-`Job.run_job(...)`, inspect the resulting `JobRun`, and use its owner-scoped log
-and resource-usage methods.
+Use the standard CLI execution loop when execution success matters:
 
-For example:
+- `mainsequence code-repository jobs list`
+- `mainsequence code-repository jobs run <JOB_UID>`
+- `mainsequence code-repository jobs run <JOB_UID> --arg=<ARG>` for repeatable
+  manual per-run arguments, including values that start with `-`
+- `mainsequence code-repository jobs run <JOB_UID> -- <ARG>...` for manual
+  passthrough arguments
+- `mainsequence code-repository jobs runs list <JOB_UID>`
+- `mainsequence code-repository jobs runs logs <JOB_RUN_UID> --max-wait-seconds 900`
+
+The Python equivalent for one manual run is:
 
 ```python
 job.run_job(
@@ -135,7 +141,9 @@ Current support matrix:
 | Invocation | Argument support |
 | --- | --- |
 | `Job.run_job(command_args=[...])` | Supported for that manual run |
+| `mainsequence code-repository jobs run ... --arg/-- ...` | Supported for that manual run |
 | `Job.scheduled_command_args` | Persisted list copied into future scheduler-created runs |
+| `mainsequence code-repository jobs update --scheduled-arg ...` | Replaces the persisted list on an existing Job |
 | `.mainsequence/workflows/*.yaml` Job declaration | Supports `scheduled_command_args` as an ordered `list[str]` |
 
 Keep `scheduled_command_args` separate from manual `command_args`. Retrieve the
@@ -159,6 +167,13 @@ Use owner-scoped observability rather than infrastructure discovery:
 - `ResourceRelease.get_logs()` and `ResourceRelease.get_resource_usage()`
 - `Agent.get_logs()` and `Agent.get_resource_usage()`
 - `AgentSession.get_logs()` for one fixed session
+- `mainsequence code-repository jobs runs logs <JOB_RUN_UID>`
+- `mainsequence code-repository jobs runs resource-usage <JOB_RUN_UID>`
+- `mainsequence code-repository resources logs <RESOURCE_RELEASE_UID>`
+- `mainsequence code-repository resources resource-usage <RESOURCE_RELEASE_UID>`
+- `mainsequence agent logs <AGENT_UID>`
+- `mainsequence agent resource-usage <AGENT_UID>`
+- `mainsequence agent session logs <AGENT_SESSION_UID>`
 
 Do not ask the user for an Environment UID for these owner operations. The SDK
 preserves the backend-owned capability scope. Do not discover Knative services,
@@ -259,6 +274,7 @@ When reviewing an orchestration task, look for:
 - jobs tied to moving repository state instead of an exact image
 - client code that interprets automatic deployment as a branch-tip or `latest` selector
 - no run/log verification after creation
+- unsafe use of `--strict`
 - workflows depending on laptop-specific file paths instead of Artifacts
 - `automatic_deployment` enabled without an explicit decision about repository-sync CI/CD rotation
 - assumptions that automatic deployment will deploy local unpushed changes

@@ -1,6 +1,6 @@
 # ADR 0028: MetaTable Storage Hash As Utility
 
-> Historical decision: SDK-owned MetaTables functionality described here was superseded by [ADR 0034](0034-remove-metatables-from-sdk.md). Follow the current [removal migration guide](../migrations/metatables-sdk-removal.md) for supported imports and commands.
+> Historical decision: SDK-owned MetaTables functionality described here was superseded by [ADR 0034](0034-extract-metatables-python-package.md). Follow the current [removal migration guide](../migrations/metatables-sdk-removal.md) for supported imports and commands.
 
 Date: 2026-06-13
 

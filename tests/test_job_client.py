@@ -85,6 +85,12 @@ def _load_models_helpers_module():
     return importlib.import_module("mainsequence.client.models_helpers")
 
 
+def test_removed_job_batch_sync_is_not_exposed():
+    models_helpers = _load_models_helpers_module()
+
+    assert not hasattr(models_helpers.Job, "bulk_get_or_create")
+
+
 def test_job_run_job_posts_to_canonical_action(monkeypatch):
     models_helpers = _load_models_helpers_module()
     Job = models_helpers.Job

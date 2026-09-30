@@ -1,6 +1,6 @@
 # ADR 0029: A2A Message Send Only
 
-> Historical decision: the SDK-owned A2A workflow described here was superseded by [ADR 0034](0034-remove-metatables-from-sdk.md). Follow the current [removal migration guide](../migrations/metatables-sdk-removal.md) for supported imports and commands.
+> Historical decision: the SDK-owned A2A workflow described here was superseded by [ADR 0034](0034-extract-metatables-python-package.md). Follow the current [removal migration guide](../migrations/metatables-sdk-removal.md) for supported imports and commands.
 
 > Amended by Platform Agents ADR-027. Runtime access now carries the
 > authoritative `runtime_interaction` admission decision and diagnostic

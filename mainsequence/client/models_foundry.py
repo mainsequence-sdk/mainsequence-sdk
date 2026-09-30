@@ -1067,3 +1067,17 @@ class Constant(
     @classmethod
     def invalidate_filter_cache(cls) -> None:
         cls._filter_cache.clear()
+
+    @classmethod
+    def create_constants_if_not_exist(cls, constants_to_create: dict):
+        existing_constants = cls.filter(name__in=list(constants_to_create.keys()))
+        existing_constants_names = [constant.name for constant in existing_constants]
+        constants_to_register = {
+            key: value
+            for key, value in constants_to_create.items()
+            if key not in existing_constants_names
+        }
+        return [
+            cls.create(name=key, value=value)
+            for key, value in constants_to_register.items()
+        ]
