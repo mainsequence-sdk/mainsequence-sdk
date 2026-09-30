@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=77", "wheel"]
+requires = ["setuptools>=84.0.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -70,9 +70,9 @@ dev = [
   "packaging>=24.2",
   "pipdeptree",
   "pre-commit",
-  "pymdown-extensions>=11.0.1",
-  "pytest>=9.0.3",
-  "ruff>=0.14.0",
+  "pymdown-extensions>=12.1",
+  "pytest>=9.1.1",
+  "ruff>=0.16.9",
   "twine",
 ]
 
