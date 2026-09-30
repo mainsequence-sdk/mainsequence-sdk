@@ -44,6 +44,7 @@ from textwrap import dedent
 from typing import NoReturn
 
 import click
+import requests
 import typer
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.version import InvalidVersion, Version
@@ -713,7 +714,8 @@ def _require_login() -> dict:
     Returns:
         profile dict
 
-    Raises typer.Exit(1) with user-friendly message on failure.
+    Raises typer.Exit(1) with user-friendly message on failure: a missing or
+    rejected session, or a backend that could not be reached.
     """
     try:
         prof = get_current_user_profile()
@@ -725,6 +727,11 @@ def _require_login() -> dict:
         raise typer.Exit(1) from e
     except ApiError as e:
         error("Not logged in. Run: mainsequence login")
+        raise typer.Exit(1) from e
+    except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+        # The backend gave no answer about the session, so this is not "Not logged in".
+        # Never echo the exception: a transport error can carry request details.
+        error(f"The backend at {cfg.backend_url()} could not be reached ({type(e).__name__}).")
         raise typer.Exit(1) from e
 
 
