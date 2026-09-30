@@ -5,9 +5,10 @@ APIs, Agents, and reusable platform resources. The Python SDK provides the
 authentication, client models, CLI workflows, Git-native source context,
 observability, instrumentation, and scaffold utilities used by those workflows.
 
-MetaTables is an independent domain package. The SDK documentation keeps the
-extraction history and migration boundary, while current table implementation
-guidance belongs to that package.
+MetaTables is an independent domain package, installed as
+`mainsequence-metatable` and imported as `metatables`. The SDK documentation
+keeps the extraction history and migration boundary, while current table
+implementation guidance belongs to that package.
 
 ## Choose A Reading Path
 

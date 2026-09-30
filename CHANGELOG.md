@@ -31,9 +31,11 @@ boundary and breaking changes.
 - ADR 0037: the session is one record per backend in the operating system
   credential store, and a CodeRepository `.env` holds no credential.
 
-- Restored the SDK-owned MetaTable migration workflow skill with the current
-  `metatables` provider, offline revision, and approved API execution boundary.
-  MetaTable implementation and domain guidance remain in the independent package.
+- The scaffold's one MetaTables skill is now `maintenance/metatables_transition`.
+  It covers only moving a repository off the SDK-owned MetaTables code: install
+  `mainsequence-metatable`, copy its skills, rewrite imports and replace the
+  retired commands. The Alembic migration workflow it used to describe belongs
+  to the `metatables` package's own skills, and `data_publishing/` is gone.
 - ADR 0035: network-free `get_git_source_context()` and optional platform metadata.
   Missing Environment errors occur only in operations requiring the current
   branch's Environment. Existing context caching and authentication are preserved;
@@ -68,9 +70,8 @@ boundary and breaking changes.
   remain independent of the removed MetaTables implementation.
 - Restored the reusable scaffold-skill copier and packaged `agent_scaffold` after
   the MetaTables extraction incorrectly removed the entire scaffold. The retained
-  bundle documents the SDK's full retained capabilities, owns the cross-component
-  MetaTable migration workflow, and routes other MetaTables work to its owning
-  package.
+  bundle documents the SDK's full retained capabilities and routes MetaTables
+  work to its owning package.
 - CLI login credentials now persist through the operating system credential store
   on Windows, Linux, and macOS. Legacy `auth.json` credentials are migrated only
   when a recommended secure backend is available; plaintext file persistence is

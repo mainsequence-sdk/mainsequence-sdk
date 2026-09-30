@@ -14,9 +14,10 @@ Sequence platform. It provides authentication, typed platform resources,
 CodeRepository development and release operations, Agent and A2A workflows,
 jobs, sharing, observability, logging, tracing, and reusable scaffold tooling.
 
-MetaTables is now an independent domain package. Table models, time-index table
-updates, SQLAlchemy schemas, local database interfaces, and Alembic execution
-are no longer implemented by this distribution.
+MetaTables is now an independent domain package, installed as
+`mainsequence-metatable` and imported as `metatables`. Table models, time-index
+table updates, SQLAlchemy schemas, local database interfaces, and Alembic
+execution are no longer implemented by this distribution.
 
 ## Repository Status
 
@@ -116,9 +117,10 @@ framework-independent [caller assertion verifier](docs/knowledge/server/caller_a
 Applications remain responsible for resource authorization and storage
 operations.
 
-Use the independent `metatables` package for table-domain work. See the
-[MetaTables migration guide](docs/migrations/metatables-sdk-removal.md) for old
-and new imports, retired table CLI commands, and the legacy SDK option.
+Install `mainsequence-metatable` and import `metatables` for table-domain work.
+See the [MetaTables migration guide](docs/migrations/metatables-sdk-removal.md)
+for the install step, old and new imports, retired table CLI commands, and the
+legacy SDK option.
 
 ## Development
 

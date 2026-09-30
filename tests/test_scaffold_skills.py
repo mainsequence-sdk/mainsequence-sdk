@@ -193,9 +193,9 @@ def test_packaged_scaffold_keeps_retained_sdk_skills():
     assert skill_paths == {
         "a2a_sdk_execution/SKILL.md",
         "application_surfaces/api_surfaces/SKILL.md",
-        "data_publishing/meta_table_migrations/SKILL.md",
         "maintenance/bug_auditor/SKILL.md",
         "maintenance/code_repository_maintenance/SKILL.md",
+        "maintenance/metatables_transition/SKILL.md",
         "platform_operations/access_control_and_sharing/SKILL.md",
         "platform_operations/orchestration_and_releases/SKILL.md",
         "sdk_code_repository_execution/SKILL.md",
