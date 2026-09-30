@@ -62,6 +62,10 @@ boundary and breaking changes.
 
 ### Changed
 
+- Removed the remote `CodeRepositoryBranch.update_sdk()` action and retired
+  SDK observation response fields. The local
+  `mainsequence code-repository update-sdk --path .` command remains supported
+  and updates only the checkout's lockfile and environment.
 - Amended ADR 0034 and restored the CodeRepository local-development CLI that
   the MetaTables extraction removed by mistake: `set-up-locally`,
   `refresh-token`, `sync`, `update-sdk`, `update AGENTS.md`,

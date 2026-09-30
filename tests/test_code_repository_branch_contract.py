@@ -43,7 +43,6 @@ def code_repository_branch_payload() -> dict:
             "title": "Python",
             "description": "Python runtime",
         },
-        "sdks": [],
         "github_repository_binding_uid": REPOSITORY_UID,
         "latest_git_version": "1.0.0",
         "is_initialized": True,
