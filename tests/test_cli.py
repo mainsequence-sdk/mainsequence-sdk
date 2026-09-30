@@ -23,11 +23,12 @@ def isolated_login_configuration(monkeypatch):
     monkeypatch.setattr(cli_mod, "get_current_user_profile", lambda: {})
 
 
-def test_cli_exposes_only_adapter_commands():
+def test_cli_exposes_core_and_code_repository_commands():
     result = runner.invoke(cli_mod.app, ["--help"])
     assert result.exit_code == 0
     for command in ("login", "logout", "settings", "version", "doctor"):
         assert command in result.output
+    assert "code-repository" in result.output
 
 
 def test_manual_jwt_login_persists_tokens(monkeypatch):
@@ -36,10 +37,9 @@ def test_manual_jwt_login_persists_tokens(monkeypatch):
     monkeypatch.setattr(
         cli_mod.cfg,
         "save_tokens",
-        lambda username, access, refresh: saved.update(
-            username=username, access=access, refresh=refresh
-        )
-        or True,
+        lambda username, access, refresh: (
+            saved.update(username=username, access=access, refresh=refresh) or True
+        ),
     )
 
     result = runner.invoke(

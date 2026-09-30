@@ -31,8 +31,8 @@ them to update only the managed section.
 - SDK authentication, Git source context, direct platform adapters, and local
   implementation routing:
   `.agents/skills/mainsequence/sdk_code_repository_execution/SKILL.md`
-- CLI login, endpoint configuration, diagnostics, and explicitly requested SDK
-  dependency updates:
+- CLI login, endpoint configuration, diagnostics, and explicitly requested local
+  CodeRepository setup, environment, synchronization, SDK, and scaffold updates:
   `.agents/skills/mainsequence/maintenance/code_repository_maintenance/SKILL.md`
 - Failure classification and SDK/backend contract mismatches:
   `.agents/skills/mainsequence/maintenance/bug_auditor/SKILL.md`

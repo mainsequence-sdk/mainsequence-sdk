@@ -12,11 +12,13 @@ import typer
 from . import config as cfg
 from .api import ApiError, get_current_user_profile, logout_cli_session
 from .browser_auth import BrowserAuthError, login_via_browser, login_via_mcp_handoff
+from .code_repository import code_repository
 from .ui import error, success, warn
 
 app = typer.Typer(help="Main Sequence platform SDK", no_args_is_help=True)
 settings = typer.Typer(help="Backend endpoint settings", no_args_is_help=True)
 app.add_typer(settings, name="settings")
+app.add_typer(code_repository, name="code-repository")
 
 
 def _runtime_credential_mode_enabled() -> bool:

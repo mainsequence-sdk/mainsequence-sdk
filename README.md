@@ -1,6 +1,6 @@
 # Main Sequence Python SDK
 
-The `mainsequence` package is a thin Python adapter for the Main Sequence platform. It provides authentication, a generic HTTP client, direct platform resource models, CodeRepository source identity, and optional logging and tracing. Domain contracts and workflows live in their owning packages.
+The `mainsequence` package is a Python adapter for the Main Sequence platform. It provides authentication, a generic HTTP client, direct platform resource models, CodeRepository source identity and local-development operations, and optional logging and tracing. Domain contracts and workflows live in their owning packages.
 
 ## Install and authenticate
 
@@ -18,7 +18,7 @@ pip install 'mainsequence[tracing]'
 
 `mainsequence login --mcp` can establish the same CLI session through an already authenticated Main Sequence MCP principal. `mainsequence login --access-token ... --refresh-token ...` imports a JWT pair. For runtime credentials, set `MAINSEQUENCE_AUTH_MODE=runtime_credential` and the backend-provided credential ID and secret.
 
-The CLI now contains `login`, `logout`, `settings`, `version`, and `doctor`. Use `mainsequence settings set-backend <URL>` to change the backend endpoint, and `mainsequence doctor --check-connection` to probe it.
+The CLI contains `login`, `logout`, `settings`, `version`, and `doctor`, plus the retained `code-repository` local-development commands for checkout setup, token refresh, Python environment maintenance, Git synchronization, SDK/scaffold updates, skill installation, and signed terminal access. Use `mainsequence code-repository --help` for that surface. Use `mainsequence settings set-backend <URL>` to change the backend endpoint, and `mainsequence doctor --check-connection` to probe it.
 
 ## Python client
 

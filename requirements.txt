@@ -43,6 +43,8 @@ more-itertools==11.1.0
     #   jaraco-functools
 opentelemetry-api==1.44.0
     # via mainsequence
+packaging==26.3
+    # via mainsequence
 portalocker==3.2.0
     # via concurrent-log-handler
 pycparser==3.0 ; implementation_name != 'PyPy' and platform_python_implementation != 'PyPy' and sys_platform == 'linux'

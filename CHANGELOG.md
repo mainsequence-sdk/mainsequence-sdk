@@ -41,6 +41,12 @@ boundary and breaking changes.
 
 ### Changed
 
+- Amended ADR 0034 and restored the CodeRepository local-development CLI that
+  the MetaTables extraction removed by mistake: `set-up-locally`,
+  `refresh-token`, `sync`, `update-sdk`, `update AGENTS.md`,
+  `update-agent-skills`, `freeze-env`, `build-local-venv`, and
+  `open-signed-terminal`. These commands retain Git-native branch authority and
+  do not restore MetaTables or deployment orchestration.
 - Restored the reusable scaffold-skill copier and packaged `agent_scaffold` after
   the MetaTables extraction incorrectly removed the entire scaffold. The retained
   bundle now documents thin-SDK capabilities, owns the cross-component migration
@@ -90,11 +96,11 @@ boundary and breaking changes.
 
 - Removed SDK-owned MetaTables, updater and migration modules, local database and
   DataFrame helpers, their CLI commands, implementation docs, packaged table and
-  updater skills, and domain-only dependencies. The CLI now handles
-  authentication, endpoint settings, version, and diagnostics. Agent A2A message
-  orchestration, repository deployment, and dynamic platform-skill assembly also
-  leave the thin SDK. The independent `metatables` package port is separate from
-  this SDK change; confirm its compatible version before release.
+  updater skills, and domain-only dependencies. Agent A2A message orchestration
+  and repository Docker/deployment commands also leave the SDK. CodeRepository
+  local development and dynamic SDK/platform skill assembly remain supported.
+  The independent `metatables` package port is separate from this SDK change;
+  confirm its compatible version before release.
 
 - Removed `docs/CNAME`, which declared a `docs.main-sequence-sdk.main-sequence.io`
   custom domain that was never set up: the domain does not resolve and GitHub Pages

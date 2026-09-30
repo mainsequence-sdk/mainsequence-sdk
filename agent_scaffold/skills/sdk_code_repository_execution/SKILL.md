@@ -56,18 +56,25 @@ process, not an already running process with frozen context.
 - Do not recreate removed domain helpers inside application code merely to keep
   an old SDK import working.
 
-## Local Checks
+## Local Development CLI
 
-Use the retained CLI only for its actual surface:
+The SDK retains authentication plus the CodeRepository bootstrap and maintenance
+surface. Inspect command help before use:
 
 ```bash
 mainsequence version
 mainsequence doctor
 mainsequence login
 mainsequence settings show
+mainsequence code-repository --help
 ```
 
-Inspect `mainsequence --help` before assuming any other command exists.
+Use `set-up-locally`, `refresh-token`, `build-local-venv`, `freeze-env`,
+`update-sdk`, `update AGENTS.md`, `update-agent-skills`,
+`open-signed-terminal`, and `sync` only for their documented local-development
+workflows. These commands do not restore MetaTables, deployment orchestration, or
+Agent message protocols to the SDK. Follow the maintenance skill for mutating
+operations.
 
 ## Completion Evidence
 

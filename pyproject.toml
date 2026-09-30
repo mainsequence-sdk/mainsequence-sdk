@@ -26,6 +26,7 @@ dependencies = [
   "concurrent-log-handler",
   "keyring>=25.7.0,<26",
   "opentelemetry-api",
+  "packaging>=24.2",
   "pydantic>=2.11,<3",
   "pyyaml",
   "requests>=2.33.0",

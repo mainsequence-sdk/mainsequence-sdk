@@ -1,13 +1,13 @@
 ---
 name: mainsequence-code-repository-maintenance
-description: Maintain Main Sequence SDK authentication, endpoint configuration, diagnostics, and dependency version only when the user explicitly requests the corresponding change.
+description: Maintain Main Sequence authentication, local CodeRepository checkouts, Python environments, Git synchronization, and SDK-owned scaffold content when explicitly requested.
 ---
 
 # Main Sequence CodeRepository Maintenance
 
 ## Scope
 
-This skill covers the retained core CLI:
+This skill covers the core CLI and retained CodeRepository development operations:
 
 ```bash
 mainsequence login
@@ -17,11 +17,19 @@ mainsequence settings set-backend <url>
 mainsequence settings reset
 mainsequence version
 mainsequence doctor
+mainsequence code-repository set-up-locally <code_repository_uid> [--branch <branch>]
+mainsequence code-repository refresh-token --path .
+mainsequence code-repository build-local-venv --path .
+mainsequence code-repository freeze-env --path .
+mainsequence code-repository update-sdk --path .
+mainsequence code-repository update AGENTS.md --path .
+mainsequence code-repository update-agent-skills --path .
+mainsequence code-repository open-signed-terminal --path .
+mainsequence code-repository sync --path . -m "<message>"
 ```
 
-Inspect `mainsequence --help` for the installed version. Do not use historical
-CodeRepository deployment, synchronization, agent-message, or skill-update
-commands that are absent from the thin SDK.
+Inspect `mainsequence --help` and `mainsequence code-repository --help` for the
+installed version. Docker/deployment and agent-message commands remain retired.
 
 ## Authentication
 
@@ -46,8 +54,29 @@ manager for dependency changes and preserve its lockfile policy.
 utility for an owning library or tool. Its presence does not authorize an agent
 to overwrite `.agents/skills/` during unrelated work.
 
+## Git-Native Context
+
+Commands operating on an existing checkout derive repository and branch identity
+from that checkout and the process-frozen SDK context. Never ask for or inject an
+Organization Environment UID or a runtime branch override. `set-up-locally
+--branch` selects what Git branch to clone before the checkout exists; subsequent
+commands use the actual checked-out branch.
+
+`sync --dry-run` performs read-only release and collision preflight. It must not
+create an SSH key, register a deploy key, modify files, create a commit or tag, or
+push. Run mutating synchronization only when the user explicitly requests it.
+
+## Scaffold Maintenance
+
+`update AGENTS.md` changes only the Main Sequence managed block when the markers
+are present. `update-agent-skills` reads SDK skills from the target checkout's
+installed `mainsequence` package, reads platform-owned skills from the
+authenticated MCP catalog, validates provenance and collisions, and replaces only
+`.agents/skills/mainsequence`. The command writes `PINNED_FROM.txt` with both SDK
+and platform provenance and must preserve independent skill namespaces.
+
 ## Verification
 
-After an authentication or endpoint change, verify `mainsequence doctor`
-without exposing secrets. After an SDK dependency update, report the resolved
-version and run the repository checks appropriate to that change.
+After an authentication or endpoint change, verify `mainsequence doctor` without
+exposing secrets. After environment, SDK, scaffold, or synchronization work,
+report the exact command, resolved SDK version, and relevant repository checks.
