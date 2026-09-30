@@ -102,7 +102,7 @@ class CurrentCodeRepositoryBranchCollectionMixin:
 
 
 class CurrentCodeRepositoryEnvironmentResourceMixin:
-    """Scope CodeRepository-facing Environment resources to the frozen Git context."""
+    """Scope Environment resources through the current branch's Environment."""
 
     SDK_OWNED_CONTEXT_FIELDS: ClassVar[frozenset[str]] = frozenset({"organization_environment_uid"})
 
@@ -138,12 +138,6 @@ class BaseObjectOrm:
 
     END_POINTS = {
         "User": "users",
-        # TDAG
-        "TimeIndexMetaTable": "time-index-meta-tables",
-        "TimeIndexTableUpdate": "time-index-table-updates",
-        "TimeIndexTableUpdateDetails": "time-index-table-update-details",
-        "TableUpdateRun": "table-update-runs",
-        "DataSource": "data-sources",
         "CodeRepository": "code-repositories",
         "CodeRepositoryBranch": "code-repository-branches",
         "GitHubRepositoryBinding": "github-repository-bindings",

@@ -30,14 +30,12 @@ This skill is for:
 - enforce standard Main Sequence repository structure expectations
 - separate verified facts from assumptions
 - surface documentation mismatches to the user
-- enforce the namespace-first safety rule for new or modified TimeIndexTableUpdaters
 
 ## This Skill Must Not Claim
 
 This skill must not claim ownership of:
 
-- TimeIndexTableUpdater engineering
-- MetaTable design
+- domain-package data modeling and execution
 - Command Center-serving FastAPI contract and release design
 - jobs, schedules, images, resources, or releases
 - RBAC or sharing semantics
@@ -49,12 +47,8 @@ Do not let this skill become a domain manual.
 
 ## Route Adjacent Work
 
-- TimeIndexTableUpdaters:
-  `.agents/skills/mainsequence/data_publishing/time_index_table_updates/SKILL.md`
-- MetaTables:
-  `.agents/skills/mainsequence/data_publishing/meta_tables/SKILL.md`
-- platform data discovery before implementation:
-  `.agents/skills/mainsequence/data_access/exploration/SKILL.md`
+- MetaTables, table updates, and domain data discovery: use the installed
+  `metatables` package skills and documentation
 - FastAPI APIs serving the Command Center frontend:
   `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
 - CodeRepository audits, blocker analysis, and upstream SDK assessment:
@@ -122,11 +116,9 @@ Keep the platform boundaries explicit:
 For ordinary local implementation, work naturally in the current Git branch.
 Do not make CodeRepositoryBranch selection a separate user workflow.
 An unregistered local branch remains valid for ordinary local development, but
-it has no CodeRepositoryBranch, Environment, or branch-derived MetaTables DataSource.
-Only branch-owned operations fail. Register the branch before using Jobs,
-images, releases, resources, platform-managed MetaTables/TimeIndexTableUpdaters, migrations,
-pods, or other branch-owned platform APIs. Never fall back to another branch or
-to an aggregate-level default DataSource.
+it has no CodeRepositoryBranch or Environment. Only branch-owned operations
+fail. Register the branch before using Jobs, images, releases, resources, pods,
+or other branch-owned platform APIs. Never fall back to another branch.
 
 ## Required Decisions
 
@@ -190,14 +182,20 @@ Do not start domain work with a vague target.
 
 ### 4. Verify code repository context before making platform claims
 
-Use the CLI to confirm the active CodeRepository and refresh credentials before live checks when needed.
+Use the CLI to confirm the active CodeRepository and the saved session before live checks when needed.
 
 When the result will be consumed programmatically or used as machine-readable evidence, prefer the CLI `--json` flag.
 
 Typical bootstrap checks:
 
 - `mainsequence code-repository current --debug`
-- `mainsequence code-repository refresh-token --path .`
+- `mainsequence auth status --check`
+- `mainsequence refresh-token`
+
+The session lives in the operating system credential store, not in `.env`, and
+belongs to the machine, not to a checkout. `auth status` reports it without
+printing a token value. `refresh-token` renews it; run in a checkout, it also
+removes credential entries an earlier version left in `.env`.
 
 Do not proceed with a live branch-owned check unless `code-repository current` reports
 the current Git branch and a resolved CodeRepositoryBranch UID.
@@ -207,10 +205,6 @@ the current Git branch and a resolved CodeRepositoryBranch UID.
 Once the task boundary is clear, move into the correct specialized skill.
 
 Do not teach domain semantics here.
-
-### 6. Use namespaces first for new or modified TimeIndexTableUpdaters
-
-Before first-running or validating a new or changed TimeIndexTableUpdater, use an explicit namespace before any non-namespaced run.
 
 ## Review Rules
 

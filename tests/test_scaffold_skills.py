@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from mainsequence.scaffold_skills import (
@@ -7,6 +9,9 @@ from mainsequence.scaffold_skills import (
     copy_scaffold_skills,
     normalize_scaffold_skill_namespace,
 )
+
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+SCAFFOLD_ROOT = REPOSITORY_ROOT / "agent_scaffold"
 
 
 def _write_skill(skills_root, name: str, content: str = "skill") -> None:
@@ -177,3 +182,22 @@ def test_normalize_scaffold_skill_namespace_rejects_invalid_names(namespace):
 
 def test_normalize_scaffold_skill_namespace_derives_package_style_name():
     assert normalize_scaffold_skill_namespace("ms-markets") == "ms_markets"
+
+
+def test_packaged_scaffold_keeps_retained_sdk_skills():
+    skill_paths = {
+        path.relative_to(SCAFFOLD_ROOT / "skills").as_posix()
+        for path in (SCAFFOLD_ROOT / "skills").rglob("SKILL.md")
+    }
+
+    assert skill_paths == {
+        "a2a_sdk_execution/SKILL.md",
+        "application_surfaces/api_surfaces/SKILL.md",
+        "maintenance/bug_auditor/SKILL.md",
+        "maintenance/code_repository_maintenance/SKILL.md",
+        "maintenance/metatables_transition/SKILL.md",
+        "platform_operations/access_control_and_sharing/SKILL.md",
+        "platform_operations/orchestration_and_releases/SKILL.md",
+        "sdk_code_repository_execution/SKILL.md",
+    }
+    assert (SCAFFOLD_ROOT / "AGENTS.md").is_file()

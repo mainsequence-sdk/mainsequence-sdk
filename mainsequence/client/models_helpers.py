@@ -810,8 +810,24 @@ class ResourceRelease(
     BaseObjectOrm,
     BasePydanticModel,
 ):
+    """Discover deployment releases by public UID or exact name.
+
+    ``filter(name=...)`` and ``get(name=...)`` retain the current
+    CodeRepositoryBranch context. Names can repeat across branches and release
+    kinds; filtered ``get`` requires exactly one match.
+
+    For a shared deployment owned by another repository, use the existing
+    ``filter_admin(name=..., code_repository_branch_uid=..., release_kind=...)``
+    path with its owning branch UID. This explicit query scope does not expand
+    server authorization. Retrieve the returned UID with ``get(pk=...)`` when
+    full release details are needed.
+
+    See the SDK's Resource releases guide for supported filters and examples.
+    """
+
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
         "uid": ["exact", "in"],
+        "name": ["exact"],
         "code_repository_branch_uid": ["exact"],
         "resource__uid": ["exact", "in"],
         "related_job__uid": ["exact", "in"],
@@ -819,6 +835,7 @@ class ResourceRelease(
     }
     FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
         "uid": "uid",
+        "name": "str",
         "code_repository_branch_uid": "uid",
         "resource__uid": "uid",
         "related_job__uid": "uid",
@@ -891,7 +908,7 @@ class ResourceRelease(
         wait_timeout_seconds: float = 600.0,
         timeout: int | float | tuple[float, float] | None = None,
     ) -> ResourceReleaseRuntimeAccess:
-        """Poll Django with backend-directed bounded backoff until admission settles."""
+        """Poll until backend-directed runtime admission reaches a terminal state."""
 
         if wait_timeout_seconds <= 0:
             raise ValueError("wait_timeout_seconds must be greater than 0")
@@ -917,10 +934,9 @@ class ResourceRelease(
                 )
             retry_after_ms = access.runtime_access.retry_after_ms
             if retry_after_ms is None:
-                raise RuntimeError(
-                    "Transient runtime access response is missing retry_after_ms."
-                )
+                raise RuntimeError("Transient runtime access response is missing retry_after_ms.")
             time.sleep(min(remaining, max(0.1, retry_after_ms / 1000.0)))
+
 
     uid: str | None = Field(
         None,

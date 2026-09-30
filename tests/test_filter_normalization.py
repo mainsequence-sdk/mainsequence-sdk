@@ -11,7 +11,6 @@ from pydantic import ConfigDict, Field, ValidationError
 
 import mainsequence.client.agent_runtime_models as agent_models_mod
 import mainsequence.client.base as base_mod
-import mainsequence.client.metatables as models_metatables_mod
 import mainsequence.client.models_foundry as models_foundry_mod
 import mainsequence.client.models_helpers as models_helpers_mod
 import mainsequence.client.models_user as models_user_mod
@@ -499,536 +498,6 @@ def test_code_repository_image_filter_accepts_boolean_build_error(monkeypatch):
     assert [image.build_error for image in images] == [False, True]
 
 
-def test_output_table_normalizes_namespace_filters():
-    from mainsequence.client.metatables import TimeIndexMetaTable
-
-    normalized = TimeIndexMetaTable._normalize_filter_kwargs(
-        {
-            "namespace__contains": "  pytest  ",
-            "namespace__in": [" alpha ", "beta"],
-            "namespace__isnull": "false",
-        }
-    )
-
-    assert normalized == {
-        "namespace__contains": "pytest",
-        "namespace__in": ["alpha", "beta"],
-        "namespace__isnull": False,
-    }
-
-
-def test_output_table_normalizes_data_source_uid_filters():
-    from mainsequence.client.metatables import TimeIndexMetaTable
-
-    uid = uuid.UUID("dddddddd-dddd-4ddd-8ddd-dddddddddddd")
-
-    normalized = TimeIndexMetaTable._normalize_filter_kwargs(
-        {
-            "data_source__uid": {"uid": uid},
-            "data_source__uid__in": [{"uid": uid}],
-        }
-    )
-
-    assert normalized == {
-        "data_source__uid": str(uid),
-        "data_source__uid__in": [str(uid)],
-    }
-
-
-def test_output_table_does_not_expose_environment_filters():
-    from mainsequence.client.metatables import TimeIndexMetaTable
-
-    uid = uuid.UUID("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb")
-
-    with pytest.raises(ValueError, match="Unsupported TimeIndexMetaTable filter"):
-        TimeIndexMetaTable._normalize_filter_kwargs({"organization_environment_uid": {"uid": uid}})
-
-
-@pytest.mark.parametrize(
-    "model_class",
-    [
-        models_metatables_mod.MetaTable,
-        models_metatables_mod.TimeIndexMetaTable,
-    ],
-)
-def test_meta_table_collection_sends_canonical_environment_query_params(
-    monkeypatch,
-    model_class,
-):
-    captured = {}
-
-    class FakeResponse:
-        status_code = 200
-        content = b'{"results": [], "next": null}'
-
-        @staticmethod
-        def json():
-            return {"results": [], "next": None}
-
-    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
-        captured.update(
-            {
-                "r_type": r_type,
-                "payload": payload,
-                "timeout": time_out,
-            }
-        )
-        return FakeResponse()
-
-    monkeypatch.setattr(base_mod, "make_request", _fake_make_request)
-    monkeypatch.setattr(model_class, "build_session", classmethod(lambda cls: object()))
-
-    rows = model_class.filter(timeout=17)
-
-    assert rows == []
-    assert captured == {
-        "r_type": "GET",
-        "payload": {
-            "params": {
-                "organization_environment_uid": ENVIRONMENT_UID,
-            }
-        },
-        "timeout": 17,
-    }
-
-    with pytest.raises(ValueError, match="cannot override SDK-resolved context"):
-        model_class.filter(organization_environment_uid=("11111111-1111-4111-8111-111111111111"))
-
-
-def test_output_table_rejects_data_source_id_filter():
-    from mainsequence.client.metatables import TimeIndexMetaTable
-
-    with pytest.raises(ValueError, match="Unsupported TimeIndexMetaTable filter"):
-        TimeIndexMetaTable._normalize_filter_kwargs({"data_source__id": {"id": 7}})
-
-
-def test_include_relations_detail_is_only_table_update_read_param():
-    from mainsequence.client.metatables import TimeIndexMetaTable, TimeIndexTableUpdate
-
-    assert "include_relations_detail" in TimeIndexTableUpdate.READ_QUERY_PARAMS
-    assert "include_relations_detail" not in (TimeIndexMetaTable.READ_QUERY_PARAMS or {})
-
-    filter_kwargs, read_query_kwargs = TimeIndexMetaTable._split_filter_and_read_query_kwargs(
-        {"include_relations_detail": True}
-    )
-
-    assert read_query_kwargs == {}
-    assert filter_kwargs == {"include_relations_detail": True}
-    with pytest.raises(ValueError, match="Unsupported TimeIndexMetaTable filter"):
-        TimeIndexMetaTable._normalize_filter_kwargs(filter_kwargs)
-
-
-def test_output_table_delete_after_date_posts_tail_delete(monkeypatch):
-    from mainsequence.client import metatables as models_metatables
-
-    captured = {}
-
-    class FakeResponse:
-        status_code = 200
-        content = b'{"ok": true}'
-        content = b'{"ok": true}'
-
-        @staticmethod
-        def json():
-            return {
-                "ok": True,
-                "dynamic_table_id": 714,
-                "deleted_count": 123,
-                "table_empty": False,
-                "stats": {
-                    "last_time_index_value": "2026-03-31T23:59:00Z",
-                    "earliest_index_value": "2024-01-01T00:00:00Z",
-                    "multi_index_stats": None,
-                    "multi_index_column_stats": None,
-                },
-            }
-
-    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
-        captured["r_type"] = r_type
-        captured["url"] = url
-        captured["payload"] = payload
-        captured["timeout"] = time_out
-        return FakeResponse()
-
-    monkeypatch.setattr(models_metatables, "make_request", _fake_make_request)
-    monkeypatch.setattr(
-        models_metatables.TimeIndexMetaTable, "build_session", classmethod(lambda cls: object())
-    )
-
-    storage = models_metatables.TimeIndexMetaTable(
-        uid="714",
-        storage_hash="prices_hash",
-        management_mode="platform_managed",
-        physical_table_name="prices_hash",
-        data_source={
-            "uid": "data-source-uid",
-            "data_source_uid": "data-source-uid",
-            "class_type": "timescale_db",
-        },
-        source_class_name="PricesNode",
-        creation_date="2026-04-01T00:00:00Z",
-        time_indexed_profile=models_metatables.TimeIndexedProfile(
-            time_index_meta_table_uid="714",
-            time_index_name="time_index",
-            index_names=["time_index", "entity_uid"],
-            column_dtypes_map={
-                "time_index": "datetime64[ns, UTC]",
-                "entity_uid": "object",
-                "value": "float64",
-            },
-            storage_layout={
-                "time_index": "time_index",
-                "identity_dimensions": ["entity_uid"],
-            },
-            physical_index_plan={
-                "uniqueness": {"columns": ["time_index", "entity_uid"]},
-            },
-        ),
-    )
-
-    result = storage.delete_after_date(
-        "2026-04-01T00:00:00Z",
-        dimension_filters={"entity_uid": ["AAPL", "MSFT"]},
-        timeout=30,
-    )
-
-    assert result["ok"] is True
-    assert result["deleted_count"] == 123
-    assert captured == {
-        "r_type": "POST",
-        "url": f"{models_metatables.TimeIndexMetaTable.get_object_url()}/714/delete-after-date/",
-        "payload": {
-            "json": {
-                "after_date": "2026-04-01T00:00:00Z",
-                "dimension_filters": {"entity_uid": ["AAPL", "MSFT"]},
-            }
-        },
-        "timeout": 30,
-    }
-
-
-def test_output_table_delete_after_date_accepts_index_coordinates(monkeypatch):
-    from mainsequence.client import metatables as models_metatables
-
-    captured = {}
-
-    class FakeResponse:
-        status_code = 200
-        content = b'{"ok": true}'
-        content = b'{"ok": true}'
-
-        @staticmethod
-        def json():
-            return {"ok": True, "dynamic_table_id": 714, "deleted_count": 1}
-
-    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
-        captured["payload"] = payload
-        return FakeResponse()
-
-    monkeypatch.setattr(models_metatables, "make_request", _fake_make_request)
-    monkeypatch.setattr(
-        models_metatables.TimeIndexMetaTable, "build_session", classmethod(lambda cls: object())
-    )
-
-    storage = models_metatables.TimeIndexMetaTable(
-        uid="714",
-        storage_hash="prices_hash",
-        management_mode="platform_managed",
-        physical_table_name="prices_hash",
-        data_source={
-            "uid": "data-source-uid",
-            "data_source_uid": "data-source-uid",
-            "class_type": "timescale_db",
-        },
-        source_class_name="PricesNode",
-        creation_date="2026-04-01T00:00:00Z",
-        time_indexed_profile=models_metatables.TimeIndexedProfile(
-            time_index_meta_table_uid="714",
-            time_index_name="time_index",
-            index_names=["time_index", "entity_uid"],
-            column_dtypes_map={
-                "time_index": "datetime64[ns, UTC]",
-                "entity_uid": "object",
-                "value": "float64",
-            },
-            storage_layout={
-                "time_index": "time_index",
-                "identity_dimensions": ["entity_uid"],
-            },
-            physical_index_plan={
-                "uniqueness": {"columns": ["time_index", "entity_uid"]},
-            },
-        ),
-    )
-
-    storage.delete_after_date(
-        datetime.datetime(2026, 4, 1, 0, 0, tzinfo=datetime.UTC),
-        index_coordinates=[{"entity_uid": "AAPL"}],
-    )
-
-    assert captured["payload"] == {
-        "json": {
-            "after_date": "2026-04-01T00:00:00+00:00",
-            "index_coordinates": [{"entity_uid": "AAPL"}],
-        }
-    }
-
-
-def test_output_table_run_query_posts_json_sql(monkeypatch):
-    from mainsequence.client import metatables as models_metatables
-
-    captured = {}
-    session = SimpleNamespace(headers={"Content-Type": "application/json"})
-
-    class FakeResponse:
-        status_code = 200
-        content = b'{"ok": true}'
-
-        @staticmethod
-        def json():
-            return {
-                "ok": True,
-                "query_id": "abc123",
-                "dynamic_table_id": 714,
-                "results": [{"column_a": "value", "column_b": 10}],
-                "truncated": False,
-                "max_rows": 1000,
-                "row_count": 1,
-                "error": None,
-            }
-
-    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
-        captured["headers"] = dict(s.headers)
-        captured["r_type"] = r_type
-        captured["url"] = url
-        captured["payload"] = payload
-        captured["timeout"] = time_out
-        return FakeResponse()
-
-    monkeypatch.setattr(models_metatables, "make_request", _fake_make_request)
-    monkeypatch.setattr(
-        models_metatables.TimeIndexMetaTable, "build_session", classmethod(lambda cls: session)
-    )
-
-    storage = models_metatables.TimeIndexMetaTable(
-        uid="714",
-        storage_hash="prices_hash",
-        management_mode="platform_managed",
-        physical_table_name="prices_hash",
-        data_source={
-            "uid": "data-source-uid",
-            "data_source_uid": "data-source-uid",
-            "class_type": "timescale_db",
-        },
-        source_class_name="PricesNode",
-        creation_date="2026-04-01T00:00:00Z",
-    )
-
-    result = storage.run_query("SELECT * FROM my_table LIMIT 100", timeout=30)
-
-    assert result["ok"] is True
-    assert result["dynamic_table_id"] == 714
-    assert captured == {
-        "headers": {"Content-Type": "application/json"},
-        "r_type": "POST",
-        "url": f"{models_metatables.TimeIndexMetaTable.get_object_url()}/714/run-query/",
-        "payload": {"json": "SELECT * FROM my_table LIMIT 100"},
-        "timeout": 30,
-    }
-    assert session.headers == {"Content-Type": "application/json"}
-
-
-def test_meta_table_run_query_posts_json_sql(monkeypatch):
-    from mainsequence.client import metatables as models_metatables
-
-    captured = {}
-    session = SimpleNamespace(headers={"Content-Type": "application/json"})
-
-    class FakeResponse:
-        status_code = 200
-        content = b'{"ok": true}'
-
-        @staticmethod
-        def json():
-            return {
-                "ok": True,
-                "query_id": "abc123",
-                "meta_table_uid": "b14db80b-64b7-4390-8483-5377510de505",
-                "results": [{"column_a": "value", "column_b": 10}],
-                "truncated": False,
-                "max_rows": 1000,
-                "row_count": 1,
-                "error": None,
-            }
-
-    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
-        captured["headers"] = dict(s.headers)
-        captured["r_type"] = r_type
-        captured["url"] = url
-        captured["payload"] = payload
-        captured["timeout"] = time_out
-        return FakeResponse()
-
-    monkeypatch.setattr(models_metatables, "make_request", _fake_make_request)
-    monkeypatch.setattr(
-        models_metatables.MetaTable, "build_session", classmethod(lambda cls: session)
-    )
-
-    meta_table = models_metatables.MetaTable(
-        uid="b14db80b-64b7-4390-8483-5377510de505",
-        data_source_uid="data-source-uid",
-        storage_hash="asset_storage",
-        management_mode="platform_managed",
-        physical_table_name="asset_storage",
-    )
-
-    result = meta_table.run_query("SELECT * FROM asset LIMIT 100", timeout=30)
-
-    assert result["ok"] is True
-    assert result["meta_table_uid"] == "b14db80b-64b7-4390-8483-5377510de505"
-    assert captured == {
-        "headers": {"Content-Type": "application/json"},
-        "r_type": "POST",
-        "url": (
-            f"{models_metatables.MetaTable.get_object_url()}/"
-            "b14db80b-64b7-4390-8483-5377510de505/run-query/"
-        ),
-        "payload": {"json": "SELECT * FROM asset LIMIT 100"},
-        "timeout": 30,
-    }
-    assert session.headers == {"Content-Type": "application/json"}
-
-
-def test_output_table_run_query_returns_structured_error_envelope(monkeypatch):
-    from mainsequence.client import metatables as models_metatables
-
-    session = SimpleNamespace(headers={})
-
-    class FakeResponse:
-        status_code = 400
-        content = b'{"ok": false}'
-
-        @staticmethod
-        def json():
-            return {
-                "ok": False,
-                "query_id": "abc123",
-                "dynamic_table_id": 714,
-                "results": [],
-                "truncated": False,
-                "max_rows": 0,
-                "row_count": 0,
-                "error": {
-                    "kind": "validation_error",
-                    "message": "Only SELECT/WITH/EXPLAIN queries are allowed.",
-                    "retryable": False,
-                    "sqlstate": None,
-                },
-            }
-
-    monkeypatch.setattr(models_metatables, "make_request", lambda **_kwargs: FakeResponse())
-    monkeypatch.setattr(
-        models_metatables.TimeIndexMetaTable, "build_session", classmethod(lambda cls: session)
-    )
-
-    storage = models_metatables.TimeIndexMetaTable(
-        uid="714",
-        storage_hash="prices_hash",
-        management_mode="platform_managed",
-        physical_table_name="prices_hash",
-        data_source={
-            "uid": "data-source-uid",
-            "data_source_uid": "data-source-uid",
-            "class_type": "timescale_db",
-        },
-        source_class_name="PricesNode",
-        creation_date="2026-04-01T00:00:00Z",
-    )
-
-    result = storage.run_query("DELETE FROM my_table")
-    assert result["ok"] is False
-    assert result["error"]["kind"] == "validation_error"
-
-
-def test_table_update_normalizes_output_table_namespace_filters():
-    from mainsequence.client.metatables import TimeIndexTableUpdate
-
-    normalized = TimeIndexTableUpdate._normalize_filter_kwargs(
-        {
-            "output_table__namespace__contains": "  pytest  ",
-            "output_table__namespace__in": [" alpha ", "beta"],
-            "output_table__namespace__isnull": "false",
-        }
-    )
-
-    assert normalized == {
-        "output_table__namespace__contains": "pytest",
-        "output_table__namespace__in": ["alpha", "beta"],
-        "output_table__namespace__isnull": False,
-    }
-
-
-def test_table_update_accepts_uid_update_lookup_filters():
-    from mainsequence.client.metatables import TimeIndexTableUpdate
-
-    uid = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
-
-    normalized = TimeIndexTableUpdate._normalize_filter_kwargs(
-        {
-            "update_hash": " weights_daily ",
-            "output_table__uid": {"uid": uid},
-            "output_table__data_source__uid": {"uid": uid},
-        }
-    )
-
-    assert normalized == {
-        "update_hash": "weights_daily",
-        "output_table__uid": uid,
-        "output_table__data_source__uid": uid,
-    }
-
-
-def test_table_update_rejects_data_source_id_filter():
-    from mainsequence.client.metatables import TimeIndexTableUpdate
-
-    with pytest.raises(ValueError, match="Unsupported TimeIndexTableUpdate filter"):
-        TimeIndexTableUpdate._normalize_filter_kwargs({"output_table__data_source__id": {"id": 7}})
-
-
-def test_meta_table_normalizes_data_source_uid_filters():
-    from mainsequence.client.metatables import MetaTable
-
-    uid = "ffffffff-ffff-4fff-8fff-ffffffffffff"
-
-    normalized = MetaTable._normalize_filter_kwargs(
-        {
-            "data_source__uid": {"uid": uid},
-            "data_source__uid__in": [{"uid": uid}],
-        }
-    )
-
-    assert normalized == {
-        "data_source__uid": uid,
-        "data_source__uid__in": [uid],
-    }
-
-
-def test_meta_table_does_not_expose_environment_filters():
-    from mainsequence.client.metatables import MetaTable
-
-    uid = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
-
-    with pytest.raises(ValueError, match="Unsupported MetaTable filter"):
-        MetaTable._normalize_filter_kwargs({"organization_environment_uid": {"uid": uid}})
-
-
-def test_meta_table_rejects_data_source_id_filter():
-    from mainsequence.client.metatables import MetaTable
-
-    with pytest.raises(ValueError, match="Unsupported MetaTable filter"):
-        MetaTable._normalize_filter_kwargs({"data_source__id": {"id": 7}})
-
-
 def test_normalize_filter_kwargs_rejects_unsupported_filters():
     with pytest.raises(ValueError, match="Unsupported DemoFilterModel filter"):
         DemoFilterModel._normalize_filter_kwargs({"unsupported": 1})
@@ -1446,8 +915,6 @@ def test_shareable_access_state_drops_removed_internal_identity():
 @pytest.mark.parametrize(
     ("resource_cls", "accessor_name", "access_level"),
     [
-        (models_metatables_mod.MetaTable, "can_view", "view"),
-        (models_metatables_mod.TimeIndexMetaTable, "can_view", "view"),
         (models_foundry_mod.Constant, "can_edit", "edit"),
     ],
 )
@@ -4901,3 +4368,66 @@ def test_retired_collection_create_fails_before_http(monkeypatch, model):
 
 def test_resource_release_does_not_offer_manual_deployment():
     assert not hasattr(models_helpers_mod.ResourceRelease, "deploy_current_version")
+
+@pytest.mark.parametrize("method_name", ["filter", "get"])
+def test_resource_release_name_lookup_keeps_current_branch_scope(monkeypatch, method_name):
+    captured = {}
+    release_uid = "2f4c4c3d-5669-4da5-9d86-b84633c1e6ed"
+
+    class FakeResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return [{
+                "uid": release_uid,
+                "name": "Shared API",
+                "code_repository_branch_uid": CODE_REPOSITORY_BRANCH_UID,
+                "release_kind": "fastapi",
+                "automatic_deployment": True,
+            }]
+
+    def fake_make_request(**kwargs):
+        captured.update(kwargs)
+        return FakeResponse()
+
+    monkeypatch.setattr(base_mod, "make_request", fake_make_request)
+    result = getattr(models_helpers_mod.ResourceRelease, method_name)(name="Shared API")
+
+    assert captured["payload"]["params"] == {
+        "name": "Shared API",
+        "code_repository_branch_uid": CODE_REPOSITORY_BRANCH_UID,
+    }
+    release = result[0] if method_name == "filter" else result
+    assert release.uid == release_uid
+
+def test_resource_release_name_admin_filter_uses_the_explicit_owning_branch(monkeypatch):
+    owning_branch_uid = "42c4b562-4da5-49bb-a3b4-1372c9491738"
+    captured = {}
+
+    class FakeResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return []
+
+    def fake_make_request(**kwargs):
+        captured.update(kwargs)
+        return FakeResponse()
+
+    monkeypatch.setattr(base_mod, "make_request", fake_make_request)
+    assert models_helpers_mod.ResourceRelease.filter_admin(
+        name="Shared API",
+        code_repository_branch_uid=owning_branch_uid,
+        release_kind="fastapi",
+    ) == []
+    assert captured["payload"]["params"] == {
+        "name": "Shared API",
+        "code_repository_branch_uid": owning_branch_uid,
+        "release_kind": "fastapi",
+    }
+
+def test_resource_release_name_filter_supports_only_exact_matching():
+    with pytest.raises(ValueError, match="Unsupported ResourceRelease filter"):
+        models_helpers_mod.ResourceRelease._normalize_filter_kwargs({"name__contains": "API"})

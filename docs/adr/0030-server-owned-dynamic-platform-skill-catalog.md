@@ -1,5 +1,7 @@
 # ADR 0030: Server-Owned Dynamic Platform Skill Catalog
 
+> Historical decision: SDK-bundled skill assembly described here was superseded by [ADR 0034](0034-extract-metatables-python-package.md). Follow the current [removal migration guide](../migrations/metatables-sdk-removal.md) for supported imports and commands.
+
 ## Status
 
 Accepted

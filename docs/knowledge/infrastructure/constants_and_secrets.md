@@ -44,7 +44,7 @@ In practice:
 
 Think of constants and secrets as runtime inputs, not workflow outputs.
 
-Jobs, resources, dashboards, agents, and notebooks often need configuration that should not live directly inside code. Constants and secrets give you a place to store that configuration in the platform.
+Jobs, resources, APIs, agents, and notebooks often need configuration that should not live directly inside code. Constants and secrets give you a place to store that configuration in the platform.
 
 A useful mental split is:
 
@@ -54,11 +54,11 @@ A useful mental split is:
 
 That keeps the repository cleaner and reduces the amount of environment-specific data hardcoded into scripts and jobs.
 
-Constants and Secrets are owned by an Organization Environment. CodeRepository-facing
-SDK operations resolve that Environment from the process-frozen current Git
-branch and its registered `CodeRepositoryBranch`. Users do not pass an Environment UID
-or branch UID. CodeRepositories and branches mapped to the same Environment can use the
-same configuration identities.
+Constants and Secrets are owned by an Organization Environment. SDK operations
+use the current registered branch's [Environment context](context.md), with
+authenticated runtime target checks when deployed. A branch without an
+Environment raises only when a scoped operation needs one. Users do not pass an
+Environment UID or branch UID.
 
 ## Names Are Unique Identities
 
@@ -93,7 +93,6 @@ Main Sequence applies resource-level access control, so the real operational que
 In practice, the current SDK exposes sharing behavior across several resource types:
 
 - `CodeRepository`
-- `TimeIndexMetaTable`
 - `Constant`
 - `Secret`
 - `Bucket`
@@ -103,7 +102,6 @@ In practice, the current SDK exposes sharing behavior across several resource ty
 Why these matter:
 
 - `CodeRepository` defines an important collaboration and execution boundary
-- `TimeIndexMetaTable` is the published table boundary for shared datasets
 - `Constant` stores shareable, non-sensitive runtime configuration
 - `Secret` stores protected credentials
 - `Bucket` holds artifacts and files that may themselves contain sensitive or controlled content
@@ -112,13 +110,13 @@ Why these matter:
 
 !!! warning "IMPORTANT"
     `Constant` and `Secret` are not the only shareable resources in the SDK.
-    `CodeRepository`, `TimeIndexMetaTable`, `Bucket`, `Artifact`, and `ResourceRelease` also participate in the same shareable-object model.
+    `CodeRepository`, `Bucket`, `Artifact`, and `ResourceRelease` also participate in the same shareable-object model.
     This guide focuses on constants and secrets because they are the simplest place to learn the pattern.
 
 That is the practical reason this topic matters early:
 
 - constants and secrets teach the access-control model in its simplest form
-- the same idea scales later to CodeRepositories, shared tables, buckets, artifacts, and deployed resources
+- the same idea scales later to CodeRepositories, buckets, artifacts, and deployed resources
 
 ## Constants
 
@@ -346,7 +344,7 @@ Secrets need a different operational standard than constants:
 - do not commit them to the repository
 - do not copy them into constants
 - do not print them in logs
-- do not paste them into dashboards or notebooks casually
+- do not paste them into application UIs or notebooks casually
 - rotate them when external systems require it
 
 A good working rule is:

@@ -667,21 +667,6 @@ def test_sdk_source_tree_does_not_vendor_extension_library_routing_skills():
     assert not (sdk_root / "agent_scaffold" / "skills" / "ms_tau_sdk").exists()
 
 
-def test_scaffold_routes_tau_runtime_work_to_the_independent_sdk_namespace():
-    sdk_root = Path(__file__).resolve().parents[1]
-    agents = (sdk_root / "agent_scaffold" / "AGENTS.md").read_text(encoding="utf-8")
-    execution = (
-        sdk_root / "agent_scaffold" / "skills" / "sdk_code_repository_execution" / "SKILL.md"
-    ).read_text(encoding="utf-8")
-
-    for content in (agents, execution):
-        assert ".agents/skills/ms_tau_sdk/" in content
-        assert "uv run ms-tau skills sync --path ." in content
-        assert ".agents/skills/mainsequence/" in content
-    assert "never owns or updates the `ms_tau_sdk` namespace" in agents
-    assert "must not copy,\nrefresh, or remove `.agents/skills/ms_tau_sdk/`" in execution
-
-
 def test_code_repository_maintenance_is_sdk_owned_and_uses_canonical_cli_workflows():
     sdk_root = Path(__file__).resolve().parents[1]
     skill_path = (
@@ -694,15 +679,15 @@ def test_code_repository_maintenance_is_sdk_owned_and_uses_canonical_cli_workflo
     )
     content = skill_path.read_text(encoding="utf-8")
 
-    assert "name: code_repository_maintenance" in content
+    assert "name: mainsequence-code-repository-maintenance" in content
     assert "mainsequence code-repository build-local-venv --path ." in content
-    assert "mainsequence code-repository refresh-token --path ." in content
+    assert "\nmainsequence refresh-token\n" in content
+    assert "code-repository refresh-token" not in content
     assert "mainsequence code-repository update-sdk --path ." in content
     assert "mainsequence code-repository sync --path . -m" in content
-    assert content.index("mainsequence code-repository update-agent-skills --path .") < (
-        content.index("mainsequence code-repository update AGENTS.md --path .")
-    )
-    assert "Do not call `sync-after-commit`" in content
+    assert "mainsequence code-repository update-agent-skills --path ." in content
+    assert "mainsequence code-repository update AGENTS.md --path ." in content
+    assert "only when the user explicitly requests it" in content
     assert "mainsequence://" not in content
 
 

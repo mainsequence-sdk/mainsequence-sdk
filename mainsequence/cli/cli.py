@@ -11,7 +11,9 @@ Parity with VS Code extension:
 - code-repository build_local_venv (create local .venv from pyproject + uv sync)
 - code-repository sync (uv bump + lock/sync/export + git commit/push)
 - code-repository build-docker-env (docker build + devcontainer config)
-- local `.env` provisioning during set-up-locally uses only CLI-managed runtime values
+- local `.env` provisioning during set-up-locally writes the backend endpoint and no credential
+- refresh-token (renew the saved session; it belongs to the machine, not to a checkout)
+- auth token / auth status (hand the saved session to other local tools)
 - code-repository current (detect current code repository + venv/python info)
 - sdk latest + code-repository sdk-status + code-repository update-sdk
 - doctor diagnostics
@@ -39,6 +41,7 @@ import time
 import uuid
 from enum import Enum as PyEnum
 from textwrap import dedent
+from typing import NoReturn
 
 import click
 import typer
@@ -72,35 +75,24 @@ from .api import (
     add_constant_user_to_edit,
     add_constant_user_to_view,
     add_deploy_key,
-    add_meta_table_labels,
-    add_meta_table_team_to_edit,
-    add_meta_table_team_to_view,
-    add_meta_table_user_to_edit,
-    add_meta_table_user_to_view,
     add_secret_team_to_edit,
     add_secret_team_to_view,
     add_secret_user_to_edit,
     add_secret_user_to_view,
     add_team_user_to_edit,
     add_team_user_to_view,
-    add_time_index_table_labels,
-    add_time_index_table_team_to_edit,
-    add_time_index_table_team_to_view,
-    add_time_index_table_user_to_edit,
-    add_time_index_table_user_to_view,
     bulk_delete_code_repositories,
     create_code_repository,
     create_constant,
     create_organization_team,
     create_secret,
+    current_access_token,
     delete_agent,
     delete_code_repository_image,
     delete_constant,
-    delete_meta_table,
     delete_organization_team,
     delete_resource_release,
     delete_secret,
-    delete_time_index_table,
     fetch_platform_code_repository_skill_catalog,
     get_agent,
     get_agent_logs,
@@ -114,18 +106,15 @@ from .api import (
     get_code_repository_job_run_logs,
     get_code_repository_job_run_resource_usage,
     get_code_repository_repository,
-    get_code_repository_time_index_table_updates,
     get_constant,
     get_current_user_profile,
     get_logged_user_details,
-    get_meta_table,
     get_or_create_agent_session,
     get_organization_team,
     get_resource_release,
     get_resource_release_logs,
     get_resource_release_resource_usage,
     get_secret,
-    get_time_index_table,
     list_agent_sessions,
     list_agent_users_can_edit,
     list_agent_users_can_view,
@@ -141,20 +130,14 @@ from .api import (
     list_constant_users_can_view,
     list_constants,
     list_github_organizations,
-    list_meta_table_users_can_edit,
-    list_meta_table_users_can_view,
-    list_meta_tables,
     list_organization_teams,
     list_secret_users_can_edit,
     list_secret_users_can_view,
     list_secrets,
     list_team_users_can_edit,
     list_team_users_can_view,
-    list_time_index_table_users_can_edit,
-    list_time_index_table_users_can_view,
-    list_time_index_tables,
     logout_cli_session,
-    refresh_time_index_table_search_index,
+    refresh_access,
     remove_agent_team_from_edit,
     remove_agent_team_from_view,
     remove_agent_user_from_edit,
@@ -168,34 +151,20 @@ from .api import (
     remove_constant_team_from_view,
     remove_constant_user_from_edit,
     remove_constant_user_from_view,
-    remove_meta_table_labels,
-    remove_meta_table_team_from_edit,
-    remove_meta_table_team_from_view,
-    remove_meta_table_user_from_edit,
-    remove_meta_table_user_from_view,
     remove_secret_team_from_edit,
     remove_secret_team_from_view,
     remove_secret_user_from_edit,
     remove_secret_user_from_view,
     remove_team_user_from_edit,
     remove_team_user_from_view,
-    remove_time_index_table_labels,
-    remove_time_index_table_team_from_edit,
-    remove_time_index_table_team_from_view,
-    remove_time_index_table_user_from_edit,
-    remove_time_index_table_user_from_view,
     render_code_repository_branch_default_redeployment_tag,
     repo_name_from_git_url,
     resolve_code_repository,
     run_code_repository_job,
-    run_meta_table_query,
-    run_time_index_table_query,
     safe_slug,
     search_code_repositories,
     semantic_search_agents,
     send_agent_session_a2a_message,
-    time_index_table_column_search,
-    time_index_table_description_search,
     update_code_repository_job_scheduled_command_args,
     update_organization_team,
     validate_code_repository_name,
@@ -223,7 +192,6 @@ from .local_ops import (
     uv_preview_patch_version,
     uv_project_version,
 )
-from .migrations import migrations as migrations_group
 from .model_filters import build_cli_model_filter_rows, parse_cli_model_filters
 from .pydantic_cli import (
     pydantic_argument,
@@ -342,21 +310,18 @@ constants = typer.Typer(help="Constant commands")
 secrets = typer.Typer(help="Secret commands")
 organization = typer.Typer(help="Organization commands")
 organization_teams_group = typer.Typer(help="Organization team commands")
-meta_table_group = typer.Typer(help="MetaTable table-storage commands")
-time_index_table_group = typer.Typer(help="Time-index table discovery and access commands")
 code_repository = typer.Typer(help="CodeRepository commands (remote + local operations)")
 code_repository_list_group = typer.Typer(help="List-related CodeRepository commands")
 code_repository_resources_group = typer.Typer(help="CodeRepository resource commands")
-code_repository_time_index_table_updates_group = typer.Typer(
-    help="CodeRepository time-index table update commands"
-)
 code_repository_images_group = typer.Typer(help="CodeRepository image commands")
 code_repository_jobs_group = typer.Typer(help="CodeRepository job commands")
 code_repository_job_runs_group = typer.Typer(help="CodeRepository job run commands")
 settings = typer.Typer(help="Settings (base folder, backend, etc.)")
 sdk = typer.Typer(help="SDK utilities (latest version, status)")
 skills = typer.Typer(help="Installed scaffold skill commands")
+auth = typer.Typer(help="Saved session commands for other local tools", no_args_is_help=True)
 
+app.add_typer(auth, name="auth")
 app.add_typer(agent, name="agent")
 agent.add_typer(agent_session_group, name="session")
 agent_session_group.add_typer(agent_session_a2a_group, name="a2a")
@@ -364,21 +329,14 @@ app.add_typer(constants, name="constants")
 app.add_typer(secrets, name="secrets")
 app.add_typer(organization, name="organization")
 app.add_typer(skills, name="skills")
-app.add_typer(meta_table_group, name="meta-table")
-app.add_typer(meta_table_group, name="meta_table")
-app.add_typer(time_index_table_group, name="time-index-table")
 app.add_typer(code_repository, name="code-repository")
 code_repository.add_typer(code_repository_list_group, name="list")
 code_repository.add_typer(code_repository_resources_group, name="resources")
-code_repository.add_typer(
-    code_repository_time_index_table_updates_group, name="time-index-table-updates"
-)
 code_repository.add_typer(code_repository_images_group, name="images")
 code_repository.add_typer(code_repository_jobs_group, name="jobs")
 code_repository_jobs_group.add_typer(code_repository_job_runs_group, name="runs")
 app.add_typer(settings, name="settings")
 app.add_typer(sdk, name="sdk")
-app.add_typer(migrations_group, name="migrations")
 
 
 @app.callback()
@@ -404,8 +362,6 @@ JOB_RUN_MODEL_REF = "mainsequence.client.models_helpers.JobRun"
 CODE_REPOSITORY_IMAGE_MODEL_REF = "mainsequence.client.models_foundry.CodeRepositoryImage"
 CODE_REPOSITORY_RESOURCE_MODEL_REF = "mainsequence.client.models_helpers.CodeRepositoryResource"
 RESOURCE_RELEASE_MODEL_REF = "mainsequence.client.models_helpers.ResourceRelease"
-TIME_INDEX_TABLE_MODEL_REF = "mainsequence.client.metatables.TimeIndexMetaTable"
-META_TABLE_MODEL_REF = "mainsequence.client.metatables.MetaTable"
 CONSTANT_MODEL_REF = "mainsequence.client.models_foundry.Constant"
 SECRET_MODEL_REF = "mainsequence.client.models_foundry.Secret"
 TEAM_MODEL_REF = "mainsequence.client.models_user.Team"
@@ -428,18 +384,18 @@ INSTR_REL_PATH = pathlib.Path("examples") / "ai" / "instructions"
 def _mainsequence_ascii_banner() -> str:
     return dedent(
         r"""
-         __  __       _        
-        |  \/  | __ _(_)_ __   
-        | |\/| |/ _` | | '_ \  
-        | |  | | (_| | | | | | 
-        |_|  |_|\__,_|_|_| |_| 
+         __  __       _
+        |  \/  | __ _(_)_ __
+        | |\/| |/ _` | | '_ \
+        | |  | | (_| | | | | |
+        |_|  |_|\__,_|_|_| |_|
 
-         ____                                 
+         ____
         / ___|  ___  __ _ _   _  ___ _ __   ___ ___
         \___ \ / _ \/ _` | | | |/ _ \ '_ \ / __/ _ \
          ___) |  __/ (_| | |_| |  __/ | | | (_|  __/
         |____/ \___|\__, |\__,_|\___|_| |_|\___\___|
-                      |_|                           
+                      |_|
         """
     ).strip("\n")
 
@@ -1370,29 +1326,6 @@ def _require_delete_verification(
         raise typer.Exit(0)
 
 
-def _format_time_index_table_delete_preview(storage: dict[str, object]) -> list[tuple[str, str]]:
-    return [
-        ("UID", str(storage.get("uid") or "-")),
-        ("Physical Table", str(storage.get("physical_table_name") or "-")),
-        ("Identifier", str(storage.get("identifier") or "-")),
-        ("Source Class", str(storage.get("source_class_name") or "-")),
-        ("Data Source", _format_time_index_table_data_source(storage.get("data_source"))),
-        ("Protected", str(storage.get("protect_from_deletion"))),
-    ]
-
-
-def _format_meta_table_delete_preview(meta_table: dict[str, object]) -> list[tuple[str, str]]:
-    return [
-        ("UID", str(meta_table.get("uid") or "-")),
-        ("Identifier", str(meta_table.get("identifier") or "-")),
-        ("Namespace", str(meta_table.get("namespace") or "-")),
-        ("Physical Table", str(meta_table.get("physical_table_name") or "-")),
-        ("Management Mode", str(meta_table.get("management_mode") or "-")),
-        ("Data Source", _format_time_index_table_data_source(meta_table.get("data_source"))),
-        ("Protected", str(meta_table.get("protect_from_deletion"))),
-    ]
-
-
 def _format_code_repository_image_delete_preview(image: dict[str, object]) -> list[tuple[str, str]]:
     return [
         ("UID", str(image.get("uid") or "-")),
@@ -1475,24 +1408,6 @@ def _format_nested_summary(
             field_value = value.get(field_name)
             if field_value not in (None, ""):
                 return str(field_value)
-        return "-"
-    if value is None:
-        return "-"
-    return str(value)
-
-
-def _format_time_index_table_data_source(value) -> str:
-    if isinstance(value, dict):
-        display_name = str(value.get("display_name") or "").strip()
-        class_type = str(value.get("class_type") or "").strip()
-        if display_name and class_type:
-            return f"{display_name} ({class_type})"
-        if display_name:
-            return display_name
-        if class_type:
-            return class_type
-        if value.get("uid") is not None:
-            return str(value.get("uid"))
         return "-"
     if value is None:
         return "-"
@@ -1711,95 +1626,35 @@ def _install_uv() -> tuple[bool, str]:
     return False, "; ".join(reasons)
 
 
-def _current_session_jwt_tokens() -> tuple[str, str]:
+def _code_repository_env_text(backend_url: str) -> str:
     """
-    Return access/refresh JWTs from the current CLI session.
+    Return the `.env` of a new checkout: the backend endpoint and no credential.
 
-    Raises:
-        RuntimeError: if the CLI session does not currently expose both tokens.
+    The session lives in the operating system credential store, and a platform
+    runtime receives its credential in its own environment.
     """
-    tokens = cfg.get_tokens()
-    access_token = (tokens.get("access") or "").strip()
-    refresh_token = (tokens.get("refresh") or "").strip()
-    if not access_token or not refresh_token:
-        raise RuntimeError("JWT session tokens are missing. Run: mainsequence login")
-    return access_token, refresh_token
+    return f"MAINSEQUENCE_ENDPOINT={backend_url}\n"
 
 
-def _current_code_repository_runtime_auth_env(backend_url: str) -> dict[str, str]:
+def _remove_env_credentials(directory: pathlib.Path) -> list[str]:
     """
-    Return auth environment entries for local CodeRepository `.env` provisioning.
+    Remove credential entries from `directory/.env` and return their names.
 
-    The output follows the active auth mode:
-    - a backend-injected runtime credential mode preserves its credential keys
-      and an exchanged access token
-    - default JWT mode writes the current CLI session access/refresh token pair
+    An earlier version, or another tool, may have left tokens there. A tool that
+    loads the file would use them instead of the saved session. Values are never
+    read out, and a file that cannot be changed is reported and left alone.
     """
-    if _runtime_credential_mode_enabled():
-        credential_id = (os.environ.get("MAINSEQUENCE_RUNTIME_CREDENTIAL_ID") or "").strip()
-        credential_secret = (os.environ.get("MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET") or "").strip()
-        if not credential_id or not credential_secret:
-            raise RuntimeError(
-                "Runtime credential mode requires MAINSEQUENCE_RUNTIME_CREDENTIAL_ID "
-                "and MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET."
-            )
-
-        access_token = _exchange_runtime_credential_for_cli_login(backend_url)
-        return {
-            "MAINSEQUENCE_AUTH_MODE": "runtime_credential",
-            "MAINSEQUENCE_ACCESS_TOKEN": access_token,
-            "MAINSEQUENCE_RUNTIME_CREDENTIAL_ID": credential_id,
-            "MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET": credential_secret,
-        }
-
-    access_token, refresh_token = _current_session_jwt_tokens()
-    return {
-        "MAINSEQUENCE_ACCESS_TOKEN": access_token,
-        "MAINSEQUENCE_REFRESH_TOKEN": refresh_token,
-    }
-
-
-def _render_code_repository_runtime_env_text(
-    env_text: str,
-    *,
-    auth_env: dict[str, str],
-    backend_url: str,
-) -> str:
-    """
-    Return `.env` text with managed runtime auth keys refreshed.
-
-    Managed keys are rewritten from scratch to avoid duplicate stale entries.
-    Obsolete local CodeRepository aliases are not carried into the rendered file.
-    """
-    from mainsequence.repository_identity_security import (
-        UNSUPPORTED_SOURCE_IDENTITY_ENV_NAMES,
-    )
-
-    managed_prefixes = (
-        "MAINSEQUENCE_AUTH_MODE=",
-        "MAINSEQUENCE_ACCESS_TOKEN=",
-        "MAINSEQUENCE_REFRESH_TOKEN=",
-        "MAINSEQUENCE_RUNTIME_CREDENTIAL_ID=",
-        "MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET=",
-        "MAINSEQUENCE_ENDPOINT=",
-        "MAINSEQUENCE_TOKEN=",
-    ) + tuple(f"{name}=" for name in UNSUPPORTED_SOURCE_IDENTITY_ENV_NAMES)
-    lines = [
-        ln
-        for ln in (env_text or "").replace("\r", "").splitlines()
-        if not any(ln.startswith(prefix) for prefix in managed_prefixes)
-    ]
-
-    if lines and lines[-1] != "":
-        lines.append("")
-
-    lines.extend(
-        [f"{key}={value}" for key, value in auth_env.items() if value]
-        + [f"MAINSEQUENCE_ENDPOINT={backend_url}"]
-    )
-
-    final_env = "\n".join(lines).replace("\r", "")
-    return final_env + ("\n" if not final_env.endswith("\n") else "")
+    env_path = directory / ".env"
+    if not env_path.is_file():
+        return []
+    try:
+        cleaned, removed = cfg.strip_env_credentials(env_path.read_text(encoding="utf-8"))
+        if removed:
+            env_path.write_text(cleaned, encoding="utf-8")
+    except (OSError, UnicodeError) as e:
+        warn(f"Could not clean {env_path} ({type(e).__name__}).")
+        return []
+    return removed
 
 
 # ---------- top-level commands ----------
@@ -2168,7 +2023,6 @@ def logout(
     mainsequence logout --export
     ```
     """
-    cfg.clear_session_overrides()
     backend_logout_result = {
         "attempted": False,
         "revoked": False,
@@ -2186,6 +2040,7 @@ def logout(
         }
 
     ok = cfg.clear_tokens()
+    cfg.clear_session_overrides()
     if export:
         typer.echo("unset MAINSEQUENCE_ACCESS_TOKEN")
         typer.echo("unset MAINSEQUENCE_REFRESH_TOKEN")
@@ -2228,6 +2083,194 @@ def doctor():
     ```
     """
     run_doctor()
+
+
+AUTH_EXIT_NOT_LOGGED_IN = 1
+AUTH_EXIT_NO_CREDENTIAL_STORE = 3
+
+
+def _format_epoch(value: int | None) -> str:
+    if value is None:
+        return "-"
+    return datetime.datetime.fromtimestamp(value, datetime.UTC).strftime("%Y-%m-%d %H:%M UTC")
+
+
+def _exit_without_session(exc: Exception) -> NoReturn:
+    """
+    Say why there is no usable session, and exit with the matching code.
+    """
+    from mainsequence import bootstrap
+
+    if not isinstance(exc, NotLoggedIn):
+        # Never echo the exception: a transport error can carry request details.
+        error(f"The session could not be renewed ({type(exc).__name__}).")
+        raise typer.Exit(AUTH_EXIT_NOT_LOGGED_IN) from exc
+    if bootstrap.credential_source() is None and not cfg.secure_store_available():
+        error(
+            "No credential store is available on this machine, and the environment "
+            "carries no credentials. Log in for this shell with: "
+            'eval "$(mainsequence login --export)"'
+        )
+        raise typer.Exit(AUTH_EXIT_NO_CREDENTIAL_STORE) from exc
+    store_error = cfg.store_read_error()
+    if store_error:
+        error(f"The saved session could not be read. {store_error} Run: mainsequence login")
+    else:
+        error("Not logged in. Run: mainsequence login")
+    raise typer.Exit(AUTH_EXIT_NOT_LOGGED_IN) from exc
+
+
+@app.command("refresh-token")
+@app.command("refresh_token", hidden=True)
+def refresh_saved_session():
+    """
+    Renew the saved session and say whether it works.
+
+    The session is one record per backend in the operating system credential
+    store, and no CodeRepository holds a copy of it. This command renews the
+    access token from the refresh token, or from the runtime credential of a
+    platform runtime, saves it, and reports the session. It prints no token
+    value, asks nothing and opens no browser.
+
+    When the current directory has a `.env` with credential entries that an
+    earlier version or another tool left there, they are removed and named:
+    a tool that loads that file would use them instead of the saved session.
+
+    With the global `--json` flag the output is the session report of
+    `mainsequence auth status` plus `removed_env_entries`.
+
+    Exit codes: 0 when the session was renewed; 1 when there is no session, the
+    credential store could not be read, or the backend refused the session (run
+    `mainsequence login`); 3 when this machine has no credential store and the
+    environment carries no credentials.
+
+    Examples
+    --------
+    ```bash
+    mainsequence refresh-token
+    mainsequence refresh-token --json
+    ```
+    """
+    removed = _remove_env_credentials(pathlib.Path.cwd())
+
+    try:
+        refresh_access()
+    except Exception as e:
+        if removed and not _json_output_enabled():
+            info(f"Removed credential entries from ./.env: {', '.join(removed)}")
+        _exit_without_session(e)
+
+    report = cfg.session_report()
+    report["removed_env_entries"] = removed
+    if _emit_json(report):
+        return
+    if removed:
+        info(f"Removed credential entries from ./.env: {', '.join(removed)}")
+    who = f" for {report['username']}" if report["username"] else ""
+    until = (
+        f", valid until {_format_epoch(report['session_expires_at'])}"
+        if report["session_expires_at"] is not None
+        else ""
+    )
+    success(f"Session renewed{who} on {report['endpoint']}{until}.")
+
+
+@auth.command("token")
+def auth_token():
+    """
+    Print a short-lived access token for another local tool.
+
+    The token comes from the session this process would use: credentials set in
+    the environment, otherwise the saved CLI session. It is renewed first when
+    it would expire within a minute. The refresh token is never printed, nothing
+    is asked and no browser is opened: without a usable session the command
+    fails.
+
+    With the global `--json` flag the output is one object with `endpoint`,
+    `access_token`, `token_type` and `expires_at` (epoch seconds, or null when
+    the token carries no expiry). Without it, the access token alone is printed.
+
+    Exit codes: 0 on success; 1 when there is no session, the credential store
+    could not be read, or the backend did not renew the session (run
+    `mainsequence login`); 3 when this machine has no credential store and the
+    environment carries no credentials.
+
+    Examples
+    --------
+    ```bash
+    mainsequence auth token --json
+    curl -H "Authorization: Bearer $(mainsequence auth token)" "$MAINSEQUENCE_ENDPOINT/api/v1/users/me/"
+    ```
+    """
+    try:
+        access, expires_at = current_access_token()
+    except Exception as e:
+        _exit_without_session(e)
+
+    payload = {
+        "endpoint": cfg.backend_url(),
+        "access_token": access,
+        "token_type": "Bearer",
+        "expires_at": expires_at,
+    }
+    if _emit_json(payload):
+        return
+    typer.echo(access)
+
+
+@auth.command("status")
+def auth_status(
+    check: bool = typer.Option(
+        False,
+        "--check",
+        help="Also ask the backend whether it accepts the session.",
+    ),
+):
+    """
+    Report the session other local tools would use. No token value is printed.
+
+    Without `--check` the answer comes from the tokens' own expiry and needs no
+    network. With `--check` the backend is asked as well.
+
+    Exit codes: 0 when a usable session exists, 1 when it does not.
+
+    Examples
+    --------
+    ```bash
+    mainsequence auth status
+    mainsequence auth status --check --json
+    ```
+    """
+    report = cfg.session_report()
+    if check and report["authenticated"]:
+        report["checked_with_backend"] = True
+        try:
+            profile = get_current_user_profile()
+        except Exception:
+            profile = None
+        username = str((profile or {}).get("username") or "").strip()
+        report["authenticated"] = bool(username)
+        if username:
+            report["username"] = username
+
+    if not _emit_json(report):
+        rows = [
+            ("Backend", report["endpoint"]),
+            ("Authenticated", "yes" if report["authenticated"] else "no"),
+            ("Checked with backend", "yes" if report["checked_with_backend"] else "no"),
+            ("Auth mode", report["auth_mode"]),
+            ("User", report["username"] or "-"),
+            ("Credentials from", report["source"] or "-"),
+            ("Auth storage", report["storage"]),
+            ("Session expires", _format_epoch(report["session_expires_at"])),
+            ("Access token expires", _format_epoch(report["access_expires_at"])),
+        ]
+        if report["store_error"]:
+            # A store that cannot be read looks like a machine that is not logged in.
+            rows.append(("Credential store error", report["store_error"]))
+        print_kv("MainSequence session", rows)
+    if not report["authenticated"]:
+        raise typer.Exit(AUTH_EXIT_NOT_LOGGED_IN)
 
 
 @app.command("user")
@@ -4027,31 +4070,6 @@ def _secrets_delete_impl(
     print_kv("Deleted Secret", _format_secret_preview(deleted))
 
 
-def _print_storage_query_payload(title: str, payload: dict[str, object]) -> None:
-    print_kv(
-        title,
-        [
-            ("OK", str(payload.get("ok"))),
-            ("Query ID", str(payload.get("query_id") or "-")),
-            ("MetaTable UID", str(payload.get("meta_table_uid") or "-")),
-            (
-                "Time Index MetaTable UID",
-                str(payload.get("time_index_meta_table_uid") or "-"),
-            ),
-            ("Row Count", str(payload.get("row_count") or 0)),
-            ("Truncated", str(payload.get("truncated"))),
-            ("Max Rows", str(payload.get("max_rows") or "-")),
-        ],
-    )
-    print_kv(
-        f"{title} Payload",
-        [
-            ("Results", _format_json_value(payload.get("results"))),
-            ("Error", _format_json_value(payload.get("error"))),
-        ],
-    )
-
-
 def _parse_cli_csv_list(values: list[str] | None) -> list[str]:
     items: list[str] = []
     for raw in values or []:
@@ -4060,266 +4078,6 @@ def _parse_cli_csv_list(values: list[str] | None) -> list[str]:
             if value:
                 items.append(value)
     return items
-
-
-def _time_index_table_list_impl(
-    timeout: int | None,
-    filter_entries: list[str] | None,
-    show_filters: bool,
-    data_source_uid: str | None = None,
-) -> None:
-    filters = _resolve_cli_list_filters(
-        model_ref=TIME_INDEX_TABLE_MODEL_REF,
-        filter_entries=filter_entries,
-        show_filters=show_filters,
-        command_label="Time-Index Table",
-    )
-    filters = _merge_cli_filter_alias(
-        filters,
-        filter_key="data_source__uid",
-        value=data_source_uid,
-        option_name="data-source-uid",
-    )
-    _require_login()
-
-    try:
-        storages = list_time_index_tables(timeout=timeout, filters=filters)
-    except ApiError as e:
-        error(f"Time-index tables fetch failed: {e}")
-        raise typer.Exit(1) from e
-
-    if _emit_json(storages):
-        return
-
-    if storages:
-        print_table(
-            "Time-Index Tables",
-            [
-                "UID",
-                "Physical Table",
-                "Source Class",
-                "Identifier",
-                "Namespace",
-                "Data Source",
-            ],
-            _build_time_index_table_rows(storages),
-        )
-    else:
-        info("No time-index tables.")
-    info(f"Total time-index tables: {len(storages)}")
-
-
-def _meta_table_list_impl(
-    timeout: int | None,
-    filter_entries: list[str] | None,
-    show_filters: bool,
-    data_source_uid: str | None = None,
-) -> None:
-    filters = _resolve_cli_list_filters(
-        model_ref=META_TABLE_MODEL_REF,
-        filter_entries=filter_entries,
-        show_filters=show_filters,
-        command_label="MetaTable",
-    )
-    filters = _merge_cli_filter_alias(
-        filters,
-        filter_key="data_source__uid",
-        value=data_source_uid,
-        option_name="data-source-uid",
-    )
-    _require_login()
-
-    try:
-        meta_tables = list_meta_tables(timeout=timeout, filters=filters)
-    except ApiError as e:
-        error(f"MetaTables fetch failed: {e}")
-        raise typer.Exit(1) from e
-
-    if _emit_json(meta_tables):
-        return
-
-    if meta_tables:
-        print_table(
-            "MetaTables",
-            [
-                "UID",
-                "Physical Table",
-                "Identifier",
-                "Namespace",
-                "Mode",
-                "Data Source",
-            ],
-            _build_meta_table_rows(meta_tables),
-        )
-    else:
-        info("No MetaTables.")
-    info(f"Total MetaTables: {len(meta_tables)}")
-
-
-def _build_time_index_table_rows(storages: list[dict[str, object]]) -> list[list[str]]:
-    rows: list[list[str]] = []
-    for storage in storages:
-        rows.append(
-            [
-                str(storage.get("uid") or "-"),
-                str(storage.get("physical_table_name") or "-"),
-                str(storage.get("source_class_name") or "-"),
-                str(storage.get("identifier") or "-"),
-                str(storage.get("namespace") or "-"),
-                _format_time_index_table_data_source(storage.get("data_source")),
-            ]
-        )
-    return rows
-
-
-def _build_meta_table_rows(meta_tables: list[dict[str, object]]) -> list[list[str]]:
-    rows: list[list[str]] = []
-    for meta_table in meta_tables:
-        rows.append(
-            [
-                str(meta_table.get("uid") or "-"),
-                str(meta_table.get("physical_table_name") or "-"),
-                str(meta_table.get("identifier") or "-"),
-                str(meta_table.get("namespace") or "-"),
-                str(meta_table.get("management_mode") or "-"),
-                _format_time_index_table_data_source(meta_table.get("data_source")),
-            ]
-        )
-    return rows
-
-
-def _parse_cli_embedding(value: str | None) -> list[float] | None:
-    raw = (value or "").strip()
-    if not raw:
-        return None
-
-    items = [item.strip() for item in raw.split(",") if item.strip()]
-    if not items:
-        return None
-
-    try:
-        return [float(item) for item in items]
-    except ValueError as e:
-        error("Invalid --q-embedding value. Use a comma-separated list of floats.")
-        raise typer.Exit(1) from e
-
-
-def _unpack_time_index_table_search_response(
-    payload: dict[str, object] | list[dict[str, object]],
-) -> tuple[list[dict[str, object]], dict[str, object]]:
-    if isinstance(payload, list):
-        return payload, {}
-
-    if isinstance(payload, dict) and isinstance(payload.get("results"), list):
-        meta = {
-            "count": payload.get("count"),
-            "next": payload.get("next"),
-            "previous": payload.get("previous"),
-        }
-        return list(payload.get("results") or []), meta
-
-    if isinstance(payload, dict):
-        return [payload], {}
-
-    return [], {}
-
-
-def _time_index_table_search_impl(
-    *,
-    command_label: str,
-    title: str,
-    q: str,
-    filter_entries: list[str] | None,
-    show_filters: bool,
-    search_fn,
-) -> None:
-    filters = _resolve_cli_list_filters(
-        model_ref=TIME_INDEX_TABLE_MODEL_REF,
-        filter_entries=filter_entries,
-        show_filters=show_filters,
-        command_label=command_label,
-    )
-    _require_login()
-
-    try:
-        payload = search_fn(filters=filters)
-    except ApiError as e:
-        error(f"{command_label} failed: {e}")
-        raise typer.Exit(1) from e
-
-    if _emit_json(payload):
-        return
-
-    storages, pagination = _unpack_time_index_table_search_response(payload)
-    if storages:
-        print_table(
-            title,
-            [
-                "UID",
-                "Physical Table",
-                "Source Class",
-                "Identifier",
-                "Namespace",
-                "Data Source",
-            ],
-            _build_time_index_table_rows(storages),
-        )
-    else:
-        info("No time-index tables matched the search.")
-
-    if pagination:
-        print_kv(
-            "Pagination",
-            [
-                ("Query", q),
-                ("Returned", str(len(storages))),
-                ("Count", str(pagination.get("count") or "-")),
-                ("Next", str(pagination.get("next") or "-")),
-                ("Previous", str(pagination.get("previous") or "-")),
-            ],
-        )
-    else:
-        info(f'Returned time-index tables for query "{q}": {len(storages)}')
-
-
-def _print_time_index_table_search_section(
-    *,
-    title: str,
-    q: str,
-    payload: dict[str, object] | list[dict[str, object]],
-) -> int:
-    storages, pagination = _unpack_time_index_table_search_response(payload)
-    if storages:
-        print_table(
-            title,
-            [
-                "UID",
-                "Physical Table",
-                "Source Class",
-                "Identifier",
-                "Namespace",
-                "Data Source",
-            ],
-            _build_time_index_table_rows(storages),
-        )
-    else:
-        info(f'No time-index tables matched "{q}" for {title.lower()}.')
-
-    if pagination:
-        print_kv(
-            f"{title} Pagination",
-            [
-                ("Query", q),
-                ("Returned", str(len(storages))),
-                ("Count", str(pagination.get("count") or "-")),
-                ("Next", str(pagination.get("next") or "-")),
-                ("Previous", str(pagination.get("previous") or "-")),
-            ],
-        )
-    else:
-        info(f'{title}: {len(storages)} match(es) for "{q}"')
-
-    return len(storages)
 
 
 @agent.command("list")
@@ -5444,1219 +5202,6 @@ def secrets_remove_team_from_edit_cmd(
     )
 
 
-def _time_index_table_detail_impl(table_uid: str, timeout: int | None) -> None:
-    _require_login()
-
-    try:
-        storage = get_time_index_table(table_uid, timeout=timeout)
-    except ApiError as e:
-        error(f"Time-index table fetch failed: {e}")
-        raise typer.Exit(1) from e
-
-    if _emit_json(storage):
-        return
-
-    time_indexed_profile = storage.get("time_indexed_profile")
-    storage_layout = storage.get("storage_layout")
-    physical_index_plan = storage.get("physical_index_plan")
-    if isinstance(time_indexed_profile, dict):
-        storage_layout = time_indexed_profile.get("storage_layout") or storage_layout
-        physical_index_plan = time_indexed_profile.get("physical_index_plan") or physical_index_plan
-
-    print_kv(
-        "Time-Index Table",
-        [
-            ("UID", str(storage.get("uid") or table_uid)),
-            ("Physical Table", str(storage.get("physical_table_name") or "-")),
-            ("Identifier", str(storage.get("identifier") or "-")),
-            ("Source Class", str(storage.get("source_class_name") or "-")),
-            ("Data Source", _format_time_index_table_data_source(storage.get("data_source"))),
-            ("Protected", str(storage.get("protect_from_deletion"))),
-            ("Created", str(storage.get("creation_date") or "-")),
-            ("Created By", str(storage.get("created_by_user") or "-")),
-            ("Organization", str(storage.get("organization_owner") or "-")),
-            ("Description", str(storage.get("description") or "-")),
-        ],
-    )
-
-    print_kv(
-        "Time-Index Table Config",
-        [
-            ("Time Indexed Profile", _format_json_value(time_indexed_profile)),
-            ("Storage Layout", _format_json_value(storage_layout)),
-            ("Physical Index Plan", _format_json_value(physical_index_plan)),
-            ("Table Index Names", _format_json_value(storage.get("table_index_names"))),
-            ("Compression Policy", _format_json_value(storage.get("compression_policy_config"))),
-            ("Retention Policy", _format_json_value(storage.get("retention_policy_config"))),
-        ],
-    )
-
-
-def _meta_table_detail_impl(meta_table_uid: str, timeout: int | None) -> None:
-    _require_login()
-
-    try:
-        meta_table = get_meta_table(meta_table_uid, timeout=timeout)
-    except ApiError as e:
-        error(f"MetaTable fetch failed: {e}")
-        raise typer.Exit(1) from e
-
-    if _emit_json(meta_table):
-        return
-
-    print_kv(
-        "MetaTable",
-        [
-            ("UID", str(meta_table.get("uid") or meta_table_uid)),
-            ("Physical Table", str(meta_table.get("physical_table_name") or "-")),
-            ("Identifier", str(meta_table.get("identifier") or "-")),
-            ("Namespace", str(meta_table.get("namespace") or "-")),
-            ("Management Mode", str(meta_table.get("management_mode") or "-")),
-            ("Data Source", _format_time_index_table_data_source(meta_table.get("data_source"))),
-            ("Protected", str(meta_table.get("protect_from_deletion"))),
-            ("Created", str(meta_table.get("creation_date") or "-")),
-            ("Created By", str(meta_table.get("created_by_user_uid") or "-")),
-            ("Organization", str(meta_table.get("organization_owner_uid") or "-")),
-            ("Description", str(meta_table.get("description") or "-")),
-        ],
-    )
-
-    print_kv(
-        "MetaTable Contract",
-        [
-            ("Contract Version", str(meta_table.get("contract_version") or "-")),
-            ("Table Contract", _format_json_value(meta_table.get("table_contract"))),
-            ("Columns", _format_json_value(meta_table.get("columns"))),
-            ("Introspection", _format_json_value(meta_table.get("introspection_snapshot"))),
-        ],
-    )
-
-
-def _meta_table_run_query_impl(
-    *,
-    meta_table_uid: str,
-    sql: str,
-    timeout: int | None,
-) -> None:
-    _require_login()
-
-    try:
-        payload = run_meta_table_query(meta_table_uid, sql, timeout=timeout)
-    except ApiError as e:
-        # The api layer already names the operation in the message; prefixing again
-        # produces "MetaTable query failed: MetaTable query failed: ...".
-        error(str(e))
-        raise typer.Exit(1) from e
-
-    ok = bool(payload.get("ok"))
-    if _emit_json(payload):
-        if not ok:
-            raise typer.Exit(1)
-        return
-
-    if ok:
-        success(f"MetaTable query completed: uid={meta_table_uid}")
-    else:
-        error(f"MetaTable query failed: uid={meta_table_uid}")
-    _print_storage_query_payload("MetaTable Query", payload)
-    if not ok:
-        raise typer.Exit(1)
-
-
-def _time_index_table_run_query_impl(
-    *,
-    table_uid: str,
-    sql: str,
-    timeout: int | None,
-) -> None:
-    _require_login()
-
-    try:
-        payload = run_time_index_table_query(table_uid, sql, timeout=timeout)
-    except ApiError as e:
-        # The api layer already names the operation in the message; prefixing again
-        # produces "Time-index table query failed: Time-index table query failed: ...".
-        error(str(e))
-        raise typer.Exit(1) from e
-
-    ok = bool(payload.get("ok"))
-    if _emit_json(payload):
-        if not ok:
-            raise typer.Exit(1)
-        return
-
-    if ok:
-        success(f"Time-index table query completed: uid={table_uid}")
-    else:
-        error(f"Time-index table query failed: uid={table_uid}")
-    _print_storage_query_payload("Time-Index Table Query", payload)
-    if not ok:
-        raise typer.Exit(1)
-
-
-def _time_index_table_delete_impl(
-    *,
-    table_uid: str,
-    full_delete_selected: bool,
-    full_delete_downstream_tables: bool,
-    delete_with_no_table: bool,
-    override_protection: bool,
-    timeout: int | None,
-) -> None:
-    _require_login()
-
-    try:
-        storage = get_time_index_table(table_uid, timeout=timeout)
-    except ApiError as e:
-        error(f"Time-index table fetch failed: {e}")
-        raise typer.Exit(1) from e
-
-    verification_value = str(storage.get("physical_table_name") or storage.get("uid") or table_uid)
-    verification_label = (
-        "physical table name" if storage.get("physical_table_name") else "storage uid"
-    )
-    _require_delete_verification(
-        preview_title="Time-Index Table Delete Preview",
-        preview_items=_format_time_index_table_delete_preview(storage)
-        + [
-            ("full_delete_selected", str(full_delete_selected).lower()),
-            ("full_delete_downstream_tables", str(full_delete_downstream_tables).lower()),
-            ("delete_with_no_table", str(delete_with_no_table).lower()),
-            ("override_protection", str(override_protection).lower()),
-        ],
-        verification_value=verification_value,
-        verification_label=verification_label,
-    )
-
-    try:
-        deleted = delete_time_index_table(
-            table_uid,
-            full_delete_selected=full_delete_selected,
-            full_delete_downstream_tables=full_delete_downstream_tables,
-            delete_with_no_table=delete_with_no_table,
-            override_protection=override_protection,
-            timeout=timeout,
-        )
-    except ApiError as e:
-        error(f"Time-index table deletion failed: {e}")
-        raise typer.Exit(1) from e
-
-    if _emit_json(deleted):
-        return
-
-    success(f"Time-index table deleted: uid={table_uid}")
-    print_kv("Deleted Time-Index Table", _format_time_index_table_delete_preview(deleted))
-
-
-def _meta_table_delete_impl(
-    *,
-    meta_table_uid: str,
-    timeout: int | None,
-) -> None:
-    _require_login()
-
-    try:
-        meta_table = get_meta_table(meta_table_uid, timeout=timeout)
-    except ApiError as e:
-        error(f"MetaTable fetch failed: {e}")
-        raise typer.Exit(1) from e
-
-    verification_value = str(
-        meta_table.get("physical_table_name") or meta_table.get("uid") or meta_table_uid
-    )
-    verification_label = (
-        "physical table name" if meta_table.get("physical_table_name") else "MetaTable uid"
-    )
-    _require_delete_verification(
-        preview_title="MetaTable Delete Preview",
-        preview_items=_format_meta_table_delete_preview(meta_table),
-        verification_value=verification_value,
-        verification_label=verification_label,
-    )
-
-    try:
-        deleted = delete_meta_table(meta_table_uid, timeout=timeout)
-    except ApiError as e:
-        error(f"MetaTable deletion failed: {e}")
-        raise typer.Exit(1) from e
-
-    if _emit_json(deleted):
-        return
-
-    success(f"MetaTable deleted: uid={meta_table_uid}")
-    print_kv("Deleted MetaTable", _format_meta_table_delete_preview(deleted))
-
-
-@meta_table_group.command("list")
-def meta_table_list_cmd(
-    data_source_uid: str | None = typer.Option(
-        None, "--data-source-uid", help="Filter by data source UID."
-    ),
-    filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
-    show_filters: bool = typer.Option(
-        False, "--show-filters", help="Show the filters supported by this list command and exit."
-    ),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    """
-    List MetaTables visible to the authenticated user.
-
-    Uses SDK client `MetaTable.filter()` as the canonical table-storage surface.
-    """
-    _meta_table_list_impl(
-        timeout=timeout,
-        filter_entries=filter_entries,
-        show_filters=show_filters,
-        data_source_uid=data_source_uid,
-    )
-
-
-@meta_table_group.command("detail")
-def meta_table_detail_cmd(
-    meta_table_uid: str = typer.Argument(..., help="MetaTable UID."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    """
-    Show one MetaTable and render its table contract in the terminal.
-    """
-    _meta_table_detail_impl(meta_table_uid=meta_table_uid, timeout=timeout)
-
-
-@meta_table_group.command("run_query")
-def meta_table_run_query_cmd(
-    meta_table_uid: str = typer.Argument(..., help="MetaTable UID."),
-    sql: str = typer.Argument(..., help="Raw SQL query to run."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    """
-    Run a raw SQL query against one MetaTable.
-
-    Sends the SQL as a JSON string body to the backend, not as an object.
-    """
-    _meta_table_run_query_impl(meta_table_uid=meta_table_uid, sql=sql, timeout=timeout)
-
-
-@meta_table_group.command("delete")
-def meta_table_delete_cmd(
-    meta_table_uid: str = typer.Argument(..., help="MetaTable UID."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    """
-    Delete one MetaTable through the canonical table-storage model.
-    """
-    _meta_table_delete_impl(meta_table_uid=meta_table_uid, timeout=timeout)
-
-
-@meta_table_group.command("can_view")
-def meta_table_can_view_cmd(
-    meta_table_uid: str = typer.Argument(..., help="MetaTable UID."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    """List users who can view one MetaTable."""
-    _shareable_user_list_impl(
-        fetch_fn=list_meta_table_users_can_view,
-        object_label="MetaTable",
-        access_label="view",
-        object_uid=meta_table_uid,
-        timeout=timeout,
-    )
-
-
-@meta_table_group.command("can_edit")
-def meta_table_can_edit_cmd(
-    meta_table_uid: str = typer.Argument(..., help="MetaTable UID."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    """List users who can edit one MetaTable."""
-    _shareable_user_list_impl(
-        fetch_fn=list_meta_table_users_can_edit,
-        object_label="MetaTable",
-        access_label="edit",
-        object_uid=meta_table_uid,
-        timeout=timeout,
-    )
-
-
-@meta_table_group.command("add-label")
-def meta_table_add_label_cmd(
-    meta_table_uid: str = typer.Argument(..., help="MetaTable UID."),
-    labels: list[str] | None = typer.Option(
-        None,
-        "--label",
-        help="Organizational label to add. Repeatable or comma-separated.",
-    ),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    """Add one or more organizational labels to a MetaTable."""
-    _labelable_object_labels_update_impl(
-        action_fn=add_meta_table_labels,
-        object_label="MetaTable",
-        action_label="add-label",
-        object_uid=meta_table_uid,
-        labels=labels,
-        timeout=timeout,
-    )
-
-
-@meta_table_group.command("add_label", hidden=True)
-def meta_table_add_label_alias_cmd(
-    meta_table_uid: str = typer.Argument(..., help="MetaTable UID."),
-    labels: list[str] | None = typer.Option(None, "--label", help="Organizational label to add."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    """Backward-compatible alias for `mainsequence meta-table add-label`."""
-    meta_table_add_label_cmd(meta_table_uid=meta_table_uid, labels=labels, timeout=timeout)
-
-
-@meta_table_group.command("remove-label")
-def meta_table_remove_label_cmd(
-    meta_table_uid: str = typer.Argument(..., help="MetaTable UID."),
-    labels: list[str] | None = typer.Option(
-        None,
-        "--label",
-        help="Organizational label to remove. Repeatable or comma-separated.",
-    ),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    """Remove one or more organizational labels from a MetaTable."""
-    _labelable_object_labels_update_impl(
-        action_fn=remove_meta_table_labels,
-        object_label="MetaTable",
-        action_label="remove-label",
-        object_uid=meta_table_uid,
-        labels=labels,
-        timeout=timeout,
-    )
-
-
-@meta_table_group.command("remove_label", hidden=True)
-def meta_table_remove_label_alias_cmd(
-    meta_table_uid: str = typer.Argument(..., help="MetaTable UID."),
-    labels: list[str] | None = typer.Option(
-        None, "--label", help="Organizational label to remove."
-    ),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    """Backward-compatible alias for `mainsequence meta-table remove-label`."""
-    meta_table_remove_label_cmd(meta_table_uid=meta_table_uid, labels=labels, timeout=timeout)
-
-
-@meta_table_group.command("add_to_view")
-def meta_table_add_to_view_cmd(
-    meta_table_uid: str = typer.Argument(..., help="MetaTable UID."),
-    user_uid: uuid.UUID = typer.Argument(..., help="User UID to grant view access."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    """Grant explicit view access to one user for one MetaTable."""
-    _shareable_user_access_update_impl(
-        action_fn=add_meta_table_user_to_view,
-        object_label="MetaTable",
-        action_label="add_to_view",
-        object_uid=meta_table_uid,
-        user_uid=user_uid,
-        timeout=timeout,
-    )
-
-
-@meta_table_group.command("add_to_edit")
-def meta_table_add_to_edit_cmd(
-    meta_table_uid: str = typer.Argument(..., help="MetaTable UID."),
-    user_uid: uuid.UUID = typer.Argument(..., help="User UID to grant edit access."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    """Grant explicit edit access to one user for one MetaTable."""
-    _shareable_user_access_update_impl(
-        action_fn=add_meta_table_user_to_edit,
-        object_label="MetaTable",
-        action_label="add_to_edit",
-        object_uid=meta_table_uid,
-        user_uid=user_uid,
-        timeout=timeout,
-    )
-
-
-@meta_table_group.command("remove_from_view")
-def meta_table_remove_from_view_cmd(
-    meta_table_uid: str = typer.Argument(..., help="MetaTable UID."),
-    user_uid: uuid.UUID = typer.Argument(..., help="User UID to remove explicit view access from."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    """Remove explicit view access from one user for one MetaTable."""
-    _shareable_user_access_update_impl(
-        action_fn=remove_meta_table_user_from_view,
-        object_label="MetaTable",
-        action_label="remove_from_view",
-        object_uid=meta_table_uid,
-        user_uid=user_uid,
-        timeout=timeout,
-    )
-
-
-@meta_table_group.command("remove_from_edit")
-def meta_table_remove_from_edit_cmd(
-    meta_table_uid: str = typer.Argument(..., help="MetaTable UID."),
-    user_uid: uuid.UUID = typer.Argument(..., help="User UID to remove explicit edit access from."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    """Remove explicit edit access from one user for one MetaTable."""
-    _shareable_user_access_update_impl(
-        action_fn=remove_meta_table_user_from_edit,
-        object_label="MetaTable",
-        action_label="remove_from_edit",
-        object_uid=meta_table_uid,
-        user_uid=user_uid,
-        timeout=timeout,
-    )
-
-
-@meta_table_group.command("add_team_to_view")
-def meta_table_add_team_to_view_cmd(
-    meta_table_uid: str = typer.Argument(..., help="MetaTable UID."),
-    team_uid: uuid.UUID = typer.Argument(..., help="Team UID to grant view access."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    _shareable_team_access_update_impl(
-        action_fn=add_meta_table_team_to_view,
-        object_label="MetaTable",
-        action_label="add_team_to_view",
-        object_uid=meta_table_uid,
-        team_uid=team_uid,
-        timeout=timeout,
-    )
-
-
-@meta_table_group.command("add_team_to_edit")
-def meta_table_add_team_to_edit_cmd(
-    meta_table_uid: str = typer.Argument(..., help="MetaTable UID."),
-    team_uid: uuid.UUID = typer.Argument(..., help="Team UID to grant edit access."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    _shareable_team_access_update_impl(
-        action_fn=add_meta_table_team_to_edit,
-        object_label="MetaTable",
-        action_label="add_team_to_edit",
-        object_uid=meta_table_uid,
-        team_uid=team_uid,
-        timeout=timeout,
-    )
-
-
-@meta_table_group.command("remove_team_from_view")
-def meta_table_remove_team_from_view_cmd(
-    meta_table_uid: str = typer.Argument(..., help="MetaTable UID."),
-    team_uid: uuid.UUID = typer.Argument(..., help="Team UID to remove explicit view access from."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    _shareable_team_access_update_impl(
-        action_fn=remove_meta_table_team_from_view,
-        object_label="MetaTable",
-        action_label="remove_team_from_view",
-        object_uid=meta_table_uid,
-        team_uid=team_uid,
-        timeout=timeout,
-    )
-
-
-@meta_table_group.command("remove_team_from_edit")
-def meta_table_remove_team_from_edit_cmd(
-    meta_table_uid: str = typer.Argument(..., help="MetaTable UID."),
-    team_uid: uuid.UUID = typer.Argument(..., help="Team UID to remove explicit edit access from."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    _shareable_team_access_update_impl(
-        action_fn=remove_meta_table_team_from_edit,
-        object_label="MetaTable",
-        action_label="remove_team_from_edit",
-        object_uid=meta_table_uid,
-        team_uid=team_uid,
-        timeout=timeout,
-    )
-
-
-@time_index_table_group.command("list")
-def time_index_table_list_cmd(
-    data_source_uid: str | None = typer.Option(
-        None, "--data-source-uid", help="Filter by data source UID."
-    ),
-    filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
-    show_filters: bool = typer.Option(
-        False, "--show-filters", help="Show the filters supported by this list command and exit."
-    ),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    """
-    List time-index tables visible to the authenticated user.
-
-    Uses SDK client `TimeIndexMetaTable.filter()` as the single source of truth.
-
-    Parameters
-    ----------
-    timeout:
-        Request timeout in seconds.
-
-    Examples
-    --------
-    ```bash
-    mainsequence time-index-table list
-    mainsequence time-index-table list --filter namespace=pytest_alice
-    mainsequence time-index-table list --data-source-uid <DATA_SOURCE_UID>
-    mainsequence time-index-table list --timeout 60
-    ```
-    """
-    _time_index_table_list_impl(
-        timeout=timeout,
-        filter_entries=filter_entries,
-        show_filters=show_filters,
-        data_source_uid=data_source_uid,
-    )
-
-
-@time_index_table_group.command("detail")
-def time_index_table_detail_cmd(
-    table_uid: str = typer.Argument(..., help="Time-index table UID."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    """
-    Show one time-index table and render its configuration in the terminal.
-
-    The configuration view includes the server-derived `storage_layout` and
-    `physical_index_plan` when the backend exposes them on the source table
-    configuration.
-
-    Uses SDK client `TimeIndexMetaTable.get()` as the single source of truth.
-
-    Parameters
-    ----------
-    table_uid:
-        Time-index table UID.
-    timeout:
-        Request timeout in seconds.
-
-    Examples
-    --------
-    ```bash
-    mainsequence time-index-table detail <TIME_INDEX_TABLE_UID>
-    mainsequence time-index-table detail <TIME_INDEX_TABLE_UID> --timeout 60
-    ```
-    """
-    _time_index_table_detail_impl(table_uid=table_uid, timeout=timeout)
-
-
-@time_index_table_group.command("run_query")
-def time_index_table_run_query_cmd(
-    table_uid: str = typer.Argument(..., help="Time-index table UID."),
-    sql: str = typer.Argument(..., help="Raw SQL query to run."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    """
-    Run a raw SQL query against one time-index table.
-    """
-    _time_index_table_run_query_impl(table_uid=table_uid, sql=sql, timeout=timeout)
-
-
-@time_index_table_group.command("refresh-search-index")
-def time_index_table_refresh_search_index_cmd(
-    table_uid: str = typer.Argument(..., help="Time-index table UID."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    """
-    Refresh the semantic search index for one time-index table.
-
-    Uses SDK client `TimeIndexMetaTable.refresh_table_search_index()` as the single source of truth.
-
-    Examples
-    --------
-    ```bash
-    mainsequence time-index-table refresh-search-index <TIME_INDEX_TABLE_UID>
-    mainsequence time-index-table refresh-search-index <TIME_INDEX_TABLE_UID> --timeout 60
-    ```
-    """
-    _require_login()
-
-    try:
-        payload = refresh_time_index_table_search_index(table_uid, timeout=timeout)
-    except ApiError as e:
-        error(f"Time-index table search index refresh failed: {e}")
-        raise typer.Exit(1) from e
-
-    if _emit_json(payload):
-        return
-
-    success(f"Time-index table search index refresh requested: uid={table_uid}")
-    print_kv(
-        "Time-Index Table Search Index Refresh",
-        [(str(k), _format_json_value(v)) for k, v in payload.items()],
-    )
-
-
-@time_index_table_group.command("search")
-def time_index_table_search_cmd(
-    q: str = typer.Argument(
-        ..., help="Natural-language query to match against time-index table descriptions."
-    ),
-    mode: str = typer.Option(
-        "description",
-        "--mode",
-        help=(
-            "Search scope. Default is semantic description discovery. "
-            "Use column only for schema-name lookup, or both when explicitly needed."
-        ),
-    ),
-    data_source_uid: str | None = typer.Option(
-        None, "--data-source-uid", help="Filter by data source UID."
-    ),
-    q_embedding: str | None = typer.Option(
-        None,
-        "--q-embedding",
-        help="Optional comma-separated embedding vector, for example 0.1,0.2,0.3.",
-    ),
-    trigram_k: int = typer.Option(200, "--trigram-k", help="Candidate count for trigram search."),
-    embed_k: int = typer.Option(200, "--embed-k", help="Candidate count for embedding search."),
-    w_trgm: float = typer.Option(0.65, "--w-trgm", help="Weight for trigram ranking."),
-    w_emb: float = typer.Option(0.35, "--w-emb", help="Weight for embedding ranking."),
-    embedding_model: str = typer.Option(
-        "default",
-        "--embedding-model",
-        help="Embedding model to use when the server generates the query embedding.",
-    ),
-    filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
-    show_filters: bool = typer.Option(
-        False,
-        "--show-filters",
-        help="Show structured filters that can narrow this search and exit.",
-    ),
-):
-    """
-    Search time-index tables through MetaTable metadata.
-
-    Default search uses `TimeIndexMetaTable.description_search()`, backed by
-    `/api/v1/time-index-meta-tables/description-search/`. Column mode is a
-    separate schema lookup path and filters narrow results; they are not the
-    semantic discovery path itself.
-
-    Examples
-    --------
-    ```bash
-    mainsequence time-index-table search "close price"
-    mainsequence time-index-table search "node weights" --data-source-uid <DATA_SOURCE_UID>
-    mainsequence time-index-table search "close" --mode column
-    mainsequence time-index-table search "node weights" --q-embedding 0.1,0.2,0.3
-    ```
-    """
-    normalized_mode = (mode or "").strip().lower()
-    if normalized_mode not in {"both", "description", "column"}:
-        error("Invalid --mode. Use one of: both, description, column.")
-        raise typer.Exit(1)
-
-    parsed_embedding = _parse_cli_embedding(q_embedding)
-    filters = _resolve_cli_list_filters(
-        model_ref=TIME_INDEX_TABLE_MODEL_REF,
-        filter_entries=filter_entries,
-        show_filters=show_filters,
-        command_label="Time-Index Table Search",
-    )
-    filters = _merge_cli_filter_alias(
-        filters,
-        filter_key="data_source__uid",
-        value=data_source_uid,
-        option_name="data-source-uid",
-    )
-    _require_login()
-
-    total_matches = 0
-    description_payload = None
-    column_payload = None
-
-    if normalized_mode in {"both", "description"}:
-        try:
-            description_payload = time_index_table_description_search(
-                q,
-                q_embedding=parsed_embedding,
-                trigram_k=trigram_k,
-                embed_k=embed_k,
-                w_trgm=w_trgm,
-                w_emb=w_emb,
-                embedding_model=embedding_model,
-                filters=filters,
-            )
-        except ApiError as e:
-            error(f"Time-Index Table Search failed: {e}")
-            raise typer.Exit(1) from e
-        storages, _ = _unpack_time_index_table_search_response(description_payload)
-        total_matches += len(storages)
-
-    if normalized_mode in {"both", "column"}:
-        try:
-            column_payload = time_index_table_column_search(q, filters=filters)
-        except ApiError as e:
-            error(f"Time-Index Table Search failed: {e}")
-            raise typer.Exit(1) from e
-        storages, _ = _unpack_time_index_table_search_response(column_payload)
-        total_matches += len(storages)
-
-    if _emit_json(
-        {
-            "query": q,
-            "mode": normalized_mode,
-            "description": (
-                description_payload if normalized_mode in {"both", "description"} else None
-            ),
-            "column": column_payload if normalized_mode in {"both", "column"} else None,
-            "total_matches": total_matches,
-        }
-    ):
-        return
-
-    if normalized_mode in {"both", "description"} and description_payload is not None:
-        _print_time_index_table_search_section(
-            title="Description Matches",
-            q=q,
-            payload=description_payload,
-        )
-
-    if normalized_mode in {"both", "column"} and column_payload is not None:
-        _print_time_index_table_search_section(
-            title="Column Matches",
-            q=q,
-            payload=column_payload,
-        )
-
-    info(f'Total search matches for "{q}": {total_matches}')
-
-
-@time_index_table_group.command("description-search", hidden=True)
-def time_index_table_description_search_cmd(
-    q: str = typer.Argument(
-        ..., help="Natural-language query to match against time-index table descriptions."
-    ),
-    data_source_uid: str | None = typer.Option(
-        None, "--data-source-uid", help="Filter by data source UID."
-    ),
-    q_embedding: str | None = typer.Option(
-        None,
-        "--q-embedding",
-        help="Optional comma-separated embedding vector, for example 0.1,0.2,0.3.",
-    ),
-    trigram_k: int = typer.Option(200, "--trigram-k", help="Candidate count for trigram search."),
-    embed_k: int = typer.Option(200, "--embed-k", help="Candidate count for embedding search."),
-    w_trgm: float = typer.Option(0.65, "--w-trgm", help="Weight for trigram ranking."),
-    w_emb: float = typer.Option(0.35, "--w-emb", help="Weight for embedding ranking."),
-    embedding_model: str = typer.Option(
-        "default",
-        "--embedding-model",
-        help="Embedding model to use when the server generates the query embedding.",
-    ),
-    filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
-    show_filters: bool = typer.Option(
-        False,
-        "--show-filters",
-        help="Show structured filters that can narrow this search and exit.",
-    ),
-):
-    """
-    Hidden alias for semantic description discovery.
-    """
-    parsed_embedding = _parse_cli_embedding(q_embedding)
-    filters = _resolve_cli_list_filters(
-        model_ref=TIME_INDEX_TABLE_MODEL_REF,
-        filter_entries=filter_entries,
-        show_filters=show_filters,
-        command_label="Time-Index Table Description Search",
-    )
-    filters = _merge_cli_filter_alias(
-        filters,
-        filter_key="data_source__uid",
-        value=data_source_uid,
-        option_name="data-source-uid",
-    )
-    _require_login()
-    try:
-        payload = time_index_table_description_search(
-            q,
-            q_embedding=parsed_embedding,
-            trigram_k=trigram_k,
-            embed_k=embed_k,
-            w_trgm=w_trgm,
-            w_emb=w_emb,
-            embedding_model=embedding_model,
-            filters=filters,
-        )
-    except ApiError as e:
-        error(f"Time-Index Table Description Search failed: {e}")
-        raise typer.Exit(1) from e
-    if _emit_json(payload):
-        return
-    _print_time_index_table_search_section(
-        title="Description Matches",
-        q=q,
-        payload=payload,
-    )
-
-
-@time_index_table_group.command("column-search", hidden=True)
-def time_index_table_column_search_cmd(
-    q: str = typer.Argument(..., help="Column name or term to search in time-index table columns."),
-    data_source_uid: str | None = typer.Option(
-        None, "--data-source-uid", help="Filter by data source UID."
-    ),
-    filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
-    show_filters: bool = typer.Option(
-        False,
-        "--show-filters",
-        help="Show structured filters that can narrow this column lookup and exit.",
-    ),
-):
-    """
-    Search time-index tables by column metadata.
-
-    Uses SDK client `TimeIndexMetaTable.column_search()` as the single source of truth.
-
-    Examples
-    --------
-    ```bash
-    mainsequence time-index-table column-search weight
-    mainsequence time-index-table column-search close --filter physical_table_name__contains=weights
-    ```
-    """
-    filters = _resolve_cli_list_filters(
-        model_ref=TIME_INDEX_TABLE_MODEL_REF,
-        filter_entries=filter_entries,
-        show_filters=show_filters,
-        command_label="Time-Index Table Column Search",
-    )
-    filters = _merge_cli_filter_alias(
-        filters,
-        filter_key="data_source__uid",
-        value=data_source_uid,
-        option_name="data-source-uid",
-    )
-    _require_login()
-    try:
-        payload = time_index_table_column_search(q, filters=filters)
-    except ApiError as e:
-        error(f"Time-Index Table Column Search failed: {e}")
-        raise typer.Exit(1) from e
-    if _emit_json(payload):
-        return
-    _print_time_index_table_search_section(
-        title="Column Matches",
-        q=q,
-        payload=payload,
-    )
-
-
-@time_index_table_group.command("delete")
-def time_index_table_delete_cmd(
-    table_uid: str = typer.Argument(..., help="Time-index table UID."),
-    full_delete_selected: bool = typer.Option(
-        False,
-        "--full-delete-selected/--no-full-delete-selected",
-        help="Fully delete the selected TimeIndexMetaTable and its backing table.",
-    ),
-    full_delete_downstream_tables: bool = typer.Option(
-        False,
-        "--full-delete-downstream-tables/--no-full-delete-downstream-tables",
-        help="Delete downstream tables and dependencies starting from the selected metadata instance.",
-    ),
-    delete_with_no_table: bool = typer.Option(
-        False,
-        "--delete-with-no-table/--no-delete-with-no-table",
-        help="Scan TimeIndexMetaTable rows and fully delete records whose backing DB table does not exist.",
-    ),
-    override_protection: bool = typer.Option(
-        False,
-        "--override-protection/--no-override-protection",
-        help="Bypass protect_from_deletion. ORG_ADMIN only. Used with full_delete_selected=true.",
-    ),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    """
-    Delete one time-index table using the SDK client `TimeIndexMetaTable.delete()` path.
-
-    The command always requires typed verification before the delete call is executed.
-
-    Examples
-    --------
-    ```bash
-    mainsequence time-index-table delete <TIME_INDEX_TABLE_UID>
-    mainsequence time-index-table delete <TIME_INDEX_TABLE_UID> --full-delete-selected
-    mainsequence time-index-table delete <TIME_INDEX_TABLE_UID> --full-delete-selected --override-protection
-    ```
-    """
-    _time_index_table_delete_impl(
-        table_uid=table_uid,
-        full_delete_selected=full_delete_selected,
-        full_delete_downstream_tables=full_delete_downstream_tables,
-        delete_with_no_table=delete_with_no_table,
-        override_protection=override_protection,
-        timeout=timeout,
-    )
-
-
-@time_index_table_group.command("can_view")
-def time_index_table_can_view_cmd(
-    table_uid: str = typer.Argument(..., help="Time-index table UID."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    """
-    List users who can view one time-index table.
-
-    Uses the SDK `ShareableObjectMixin.can_view()` path through the `TimeIndexMetaTable` model.
-
-    Examples
-    --------
-    ```bash
-    mainsequence time-index-table can_view <TIME_INDEX_TABLE_UID>
-    ```
-    """
-    _shareable_user_list_impl(
-        fetch_fn=list_time_index_table_users_can_view,
-        object_label="Time-Index Table",
-        access_label="view",
-        object_uid=table_uid,
-        timeout=timeout,
-    )
-
-
-@time_index_table_group.command("can_edit")
-def time_index_table_can_edit_cmd(
-    table_uid: str = typer.Argument(..., help="Time-index table UID."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    """
-    List users who can edit one time-index table.
-
-    Uses the SDK `ShareableObjectMixin.can_edit()` path through the `TimeIndexMetaTable` model.
-
-    Examples
-    --------
-    ```bash
-    mainsequence time-index-table can_edit <TIME_INDEX_TABLE_UID>
-    ```
-    """
-    _shareable_user_list_impl(
-        fetch_fn=list_time_index_table_users_can_edit,
-        object_label="Time-Index Table",
-        access_label="edit",
-        object_uid=table_uid,
-        timeout=timeout,
-    )
-
-
-@time_index_table_group.command("add-label")
-def time_index_table_add_label_cmd(
-    table_uid: str = typer.Argument(..., help="Time-index table UID."),
-    labels: list[str] | None = typer.Option(
-        None,
-        "--label",
-        help="Organizational label to add. Repeatable or comma-separated.",
-    ),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    """
-    Add one or more organizational labels to a time-index table.
-
-    Labels are helpers for grouping and discovery only. They do not affect runtime behavior or functionality.
-    """
-    _labelable_object_labels_update_impl(
-        action_fn=add_time_index_table_labels,
-        object_label="Time-Index Table",
-        action_label="add-label",
-        object_uid=table_uid,
-        labels=labels,
-        timeout=timeout,
-    )
-
-
-@time_index_table_group.command("remove-label")
-def time_index_table_remove_label_cmd(
-    table_uid: str = typer.Argument(..., help="Time-index table UID."),
-    labels: list[str] | None = typer.Option(
-        None,
-        "--label",
-        help="Organizational label to remove. Repeatable or comma-separated.",
-    ),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    """
-    Remove one or more organizational labels from a time-index table.
-
-    Labels are helpers for grouping and discovery only. They do not affect runtime behavior or functionality.
-    """
-    _labelable_object_labels_update_impl(
-        action_fn=remove_time_index_table_labels,
-        object_label="Time-Index Table",
-        action_label="remove-label",
-        object_uid=table_uid,
-        labels=labels,
-        timeout=timeout,
-    )
-
-
-@time_index_table_group.command("add_to_view")
-def time_index_table_add_to_view_cmd(
-    table_uid: str = typer.Argument(..., help="Time-index table UID."),
-    user_uid: uuid.UUID = typer.Argument(..., help="User UID to grant view access."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    """
-    Grant explicit view access to one user for one time-index table.
-
-    Examples
-    --------
-    ```bash
-    mainsequence time-index-table add_to_view <TIME_INDEX_TABLE_UID> <USER_UID>
-    ```
-    """
-    _shareable_user_access_update_impl(
-        action_fn=add_time_index_table_user_to_view,
-        object_label="Time-Index Table",
-        action_label="add_to_view",
-        object_uid=table_uid,
-        user_uid=user_uid,
-        timeout=timeout,
-    )
-
-
-@time_index_table_group.command("add_to_edit")
-def time_index_table_add_to_edit_cmd(
-    table_uid: str = typer.Argument(..., help="Time-index table UID."),
-    user_uid: uuid.UUID = typer.Argument(..., help="User UID to grant edit access."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    """
-    Grant explicit edit access to one user for one time-index table.
-
-    Examples
-    --------
-    ```bash
-    mainsequence time-index-table add_to_edit <TIME_INDEX_TABLE_UID> <USER_UID>
-    ```
-    """
-    _shareable_user_access_update_impl(
-        action_fn=add_time_index_table_user_to_edit,
-        object_label="Time-Index Table",
-        action_label="add_to_edit",
-        object_uid=table_uid,
-        user_uid=user_uid,
-        timeout=timeout,
-    )
-
-
-@time_index_table_group.command("remove_from_view")
-def time_index_table_remove_from_view_cmd(
-    table_uid: str = typer.Argument(..., help="Time-index table UID."),
-    user_uid: uuid.UUID = typer.Argument(..., help="User UID to remove explicit view access from."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    """
-    Remove explicit view access from one user for one time-index table.
-
-    Examples
-    --------
-    ```bash
-    mainsequence time-index-table remove_from_view <TIME_INDEX_TABLE_UID> <USER_UID>
-    ```
-    """
-    _shareable_user_access_update_impl(
-        action_fn=remove_time_index_table_user_from_view,
-        object_label="Time-Index Table",
-        action_label="remove_from_view",
-        object_uid=table_uid,
-        user_uid=user_uid,
-        timeout=timeout,
-    )
-
-
-@time_index_table_group.command("remove_from_edit")
-def time_index_table_remove_from_edit_cmd(
-    table_uid: str = typer.Argument(..., help="Time-index table UID."),
-    user_uid: uuid.UUID = typer.Argument(..., help="User UID to remove explicit edit access from."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    """
-    Remove explicit edit access from one user for one time-index table.
-
-    Examples
-    --------
-    ```bash
-    mainsequence time-index-table remove_from_edit <TIME_INDEX_TABLE_UID> <USER_UID>
-    ```
-    """
-    _shareable_user_access_update_impl(
-        action_fn=remove_time_index_table_user_from_edit,
-        object_label="Time-Index Table",
-        action_label="remove_from_edit",
-        object_uid=table_uid,
-        user_uid=user_uid,
-        timeout=timeout,
-    )
-
-
-@time_index_table_group.command("add_team_to_view")
-def time_index_table_add_team_to_view_cmd(
-    table_uid: str = typer.Argument(..., help="Time-index table UID."),
-    team_uid: uuid.UUID = typer.Argument(..., help="Team UID to grant view access."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    _shareable_team_access_update_impl(
-        action_fn=add_time_index_table_team_to_view,
-        object_label="Time-Index Table",
-        action_label="add_team_to_view",
-        object_uid=table_uid,
-        team_uid=team_uid,
-        timeout=timeout,
-    )
-
-
-@time_index_table_group.command("add_team_to_edit")
-def time_index_table_add_team_to_edit_cmd(
-    table_uid: str = typer.Argument(..., help="Time-index table UID."),
-    team_uid: uuid.UUID = typer.Argument(..., help="Team UID to grant edit access."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    _shareable_team_access_update_impl(
-        action_fn=add_time_index_table_team_to_edit,
-        object_label="Time-Index Table",
-        action_label="add_team_to_edit",
-        object_uid=table_uid,
-        team_uid=team_uid,
-        timeout=timeout,
-    )
-
-
-@time_index_table_group.command("remove_team_from_view")
-def time_index_table_remove_team_from_view_cmd(
-    table_uid: str = typer.Argument(..., help="Time-index table UID."),
-    team_uid: uuid.UUID = typer.Argument(..., help="Team UID to remove explicit view access from."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    _shareable_team_access_update_impl(
-        action_fn=remove_time_index_table_team_from_view,
-        object_label="Time-Index Table",
-        action_label="remove_team_from_view",
-        object_uid=table_uid,
-        team_uid=team_uid,
-        timeout=timeout,
-    )
-
-
-@time_index_table_group.command("remove_team_from_edit")
-def time_index_table_remove_team_from_edit_cmd(
-    table_uid: str = typer.Argument(..., help="Time-index table UID."),
-    team_uid: uuid.UUID = typer.Argument(..., help="Team UID to remove explicit edit access from."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    _shareable_team_access_update_impl(
-        action_fn=remove_time_index_table_team_from_edit,
-        object_label="Time-Index Table",
-        action_label="remove_team_from_edit",
-        object_uid=table_uid,
-        team_uid=team_uid,
-        timeout=timeout,
-    )
-
-
 # ---------- CodeRepository group ----------
 
 
@@ -6694,126 +5239,6 @@ def code_repository_list(
     if _emit_json(items):
         return
     typer.echo(_render_code_repositories_table(items))
-
-
-def _print_code_repository_time_index_table_updates(
-    code_repository_id: str | None = typer.Argument(None, help="CodeRepository UID"),
-    filter_entries: list[str] | None = None,
-    show_filters: bool = False,
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-) -> None:
-    """
-    List time-index table updates for a CodeRepository.
-
-    Uses SDK client `CodeRepositoryBranch.get_time_index_table_updates()` as the single source of truth
-    for payload parsing and shape handling.
-
-    Parameters
-    ----------
-    code_repository_id:
-        Optional CodeRepository UID assertion. Git repository identity remains authoritative.
-    timeout:
-        Optional request timeout in seconds.
-
-    Examples
-    --------
-    ```bash
-    mainsequence code-repository time-index-table-updates list
-    mainsequence code-repository time-index-table-updates list code-repository-uid-123
-    mainsequence code-repository time-index-table-updates list code-repository-uid-123 --timeout 60
-    ```
-    """
-    _resolve_cli_list_filters(
-        model_ref=None,
-        filter_entries=filter_entries,
-        show_filters=show_filters,
-        command_label="CodeRepository Time-Index Table Updates",
-        reserved_filter_descriptions={
-            "code_repository_uid": "resolved from the current Git repository"
-        },
-    )
-
-    _require_login()
-    try:
-        code_repository_branch_uid = _resolve_code_repository_branch_uid_for_command(
-            code_repository_id
-        )
-        updates = get_code_repository_time_index_table_updates(
-            code_repository_branch_uid, timeout=timeout
-        )
-    except NotLoggedIn as e:
-        error("Not logged in. Run: mainsequence login")
-        raise typer.Exit(1) from e
-    except ApiError as e:
-        error(str(e))
-        raise typer.Exit(1) from e
-
-    if _emit_json(updates):
-        return
-
-    if not updates:
-        info("No time-index table updates found.")
-        return
-
-    rows: list[list[str]] = []
-    for u in updates:
-        output_table = u.get("output_table")
-        if isinstance(output_table, dict):
-            output_table_value = (
-                output_table.get("physical_table_name") or output_table.get("uid") or "-"
-            )
-        else:
-            output_table_value = output_table if output_table is not None else "-"
-
-        details = u.get("update_details")
-        if isinstance(details, dict):
-            details_uid = details.get("table_update_uid") or "-"
-        else:
-            details_uid = details if details is not None else "-"
-
-        rows.append(
-            [
-                str(u.get("uid") or "-"),
-                str(u.get("update_hash") or "-"),
-                str(output_table_value),
-                str(details_uid),
-            ]
-        )
-
-    print_table(
-        "CodeRepository Time-Index Table Updates",
-        ["UID", "Update Hash", "Output Table", "Update Details"],
-        rows,
-    )
-    info(f"Total updates: {len(rows)}")
-
-
-@code_repository_time_index_table_updates_group.command("list")
-def code_repository_time_index_table_updates_list_cmd(
-    code_repository_id: str | None = typer.Argument(None, help="CodeRepository UID"),
-    filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
-    show_filters: bool = typer.Option(
-        False, "--show-filters", help="Show the filters supported by this list command and exit."
-    ),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    """
-    List time-index table updates for a CodeRepository.
-
-    Examples
-    --------
-    ```bash
-    mainsequence code-repository time-index-table-updates list
-    mainsequence code-repository time-index-table-updates list code-repository-uid-123
-    mainsequence code-repository time-index-table-updates list code-repository-uid-123 --timeout 60
-    ```
-    """
-    _print_code_repository_time_index_table_updates(
-        code_repository_id=code_repository_id,
-        filter_entries=filter_entries,
-        show_filters=show_filters,
-        timeout=timeout,
-    )
 
 
 @code_repository.command("validate-name")
@@ -8462,8 +6887,10 @@ def code_repository_set_up_locally(
     Workflow:
     - ensure, register when needed, and verify a repository-specific SSH key,
     - clone the repository into the local CodeRepositories root,
-    - build local runtime auth/backend entries for the active auth mode,
-    - write/update `.env` with local runtime values.
+    - write `.env` with the backend endpoint.
+
+    `.env` receives no credential. The SDK reads the saved CLI session when it is
+    imported, and other local tools obtain a token with `mainsequence auth token`.
 
     Parameters
     ----------
@@ -8562,22 +6989,9 @@ def code_repository_set_up_locally(
         error("git clone failed")
         raise typer.Exit(3)
 
-    backend_url = cfg.backend_url()
-    try:
-        auth_env = _current_code_repository_runtime_auth_env(backend_url)
-    except RuntimeError as e:
-        error(str(e))
-        raise typer.Exit(1) from e
-    except ApiError as e:
-        error(str(e))
-        raise typer.Exit(1) from e
-
-    final_env = _render_code_repository_runtime_env_text(
-        "",
-        auth_env=auth_env,
-        backend_url=backend_url,
-    )
-    (target_dir / ".env").write_text(final_env, encoding="utf-8")
+    # The checkout gets the backend endpoint and no credential: the SDK reads the
+    # saved CLI session on import, and other tools ask `mainsequence auth token`.
+    (target_dir / ".env").write_text(_code_repository_env_text(cfg.backend_url()), encoding="utf-8")
 
     success(f"Local folder: {target_dir}")
     info(f"Repo URL: {repo}")
@@ -8864,70 +7278,6 @@ def code_repository_build_local_venv(
             raise typer.Exit(1)
 
     success(f"Local .venv built for Python requirement {python_request}.")
-
-
-@code_repository.command("refresh-token")
-def code_repository_refresh_token(
-    code_repository_id: str | None = typer.Argument(
-        None, help="Optional CodeRepository UID assertion against the current Git worktree"
-    ),
-    path: str | None = typer.Option(None, "--path", help="CodeRepository directory"),
-):
-    """
-    Refresh local CodeRepository auth entries in `.env` from the active auth mode.
-
-    Use this when a CodeRepository has been idle long enough for the previously injected
-    auth token to expire. The command preserves the rest of the `.env` file and
-    only rewrites the runtime auth keys managed by the CLI.
-
-    Parameters
-    ----------
-    code_repository_id:
-        Optional CodeRepository UID assertion against the current Git worktree.
-    path:
-        Explicit local path. If omitted, the current directory is used.
-
-    Examples
-    --------
-    ```bash
-    mainsequence code-repository refresh-token
-    mainsequence code-repository refresh-token code-repository-uid-123
-    mainsequence code-repository refresh-token --path .
-    ```
-    """
-    _require_login()
-    code_repository_dir = _resolve_code_repository_dir(code_repository_id, path)
-    env_path = code_repository_dir / ".env"
-    if not env_path.is_file():
-        error(f".env not found in CodeRepository root: {env_path}")
-        info(
-            "Run: mainsequence code-repository set-up-locally <code_repository_uid> to provision the local runtime first."
-        )
-        raise typer.Exit(1)
-
-    backend_url = cfg.backend_url()
-    try:
-        auth_env = _current_code_repository_runtime_auth_env(backend_url)
-    except RuntimeError as e:
-        error(str(e))
-        raise typer.Exit(1) from e
-    except ApiError as e:
-        error(str(e))
-        raise typer.Exit(1) from e
-
-    try:
-        env_text = env_path.read_text(encoding="utf-8")
-    except Exception as e:
-        error(f"Could not read .env: {e}")
-        raise typer.Exit(1) from e
-
-    final_env = _render_code_repository_runtime_env_text(
-        env_text,
-        auth_env=auth_env,
-        backend_url=backend_url,
-    )
-    env_path.write_text(final_env, encoding="utf-8")
-    success(f"Refreshed auth entries in: {env_path}")
 
 
 @code_repository.command("freeze-env")
@@ -9739,7 +8089,7 @@ def skills_list_cmd():
 def skills_path_cmd(
     skill_name: str | None = typer.Argument(
         None,
-        help="Optional installed SDK skill name, for example sdk_code_repository_execution or data_publishing/meta_tables",
+        help="Optional installed SDK skill name, for example sdk_code_repository_execution",
     ),
 ):
     """
@@ -9749,14 +8099,14 @@ def skills_path_cmd(
     directory for the current CLI installation.
 
     When a skill name is provided, it may be the full relative skill path such as
-    `data_publishing/meta_tables` or, when unique, by its leaf folder name.
+    `sdk_code_repository_execution` or, when unique, by its leaf folder name.
 
     Examples
     --------
     ```bash
     mainsequence skills path
     mainsequence skills path sdk_code_repository_execution
-    mainsequence skills path data_publishing/meta_tables
+    mainsequence skills path sdk_code_repository_execution
     mainsequence skills path builder
     ```
     """

@@ -1,67 +1,25 @@
-MainSequence SDK and is developed for use only under an explicit
-license agreement. The details of the license are as follows:
+# License
 
-MainSequence GmbH SDK License Agreement
-This License Agreement (the "License") governs the use, modification, and distribution of the software provided by
-MainSequence GmbH (the "Licensor"). The software (the "Software") is provided to you under the terms of this License. By
-using the Software, you agree to the terms of this License.
+The Main Sequence SDK is licensed under the MIT License.
 
-TERMS AND CONDITIONS
+MIT License
 
-0. Definitions
-   "Personal Use": Use by an individual for personal purposes that are not connected to any business, organization, or
-   commercial activity.
-   "Internal Use": Use within a business, organization, or other entity, provided it is not made accessible to third
-   parties or used for commercial purposes.
-   "Commercial Use": Use of the Software in exchange for monetary or other compensation, including hosting, offering
-   Software as a service, selling the Software, or using it in a product or service for sale.
-   "License Agreement": The legally binding agreement between the Licensor and the licensee (you), subject to the terms
-   outlined in this License.
-1. Grant of License
-   1.1 Personal and Internal Use
-   The Licensor grants you a limited, non-exclusive, non-transferable, revocable license to use and modify the Software
-   for personal or internal use only, provided that such use is strictly subject to this License Agreement and continues
-   only while the License Agreement remains in effect.
-   Upon termination of this License Agreement, all rights to use the Software for personal or internal purposes shall be
-   immediately revoked, and you must cease all use of the Software.
-   1.2 Modification
-   You are permitted to modify the Software solely for your own personal or internal use, subject to the restrictions
-   outlined in this License Agreement.
-   You are not permitted to distribute, sublicense, or otherwise transfer modified or unmodified versions of the
-   Software to any third party.
-   1.3 Prohibited Redistribution
-   You may not redistribute, sublicense, sell, lease, rent, or otherwise transfer the Software, whether in its original
-   form or as modified by you, to any third party.
-   Any attempt to distribute or transfer the Software in any way, without explicit permission from MainSequence GmbH, is
-   strictly prohibited.
-2. Prohibition of Commercial Use
-   The Software may not be used for any commercial purposes without obtaining a separate commercial license from
-   MainSequence GmbH.
-   Examples of prohibited commercial use include, but are not limited to:
-   Hosting or offering the Software as a service to others, either modified or unmodified.
-   Using the Software as part of a commercial product or service provided to customers for a fee.
-   Using the Software in any production environment that generates income, directly or indirectly, from its use.
-3. Termination
-   This License Agreement will automatically terminate if you fail to comply with any of its terms.
-   Upon termination of this License, you must immediately cease all use of the Software, destroy all copies (modified or
-   unmodified), and remove the Software from any devices or systems on which it is installed.
-   MainSequence GmbH reserves the right to terminate this License at its discretion for any violation of its terms or
-   for any other reason.
-4. Commercial License
-   If you wish to use the Software for commercial purposes, you must contact MainSequence GmbH to negotiate and obtain a
-   separate commercial license. The terms of the commercial license, including any fees, will be negotiated separately
-   from this License Agreement.
-   Without a valid commercial license, you are strictly prohibited from using the Software for any commercial activity.
-5. Disclaimer of Warranty
-   THE SOFTWARE IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
-   WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL MAINSEQUENCE
-   GMBH OR THE COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
-   TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-   SOFTWARE.
+Copyright (c) 2026 MainSequence GmbH
 
-6. Limitation of Liability
-   IN NO EVENT SHALL MAINSEQUENCE GMBH BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, OR CONSEQUENTIAL DAMAGES
-   ARISING OUT OF THE USE OR INABILITY TO USE THE SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-7. Governing Law
-   This License Agreement shall be governed by and construed in accordance with the laws of the jurisdiction where MainSequence GmbH is located, without regard to its conflict of law provisions.
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

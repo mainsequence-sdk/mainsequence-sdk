@@ -10,8 +10,6 @@ import types
 import pytest
 
 import mainsequence.client.base as client_base
-import mainsequence.client.metatables as models_metatables
-import mainsequence.client.metatables.core as metatables_core
 import mainsequence.client.models_foundry as models_foundry
 import mainsequence.client.utils as client_utils
 import mainsequence.code_repository_context as code_repository_context
@@ -22,7 +20,6 @@ from mainsequence.client.base import (
 
 CODE_REPOSITORY_UID = "1d0530c0-65d1-4db0-856b-dc29d8260a09"
 CODE_REPOSITORY_BRANCH_UID = "5a28020a-0f1b-47ee-aab8-334286234bea"
-DATA_SOURCE_UID = "864e7c22-482a-464a-8758-0d3408abd77f"
 ENVIRONMENT_UID = "a5e95092-a77a-45a6-835c-46d327e8b5e7"
 COMMIT_SHA = "a" * 40
 _REMOVED_DOMAIN_TOKEN = "PRO" + "JECT"
@@ -38,11 +35,6 @@ _UNSUPPORTED_ENVIRONMENT_UID_ENV = (
 @pytest.fixture(autouse=True)
 def _reset_context(monkeypatch):
     code_repository_context._reset_code_repository_context()
-    monkeypatch.setattr(
-        models_metatables,
-        "SessionDataSource",
-        models_metatables.PodDataSource(),
-    )
     yield
     code_repository_context._reset_code_repository_context()
 
@@ -57,23 +49,12 @@ def _source(*, branch: str = "main", commit_sha: str = COMMIT_SHA):
     )
 
 
-def _data_source(*, status: str = "AVAILABLE"):
-    return types.SimpleNamespace(
-        uid=DATA_SOURCE_UID,
-        data_source_uid=DATA_SOURCE_UID,
-        display_name="Remote Timescale",
-        class_type="timescale_db",
-        status=status,
-    )
-
-
-def _code_repository_branch(*, branch: str = "main", data_source=None):
+def _code_repository_branch(*, branch: str = "main"):
     return types.SimpleNamespace(
         uid=CODE_REPOSITORY_BRANCH_UID,
         code_repository_uid=CODE_REPOSITORY_UID,
         repository_branch=branch,
         organization_environment_uid=ENVIRONMENT_UID,
-        metatables_data_source=data_source,
     )
 
 
@@ -82,7 +63,6 @@ def _resolve(
     *,
     source=None,
     registered=True,
-    data_source=None,
 ):
     source = source or _source()
     monkeypatch.setattr(code_repository_context, "_resolve_git_source_context", lambda path: source)
@@ -99,7 +79,6 @@ def _resolve(
             commit_sha=resolved_source.commit_sha,
             code_repository_branch=_code_repository_branch(
                 branch=resolved_source.repository_branch,
-                data_source=data_source,
             ),
         )
 
@@ -188,8 +167,6 @@ def test_code_repository_branch_git_context_uses_canonical_backend_action(monkey
                     "code_repository_name": "Example CodeRepository",
                     "code_repository_type": "python",
                     "repository_branch": "main",
-                    "metatables_data_source": None,
-                    "metatables_data_source_uid": None,
                     "organization_environment_uid": ENVIRONMENT_UID,
                     "organization_environment_name": "Development",
                     "default_base_image": {"uid": "base-image-uid"},
@@ -254,7 +231,6 @@ def test_context_resolves_once_and_returns_identical_snapshot(monkeypatch):
             commit_sha=source.commit_sha,
             code_repository_branch=_code_repository_branch(
                 branch=source.repository_branch,
-                data_source=_data_source(),
             ),
         )
 
@@ -319,10 +295,9 @@ def test_identity_environment_variables_never_select_context(monkeypatch):
 
 
 def test_authenticated_runtime_context_requires_matching_git(monkeypatch):
-    data_source = _data_source()
     _install_authenticated_runtime_context()
 
-    context = _resolve(monkeypatch, data_source=data_source)
+    context = _resolve(monkeypatch)
 
     assert context.is_authenticated_runtime is True
     assert context.source_context == _source()
@@ -332,16 +307,8 @@ def test_authenticated_runtime_context_requires_matching_git(monkeypatch):
     assert context.repository_ref == "refs/heads/main"
     assert context.commit_sha == COMMIT_SHA
     assert context.organization_environment_uid == ENVIRONMENT_UID
-    assert context.metatables_data_source is data_source
     assert code_repository_context.validate_code_repository_source_context(context=context) is context
 
-    assert models_metatables.MetaTable._sdk_owned_query_context("MetaTable.filter") == {}
-    assert metatables_core._with_current_metatable_code_repository_context(
-        {"management_mode": "platform_managed"}
-    ) == {"management_mode": "platform_managed"}
-    assert metatables_core._with_current_metatable_code_repository_context(
-        {"management_mode": "external_registered"}
-    ) == {"management_mode": "external_registered"}
 
 
 def test_authenticated_runtime_context_has_no_missing_git_fallback(monkeypatch):
@@ -439,7 +406,7 @@ def test_configured_runtime_credential_exchanges_context_before_resolution(monke
     assert context.is_authenticated_runtime is True
     assert context.source_context == _source()
     assert exchange_calls == [(True, None)]
-    assert events == ["exchange", "git", "backend"]
+    assert events == ["git", "exchange", "backend"]
 
 
 def test_unregistered_git_context_is_nonfatal_until_branch_context_is_required(monkeypatch):
@@ -477,7 +444,6 @@ def test_code_repository_environment_operation_fails_when_branch_has_no_environm
         code_repository_uid=context.code_repository_uid,
         code_repository_branch_uid=context.code_repository_branch_uid,
         organization_environment_uid=None,
-        metatables_data_source=context.metatables_data_source,
         status=context.status,
         process_id=context.process_id,
         code_repository_branch=context.code_repository_branch,
@@ -485,13 +451,13 @@ def test_code_repository_environment_operation_fails_when_branch_has_no_environm
     )
     monkeypatch.setattr(
         code_repository_context,
-        "require_code_repository_branch_context",
-        lambda operation: missing_environment_context,
+        "get_code_repository_context",
+        lambda: missing_environment_context,
     )
 
     with pytest.raises(
         code_repository_context.CodeRepositoryEnvironmentContextRequiredError,
-        match="none was returned",
+        match="requires an Organization Environment",
     ):
         code_repository_context.resolve_organization_environment_uid("Create Secret")
 
@@ -569,17 +535,6 @@ def test_failed_initialization_is_cached(monkeypatch):
     assert calls == 1
 
 
-def test_code_repository_data_source_requires_exact_registered_branch(monkeypatch):
-    data_source = _data_source()
-    context = _resolve(monkeypatch, data_source=data_source)
-
-    assert (
-        code_repository_context.require_code_repository_metatables_data_source(
-            "CodeRepositoryBranch-derived data access",
-            context=context,
-        )
-        is data_source
-    )
 
 
 class _ScopedCollection(CurrentCodeRepositoryBranchCollectionMixin, BaseObjectOrm):
@@ -652,94 +607,3 @@ def test_current_branch_collection_is_scoped_and_admin_path_is_explicit(monkeypa
     assert captured[-1]["payload"] == {}
     with pytest.raises(code_repository_context.CodeRepositoryBranchContextRequiredError):
         _ScopedCollection.filter(code_repository_branch_uid="other-branch")
-
-
-def test_table_update_always_submits_git_resolved_branch(monkeypatch):
-    monkeypatch.setenv("MAINSEQUENCE_AUTH_MODE", "runtime_credential")
-    _resolve(monkeypatch)
-    captured = {}
-
-    class Response:
-        status_code = 201
-
-        @staticmethod
-        def json():
-            return {
-                "uid": "update-uid-1",
-                "update_hash": "abc123",
-                "build_configuration": {
-                    "configuration_schema_version": 2,
-                    "table_updater_class_import_path": {
-                        "module": "tests.test_code_repository_context",
-                        "qualname": "ExampleUpdater",
-                    },
-                },
-                "orm_class": "TimeIndexTableUpdate",
-                "output_table": "storage-1",
-                "labels": [],
-                "description": None,
-                "update_details": None,
-            }
-
-    monkeypatch.setattr(
-        models_metatables.TimeIndexTableUpdate,
-        "build_session",
-        classmethod(lambda cls: types.SimpleNamespace(headers={})),
-    )
-    monkeypatch.setattr(
-        models_metatables,
-        "make_request",
-        lambda **kwargs: captured.update(kwargs) or Response(),
-    )
-
-    models_metatables.TimeIndexTableUpdate.get_or_create(
-        update_hash="abc123",
-        output_table_uid="storage-1",
-        build_configuration={
-            "configuration_schema_version": 2,
-            "table_updater_class_import_path": {
-                "module": "tests.test_code_repository_context",
-                "qualname": "ExampleUpdater",
-            },
-        },
-    )
-
-    assert captured["payload"]["json"]["current_code_repository_branch_uid"] == CODE_REPOSITORY_BRANCH_UID
-
-
-def test_metatable_request_always_submits_git_resolved_context(monkeypatch):
-    _resolve(monkeypatch)
-
-    payload = models_metatables._with_current_metatable_code_repository_context(
-        {
-            "management_mode": "platform_managed",
-            "data_source_uid": DATA_SOURCE_UID,
-        }
-    )
-
-    assert payload["code_repository_context"] == {
-        "code_repository_branch_uid": CODE_REPOSITORY_BRANCH_UID,
-    }
-
-
-def test_code_repository_model_drops_removed_default_data_source_fields():
-    payload = {
-        "uid": CODE_REPOSITORY_UID,
-        "code_repository_name": "Example CodeRepository",
-        "code_repository_type": "python",
-        "primary_language": "python",
-        "framework": "mainsequence",
-        "github_repository_binding_uid": "3c2113e7-40ba-4d8c-ad65-51ca236c3b0c",
-        "archived": False,
-        "created_by": "user-4",
-        "labels": [],
-        "branches": [],
-        "default_metatables_data_source_uid": DATA_SOURCE_UID,
-    }
-
-    # Tolerant reading (ADR 0032): the retired field is dropped, not declared.
-    assert "default_metatables_data_source_uid" not in models_foundry.CodeRepository.model_fields
-    assert not hasattr(
-        models_foundry.CodeRepository.model_validate(payload),
-        "default_metatables_data_source_uid",
-    )

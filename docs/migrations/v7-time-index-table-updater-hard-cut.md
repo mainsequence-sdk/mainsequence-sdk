@@ -1,5 +1,7 @@
 # Migrating from 6.x to 7.0
 
+> Historical migration: the SDK-owned updater paths in this guide were later removed under [ADR 0034](../adr/0034-extract-metatables-python-package.md). Use the current [MetaTables removal guide](metatables-sdk-removal.md).
+
 Main Sequence SDK 7.0 replaces the DataNode vocabulary and wire contract with
 explicit time-index-table update concepts. This is a hard cut: version 7 has no
 deprecated aliases, forwarding modules, legacy routes, old CLI commands, or

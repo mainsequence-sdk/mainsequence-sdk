@@ -5,6 +5,14 @@ Date: 2026-08-22
 Status: Accepted and implemented; aligned with platform ADR-046 for the
 immediate CodeRepository cutover
 
+Partially superseded by [ADR 0035: Independent Git source and platform execution context](0035-independent-git-source-and-platform-context.md), accepted and implemented on `metatables_removal`.
+Network-free source discovery removes mandatory platform enrichment for local
+Git facts. Missing Environment errors are deferred to operations that require one;
+Environment scope remains derived from the registered current branch.
+Canonical Git facts, source drift checks, runtime target verification, and real
+branch-owned operation guards remain in force. ADR 0034 separately removes the
+historical MetaTables/DataSource implementation described in this record.
+
 > Current contract: `CodeRepository`, `CodeRepositoryBranch`, and
 > `GitHubRepositoryBinding` are the canonical public names. The Project-era
 > SDK ontology is retired and must not be reintroduced.
@@ -38,7 +46,11 @@ backend-owned and target-derived; Git identity never grants permission.
 
 ## Decision
 
-The SDK has one CodeRepository-context entry point:
+> Superseded in part by ADR 0035: source-only callers use
+> `get_git_source_context()` without platform enrichment. The original composition
+> entry point below remains available.
+
+The original decision defined one CodeRepository-context entry point:
 
 ```python
 from mainsequence.code_repository_context import get_code_repository_context
@@ -93,6 +105,9 @@ drift; it does not silently retarget platform work.
 
 ### Valid unresolved states
 
+> ADR 0035 removes the branch prerequisite for Environment-owned resources.
+> The historical paragraph below remains applicable only to branch-owned targets.
+
 Resolution itself does not fail merely because no visible CodeRepositoryBranch maps to
 the repository and branch:
 
@@ -115,6 +130,9 @@ order, or a caller-supplied CodeRepositoryBranch UID. The removed
 repository-level default MetaTables DataSource contract is not restored.
 
 ### Retired environment contract
+
+> ADR 0035 adds typed Python configuration for development Environment scope.
+> It does not restore these retired environment variables or make them source identity.
 
 The SDK does not read, write, or inject these values as source identity:
 
@@ -161,6 +179,11 @@ to equal the authenticated runtime target; explicitly targeted operations must
 enforce their documented target and Environment boundary instead.
 
 ### Environment-owned resources resolved from the current CodeRepositoryBranch
+
+> ADR 0035 preserves this branch-derived Environment contract. A missing
+> Environment is valid during general source/context discovery and raises only
+> when an Environment-owned operation requires it. Runtime target authority and
+> SDK-owned wire fields are preserved.
 
 Object ownership and operation context are separate concerns. `Secret`,
 `Constant`, logical `Bucket`, `Artifact`, and `MetaTable` belong to one

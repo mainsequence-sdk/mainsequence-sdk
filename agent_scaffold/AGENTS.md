@@ -64,14 +64,13 @@ never owns or updates the `ms_tau_sdk` namespace.
   `.agents/skills/mainsequence/maintenance/code_repository_maintenance/SKILL.md`
 - Blocker analysis, failure classification, and SDK/platform contract mismatches:
   `.agents/skills/mainsequence/maintenance/bug_auditor/SKILL.md`
-- Platform data discovery before implementation:
-  `.agents/skills/mainsequence/data_access/exploration/SKILL.md`
-- TimeIndexTableUpdaters and update behavior:
-  `.agents/skills/mainsequence/data_publishing/time_index_table_updates/SKILL.md`
-- MetaTables and governed table operations:
-  `.agents/skills/mainsequence/data_publishing/meta_tables/SKILL.md`
-- Alembic-managed MetaTable schema changes:
-  `.agents/skills/mainsequence/data_publishing/meta_table_migrations/SKILL.md`
+- MetaTable modeling, queries, external registration, table updates, Alembic
+  schema changes, and data discovery: use the skills the `metatables` package
+  installs under `.agents/skills/metatables/` and its documentation.
+- Code that still imports `mainsequence.meta_tables` or
+  `mainsequence.client.metatables`, or calls the retired `mainsequence` table
+  and migration commands:
+  `.agents/skills/mainsequence/maintenance/metatables_transition/SKILL.md`
 - FastAPI APIs serving the Command Center frontend:
   `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
 - Jobs, schedules, images, resources, releases, and Artifacts:
@@ -96,7 +95,7 @@ never owns or updates the `ms_tau_sdk` namespace.
   not ask users to inject CodeRepositoryBranch or Environment identity.
 - Use the `mainsequence` CLI as the default platform control surface. Prefer
   `--json` when output will be parsed or used as evidence.
-- Use the data-exploration skill before designing against unknown platform data.
+- Use the owning domain package before designing against an unfamiliar domain contract.
 - Keep reusable business logic under `src/` and keep API, job, and other
   integration layers thin.
 - Verify only the platform objects relevant to the requested outcome.

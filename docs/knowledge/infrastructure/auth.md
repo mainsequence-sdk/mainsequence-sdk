@@ -60,7 +60,54 @@ The user signs in with:
 mainsequence login
 ```
 
-After login, the CLI has enough information to authenticate later commands without asking for the password again.
+After login, the CLI has enough information to authenticate later commands without asking for the password again. On import, the SDK also bootstraps missing access/refresh tokens from that persisted CLI session. Endpoint resolution preserves explicit process values, then uses the checkout `.env` endpoint or saved CLI configuration. This local bootstrap does not authenticate against the network.
+
+Persistent CLI credentials use the operating system credential store, one
+record per backend:
+
+| System | Store | How it is reached |
+| --- | --- | --- |
+| macOS | Login Keychain | Apple's `security` program, with the secret on standard input |
+| Linux | Secret Service | The `keyring` library's Secret Service backend, named explicitly |
+| Windows | Credential Manager | The `keyring` library's recommended backend |
+
+On macOS the Keychain grants access per program. An entry written through the
+Security framework belongs to the interpreter that wrote it, and every other
+interpreter build, including the same one after an upgrade, waits on a consent
+dialog when it reads that entry. `security` is one program for every
+interpreter, so a login made from one CodeRepository is read from another
+without a dialog. The cost is that any program of the same user can read the
+entry the same way.
+
+The CLI marks every Keychain entry it writes, and asks for the secret only of
+an entry that carries its mark. Asking `security` for an entry that another
+program wrote would show the consent dialog in every process, so such an entry
+is never asked for. A session that another version of the CLI saved is
+therefore not read: `mainsequence doctor` and `mainsequence auth status` say
+so, and one `mainsequence login` replaces it. A released version installed in
+another CodeRepository reads the new entry and keeps the mark when it updates
+it, so the two share the session.
+
+When the Keychain is locked, the CLI waits at most 10 seconds and continues
+without a saved session, and the same two commands say that the credential
+store could not be read.
+
+Linux requires an available, unlocked desktop keyring that implements Secret
+Service. If no store is available, login remains valid only for the current
+process and the CLI does not fall back to a plaintext token file. Existing
+`auth.json` credentials are migrated and removed only after secure-store write
+and readback succeed.
+
+The record is ASCII JSON with a version, the backend it belongs to, the
+username, and the tokens. A record with a refresh token and no access token is
+a complete session: the access token is renewed from it. A record that names
+another backend is refused. See
+[ADR 0037](../../adr/0037-machine-session-in-the-os-credential-store.md).
+
+A CodeRepository `.env` holds the backend endpoint and no credential. The CLI
+does not write a token there. `mainsequence refresh-token` renews the saved
+session from any directory, and removes a credential that an earlier version
+or another tool left in the `.env` of the directory it runs in.
 
 Functionally:
 
@@ -103,6 +150,19 @@ authentication lane; the CLI rejects `--mcp` in that mode, so run ordinary
 
 If a local shell, IDE, or subprocess cannot see auth credentials, refresh or export them with the CLI login flow used by your environment.
 
+### Other Local Tools
+
+A local tool that does not read the credential store itself obtains a
+short-lived access token from the CLI:
+
+```bash
+mainsequence auth token --json
+```
+
+The refresh token never leaves the store through this command. The output and
+exit codes are in the [CLI reference](../../cli/index.md#handing-the-session-to-another-local-tool).
+`mainsequence auth status` reports the session without any token value.
+
 ## Environment JWT Auth
 
 Some processes receive JWT tokens through environment variables:
@@ -121,32 +181,18 @@ Functionally this is the same token model as CLI-managed JWT auth:
 
 This mode is useful when a launcher, signed terminal, or controlled runtime injects tokens into the environment instead of relying on persisted CLI storage.
 
-## Request-Bound Access-Token Auth
+Credentials already in the process environment win over the saved CLI session.
+When the backend rejects that pair, the SDK does not try the saved session,
+because the pair may belong to another user or backend. The error says that the
+rejected credentials came from the environment, and whether a saved session
+exists for the backend. A stale pair usually comes from a shell export, an IDE
+run configuration, or a `.env` file that the tooling loads into the process.
 
-Request-bound access-token auth is for code running inside an authenticated platform request.
+## Request-bound caller identity
 
-In this mode, the runtime already has the identity for the current request. The SDK should use that request's access token to make backend calls as the same user.
+FastAPI applications install the [SDK request identity integration](../fastapi/index.md) once. Handlers and services call `User.get_logged_user()`. The integration verifies the platform assertion and binds a request scope; it never changes process credentials.
 
-Functionally:
-
-- the access token belongs to the current request context
-- the token is used as `Authorization: Bearer <token>`
-- there is no refresh token
-- if the request token expires or is rejected, the request should fail instead of silently becoming a different identity
-
-When this is configured explicitly for a process, use:
-
-```bash
-MAINSEQUENCE_AUTH_MODE=session_jwt
-MAINSEQUENCE_ACCESS_TOKEN=<request or session access token>
-```
-
-Use this for:
-
-- FastAPI request handlers running behind the platform
-- code that explicitly binds request headers into the SDK auth context
-
-Do not use this mode for standalone scripts that need to run independently for a long time.
+The gateway consumes the original release Bearer token. Do not put an inbound token into process `MAINSEQUENCE_ACCESS_TOKEN` or select `session_jwt` for each HTTP caller. The runtime's SDK authentication remains independent.
 
 ## Runtime Credential Auth
 
@@ -180,37 +226,13 @@ If the parent shell needs the exchanged token, use:
 eval "$(mainsequence login --export)"
 ```
 
-Local CodeRepository provisioning is also runtime-credential aware:
-
-```bash
-mainsequence code-repository set-up-locally <CODE_REPOSITORY_UID>
-mainsequence code-repository refresh-token --path .
-```
-
-When an already authenticated coding-agent runtime uses
-`MAINSEQUENCE_AUTH_MODE=runtime_credential`, these commands preserve the
-backend-injected runtime credential auth shape in the CodeRepository `.env`:
-
-```bash
-MAINSEQUENCE_AUTH_MODE=runtime_credential
-MAINSEQUENCE_ACCESS_TOKEN=<exchanged short-lived access token>
-MAINSEQUENCE_RUNTIME_CREDENTIAL_ID=<credential id>
-MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET=<credential secret>
-MAINSEQUENCE_ENDPOINT=<platform API origin>
-```
-
-They do not require or write `MAINSEQUENCE_REFRESH_TOKEN` in runtime credential mode.
-Both local CodeRepository commands preserve unrelated `.env` entries while rendering
-the current supported authentication shape. They remove obsolete token aliases
-and superseded repository, branch, and Environment identity
-entries.
-
-CodeRepository source identity is separate from authentication. In local and deployed
-code repository images, the SDK reads the containing sanitized Git checkout, attached
-branch, and exact HEAD commit, then maps that source to CodeRepository and
-CodeRepositoryBranch through the platform API. Switching branches does not rewrite
-credentials and takes effect in the next process. Runtime credentials authorize
-the deployed target but do not select repository or branch identity.
+CodeRepository source identity is separate from authentication. The network-free
+`get_git_source_context()` reads the actual checkout, attached branch, and HEAD.
+`get_code_repository_context()` optionally maps those same facts to a registered
+platform branch. Login and User/Organization requests do not require registration.
+Missing Environment metadata is allowed during context discovery. Operations that
+require an Environment raise if the current branch has none. Runtime credentials
+keep their authenticated target scope. See [Git source and Environment context](context.md).
 
 Functionally:
 
@@ -228,9 +250,9 @@ Important constraints:
 - `MAINSEQUENCE_REFRESH_TOKEN` is not used in this mode
 - runtime credential mode wins when `MAINSEQUENCE_AUTH_MODE=runtime_credential`
 - the exchanged access token should be treated as short-lived runtime material
-- CodeRepository `.env` files may contain runtime credential material; keep `.env` out of version control
-- users and application code never set CodeRepository, CodeRepositoryBranch, repository
-  branch, or Organization Environment values to choose context
+- the CLI does not write the runtime credential or an exchanged token into a CodeRepository `.env`; a `.env` written by an earlier version may still contain them, so keep `.env` out of version control and remove them by running `mainsequence refresh-token` in that checkout
+- repository and branch context come from Git; Environment context comes from the
+  registered branch, with no developer override or fallback
 - deployed branch-owned SDK requests carry the Git-resolved CodeRepositoryBranch; the
   backend requires equality with the authenticated JobRun, CodeRepository Executor, or
   ResourceRelease target
@@ -267,11 +289,7 @@ Use `User.get_authenticated_user_details()` in standalone CLI or script code tha
 making the current request. It does not return a full `User` account and it does
 not identify the release owner or runtime workload principal.
 
-For FastAPI releases, the Main Sequence platform injects the authenticated
-human into `request.state.user` and `request.state.user_uid`. Handlers read that
-state and pass the identity explicitly to shared code. Do not use
-`User.get_logged_user()` as the FastAPI handler entry point; route-level
-authorization remains application-owned.
+For FastAPI releases, install SDK request identity once and use `User.get_logged_user()` in handlers and services. Request-state fields are compatibility projections of that same identity; resource policy remains application-owned.
 
 The distinction matters because request-bound code resolves the human caller
 from the active request identity, while standalone code resolves the account

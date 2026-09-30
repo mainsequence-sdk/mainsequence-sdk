@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """
 mainsequence.cli.docker_utils
 =============================
@@ -16,6 +14,8 @@ Docker environment helpers aligned with VS Code extension behavior:
 The VS Code extension ships template files; the CLI embeds templates as strings so it
 works out of the box.
 """
+
+from __future__ import annotations
 
 import datetime as _dt
 import json

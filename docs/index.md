@@ -1,53 +1,52 @@
 # Main Sequence Documentation
 
-Main Sequence is a platform for building data products, deploying workflows, and exposing them as reusable platform resources.
+Main Sequence is a platform for building and operating CodeRepositories, jobs,
+APIs, Agents, and reusable platform resources. The Python SDK provides the
+authentication, client models, CLI workflows, Git-native source context,
+observability, instrumentation, and scaffold utilities used by those workflows.
 
-The Main Sequence platform allows you to:
+MetaTables is an independent domain package, installed as
+`mainsequence-metatable` and imported as `metatables`. The SDK documentation
+keeps the extraction history and migration boundary, while current table
+implementation guidance belongs to that package.
 
-1. rapidly build and deploy data products with normalized `MetaTable` contracts and `TimeIndexTableUpdater` producer workflows
-2. deploy FastAPI services and supported application surfaces on the platform
-3. rapidly deploy agents using the Google Agent SDK
-
-The key idea is that you can focus on development and deployment, while the platform handles the DevOps layer.
-
-## Choose a reading path
+## Choose A Reading Path
 
 ### Knowledge
 
-Use the Knowledge section if you already know the workflow you are building and want the deeper conceptual guide.
+Use the knowledge guides for platform concepts and end-to-end behavior:
 
-Key entry points:
-
-- [Time-Index Table Updaters](knowledge/time_index_table_updates.md)
-- [MetaTables](knowledge/meta_tables/index.md)
-- [Migrating from 7.x to 8.0](migrations/v8-code-repository-ontology.md)
-- [Migrating from 6.x to 7.0](migrations/v7-time-index-table-updater-hard-cut.md)
+- [Authentication](knowledge/infrastructure/auth.md)
+- [Git source and Environment context](knowledge/infrastructure/context.md)
+- [Users and Access](knowledge/infrastructure/users_and_access.md)
 - [Constants and Secrets](knowledge/infrastructure/constants_and_secrets.md)
 - [Scheduling Jobs](knowledge/infrastructure/scheduling_jobs.md)
-- [Streamlit dashboard support removal](migrations/streamlit-dashboard-removal.md)
+- [Artifacts](knowledge/infrastructure/artifacts.md)
+- [Resource releases](knowledge/infrastructure/resource_releases.md)
+- [FastAPI request user context](knowledge/fastapi/index.md)
+- [Server caller assertions](knowledge/server/caller_assertions.md)
 
 ### CLI
 
-Use the CLI section for command-focused operational work:
-
-- [CLI Overview](cli/index.md)
+Use the [CLI overview](cli/index.md) for authentication, Agents,
+CodeRepositories, jobs and runs, images, resources and releases, sharing,
+scaffold maintenance, Docker, and local-development commands. The installed
+`mainsequence --help` output is authoritative for the installed SDK version.
 
 ### Reference
 
-Use the generated reference when you need the API surface directly:
+Use the [generated API reference](reference/index.md) when you need exact Python
+classes, methods, parameters, or return types.
 
-- [Reference Index](reference/index.md)
+### Architecture And Migrations
 
-## What this SDK covers
+- [Architecture decision index](adr/index.md)
+- [ADR 0034: Extract the MetaTables Python API](adr/0034-extract-metatables-python-package.md)
+- [MetaTables SDK removal](migrations/metatables-sdk-removal.md)
+- [Independent Git and Environment context](migrations/independent-context.md)
+- [CodeRepository ontology hard cut](migrations/v8-code-repository-ontology.md)
+- [Streamlit dashboard support removal](migrations/streamlit-dashboard-removal.md)
 
-The SDK is organized around a few main areas:
-
-- `mainsequence.meta_tables`: `TimeIndexTableUpdater`s, persistence, orchestration, and update workflows
-- `mainsequence.client`: API client models for CodeRepositories, jobs, tables, platform resources, and sharing
-- `mainsequence.cli`: the `mainsequence` command-line interface
-
-## Tutorial ownership
-
-The beginner tutorial is maintained in its own self-contained CodeRepository rather
-than inside this SDK reference site. This repository remains the source of truth
-for SDK APIs, concepts, CLI behavior, and generated reference documentation.
+The beginner tutorial is maintained in its own self-contained CodeRepository.
+This repository remains the source of truth for SDK APIs, CLI behavior,
+architecture decisions, and generated reference documentation.

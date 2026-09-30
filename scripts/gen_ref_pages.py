@@ -40,3 +40,6 @@ for path in sorted(src.rglob("*.py")):
 
 with mkdocs_gen_files.open("reference/SUMMARY.md", "w") as nav_file:
     nav_file.writelines(nav.build_literate_nav())
+
+with mkdocs_gen_files.open("reference/index.md", "w") as index_file:
+    index_file.write("# SDK API reference\n\nThe pages in this section document the installed `mainsequence` package.\n")

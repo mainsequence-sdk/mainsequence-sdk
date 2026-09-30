@@ -52,10 +52,8 @@ This skill audits. It does not implement by default.
   platform catalog; do not assume its filesystem path
 - bootstrap, routing, and repository structure:
   `.agents/skills/mainsequence/sdk_code_repository_execution/SKILL.md`
-- TimeIndexTableUpdater implementation issues:
-  `.agents/skills/mainsequence/data_publishing/time_index_table_updates/SKILL.md`
-- MetaTable implementation issues:
-  `.agents/skills/mainsequence/data_publishing/meta_tables/SKILL.md`
+- MetaTable and table-update implementation issues: use the installed
+  `metatables` package skill that owns the affected contract
 - Command Center FastAPI contract or release issues:
   `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
 - jobs, images, releases, and runtime environment issues:

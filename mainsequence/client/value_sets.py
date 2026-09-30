@@ -53,7 +53,7 @@ def _reset_reported_unknown_values() -> None:
     _reported_unknown_values.clear()
 
 
-class OpenStrEnum(str, Enum):
+class OpenStrEnum(str, Enum):  # noqa: UP042 - preserve Enum behavior for unknown backend values
     """A string enum that keeps a value it does not declare instead of raising.
 
     A known value validates to the declared member, so `kind is Kind.AGENT` and

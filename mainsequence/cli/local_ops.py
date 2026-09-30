@@ -80,7 +80,9 @@ def ensure_uv_installed(code_repository_dir: pathlib.Path, upgrade: bool = True)
     raise RuntimeError("uv executable not found. Install uv and ensure it is available in PATH.")
 
 
-def run_cmd(cmd: list[str], cwd: pathlib.Path, env: dict[str, str] | None = None) -> subprocess.CompletedProcess:
+def run_cmd(
+    cmd: list[str], cwd: pathlib.Path, env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess:
     """
     Run a command, streaming output.
 
@@ -93,7 +95,9 @@ def run_cmd(cmd: list[str], cwd: pathlib.Path, env: dict[str, str] | None = None
     return r
 
 
-def run_uv(uv_path: pathlib.Path, args: list[str], cwd: pathlib.Path, env: dict[str, str] | None = None) -> None:
+def run_uv(
+    uv_path: pathlib.Path, args: list[str], cwd: pathlib.Path, env: dict[str, str] | None = None
+) -> None:
     """Run uv with args, raising on failure."""
     run_cmd([str(uv_path), *args], cwd=cwd, env=env)
 
@@ -209,4 +213,6 @@ def uv_export_requirements(
         return
     except Exception:
         # fallback to alternate flags used by the extension
-        run_uv(uv_path, [*base, "--format", "requirements.txt", "--output-file", output_file], cwd=cwd)
+        run_uv(
+            uv_path, [*base, "--format", "requirements.txt", "--output-file", output_file], cwd=cwd
+        )

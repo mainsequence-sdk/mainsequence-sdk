@@ -32,18 +32,15 @@ This skill is for:
 
 This skill must not claim ownership of:
 
-- TimeIndexTableUpdater producer behavior
-- MetaTable schema and row semantics
+- domain-package data production and schema semantics
 - Command Center FastAPI wire contracts
 - RBAC or sharing policy
 - application UI implementation details
 
 ## Route Adjacent Work
 
-- TimeIndexTableUpdaters:
-  `.agents/skills/mainsequence/data_publishing/time_index_table_updates/SKILL.md`
-- MetaTables:
-  `.agents/skills/mainsequence/data_publishing/meta_tables/SKILL.md`
+- MetaTables, table updates, and table schemas: use the installed `metatables`
+  package skills and documentation
 - Command Center FastAPI provider implementation and contract validation:
   `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
 - RBAC and sharing:

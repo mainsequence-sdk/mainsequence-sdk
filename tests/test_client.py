@@ -1,5 +1,3 @@
-import time
-
 import pytest
 
 import mainsequence.client as msc
@@ -8,52 +6,6 @@ import mainsequence.client as msc
 # SDK credentials, so none of them can run in CI. See `[tool.pytest.ini_options]`
 # in pyproject.toml: `pytest` deselects them, `pytest -m live` runs them.
 pytestmark = pytest.mark.live
-
-
-def test_create_code_repository():
-    ds = msc.DataSource.filter(status=msc.DataSource.STATUS_AVAILABLE)[0]
-    img = msc.CodeRepositoryBaseImage.filter()[0]
-    org = msc.GitHubOrganization.filter()[0]
-
-    code_repository = msc.CodeRepository.filter(id=124)
-
-    # todo:loop unitl is_initialized == True
-    code_repository = msc.CodeRepository.create(
-        code_repository_name="demo-repository-002",
-        data_source=ds,  # <-- pydantic obj with .id
-        default_base_image=img,  # <-- pydantic obj with .id (or None)
-        github_org=org,  # <-- pydantic obj with .id (or None)
-        repository_branch="main",
-        env_vars={"FOO": "bar"},
-    )
-    print(code_repository)
-
-
-def test_code_repository_time_index_table_updates():
-    code_repository_branch = msc.CodeRepositoryBranch.filter()[0]
-
-    updates = []
-    poll_interval_s = 2
-    timeout_s = 120
-    deadline = time.time() + timeout_s
-
-    while not updates and time.time() < deadline:
-        updates = code_repository_branch.get_time_index_table_updates()
-        if not updates:
-            remaining = max(0, int(deadline - time.time()))
-            print(
-                f"No time-index table updates yet for CodeRepositoryBranch {code_repository_branch.uid}. "
-                f"Retrying in {poll_interval_s}s (remaining: {remaining}s)..."
-            )
-            time.sleep(poll_interval_s)
-
-    assert updates, (
-        "No time-index table updates found for CodeRepositoryBranch "
-        f"{code_repository_branch.uid} within {timeout_s}s."
-    )
-
-    for table_update in updates:
-        print(table_update)
 
 
 def test_code_repository_image_filter():

@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import builtins
-import importlib
 import pathlib
 import sys
 import tomllib
@@ -46,88 +44,6 @@ def _seed_mainsequence_packages() -> None:
     sys.modules["mainsequence.client"] = client_pkg
 
 
-def test_core_client_import_does_not_require_duckdb(monkeypatch):
-    _reset_mainsequence_modules()
-    _seed_mainsequence_packages()
-
-    real_import = builtins.__import__
-
-    def _guarded_import(name, globals=None, locals=None, fromlist=(), level=0):
-        if name in {
-            "duckdb",
-            "pyarrow",
-            "mainsequence.client.data_sources_interfaces.duckdb",
-        }:
-            raise ModuleNotFoundError(name=name)
-        return real_import(name, globals, locals, fromlist, level)
-
-    monkeypatch.setattr(builtins, "__import__", _guarded_import)
-
-    foundry_module = importlib.import_module("mainsequence.client.models_foundry")
-    metatables_module = importlib.import_module("mainsequence.client.metatables")
-
-    assert hasattr(foundry_module, "CodeRepository")
-    assert hasattr(metatables_module, "DataSource")
-    assert not hasattr(metatables_module, "DynamicTableDataSource")
-    assert not hasattr(foundry_module, "DynamicTableDataSource")
-
-
-def test_models_foundry_import_does_not_resolve_session_data_source(monkeypatch):
-    _reset_mainsequence_modules()
-    _seed_mainsequence_packages()
-
-    metatables_module = importlib.import_module("mainsequence.client.metatables")
-
-    def _fail_import_time_resolution():
-        raise AssertionError("models_foundry import must not resolve SessionDataSource")
-
-    monkeypatch.setattr(
-        metatables_module.SessionDataSource,
-        "set_remote_db",
-        _fail_import_time_resolution,
-    )
-
-    foundry_module = importlib.import_module("mainsequence.client.models_foundry")
-
-    assert hasattr(foundry_module, "CodeRepository")
-
-
-def test_duckdb_helper_points_to_local_data_extra(monkeypatch):
-    _reset_mainsequence_modules()
-    _seed_mainsequence_packages()
-
-    real_import = builtins.__import__
-
-    def _guarded_import(name, globals=None, locals=None, fromlist=(), level=0):
-        if name in {
-            "duckdb",
-            "pyarrow",
-            "mainsequence.client.data_sources_interfaces.duckdb",
-        }:
-            raise ModuleNotFoundError(name=name)
-        return real_import(name, globals, locals, fromlist, level)
-
-    monkeypatch.setattr(builtins, "__import__", _guarded_import)
-
-    module = importlib.import_module("mainsequence.client.data_sources_interfaces")
-
-    try:
-        module.get_duckdb_interface_class()
-    except ModuleNotFoundError as exc:
-        assert "mainsequence[local-data]" in str(exc)
-    else:
-        raise AssertionError("Expected optional local-data dependency error")
-
-
-def test_sqlite_helper_uses_standard_library_storage(monkeypatch):
-    _reset_mainsequence_modules()
-    _seed_mainsequence_packages()
-
-    module = importlib.import_module("mainsequence.client.data_sources_interfaces")
-
-    assert module.get_sqlite_interface_class().__name__ == "SQLiteInterface"
-
-
 def test_streamlit_is_absent_from_dependency_contracts() -> None:
     repo_root = pathlib.Path(__file__).resolve().parents[1]
     project = tomllib.loads((repo_root / "pyproject.toml").read_text(encoding="utf-8"))
@@ -141,21 +57,3 @@ def test_streamlit_is_absent_from_dependency_contracts() -> None:
     )
     assert '\nname = "streamlit"\n' not in (repo_root / "uv.lock").read_text(encoding="utf-8")
     assert "streamlit" not in (repo_root / "requirements.txt").read_text(encoding="utf-8").lower()
-
-
-def test_postgresql_driver_is_installable_from_a_binary_wheel() -> None:
-    repo_root = pathlib.Path(__file__).resolve().parents[1]
-    project = tomllib.loads((repo_root / "pyproject.toml").read_text(encoding="utf-8"))
-    production_dependencies = [
-        str(dependency).partition(";")[0].strip().lower()
-        for dependency in project["project"]["dependencies"]
-    ]
-
-    assert any(
-        dependency.startswith("psycopg2-binary>=2.9.12")
-        for dependency in production_dependencies
-    )
-    assert not any(
-        dependency == "psycopg2" or dependency.startswith("psycopg2>=")
-        for dependency in production_dependencies
-    )

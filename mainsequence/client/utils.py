@@ -40,7 +40,7 @@ DEFAULT_TIMEOUT: tuple[float, float] = (5.0, 120.0)
 DATE_FORMAT = "%Y-%m-%dT%H:%M:%S.%fZ"
 
 
-class DataFrequency(str, Enum):
+class DataFrequency(str, Enum):  # noqa: UP042 - preserve the published Enum string form
     one_m = "1m"
     one_min = "1m"
     five_m = "5m"
@@ -71,6 +71,36 @@ def set_mainsequence_endpoint(endpoint: str) -> None:
 
 
 def _jwt_reauth_hint() -> str:
+    """
+    Say how to repair rejected JWT credentials, according to where they came from.
+
+    A pair that was already in the process environment wins over the saved CLI
+    session. When that pair is stale the saved session is not tried, because the
+    pair may belong to another user or backend; the message names it instead.
+    """
+    try:
+        from mainsequence import bootstrap
+        from mainsequence.cli import config as cli_config
+
+        from_environment = bootstrap.credential_source() == bootstrap.CREDENTIALS_FROM_ENVIRONMENT
+        saved_session = from_environment and cli_config.stored_session_available()
+    except Exception:
+        from_environment, saved_session = False, False
+
+    if from_environment:
+        return (
+            " The rejected credentials were set in this process's environment "
+            "(MAINSEQUENCE_ACCESS_TOKEN / MAINSEQUENCE_REFRESH_TOKEN) before the SDK "
+            "started: a shell export, an IDE run configuration, or a `.env` file that "
+            "your tooling loads. "
+            + (
+                "A saved CLI session exists for this backend and was not used. Remove "
+                "those variables to use it."
+                if saved_session
+                else "No saved CLI session exists for this backend. Remove those "
+                "variables and run `mainsequence login`."
+            )
+        )
     return (
         " Refresh your credentials with `mainsequence logout` and "
         "`mainsequence login`. If this code runs in a separate shell or IDE, "
@@ -251,6 +281,7 @@ class RuntimeCredentialAuthProvider(BaseAuthProvider):
                 },
                 headers={"Content-Type": "application/json"},
                 timeout=self.timeout,
+                allow_redirects=False,
             )
             if response.status_code < 200 or response.status_code >= 300:
                 raise AuthError(
@@ -663,109 +694,22 @@ loaders = AuthLoaders()
 session = build_session(loaders=loaders)
 
 
-def get_constants_tdag():
-    url = f"{MAINSEQUENCE_ENDPOINT}/api/v1/time-index-table-update-constants/"
-    r = make_request(s=session, loaders=loaders, r_type="GET", url=url)
-    return r.json()
+def get_network_ip() -> str:
+    """Return the local address selected for an outbound network route."""
 
-
-class LazyConstants(dict):
-    """
-    Class Method to load constants only once they are called. this minimizes the calls to the API
-    """
-
-    def __init__(self, constant_type: str):
-        if constant_type == "tdag":
-            self.CONSTANTS_METHOD = get_constants_tdag
-        else:
-            raise NotImplementedError(f"{constant_type} not implemented")
-        self._initialized = False
-
-    def __getattr__(self, key):
-        if not self._initialized:
-            self._load_constants()
-        return self.__dict__[key]
-
-    def _load_constants(self):
-        # 1) call the method that returns your top-level dict
-        raw_data = self.CONSTANTS_METHOD()
-        # 2) Convert nested dicts to an "object" style
-        nested = self.to_attr_dict(raw_data)
-        # 3) Dump everything into self.__dict__ so it's dot-accessible
-        for k, v in nested.items():
-            self.__dict__[k] = v
-        self._initialized = True
-
-    def to_attr_dict(self, data):
-        """
-        Recursively convert a Python dict into an object that allows dot-notation access.
-        Non-dict values (e.g., int, str, list) are returned as-is; dicts become _AttrDict.
-        """
-        if not isinstance(data, dict):
-            return data
-
-        class _AttrDict(dict):
-            def __getattr__(self, name):
-                return self[name]
-
-            def __setattr__(self, name, value):
-                self[name] = value
-
-        out = _AttrDict()
-        for k, v in data.items():
-            out[k] = self.to_attr_dict(v)  # recursively transform
-        return out
-
-
-if "META_TABLES_CONSTANTS" not in locals():
-    META_TABLES_CONSTANTS = LazyConstants("tdag")
-
-if "TDAG_CONSTANTS" not in locals():
-    TDAG_CONSTANTS = META_TABLES_CONSTANTS
-
-
-def get_network_ip():
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-        # Connect to a well-known external host (Google DNS) on port 80
-        s.connect(("8.8.8.8", 80))
-        # Get the local IP address used to make the connection
-        network_ip = s.getsockname()[0]
-    return network_ip
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+        sock.connect(("8.8.8.8", 80))
+        return sock.getsockname()[0]
 
 
 def is_process_running(pid: int) -> bool:
-    """
-    Check if a process with the given PID is running.
+    """Return whether ``pid`` identifies a live, non-zombie process."""
 
-    Args:
-        pid (int): The process ID to check.
-
-    Returns:
-        bool: True if the process is running, False otherwise.
-    """
     try:
-        # Check if the process with the given PID is running
         process = psutil.Process(pid)
         return process.is_running() and process.status() != psutil.STATUS_ZOMBIE
     except psutil.NoSuchProcess:
-        # Process with the given PID does not exist
         return False
-
-
-def set_types_in_table(df, column_types):
-    from mainsequence.client.dtype_codec import token_to_pandas_series
-
-    index_cols = [name for name in df.index.names if name is not None]
-    if index_cols:
-        df = df.reset_index()
-
-    for c, col_type in column_types.items():
-        if c in df.columns:
-            df[c] = token_to_pandas_series(df[c], col_type)
-
-    if index_cols:
-        df = df.set_index(index_cols)
-    return df
 
 
 def serialize_to_json(kwargs):

@@ -172,7 +172,9 @@ def parse_platform_code_repository_skill_catalog(
                 f"The platform MCP resource catalog returned duplicate URI {uri!r}."
             )
         if uri != PLATFORM_ONTOLOGY_URI and not uri.startswith(PLATFORM_SKILL_URI_PREFIX):
-            raise CodeRepositorySkillAssemblyError(f"Unsupported platform skill resource URI {uri!r}.")
+            raise CodeRepositorySkillAssemblyError(
+                f"Unsupported platform skill resource URI {uri!r}."
+            )
         raw_rows_by_uri[uri] = row
 
     if PLATFORM_ONTOLOGY_URI not in raw_rows_by_uri:
@@ -186,13 +188,17 @@ def parse_platform_code_repository_skill_catalog(
     }
     ontology_payload = validated_by_uri[PLATFORM_ONTOLOGY_URI]
     if ontology_payload.listed_name != _PLATFORM_ONTOLOGY_NAME:
-        raise CodeRepositorySkillAssemblyError("The platform ontology resource has an unexpected name.")
+        raise CodeRepositorySkillAssemblyError(
+            "The platform ontology resource has an unexpected name."
+        )
     if ontology_payload.resource_path != _PLATFORM_ONTOLOGY_PATH:
         raise CodeRepositorySkillAssemblyError(
             "The platform ontology resource has an unexpected resource path."
         )
     if ontology_payload.content_mime_type != "application/json":
-        raise CodeRepositorySkillAssemblyError("The platform ontology resource must use application/json.")
+        raise CodeRepositorySkillAssemblyError(
+            "The platform ontology resource must use application/json."
+        )
 
     declarations = parse_platform_code_repository_skill_declarations(ontology_payload.content)
     listed_skill_uris = set(validated_by_uri) - {PLATFORM_ONTOLOGY_URI}
@@ -274,7 +280,9 @@ def parse_platform_code_repository_skill_declarations(
     """Return the validated, deterministic skill index from platform ontology JSON."""
 
     if not isinstance(ontology_content, str):
-        raise CodeRepositorySkillAssemblyError("The platform ontology resource must contain UTF-8 text.")
+        raise CodeRepositorySkillAssemblyError(
+            "The platform ontology resource must contain UTF-8 text."
+        )
     try:
         ontology = json.loads(ontology_content)
     except json.JSONDecodeError as exc:
@@ -299,14 +307,18 @@ def parse_platform_code_repository_skill_declarations(
             label=f"{label} name",
         )
         if not _PLATFORM_SKILL_NAME_RE.fullmatch(name):
-            raise CodeRepositorySkillAssemblyError(f"{label} name must use safe lowercase snake case.")
+            raise CodeRepositorySkillAssemblyError(
+                f"{label} name must use safe lowercase snake case."
+            )
         uri = _single_line_text(
             declaration.get("uri"),
             label=f"{label} URI",
         )
         front_matter_name = _platform_skill_slug(uri, label=label)
         if name != front_matter_name.replace("-", "_"):
-            raise CodeRepositorySkillAssemblyError(f"{label} name does not match its platform skill URI.")
+            raise CodeRepositorySkillAssemblyError(
+                f"{label} name does not match its platform skill URI."
+            )
         if name in names:
             raise CodeRepositorySkillAssemblyError(
                 f"The platform ontology declares duplicate skill name {name!r}."
@@ -423,7 +435,9 @@ def _validate_platform_resource_payload(
     if actual_sha256 != declared_sha256 or response_sha256 != declared_sha256:
         raise CodeRepositorySkillAssemblyError(f"{label} content hash mismatch.")
     if content_metadata.get("owner_application") != "mcp_gateway":
-        raise CodeRepositorySkillAssemblyError(f"{label} read response is not owned by mcp_gateway.")
+        raise CodeRepositorySkillAssemblyError(
+            f"{label} read response is not owned by mcp_gateway."
+        )
     if (
         content_metadata.get("manifest_version") != manifest_version
         or content_metadata.get("manifest_sha256") != manifest_sha256
@@ -676,8 +690,7 @@ def _validate_platform_skill_path(
 ) -> None:
     if len(path.parts) < 3 or path.parts[0] != "skills":
         raise CodeRepositorySkillAssemblyError(
-            f"{label} path must be rooted under skills/ and contain at least "
-            "one skill directory."
+            f"{label} path must be rooted under skills/ and contain at least one skill directory."
         )
     if path.parts[-1] not in _PLATFORM_SKILL_FILENAMES:
         raise CodeRepositorySkillAssemblyError(
@@ -708,14 +721,18 @@ def _validate_skill_front_matter(
     try:
         front_matter = yaml.safe_load("\n".join(lines[1:closing_index]))
     except yaml.YAMLError as exc:
-        raise CodeRepositorySkillAssemblyError(f"{label} front matter must contain valid YAML.") from exc
+        raise CodeRepositorySkillAssemblyError(
+            f"{label} front matter must contain valid YAML."
+        ) from exc
     front_matter = _mapping(front_matter, label=f"{label} front matter")
     name = _single_line_text(
         front_matter.get("name"),
         label=f"{label} front matter name",
     )
     if name != expected_name:
-        raise CodeRepositorySkillAssemblyError(f"{label} front matter name must be {expected_name!r}.")
+        raise CodeRepositorySkillAssemblyError(
+            f"{label} front matter name must be {expected_name!r}."
+        )
     _single_line_text(
         front_matter.get("description"),
         label=f"{label} front matter description",

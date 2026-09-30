@@ -17,16 +17,41 @@ Install the `mainsequence-sdk` package (whatever your internal process is).
 
 ## Configuration
 
-The CLI stores config and tokens in a platform-specific directory:
+The CLI stores non-secret configuration in a platform-specific directory:
 
 - **Windows:** `%APPDATA%\\MainSequenceCLI`
 - **macOS:** `~/Library/Application Support/MainSequenceCLI`
 - **Linux:** `~/.config/mainsequence`
 
+The session is backend-scoped and persisted in the operating system credential
+store when one is available: the login Keychain on macOS, Secret Service on
+Linux, and Credential Manager on Windows. The CLI does not create a plaintext
+token-file fallback, and it does not write a credential into a CodeRepository
+`.env`. The SDK reads the saved session when it is imported, so a login made
+from one CodeRepository serves every other one on the machine.
+
 ### Environment overrides
 
 - `MAINSEQUENCE_ENDPOINT` overrides the configured backend URL.
 - `MAINSEQUENCE_ACCESS_TOKEN` and `MAINSEQUENCE_REFRESH_TOKEN` can be used to provide JWT auth for the current process.
+
+Credentials already set in the process environment win over the saved session.
+When that pair is rejected, the SDK does not fall back to the saved session,
+because the pair may belong to another user or backend; the error says that the
+rejected credentials came from the environment. `mainsequence auth status`
+shows which of the two a process is using.
+
+### Other local tools
+
+A tool that does not read the credential store itself asks the CLI for a
+short-lived access token:
+
+```bash
+mainsequence auth token --json
+```
+
+The command never prints the refresh token. Its output and exit codes are
+described in the [CLI reference](../cli/index.md#handing-the-session-to-another-local-tool).
 
 `mainsequence login`, including `mainsequence login --mcp`, uses this resolved
 configured backend unless `--backend` is supplied explicitly. The backend shown
@@ -52,15 +77,19 @@ combined with `--export`.
 
 `mainsequence logout` now performs a hard CLI logout when the session came from browser-based CLI login and a refresh token is available. It revokes the tracked CLI login session server-side through `/auth/cli/revoke/`, falls back to JWT logout on older backends that do not implement that endpoint, and otherwise clears only local CLI auth state.
 
-`mainsequence code-repository set-up-locally` and `mainsequence code-repository refresh-token`
-are auth-mode aware. In a backend-launched runtime credential process they
-preserve the injected auth mode, credential id/secret, and an exchanged
-`MAINSEQUENCE_ACCESS_TOKEN` in the CodeRepository `.env`; they do not require or write
-`MAINSEQUENCE_REFRESH_TOKEN`. Both commands preserve unrelated `.env` entries
-and do not carry obsolete `MAINSEQUENCE_TOKEN` or
-superseded numeric repository-identity entries into the rendered file. They never write a
+`mainsequence code-repository set-up-locally` writes the backend endpoint into
+the CodeRepository `.env` and no credential, in every auth mode. A
+backend-launched runtime credential process already has its credential in its
+own environment; nothing of it is copied into the checkout. It never writes a
 CodeRepositoryBranch UID, repository branch, Organization Environment UID, or another
 caller-selected deployed runtime context.
+
+`mainsequence refresh-token` renews the saved session. It is a top-level command
+without a path, because the session belongs to the machine and not to a
+checkout. When the directory it runs in has a `.env` with an access token, a
+refresh token or a runtime credential that an earlier version or another tool
+left there, it removes those entries, names them, and changes nothing else in
+the file.
 
 Local setup registers a new or inaccessible deploy key against the logical CodeRepository at
 `/api/v1/code-repositories/{code_repository_uid}/add-deploy-key/` and verifies repository access with that forced
@@ -86,7 +115,6 @@ mainsequence code-repository open-signed-terminal <CODE_REPOSITORY_UID>
 
 # CodeRepository operations
 mainsequence code-repository add-label <CODE_REPOSITORY_UID> --label rates --label research
-mainsequence time-index-table add-label <TIME_INDEX_META_TABLE_UID> --label curated
 
 # Compile environment
 mainsequence code-repository freeze-env --path .

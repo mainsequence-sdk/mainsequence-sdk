@@ -1,5 +1,7 @@
 # ADR 0023: Alembic-Owned Foreign Keys And Indexes
 
+> Historical decision: SDK-owned MetaTables functionality described here was superseded by [ADR 0034](0034-extract-metatables-python-package.md). Follow the current [removal migration guide](../migrations/metatables-sdk-removal.md) for supported imports and commands.
+
 Date: 2026-06-04
 
 Status: Accepted

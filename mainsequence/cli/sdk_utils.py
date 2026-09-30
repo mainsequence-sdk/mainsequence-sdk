@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """
 mainsequence.cli.sdk_utils
 ==========================
@@ -8,6 +6,8 @@ SDK version helpers aligned with VS Code extension behavior:
 - Fetch latest GitHub release tag (fallback to latest tag)
 - Read local mainsequence version from requirements.txt
 """
+
+from __future__ import annotations
 
 import pathlib
 import re

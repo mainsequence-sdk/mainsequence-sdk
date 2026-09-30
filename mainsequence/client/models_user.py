@@ -1,14 +1,12 @@
-
 from __future__ import annotations
 
 import datetime
-from collections.abc import Mapping
-from contextvars import ContextVar
 from typing import Any, ClassVar, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator, model_validator
 
+from mainsequence._request_identity import RequestIdentityError, _get_request_identity
 from mainsequence.defaults import STANDARD_BACKEND_URL
 
 from .base import (
@@ -19,24 +17,9 @@ from .base import (
 )
 from .exceptions import ApiError, raise_for_response
 from .utils import (
-    DEFAULT_TIMEOUT,
     make_request,
 )
 from .value_sets import OpenValueSet
-
-_CURRENT_AUTH_HEADERS: ContextVar[Mapping[str, Any] | None] = ContextVar(
-    "_CURRENT_AUTH_HEADERS",
-    default=None,
-)
-
-_CURRENT_USER: ContextVar[Any | None] = ContextVar(
-    "_CURRENT_USER",
-    default=None,
-)
-
-
-class RequestIdentityError(RuntimeError):
-    """Raised when a request does not carry a valid public user identity."""
 
 
 class RequestUserIdentity(BaseModel):
@@ -89,11 +72,16 @@ class UserApiBaseObjectOrm(BaseObjectOrm):
         return f"{cls._user_api_root().rstrip('/')}/{endpoint.strip('/')}"
 
 
-def _normalize_request_headers(headers: Mapping[str, Any]) -> dict[str, Any]:
-    normalized: dict[str, Any] = {}
-    for key, value in headers.items():
-        normalized[str(key).lower()] = value
-    return normalized
+class OrganizationEnvironment(UserApiBaseObjectOrm, BasePydanticModel):
+    """Public Environment metadata, scoped by authenticated platform visibility."""
+
+    ENDPOINT: ClassVar[str] = "organization-environments"
+
+    uid: str
+    name: str
+    organization_owner_uid: str
+    required_repository_branch: str
+    is_production: bool
 
 
 class Organization(UserApiBaseObjectOrm, BasePydanticModel):
@@ -423,7 +411,9 @@ class Team(PermissionManagedObjectMixin, BasePydanticModel, UserApiBaseObjectOrm
             timeout=timeout,
         )
 
-    def _validate_team_user_list_payload(self, payload: Any, *, action_name: str) -> list[UserSummary]:
+    def _validate_team_user_list_payload(
+        self, payload: Any, *, action_name: str
+    ) -> list[UserSummary]:
         if isinstance(payload, dict):
             payload = payload.get("results", payload.get("users", payload.get("members")))
         if not isinstance(payload, list):
@@ -683,14 +673,10 @@ class Notification(DetailActionObjectMixin, BasePydanticModel, UserApiBaseObject
     ) -> Notification | list[Notification]:
         if isinstance(payload, list):
             if not allow_many:
-                raise ApiError(
-                    f"Unexpected Notification list response: {type(payload)!r}"
-                )
+                raise ApiError(f"Unexpected Notification list response: {type(payload)!r}")
             return [cls.model_validate(item) for item in payload]
         if not isinstance(payload, dict):
-            raise ApiError(
-                f"Unexpected Notification response payload: {type(payload)!r}"
-            )
+            raise ApiError(f"Unexpected Notification response payload: {type(payload)!r}")
         return cls.model_validate(payload)
 
     @classmethod
@@ -930,18 +916,25 @@ class ShareableAccessState(BasePydanticModel):
         default_factory=list,
         title="Teams",
         description="Teams with this access level on the object.",
-        examples=[[
-            {
-                "uid": "3f1cc452-43ec-49cb-b2ba-87dbac164d29",
-                "name": "Research",
-                "description": "Research team",
-                "member_count": 5,
-            }
-        ]],
+        examples=[
+            [
+                {
+                    "uid": "3f1cc452-43ec-49cb-b2ba-87dbac164d29",
+                    "name": "Research",
+                    "description": "Research team",
+                    "member_count": 5,
+                }
+            ]
+        ],
     )
 
 
 class User(UserApiBaseObjectOrm, BasePydanticModel):
+    # Platform facts, not application authorization policy. None means the
+    # connected platform has not supplied the versioned additive contract.
+    is_organization_admin: StrictBool | None = None
+    active_team_uids: list[UUID] | None = None
+
     ENDPOINT: ClassVar[str] = "users"
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]] | None] = {
         "uid": ["exact", "in"],
@@ -1004,7 +997,6 @@ class User(UserApiBaseObjectOrm, BasePydanticModel):
         description="Name of the active subscription or access plan.",
         examples=["enterprise"],
     )
-
 
     date_joined: datetime.datetime = Field(
         ...,
@@ -1134,7 +1126,7 @@ class User(UserApiBaseObjectOrm, BasePydanticModel):
         running inside a request-bound identity context. This method reads the
         authenticated user through the backend `/api/v1/users/me/`
         endpoint and does not depend on request headers or
-        `_CURRENT_AUTH_HEADERS`.
+        the request identity context.
         """
         url = f"{cls.get_object_url()}/me/"
         r = make_request(
@@ -1154,100 +1146,9 @@ class User(UserApiBaseObjectOrm, BasePydanticModel):
         return cls.parse_obj(data)
 
     @classmethod
-    def _get_request_bound_user(
-        cls,
-        *,
-        authorization: str,
-    ) -> User:
-        url = f"{cls.get_object_url()}/me/"
-        response = cls.build_session().get(
-            url,
-            headers={"Authorization": authorization},
-            params=None,
-            timeout=DEFAULT_TIMEOUT,
-        )
-        raise_for_response(response)
-
-        data = response.json()
-        if hasattr(cls, "model_validate"):
-            return cls.model_validate(data)
-
-        return cls.parse_obj(data)
-
-    @classmethod
     def get_logged_user(cls) -> RequestUserIdentity:
-        """
-        Resolve the human making the current request as a UID-only identity.
-
-        A deployed gateway provides trusted `X-User-UID` and optional
-        `X-Username` headers. Direct local development provides a Bearer token,
-        which is validated through `/api/v1/users/me/`. When both are present,
-        their UIDs must match. The removed `X-User-ID` contract is rejected.
-
-        Use `get_authenticated_user_details()` for a full account profile in a
-        standalone authenticated CLI or script.
-        """
-        cached_user = _CURRENT_USER.get()
-        if cached_user is not None:
-            if not isinstance(cached_user, RequestUserIdentity):
-                raise RequestIdentityError("Invalid request user context value.")
-            return cached_user
-
-        headers = _CURRENT_AUTH_HEADERS.get()
-
-        if not headers:
-            raise RequestIdentityError(
-                "No request identity is available. Provide an explicitly bound "
-                "request-header context. FastAPI handlers should use the "
-                "platform-injected request.state.user instead."
-            )
-
-        normalized_headers = _normalize_request_headers(headers)
-        removed_user_id = normalized_headers.get("x-user-id") or normalized_headers.get(
-            "http_x_user_id"
-        )
-        if removed_user_id not in (None, ""):
-            raise RequestIdentityError("X-User-ID is not a supported request identity header.")
-
-        authorization_raw = normalized_headers.get("authorization")
-        authorization: str | None = None
-        if authorization_raw not in (None, ""):
-            authorization = str(authorization_raw).strip()
-            scheme, separator, credential = authorization.partition(" ")
-            if scheme.lower() != "bearer" or not separator or not credential.strip():
-                raise RequestIdentityError("Request authorization must use a Bearer token.")
-
-        header_identity: RequestUserIdentity | None = None
-        user_uid_raw = normalized_headers.get("x-user-uid") or normalized_headers.get(
-            "http_x_user_uid"
-        )
-        if user_uid_raw not in (None, ""):
-            try:
-                header_identity = RequestUserIdentity(
-                    uid=user_uid_raw,
-                    username=normalized_headers.get("x-username")
-                    or normalized_headers.get("http_x_username"),
-                )
-            except ValueError as exc:
-                raise RequestIdentityError("X-User-UID must contain a valid UUID.") from exc
-
-        if authorization is None:
-            if header_identity is None:
-                raise RequestIdentityError("Missing X-User-UID or Bearer authorization.")
-            return header_identity
-
-        user = cls._get_request_bound_user(authorization=authorization)
-        if user.uid in (None, ""):
-            raise RequestIdentityError("Authenticated user response is missing uid.")
-        try:
-            bearer_identity = RequestUserIdentity(uid=user.uid, username=user.username)
-        except ValueError as exc:
-            raise RequestIdentityError(
-                "Authenticated user response contains an invalid uid."
-            ) from exc
-
-        if header_identity is not None and header_identity.uid != bearer_identity.uid:
-            raise RequestIdentityError(
-                "Bearer user does not match the trusted request user UID."
-            )
-        return bearer_identity
+        """Return the caller bound by the application's request identity integration."""
+        user = _get_request_identity()
+        if not isinstance(user, RequestUserIdentity):
+            raise RequestIdentityError("Invalid request user context value.")
+        return user

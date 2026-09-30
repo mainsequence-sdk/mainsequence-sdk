@@ -13,9 +13,7 @@ from urllib.parse import urlsplit
 _SUPPORTED_GIT_ORIGIN_SCHEMES = {"git", "git+ssh", "http", "https", "ssh"}
 _SSH_GIT_ORIGIN_SCHEMES = {"git+ssh", "ssh"}
 _DEFAULT_GIT_ORIGIN_PORTS = {"http": 80, "https": 443, "ssh": 22, "git+ssh": 22}
-_SCP_GIT_ORIGIN_PATTERN = re.compile(
-    r"^(?:[^@/\s]+@)?(?P<host>[^:/\s]+):(?P<path>.+)$"
-)
+_SCP_GIT_ORIGIN_PATTERN = re.compile(r"^(?:[^@/\s]+@)?(?P<host>[^:/\s]+):(?P<path>.+)$")
 
 
 def which(cmd: str) -> str | None:
@@ -105,9 +103,7 @@ def git_ssh_environment(
 def require_ssh_git_origin(repo_url: str) -> str:
     identity, uses_ssh = repository_ssh_key_identity(repo_url)
     if not uses_ssh:
-        raise ValueError(
-            "Git origin must use SSH before a repository deploy key can be selected."
-        )
+        raise ValueError("Git origin must use SSH before a repository deploy key can be selected.")
     return identity
 
 
@@ -134,9 +130,7 @@ def ensure_key_for_repo(repo_url: str) -> tuple[pathlib.Path, pathlib.Path, str]
         )
         if rc != 0:
             detail = err.strip()
-            raise RuntimeError(
-                f"ssh-keygen failed for {key}" + (f": {detail}" if detail else ".")
-            )
+            raise RuntimeError(f"ssh-keygen failed for {key}" + (f": {detail}" if detail else "."))
     if not key.is_file() or not pub.is_file():
         raise RuntimeError(f"Repository SSH keypair was not created: {key}")
     public_key = pub.read_text(encoding="utf-8").strip()
@@ -185,9 +179,7 @@ def verify_git_tag_absent(repo_dir: str | pathlib.Path, tag_name: str) -> None:
     rc, out, err = run("git", "check-ref-format", ref, cwd=str(repo_dir))
     if rc != 0:
         detail = (err or out).strip()
-        raise RuntimeError(
-            f"Invalid Git tag: {tag}" + (f": {detail}" if detail else ".")
-        )
+        raise RuntimeError(f"Invalid Git tag: {tag}" + (f": {detail}" if detail else "."))
     rc, out, err = run("git", "show-ref", "--verify", "--quiet", ref, cwd=str(repo_dir))
     if rc == 0:
         raise RuntimeError(f"Git tag already exists locally: {tag}")

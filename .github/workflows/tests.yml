@@ -42,8 +42,7 @@ jobs:
         run: python -m pip install --upgrade uv
 
       - name: Install the project with every extra and dependency group
-        # `--all-extras` matters: tests/test_duckdb_interface_dimensions.py
-        # imports the `local-data` extra at module scope.
+        # `--all-extras` covers optional server integration tests.
         run: uv sync --frozen --all-extras --all-groups
 
       - name: Run the test suite

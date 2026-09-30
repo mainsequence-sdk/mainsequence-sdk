@@ -9,77 +9,73 @@
 [![Last Commit](https://img.shields.io/github/last-commit/mainsequence-sdk/mainsequence-sdk)](https://github.com/mainsequence-sdk/mainsequence-sdk/commits/main/)
 [![Maintained](https://img.shields.io/badge/maintained-actively-green.svg)](https://github.com/mainsequence-sdk/mainsequence-sdk/commits/main/)
 
-The Main Sequence Python SDK is the client and development toolkit for the Main Sequence platform.
+The Main Sequence Python SDK is the client and development toolkit for the Main
+Sequence platform. It provides authentication, typed platform resources,
+CodeRepository development and release operations, Agent and A2A workflows,
+jobs, sharing, observability, logging, tracing, and reusable scaffold tooling.
 
-The Main Sequence platform allows you to:
-
-1. rapidly build and deploy data products with normalized `MetaTable` contracts and `TimeIndexTableUpdater` producer workflows
-2. deploy FastAPI services and supported application surfaces on the platform
-3. rapidly deploy agents using the Google Agent SDK
-
-The key idea is that you can focus on development and deployment, while the platform handles the DevOps layer.
+MetaTables is now an independent domain package, installed as
+`mainsequence-metatable` and imported as `metatables`. Table models, time-index
+table updates, SQLAlchemy schemas, local database interfaces, and Alembic
+execution are no longer implemented by this distribution.
 
 ## Repository Status
 
 - Status: actively maintained
-- Last commit: `2026-03-27` - [`6aa5dea`](https://github.com/mainsequence-sdk/mainsequence-sdk/commit/6aa5deab73586226c7b267abf2e3f02f4f7e7669) - `docs logo fix v.3.17.6`
 - Open issues: [GitHub Issues](https://github.com/mainsequence-sdk/mainsequence-sdk/issues)
 - Documentation: [Documentation Site](https://mainsequence-sdk.github.io/mainsequence-sdk/)
 - Security policy: [SECURITY.md](SECURITY.md)
 - Release history: [CHANGELOG.md](CHANGELOG.md)
 - Major-version migrations: [Migration guides](docs/migrations/v8-code-repository-ontology.md)
 
-## What this repository contains
-
-This repository contains the SDK and documentation used to build and operate Main Sequence CodeRepositories.
+## What This Repository Contains
 
 Main package areas:
 
-- `mainsequence.meta_tables`: `MetaTable`s, `TimeIndexTableUpdater`s, update workflows, and persistence
-- `mainsequence.client`: API client models for CodeRepositories, jobs, time-index tables, sharing, and platform resources
-- `mainsequence.cli`: the `mainsequence` command-line interface
+- `mainsequence.client`: API client models for users, CodeRepositories, jobs,
+  Agents, artifacts, constants, secrets, sharing, releases, and other platform
+  resources
+- `mainsequence.cli`: the complete `mainsequence` command-line interface for
+  authentication, platform resources, and local CodeRepository operations
+- `mainsequence.instrumentation` and `mainsequence.logconf`: SDK tracing and
+  logging integration
+- `mainsequence.server`: optional server-side caller assertion verification
+- `mainsequence.scaffold_skills`: reusable, version-pinned skill copying for
+  this SDK and extension libraries
 
 Repository areas:
 
-- `docs/`: knowledge guides, CLI docs, and generated reference docs
-- `tests/`: automated tests
+- `agent_scaffold/`: version-matched SDK skills and managed `AGENTS.md` content
+- `docs/`: knowledge guides, CLI docs, architecture decisions, and generated
+  reference docs
+- `tests/`: offline tests plus explicitly marked live-backend tests
 
-## Documentation map
-
-The documentation is organized into three reading modes:
-
-1. **Knowledge**: deeper conceptual guides
-2. **CLI**: command-focused operational documentation
-3. **Reference**: generated API reference
+## Documentation Map
 
 Recommended entry points:
 
-- Beginner tutorial:
-  - [MainSequence SDK tutorial CodeRepository](https://github.com/mainsequence-projects/mainsequence-sdk-tutorial)
-- Knowledge:
-  - [Time-Index Table Updaters](docs/knowledge/time_index_table_updates.md)
-  - [MetaTables](docs/knowledge/meta_tables/index.md)
-  - [Constants and Secrets](docs/knowledge/infrastructure/constants_and_secrets.md)
-  - [Scheduling Jobs](docs/knowledge/infrastructure/scheduling_jobs.md)
-- Migrations:
-  - [Streamlit dashboard support removal](docs/migrations/streamlit-dashboard-removal.md)
-  - [7.x to 8.0: CodeRepository ontology hard cut](docs/migrations/v8-code-repository-ontology.md)
-  - [6.x to 7.0: Time-Index Table Updater hard cut](docs/migrations/v7-time-index-table-updater-hard-cut.md)
-- CLI:
-  - [CLI Overview](docs/cli/index.md)
+- [Documentation home](docs/index.md)
+- [Authentication](docs/knowledge/infrastructure/auth.md)
+- [CLI overview](docs/cli/index.md)
+- [Git source and Environment context](docs/knowledge/infrastructure/context.md)
+- [Constants and Secrets](docs/knowledge/infrastructure/constants_and_secrets.md)
+- [Scheduling Jobs](docs/knowledge/infrastructure/scheduling_jobs.md)
+- [Resource releases](docs/knowledge/infrastructure/resource_releases.md)
+- [Generated API reference](docs/reference/index.md)
+- [MetaTables extraction guide](docs/migrations/metatables-sdk-removal.md)
+- [ADR 0034](docs/adr/0034-extract-metatables-python-package.md)
 
-## Quick start
+The beginner tutorial is maintained in the separate
+[MainSequence SDK tutorial CodeRepository](https://github.com/mainsequence-projects/mainsequence-sdk-tutorial).
 
-Install the package:
+## Quick Start
+
+Install and authenticate:
 
 ```bash
 pip install mainsequence
-```
-
-Authenticate:
-
-```bash
 mainsequence login
+mainsequence doctor
 ```
 
 An already MCP-authenticated coding agent can establish the same persisted CLI
@@ -88,112 +84,59 @@ session with `mainsequence login --mcp`, then call the printed
 callback URI; tokens return directly to the CLI and are never exposed through
 MCP.
 
-Check that you can see your CodeRepositories:
+Inspect and create CodeRepositories:
 
 ```bash
-mainsequence code-repository list
-```
-
-Create a new CodeRepository:
-
-```bash
+mainsequence code-repository search
 mainsequence code-repository create my-first-repository
-```
-
-Set it up locally:
-
-```bash
 mainsequence code-repository set-up-locally <CODE_REPOSITORY_UID>
 cd my-first-repository
 mainsequence code-repository build-local-venv --path .
 ```
 
-From there, the normal learning path is:
+Use `mainsequence --help` and `mainsequence code-repository --help` for the
+installed command surface. The CLI includes Agent and AgentSession,
+CodeRepository, jobs and runs, images, resources and releases, constants,
+secrets, teams, sharing, scaffold, Docker, and local-development commands.
 
-1. model your first canonical table with a backend-managed `MetaTable`
-2. create your first `TimeIndexTableUpdater` as an opinionated MetaTable-backed update workflow
-3. understand sharing and RBAC for published tables
-4. add an API or another application surface
-5. schedule jobs
-6. build supported application surfaces or downstream consumers
-7. package the CodeRepository as an agent-facing surface when it is ready
+## Python Client
 
-## Installation for development
+`mainsequence.client` provides `AuthLoaders`, `MainSequenceClient`, generic
+request and response helpers, and typed platform adapters. The platform owns
+authorization and lifecycle policy. The SDK resolves CodeRepository source
+identity from the current Git checkout when an operation requires that context.
 
-This repository uses `pyproject.toml` and a development dependency group.
+Discover deployments with `ResourceRelease.filter(name=...)` or resolve a known
+release UID with `ResourceRelease.get(pk=...)`. For shared deployments owned by
+another repository, use the explicitly scoped `filter_admin` path. See
+[Resource releases](docs/knowledge/infrastructure/resource_releases.md) for
+supported filters and examples.
 
-With `uv`:
+Server integrations can install `mainsequence[server]` for the
+framework-independent [caller assertion verifier](docs/knowledge/server/caller_assertions.md).
+Applications remain responsible for resource authorization and storage
+operations.
+
+Install `mainsequence-metatable` and import `metatables` for table-domain work.
+See the [MetaTables migration guide](docs/migrations/metatables-sdk-removal.md)
+for the install step, old and new imports, retired table CLI commands, and the
+legacy SDK option.
+
+## Development
+
+This repository requires Python 3.13 or newer and uses `pyproject.toml` with a
+development dependency group.
 
 ```bash
 uv sync --group dev
-```
-
-Or with `pip`, install the package and the docs/test tools you need separately.
-
-## Common development commands
-
-Run the CLI:
-
-```bash
-mainsequence --help
-```
-
-Run tests:
-
-```bash
 pytest
-```
-
-Serve the docs locally:
-
-```bash
-mkdocs serve
-```
-
-Build the docs:
-
-```bash
-mkdocs build
-```
-
-Lint the code:
-
-```bash
 ruff check .
+mkdocs build --strict
 ```
 
-Format the code:
+Live-backend tests are marked `live` and excluded from a normal test run. Run
+them explicitly with `pytest -m live` when credentials and a target backend are
+available.
 
-```bash
-black .
-```
-
-## How to read this repository
-
-If you are evaluating the platform:
-
-- start with the separate canonical tutorial CodeRepository linked above
-
-If you are building a feature and already know the area:
-
-- go straight to the relevant guide in `docs/knowledge/`
-
-If you are operating CodeRepositories day to day:
-
-- use `docs/cli/` and the `mainsequence --help` command tree
-
-If you need the exact SDK surface:
-
-- use `docs/reference/`
-
-## Package metadata
-
-- Package name: `mainsequence`
-- Python: `>=3.13`
-- CLI entry point: `mainsequence`
-
-Package metadata is defined in [pyproject.toml](pyproject.toml).
-
-## License
-
-This repository is distributed under the terms described in [LICENSE](LICENSE).
+Package metadata is defined in [pyproject.toml](pyproject.toml). This repository
+is licensed under the MIT License; see [LICENSE](LICENSE).

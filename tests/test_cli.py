@@ -2391,78 +2391,6 @@ def test_config_get_tokens_fallback_legacy_env(cli_mod, monkeypatch):
     assert out["refresh"] == "legacy-ref"
 
 
-def test_config_get_tokens_fallback_local_store(cli_mod, monkeypatch, tmp_path):
-    auth_json = tmp_path / "auth.json"
-    cli_mod.cfg.write_json(
-        auth_json,
-        {"username": "u@example.com", "access": "acc", "refresh": "ref"},
-    )
-    monkeypatch.setattr(cli_mod.cfg, "AUTH_JSON", auth_json)
-    monkeypatch.delenv(cli_mod.cfg.ENV_ACCESS, raising=False)
-    monkeypatch.delenv(cli_mod.cfg.ENV_REFRESH, raising=False)
-    monkeypatch.delenv(cli_mod.cfg.ENV_USERNAME, raising=False)
-    monkeypatch.setattr(cli_mod.cfg, "_read_secure_tokens", lambda: {})
-
-    out = cli_mod.cfg.get_tokens()
-    assert out["username"] == "u@example.com"
-    assert out["access"] == "acc"
-    assert out["refresh"] == "ref"
-
-
-def test_config_get_tokens_fallback_backend_scoped_local_store(cli_mod, monkeypatch, tmp_path):
-    auth_json = tmp_path / "auth.json"
-    cli_mod.cfg.write_json(
-        auth_json,
-        {
-            "version": 2,
-            "by_backend": {
-                "https://api.main-sequence.app": {
-                    "username": "prod@example.com",
-                    "access": "prod-acc",
-                    "refresh": "prod-ref",
-                },
-                "http://127.0.0.1:8000": {
-                    "username": "dev@example.com",
-                    "access": "dev-acc",
-                    "refresh": "dev-ref",
-                },
-            },
-        },
-    )
-    monkeypatch.setattr(cli_mod.cfg, "AUTH_JSON", auth_json)
-    monkeypatch.setattr(cli_mod.cfg, "backend_url", lambda: "http://127.0.0.1:8000")
-    monkeypatch.delenv(cli_mod.cfg.ENV_ACCESS, raising=False)
-    monkeypatch.delenv(cli_mod.cfg.ENV_REFRESH, raising=False)
-    monkeypatch.delenv(cli_mod.cfg.ENV_USERNAME, raising=False)
-    monkeypatch.setattr(cli_mod.cfg, "_read_secure_tokens", lambda: {})
-
-    out = cli_mod.cfg.get_tokens()
-    assert out["username"] == "dev@example.com"
-    assert out["access"] == "dev-acc"
-    assert out["refresh"] == "dev-ref"
-
-
-def test_config_get_tokens_runtime_mode_allows_access_without_refresh(
-    cli_mod, monkeypatch, tmp_path
-):
-    auth_json = tmp_path / "auth.json"
-    cli_mod.cfg.write_json(
-        auth_json,
-        {"username": "u@example.com", "access": "acc", "refresh": ""},
-    )
-    monkeypatch.setattr(cli_mod.cfg, "AUTH_JSON", auth_json)
-    monkeypatch.setenv("MAINSEQUENCE_AUTH_MODE", "runtime_credential")
-    monkeypatch.delenv(cli_mod.cfg.ENV_ACCESS, raising=False)
-    monkeypatch.delenv(cli_mod.cfg.ENV_REFRESH, raising=False)
-    monkeypatch.delenv(cli_mod.cfg.ENV_USERNAME, raising=False)
-    monkeypatch.setattr(cli_mod.cfg, "_read_secure_tokens", lambda: {})
-
-    out = cli_mod.cfg.get_tokens()
-    assert out["username"] == "u@example.com"
-    assert out["access"] == "acc"
-    assert out["refresh"] == ""
-
-
 def test_config_get_tokens_prefers_env_over_local_store(cli_mod, monkeypatch, tmp_path):
     auth_json = tmp_path / "auth.json"
     cli_mod.cfg.write_json(
@@ -2546,69 +2474,6 @@ def test_prime_runtime_env_falls_back_to_cli_login_context(cli_mod, monkeypatch,
     assert _UNSUPPORTED_REPOSITORY_NUMERIC_ID_ENV not in os.environ
     assert os.environ["MAINSEQUENCE_ACCESS_TOKEN"] == "acc-123"
     assert os.environ["MAINSEQUENCE_REFRESH_TOKEN"] == "ref-456"
-
-
-def test_config_save_tokens_writes_secure_store(cli_mod, monkeypatch):
-    captured = {}
-
-    def _write_secure_tokens(*, username, access, refresh):
-        captured["username"] = username
-        captured["access"] = access
-        captured["refresh"] = refresh
-        return True
-
-    monkeypatch.setattr(cli_mod.cfg, "_write_secure_tokens", _write_secure_tokens)
-    monkeypatch.setattr(cli_mod.cfg, "_macos_security_exists", lambda: True)
-    cli_mod.cfg.save_tokens("u@example.com", "acc", "ref")
-    assert captured == {"username": "u@example.com", "access": "acc", "refresh": "ref"}
-
-
-def test_config_save_tokens_writes_local_store_when_secure_store_unavailable(
-    cli_mod, monkeypatch, tmp_path
-):
-    auth_json = tmp_path / "auth.json"
-    monkeypatch.setattr(cli_mod.cfg, "AUTH_JSON", auth_json)
-    monkeypatch.setattr(cli_mod.cfg, "_macos_security_exists", lambda: False)
-    monkeypatch.setattr(cli_mod.cfg, "backend_url", lambda: "https://api.main-sequence.app")
-
-    ok = cli_mod.cfg.save_tokens("u@example.com", "acc", "ref")
-
-    assert ok is True
-    assert cli_mod.cfg.read_json(auth_json, {}) == {
-        "version": 2,
-        "by_backend": {
-            "https://api.main-sequence.app": {
-                "username": "u@example.com",
-                "access": "acc",
-                "refresh": "ref",
-            }
-        },
-    }
-
-
-def test_config_save_tokens_falls_back_to_local_store_when_secure_readback_fails(
-    cli_mod, monkeypatch, tmp_path
-):
-    auth_json = tmp_path / "auth.json"
-    monkeypatch.setattr(cli_mod.cfg, "AUTH_JSON", auth_json)
-    monkeypatch.setattr(cli_mod.cfg, "_macos_security_exists", lambda: True)
-    monkeypatch.setattr(cli_mod.cfg, "backend_url", lambda: "http://127.0.0.1:8000")
-    monkeypatch.setattr(cli_mod.cfg, "_write_secure_tokens", lambda **kwargs: True)
-    monkeypatch.setattr(cli_mod.cfg, "_read_secure_tokens", lambda: {})
-
-    ok = cli_mod.cfg.save_tokens("dev@example.com", "dev-acc", "dev-ref")
-
-    assert ok is True
-    assert cli_mod.cfg.read_json(auth_json, {}) == {
-        "version": 2,
-        "by_backend": {
-            "http://127.0.0.1:8000": {
-                "username": "dev@example.com",
-                "access": "dev-acc",
-                "refresh": "dev-ref",
-            }
-        },
-    }
 
 
 def test_config_clear_tokens_removes_local_store(cli_mod, monkeypatch, tmp_path):
@@ -2829,39 +2694,6 @@ def test_code_repository_list(cli_mod, runner, monkeypatch):
     assert "Class" not in result.output
 
 
-def test_code_repository_get_time_index_table_updates(cli_mod, runner, monkeypatch):
-    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
-    monkeypatch.setattr(
-        cli_mod,
-        "get_code_repository_time_index_table_updates",
-        lambda code_repository_branch_uid, timeout=None: [
-            {
-                "uid": "time-index-table-update-uid-10",
-                "update_hash": "abc123",
-                "output_table": {
-                    "uid": "meta-table-uid-42",
-                    "physical_table_name": "storage-xyz",
-                },
-                "update_details": {"table_update_uid": "time-index-table-update-uid-10"},
-            }
-        ],
-    )
-    monkeypatch.setattr(
-        cli_mod,
-        "_resolve_code_repository_branch_uid_for_command",
-        lambda *args, **kwargs: "code-repository-branch-uid-123",
-    )
-
-    result = runner.invoke(
-        cli_mod.app, ["code-repository", "time-index-table-updates", "list", "123"]
-    )
-    assert result.exit_code == 0
-    assert "CodeRepository Time-Index Table Updates" in result.output
-    assert "abc123" in result.output
-    assert "storage-xyz" in result.output
-    assert "Total updates: 1" in result.output
-
-
 def test_code_repository_can_view(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(
@@ -3005,104 +2837,6 @@ def test_code_repository_add_team_to_view(cli_mod, runner, monkeypatch):
     }
     assert "CodeRepository add_team_to_view completed." in result.output
     assert "Research" in result.output
-
-
-def test_get_code_repository_time_index_table_updates_sets_code_repository_env(
-    cli_mod, monkeypatch
-):
-    api_mod = importlib.import_module("mainsequence.cli.api")
-    captured = {}
-
-    monkeypatch.setattr(
-        api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"}
-    )
-    monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
-    monkeypatch.delenv(_UNSUPPORTED_REPOSITORY_UID_ENV, raising=False)
-    monkeypatch.setattr(
-        api_mod,
-        "resolve_code_repository_branch_uid",
-        lambda value: str(value),
-    )
-
-    fake_client_pkg = types.ModuleType("mainsequence.client")
-    fake_utils = types.ModuleType("mainsequence.client.utils")
-    fake_base = types.ModuleType("mainsequence.client.base")
-    fake_models = types.ModuleType("mainsequence.client.models_foundry")
-
-    class FakeLoaders:
-        provider = "orig"
-
-        def use_jwt(self, *, access=None, refresh=None):
-            captured["jwt"] = (access, refresh)
-
-    fake_utils.loaders = FakeLoaders()
-    fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
-    fake_utils.API_ENDPOINT = "https://old.test/api/v1"
-    fake_utils.AUTH_ENDPOINT = "https://old.test"
-
-    def _set_mainsequence_endpoint(endpoint):
-        normalized = endpoint.rstrip("/")
-        fake_utils.MAINSEQUENCE_ENDPOINT = normalized
-        fake_utils.API_ENDPOINT = f"{normalized}/api/v1"
-        fake_utils.AUTH_ENDPOINT = normalized
-        captured["endpoint"] = normalized
-
-    fake_utils.set_mainsequence_endpoint = _set_mainsequence_endpoint
-    fake_utils.AUTH_ENDPOINT = "https://old.test"
-
-    def _set_mainsequence_endpoint(endpoint):
-        normalized = endpoint.rstrip("/")
-        fake_utils.MAINSEQUENCE_ENDPOINT = normalized
-        fake_utils.API_ENDPOINT = f"{normalized}/api/v1"
-        fake_utils.AUTH_ENDPOINT = normalized
-        captured["endpoint"] = normalized
-
-    fake_utils.set_mainsequence_endpoint = _set_mainsequence_endpoint
-    fake_utils.AUTH_ENDPOINT = "https://old.test"
-
-    def _set_mainsequence_endpoint(endpoint):
-        fake_utils.MAINSEQUENCE_ENDPOINT = endpoint
-        fake_utils.API_ENDPOINT = f"{endpoint.rstrip('/')}/api/v1"
-        fake_utils.AUTH_ENDPOINT = endpoint.rstrip("/")
-        captured["endpoint"] = endpoint
-
-    fake_utils.set_mainsequence_endpoint = _set_mainsequence_endpoint
-
-    class FakeBaseObjectOrm:
-        ROOT_URL = "https://old.test/api/v1"
-
-    class FakeUpdate:
-        def model_dump(self):
-            return {"uid": "time-index-table-update-uid-10", "update_hash": "abc123"}
-
-    class FakeCodeRepositoryBranch:
-        ROOT_URL = "https://old.test/api/v1/code-repository-branches"
-
-        @classmethod
-        def get(cls, pk, timeout=None):
-            captured["code_repository_branch_uid_arg"] = pk
-            captured["env_code_repository_uid"] = os.environ.get(_UNSUPPORTED_REPOSITORY_UID_ENV)
-            return types.SimpleNamespace(
-                get_time_index_table_updates=lambda timeout=None: [FakeUpdate()]
-            )
-
-    fake_base.BaseObjectOrm = FakeBaseObjectOrm
-    fake_models.CodeRepositoryBranch = FakeCodeRepositoryBranch
-    fake_client_pkg.utils = fake_utils
-
-    monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.models_foundry", fake_models)
-
-    out = api_mod.get_code_repository_time_index_table_updates(
-        "5a28020a-0f1b-47ee-aab8-334286234bea"
-    )
-    assert captured["code_repository_branch_uid_arg"] == "5a28020a-0f1b-47ee-aab8-334286234bea"
-    assert captured["env_code_repository_uid"] is None
-    assert captured["jwt"] == ("acc", "ref")
-    assert out == [{"uid": "time-index-table-update-uid-10", "update_hash": "abc123"}]
-    assert os.environ.get(_UNSUPPORTED_REPOSITORY_UID_ENV) is None
 
 
 def test_list_code_repository_users_can_view_uses_client_model(cli_mod, monkeypatch):
@@ -4339,176 +4073,6 @@ def test_delete_resource_release_uses_client_model(cli_mod, monkeypatch):
     assert out["release_kind"] == "fastapi"
 
 
-def test_list_time_index_tables_uses_client_model(cli_mod, monkeypatch):
-    api_mod = importlib.import_module("mainsequence.cli.api")
-    captured = {"filters": []}
-
-    monkeypatch.setattr(
-        api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"}
-    )
-    monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
-
-    fake_client_pkg = types.ModuleType("mainsequence.client")
-    fake_utils = types.ModuleType("mainsequence.client.utils")
-    fake_base = types.ModuleType("mainsequence.client.base")
-    fake_models = types.ModuleType("mainsequence.client.metatables")
-
-    class FakeLoaders:
-        provider = "orig"
-
-        def use_jwt(self, *, access=None, refresh=None):
-            captured["jwt"] = (access, refresh)
-
-    fake_utils.loaders = FakeLoaders()
-    fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
-    fake_utils.API_ENDPOINT = "https://old.test/api/v1"
-
-    class FakeBaseObjectOrm:
-        ROOT_URL = "https://old.test/api/v1"
-
-    class FakeTimeIndexMetaTable:
-        ROOT_URL = "https://old.test/api/v1/time-index-meta-tables"
-
-        @classmethod
-        def filter(cls, timeout=None, **kwargs):
-            captured["filters"].append(kwargs)
-            return [
-                types.SimpleNamespace(
-                    model_dump=lambda *args, **kwargs: {
-                        "uid": "time-index-table-storage-42",
-                        "physical_table_name": "weights_daily_physical",
-                        "source_class_name": "WeightsUpdater",
-                        "identifier": "weights_daily",
-                        "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},
-                    }
-                )
-            ]
-
-        @classmethod
-        def get(cls, uid=None, timeout=None, **filters):
-            captured["get"] = {"uid": uid, "filters": filters, "timeout": timeout}
-            return types.SimpleNamespace(
-                model_dump=lambda *args, **kwargs: {
-                    "uid": uid,
-                    "physical_table_name": "weights_daily_physical",
-                    "source_class_name": "WeightsUpdater",
-                    "identifier": "weights_daily",
-                    "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},
-                    "protect_from_deletion": True,
-                }
-            )
-
-    fake_base.BaseObjectOrm = FakeBaseObjectOrm
-    fake_models.TimeIndexMetaTable = FakeTimeIndexMetaTable
-    fake_client_pkg.utils = fake_utils
-
-    monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.metatables", fake_models)
-
-    out = api_mod.list_time_index_tables(filters={"physical_table_name__contains": "weights"})
-    detail = api_mod.get_time_index_table("time-index-table-storage-42")
-    assert captured["filters"][0] == {"physical_table_name__contains": "weights"}
-    assert captured["get"] == {"uid": "time-index-table-storage-42", "filters": {}, "timeout": None}
-    assert captured["jwt"] == ("acc", "ref")
-    assert out == [
-        {
-            "uid": "time-index-table-storage-42",
-            "physical_table_name": "weights_daily_physical",
-            "source_class_name": "WeightsUpdater",
-            "identifier": "weights_daily",
-            "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},
-        }
-    ]
-    assert detail["uid"] == "time-index-table-storage-42"
-    assert detail["physical_table_name"] == "weights_daily_physical"
-
-
-def test_meta_table_api_uses_client_model(cli_mod, monkeypatch):
-    api_mod = importlib.import_module("mainsequence.cli.api")
-    captured = {"filters": []}
-
-    monkeypatch.setattr(
-        api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"}
-    )
-    monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
-
-    fake_client_pkg = types.ModuleType("mainsequence.client")
-    fake_utils = types.ModuleType("mainsequence.client.utils")
-    fake_base = types.ModuleType("mainsequence.client.base")
-    fake_models = types.ModuleType("mainsequence.client.metatables")
-
-    class FakeLoaders:
-        provider = "orig"
-
-        def use_jwt(self, *, access=None, refresh=None):
-            captured["jwt"] = (access, refresh)
-
-    fake_utils.loaders = FakeLoaders()
-    fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
-    fake_utils.API_ENDPOINT = "https://old.test/api/v1"
-
-    class FakeBaseObjectOrm:
-        ROOT_URL = "https://old.test/api/v1"
-
-    class FakeMetaTable:
-        ROOT_URL = "https://old.test/api/v1/meta-tables"
-
-        @classmethod
-        def filter(cls, timeout=None, **kwargs):
-            captured["filters"].append({"filters": kwargs, "timeout": timeout})
-            return [
-                types.SimpleNamespace(
-                    model_dump=lambda *args, **kwargs: {
-                        "uid": "meta-table-42",
-                        "physical_table_name": "weights_daily",
-                        "identifier": "weights",
-                        "namespace": "pytest",
-                        "management_mode": "platform_managed",
-                    }
-                )
-            ]
-
-        @classmethod
-        def get(cls, uid=None, timeout=None, **filters):
-            captured["get"] = {"uid": uid, "filters": filters, "timeout": timeout}
-
-            class _MetaTable:
-                def model_dump(self, mode="json"):
-                    return {
-                        "uid": uid,
-                        "physical_table_name": "weights_daily",
-                        "identifier": "weights",
-                    }
-
-                def delete(self, *, timeout=None):
-                    captured["delete"] = {"timeout": timeout}
-
-            return _MetaTable()
-
-    fake_base.BaseObjectOrm = FakeBaseObjectOrm
-    fake_models.MetaTable = FakeMetaTable
-    fake_client_pkg.utils = fake_utils
-
-    monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.metatables", fake_models)
-
-    out = api_mod.list_meta_tables(filters={"namespace": "pytest"}, timeout=11)
-    detail = api_mod.get_meta_table("meta-table-42", timeout=12)
-    deleted = api_mod.delete_meta_table("meta-table-42", timeout=13)
-
-    assert captured["filters"] == [{"filters": {"namespace": "pytest"}, "timeout": 11}]
-    assert captured["get"] == {"uid": "meta-table-42", "filters": {}, "timeout": 13}
-    assert captured["delete"] == {"timeout": 13}
-    assert captured["jwt"] == ("acc", "ref")
-    assert out[0]["uid"] == "meta-table-42"
-    assert detail["physical_table_name"] == "weights_daily"
-    assert deleted["uid"] == "meta-table-42"
-
-
 def test_validate_code_repository_name_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
@@ -4572,510 +4136,6 @@ def test_validate_code_repository_name_uses_client_model(cli_mod, monkeypatch):
     assert captured["timeout"] == 25
     assert out["available"] is False
     assert out["normalized"]["repository_library_name"] == "rates_platform"
-
-
-def test_time_index_table_description_search_uses_client_model(cli_mod, monkeypatch):
-    api_mod = importlib.import_module("mainsequence.cli.api")
-    captured = {}
-
-    monkeypatch.setattr(
-        api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"}
-    )
-    monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
-
-    fake_client_pkg = types.ModuleType("mainsequence.client")
-    fake_utils = types.ModuleType("mainsequence.client.utils")
-    fake_base = types.ModuleType("mainsequence.client.base")
-    fake_models = types.ModuleType("mainsequence.client.metatables")
-
-    class FakeLoaders:
-        provider = "orig"
-
-        def use_jwt(self, *, access=None, refresh=None):
-            captured["jwt"] = (access, refresh)
-
-    fake_utils.loaders = FakeLoaders()
-    fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
-    fake_utils.API_ENDPOINT = "https://old.test/api/v1"
-
-    class FakeBaseObjectOrm:
-        ROOT_URL = "https://old.test/api/v1"
-
-    class FakeTimeIndexMetaTable:
-        ROOT_URL = "https://old.test/api/v1/time-index-meta-tables"
-
-        @classmethod
-        def description_search(
-            cls,
-            q,
-            *,
-            q_embedding=None,
-            trigram_k=200,
-            embed_k=200,
-            w_trgm=0.65,
-            w_emb=0.35,
-            embedding_model="default",
-            **filters,
-        ):
-            captured["search"] = {
-                "q": q,
-                "q_embedding": q_embedding,
-                "trigram_k": trigram_k,
-                "embed_k": embed_k,
-                "w_trgm": w_trgm,
-                "w_emb": w_emb,
-                "embedding_model": embedding_model,
-                "filters": filters,
-            }
-            return {
-                "count": 1,
-                "next": None,
-                "previous": None,
-                "results": [
-                    types.SimpleNamespace(
-                        model_dump=lambda *args, **kwargs: {
-                            "uid": "time-index-table-storage-42",
-                            "physical_table_name": "weights_daily",
-                            "identifier": "weights_daily",
-                        }
-                    )
-                ],
-            }
-
-    fake_base.BaseObjectOrm = FakeBaseObjectOrm
-    fake_models.TimeIndexMetaTable = FakeTimeIndexMetaTable
-    fake_client_pkg.utils = fake_utils
-
-    monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.metatables", fake_models)
-
-    out = api_mod.time_index_table_description_search(
-        "node weights",
-        q_embedding=[0.1, 0.2],
-        trigram_k=150,
-        embed_k=120,
-        w_trgm=0.7,
-        w_emb=0.3,
-        embedding_model="text-embedding-3-large",
-        filters={"data_source__uid": "data-source-uid-2"},
-    )
-
-    assert captured["jwt"] == ("acc", "ref")
-    assert captured["search"] == {
-        "q": "node weights",
-        "q_embedding": [0.1, 0.2],
-        "trigram_k": 150,
-        "embed_k": 120,
-        "w_trgm": 0.7,
-        "w_emb": 0.3,
-        "embedding_model": "text-embedding-3-large",
-        "filters": {"data_source__uid": "data-source-uid-2"},
-    }
-    assert out == {
-        "count": 1,
-        "next": None,
-        "previous": None,
-        "results": [
-            {
-                "uid": "time-index-table-storage-42",
-                "physical_table_name": "weights_daily",
-                "identifier": "weights_daily",
-            }
-        ],
-    }
-
-
-def test_time_index_table_column_search_uses_client_model(cli_mod, monkeypatch):
-    api_mod = importlib.import_module("mainsequence.cli.api")
-    captured = {}
-
-    monkeypatch.setattr(
-        api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"}
-    )
-    monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
-
-    fake_client_pkg = types.ModuleType("mainsequence.client")
-    fake_utils = types.ModuleType("mainsequence.client.utils")
-    fake_base = types.ModuleType("mainsequence.client.base")
-    fake_models = types.ModuleType("mainsequence.client.metatables")
-
-    class FakeLoaders:
-        provider = "orig"
-
-        def use_jwt(self, *, access=None, refresh=None):
-            captured["jwt"] = (access, refresh)
-
-    fake_utils.loaders = FakeLoaders()
-    fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
-    fake_utils.API_ENDPOINT = "https://old.test/api/v1"
-
-    class FakeBaseObjectOrm:
-        ROOT_URL = "https://old.test/api/v1"
-
-    class FakeTimeIndexMetaTable:
-        ROOT_URL = "https://old.test/api/v1/time-index-meta-tables"
-
-        @classmethod
-        def column_search(cls, q, **filters):
-            captured["search"] = {"q": q, "filters": filters}
-            return [
-                types.SimpleNamespace(
-                    model_dump=lambda *args, **kwargs: {
-                        "uid": "time-index-table-storage-43",
-                        "physical_table_name": "prices_daily",
-                        "identifier": "prices_daily",
-                    }
-                )
-            ]
-
-    fake_base.BaseObjectOrm = FakeBaseObjectOrm
-    fake_models.TimeIndexMetaTable = FakeTimeIndexMetaTable
-    fake_client_pkg.utils = fake_utils
-
-    monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.metatables", fake_models)
-
-    out = api_mod.time_index_table_column_search(
-        "close", filters={"physical_table_name__contains": "prices"}
-    )
-
-    assert captured["jwt"] == ("acc", "ref")
-    assert captured["search"] == {
-        "q": "close",
-        "filters": {"physical_table_name__contains": "prices"},
-    }
-    assert out == [
-        {
-            "uid": "time-index-table-storage-43",
-            "physical_table_name": "prices_daily",
-            "identifier": "prices_daily",
-        }
-    ]
-
-
-def test_refresh_time_index_table_search_index_uses_client_model(cli_mod, monkeypatch):
-    api_mod = importlib.import_module("mainsequence.cli.api")
-    captured = {}
-
-    monkeypatch.setattr(
-        api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"}
-    )
-    monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
-
-    fake_client_pkg = types.ModuleType("mainsequence.client")
-    fake_utils = types.ModuleType("mainsequence.client.utils")
-    fake_base = types.ModuleType("mainsequence.client.base")
-    fake_models = types.ModuleType("mainsequence.client.metatables")
-
-    class FakeLoaders:
-        provider = "orig"
-
-        def use_jwt(self, *, access=None, refresh=None):
-            captured["jwt"] = (access, refresh)
-
-    fake_utils.loaders = FakeLoaders()
-    fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
-    fake_utils.API_ENDPOINT = "https://old.test/api/v1"
-
-    class FakeBaseObjectOrm:
-        ROOT_URL = "https://old.test/api/v1"
-
-    class FakeTimeIndexMetaTable:
-        ROOT_URL = "https://old.test/api/v1/time-index-meta-tables"
-
-        @classmethod
-        def get(cls, uid=None, timeout=None, **filters):
-            captured["get"] = {"uid": uid, "filters": filters, "timeout": timeout}
-
-            class _Storage:
-                def refresh_table_search_index(self, *, timeout=None):
-                    captured["refresh"] = {"timeout": timeout}
-                    return {"status": "queued", "message": "refresh started"}
-
-            return _Storage()
-
-        @classmethod
-        def get_by_uid(cls, uid, timeout=None):
-            return cls.get(uid=uid, timeout=timeout)
-
-    fake_base.BaseObjectOrm = FakeBaseObjectOrm
-    fake_models.TimeIndexMetaTable = FakeTimeIndexMetaTable
-    fake_client_pkg.utils = fake_utils
-
-    monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.metatables", fake_models)
-
-    out = api_mod.refresh_time_index_table_search_index("time-index-table-storage-42", timeout=30)
-
-    assert captured["jwt"] == ("acc", "ref")
-    assert captured["get"] == {"uid": "time-index-table-storage-42", "filters": {}, "timeout": 30}
-    assert captured["refresh"] == {"timeout": 30}
-    assert out == {
-        "status": "queued",
-        "message": "refresh started",
-        "uid": "time-index-table-storage-42",
-    }
-
-
-def test_delete_time_index_table_uses_client_model(cli_mod, monkeypatch):
-    api_mod = importlib.import_module("mainsequence.cli.api")
-    captured = {}
-
-    monkeypatch.setattr(
-        api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"}
-    )
-    monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
-
-    fake_client_pkg = types.ModuleType("mainsequence.client")
-    fake_utils = types.ModuleType("mainsequence.client.utils")
-    fake_base = types.ModuleType("mainsequence.client.base")
-    fake_models = types.ModuleType("mainsequence.client.metatables")
-
-    class FakeLoaders:
-        provider = "orig"
-
-        def use_jwt(self, *, access=None, refresh=None):
-            captured["jwt"] = (access, refresh)
-
-    fake_utils.loaders = FakeLoaders()
-    fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
-    fake_utils.API_ENDPOINT = "https://old.test/api/v1"
-
-    class FakeBaseObjectOrm:
-        ROOT_URL = "https://old.test/api/v1"
-
-    class FakeTimeIndexMetaTable:
-        ROOT_URL = "https://old.test/api/v1/time-index-meta-tables"
-
-        @classmethod
-        def get(cls, uid=None, timeout=None, **filters):
-            captured["get"] = {"uid": uid, "filters": filters, "timeout": timeout}
-
-            class _Storage:
-                def model_dump(self, mode="python"):
-                    return {
-                        "uid": uid,
-                        "physical_table_name": "weights_daily",
-                        "identifier": "weights_daily",
-                    }
-
-                def delete(
-                    self,
-                    *,
-                    full_delete_selected=False,
-                    full_delete_downstream_tables=False,
-                    delete_with_no_table=False,
-                    override_protection=False,
-                    timeout=None,
-                ):
-                    captured["delete"] = {
-                        "full_delete_selected": full_delete_selected,
-                        "full_delete_downstream_tables": full_delete_downstream_tables,
-                        "delete_with_no_table": delete_with_no_table,
-                        "override_protection": override_protection,
-                        "timeout": timeout,
-                    }
-
-            return _Storage()
-
-        @classmethod
-        def get_by_uid(cls, uid, timeout=None):
-            return cls.get(uid=uid, timeout=timeout)
-
-    fake_base.BaseObjectOrm = FakeBaseObjectOrm
-    fake_models.TimeIndexMetaTable = FakeTimeIndexMetaTable
-    fake_client_pkg.utils = fake_utils
-
-    monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.metatables", fake_models)
-
-    out = api_mod.delete_time_index_table(
-        "time-index-table-storage-42",
-        full_delete_selected=True,
-        full_delete_downstream_tables=True,
-        delete_with_no_table=False,
-        override_protection=True,
-        timeout=30,
-    )
-    assert captured["get"] == {"uid": "time-index-table-storage-42", "filters": {}, "timeout": 30}
-    assert captured["delete"] == {
-        "full_delete_selected": True,
-        "full_delete_downstream_tables": True,
-        "delete_with_no_table": False,
-        "override_protection": True,
-        "timeout": 30,
-    }
-    assert captured["jwt"] == ("acc", "ref")
-    assert out == {
-        "uid": "time-index-table-storage-42",
-        "physical_table_name": "weights_daily",
-        "identifier": "weights_daily",
-    }
-
-
-def test_list_time_index_table_users_can_view_uses_client_model(cli_mod, monkeypatch):
-    api_mod = importlib.import_module("mainsequence.cli.api")
-    captured = {}
-
-    monkeypatch.setattr(
-        api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"}
-    )
-    monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
-
-    fake_client_pkg = types.ModuleType("mainsequence.client")
-    fake_utils = types.ModuleType("mainsequence.client.utils")
-    fake_base = types.ModuleType("mainsequence.client.base")
-    fake_models = types.ModuleType("mainsequence.client.metatables")
-
-    class FakeLoaders:
-        provider = "orig"
-
-        def use_jwt(self, *, access=None, refresh=None):
-            captured["jwt"] = (access, refresh)
-
-    fake_utils.loaders = FakeLoaders()
-    fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
-    fake_utils.API_ENDPOINT = "https://old.test/api/v1"
-
-    class FakeBaseObjectOrm:
-        ROOT_URL = "https://old.test/api/v1"
-
-    class FakeTimeIndexMetaTable:
-        ROOT_URL = "https://old.test/api/v1/time-index-meta-tables"
-
-        @classmethod
-        def get(cls, uid=None, timeout=None, **filters):
-            captured["get"] = {"uid": uid, "filters": filters, "timeout": timeout}
-
-            class _Storage:
-                def can_view(self, timeout=None):
-                    captured["can_view_timeout"] = timeout
-                    return types.SimpleNamespace(
-                        model_dump=lambda mode="python": {
-                            "object_uid": uid,
-                            "object_type": "tdag.timeindexmetatable",
-                            "access_level": "view",
-                            "users": [
-                                {
-                                    "id": 8,
-                                    "username": "viewer",
-                                    "email": "viewer@example.com",
-                                    "first_name": "View",
-                                    "last_name": "User",
-                                }
-                            ],
-                            "teams": [],
-                        }
-                    )
-
-            return _Storage()
-
-        @classmethod
-        def get_by_uid(cls, uid, timeout=None):
-            return cls.get(uid=uid, timeout=timeout)
-
-    fake_base.BaseObjectOrm = FakeBaseObjectOrm
-    fake_models.TimeIndexMetaTable = FakeTimeIndexMetaTable
-    fake_client_pkg.utils = fake_utils
-
-    monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.metatables", fake_models)
-
-    out = api_mod.list_time_index_table_users_can_view("time-index-table-storage-42", timeout=15)
-    assert captured["get"] == {"uid": "time-index-table-storage-42", "filters": {}, "timeout": 15}
-    assert captured["can_view_timeout"] == 15
-    assert captured["jwt"] == ("acc", "ref")
-    assert out["users"][0]["username"] == "viewer"
-
-
-def test_add_time_index_table_user_to_edit_uses_client_model(cli_mod, monkeypatch):
-    api_mod = importlib.import_module("mainsequence.cli.api")
-    captured = {}
-
-    monkeypatch.setattr(
-        api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"}
-    )
-    monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
-
-    fake_client_pkg = types.ModuleType("mainsequence.client")
-    fake_utils = types.ModuleType("mainsequence.client.utils")
-    fake_base = types.ModuleType("mainsequence.client.base")
-    fake_models = types.ModuleType("mainsequence.client.metatables")
-
-    class FakeLoaders:
-        provider = "orig"
-
-        def use_jwt(self, *, access=None, refresh=None):
-            captured["jwt"] = (access, refresh)
-
-    fake_utils.loaders = FakeLoaders()
-    fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
-    fake_utils.API_ENDPOINT = "https://old.test/api/v1"
-
-    class FakeBaseObjectOrm:
-        ROOT_URL = "https://old.test/api/v1"
-
-    class FakeTimeIndexMetaTable:
-        ROOT_URL = "https://old.test/api/v1/time-index-meta-tables"
-
-        @classmethod
-        def get(cls, uid=None, timeout=None, **filters):
-            captured["get"] = {"uid": uid, "filters": filters, "timeout": timeout}
-
-            class _Storage:
-                def add_to_edit(self, user_uid, timeout=None):
-                    captured["add_to_edit"] = {"user_uid": user_uid, "timeout": timeout}
-                    return {
-                        "ok": True,
-                        "action": "add_to_edit",
-                        "detail": "User now has explicit edit access.",
-                        "object_uid": uid,
-                        "object_type": "tdag.timeindexmetatable",
-                        "user": {
-                            "uid": user_uid,
-                            "username": "editor",
-                            "email": "editor@example.com",
-                        },
-                        "explicit_can_view": True,
-                        "explicit_can_edit": True,
-                        "explicit_can_view_user_uids": [user_uid],
-                        "explicit_can_edit_user_uids": [user_uid],
-                    }
-
-            return _Storage()
-
-        @classmethod
-        def get_by_uid(cls, uid, timeout=None):
-            return cls.get(uid=uid, timeout=timeout)
-
-    fake_base.BaseObjectOrm = FakeBaseObjectOrm
-    fake_models.TimeIndexMetaTable = FakeTimeIndexMetaTable
-    fake_client_pkg.utils = fake_utils
-
-    monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.metatables", fake_models)
-
-    out = api_mod.add_time_index_table_user_to_edit(
-        "time-index-table-storage-42",
-        USER_UID,
-        timeout=16,
-    )
-    assert captured["get"] == {"uid": "time-index-table-storage-42", "filters": {}, "timeout": 16}
-    assert captured["add_to_edit"] == {"user_uid": USER_UID, "timeout": 16}
-    assert captured["jwt"] == ("acc", "ref")
-    assert out["action"] == "add_to_edit"
 
 
 def test_get_logged_user_details_uses_canonical_authenticated_user_method(cli_mod, monkeypatch):
@@ -5554,46 +4614,6 @@ def test_get_code_repository_job_run_logs_uses_client_model(cli_mod, monkeypatch
         "status": "RUNNING",
         "rows": ["first line"],
     }
-
-
-def test_code_repository_get_table_updates_defaults_to_env_code_repository_uid(
-    cli_mod, runner, monkeypatch, tmp_path
-):
-    target = tmp_path / "demo-123"
-    target.mkdir(parents=True, exist_ok=True)
-    (target / ".env").write_text("", encoding="utf-8")
-
-    captured = {}
-
-    monkeypatch.chdir(target)
-    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
-    monkeypatch.setattr(
-        cli_mod,
-        "_resolve_code_repository_branch_uid_for_command",
-        lambda *args, **kwargs: "code-repository-branch-uid-123",
-    )
-
-    def _get_updates(code_repository_branch_uid, timeout=None):
-        captured["code_repository_branch_uid"] = code_repository_branch_uid
-        return [
-            {
-                "uid": "time-index-table-update-uid-10",
-                "update_hash": "abc123",
-                "output_table": {
-                    "uid": "meta-table-uid-42",
-                    "physical_table_name": "storage-xyz",
-                },
-                "update_details": {"table_update_uid": "time-index-table-update-uid-10"},
-            }
-        ]
-
-    monkeypatch.setattr(cli_mod, "get_code_repository_time_index_table_updates", _get_updates)
-
-    result = runner.invoke(cli_mod.app, ["code-repository", "time-index-table-updates", "list"])
-    assert result.exit_code == 0
-    assert captured["code_repository_branch_uid"] == "code-repository-branch-uid-123"
-    assert "abc123" in result.output
-    assert "storage-xyz" in result.output
 
 
 def test_code_repository_images_defaults_to_env_code_repository_id(
@@ -6976,42 +5996,6 @@ def test_secrets_add_to_edit(cli_mod, runner, monkeypatch):
     assert "editor@example.com" in result.output
 
 
-def test_time_index_table_list(cli_mod, runner, monkeypatch):
-    captured = {}
-    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
-
-    def _list(filters=None, timeout=None):
-        captured["filters"] = filters
-        captured["timeout"] = timeout
-        return [
-            {
-                "uid": "time-index-table-storage-42",
-                "physical_table_name": "weights_daily_physical",
-                "source_class_name": "WeightsUpdater",
-                "identifier": "weights_daily",
-                "namespace": "pytest_weights",
-                "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},
-            }
-        ]
-
-    monkeypatch.setattr(cli_mod, "list_time_index_tables", _list)
-
-    result = runner.invoke(cli_mod.app, ["time-index-table", "list"])
-    assert result.exit_code == 0
-    assert captured == {
-        "filters": {},
-        "timeout": None,
-    }
-    assert "Time-Index Tables" in result.output
-    assert "weights_" in result.output
-    assert "WeightsUpd" in result.output
-    assert "Namespac" in result.output
-    assert "pytest_w" in result.output
-    assert "Default" in result.output
-    assert "DB" in result.output
-    assert "Total time-index tables: 1" in result.output
-
-
 @pytest.mark.parametrize(
     "arguments",
     [
@@ -7029,145 +6013,6 @@ def test_removed_data_node_commands_are_unknown(cli_mod, runner, arguments):
 
     assert result.exit_code != 0
     assert "No such command" in result.output
-
-
-def test_meta_table_list_uses_canonical_command(cli_mod, runner, monkeypatch):
-    captured = {}
-
-    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
-
-    def _parse(model_ref, entries):
-        captured["model_ref"] = model_ref
-        captured["entries"] = list(entries or [])
-        return {"namespace": "pytest_weights"}
-
-    def _list(timeout=None, filters=None):
-        captured["timeout"] = timeout
-        captured["filters"] = filters
-        return [
-            {
-                "uid": "meta-table-42",
-                "physical_table_name": "weights_daily_physical",
-                "identifier": "weights_daily",
-                "namespace": "pytest_weights",
-                "management_mode": "platform_managed",
-                "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},
-            }
-        ]
-
-    monkeypatch.setattr(cli_mod, "parse_cli_model_filters", _parse)
-    monkeypatch.setattr(cli_mod, "list_meta_tables", _list)
-
-    result = runner.invoke(
-        cli_mod.app,
-        [
-            "meta-table",
-            "list",
-            "--filter",
-            "namespace=pytest_weights",
-            "--data-source-uid",
-            "data-source-1",
-            "--timeout",
-            "15",
-        ],
-    )
-
-    assert result.exit_code == 0
-    assert captured == {
-        "model_ref": "mainsequence.client.metatables.MetaTable",
-        "entries": ["namespace=pytest_weights"],
-        "timeout": 15,
-        "filters": {
-            "namespace": "pytest_weights",
-            "data_source__uid": "data-source-1",
-        },
-    }
-    assert "MetaTables" in result.output
-    assert "weights_" in result.output
-    assert "platform" in result.output
-    assert "Total MetaTables: 1" in result.output
-
-
-def test_meta_table_list_rejects_environment_selector(cli_mod, runner):
-    result = runner.invoke(
-        cli_mod.app,
-        [
-            "meta-table",
-            "list",
-            "--organization-project-environment-uid",
-            "22222222-2222-4222-8222-222222222222",
-        ],
-    )
-
-    assert result.exit_code == 2
-    assert "No such option" in result.output
-
-
-def test_meta_table_detail(cli_mod, runner, monkeypatch):
-    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
-    monkeypatch.setattr(
-        cli_mod,
-        "get_meta_table",
-        lambda meta_table_uid, timeout=None: {
-            "uid": meta_table_uid,
-            "physical_table_name": "weights_daily_physical",
-            "identifier": "weights_daily",
-            "namespace": "pytest_weights",
-            "management_mode": "platform_managed",
-            "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},
-            "protect_from_deletion": True,
-            "contract_version": "relational-table.v1",
-            "table_contract": {"columns": [{"name": "time_index"}]},
-            "columns": [{"name": "time_index", "data_type": "timestamp with time zone"}],
-            "introspection_snapshot": {"row_count": 7},
-        },
-    )
-
-    result = runner.invoke(cli_mod.app, ["meta-table", "detail", "meta-table-42"])
-
-    assert result.exit_code == 0
-    assert "MetaTable" in result.output
-    assert "weights_daily" in result.output
-    assert "MetaTable Contract" in result.output
-    assert "relational-table.v1" in result.output
-    assert "time_index" in result.output
-
-
-def test_meta_table_command_exposes_storage_help(cli_mod, runner):
-    meta_result = runner.invoke(cli_mod.app, ["meta-table", "--help"])
-
-    assert meta_result.exit_code == 0
-    assert "list" in meta_result.output
-    assert "detail" in meta_result.output
-    assert "delete" in meta_result.output
-    assert "can_view" in meta_result.output
-    assert "add-label" in meta_result.output
-
-
-def test_time_index_table_list_forwards_namespace_filter(cli_mod, runner, monkeypatch):
-    captured = {}
-
-    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
-
-    def _fake_list_time_index_tables(filters=None, timeout=None):
-        captured["timeout"] = timeout
-        captured["filters"] = filters
-        return []
-
-    monkeypatch.setattr(cli_mod, "list_time_index_tables", _fake_list_time_index_tables)
-
-    result = runner.invoke(
-        cli_mod.app,
-        ["time-index-table", "list", "--filter", "namespace=pytest_weights"],
-    )
-
-    assert result.exit_code == 0
-    assert captured == {
-        "timeout": None,
-        "filters": {
-            "namespace": "pytest_weights",
-        },
-    }
 
 
 def test_code_repository_validate_name_cmd(cli_mod, runner, monkeypatch):
@@ -7194,910 +6039,6 @@ def test_code_repository_validate_name_cmd(cli_mod, runner, monkeypatch):
     assert "rates_platform" in result.output
     assert "Rates Platform 2" in result.output
     assert "Rates Platform 3" in result.output
-
-
-def test_time_index_table_list_passes_cli_filters(cli_mod, runner, monkeypatch):
-    captured = {}
-
-    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
-
-    def _parse(model_ref, entries):
-        captured["entries"] = list(entries or [])
-        return {"uid__in": ["time-index-table-storage-42", "time-index-table-storage-43"]}
-
-    def _list(timeout=None, filters=None):
-        captured["filters"] = filters
-        return []
-
-    monkeypatch.setattr(cli_mod, "parse_cli_model_filters", _parse)
-    monkeypatch.setattr(cli_mod, "list_time_index_tables", _list)
-
-    result = runner.invoke(
-        cli_mod.app,
-        [
-            "time-index-table",
-            "list",
-            "--filter",
-            "uid__in=time-index-table-storage-42,time-index-table-storage-43",
-        ],
-    )
-    assert result.exit_code == 0
-    assert captured["entries"] == [
-        "uid__in=time-index-table-storage-42,time-index-table-storage-43"
-    ]
-    assert captured["filters"] == {
-        "uid__in": ["time-index-table-storage-42", "time-index-table-storage-43"],
-    }
-
-
-def test_time_index_table_search_supports_data_source_uid_option(cli_mod, runner, monkeypatch):
-    captured = {}
-
-    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
-    monkeypatch.setattr(cli_mod, "parse_cli_model_filters", lambda model_ref, entries: {})
-
-    def _description(
-        q,
-        *,
-        q_embedding=None,
-        trigram_k=200,
-        embed_k=200,
-        w_trgm=0.65,
-        w_emb=0.35,
-        embedding_model="default",
-        filters=None,
-    ):
-        captured["filters"] = filters
-        return {"count": 0, "next": None, "previous": None, "results": []}
-
-    monkeypatch.setattr(cli_mod, "time_index_table_description_search", _description)
-    monkeypatch.setattr(cli_mod, "time_index_table_column_search", lambda q, *, filters=None: [])
-
-    result = runner.invoke(
-        cli_mod.app,
-        [
-            "time-index-table",
-            "search",
-            "close price",
-            "--mode",
-            "description",
-            "--data-source-uid",
-            "data-source-uid-2",
-        ],
-    )
-    assert result.exit_code == 0
-    assert captured["filters"] == {"data_source__uid": "data-source-uid-2"}
-
-
-def test_time_index_table_search_rejects_conflicting_data_source_filters(
-    cli_mod, runner, monkeypatch
-):
-    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
-
-    def _parse(model_ref, entries):
-        return {"data_source__uid": "data-source-uid-9"}
-
-    monkeypatch.setattr(cli_mod, "parse_cli_model_filters", _parse)
-
-    result = runner.invoke(
-        cli_mod.app,
-        [
-            "time-index-table",
-            "search",
-            "close price",
-            "--data-source-uid",
-            "data-source-uid-2",
-            "--filter",
-            "data_source__uid=data-source-uid-9",
-        ],
-    )
-    assert result.exit_code == 1
-    assert (
-        "Do not pass both `--data-source-uid` and `--filter data_source__uid=...`." in result.output
-    )
-
-
-def test_time_index_table_description_search(cli_mod, runner, monkeypatch):
-    captured = {}
-
-    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
-
-    def _parse(model_ref, entries):
-        captured["entries"] = list(entries or [])
-        return {}
-
-    def _search(
-        q,
-        *,
-        q_embedding=None,
-        trigram_k=200,
-        embed_k=200,
-        w_trgm=0.65,
-        w_emb=0.35,
-        embedding_model="default",
-        filters=None,
-    ):
-        captured["search"] = {
-            "q": q,
-            "q_embedding": q_embedding,
-            "trigram_k": trigram_k,
-            "embed_k": embed_k,
-            "w_trgm": w_trgm,
-            "w_emb": w_emb,
-            "embedding_model": embedding_model,
-            "filters": filters,
-        }
-        return {
-            "count": 3,
-            "next": "https://backend.test/page/2",
-            "previous": None,
-            "results": [
-                {
-                    "uid": "time-index-table-storage-42",
-                    "physical_table_name": "weights_daily_physical",
-                    "source_class_name": "WeightsUpdater",
-                    "identifier": "weights_daily",
-                    "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},
-                }
-            ],
-        }
-
-    monkeypatch.setattr(cli_mod, "parse_cli_model_filters", _parse)
-    monkeypatch.setattr(cli_mod, "time_index_table_description_search", _search)
-
-    result = runner.invoke(
-        cli_mod.app,
-        [
-            "time-index-table",
-            "description-search",
-            "node weights",
-            "--data-source-uid",
-            "data-source-uid-2",
-            "--q-embedding",
-            "0.1,0.2",
-            "--trigram-k",
-            "150",
-            "--embed-k",
-            "180",
-            "--w-trgm",
-            "0.7",
-            "--w-emb",
-            "0.3",
-            "--embedding-model",
-            "text-embedding-3-large",
-        ],
-    )
-    assert result.exit_code == 0
-    assert captured["entries"] == []
-    assert captured["search"] == {
-        "q": "node weights",
-        "q_embedding": [0.1, 0.2],
-        "trigram_k": 150,
-        "embed_k": 180,
-        "w_trgm": 0.7,
-        "w_emb": 0.3,
-        "embedding_model": "text-embedding-3-large",
-        "filters": {"data_source__uid": "data-source-uid-2"},
-    }
-    assert "Description Matches" in result.output
-    assert "weights_" in result.output
-    assert "Pagination" in result.output
-    assert "Count" in result.output
-
-
-def test_time_index_table_column_search(cli_mod, runner, monkeypatch):
-    captured = {}
-
-    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
-
-    def _parse(model_ref, entries):
-        captured["entries"] = list(entries or [])
-        return {"physical_table_name__contains": "weights"}
-
-    def _search(q, *, filters=None):
-        captured["search"] = {"q": q, "filters": filters}
-        return [
-            {
-                "uid": "time-index-table-storage-43",
-                "physical_table_name": "prices_daily_physical",
-                "source_class_name": "PriceBars",
-                "identifier": "prices_daily",
-                "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},
-            }
-        ]
-
-    monkeypatch.setattr(cli_mod, "parse_cli_model_filters", _parse)
-    monkeypatch.setattr(cli_mod, "time_index_table_column_search", _search)
-
-    result = runner.invoke(
-        cli_mod.app,
-        [
-            "time-index-table",
-            "column-search",
-            "close",
-            "--filter",
-            "physical_table_name__contains=weights",
-        ],
-    )
-    assert result.exit_code == 0
-    assert captured["entries"] == ["physical_table_name__contains=weights"]
-    assert captured["search"] == {
-        "q": "close",
-        "filters": {"physical_table_name__contains": "weights"},
-    }
-    assert "Column Matches" in result.output
-    assert "prices_d" in result.output
-    assert 'Column Matches: 1 match(es) for "close"' in result.output
-
-
-def test_time_index_table_search_defaults_to_description(cli_mod, runner, monkeypatch):
-    captured = {}
-
-    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
-
-    def _parse(model_ref, entries):
-        captured["entries"] = list(entries or [])
-        return {}
-
-    def _description(
-        q,
-        *,
-        q_embedding=None,
-        trigram_k=200,
-        embed_k=200,
-        w_trgm=0.65,
-        w_emb=0.35,
-        embedding_model="default",
-        filters=None,
-    ):
-        captured["description"] = {
-            "q": q,
-            "q_embedding": q_embedding,
-            "trigram_k": trigram_k,
-            "embed_k": embed_k,
-            "w_trgm": w_trgm,
-            "w_emb": w_emb,
-            "embedding_model": embedding_model,
-            "filters": filters,
-        }
-        return {
-            "count": 2,
-            "next": None,
-            "previous": None,
-            "results": [
-                {
-                    "uid": "time-index-table-storage-42",
-                    "physical_table_name": "weights_daily_physical",
-                    "source_class_name": "WeightsUpdater",
-                    "identifier": "weights_daily",
-                    "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},
-                }
-            ],
-        }
-
-    monkeypatch.setattr(cli_mod, "parse_cli_model_filters", _parse)
-    monkeypatch.setattr(cli_mod, "time_index_table_description_search", _description)
-    monkeypatch.setattr(
-        cli_mod,
-        "time_index_table_column_search",
-        lambda *args, **kwargs: (_ for _ in ()).throw(
-            AssertionError("column search should not run by default")
-        ),
-    )
-
-    result = runner.invoke(
-        cli_mod.app,
-        [
-            "time-index-table",
-            "search",
-            "close price",
-            "--data-source-uid",
-            "data-source-uid-2",
-            "--q-embedding",
-            "0.1,0.2",
-        ],
-    )
-    assert result.exit_code == 0
-    assert captured["entries"] == []
-    assert captured["description"]["q"] == "close price"
-    assert captured["description"]["q_embedding"] == [0.1, 0.2]
-    assert captured["description"]["filters"] == {"data_source__uid": "data-source-uid-2"}
-    assert "Description Matches" in result.output
-    assert "Column Matches" not in result.output
-    assert 'Total search matches for "close price": 1' in result.output
-
-
-def test_time_index_table_search_both_mode_combines_description_and_column(
-    cli_mod, runner, monkeypatch
-):
-    captured = {}
-
-    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
-
-    def _parse(model_ref, entries):
-        captured["entries"] = list(entries or [])
-        return {}
-
-    def _description(
-        q,
-        *,
-        q_embedding=None,
-        trigram_k=200,
-        embed_k=200,
-        w_trgm=0.65,
-        w_emb=0.35,
-        embedding_model="default",
-        filters=None,
-    ):
-        captured["description"] = {
-            "q": q,
-            "q_embedding": q_embedding,
-            "filters": filters,
-        }
-        return {
-            "count": 2,
-            "next": None,
-            "previous": None,
-            "results": [
-                {
-                    "uid": "time-index-table-storage-42",
-                    "physical_table_name": "weights_daily_physical",
-                    "identifier": "weights_daily",
-                }
-            ],
-        }
-
-    def _column(q, *, filters=None):
-        captured["column"] = {"q": q, "filters": filters}
-        return [
-            {
-                "uid": "time-index-table-storage-43",
-                "physical_table_name": "prices_daily_physical",
-                "identifier": "prices_daily",
-            }
-        ]
-
-    monkeypatch.setattr(cli_mod, "parse_cli_model_filters", _parse)
-    monkeypatch.setattr(cli_mod, "time_index_table_description_search", _description)
-    monkeypatch.setattr(cli_mod, "time_index_table_column_search", _column)
-
-    result = runner.invoke(
-        cli_mod.app,
-        [
-            "time-index-table",
-            "search",
-            "close price",
-            "--mode",
-            "both",
-            "--data-source-uid",
-            "data-source-uid-2",
-            "--q-embedding",
-            "0.1,0.2",
-        ],
-    )
-    assert result.exit_code == 0
-    assert captured["entries"] == []
-    assert captured["description"] == {
-        "q": "close price",
-        "q_embedding": [0.1, 0.2],
-        "filters": {"data_source__uid": "data-source-uid-2"},
-    }
-    assert captured["column"] == {
-        "q": "close price",
-        "filters": {"data_source__uid": "data-source-uid-2"},
-    }
-    assert "Description Matches" in result.output
-    assert "Column Matches" in result.output
-    assert 'Total search matches for "close price": 2' in result.output
-
-
-def test_time_index_table_search_column_mode_only(cli_mod, runner, monkeypatch):
-    captured = {}
-
-    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
-    monkeypatch.setattr(cli_mod, "parse_cli_model_filters", lambda model_ref, entries: {})
-    monkeypatch.setattr(
-        cli_mod,
-        "time_index_table_description_search",
-        lambda *args, **kwargs: (_ for _ in ()).throw(
-            AssertionError("description search should not run")
-        ),
-    )
-
-    def _column(q, *, filters=None):
-        captured["column"] = {"q": q, "filters": filters}
-        return []
-
-    monkeypatch.setattr(cli_mod, "time_index_table_column_search", _column)
-
-    result = runner.invoke(cli_mod.app, ["time-index-table", "search", "close", "--mode", "column"])
-    assert result.exit_code == 0
-    assert captured["column"] == {"q": "close", "filters": {}}
-    assert 'Column Matches: 0 match(es) for "close"' in result.output
-
-
-def test_time_index_table_detail(cli_mod, runner, monkeypatch):
-    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
-    monkeypatch.setattr(
-        cli_mod,
-        "get_time_index_table",
-        lambda storage_uid, timeout=None: {
-            "uid": storage_uid,
-            "physical_table_name": "weights_daily_physical",
-            "identifier": "weights_daily",
-            "source_class_name": "WeightsUpdater",
-            "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},
-            "protect_from_deletion": True,
-            "creation_date": "2026-03-16T10:00:00Z",
-            "created_by_user": 7,
-            "organization_owner": 2,
-            "description": "Daily portfolio weights",
-            "time_indexed_profile": {
-                "time_index_name": "time_index",
-                "storage_layout": {
-                    "time_index": "time_index",
-                    "identity_dimensions": ["account_uid", "unique_identifier"],
-                },
-                "physical_index_plan": {
-                    "uniqueness": {"columns": ["time_index", "account_uid", "unique_identifier"]}
-                },
-            },
-            "table_index_names": {"0": "time_index"},
-            "compression_policy_config": {"after": "7 days"},
-            "retention_policy_config": {"after": "90 days"},
-        },
-    )
-
-    result = runner.invoke(
-        cli_mod.app, ["time-index-table", "detail", "time-index-table-storage-42"]
-    )
-    assert result.exit_code == 0
-    assert "Time-Index Table" in result.output
-    assert "weights_daily" in result.output
-    assert "weights_daily_physical" in result.output
-    assert "Daily portfolio weights" in result.output
-    assert "Build Configuration" not in result.output
-    assert "time_index_name" in result.output
-    assert "Storage Layout" in result.output
-    assert "identity_dimensions" in result.output
-    assert "Physical Index Plan" in result.output
-    assert "uniqueness" in result.output
-    assert "90 days" in result.output
-
-
-def test_run_time_index_table_query_uses_client_model(cli_mod, monkeypatch):
-    api_mod = importlib.import_module("mainsequence.cli.api")
-    captured = {}
-
-    def _run_sdk_model_operation(
-        *, module_name, class_name, operation, code_repository_id_env=None
-    ):
-        captured["module_name"] = module_name
-        captured["class_name"] = class_name
-
-        class _ClientTimeIndexTable:
-            @classmethod
-            def get(cls, uid, timeout=None):
-                captured["uid"] = uid
-                captured["timeout"] = timeout
-
-                class _Storage:
-                    def run_query(self, sql, *, timeout=None):
-                        captured["sql"] = sql
-                        captured["query_timeout"] = timeout
-                        return {
-                            "ok": True,
-                            "query_id": "query-456",
-                            "time_index_meta_table_uid": uid,
-                            "results": [{"value": 1}],
-                            "truncated": False,
-                            "max_rows": 0,
-                            "row_count": 1,
-                            "error": None,
-                        }
-
-                return _Storage()
-
-        return operation(_ClientTimeIndexTable)
-
-    monkeypatch.setattr(api_mod, "_run_sdk_model_operation", _run_sdk_model_operation)
-
-    out = api_mod.run_time_index_table_query(
-        "time-index-table-storage-42", "SELECT 1 AS value", timeout=14
-    )
-    assert captured == {
-        "module_name": "mainsequence.client.metatables",
-        "class_name": "TimeIndexMetaTable",
-        "uid": "time-index-table-storage-42",
-        "timeout": 14,
-        "sql": "SELECT 1 AS value",
-        "query_timeout": 14,
-    }
-    assert out["ok"] is True
-    assert out["time_index_meta_table_uid"] == "time-index-table-storage-42"
-    assert out["results"] == [{"value": 1}]
-
-
-def test_run_meta_table_query_uses_client_model(cli_mod, monkeypatch):
-    api_mod = importlib.import_module("mainsequence.cli.api")
-    captured = {}
-
-    def _run_sdk_model_operation(
-        *, module_name, class_name, operation, code_repository_id_env=None
-    ):
-        captured["module_name"] = module_name
-        captured["class_name"] = class_name
-
-        class _ClientMetaTable:
-            @classmethod
-            def get(cls, uid, timeout=None):
-                captured["uid"] = uid
-                captured["timeout"] = timeout
-
-                class _MetaTable:
-                    def run_query(self, sql, *, timeout=None):
-                        captured["sql"] = sql
-                        captured["query_timeout"] = timeout
-                        return {
-                            "ok": True,
-                            "query_id": "query-789",
-                            "meta_table_uid": uid,
-                            "results": [{"value": 2}],
-                            "truncated": False,
-                            "max_rows": 1000,
-                            "row_count": 1,
-                            "error": None,
-                        }
-
-                return _MetaTable()
-
-        return operation(_ClientMetaTable)
-
-    monkeypatch.setattr(api_mod, "_run_sdk_model_operation", _run_sdk_model_operation)
-
-    out = api_mod.run_meta_table_query("meta-table-42", "SELECT 2 AS value", timeout=16)
-    assert captured == {
-        "module_name": "mainsequence.client.metatables",
-        "class_name": "MetaTable",
-        "uid": "meta-table-42",
-        "timeout": 16,
-        "sql": "SELECT 2 AS value",
-        "query_timeout": 16,
-    }
-    assert out["ok"] is True
-    assert out["meta_table_uid"] == "meta-table-42"
-    assert out["results"] == [{"value": 2}]
-
-
-def test_time_index_table_run_query(cli_mod, runner, monkeypatch):
-    captured = {}
-    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
-
-    def _run_query(storage_uid, sql, *, timeout=None):
-        captured["table_uid"] = storage_uid
-        captured["sql"] = sql
-        captured["timeout"] = timeout
-        return {
-            "ok": True,
-            "query_id": "query-456",
-            "time_index_meta_table_uid": storage_uid,
-            "results": [{"value": 1}],
-            "truncated": False,
-            "max_rows": 0,
-            "row_count": 1,
-            "error": None,
-        }
-
-    monkeypatch.setattr(cli_mod, "run_time_index_table_query", _run_query)
-
-    result = runner.invoke(
-        cli_mod.app,
-        [
-            "time-index-table",
-            "run_query",
-            "time-index-table-storage-42",
-            "SELECT 1 AS value",
-            "--timeout",
-            "15",
-        ],
-    )
-    assert result.exit_code == 0
-    assert captured == {
-        "table_uid": "time-index-table-storage-42",
-        "sql": "SELECT 1 AS value",
-        "timeout": 15,
-    }
-    assert "Time-index table query completed: uid=time-index-table-storage-42" in result.output
-    assert "Time-Index Table Query" in result.output
-    assert "query-456" in result.output
-    assert "Time Index MetaTable UID" in result.output
-    assert "time-index-table-storage-42" in result.output
-    assert '"value": 1' in result.output
-
-
-def test_time_index_table_run_query_error_is_not_double_prefixed(cli_mod, runner, monkeypatch):
-    """The api layer already names the operation; the CLI must not prefix it again."""
-    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
-
-    def _run_query(storage_uid, sql, *, timeout=None):
-        raise cli_mod.ApiError(
-            "Time-index table query failed: 415 POST "
-            "http://127.0.0.1:8000/api/v1/time-index-meta-tables/abc/run-query/: "
-            'Unsupported media type "text/plain" in request.'
-        )
-
-    monkeypatch.setattr(cli_mod, "run_time_index_table_query", _run_query)
-
-    result = runner.invoke(
-        cli_mod.app,
-        ["time-index-table", "run_query", "abc", "SELECT 1 AS value"],
-    )
-    assert result.exit_code == 1
-    assert result.output.count("Time-index table query failed:") == 1
-
-
-def test_meta_table_run_query_error_is_not_double_prefixed(cli_mod, runner, monkeypatch):
-    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
-
-    def _run_query(meta_table_uid, sql, *, timeout=None):
-        raise cli_mod.ApiError("MetaTable query failed: boom")
-
-    monkeypatch.setattr(cli_mod, "run_meta_table_query", _run_query)
-
-    result = runner.invoke(cli_mod.app, ["meta-table", "run_query", "abc", "SELECT 1"])
-    assert result.exit_code == 1
-    assert result.output.count("MetaTable query failed:") == 1
-
-
-def test_meta_table_run_query(cli_mod, runner, monkeypatch):
-    captured = {}
-    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
-
-    def _run_query(meta_table_uid, sql, *, timeout=None):
-        captured["meta_table_uid"] = meta_table_uid
-        captured["sql"] = sql
-        captured["timeout"] = timeout
-        return {
-            "ok": True,
-            "query_id": "query-789",
-            "meta_table_uid": meta_table_uid,
-            "results": [{"value": 2}],
-            "truncated": False,
-            "max_rows": 1000,
-            "row_count": 1,
-            "error": None,
-        }
-
-    monkeypatch.setattr(cli_mod, "run_meta_table_query", _run_query)
-
-    result = runner.invoke(
-        cli_mod.app,
-        ["meta-table", "run_query", "meta-table-42", "SELECT 2 AS value", "--timeout", "15"],
-    )
-    assert result.exit_code == 0
-    assert captured == {
-        "meta_table_uid": "meta-table-42",
-        "sql": "SELECT 2 AS value",
-        "timeout": 15,
-    }
-    assert "MetaTable query completed: uid=meta-table-42" in result.output
-    assert "MetaTable Query" in result.output
-    assert "query-789" in result.output
-    assert '"value": 2' in result.output
-
-
-def test_time_index_table_refresh_search_index(cli_mod, runner, monkeypatch):
-    captured = {}
-
-    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
-
-    def _refresh(storage_uid, timeout=None):
-        captured["table_uid"] = storage_uid
-        captured["timeout"] = timeout
-        return {
-            "uid": storage_uid,
-            "status": "queued",
-            "message": "refresh started",
-        }
-
-    monkeypatch.setattr(cli_mod, "refresh_time_index_table_search_index", _refresh)
-
-    result = runner.invoke(
-        cli_mod.app,
-        [
-            "time-index-table",
-            "refresh-search-index",
-            "time-index-table-storage-42",
-            "--timeout",
-            "15",
-        ],
-    )
-    assert result.exit_code == 0
-    assert captured == {"table_uid": "time-index-table-storage-42", "timeout": 15}
-    assert (
-        "Time-index table search index refresh requested: uid=time-index-table-storage-42"
-        in result.output
-    )
-    assert "Time-Index Table Search Index Refresh" in result.output
-    assert "queued" in result.output
-    assert "refresh started" in result.output
-
-
-def test_time_index_table_can_view(cli_mod, runner, monkeypatch):
-    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
-    monkeypatch.setattr(
-        cli_mod,
-        "list_time_index_table_users_can_view",
-        lambda storage_uid, timeout=None: {
-            "access_level": "view",
-            "users": [
-                {
-                    "id": 8,
-                    "username": "viewer",
-                    "email": "viewer@example.com",
-                    "first_name": "View",
-                    "last_name": "User",
-                }
-            ],
-            "teams": [],
-        },
-    )
-
-    result = runner.invoke(
-        cli_mod.app, ["time-index-table", "can_view", "time-index-table-storage-42"]
-    )
-    assert result.exit_code == 0
-    assert "Time-Index Table Users Who Can View" in result.output
-    assert "viewer@example.com" in result.output
-    assert "Total users who can view: 1" in result.output
-
-
-def test_time_index_table_add_label(cli_mod, runner, monkeypatch):
-    captured = {}
-    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
-
-    def _add(storage_uid, labels, timeout=None):
-        captured["table_uid"] = storage_uid
-        captured["labels"] = labels
-        captured["timeout"] = timeout
-        return {"labels": [{"name": "curated"}]}
-
-    monkeypatch.setattr(cli_mod, "add_time_index_table_labels", _add)
-
-    result = runner.invoke(
-        cli_mod.app,
-        ["time-index-table", "add-label", "time-index-table-storage-42", "--label", "curated"],
-    )
-    assert result.exit_code == 0
-    assert captured == {
-        "table_uid": "time-index-table-storage-42",
-        "labels": ["curated"],
-        "timeout": None,
-    }
-    assert "Time-Index Table add-label completed." in result.output
-    assert "curated" in result.output
-
-
-def test_time_index_table_add_to_edit(cli_mod, runner, monkeypatch):
-    captured = {}
-
-    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
-
-    def _add(storage_uid, user_uid, timeout=None):
-        captured["table_uid"] = storage_uid
-        captured["user_uid"] = user_uid
-        captured["timeout"] = timeout
-        return {
-            "ok": True,
-            "action": "add_to_edit",
-            "detail": "User now has explicit edit access.",
-            "object_uid": storage_uid,
-            "object_type": "tdag.timeindexmetatable",
-            "user": {
-                "uid": user_uid,
-                "username": "editor",
-                "email": "editor@example.com",
-                "first_name": "Edit",
-                "last_name": "User",
-            },
-            "explicit_can_view": True,
-            "explicit_can_edit": True,
-            "explicit_can_view_user_uids": [user_uid],
-            "explicit_can_edit_user_uids": [user_uid],
-        }
-
-    monkeypatch.setattr(cli_mod, "add_time_index_table_user_to_edit", _add)
-
-    result = runner.invoke(
-        cli_mod.app,
-        ["time-index-table", "add_to_edit", "time-index-table-storage-42", USER_UID],
-    )
-    assert result.exit_code == 0
-    assert captured == {
-        "table_uid": "time-index-table-storage-42",
-        "user_uid": USER_UID,
-        "timeout": None,
-    }
-    assert "Time-Index Table add_to_edit completed." in result.output
-    assert "Time-Index Table Sharing Update" in result.output
-    assert "editor@example.com" in result.output
-
-
-def test_time_index_table_delete_requires_typed_verification(cli_mod, runner, monkeypatch):
-    captured = {}
-
-    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
-    monkeypatch.setattr(
-        cli_mod,
-        "get_time_index_table",
-        lambda storage_uid, timeout=None: {
-            "uid": storage_uid,
-            "physical_table_name": "weights_daily_physical",
-            "identifier": "weights_daily",
-            "source_class_name": "WeightsUpdater",
-            "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},
-            "protect_from_deletion": True,
-        },
-    )
-
-    def _delete(storage_uid, **kwargs):
-        captured["table_uid"] = storage_uid
-        captured["kwargs"] = kwargs
-        return {
-            "uid": storage_uid,
-            "physical_table_name": "weights_daily_physical",
-            "identifier": "weights_daily",
-            "source_class_name": "WeightsUpdater",
-            "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},
-            "protect_from_deletion": True,
-        }
-
-    monkeypatch.setattr(cli_mod, "delete_time_index_table", _delete)
-
-    result = runner.invoke(
-        cli_mod.app,
-        ["time-index-table", "delete", "time-index-table-storage-42", "--full-delete-selected"],
-        input="weights_daily_physical\n",
-    )
-    assert result.exit_code == 0
-    assert "Time-Index Table Delete Preview" in result.output
-    assert "Type physical table name 'weights_daily_physical' to confirm deletion" in result.output
-    assert captured["table_uid"] == "time-index-table-storage-42"
-    assert captured["kwargs"]["full_delete_selected"] is True
-    assert "Time-index table deleted: uid=time-index-table-storage-42" in result.output
-
-
-def test_time_index_table_delete_wrong_verification_cancels(cli_mod, runner, monkeypatch):
-    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
-    monkeypatch.setattr(
-        cli_mod,
-        "get_time_index_table",
-        lambda storage_uid, timeout=None: {
-            "uid": storage_uid,
-            "physical_table_name": "weights_daily_physical",
-            "identifier": "weights_daily",
-            "source_class_name": "WeightsUpdater",
-            "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},
-            "protect_from_deletion": False,
-        },
-    )
-
-    called = {"value": False}
-
-    def _delete(storage_uid, **kwargs):
-        called["value"] = True
-        return {}
-
-    monkeypatch.setattr(cli_mod, "delete_time_index_table", _delete)
-
-    result = runner.invoke(
-        cli_mod.app,
-        ["time-index-table", "delete", "time-index-table-storage-42"],
-        input="wrong-value\n",
-    )
-    assert result.exit_code == 0
-    assert called["value"] is False
-    assert "Cancelled." in result.output
 
 
 def test_code_repository_jobs_run(cli_mod, runner, monkeypatch):
@@ -8859,15 +6800,8 @@ def test_code_repository_set_up_locally(cli_mod, runner, monkeypatch, tmp_path):
 
     env_file = base / "org" / "code-repositories" / "demo-code-repository-uid-123" / ".env"
     assert env_file.exists()
-    env_text = env_file.read_text(encoding="utf-8")
-    assert "MAINSEQUENCE_ACCESS_TOKEN=access-123" in env_text
-    assert "MAINSEQUENCE_REFRESH_TOKEN=refresh-456" in env_text
-    assert "MAINSEQUENCE_ENDPOINT=https://backend.test" in env_text
-    assert _UNSUPPORTED_REPOSITORY_UID_ENV not in env_text
-    assert _UNSUPPORTED_REPOSITORY_NUMERIC_ID_ENV not in env_text
-    assert "DEFAULT_BASE_IMAGE" not in env_text
-    assert "FOO=bar" not in env_text
-    assert "MAINSEQUENCE_TOKEN=legacy-token" not in env_text
+    # The checkout gets the endpoint and no credential, even though a session exists.
+    assert env_file.read_text(encoding="utf-8") == "MAINSEQUENCE_ENDPOINT=https://backend.test\n"
 
 
 def test_code_repository_set_up_locally_runtime_credential(cli_mod, runner, monkeypatch, tmp_path):
@@ -8950,7 +6884,9 @@ def test_code_repository_set_up_locally_runtime_credential(cli_mod, runner, monk
     monkeypatch.setattr(
         cli_mod,
         "_exchange_runtime_credential_for_cli_login",
-        lambda backend_url: "runtime-access",
+        lambda backend_url: (_ for _ in ()).throw(
+            AssertionError("The runtime credential should not be exchanged to write .env")
+        ),
     )
 
     result = runner.invoke(
@@ -8964,20 +6900,10 @@ def test_code_repository_set_up_locally_runtime_credential(cli_mod, runner, monk
     assert deploy_key_requests[0][0][2] == "ssh-ed25519 AAA test"
     assert deploy_key_requests[0][1] == {}
 
+    # A runtime receives its credential in its own environment. None of it, and
+    # no exchanged token, is copied into the checkout.
     env_file = base / "org" / "code-repositories" / "demo-code-repository-uid-123" / ".env"
-    env_text = env_file.read_text(encoding="utf-8")
-    assert "MAINSEQUENCE_AUTH_MODE=runtime_credential" in env_text
-    assert "MAINSEQUENCE_ACCESS_TOKEN=runtime-access" in env_text
-    assert "MAINSEQUENCE_RUNTIME_CREDENTIAL_ID=cred-id" in env_text
-    assert "MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET=cred-secret" in env_text
-    assert "MAINSEQUENCE_ENDPOINT=https://backend.test" in env_text
-    assert _UNSUPPORTED_REPOSITORY_UID_ENV not in env_text
-    assert _UNSUPPORTED_REPOSITORY_NUMERIC_ID_ENV not in env_text
-    assert "MAINSEQUENCE_REFRESH_TOKEN" not in env_text
-    assert "DEFAULT_BASE_IMAGE" not in env_text
-    assert "FOO=bar" not in env_text
-    assert "old-access" not in env_text
-    assert "old-refresh" not in env_text
+    assert env_file.read_text(encoding="utf-8") == "MAINSEQUENCE_ENDPOINT=https://backend.test\n"
 
 
 def test_code_repository_set_up_locally_rejects_uninitialized_code_repository(
@@ -9047,122 +6973,175 @@ def test_code_repository_open(cli_mod, runner, monkeypatch, tmp_path):
     assert opened["path"] == str(target.resolve())
 
 
-def test_code_repository_refresh_token(cli_mod, runner, monkeypatch, tmp_path):
-    target = tmp_path / "demo-code-repository-uid-123"
-    target.mkdir(parents=True, exist_ok=True)
-    env_path = target / ".env"
+def _session_report(**overrides):
+    report = {
+        "endpoint": "https://backend.test",
+        "authenticated": True,
+        "checked_with_backend": False,
+        "auth_mode": "jwt",
+        "username": "u@example.com",
+        "source": "store",
+        "storage": "test store",
+        "store_error": None,
+        "session_expires_at": 1_900_000_000,
+        "access_expires_at": 1_899_000_000,
+    }
+    report.update(overrides)
+    return report
+
+
+def test_refresh_token_renews_the_saved_session(cli_mod, runner, monkeypatch, tmp_path):
+    renewals = []
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli_mod, "refresh_access", lambda: renewals.append(1) or "new-access")
+    monkeypatch.setattr(cli_mod.cfg, "session_report", _session_report)
+
+    result = runner.invoke(cli_mod.app, ["refresh-token"])
+
+    assert result.exit_code == 0, result.output
+    assert renewals == [1]
+    assert "Session renewed for u@example.com on https://backend.test" in result.output
+    assert "valid until 2030-03-17 17:46 UTC" in result.output
+    assert "new-access" not in result.output
+    # It works anywhere: no checkout, no `.env`, and none is created.
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_refresh_token_is_also_reachable_with_an_underscore(cli_mod, runner, monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli_mod, "refresh_access", lambda: "new-access")
+    monkeypatch.setattr(cli_mod.cfg, "session_report", _session_report)
+
+    result = runner.invoke(cli_mod.app, ["refresh_token"])
+
+    assert result.exit_code == 0, result.output
+    assert "Session renewed" in result.output
+    assert "refresh_token" not in runner.invoke(cli_mod.app, ["--help"]).output
+
+
+def test_refresh_token_removes_credentials_left_in_the_env_file(
+    cli_mod, runner, monkeypatch, tmp_path
+):
+    env_path = tmp_path / ".env"
     env_path.write_text(
         "FOO=bar\n"
         f"{_UNSUPPORTED_REPOSITORY_UID_ENV}=code-repository-uid-123\n"
-        f"{_UNSUPPORTED_REPOSITORY_NUMERIC_ID_ENV}=123\n"
         "MAINSEQUENCE_ACCESS_TOKEN=old-access\n"
-        "MAINSEQUENCE_REFRESH_TOKEN=old-refresh\n"
-        "MAINSEQUENCE_ENDPOINT=https://old-backend.test\n"
-        "MAINSEQUENCE_TOKEN=legacy-token\n",
+        "export MAINSEQUENCE_REFRESH_TOKEN=old-refresh\n"
+        "MAINSEQUENCE_ENDPOINT=https://other-backend.test\n"
+        "MAINSEQUENCE_TOKEN=legacy-token\n"
+        "TAU_LOCAL_MODE=true\n",
         encoding="utf-8",
     )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli_mod, "refresh_access", lambda: "new-access")
+    monkeypatch.setattr(cli_mod.cfg, "session_report", _session_report)
 
-    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
-    monkeypatch.setattr(
-        cli_mod.cfg,
-        "get_tokens",
-        lambda: {"username": "u", "access": "new-access", "refresh": "new-refresh"},
-    )
-    monkeypatch.setattr(cli_mod.cfg, "backend_url", lambda: "https://backend.test")
+    result = runner.invoke(cli_mod.app, ["refresh-token"])
 
-    result = runner.invoke(cli_mod.app, ["code-repository", "refresh-token", "--path", str(target)])
-    assert result.exit_code == 0
-
-    env_text = env_path.read_text(encoding="utf-8")
-    assert "FOO=bar" in env_text
-    assert "MAINSEQUENCE_ACCESS_TOKEN=new-access" in env_text
-    assert "MAINSEQUENCE_REFRESH_TOKEN=new-refresh" in env_text
-    assert "MAINSEQUENCE_ENDPOINT=https://backend.test" in env_text
-    assert _UNSUPPORTED_REPOSITORY_UID_ENV not in env_text
-    assert _UNSUPPORTED_REPOSITORY_NUMERIC_ID_ENV not in env_text
-    assert "MAINSEQUENCE_TOKEN" not in env_text
-    assert "old-access" not in env_text
-    assert "old-refresh" not in env_text
-
-
-def test_code_repository_refresh_token_runtime_credential(cli_mod, runner, monkeypatch, tmp_path):
-    target = tmp_path / "demo-code-repository-uid-123"
-    target.mkdir(parents=True, exist_ok=True)
-    env_path = target / ".env"
-    env_path.write_text(
+    assert result.exit_code == 0, result.output
+    # Only the credential entries go. Every other line stays as it was, the
+    # endpoint included: the command does not manage the checkout.
+    assert env_path.read_text(encoding="utf-8") == (
         "FOO=bar\n"
         f"{_UNSUPPORTED_REPOSITORY_UID_ENV}=code-repository-uid-123\n"
-        f"{_UNSUPPORTED_REPOSITORY_NUMERIC_ID_ENV}=123\n"
-        "MAINSEQUENCE_AUTH_MODE=jwt\n"
+        "MAINSEQUENCE_ENDPOINT=https://other-backend.test\n"
+        "TAU_LOCAL_MODE=true\n"
+    )
+    assert "MAINSEQUENCE_ACCESS_TOKEN, MAINSEQUENCE_REFRESH_TOKEN, MAINSEQUENCE_TOKEN" in (
+        result.output
+    )
+    for secret in ("old-access", "old-refresh", "legacy-token", "new-access"):
+        assert secret not in result.output
+
+
+def test_refresh_token_removes_the_runtime_credential_block(cli_mod, runner, monkeypatch, tmp_path):
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "FOO=bar\n"
+        "MAINSEQUENCE_AUTH_MODE=runtime_credential\n"
         "MAINSEQUENCE_ACCESS_TOKEN=old-access\n"
-        "MAINSEQUENCE_REFRESH_TOKEN=old-refresh\n"
-        "MAINSEQUENCE_TOKEN=legacy-token\n",
+        "MAINSEQUENCE_RUNTIME_CREDENTIAL_ID=old-cred-id\n"
+        "MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET=old-cred-secret\n"
+        "MAINSEQUENCE_ENDPOINT=https://backend.test\n",
         encoding="utf-8",
     )
-
+    monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("MAINSEQUENCE_AUTH_MODE", "runtime_credential")
-    monkeypatch.setenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_ID", "cred-id")
-    monkeypatch.setenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET", "cred-secret")
-    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(cli_mod, "refresh_access", lambda: "exchanged-access")
     monkeypatch.setattr(
         cli_mod.cfg,
-        "get_tokens",
-        lambda: (_ for _ in ()).throw(AssertionError("JWT tokens should not be used")),
-    )
-    monkeypatch.setattr(cli_mod.cfg, "backend_url", lambda: "https://backend.test")
-    monkeypatch.setattr(
-        cli_mod,
-        "_exchange_runtime_credential_for_cli_login",
-        lambda backend_url: "runtime-new-access",
+        "session_report",
+        lambda: _session_report(auth_mode="runtime_credential", username=None, source=None),
     )
 
-    result = runner.invoke(cli_mod.app, ["code-repository", "refresh-token", "--path", str(target)])
-    assert result.exit_code == 0
+    result = runner.invoke(cli_mod.app, ["refresh-token"])
 
-    env_text = env_path.read_text(encoding="utf-8")
-    assert "FOO=bar" in env_text
-    assert "MAINSEQUENCE_AUTH_MODE=runtime_credential" in env_text
-    assert "MAINSEQUENCE_ACCESS_TOKEN=runtime-new-access" in env_text
-    assert "MAINSEQUENCE_RUNTIME_CREDENTIAL_ID=cred-id" in env_text
-    assert "MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET=cred-secret" in env_text
-    assert "MAINSEQUENCE_ENDPOINT=https://backend.test" in env_text
-    assert _UNSUPPORTED_REPOSITORY_UID_ENV not in env_text
-    assert _UNSUPPORTED_REPOSITORY_NUMERIC_ID_ENV not in env_text
-    assert "MAINSEQUENCE_TOKEN" not in env_text
-    assert "MAINSEQUENCE_REFRESH_TOKEN" not in env_text
-    assert "old-access" not in env_text
-    assert "old-refresh" not in env_text
-
-
-def test_code_repository_refresh_token_defaults_to_cwd(cli_mod, runner, monkeypatch, tmp_path):
-    target = tmp_path / "demo-code-repository-uid-123"
-    target.mkdir(parents=True, exist_ok=True)
-    env_path = target / ".env"
-    env_path.write_text(
-        "FOO=bar\n"
-        f"{_UNSUPPORTED_REPOSITORY_UID_ENV}=code-repository-uid-123\n"
-        "MAINSEQUENCE_ACCESS_TOKEN=old-access\n"
-        "MAINSEQUENCE_REFRESH_TOKEN=old-refresh\n",
-        encoding="utf-8",
+    assert result.exit_code == 0, result.output
+    assert env_path.read_text(encoding="utf-8") == (
+        "FOO=bar\nMAINSEQUENCE_ENDPOINT=https://backend.test\n"
     )
+    assert "Session renewed on https://backend.test" in result.output
+    for secret in ("old-access", "old-cred-secret", "exchanged-access"):
+        assert secret not in result.output
 
-    monkeypatch.chdir(target)
-    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
-    monkeypatch.setattr(
-        cli_mod.cfg,
-        "get_tokens",
-        lambda: {"username": "u", "access": "new-access", "refresh": "new-refresh"},
-    )
-    monkeypatch.setattr(cli_mod.cfg, "backend_url", lambda: "https://backend.test")
 
-    result = runner.invoke(cli_mod.app, ["code-repository", "refresh-token"])
-    assert result.exit_code == 0
+def test_refresh_token_without_a_session_asks_for_a_login(cli_mod, runner, monkeypatch, tmp_path):
+    env_path = tmp_path / ".env"
+    env_path.write_text("FOO=bar\nMAINSEQUENCE_REFRESH_TOKEN=old-refresh\n", encoding="utf-8")
 
-    env_text = env_path.read_text(encoding="utf-8")
-    assert "MAINSEQUENCE_ACCESS_TOKEN=new-access" in env_text
-    assert "MAINSEQUENCE_REFRESH_TOKEN=new-refresh" in env_text
-    assert "MAINSEQUENCE_ENDPOINT=https://backend.test" in env_text
-    assert _UNSUPPORTED_REPOSITORY_UID_ENV not in env_text
+    def no_session():
+        raise cli_mod.NotLoggedIn("Not logged in. Run `mainsequence login`.")
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli_mod, "refresh_access", no_session)
+    monkeypatch.setattr(cli_mod.cfg, "secure_store_available", lambda: True)
+    monkeypatch.setattr(cli_mod.cfg, "store_read_error", lambda: None)
+
+    result = runner.invoke(cli_mod.app, ["refresh-token"])
+
+    assert result.exit_code == cli_mod.AUTH_EXIT_NOT_LOGGED_IN == 1
+    assert "Not logged in. Run: mainsequence login" in result.output
+    # The stale entry is removed either way: it would hide the session a login saves.
+    assert env_path.read_text(encoding="utf-8") == "FOO=bar\n"
+    assert "old-refresh" not in result.output
+
+
+def test_refresh_token_does_not_echo_a_transport_failure(cli_mod, runner, monkeypatch, tmp_path):
+    def unreachable():
+        raise ConnectionError("https://backend.test/auth/?refresh=refresh-value")
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli_mod, "refresh_access", unreachable)
+
+    result = runner.invoke(cli_mod.app, ["refresh-token"])
+
+    assert result.exit_code == 1
+    assert "The session could not be renewed (ConnectionError)." in result.output
+    assert "refresh-value" not in result.output
+    assert "Traceback" not in result.output
+
+
+def test_refresh_token_json_is_the_session_report(cli_mod, runner, monkeypatch, tmp_path):
+    (tmp_path / ".env").write_text("MAINSEQUENCE_ACCESS_TOKEN=old-access\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli_mod, "refresh_access", lambda: "new-access")
+    monkeypatch.setattr(cli_mod.cfg, "session_report", _session_report)
+
+    result = runner.invoke(cli_mod.app, ["refresh-token", "--json"])
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output) == {
+        **_session_report(),
+        "removed_env_entries": ["MAINSEQUENCE_ACCESS_TOKEN"],
+    }
+
+
+def test_the_per_checkout_refresh_token_command_is_gone(cli_mod, runner):
+    result = runner.invoke(cli_mod.app, ["code-repository", "refresh-token", "--path", "."])
+
+    assert result.exit_code == 2
+    assert "No such command" in result.output
 
 
 def test_code_repository_delete_local(cli_mod, runner, monkeypatch, tmp_path):
@@ -10084,7 +8063,6 @@ def test_code_repository_current_debug_reports_authenticated_runtime_git_context
         code_repository_uid="code-repository-uid-123",
         code_repository_branch_uid="code-repository-branch-uid-123",
         organization_environment_uid="environment-uid-123",
-        metatables_data_source=None,
         status="resolved",
         process_id=os.getpid(),
         code_repository_branch=types.SimpleNamespace(uid="code-repository-branch-uid-123"),

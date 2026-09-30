@@ -30,11 +30,7 @@ class CodeRepositoryBranchContextRequiredError(CodeRepositoryContextError):
 
 
 class CodeRepositoryEnvironmentContextRequiredError(CodeRepositoryBranchContextRequiredError):
-    """Raised when the current CodeRepositoryBranch has no resolved Environment."""
-
-
-class CodeRepositoryDataSourceContextRequiredError(CodeRepositoryContextError):
-    """Raised when branch-derived data access has no usable DataSource."""
+    """Raised only when an operation needs an unavailable Environment."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,7 +51,6 @@ class CodeRepositoryContext:
     code_repository_uid: str | None
     code_repository_branch_uid: str | None
     organization_environment_uid: str | None
-    metatables_data_source: Any | None
     status: CodeRepositoryContextStatus
     process_id: int
     code_repository_branch: Any | None
@@ -91,13 +86,38 @@ class CodeRepositoryContext:
 class _ContextState:
     process_id: int
     phase: Literal["uninitialized", "resolving", "resolved", "failed"]
-    context: CodeRepositoryContext | None = None
+    context: CodeRepositoryContext | GitCodeRepositorySourceContext | None = None
     error: Exception | None = None
 
 
 _STATE_CONDITION = threading.Condition(threading.RLock())
 _STATE = _ContextState(process_id=os.getpid(), phase="uninitialized")
 _AUTHENTICATED_RUNTIME_CONTEXT: tuple[int, dict[str, str]] | None = None
+_SOURCE_STATE = _ContextState(process_id=os.getpid(), phase="uninitialized")
+
+
+def _clear_context_states() -> None:
+    # Caller owns the condition, or is the sole thread after fork.
+    global _STATE, _SOURCE_STATE, _AUTHENTICATED_RUNTIME_CONTEXT
+    _STATE = _ContextState(process_id=os.getpid(), phase="uninitialized")
+    _SOURCE_STATE = _ContextState(process_id=os.getpid(), phase="uninitialized")
+    _AUTHENTICATED_RUNTIME_CONTEXT = None
+
+
+def _ensure_current_process() -> None:
+    if _SOURCE_STATE.process_id != os.getpid():
+        _clear_context_states()
+
+
+def _after_fork() -> None:
+    # A parent thread may have owned the old lock when fork occurred.
+    global _STATE_CONDITION
+    _STATE_CONDITION = threading.Condition(threading.RLock())
+    _clear_context_states()
+
+
+if hasattr(os, "register_at_fork"):
+    os.register_at_fork(after_in_child=_after_fork)
 
 
 def _normalize_authenticated_runtime_context(
@@ -287,7 +307,9 @@ def _git_output(code_repository_dir: pathlib.Path, *args: str) -> str:
     return output
 
 
-def _resolve_git_source_context(code_repository_dir: pathlib.Path) -> GitCodeRepositorySourceContext:
+def _resolve_git_source_context(
+    code_repository_dir: pathlib.Path,
+) -> GitCodeRepositorySourceContext:
     repository_root = pathlib.Path(
         _git_output(code_repository_dir, "rev-parse", "--show-toplevel")
     ).resolve()
@@ -363,10 +385,9 @@ def _load_code_repository_branch_context(
 
 def _build_code_repository_context(
     *,
-    code_repository_dir: pathlib.Path,
+    source: GitCodeRepositorySourceContext,
     code_repository_branch_context_loader: CodeRepositoryBranchContextLoader,
 ) -> CodeRepositoryContext:
-    source = _resolve_git_source_context(code_repository_dir)
     resolution = _load_code_repository_branch_context(code_repository_branch_context_loader, source)
     if resolution is None:
         return CodeRepositoryContext(
@@ -374,7 +395,6 @@ def _build_code_repository_context(
             code_repository_uid=None,
             code_repository_branch_uid=None,
             organization_environment_uid=None,
-            metatables_data_source=None,
             status="code_repository_branch_not_registered",
             process_id=os.getpid(),
             code_repository_branch=None,
@@ -408,9 +428,13 @@ def _build_code_repository_context(
         raise CodeRepositoryContextError("Git-resolved CodeRepositoryBranch has no UID.")
     code_repository_uid = _normalized_value(code_repository_branch, "code_repository_uid")
     if not code_repository_uid:
-        raise CodeRepositoryContextError("Git-resolved CodeRepositoryBranch has no CodeRepository UID.")
+        raise CodeRepositoryContextError(
+            "Git-resolved CodeRepositoryBranch has no CodeRepository UID."
+        )
     if _normalized_value(code_repository_branch, "repository_branch") != source.repository_branch:
-        raise CodeRepositoryContextError("Git-resolved CodeRepositoryBranch has a mismatched branch.")
+        raise CodeRepositoryContextError(
+            "Git-resolved CodeRepositoryBranch has a mismatched branch."
+        )
 
     return CodeRepositoryContext(
         source_context=source,
@@ -419,7 +443,6 @@ def _build_code_repository_context(
         organization_environment_uid=(
             _normalized_value(code_repository_branch, "organization_environment_uid") or None
         ),
-        metatables_data_source=_object_value(code_repository_branch, "metatables_data_source"),
         status="resolved",
         process_id=os.getpid(),
         code_repository_branch=code_repository_branch,
@@ -440,9 +463,7 @@ def _verify_authenticated_runtime_code_repository_context(
         "code_repository_uid": str(context.code_repository_uid or "").strip(),
         "code_repository_branch_uid": str(context.code_repository_branch_uid or "").strip(),
         "repository_branch": context.repository_branch,
-        "organization_environment_uid": str(
-            context.organization_environment_uid or ""
-        ).strip(),
+        "organization_environment_uid": str(context.organization_environment_uid or "").strip(),
     }
     mismatched = sorted(
         field for field, expected in expected_fields.items() if observed_fields[field] != expected
@@ -459,31 +480,92 @@ def _verify_authenticated_runtime_code_repository_context(
     )
 
 
+def get_git_source_context(
+    *,
+    code_repository_dir: str | pathlib.Path | None = None,
+) -> GitCodeRepositorySourceContext:
+    """Freeze actual local Git facts without importing authentication or making requests."""
+
+    global _SOURCE_STATE
+    directory = pathlib.Path(code_repository_dir or pathlib.Path.cwd()).resolve()
+    with _STATE_CONDITION:
+        _ensure_current_process()
+        while _SOURCE_STATE.phase == "resolving":
+            _STATE_CONDITION.wait()
+        if _SOURCE_STATE.phase == "resolved":
+            source = _SOURCE_STATE.context
+            assert isinstance(source, GitCodeRepositorySourceContext)
+            if code_repository_dir is not None and not directory.is_relative_to(
+                source.repository_root
+            ):
+                raise CodeRepositorySourceContextDriftError(
+                    "Requested directory is outside the frozen repository; start a fresh process."
+                )
+            if code_repository_dir is not None and directory != source.repository_root:
+                if _resolve_git_source_context(directory) != source:
+                    raise CodeRepositorySourceContextDriftError(
+                        "Requested directory does not match the frozen Git source."
+                    )
+            return source
+        if _SOURCE_STATE.phase == "failed":
+            assert _SOURCE_STATE.error is not None
+            raise _SOURCE_STATE.error
+        _SOURCE_STATE = _ContextState(os.getpid(), "resolving")
+    try:
+        source = _resolve_git_source_context(directory)
+    except Exception as exc:
+        with _STATE_CONDITION:
+            _SOURCE_STATE = _ContextState(os.getpid(), "failed", error=exc)
+            _STATE_CONDITION.notify_all()
+        raise
+    with _STATE_CONDITION:
+        _SOURCE_STATE = _ContextState(os.getpid(), "resolved", context=source)
+        _STATE_CONDITION.notify_all()
+    return source
+
+
+def validate_git_source_context() -> GitCodeRepositorySourceContext:
+    """Validate the frozen source against the checkout, without platform enrichment."""
+
+    source = get_git_source_context()
+    if _resolve_git_source_context(source.repository_root) != source:
+        raise CodeRepositorySourceContextDriftError(
+            "Git repository, branch, or HEAD changed after source context was frozen."
+        )
+    return source
+
+
 def get_code_repository_context(
     *,
     code_repository_dir: str | pathlib.Path | None = None,
     code_repository_uid: str | None = None,
     _code_repository_branch_context_loader: CodeRepositoryBranchContextLoader | None = None,
 ) -> CodeRepositoryContext:
-    """Resolve and freeze Git-native context, then verify any runtime target."""
+    """Freeze optional platform metadata for the current Git source once per process.
 
+    Missing registration or Environment metadata is valid here. Operations that
+    require those prerequisites enforce them through their resource guards.
+    """
     global _STATE
 
+    source = get_git_source_context(code_repository_dir=code_repository_dir)
     process_id = os.getpid()
     _exchange_authenticated_runtime_context_if_configured()
-    normalized_code_repository_dir = pathlib.Path(code_repository_dir or pathlib.Path.cwd()).resolve()
     with _STATE_CONDITION:
-        if _STATE.process_id != process_id:
-            _STATE = _ContextState(process_id=process_id, phase="uninitialized")
+        _ensure_current_process()
         while _STATE.phase == "resolving":
             _STATE_CONDITION.wait()
         if _STATE.phase == "resolved":
-            assert _STATE.context is not None
-            if code_repository_uid and str(code_repository_uid).strip() != _STATE.context.code_repository_uid:
+            context = _STATE.context
+            assert isinstance(context, CodeRepositoryContext)
+            if (
+                code_repository_uid
+                and str(code_repository_uid).strip() != context.code_repository_uid
+            ):
                 raise CodeRepositoryContextError(
                     "Requested CodeRepository does not match the Git context locked for this run."
                 )
-            return _STATE.context
+            return context
         if _STATE.phase == "failed":
             assert _STATE.error is not None
             raise _STATE.error
@@ -492,15 +574,15 @@ def get_code_repository_context(
     try:
         authenticated_context = _authenticated_runtime_context_for_process()
         context = _build_code_repository_context(
-            code_repository_dir=normalized_code_repository_dir,
+            source=source,
             code_repository_branch_context_loader=(
-                _code_repository_branch_context_loader or _default_code_repository_branch_context_loader
+                _code_repository_branch_context_loader
+                or _default_code_repository_branch_context_loader
             ),
         )
         if authenticated_context is not None:
             context = _verify_authenticated_runtime_code_repository_context(
-                context,
-                authenticated_context,
+                context, authenticated_context
             )
         if code_repository_uid and str(code_repository_uid).strip() != context.code_repository_uid:
             raise CodeRepositoryContextError(
@@ -511,7 +593,6 @@ def get_code_repository_context(
             _STATE = _ContextState(process_id=process_id, phase="failed", error=exc)
             _STATE_CONDITION.notify_all()
         raise
-
     with _STATE_CONDITION:
         _STATE = _ContextState(process_id=process_id, phase="resolved", context=context)
         _STATE_CONDITION.notify_all()
@@ -561,14 +642,14 @@ def resolve_code_repository_branch_uid(operation: str, supplied_uid: Any = None)
 
 
 def resolve_organization_environment_uid(operation: str) -> str:
-    """Return the Environment UID derived from the process-frozen CodeRepositoryBranch."""
-
-    context = require_code_repository_branch_context(operation)
+    """Require the current branch's Environment only for an operation that needs it."""
+    context = get_code_repository_context()
     environment_uid = str(context.organization_environment_uid or "").strip()
     if not environment_uid:
         raise CodeRepositoryEnvironmentContextRequiredError(
-            f"{operation} requires an Organization Environment resolved from "
-            f"CodeRepositoryBranch {context.code_repository_branch_uid!r}, but none was returned."
+            f"{operation} requires an Organization Environment, but the current Git branch "
+            f"{context.repository_branch!r} has no registered Environment. "
+            "Git discovery and operations that do not require an Environment remain available."
         )
     return environment_uid
 
@@ -611,41 +692,18 @@ def scope_current_code_repository_branch_filters(
     return scoped
 
 
-def require_code_repository_metatables_data_source(
-    operation: str,
-    *,
-    context: CodeRepositoryContext | None = None,
-) -> Any:
-    resolved = require_code_repository_branch_context(operation, context=context)
-    data_source = resolved.metatables_data_source
-    if data_source is None:
-        raise CodeRepositoryDataSourceContextRequiredError(
-            f"{operation} requires CodeRepositoryBranch.metatables_data_source, but "
-            f"CodeRepositoryBranch {resolved.code_repository_branch_uid!r} has none configured."
-        )
-    status = str(_object_value(data_source, "status", "") or "")
-    if status != "AVAILABLE":
-        raise CodeRepositoryDataSourceContextRequiredError(
-            f"{operation} requires an AVAILABLE CodeRepositoryBranch MetaTables DataSource; "
-            f"got status {status or 'unknown'!r}."
-        )
-    return data_source
-
-
 def _reset_code_repository_context() -> None:
-    """Reset call-once state for isolated SDK tests."""
-
-    global _AUTHENTICATED_RUNTIME_CONTEXT, _STATE
+    """Reset process-owned context for isolated SDK tests."""
     with _STATE_CONDITION:
-        _AUTHENTICATED_RUNTIME_CONTEXT = None
-        _STATE = _ContextState(process_id=os.getpid(), phase="uninitialized")
+        _clear_context_states()
         _STATE_CONDITION.notify_all()
 
 
 __all__ = [
+    "get_git_source_context",
+    "validate_git_source_context",
     "GitCodeRepositorySourceContext",
     "CodeRepositoryBranchContextRequiredError",
-    "CodeRepositoryDataSourceContextRequiredError",
     "CodeRepositoryEnvironmentContextRequiredError",
     "CodeRepositoryContext",
     "CodeRepositoryContextError",
@@ -654,7 +712,6 @@ __all__ = [
     "is_authenticated_runtime_code_repository_context",
     "normalize_github_repository_binding_identity",
     "require_code_repository_branch_context",
-    "require_code_repository_metatables_data_source",
     "resolve_organization_environment_uid",
     "resolve_code_repository_branch_uid",
     "scope_current_code_repository_branch_filters",

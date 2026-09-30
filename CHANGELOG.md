@@ -6,8 +6,46 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+ADR 0034 removes the SDK-owned MetaTables implementation and domain workflow
+surface described in earlier entries below. See the
+[migration guide](docs/migrations/metatables-sdk-removal.md) for the final package
+boundary and breaking changes.
+
 ### Added
 
+- `mainsequence auth token` hands a short-lived access token to a local tool
+  that does not read the credential store. It renews the token when it is about
+  to expire, never prints the refresh token, and with `--json` prints
+  `endpoint`, `access_token`, `token_type` and `expires_at`. Exit code `1` means
+  no usable session and `3` means no credential store.
+- `mainsequence auth status` reports the session without any token value: the
+  backend, the user, where the session is stored, whether its credentials came
+  from the environment or from the saved session, when it expires, and why the
+  credential store could not be read when it could not. `--check` also asks the
+  backend.
+- `mainsequence refresh-token` renews the saved session and says whether it
+  works. It is a top-level command without a path, because the session belongs
+  to the machine and not to a checkout. Run in a directory whose `.env` still
+  holds an access token, a refresh token or a runtime credential from an
+  earlier version, it removes those entries and names them.
+- ADR 0037: the session is one record per backend in the operating system
+  credential store, and a CodeRepository `.env` holds no credential.
+
+- The scaffold's one MetaTables skill is now `maintenance/metatables_transition`.
+  It covers only moving a repository off the SDK-owned MetaTables code: install
+  `mainsequence-metatable`, copy its skills, rewrite imports and replace the
+  retired commands. The Alembic migration workflow it used to describe belongs
+  to the `metatables` package's own skills, and `data_publishing/` is gone.
+- ADR 0035: network-free `get_git_source_context()` and optional platform metadata.
+  Missing Environment errors occur only in operations requiring the current
+  branch's Environment. Existing context caching and authentication are preserved;
+  there is no Environment override, account binding, or identity preflight.
+
+- Moved application DataSource adapters to MetaTables; database registration
+  belongs to that package and credentials use platform Secrets.
+
+- Added framework-independent caller assertion verification in the optional
+  `mainsequence[server]` extra, with release/Environment checks and bounded public-key discovery.
 - Declared `site_url` so the documentation site has a canonical root. The sitemap
   was previously empty and no page carried a canonical link; it now lists all 108
   pages as absolute URLs.
@@ -21,14 +59,51 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Added a `Tests` workflow that runs the suite on pull requests and pushes. The
   development publish job calls the same workflow, so a development release cannot be
   published while the suite is failing.
-- Added a documentation-reference check over everything the wheel ships under
-  `agent_scaffold`: a skill must not cite SDK documentation by repository-relative
-  path, every documentation-site link must map to a page `docs/` actually renders,
-  and every cross-skill `SKILL.md` reference must resolve. The page check is a pure
-  URL-to-path transform, so it needs no network.
 
 ### Changed
 
+- Amended ADR 0034 and restored the CodeRepository local-development CLI that
+  the MetaTables extraction removed by mistake: `set-up-locally`,
+  `refresh-token`, `sync`, `update-sdk`, `update AGENTS.md`,
+  `update-agent-skills`, `freeze-env`, `build-local-venv`, and
+  `open-signed-terminal`. These commands retain Git-native branch authority and
+  remain independent of the removed MetaTables implementation.
+- Restored the reusable scaffold-skill copier and packaged `agent_scaffold` after
+  the MetaTables extraction incorrectly removed the entire scaffold. The retained
+  bundle documents the SDK's full retained capabilities and routes MetaTables
+  work to its owning package.
+- CLI login credentials now persist through the operating system credential store
+  on Windows, Linux, and macOS. Legacy `auth.json` credentials are migrated only
+  when a recommended secure backend is available; plaintext file persistence is
+  no longer used as a fallback.
+- The CLI no longer writes credentials into a CodeRepository `.env`.
+  `mainsequence code-repository set-up-locally` writes the backend endpoint
+  only. The SDK already read the saved session on import, so a login made from
+  one CodeRepository serves every other one on the machine. A tool that read
+  the token pair from `.env` takes it from its environment or asks
+  `mainsequence auth token`. See ADR 0037.
+- The saved session is reached the same way from every interpreter on the
+  machine. On macOS the CLI uses Apple's `security` program under the entry
+  name released versions used. It marks the entries it writes and asks for the
+  secret of a marked entry only, so no consent dialog appears for an entry
+  another program wrote; a session saved by another version needs one login.
+  The record now travels on standard input instead of a command line, without
+  a login shell, and a call that waits for the user is cut off after 10
+  seconds.
+  On Linux the Secret Service backend is named explicitly and items that other
+  programs stored for the same entry are removed on a write. Windows is
+  unchanged. The record gains a version and the backend it belongs to, a record
+  for another backend is refused, and a record with a refresh token alone is a
+  session.
+- A JWT pair rejected by the backend is reported with its source. When the pair
+  was set in the process environment, the error says so and says whether a
+  saved session exists, instead of advising a logout and login that would not
+  change that pair.
+- `mainsequence doctor` shows whether the session is valid, whether the
+  credentials came from the environment or from the saved session, why the
+  credential store could not be read, and the credential entries found in the
+  current checkout's `.env`.
+- Runtime credential exchange no longer follows redirects.
 - `CodeRepositoryBranch.list_github_issues()` now treats its receiving branch
   as the target resource, matching issue creation. It no longer requires that
   target to equal the process-frozen branch; the backend enforces the runtime
@@ -59,20 +134,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   `mainsequence.client.value_sets.declared_values()` reads them back.
 - The final-release publish job now refuses a `v*` tag whose commit is not contained in
   `main`.
-- Tests that need a live backend and credentials carry a `live` marker and are deselected
-  by default. `pytest` runs offline; `pytest -m live` runs the live tests.
-- `description_search(...)` moved from `MetaTable` to `TimeIndexMetaTable`. The backend
-  serves `description-search/` only for `time-index-meta-tables`, so the method now lives
-  on the only class whose URL it resolves to.
+- Tests that need a live backend and credentials remain marked `live` and are
+  deselected by default. The normal test run remains offline.
 
 ### Removed
+
+- Removed `mainsequence code-repository refresh-token`. It rewrote tokens in the
+  `.env` of one checkout, and no checkout holds a credential any more. Use
+  `mainsequence refresh-token`, which renews the machine's session.
+
+- Removed SDK-owned MetaTables, updater and migration modules, local database and
+  DataFrame helpers, their CLI commands, implementation docs, packaged table and
+  updater skills, and domain-only dependencies. Agent A2A orchestration,
+  CodeRepository development, Docker/deployment commands, observability,
+  instrumentation, and dynamic SDK/platform skill assembly remain supported.
+  The independent `metatables` package port is separate from this SDK change;
+  confirm its compatible version before release.
 
 - Removed `docs/CNAME`, which declared a `docs.main-sequence-sdk.main-sequence.io`
   custom domain that was never set up: the domain does not resolve and GitHub Pages
   has no custom domain configured. MkDocs was copying the file into every deployed
   site. The documentation is served from GitHub Pages at
   <https://mainsequence-sdk.github.io/mainsequence-sdk/>, which is the root the
-  shipped skills cite.
+  historical guides cited.
 - Removed `TimeIndexTableUpdate.verify_if_direct_dependencies_are_updated()`. The route
   was dropped with the time-index table updater hard cut; `set_start_of_execution()`
   already returns `direct_dependency_uids` in its response.
@@ -80,6 +164,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   The backend no longer serves `import-branch/`.
 
 ### Fixed
+
+- A saved session keeps its user name. A new process took the session's tokens
+  from the credential store without the name, so `mainsequence auth status`
+  showed no user, and the first renewal saved the session again without it.
 
 - AgentSession runtime-access parsing no longer requires the retired
   `runtime_interaction.action` key. The backend omits it, but the SDK previously
