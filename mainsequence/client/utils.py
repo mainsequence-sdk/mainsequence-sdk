@@ -70,42 +70,145 @@ def set_mainsequence_endpoint(endpoint: str) -> None:
     AUTH_ENDPOINT = normalized
 
 
-def _jwt_reauth_hint() -> str:
-    """
-    Say how to repair rejected JWT credentials, according to where they came from.
+_SESSION_TOKEN_VARIABLES = ("MAINSEQUENCE_ACCESS_TOKEN", "MAINSEQUENCE_REFRESH_TOKEN")
+# Renewal answers that refuse the credentials, as opposed to a backend that failed.
+_REFUSED_RENEWAL_STATUSES = frozenset({400, 401, 403})
 
-    A pair that was already in the process environment wins over the saved CLI
-    session. When that pair is stale the saved session is not tried, because the
-    pair may belong to another user or backend; the message names it instead.
+
+def _format_utc(epoch: int) -> str:
+    return datetime.datetime.fromtimestamp(epoch, tz=datetime.UTC).strftime(
+        "%Y-%m-%d %H:%M UTC"
+    )
+
+
+def _session_backend() -> str:
+    return (AUTH_ENDPOINT or "").rstrip("/")
+
+
+def _login_command(backend: str) -> str:
+    """
+    Return the CLI command that signs in to `backend`.
+
+    `mainsequence login` alone signs in to the configured backend. Another
+    backend needs its address and the folder that holds its repositories.
     """
     try:
-        from mainsequence import bootstrap
         from mainsequence.cli import config as cli_config
 
-        from_environment = bootstrap.credential_source() == bootstrap.CREDENTIALS_FROM_ENVIRONMENT
-        saved_session = from_environment and cli_config.stored_session_available()
+        configured = cli_config.normalize_backend_url(
+            cli_config.get_persistent_config().get("backend_url")
+        )
     except Exception:
-        from_environment, saved_session = False, False
+        configured = ""
+    if not backend or backend == configured:
+        return "`mainsequence login`"
+    return f"`mainsequence login {backend} <base folder>`"
+
+
+def _env_file_holding_process_credentials() -> pathlib.Path | None:
+    """
+    Return the working directory's `.env` when it holds this process's tokens.
+
+    IDE run configurations, launchers and dotenv calls load that file into a
+    process's environment. Values are compared here and never shown.
+    """
+    from mainsequence.cli import config as cli_config
+
+    env_path = pathlib.Path.cwd() / ".env"
+    try:
+        lines = env_path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeError):
+        return None
+    for line in lines:
+        key = cli_config.env_line_key(line)
+        if key not in _SESSION_TOKEN_VARIABLES:
+            continue
+        value = line.split("=", 1)[1].split(" #", 1)[0].strip().strip("\"'")
+        if value and value == (os.environ.get(key) or "").strip():
+            return env_path
+    return None
+
+
+def _jwt_reauth_hint(refresh_token: str | None = None) -> str:
+    """
+    Say why the backend refused this process's credentials and how to repair them.
+
+    The facts come from this process and this machine: the refresh token's own
+    expiry, whether the credentials were already in the environment when the SDK
+    started (and which `.env` holds them, when one does), and the saved session
+    of the backend. A pair from the environment wins over the saved session, so
+    the saved session is named and not used: the pair may belong to another user
+    or backend. No token value is included.
+    """
+    backend = _session_backend()
+    refresh = refresh_token if refresh_token is not None else os.getenv("MAINSEQUENCE_REFRESH_TOKEN")
+    expiry = _decode_jwt_exp(refresh)
+    try:
+        from mainsequence import bootstrap
+
+        source = bootstrap.credential_source()
+        from_environment = source == bootstrap.CREDENTIALS_FROM_ENVIRONMENT
+        from_store = source == bootstrap.CREDENTIALS_FROM_STORE
+    except Exception:
+        from_environment = from_store = False
+    login = _login_command(backend)
+
+    parts = []
+    if expiry is not None and expiry <= int(time.time()):
+        parts.append(f" The refresh token expired on {_format_utc(expiry)}.")
+    elif expiry is not None:
+        parts.append(
+            " The refresh token has not expired: the backend revoked it, or it was "
+            "issued by another backend."
+        )
 
     if from_environment:
-        return (
-            " The rejected credentials were set in this process's environment "
-            "(MAINSEQUENCE_ACCESS_TOKEN / MAINSEQUENCE_REFRESH_TOKEN) before the SDK "
-            "started: a shell export, an IDE run configuration, or a `.env` file that "
-            "your tooling loads. "
-            + (
-                "A saved CLI session exists for this backend and was not used. Remove "
-                "those variables to use it."
-                if saved_session
-                else "No saved CLI session exists for this backend. Remove those "
-                "variables and run `mainsequence login`."
+        try:
+            env_file = _env_file_holding_process_credentials()
+        except Exception:
+            env_file = None
+        try:
+            from mainsequence.cli import config as cli_config
+
+            saved = cli_config.saved_session_summary(backend)
+        except Exception:
+            saved = {"usable": False, "username": "", "expires_at": None}
+        if env_file is not None:
+            parts.append(
+                f" These credentials come from the token lines of {env_file}, not from "
+                "your saved session."
             )
+            cleanup = f"run `mainsequence refresh-token` in {env_file.parent} to remove those lines"
+        else:
+            parts.append(
+                " These credentials were in this process's environment "
+                "(MAINSEQUENCE_ACCESS_TOKEN / MAINSEQUENCE_REFRESH_TOKEN) when it started, "
+                "set by the program that started it, not taken from your saved session."
+            )
+            cleanup = "start the process without those two variables"
+        if saved["usable"]:
+            who = f" ({saved['username']})" if saved["username"] else ""
+            until = (
+                f", valid until {_format_utc(saved['expires_at'])}"
+                if saved["expires_at"] is not None
+                else ""
+            )
+            parts.append(
+                f" Your saved session for {backend}{who} is usable{until}: "
+                f"{cleanup}, and the next start uses it."
+            )
+        else:
+            parts.append(
+                f" There is no usable saved session for {backend}. Sign in with {login}, "
+                f"then {cleanup}."
+            )
+    elif from_store:
+        parts.append(
+            f" These credentials are your saved session for {backend}. Sign in again with {login}."
         )
-    return (
-        " Refresh your credentials with `mainsequence logout` and "
-        "`mainsequence login`. If this code runs in a separate shell or IDE, "
-        "use `mainsequence login --export` and load the exported env vars there."
-    )
+    else:
+        parts.append(f" Sign in with {login}.")
+    return "".join(parts)
 
 
 def _env_has_value(name: str) -> bool:
@@ -397,10 +500,14 @@ class JWTAuthProvider(BaseAuthProvider):
             if not force and not self._needs_refresh():
                 return
 
+            backend = _session_backend()
             if not self.refresh_token:
                 if self.access_token and not force:
                     return
-                raise AuthError("JWT refresh token is missing." + _jwt_reauth_hint())
+                raise AuthError(
+                    f"Main Sequence cannot renew the session of this process for {backend}: "
+                    "it has no refresh token." + _jwt_reauth_hint(self.refresh_token)
+                )
 
             http_client = session or requests
 
@@ -411,16 +518,24 @@ class JWTAuthProvider(BaseAuthProvider):
                 timeout=self.timeout,
             )
 
-            if r.status_code != 200:
+            if r.status_code in _REFUSED_RENEWAL_STATUSES:
                 raise AuthError(
-                    f"JWT refresh failed with status {r.status_code}." + _jwt_reauth_hint()
+                    f"Main Sequence refused to renew the session of this process for {backend} "
+                    f"(HTTP {r.status_code})." + _jwt_reauth_hint(self.refresh_token)
+                )
+            if r.status_code != 200:
+                # The backend failed; the credentials were not judged.
+                raise AuthError(
+                    f"Main Sequence could not renew the session of this process for {backend}: "
+                    f"the backend answered HTTP {r.status_code}. Try again when it is available."
                 )
 
             data = r.json()
             access = data.get("access")
             if not access:
                 raise AuthError(
-                    "JWT refresh response did not include access token." + _jwt_reauth_hint()
+                    f"Main Sequence renewed the session for {backend} without an access token."
+                    + _jwt_reauth_hint(self.refresh_token)
                 )
 
             # Important if ROTATE_REFRESH_TOKENS=True
@@ -604,15 +719,12 @@ def make_request(
 
             if r.status_code == 401 and loaders is not None and not auth_retried:
                 logger.warning(f"Error {r.status_code}; forcing auth refresh once")
-                try:
-                    s.headers.update(loaders.refresh_headers(force=True, session=s))
-                    req = get_req(session=s)
-                    auth_retried = True
-                    continue
-                except AuthError:
-                    logger.exception("Auth refresh failed")
-                    keep_request = False
-                    break
+                # A refused renewal raises AuthError: it is reported below with the
+                # reason and the repair, not as a traceback.
+                s.headers.update(loaders.refresh_headers(force=True, session=s))
+                req = get_req(session=s)
+                auth_retried = True
+                continue
 
             keep_request = False
             break

@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+The next final release is `9.0.1`. Removing the MetaTables public API and CLI
+surface is a breaking change and warrants a major version, not an `8.1.x`
+patch. The removal already shipped in `8.1.26` and `8.1.27`; this version
+declaration introduces no further functionality removal. `9.0.0` was previously
+published and yanked, so its distribution filenames cannot be reused.
+
 ADR 0034 removes the SDK-owned MetaTables implementation and domain workflow
 surface described in earlier entries below. See the
 [migration guide](docs/migrations/metatables-sdk-removal.md) for the final package
@@ -168,6 +174,19 @@ boundary and breaking changes.
   The backend no longer serves `import-branch/`.
 
 ### Fixed
+
+- When the backend refuses to renew credentials that were in the process
+  environment, the error now says what happened and what to do instead of
+  "JWT refresh failed with status 401": when the refresh token expired, or that
+  it was refused before its expiry; whether the pair comes from the working
+  directory's `.env` (named) or from the program that started the process; the
+  saved session of that backend with its user and validity; and the repair,
+  `mainsequence refresh-token` in that directory or starting the process without
+  `MAINSEQUENCE_ACCESS_TOKEN` and `MAINSEQUENCE_REFRESH_TOKEN`, with a sign-in
+  first when no saved session is usable. A request that receives `401` and then
+  a refused renewal raises that error instead of logging a traceback and
+  returning the backend's bare answer. A renewal that fails with another
+  status is reported as a backend failure, not as a credential problem.
 
 - A CLI command that checks the session before it runs no longer ends in a
   Python traceback when the backend cannot be reached. A connection error or a

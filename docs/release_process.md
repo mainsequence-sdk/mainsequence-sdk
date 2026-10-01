@@ -64,11 +64,18 @@ pip install --pre mainsequence
 The logic lives in [`scripts/dev_release_version.py`][script] and is covered by
 `tests/test_dev_release_version.py`.
 
-Git tags are not used: this repository's tag history contains tags that do not
-correspond to anything that was released, for example a `v9.0.0` tag.
-For the same reason, a version declared in `pyproject.toml` that is ahead of the
-computed base does not change the result; the workflow log notes it and counts
-from PyPI anyway.
+Git tags are not used to compute the version. A declared minor or major release
+keeps its own number; PyPI does not replace it with the next patch of the latest
+final release.
+
+### Breaking changes
+
+Removing public SDK APIs or commands requires a major version. The MetaTables
+extraction makes the next final release `9.0.1`, with development releases
+`9.0.1.devN`. Version `9.0.0` was previously published and yanked, and its
+distribution filenames cannot be reused. This declaration adds no further
+removals to the extraction already shipped in `8.1.26` and `8.1.27`; see the
+[migration guide](migrations/metatables-sdk-removal.md).
 
 ### Guards
 

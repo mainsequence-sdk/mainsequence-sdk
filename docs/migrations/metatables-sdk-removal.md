@@ -5,6 +5,21 @@ independent package. Its distribution is `mainsequence-metatable`; the import
 and the command are `metatables`. The extraction does not reduce unrelated Main
 Sequence platform functionality.
 
+## Release boundary
+
+The next final SDK release is `9.0.1`, marking the MetaTables extraction as a
+breaking public API change. Development publishes `9.0.1.devN`; merging
+`development` into `main` publishes final `9.0.1`.
+
+The extraction already shipped in SDK `8.1.26` and `8.1.27` despite being a
+breaking change. Those releases do not retain the former MetaTables imports or
+commands. `9.0.1` introduces no additional removal; it corrects the release
+classification. SDK `8.1.25` contains the former implementation, but its
+compatibility with a current backend must be verified before pinning it.
+
+Version `9.0.0` was previously published and yanked. Its distribution filenames
+cannot be reused, so this major-version transition starts at `9.0.1`.
+
 ## Install
 
 ```bash

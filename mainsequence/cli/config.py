@@ -756,6 +756,24 @@ def secure_store_available() -> bool:
     return _secure_keyring_backend() is not None
 
 
+def saved_session_summary(backend: str | None = None) -> dict:
+    """
+    Describe the saved session of a backend without any token value.
+
+    `usable` says whether its refresh token has not expired by its own claim,
+    `expires_at` is that claim in epoch seconds (None when absent) and
+    `username` is the recorded user. The process environment is not consulted.
+    """
+    tokens = _read_secure_tokens(backend)
+    refresh = (tokens.get("refresh") or "").strip()
+    expires_at = token_expiry(refresh)
+    return {
+        "username": str(tokens.get("username") or ""),
+        "expires_at": expires_at,
+        "usable": bool(refresh) and (expires_at is None or expires_at > int(time.time())),
+    }
+
+
 def stored_session_available(backend: str | None = None) -> bool:
     """
     Return whether the credential store holds a renewable session for a backend.
