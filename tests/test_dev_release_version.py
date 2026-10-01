@@ -1,7 +1,7 @@
 """Contract for the development-release version computed by the publish workflow.
 
 The standard these tests pin down is documented in
-`docs/knowledge/release_process.md`.
+`docs/release_process.md`.
 """
 
 from __future__ import annotations
@@ -72,8 +72,12 @@ def test_dev_version_is_the_declared_version_with_a_dev_serial():
     )
 
 
-def test_a_planned_minor_release_keeps_its_own_number():
-    assert dev_release_version.dev_version(Version("8.2.0"), Version("8.1.19"), 7) == "8.2.0.dev7"
+@pytest.mark.parametrize("declared", ["8.2.0", "9.0.1"])
+def test_a_planned_minor_or_major_release_keeps_its_own_number(declared):
+    assert (
+        dev_release_version.dev_version(Version(declared), Version("8.1.27"), 7)
+        == f"{declared}.dev7"
+    )
 
 
 @pytest.mark.parametrize("declared", ["8.1.19", "8.1.18"])

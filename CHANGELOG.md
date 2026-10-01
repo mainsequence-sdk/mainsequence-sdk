@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+The next final release is `9.0.1`. Removing the MetaTables public API and CLI
+surface is a breaking change and warrants a major version, not an `8.1.x`
+patch. The removal already shipped in `8.1.26` and `8.1.27`; this version
+declaration introduces no further functionality removal. `9.0.0` was previously
+published and yanked, so its distribution filenames cannot be reused.
+
 ADR 0034 removes the SDK-owned MetaTables implementation and domain workflow
 surface described in earlier entries below. See the
 [migration guide](docs/migrations/metatables-sdk-removal.md) for the final package
