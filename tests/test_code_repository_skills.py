@@ -2,13 +2,11 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import re
 from pathlib import Path
 
 import pytest
 
-from mainsequence import code_repository_skills
 from mainsequence.cli import api as cli_api
 from mainsequence.cli.api import ApiError
 from mainsequence.code_repository_skills import (
@@ -16,7 +14,7 @@ from mainsequence.code_repository_skills import (
     PLATFORM_SKILL_URI_PREFIX,
     CodeRepositorySkillAssemblyError,
     PlatformCodeRepositorySkillCatalog,
-    install_dual_source_code_repository_skills,
+    install_platform_code_repository_skills,
     parse_platform_code_repository_skill_catalog,
 )
 
@@ -206,26 +204,6 @@ def test_parse_platform_catalog_accepts_current_backend_skill_membership():
     }
 
 
-def test_dual_source_install_preserves_current_backend_skill_hierarchy(tmp_path):
-    sdk_skills = tmp_path / "installed-sdk" / "agent_scaffold" / "skills"
-    sdk_skill = sdk_skills / "sdk_code_repository_execution"
-    sdk_skill.mkdir(parents=True)
-    (sdk_skill / "SKILL.md").write_text("sdk execution", encoding="utf-8")
-    code_repository_dir = tmp_path / "code-repository"
-
-    install_dual_source_code_repository_skills(
-        code_repository_dir=code_repository_dir,
-        sdk_library_name="mainsequence",
-        sdk_skills_path=sdk_skills,
-        sdk_version="6.0.4",
-        platform_catalog=_current_backend_catalog(),
-    )
-
-    managed_root = code_repository_dir / ".agents" / "skills" / "mainsequence"
-    for resource_path in _CURRENT_BACKEND_SKILL_PATHS.values():
-        assert (managed_root / resource_path.removeprefix("skills/")).is_file()
-
-
 def test_parse_platform_catalog_rejects_undeclared_duplicate_and_unsafe_skills():
     rows = _platform_rows()
     rows.append(_platform_rows(skill_names=("undeclared_skill",))[1])
@@ -292,141 +270,29 @@ def test_parse_platform_catalog_rejects_invalid_front_matter_and_schema_version(
         )
 
 
-def test_dual_source_install_replaces_only_managed_tree_and_records_both_sources(
-    tmp_path,
-):
-    sdk_skills = tmp_path / "installed-sdk" / "agent_scaffold" / "skills"
-    sdk_skill = sdk_skills / "sdk_code_repository_execution"
-    sdk_skill.mkdir(parents=True)
-    (sdk_skill / "SKILL.md").write_text("sdk execution", encoding="utf-8")
-    maintenance_skill = sdk_skills / "maintenance" / "code_repository_maintenance"
-    maintenance_skill.mkdir(parents=True)
-    (maintenance_skill / "SKILL.md").write_text(
-        "sdk code repository maintenance",
-        encoding="utf-8",
+def test_platform_refresh_replaces_only_platform_namespace(tmp_path):
+    repository = tmp_path / "repository"
+    root = repository / ".agents" / "skills"
+    sdk = root / "mainsequence" / "SDK.txt"
+    sdk.parent.mkdir(parents=True)
+    sdk.write_text("unchanged", encoding="utf-8")
+    stale = root / "mainsequence_platform" / "retired" / "SKILL.md"
+    stale.parent.mkdir(parents=True)
+    stale.write_text("old", encoding="utf-8")
+    catalog = _current_backend_catalog()
+    destination, installed = install_platform_code_repository_skills(
+        code_repository_dir=repository, platform_catalog=catalog
     )
-
-    code_repository_dir = tmp_path / "code-repository"
-    managed_root = code_repository_dir / ".agents" / "skills" / "mainsequence"
-    stale_skill = managed_root / "stale"
-    stale_skill.mkdir(parents=True)
-    (stale_skill / "SKILL.md").write_text("stale", encoding="utf-8")
-    code_repository_owned = code_repository_dir / ".agents" / "skills" / "repository_owned"
-    code_repository_owned.mkdir(parents=True)
-    (code_repository_owned / "SKILL.md").write_text("keep", encoding="utf-8")
-
-    result = install_dual_source_code_repository_skills(
-        code_repository_dir=code_repository_dir,
-        sdk_library_name="mainsequence",
-        sdk_skills_path=sdk_skills,
-        sdk_version="4.4.34",
-        platform_catalog=_platform_catalog(),
-    )
-
-    assert not stale_skill.exists()
-    assert (managed_root / "sdk_code_repository_execution" / "SKILL.md").read_text(
-        encoding="utf-8"
-    ) == "sdk execution"
-    assert (managed_root / "maintenance" / "code_repository_maintenance" / "SKILL.md").read_text(
-        encoding="utf-8"
-    ) == "sdk code repository maintenance"
-    assert (managed_root / "alpha_skill" / "SKILL.md").is_file()
-    assert (managed_root / "beta_skill" / "SKILL.md").is_file()
-    assert (managed_root / "gamma_skill" / "SKILL.md").is_file()
-    assert (code_repository_owned / "SKILL.md").read_text(encoding="utf-8") == "keep"
-    assert [(item.name, item.owner) for item in result.installed] == [
-        ("maintenance", "sdk"),
-        ("sdk_code_repository_execution", "sdk"),
-        ("alpha_skill", "platform"),
-        ("beta_skill", "platform"),
-        ("gamma_skill", "platform"),
-    ]
-
-    sentinel = result.sentinel_path.read_text(encoding="utf-8")
-    assert "schema=2" in sentinel
-    assert "pinned_version=4.4.34" in sentinel
-    assert "copied_at_utc=" in sentinel
-    assert "installed_at_utc=" in sentinel
-    assert "sdk_version=4.4.34" in sentinel
-    assert "platform_retrieved_at_utc=" in sentinel
-    assert "platform_manifest_version=2" in sentinel
-    assert f"platform_manifest_sha256={'a' * 64}" in sentinel
-    assert "platform_resource_count=4" in sentinel
-    assert "platform_skill_count=3" in sentinel
+    assert destination == root / "mainsequence_platform"
+    assert not stale.exists()
+    assert sdk.read_text() == "unchanged"
+    for skill in catalog.skills:
+        assert destination.joinpath(*skill.relative_path.parts).read_text() == skill.content
+    assert {item.owner for item in installed} == {"platform"}
     assert (
-        "platform_resource.beta_skill.uri=mainsequence://platform/skills/beta-skill"
-    ) in sentinel
-
-
-def test_dual_source_install_rejects_sdk_platform_path_collision_without_writes(
-    tmp_path,
-):
-    sdk_skills = tmp_path / "installed-sdk" / "agent_scaffold" / "skills"
-    colliding_skill = sdk_skills / "beta_skill"
-    colliding_skill.mkdir(parents=True)
-    (colliding_skill / "SKILL.md").write_text("sdk collision", encoding="utf-8")
-    code_repository_dir = tmp_path / "code-repository"
-    existing = code_repository_dir / ".agents" / "skills" / "mainsequence" / "existing" / "SKILL.md"
-    existing.parent.mkdir(parents=True)
-    existing.write_text("keep", encoding="utf-8")
-
-    with pytest.raises(CodeRepositorySkillAssemblyError, match="collision"):
-        install_dual_source_code_repository_skills(
-            code_repository_dir=code_repository_dir,
-            sdk_library_name="mainsequence",
-            sdk_skills_path=sdk_skills,
-            sdk_version="4.4.34",
-            platform_catalog=_platform_catalog(),
-        )
-
-    assert existing.read_text(encoding="utf-8") == "keep"
-
-
-def test_dual_source_install_restores_previous_tree_when_final_swap_fails(
-    monkeypatch,
-    tmp_path,
-):
-    sdk_skills = tmp_path / "installed-sdk" / "agent_scaffold" / "skills"
-    sdk_skill = sdk_skills / "sdk_code_repository_execution"
-    sdk_skill.mkdir(parents=True)
-    (sdk_skill / "SKILL.md").write_text("sdk execution", encoding="utf-8")
-
-    code_repository_dir = tmp_path / "code-repository"
-    managed_root = code_repository_dir / ".agents" / "skills" / "mainsequence"
-    previous = managed_root / "previous" / "SKILL.md"
-    previous.parent.mkdir(parents=True)
-    previous.write_text("previous valid tree", encoding="utf-8")
-    previous_sentinel = managed_root / "PINNED_FROM.txt"
-    previous_sentinel.write_text(
-        "schema=2\nsdk_version=previous\n",
-        encoding="utf-8",
+        f"platform_manifest_sha256={catalog.manifest_sha256}"
+        in (destination / "PINNED_FROM.txt").read_text()
     )
-
-    real_replace = os.replace
-    replace_calls = 0
-
-    def _fail_staging_swap(source, destination):
-        nonlocal replace_calls
-        replace_calls += 1
-        if replace_calls == 2:
-            raise OSError("simulated final swap failure")
-        return real_replace(source, destination)
-
-    monkeypatch.setattr(code_repository_skills.os, "replace", _fail_staging_swap)
-
-    with pytest.raises(OSError, match="simulated final swap failure"):
-        install_dual_source_code_repository_skills(
-            code_repository_dir=code_repository_dir,
-            sdk_library_name="mainsequence",
-            sdk_skills_path=sdk_skills,
-            sdk_version="4.4.34",
-            platform_catalog=_platform_catalog(),
-        )
-
-    assert previous.read_text(encoding="utf-8") == "previous valid tree"
-    assert previous_sentinel.read_text(encoding="utf-8") == ("schema=2\nsdk_version=previous\n")
-    assert not list(managed_root.parent.glob(".mainsequence.backup-*"))
-    assert not list(managed_root.parent.glob(".mainsequence.staging-*"))
 
 
 def test_cli_fetch_uses_authenticated_mcp_resources(monkeypatch):
@@ -708,8 +574,7 @@ def test_docs_do_not_reference_unsupported_agent_state_files():
     }
     forbidden_patterns = (
         re.compile(
-            r"\.agents(?:/|\.)"
-            r"(?:tasks?|status|record|journal|local[_-]?journal)(?:\.md)?\b",
+            r"\.agents(?:/|\.)" r"(?:tasks?|status|record|journal|local[_-]?journal)(?:\.md)?\b",
             re.IGNORECASE,
         ),
         re.compile(r"\bproject[- ]state (?:files?|records?)\b", re.IGNORECASE),

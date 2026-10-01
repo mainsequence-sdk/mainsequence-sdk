@@ -369,139 +369,68 @@ mainsequence skills path sdk_code_repository_execution
 mainsequence skills path maintenance/code_repository_maintenance
 ```
 
-### Updating CodeRepository agent skills
+### Updating SDK-owned skills
 
-`mainsequence code-repository update-agent-skills --path <CODE_REPOSITORY>` performs one
-dual-source update:
+`mainsequence code-repository update-agent-skills --path <CODE_REPOSITORY>`
+copies only the target checkout's installed `agent_scaffold/skills` bundle.
+It requires neither a signed-in session nor a reachable backend. The SDK owns
+the entire `.agents/skills/mainsequence/` namespace: every file and folder not
+shipped by that installed version is removed. This is a replacement, not a
+merge with old skills or platform content.
 
-1. it resolves SDK-owned execution skills from the target code repository's installed
-   `agent_scaffold/skills` and records that installed SDK version;
-2. it uses the already-configured platform JWT to initialize `/mcp`, discover
-   the server-owned platform catalog with `resources/list`, reads the ontology
-   first, and retrieves the skills declared by `ontology.skill_resources` with
-   `resources/read`;
-3. it validates one complete manifest revision, generic URI/name/path/front-
-   matter rules, every content hash, and the SDK/platform destination ownership
-   map; and
-4. it stages the combined result before replacing only
-   `.agents/skills/mainsequence/`.
+The copy is staged and atomic, and its `PINNED_FROM.txt` records the installed
+library's `pinned_version` and source path. Source checkouts, overlapping paths,
+and destinations escaping the checkout are protected. Failed replacement
+restores the previous namespace. Other libraries' skill folders are untouched.
 
-The command does not cache or package platform resources in the SDK. It
-requires the backend for the platform lane. The ontology is read and hashed as
-part of the platform manifest identity and its `skill_resources` array is the
-authoritative skill index. The SDK does not pin concrete platform skill names
-or MCP list order. A valid additive platform skill is accepted without an SDK
-catalog change, while missing, undeclared, duplicate, unsafe, or internally
-inconsistent platform skill resources are rejected. Unrelated MCP resources
-are ignored and not read. Only validated platform skill resources are
-materialized under `.agents/skills/mainsequence/` in deterministic name/URI
-order.
+After an SDK upgrade, refresh both SDK-owned skills and the managed Main
+Sequence instructions when the user requests those updates:
 
-If authentication, transport, unsupported manifest schema, catalog validation,
-staging, or final replacement fails, the command exits non-zero and preserves
-the previous managed tree and sentinel. It never changes repository-owned skills
-outside `.agents/skills/mainsequence/`, and it is not run implicitly when an
-agent starts.
-
-Use `--json` for the machine-readable result. Existing top-level compatibility
-fields remain, while `sdk`, `platform`, and each `updated[].owner` identify the
-two independent sources:
-
-```json
-{
-  "code_repository": "/code-repository",
-  "library_name": "mainsequence",
-  "namespace": "mainsequence",
-  "pinned_version": "5.0.0",
-  "sdk": {
-    "library_name": "mainsequence",
-    "version": "5.0.0",
-    "skills_path": "/code-repository/.venv/lib/pythonX.Y/site-packages/agent_scaffold/skills"
-  },
-  "platform": {
-    "source_url": "https://platform.example/mcp",
-    "manifest_version": 2,
-    "manifest_sha256": "<sha256>",
-    "ontology_uri": "mainsequence://platform/ontology",
-    "ontology_sha256": "<sha256>",
-    "resources": [
-      {
-        "name": "ontology",
-        "uri": "mainsequence://platform/ontology",
-        "path": "ontology/platform.json",
-        "content_sha256": "<sha256>"
-      },
-      {
-        "name": "a2a_communication",
-        "uri": "mainsequence://platform/skills/a2a-communication",
-        "path": "skills/agents/a2a_communication/SKILL.md",
-        "content_sha256": "<sha256>"
-      },
-      {
-        "name": "code_repository_design",
-        "uri": "mainsequence://platform/skills/code-repository-design",
-        "path": "skills/platform/code_repository_design/SKILL.md",
-        "content_sha256": "<sha256>"
-      },
-      {
-        "name": "code_repository_to_agent",
-        "uri": "mainsequence://platform/skills/code-repository-to-agent",
-        "path": "skills/agents/code_repository_to_agent/SKILL.md",
-        "content_sha256": "<sha256>"
-      }
-    ],
-    "skills": [
-      {
-        "name": "a2a_communication",
-        "uri": "mainsequence://platform/skills/a2a-communication",
-        "path": "agents/a2a_communication/SKILL.md",
-        "content_sha256": "<sha256>"
-      },
-      {
-        "name": "code_repository_design",
-        "uri": "mainsequence://platform/skills/code-repository-design",
-        "path": "platform/code_repository_design/SKILL.md",
-        "content_sha256": "<sha256>"
-      },
-      {
-        "name": "code_repository_to_agent",
-        "uri": "mainsequence://platform/skills/code-repository-to-agent",
-        "path": "agents/code_repository_to_agent/SKILL.md",
-        "content_sha256": "<sha256>"
-      }
-    ]
-  },
-  "updated": [
-    {
-      "name": "sdk_code_repository_execution",
-      "owner": "sdk"
-    },
-    {
-      "name": "maintenance",
-      "owner": "sdk"
-    },
-    {
-      "name": "a2a_communication",
-      "owner": "platform"
-    },
-    {
-      "name": "code_repository_design",
-      "owner": "platform"
-    },
-    {
-      "name": "code_repository_to_agent",
-      "owner": "platform"
-    }
-  ]
-}
+```bash
+uv run --offline mainsequence code-repository update-agent-skills --path .
+uv run --offline mainsequence code-repository update AGENTS.md --path .
 ```
 
-The schema-2 `PINNED_FROM.txt` retains the schema-1 compatibility fields
-(`library_name`, `namespace`, `pinned_version`, `skills_path`,
-`copied_at_utc`, and `command`) and adds `installed_at_utc`, the `sdk_*`
-fields, `platform_source_url`, `platform_retrieved_at_utc`, platform
-manifest/ontology identity, `platform_resource_count`,
-`platform_skill_count`, and one `platform_resource.<name>.*` group for the
-ontology and each installed platform skill.
+The first command deletes retired skills, including the old table workflow
+folders. The second updates the Main Sequence managed block in `AGENTS.md`;
+text outside that block is preserved. Without managed markers, the existing
+`update AGENTS.md` command replaces the file from the template.
+
+`update-sdk` upgrades the dependency and reports a missing or mismatched skill
+pin. It does not silently modify skills or `AGENTS.md`. Use the refreshed
+checkout's CLI, not an older global CLI installation. Supplying
+`--code-repository-uid` requests a platform identity assertion and may require
+backend access; omit it for a local copy.
+
+Use `--json` to report `sdk`, `pinned_version`, `destination_root`,
+`sentinel_path`, and the installed `updated` entries.
+
+### Updating platform-owned skills
+
+Platform skills have a separate namespace and authenticated command:
+
+```bash
+mainsequence code-repository update-platform-skills --path .
+```
+
+This discovers the backend's catalog through authenticated MCP resources,
+validates the ontology declarations, manifest identity, URI/name/path/front
+matter, and content hashes, then atomically replaces only
+`.agents/skills/mainsequence_platform/`. The SDK-owned `mainsequence`
+namespace and other libraries are untouched. The platform sentinel records the
+catalog's original source, retrieval time, and manifest/resource hashes.
+
+Existing mixed installations are not retained in the SDK namespace. Refresh
+SDK skills to remove those entries, then explicitly refresh platform skills
+into their own namespace. A platform refresh failure does not block local SDK
+skill copying.
+
+The backend owns catalog membership; SDK constants do not pin concrete skill
+names or list order. Missing, duplicate, undeclared, unsafe, or inconsistent
+resources fail before installation. Platform content is never vendored in the
+SDK. The `--json` result reports `platform`, the destination, and the installed
+entries.
+
+
 
 ## Troubleshooting

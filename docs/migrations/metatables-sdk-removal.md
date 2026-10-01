@@ -7,9 +7,7 @@ Sequence platform functionality.
 
 ## Release boundary
 
-The next final SDK release is `9.0.1`, marking the MetaTables extraction as a
-breaking public API change. Development publishes `9.0.1.devN`; merging
-`development` into `main` publishes final `9.0.1`.
+SDK `9.0.1` marks the MetaTables extraction as a breaking public API change.
 
 The extraction already shipped in SDK `8.1.26` and `8.1.27` despite being a
 breaking change. Those releases do not retain the former MetaTables imports or
@@ -21,6 +19,20 @@ Version `9.0.0` was previously published and yanked. Its distribution filenames
 cannot be reused, so this major-version transition starts at `9.0.1`.
 
 ## Install
+
+After upgrading the SDK, refresh its owned skill namespace and managed routing
+instructions with the installed checkout's CLI. Neither command requires login:
+
+```bash
+uv run --offline mainsequence code-repository update-agent-skills --path .
+uv run --offline mainsequence code-repository update AGENTS.md --path .
+```
+
+The copy completely replaces `.agents/skills/mainsequence/` with the installed
+SDK bundle, deleting retired SDK table skills. It does not change
+`.agents/skills/metatables/` or other libraries' skills. Platform skills use
+the separate authenticated `update-platform-skills` command and namespace;
+they are no longer mixed into the SDK-owned folder.
 
 ```bash
 uv add mainsequence-metatable

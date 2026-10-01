@@ -172,21 +172,36 @@ to publish the CodeRepository changes.
 ## Refresh Managed Skills And Instructions
 
 Run either managed-scaffold command only when the user explicitly requests that
-specific update. When both are requested, refresh the SDK-owned and
-platform-owned skills first, then update the managed Main Sequence block in
+specific update. When both are requested, refresh the SDK-owned skills first,
+then update the managed Main Sequence block in
 `AGENTS.md`:
 
 ```bash
-mainsequence code-repository update-agent-skills --path .
-mainsequence code-repository update AGENTS.md --path .
+uv run --offline mainsequence code-repository update-agent-skills --path .
+uv run --offline mainsequence code-repository update AGENTS.md --path .
 ```
 
 Verify `.agents/skills/mainsequence/PINNED_FROM.txt` after success:
 
-- `sdk_version` must match the installed CodeRepository SDK;
-- platform manifest, ontology, and resource hashes must be present;
+- `pinned_version` must match the installed CodeRepository SDK;
+- the namespace must contain exactly the installed SDK's skill folders;
 - repository-owned skills outside `.agents/skills/mainsequence/` must remain
   untouched.
+
+The SDK owns the whole `mainsequence` namespace. Copying it requires no login
+or platform access and deletes obsolete folders, including retired table
+workflow skills. Do not preserve old or platform-owned content in that folder.
+The installed `metatables` package owns table workflows in its own namespace.
+
+When the user requests platform skills, use the separate authenticated command:
+
+```bash
+mainsequence code-repository update-platform-skills --path .
+```
+
+It owns only `.agents/skills/mainsequence_platform/` and records the platform
+manifest, ontology, and resource hashes there. A backend or authentication
+failure in this command must not block a local SDK skill copy.
 
 The skill update is staged and atomic. If it fails, report the failing lane and
 preserve the previous valid managed tree. Because this operation can update

@@ -2,19 +2,17 @@
 
 Date: 2026-06-14
 
-> Current Main Sequence behavior: the generic `copy_scaffold_skills(...)`
-> helper and its schema-1 SDK-only sentinel remain supported for extension
-> libraries. The Main Sequence `code-repository update-agent-skills` command now uses
-> that helper's dry-run/source-validation behavior as one lane of a
-> dual-source installation, combines installed SDK skills with authenticated
-> platform skills, and writes its schema-2 dual-provenance sentinel. The
-> completed tasks below describe the original reusable-copy extraction and are
-> retained as historical implementation context.
+> Updated 2026-10-01 for issue #181: `copy_scaffold_skills(...)` atomically
+> replaces the entire library-owned namespace, removes entries absent from the
+> installed bundle, and writes its schema-1 installed-version sentinel. The SDK
+> command is local and needs no sign-in. Platform skills are refreshed separately
+> into `mainsequence_platform`; they are never merged into the SDK namespace.
+> The completed tasks below retain the original reusable-copy extraction history.
 
 ## Context
 
-`mainsequence code-repository update-agent-skills` currently owns one hard-coded copy
-flow:
+Before this reusable-copy extraction, `mainsequence code-repository
+update-agent-skills` owned one hard-coded copy flow:
 
 1. resolve the target project;
 2. resolve that project's installed `agent_scaffold/skills/` bundle from its
@@ -172,9 +170,9 @@ Behavior:
   - skip files;
   - skip names starting with `.` or `__`;
   - copy the directory to the destination namespace;
-  - overwrite only the matching destination folder.
-- Do not delete unrelated folders in the destination namespace unless they are
-  overwritten by a copied source folder.
+  - stage it for atomic replacement of the destination namespace.
+- Delete every file or folder in the library-owned destination namespace that
+  is absent from the installed bundle. Do not preserve retired SDK instructions.
 - Do not touch CodeRepository-owned skills outside the destination namespace.
 - When `dry_run=True`, return the same copy plan without writing files.
 - Write the sentinel after all non-dry-run copies succeed.
@@ -392,6 +390,6 @@ Update CLI tests:
 ## Non-Goals
 
 - Do not make extension libraries copy into `.agents/skills/mainsequence/`.
-- Do not delete existing CodeRepository-owned skill folders.
+- Do not delete CodeRepository-owned skills outside the library-owned namespace.
 - Do not require extension libraries to use Typer or the Main Sequence CLI.
 - Do not build the project-health/version-drift checker in the first change.
