@@ -1,5 +1,12 @@
 # ADR 0037: The session lives in the operating system credential store
 
+Amended 2026-10-01: the error for a refused pair from the environment says
+when the refresh token expired or that it was refused before its expiry, which
+`.env` holds the pair when the working directory's does, the saved session's
+user and validity, and the command that repairs it. A renewal that fails with
+any other answer than `400`, `401` or `403` is reported as a backend failure.
+See decision 4.
+
 Amended 2026-09-30: on macOS the CLI asks for the secret of a Keychain entry
 only when the entry carries the CLI's own mark. The first implementation read
 any entry under the name, and an entry that another program had written made
@@ -88,8 +95,12 @@ CodeRepository has its own virtual environment. These are the observations of
 4. Credentials already in the process environment still win over the saved
    session, and a rejected pair from the environment is not replaced by the
    saved session, because that pair may belong to another user or backend. The
-   error names the environment as the source and says whether a saved session
-   exists.
+   error says when the refresh token expired, or that it was refused before its
+   expiry; where the pair came from, naming the working directory's `.env` when
+   it holds the pair; the saved session's user and validity, or that there is
+   none; and the repair: `mainsequence refresh-token` in that directory, or
+   starting the process without the two variables, and a sign-in first when no
+   saved session is usable. No token value appears in it.
 
 ## The record
 

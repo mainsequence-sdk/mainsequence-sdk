@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import base64
+import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -118,36 +122,189 @@ def test_bootstrap_records_that_no_credentials_were_found(credential_source, mon
     assert credential_source() is None
 
 
-def test_rejected_environment_pair_is_named_instead_of_the_saved_session(monkeypatch):
+def _jwt(expires_at: int) -> str:
+    def part(data: dict) -> str:
+        return base64.urlsafe_b64encode(json.dumps(data).encode()).decode().rstrip("=")
+
+    return f"{part({'alg': 'none'})}.{part({'exp': expires_at, 'token_type': 'refresh'})}.signature"
+
+
+@pytest.fixture
+def refused(monkeypatch, tmp_path):
+    """A process whose environment pair the backend refused, on a machine with a saved session."""
     from mainsequence import bootstrap as bootstrap_module
     from mainsequence.client import utils
 
+    now = int(time.time())
+    expired_at, saved_until = now - 13 * 3600, now + 4 * 86400
+    refresh = _jwt(expired_at)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(utils, "AUTH_ENDPOINT", "http://127.0.0.1:8000")
     monkeypatch.setattr(bootstrap_module, "_credential_source", "environment")
-    monkeypatch.setattr(config, "stored_session_available", lambda backend=None: True)
-    hint = utils._jwt_reauth_hint()
-    assert "MAINSEQUENCE_ACCESS_TOKEN / MAINSEQUENCE_REFRESH_TOKEN" in hint
-    assert "A saved CLI session exists for this backend and was not used." in hint
-
-    monkeypatch.setattr(config, "stored_session_available", lambda backend=None: False)
-    hint = utils._jwt_reauth_hint()
-    assert "No saved CLI session exists for this backend." in hint
-    assert "mainsequence login" in hint
-
-
-def test_rejected_saved_session_keeps_the_login_hint_and_does_not_read_the_store(monkeypatch):
-    from mainsequence import bootstrap as bootstrap_module
-    from mainsequence.client import utils
-
-    store_reads = []
-    monkeypatch.setattr(bootstrap_module, "_credential_source", "store")
     monkeypatch.setattr(
-        config, "stored_session_available", lambda backend=None: store_reads.append(1) or True
+        config, "get_persistent_config", lambda: {"backend_url": "http://127.0.0.1:8000"}
+    )
+    monkeypatch.setattr(
+        config,
+        "saved_session_summary",
+        lambda backend=None: {
+            "usable": backend == "http://127.0.0.1:8000",
+            "username": "dev@example.test",
+            "expires_at": saved_until,
+        },
+    )
+    monkeypatch.setenv("MAINSEQUENCE_ACCESS_TOKEN", "copied-access")
+    monkeypatch.setenv("MAINSEQUENCE_REFRESH_TOKEN", refresh)
+    return SimpleNamespace(
+        utils=utils, directory=tmp_path, refresh=refresh, expired_at=expired_at, saved_until=saved_until
+    )
+
+
+def test_refused_pair_from_a_dotenv_names_the_file_the_expiry_and_the_repair(refused):
+    utils = refused.utils
+    env_file = refused.directory / ".env"
+    env_file.write_text(
+        "MAINSEQUENCE_ENDPOINT=http://127.0.0.1:8000\n"
+        f"export MAINSEQUENCE_REFRESH_TOKEN='{refused.refresh}' # exported by a tool\n"
     )
 
     hint = utils._jwt_reauth_hint()
 
-    assert "`mainsequence logout` and `mainsequence login`" in hint
-    assert store_reads == []
+    assert f" The refresh token expired on {utils._format_utc(refused.expired_at)}." in hint
+    assert f" These credentials come from the token lines of {env_file}, not from your saved session." in hint
+    assert (
+        " Your saved session for http://127.0.0.1:8000 (dev@example.test) is usable, valid until "
+        f"{utils._format_utc(refused.saved_until)}: run `mainsequence refresh-token` in "
+        f"{refused.directory} to remove those lines, and the next start uses it."
+    ) in hint
+    assert refused.refresh not in hint
+    assert "copied-access" not in hint
+
+
+def test_refused_pair_set_by_the_starting_program_says_to_start_without_it(refused):
+    (refused.directory / ".env").write_text("MAINSEQUENCE_REFRESH_TOKEN=another-value\n")
+
+    hint = refused.utils._jwt_reauth_hint()
+
+    assert "set by the program that started it, not taken from your saved session." in hint
+    assert ": start the process without those two variables, and the next start uses it." in hint
+
+
+def test_refused_pair_without_a_usable_saved_session_says_to_sign_in_first(refused, monkeypatch):
+    monkeypatch.setattr(
+        config,
+        "saved_session_summary",
+        lambda backend=None: {"usable": False, "username": "", "expires_at": None},
+    )
+
+    assert (
+        " There is no usable saved session for http://127.0.0.1:8000. Sign in with "
+        "`mainsequence login`, then start the process without those two variables."
+    ) in refused.utils._jwt_reauth_hint()
+
+
+def test_signing_in_to_another_backend_names_it_and_its_base_folder(refused, monkeypatch):
+    monkeypatch.setattr(
+        config, "get_persistent_config", lambda: {"backend_url": "https://api.main-sequence.app/"}
+    )
+    monkeypatch.setattr(
+        config,
+        "saved_session_summary",
+        lambda backend=None: {"usable": False, "username": "", "expires_at": None},
+    )
+
+    assert (
+        "Sign in with `mainsequence login http://127.0.0.1:8000 <base folder>`"
+        in refused.utils._jwt_reauth_hint()
+    )
+
+
+def test_refused_token_that_has_not_expired_is_called_revoked(refused, monkeypatch):
+    monkeypatch.setenv("MAINSEQUENCE_REFRESH_TOKEN", _jwt(int(time.time()) + 3600))
+
+    assert (
+        " The refresh token has not expired: the backend revoked it, or it was issued by "
+        "another backend."
+    ) in refused.utils._jwt_reauth_hint()
+
+
+def test_refused_saved_session_says_to_sign_in_again_and_does_not_read_the_store(refused, monkeypatch):
+    from mainsequence import bootstrap as bootstrap_module
+
+    monkeypatch.setattr(bootstrap_module, "_credential_source", "store")
+    monkeypatch.setattr(
+        config, "saved_session_summary", lambda backend=None: pytest.fail("The store was read")
+    )
+    monkeypatch.setattr(
+        config, "stored_session_available", lambda backend=None: pytest.fail("The store was read")
+    )
+
+    hint = refused.utils._jwt_reauth_hint()
+
+    assert hint.endswith(
+        " These credentials are your saved session for http://127.0.0.1:8000. "
+        "Sign in again with `mainsequence login`."
+    )
+
+
+def test_renewal_refusal_and_backend_failure_read_differently(refused, monkeypatch):
+    utils = refused.utils
+
+    class Answer:
+        status_code = 401
+
+        def json(self):
+            return {}
+
+    monkeypatch.setattr(utils.requests, "post", lambda *args, **kwargs: Answer())
+    provider = utils.JWTAuthProvider(
+        access_token="copied-access",
+        refresh_token=refused.refresh,
+        refresh_url="http://127.0.0.1:8000/auth/jwt-token/token/refresh/",
+    )
+
+    with pytest.raises(utils.AuthError) as refusal:
+        provider.refresh(force=True)
+    assert str(refusal.value).startswith(
+        "Main Sequence refused to renew the session of this process for "
+        "http://127.0.0.1:8000 (HTTP 401). The refresh token expired on "
+    )
+
+    Answer.status_code = 503
+    with pytest.raises(utils.AuthError) as failure:
+        provider.refresh(force=True)
+    assert str(failure.value) == (
+        "Main Sequence could not renew the session of this process for "
+        "http://127.0.0.1:8000: the backend answered HTTP 503. Try again when it is available."
+    )
+
+
+def test_request_reports_a_refused_renewal_with_its_reason(refused):
+    utils = refused.utils
+
+    class Answer:
+        status_code = 401
+        text = '{"detail": "Given token not valid for any token type"}'
+
+    class Session:
+        headers: dict = {}
+
+        def get(self, url, **kwargs):
+            return Answer()
+
+    class Loaders:
+        def refresh_headers(self, force=False, session=None):
+            if force:
+                raise utils.AuthError("Main Sequence refused to renew the session." + utils._jwt_reauth_hint())
+            return {"Authorization": "Bearer copied-access"}
+
+    response = utils.make_request(Session(), "GET", "http://127.0.0.1:8000/api/v1/users/me/", Loaders())
+
+    assert response.status_code == 401
+    assert response.code == "auth_error"
+    assert response.text.startswith("Main Sequence refused to renew the session.")
+    assert "start the process without those two variables" in response.text
+    assert "Given token not valid" not in response.text
 
 
 def test_package_import_bootstraps_before_client_endpoint_and_provider_initialization(tmp_path):

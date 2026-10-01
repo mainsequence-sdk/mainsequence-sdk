@@ -175,6 +175,19 @@ boundary and breaking changes.
 
 ### Fixed
 
+- When the backend refuses to renew credentials that were in the process
+  environment, the error now says what happened and what to do instead of
+  "JWT refresh failed with status 401": when the refresh token expired, or that
+  it was refused before its expiry; whether the pair comes from the working
+  directory's `.env` (named) or from the program that started the process; the
+  saved session of that backend with its user and validity; and the repair,
+  `mainsequence refresh-token` in that directory or starting the process without
+  `MAINSEQUENCE_ACCESS_TOKEN` and `MAINSEQUENCE_REFRESH_TOKEN`, with a sign-in
+  first when no saved session is usable. A request that receives `401` and then
+  a refused renewal raises that error instead of logging a traceback and
+  returning the backend's bare answer. A renewal that fails with another
+  status is reported as a backend failure, not as a credential problem.
+
 - A CLI command that checks the session before it runs no longer ends in a
   Python traceback when the backend cannot be reached. A connection error or a
   timeout during that check prints one line that names the backend URL and the

@@ -182,11 +182,27 @@ Functionally this is the same token model as CLI-managed JWT auth:
 This mode is useful when a launcher, signed terminal, or controlled runtime injects tokens into the environment instead of relying on persisted CLI storage.
 
 Credentials already in the process environment win over the saved CLI session.
-When the backend rejects that pair, the SDK does not try the saved session,
-because the pair may belong to another user or backend. The error says that the
-rejected credentials came from the environment, and whether a saved session
-exists for the backend. A stale pair usually comes from a shell export, an IDE
-run configuration, or a `.env` file that the tooling loads into the process.
+When the backend refuses to renew that pair, the SDK does not try the saved
+session, because the pair may belong to another user or backend. The error
+instead says, without any token value:
+
+- the backend, and whether the refresh token expired (with its date) or was
+  refused before its expiry, which means it was revoked or issued by another
+  backend;
+- where the pair came from: the working directory's `.env` when it holds those
+  tokens, which an IDE run configuration or a launcher loaded into the process,
+  otherwise the program that started the process;
+- the saved session of that backend: its user and until when it is usable, or
+  that there is none;
+- the repair. With a usable saved session, run `mainsequence refresh-token` in
+  that directory, which removes the token lines, or start the process without
+  the two variables; the next start uses the saved session. Without one, sign
+  in first with `mainsequence login` (another backend needs its address and
+  base folder).
+
+A renewal that fails for another reason than a refusal (any answer other than
+`400`, `401` or `403`) is reported as a backend failure, not as a credential
+problem.
 
 ## Request-bound caller identity
 
