@@ -1,25 +1,17 @@
-"""Dual-source Main Sequence code repository skill assembly.
+"""Authenticated platform skill catalog validation and installation.
 
-The existing ``mainsequence code-repository update-agent-skills`` command has two
-canonical inputs:
-
-* SDK-owned execution skills from the target code repository's installed
-  ``agent_scaffold/skills`` tree.
-* Platform-owned skills retrieved from authenticated MCP resources.
-
-Platform content is validated in memory and written only to the target code
-repository. It is never persisted in the installed SDK package.
+SDK-owned skills are mirrored separately by ``copy_scaffold_skills`` into the
+``mainsequence`` namespace. Platform resources use ``mainsequence_platform``;
+they are never mixed into the SDK-owned namespace or installed SDK package.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
-import os
 import re
 import shutil
 import tempfile
-import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -29,11 +21,10 @@ import yaml
 
 from .scaffold_skills import (
     PINNED_FROM_FILENAME,
-    CopiedScaffoldSkill,
-    copy_scaffold_skills,
+    _check_code_repository_guards,
+    _replace_managed_tree,
 )
 
-DUAL_SOURCE_SENTINEL_SCHEMA = "2"
 PLATFORM_RESOURCE_NAMESPACE = "mainsequence://platform/"
 PLATFORM_ONTOLOGY_URI = "mainsequence://platform/ontology"
 PLATFORM_SKILL_URI_PREFIX = f"{PLATFORM_RESOURCE_NAMESPACE}skills/"
@@ -127,20 +118,6 @@ class InstalledCodeRepositorySkill:
     source: str
     destination: Path
     content_sha256: str | None = None
-
-
-@dataclass(frozen=True)
-class DualSourceCodeRepositorySkillInstallResult:
-    """Result of one completed dual-source CodeRepository skill update."""
-
-    code_repository_dir: Path
-    destination_root: Path
-    sentinel_path: Path
-    sdk_library_name: str
-    sdk_version: str
-    sdk_skills_path: Path
-    platform_catalog: PlatformCodeRepositorySkillCatalog
-    installed: tuple[InstalledCodeRepositorySkill, ...]
 
 
 def parse_platform_code_repository_skill_catalog(
@@ -463,196 +440,70 @@ def _validate_platform_resource_payload(
     )
 
 
-def install_dual_source_code_repository_skills(
+def install_platform_code_repository_skills(
     *,
     code_repository_dir: Path,
-    sdk_library_name: str,
-    sdk_skills_path: Path,
-    sdk_version: str,
     platform_catalog: PlatformCodeRepositorySkillCatalog,
-    namespace: str = "mainsequence",
-    command: str = "mainsequence code-repository update-agent-skills",
     protected_code_repository_roots: Sequence[Path] = (),
-) -> DualSourceCodeRepositorySkillInstallResult:
-    """Install SDK-owned and platform-owned skills as one validated CodeRepository tree."""
-
-    sdk_plan = copy_scaffold_skills(
-        code_repository_dir=code_repository_dir,
-        library_name=sdk_library_name,
-        namespace=namespace,
-        skills_path=sdk_skills_path,
-        pinned_version=sdk_version,
-        command=command,
-        dry_run=True,
+) -> tuple[Path, tuple[InstalledCodeRepositorySkill, ...]]:
+    """Replace only the platform-owned mainsequence_platform skill namespace."""
+    repository = code_repository_dir.expanduser().resolve()
+    namespace = repository / ".agents" / "skills" / "mainsequence_platform"
+    if namespace.is_symlink():
+        raise CodeRepositorySkillAssemblyError("Platform namespace must not be a symlink.")
+    destination = namespace.resolve()
+    if not destination.is_relative_to(repository):
+        raise CodeRepositorySkillAssemblyError("Platform destination escapes the target checkout.")
+    _check_code_repository_guards(
+        code_repository_dir=repository,
         protected_code_repository_roots=protected_code_repository_roots,
+        code_repository_guard=None,
     )
-    _validate_source_ownership(
-        sdk_skills=sdk_plan.copied,
-        platform_skills=platform_catalog.skills,
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    staging = Path(
+        tempfile.mkdtemp(prefix=".mainsequence_platform.staging-", dir=destination.parent)
     )
-
-    destination_root = sdk_plan.destination_root
-    destination_parent = destination_root.parent
-    destination_parent.mkdir(parents=True, exist_ok=True)
-    staging_root = Path(
-        tempfile.mkdtemp(
-            prefix=f".{destination_root.name}.staging-",
-            dir=destination_parent,
-        )
-    )
-
-    installed: list[InstalledCodeRepositorySkill] = []
+    installed = []
+    lines = [
+        "schema=platform-1",
+        "owner=platform",
+        f"platform_source_url={_sentinel_value(platform_catalog.source_url)}",
+        f"platform_retrieved_at_utc={_utc_timestamp()}",
+        f"platform_manifest_version={platform_catalog.manifest_version}",
+        f"platform_manifest_sha256={platform_catalog.manifest_sha256}",
+        f"platform_ontology_sha256={platform_catalog.ontology_sha256}",
+    ]
     try:
-        for item in sdk_plan.copied:
-            staged_destination = staging_root / item.name
-            shutil.copytree(item.source, staged_destination)
-            installed.append(
-                InstalledCodeRepositorySkill(
-                    name=item.name,
-                    owner="sdk",
-                    source=str(item.source),
-                    destination=destination_root / item.name,
-                )
-            )
-
         for skill in platform_catalog.skills:
-            staged_destination = staging_root.joinpath(*skill.relative_path.parts)
-            staged_destination.parent.mkdir(parents=True, exist_ok=True)
-            staged_destination.write_text(skill.content, encoding="utf-8")
+            target = staging.joinpath(*skill.relative_path.parts)
+            if not target.resolve().is_relative_to(staging):
+                raise CodeRepositorySkillAssemblyError("Platform skill path escapes its namespace.")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(skill.content, encoding="utf-8")
             installed.append(
                 InstalledCodeRepositorySkill(
                     name=skill.name,
                     owner="platform",
                     source=skill.uri,
-                    destination=destination_root.joinpath(*skill.relative_path.parts),
+                    destination=destination.joinpath(*skill.relative_path.parts),
                     content_sha256=skill.content_sha256,
                 )
             )
-
-        sentinel_path = staging_root / PINNED_FROM_FILENAME
-        sentinel_path.write_text(
-            render_dual_source_sentinel(
-                sdk_library_name=sdk_library_name,
-                namespace=namespace,
-                sdk_version=sdk_version,
-                sdk_skills_path=sdk_plan.skills_path,
-                platform_catalog=platform_catalog,
-                command=command,
-            ),
-            encoding="utf-8",
-        )
-        _replace_managed_tree(
-            staging_root=staging_root,
-            destination_root=destination_root,
-        )
+        for resource in platform_catalog.resources:
+            prefix = f"platform_resource.{resource.name}"
+            lines.extend(
+                [
+                    f"{prefix}.uri={_sentinel_value(resource.uri)}",
+                    f"{prefix}.path={_sentinel_value(str(resource.resource_path))}",
+                    f"{prefix}.content_sha256={resource.content_sha256}",
+                ]
+            )
+        (staging / PINNED_FROM_FILENAME).write_text("\n".join([*lines, ""]), encoding="utf-8")
+        _replace_managed_tree(staging_root=staging, destination_root=destination)
     except Exception:
-        if staging_root.exists():
-            shutil.rmtree(staging_root, ignore_errors=True)
+        shutil.rmtree(staging, ignore_errors=True)
         raise
-
-    return DualSourceCodeRepositorySkillInstallResult(
-        code_repository_dir=sdk_plan.code_repository_dir,
-        destination_root=destination_root,
-        sentinel_path=destination_root / PINNED_FROM_FILENAME,
-        sdk_library_name=sdk_library_name,
-        sdk_version=sdk_version,
-        sdk_skills_path=sdk_plan.skills_path,
-        platform_catalog=platform_catalog,
-        installed=tuple(installed),
-    )
-
-
-def render_dual_source_sentinel(
-    *,
-    sdk_library_name: str,
-    namespace: str,
-    sdk_version: str,
-    sdk_skills_path: Path,
-    platform_catalog: PlatformCodeRepositorySkillCatalog,
-    command: str,
-) -> str:
-    """Render the schema-2 dual-source provenance record."""
-
-    installed_at_utc = _utc_timestamp()
-    lines = [
-        f"schema={DUAL_SOURCE_SENTINEL_SCHEMA}",
-        f"library_name={_sentinel_value(sdk_library_name)}",
-        f"namespace={_sentinel_value(namespace)}",
-        f"pinned_version={_sentinel_value(sdk_version)}",
-        f"skills_path={_sentinel_value(str(sdk_skills_path.resolve()))}",
-        f"copied_at_utc={installed_at_utc}",
-        f"installed_at_utc={installed_at_utc}",
-        f"sdk_library_name={_sentinel_value(sdk_library_name)}",
-        f"sdk_version={_sentinel_value(sdk_version)}",
-        f"sdk_skills_path={_sentinel_value(str(sdk_skills_path.resolve()))}",
-        f"platform_source_url={_sentinel_value(platform_catalog.source_url)}",
-        f"platform_retrieved_at_utc={installed_at_utc}",
-        f"platform_manifest_version={platform_catalog.manifest_version}",
-        f"platform_manifest_sha256={platform_catalog.manifest_sha256}",
-        f"platform_ontology_uri={platform_catalog.ontology_uri}",
-        f"platform_ontology_sha256={platform_catalog.ontology_sha256}",
-        f"platform_resource_count={len(platform_catalog.resources)}",
-        f"platform_skill_count={len(platform_catalog.skills)}",
-    ]
-    for resource in platform_catalog.resources:
-        prefix = f"platform_resource.{resource.name}"
-        lines.extend(
-            [
-                f"{prefix}.uri={_sentinel_value(resource.uri)}",
-                f"{prefix}.path={_sentinel_value(str(resource.resource_path))}",
-                f"{prefix}.content_sha256={resource.content_sha256}",
-            ]
-        )
-    lines.extend(
-        [
-            f"command={_sentinel_value(command)}",
-            "",
-        ]
-    )
-    return "\n".join(lines)
-
-
-def _validate_source_ownership(
-    *,
-    sdk_skills: Sequence[CopiedScaffoldSkill],
-    platform_skills: Sequence[PlatformCodeRepositorySkill],
-) -> None:
-    sdk_roots = {item.name for item in sdk_skills}
-    collisions = sorted(
-        {
-            skill.relative_path.parts[0]
-            for skill in platform_skills
-            if skill.relative_path.parts[0] in sdk_roots
-        }
-    )
-    if collisions:
-        raise CodeRepositorySkillAssemblyError(
-            "SDK/platform skill path ownership collision: "
-            + ", ".join(collisions)
-            + ". Refactor the SDK-owned skill path before updating the CodeRepository."
-        )
-
-
-def _replace_managed_tree(*, staging_root: Path, destination_root: Path) -> None:
-    backup_root = destination_root.parent / (f".{destination_root.name}.backup-{uuid.uuid4().hex}")
-    destination_existed = destination_root.exists()
-    if destination_existed:
-        os.replace(destination_root, backup_root)
-    try:
-        os.replace(staging_root, destination_root)
-    except Exception as install_exc:
-        try:
-            if destination_existed and backup_root.exists():
-                os.replace(backup_root, destination_root)
-        except Exception as rollback_exc:
-            raise CodeRepositorySkillAssemblyError(
-                "CodeRepository skill installation failed and rollback also failed: "
-                f"{rollback_exc}. The previous managed tree remains at "
-                f"{backup_root} for manual recovery."
-            ) from install_exc
-        raise
-    if backup_root.exists():
-        shutil.rmtree(backup_root, ignore_errors=True)
+    return destination, tuple(installed)
 
 
 def _safe_platform_resource_path(

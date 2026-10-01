@@ -42,6 +42,7 @@ specific update:
 
 - `mainsequence code-repository update-sdk --path .`
 - `mainsequence code-repository update-agent-skills --path .`
+- `mainsequence code-repository update-platform-skills --path .`
 - `mainsequence code-repository update AGENTS.md --path .`
 - `uv run ms-tau skills sync --path .`
 
@@ -50,6 +51,11 @@ to report, not permission to mutate the repository. The same rule applies to
 `.agents/skills/ms_tau_sdk/PINNED_FROM.txt`. When a Main Sequence update is
 requested, use the `code_repository_maintenance` skill. The `mainsequence` CLI
 never owns or updates the `ms_tau_sdk` namespace.
+
+The SDK owns all of `.agents/skills/mainsequence/`. Its skill copy is local,
+requires no sign-in, and deletes everything absent from the installed SDK
+bundle. Platform skills are installed separately under
+`.agents/skills/mainsequence_platform/` by the authenticated platform update.
 
 ## Route By Task
 

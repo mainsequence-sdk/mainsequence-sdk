@@ -56,8 +56,9 @@ from ..code_repository_context import (
 )
 from ..code_repository_skills import (
     CodeRepositorySkillAssemblyError,
-    install_dual_source_code_repository_skills,
+    install_platform_code_repository_skills,
 )
+from ..scaffold_skills import ScaffoldSkillCopyBlocked, copy_scaffold_skills
 from . import config as cfg
 from .api import (
     ApiError,
@@ -7845,6 +7846,33 @@ def code_repository_update_sdk(
         run_uv(uv, ["sync"], cwd=code_repository_dir)
 
     success("SDK update complete.")
+    _warn_if_sdk_skills_stale(code_repository_dir)
+
+
+def _warn_if_sdk_skills_stale(code_repository_dir: pathlib.Path) -> None:
+    try:
+        version = _code_repository_installed_package_version(code_repository_dir, "mainsequence")
+        sentinel = code_repository_dir / ".agents" / "skills" / "mainsequence" / "PINNED_FROM.txt"
+        values = (
+            dict(
+                line.split("=", 1)
+                for line in sentinel.read_text(encoding="utf-8").splitlines()
+                if "=" in line
+            )
+            if sentinel.is_file()
+            else {}
+        )
+    except (OSError, ValueError, typer.Exit):
+        warn("Could not check the vendored SDK skill pin. Run update-agent-skills to refresh it.")
+        return
+    pinned = values.get("pinned_version", values.get("sdk_version"))
+    if pinned != version:
+        warn(
+            f"Vendored SDK skills are stale or missing (pinned: {pinned or 'missing'}; installed: {version}). "
+            "No scaffold files were changed. Refresh with "
+            "`uv run --offline mainsequence code-repository update-agent-skills --path .` "
+            "and `uv run --offline mainsequence code-repository update AGENTS.md --path .`."
+        )
 
 
 @code_repository.command("update")
@@ -7935,130 +7963,115 @@ def code_repository_update_agent_skills(
     path: str | None = typer.Option(None, "--path", help="CodeRepository directory"),
 ):
     """
-    Update `.agents/skills/mainsequence` from installed SDK and platform sources.
+    Replace SDK-owned skills with the target checkout's installed SDK bundle.
 
-    The existing command copies SDK-owned execution skills from the target
-    CodeRepository's installed `agent_scaffold/skills` tree and retrieves
-    platform-owned skills from authenticated MCP resources. It validates and
-    stages both sources, then replaces only the managed `mainsequence`
-    namespace and writes one dual-source `PINNED_FROM.txt`. Bundle-root files
-    such as `AGENTS.md` are not copied by this command.
+    No sign-in or backend access is required unless a CodeRepository UID
+    assertion is supplied. The SDK owns all of .agents/skills/mainsequence:
+    files and folders absent from the installed bundle are deleted. Other
+    namespaces are untouched. AGENTS.md is refreshed separately with
+    code-repository update AGENTS.md. Platform skills use update-platform-skills.
 
     Examples
     --------
-    ```bash
-    mainsequence code-repository update-agent-skills
     mainsequence code-repository update-agent-skills --path .
-    mainsequence code-repository update-agent-skills --code-repository-uid code-repository-uid-123
-    ```
     """
-    code_repository_dir = _resolve_code_repository_dir(code_repository_id, path)
-
-    scaffold_bundle_dir = _code_repository_agent_scaffold_bundle_dir(code_repository_dir)
-    skills_dir = scaffold_bundle_dir / "skills"
-    if not skills_dir.exists() or not skills_dir.is_dir():
-        error(f"CodeRepository-installed agent_scaffold bundle is missing skills/: {skills_dir}")
-        raise typer.Exit(1)
-
-    pinned_version = _code_repository_installed_package_version(code_repository_dir, "mainsequence")
-    source_checkout_root = _mainsequence_source_checkout_root()
-    protected_code_repository_roots = (
-        (source_checkout_root,) if source_checkout_root is not None else ()
-    )
+    directory = _resolve_code_repository_dir(code_repository_id, path)
+    skills_dir = _code_repository_agent_scaffold_bundle_dir(directory) / "skills"
+    version = _code_repository_installed_package_version(directory, "mainsequence")
+    source_root = _mainsequence_source_checkout_root()
     try:
-        platform_catalog = fetch_platform_code_repository_skill_catalog()
-        install_result = install_dual_source_code_repository_skills(
-            code_repository_dir=code_repository_dir,
-            sdk_library_name="mainsequence",
+        result = copy_scaffold_skills(
+            code_repository_dir=directory,
+            library_name="mainsequence",
             namespace="mainsequence",
-            sdk_skills_path=skills_dir,
-            sdk_version=pinned_version,
-            platform_catalog=platform_catalog,
+            skills_path=skills_dir,
+            pinned_version=version,
             command="mainsequence code-repository update-agent-skills",
-            protected_code_repository_roots=protected_code_repository_roots,
+            protected_code_repository_roots=(source_root,) if source_root else (),
         )
-    except (
-        ApiError,
-        CodeRepositorySkillAssemblyError,
-        FileNotFoundError,
-        OSError,
-        ValueError,
-    ) as exc:
+    except (ScaffoldSkillCopyBlocked, FileNotFoundError, OSError, ValueError) as exc:
         error(str(exc))
         raise typer.Exit(1) from exc
-
     updated = [
-        {
-            "name": item.name,
-            "owner": item.owner,
-            "source": item.source,
-            "destination": item.destination,
-            "content_sha256": item.content_sha256,
-        }
-        for item in install_result.installed
+        {"name": item.name, "owner": "sdk", "source": item.source, "destination": item.destination}
+        for item in result.copied
     ]
-
     payload = {
-        "code_repository": code_repository_dir,
-        "library_name": install_result.sdk_library_name,
-        "namespace": "mainsequence",
-        "skills_path": install_result.sdk_skills_path,
-        "destination_root": install_result.destination_root,
-        "sentinel_path": install_result.sentinel_path,
-        "pinned_version": install_result.sdk_version,
+        "code_repository": directory,
+        "library_name": result.library_name,
+        "namespace": result.namespace,
+        "skills_path": result.skills_path,
+        "destination_root": result.destination_root,
+        "sentinel_path": result.sentinel_path,
+        "pinned_version": result.pinned_version,
         "sdk": {
-            "library_name": install_result.sdk_library_name,
-            "version": install_result.sdk_version,
-            "skills_path": install_result.sdk_skills_path,
-        },
-        "platform": {
-            "source_url": platform_catalog.source_url,
-            "manifest_version": platform_catalog.manifest_version,
-            "manifest_sha256": platform_catalog.manifest_sha256,
-            "ontology_uri": platform_catalog.ontology_uri,
-            "ontology_sha256": platform_catalog.ontology_sha256,
-            "resources": [
-                {
-                    "name": resource.name,
-                    "uri": resource.uri,
-                    "path": str(resource.resource_path),
-                    "content_sha256": resource.content_sha256,
-                }
-                for resource in platform_catalog.resources
-            ],
-            "skills": [
-                {
-                    "name": skill.name,
-                    "uri": skill.uri,
-                    "path": str(skill.relative_path),
-                    "content_sha256": skill.content_sha256,
-                }
-                for skill in platform_catalog.skills
-            ],
+            "library_name": result.library_name,
+            "version": version,
+            "skills_path": result.skills_path,
         },
         "updated_count": len(updated),
         "updated": updated,
     }
     if _emit_json(payload):
         return
-
-    success("Updated .agents/skills/mainsequence from installed SDK and platform sources.")
+    success("Replaced SDK-owned .agents/skills/mainsequence with the installed bundle.")
     print_kv(
         "CodeRepository Skill Provenance",
-        [
-            ("SDK Library", install_result.sdk_library_name),
-            ("SDK Version", install_result.sdk_version),
-            ("Platform Manifest", platform_catalog.manifest_sha256),
-            ("Platform Resources", len(platform_catalog.resources)),
-            ("Platform Skills", len(platform_catalog.skills)),
-            ("Sentinel", str(install_result.sentinel_path)),
-        ],
+        [("SDK Version", version), ("Sentinel", str(result.sentinel_path))],
     )
     print_table(
         "Updated CodeRepository Skills",
         ["Skill", "Owner", "Destination"],
         [[item["name"], item["owner"], str(item["destination"])] for item in updated],
     )
+
+
+@code_repository.command("update-platform-skills")
+def code_repository_update_platform_skills(
+    path: str | None = typer.Option(None, "--path", help="CodeRepository directory"),
+):
+    """Refresh authenticated platform skills in .agents/skills/mainsequence_platform.
+
+    This requires a signed-in session and a reachable backend. The SDK-owned
+    mainsequence namespace and other library namespaces remain untouched.
+    """
+    directory = _resolve_code_repository_dir(None, path)
+    source_root = _mainsequence_source_checkout_root()
+    try:
+        catalog = fetch_platform_code_repository_skill_catalog()
+        destination, installed = install_platform_code_repository_skills(
+            code_repository_dir=directory,
+            platform_catalog=catalog,
+            protected_code_repository_roots=(source_root,) if source_root else (),
+        )
+    except (
+        ApiError,
+        CodeRepositorySkillAssemblyError,
+        ScaffoldSkillCopyBlocked,
+        FileNotFoundError,
+        OSError,
+        ValueError,
+    ) as exc:
+        error(str(exc))
+        raise typer.Exit(1) from exc
+    payload = {
+        "code_repository": directory,
+        "namespace": "mainsequence_platform",
+        "destination_root": destination,
+        "sentinel_path": destination / "PINNED_FROM.txt",
+        "platform": {
+            "source_url": catalog.source_url,
+            "manifest_version": catalog.manifest_version,
+            "manifest_sha256": catalog.manifest_sha256,
+            "ontology_uri": catalog.ontology_uri,
+            "ontology_sha256": catalog.ontology_sha256,
+        },
+        "updated_count": len(installed),
+        "updated": [dataclasses.asdict(item) for item in installed],
+    }
+    if _emit_json(payload):
+        return
+    success("Updated .agents/skills/mainsequence_platform from the authenticated platform catalog.")
 
 
 @skills.command("list")

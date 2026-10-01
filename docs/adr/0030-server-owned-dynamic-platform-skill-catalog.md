@@ -1,6 +1,7 @@
 # ADR 0030: Server-Owned Dynamic Platform Skill Catalog
 
-> Historical decision: SDK-bundled skill assembly described here was superseded by [ADR 0034](0034-extract-metatables-python-package.md). Follow the current [removal migration guide](../migrations/metatables-sdk-removal.md) for supported imports and commands.
+Amended 2026-10-01 for SDK issue #181: catalog validation remains current, but
+SDK and platform skills no longer share an installation namespace.
 
 ## Status
 
@@ -31,6 +32,24 @@ The SDK must keep filesystem and content validation strict without deciding
 which concrete platform skills are allowed to exist.
 
 ## Decision
+
+### Installation Ownership
+
+`update-agent-skills` is a local mirror of the installed SDK bundle and owns
+all of `.agents/skills/mainsequence/`. It deletes anything absent from that
+bundle, requires no authenticated platform catalog, and never retains platform
+content there. Its sentinel records the installed library version. Source
+checkout protections, staging, and rollback remain required.
+
+`update-platform-skills` fetches the authenticated catalog and owns only
+`.agents/skills/mainsequence_platform/`. SDK copying cannot be blocked by
+platform authentication or availability. Existing mixed trees are replaced,
+not grandfathered in. Platform skills can then be explicitly installed in
+their separate namespace; their content and membership remain backend-owned.
+
+An SDK upgrade reports stale or missing SDK skill pins. It does not grant
+permission to change vendored skills or `AGENTS.md` implicitly. Both local
+refreshes remain explicit user-requested operations.
 
 The backend owns platform skill membership and content. The SDK uses
 `ontology.skill_resources` as the authoritative project-skill index.
@@ -92,9 +111,9 @@ MCP list order and ontology array order have no semantic meaning. After full
 validation, the SDK sorts skills by name and URI. That order drives the catalog,
 installation result, and sentinel rendering.
 
-The existing ownership collision check, staging directory, atomic managed-tree
-replacement, and rollback behavior remain mandatory. Validation failure must
-leave the previous managed tree and sentinel unchanged.
+Staging, atomic replacement, and rollback remain mandatory for each owned
+namespace. Validation failure leaves that namespace and its sentinel unchanged.
+Equal relative names in separate owner namespaces are not collisions.
 
 ### Versioning
 

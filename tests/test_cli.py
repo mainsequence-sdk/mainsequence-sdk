@@ -1173,10 +1173,6 @@ def test_shared_compute_validation_supports_k8s_quantities(cli_mod):
     }
 
 
-
-
-
-
 def test_settings_show_ignores_session_overrides(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(
         cli_mod.cfg,
@@ -8136,15 +8132,21 @@ def test_code_repository_sdk_status_json(cli_mod, runner, monkeypatch, tmp_path)
     assert payload["local_requirements_txt"] == "1.2.3"
 
 
-def test_code_repository_update_sdk(cli_mod, runner, monkeypatch, tmp_path):
+@pytest.mark.parametrize("pin", [None, "8.1.25", "9.0.2"])
+def test_code_repository_update_sdk(cli_mod, runner, monkeypatch, tmp_path, pin):
     target = tmp_path / "code-repository"
     target.mkdir(parents=True, exist_ok=True)
     uv_path = target / ".venv" / "bin" / "uv"
     calls = []
+    sentinel = target / ".agents" / "skills" / "mainsequence" / "PINNED_FROM.txt"
+    if pin is not None:
+        sentinel.parent.mkdir(parents=True)
+        sentinel.write_text(f"pinned_version={pin}\n", encoding="utf-8")
 
     monkeypatch.setattr(cli_mod, "ensure_venv", lambda *_: None)
     monkeypatch.setattr(cli_mod, "ensure_uv_installed", lambda *_: uv_path)
     monkeypatch.setattr(cli_mod, "run_uv", lambda uv, args, cwd, env=None: calls.append(args))
+    monkeypatch.setattr(cli_mod, "_code_repository_installed_package_version", lambda *_: "9.0.2")
 
     result = runner.invoke(
         cli_mod.app,
@@ -8153,6 +8155,11 @@ def test_code_repository_update_sdk(cli_mod, runner, monkeypatch, tmp_path):
     assert result.exit_code == 0
     assert ["lock", "--upgrade-package", "mainsequence"] in calls
     assert ["sync"] in calls
+    assert ("Vendored SDK skills are stale or missing" in result.output) == (pin != "9.0.2")
+    if pin is not None:
+        assert sentinel.read_text() == f"pinned_version={pin}\n"
+    else:
+        assert not sentinel.exists()
 
 
 def _write_installed_agent_scaffold_bundle(bundle_dir: pathlib.Path) -> pathlib.Path:
@@ -8526,19 +8533,10 @@ def test_code_repository_update_agent_skills_overwrites_matching_folders(
     assert "namespace=mainsequence" in sentinel_content
     assert "pinned_version=4.4.3" in sentinel_content
     assert f"skills_path={(bundle_dir / 'skills').resolve()}" in sentinel_content
-    assert "sdk_version=4.4.3" in sentinel_content
-    assert f"platform_manifest_sha256={'a' * 64}" in sentinel_content
+    assert "platform_manifest_sha256" not in sentinel_content
     assert "Updated CodeRepository Skills" in result.output
     assert "SDK Version" in result.output
-    assert (
-        target / ".agents" / "skills" / "mainsequence" / "code_repository_design" / "SKILL.md"
-    ).is_file()
-    assert (
-        target / ".agents" / "skills" / "mainsequence" / "a2a_communication" / "SKILL.md"
-    ).is_file()
-    assert (
-        target / ".agents" / "skills" / "mainsequence" / "code_repository_to_agent" / "SKILL.md"
-    ).is_file()
+    assert {item.name for item in sentinel.parent.iterdir()} == {"data_publishing", "maintenance", "PINNED_FROM.txt"}
 
 
 def test_code_repository_update_agent_skills_json_reports_pin_sentinel(
@@ -8583,21 +8581,107 @@ def test_code_repository_update_agent_skills_json_reports_pin_sentinel(
     assert payload["destination_root"] == str(
         (target / ".agents" / "skills" / "mainsequence").resolve()
     )
-    assert payload["updated_count"] == 4
+    assert payload["updated_count"] == 1
     assert [item["name"] for item in payload["updated"]] == [
         "data_publishing",
-        "a2a_communication",
-        "code_repository_design",
-        "code_repository_to_agent",
     ]
     assert payload["sdk"]["version"] == "4.4.3"
-    assert payload["platform"]["manifest_sha256"] == "a" * 64
-    assert [item["name"] for item in payload["platform"]["skills"]] == [
-        "a2a_communication",
-        "code_repository_design",
-        "code_repository_to_agent",
-    ]
+    assert "platform" not in payload
     assert "pinned_version=4.4.3" in sentinel.read_text(encoding="utf-8")
+
+
+def test_sdk_skills_and_agents_refresh_without_authentication(
+    cli_mod, runner, monkeypatch, tmp_path
+):
+    bundle = pathlib.Path(__file__).resolve().parents[1] / "agent_scaffold"
+    target = tmp_path / "repository"
+    stale = target / ".agents" / "skills" / "mainsequence" / "data_publishing" / "SKILL.md"
+    stale.parent.mkdir(parents=True)
+    stale.write_text("retired SDK table instructions", encoding="utf-8")
+    (stale.parent.parent / "PINNED_FROM.txt").write_text(
+        "schema=2\nsdk_version=8.1.25\n", encoding="utf-8"
+    )
+    platform = target / ".agents" / "skills" / "mainsequence_platform" / "SKILL.md"
+    platform.parent.mkdir(parents=True)
+    platform.write_text("platform instructions", encoding="utf-8")
+    extension = target / ".agents" / "skills" / "metatables" / "SKILL.md"
+    extension.parent.mkdir(parents=True)
+    extension.write_text("domain package instructions", encoding="utf-8")
+    agents = target / "AGENTS.md"
+    agents.write_text(
+        "Repository preface.\n<!-- mainsequence-agent-scaffold:start schema=1 -->\n"
+        "Old managed routing.\n<!-- mainsequence-agent-scaffold:end -->\nRepository suffix.\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(cli_mod, "_code_repository_agent_scaffold_bundle_dir", lambda *_: bundle)
+    monkeypatch.setattr(cli_mod, "_code_repository_installed_package_version", lambda *_: "9.0.2")
+    monkeypatch.setattr(cli_mod, "_installed_agent_scaffold_bundle_dir", lambda: bundle)
+    for name in (
+        "fetch_platform_code_repository_skill_catalog",
+        "_require_login",
+        "get_code_repository_context",
+    ):
+        monkeypatch.setattr(
+            cli_mod, name, lambda *args, **kwargs: pytest.fail("Local copy reached the backend")
+        )
+
+    result = runner.invoke(
+        cli_mod.app, ["code-repository", "update-agent-skills", "--path", str(target), "--json"]
+    )
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["sdk"]["version"] == "9.0.2"
+    assert "platform" not in payload
+    assert not stale.exists()
+    destination = pathlib.Path(payload["destination_root"])
+    expected = {
+        p.relative_to(bundle / "skills"): p.read_bytes()
+        for p in (bundle / "skills").rglob("*")
+        if p.is_file()
+    }
+    actual = {
+        p.relative_to(destination): p.read_bytes()
+        for p in destination.rglob("*")
+        if p.is_file() and p.name != "PINNED_FROM.txt"
+    }
+    assert actual == expected
+    assert platform.read_text() == "platform instructions"
+    assert extension.read_text() == "domain package instructions"
+
+    result = runner.invoke(
+        cli_mod.app, ["code-repository", "update", "AGENTS.md", "--path", str(target)]
+    )
+    assert result.exit_code == 0, result.output
+    content = agents.read_text(encoding="utf-8")
+    assert cli_mod._extract_agents_md_managed_block((bundle / "AGENTS.md").read_text()) in content
+    assert content.startswith("Repository preface.\n")
+    assert content.endswith("Repository suffix.\n")
+
+
+def test_platform_skill_refresh_uses_separate_namespace(cli_mod, runner, monkeypatch, tmp_path):
+    target = tmp_path / "repository"
+    sdk = target / ".agents" / "skills" / "mainsequence" / "SKILL.md"
+    sdk.parent.mkdir(parents=True)
+    sdk.write_text("SDK unchanged", encoding="utf-8")
+    calls = []
+
+    def fetch():
+        calls.append("authenticated MCP")
+        return _cli_platform_skill_catalog()
+
+    monkeypatch.setattr(cli_mod, "fetch_platform_code_repository_skill_catalog", fetch)
+    result = runner.invoke(
+        cli_mod.app, ["code-repository", "update-platform-skills", "--path", str(target), "--json"]
+    )
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["namespace"] == "mainsequence_platform"
+    assert payload["updated_count"] == 3
+    assert calls == ["authenticated MCP"]
+    assert sdk.read_text() == "SDK unchanged"
+    assert (
+        target / ".agents" / "skills" / "mainsequence_platform" / "a2a_communication" / "SKILL.md"
+    ).is_file()
 
 
 def test_login_live_with_env_tokens(cli_mod, runner, monkeypatch):

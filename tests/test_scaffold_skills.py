@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -35,6 +36,9 @@ def test_copy_scaffold_skills_copies_namespace_and_writes_pin_sentinel(tmp_path)
     existing_managed = code_repository_dir / ".agents" / "skills" / "ms_markets" / "data_publishing"
     existing_managed.mkdir(parents=True)
     (existing_managed / "old.txt").write_text("removed", encoding="utf-8")
+    retired = existing_managed.parent / "retired_skill"
+    retired.mkdir()
+    (retired / "SKILL.md").write_text("obsolete", encoding="utf-8")
 
     result = copy_scaffold_skills(
         code_repository_dir=code_repository_dir,
@@ -52,6 +56,12 @@ def test_copy_scaffold_skills_copies_namespace_and_writes_pin_sentinel(tmp_path)
         encoding="utf-8"
     ) == "new data skill"
     assert not (destination_root / "data_publishing" / "old.txt").exists()
+    assert not retired.exists()
+    assert {item.name for item in destination_root.iterdir()} == {
+        "data_publishing",
+        "maintenance",
+        "PINNED_FROM.txt",
+    }
     assert (code_repository_owned / "old.txt").exists()
     assert not (destination_root / ".hidden").exists()
     assert not (destination_root / "__pycache__").exists()
@@ -84,6 +94,37 @@ def test_copy_scaffold_skills_dry_run_writes_nothing(tmp_path):
     assert not (code_repository_dir / ".agents").exists()
 
 
+def test_copy_scaffold_skills_rolls_back_failed_namespace_replacement(tmp_path, monkeypatch):
+    source = tmp_path / "library-skills"
+    _write_skill(source, "new_skill")
+    repository = tmp_path / "repository"
+    destination = repository / ".agents" / "skills" / "mainsequence"
+    _write_skill(destination, "retired_skill", "keep until replacement succeeds")
+    sentinel = destination / "PINNED_FROM.txt"
+    sentinel.write_text("pinned_version=old\n", encoding="utf-8")
+    original = os.replace
+
+    def fail_staging_swap(source, target):
+        if ".staging-" in str(source):
+            raise OSError("simulated swap failure")
+        return original(source, target)
+
+    monkeypatch.setattr(os, "replace", fail_staging_swap)
+    with pytest.raises(OSError, match="swap failure"):
+        copy_scaffold_skills(
+            code_repository_dir=repository,
+            library_name="mainsequence",
+            skills_path=source,
+            pinned_version="9.0.2",
+        )
+    assert (
+        destination / "retired_skill" / "SKILL.md"
+    ).read_text() == "keep until replacement succeeds"
+    assert sentinel.read_text() == "pinned_version=old\n"
+    assert not list(destination.parent.glob(".mainsequence.staging-*"))
+    assert not list(destination.parent.glob(".mainsequence.backup-*"))
+
+
 @pytest.mark.parametrize("version", [None, "", " ", "unknown", "none", "null"])
 def test_copy_scaffold_skills_requires_resolved_pinned_version(tmp_path, version):
     skills_root = tmp_path / "package" / "scaffold_skills"
@@ -96,6 +137,23 @@ def test_copy_scaffold_skills_requires_resolved_pinned_version(tmp_path, version
             skills_path=skills_root,
             pinned_version=version,
         )
+
+
+def test_copy_scaffold_skills_cannot_replace_another_namespace_through_a_symlink(tmp_path):
+    source = tmp_path / "library-skills"
+    _write_skill(source, "new_skill")
+    repository = tmp_path / "repository"
+    sibling = repository / ".agents" / "skills" / "metatables"
+    _write_skill(sibling, "owned_skill", "keep")
+    (sibling.parent / "mainsequence").symlink_to(sibling, target_is_directory=True)
+    with pytest.raises(ScaffoldSkillCopyBlocked, match="symlink"):
+        copy_scaffold_skills(
+            code_repository_dir=repository,
+            library_name="mainsequence",
+            skills_path=source,
+            pinned_version="9.0.2",
+        )
+    assert (sibling / "owned_skill" / "SKILL.md").read_text() == "keep"
 
 
 def test_copy_scaffold_skills_blocks_destination_source_overlap(tmp_path):

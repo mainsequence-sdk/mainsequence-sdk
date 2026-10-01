@@ -9,10 +9,13 @@ records the installed library version that supplied the copied skills.
 from __future__ import annotations
 
 import datetime as _datetime
+import os
 import re
 import shutil
+import tempfile
+import uuid
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 PINNED_FROM_FILENAME = "PINNED_FROM.txt"
@@ -64,9 +67,10 @@ def copy_scaffold_skills(
     """Copy packaged scaffold skills into a managed CodeRepository skill namespace.
 
     The helper copies each immediate child skill directory from `skills_path` to
-    `<code_repository_dir>/.agents/skills/<namespace>/`, overwriting only matching
-    managed skill folders. Files, hidden folders, and folders starting with
-    `__` are skipped.
+    `<code_repository_dir>/.agents/skills/<namespace>/`. That entire namespace is
+    library-owned: folders no longer shipped by the library are removed. The
+    replacement is staged and atomic. Other namespaces are never changed.
+    Source files, hidden folders, and folders starting with `__` are skipped.
 
     `pinned_version` is required and must be the installed version of the
     library that owns `skills_path`. On successful non-dry-run copies, the
@@ -86,10 +90,15 @@ def copy_scaffold_skills(
     if not resolved_skills_path.is_dir():
         raise FileNotFoundError(f"Scaffold skill source directory does not exist: {skills_path}")
 
-    destination_root = (
-        resolved_code_repository_dir / ".agents" / "skills" / resolved_namespace
-    ).resolve(strict=False)
+    destination = resolved_code_repository_dir / ".agents" / "skills" / resolved_namespace
+    if destination.is_symlink():
+        raise ScaffoldSkillCopyBlocked("Blocked: the managed namespace must not be a symlink.")
+    destination_root = destination.resolve(strict=False)
     sentinel_path = destination_root / PINNED_FROM_FILENAME
+    if not destination_root.is_relative_to(resolved_code_repository_dir):
+        raise ScaffoldSkillCopyBlocked(
+            "Blocked: destination namespace escapes the target checkout."
+        )
 
     _check_code_repository_guards(
         code_repository_dir=resolved_code_repository_dir,
@@ -134,13 +143,26 @@ def copy_scaffold_skills(
     if dry_run:
         return result
 
-    for item in copied:
-        _copy_tree_overwrite(item.source, item.destination)
-    _write_pin_sentinel(
-        result,
-        command=command,
-        copied_at_utc=_utc_timestamp(),
+    destination_root.parent.mkdir(parents=True, exist_ok=True)
+    staging_root = Path(
+        tempfile.mkdtemp(prefix=f".{resolved_namespace}.staging-", dir=destination_root.parent)
     )
+    try:
+        for item in copied:
+            shutil.copytree(item.source, staging_root / item.name)
+        _write_pin_sentinel(
+            replace(
+                result,
+                destination_root=staging_root,
+                sentinel_path=staging_root / PINNED_FROM_FILENAME,
+            ),
+            command=command,
+            copied_at_utc=_utc_timestamp(),
+        )
+        _replace_managed_tree(staging_root=staging_root, destination_root=destination_root)
+    except Exception:
+        shutil.rmtree(staging_root, ignore_errors=True)
+        raise
     return result
 
 
@@ -182,11 +204,25 @@ def _iter_skill_roots(skills_path: Path) -> list[Path]:
     ]
 
 
-def _copy_tree_overwrite(source: Path, destination: Path) -> None:
-    if destination.exists():
-        shutil.rmtree(destination)
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(source, destination)
+def _replace_managed_tree(*, staging_root: Path, destination_root: Path) -> None:
+    backup_root = destination_root.parent / f".{destination_root.name}.backup-{uuid.uuid4().hex}"
+    destination_existed = destination_root.exists()
+    if destination_existed:
+        os.replace(destination_root, backup_root)
+    try:
+        os.replace(staging_root, destination_root)
+    except Exception as install_exc:
+        try:
+            if destination_existed and backup_root.exists():
+                os.replace(backup_root, destination_root)
+        except Exception as rollback_exc:
+            raise ScaffoldSkillCopyBlocked(
+                f"Skill installation and rollback failed: {rollback_exc}. "
+                f"The previous tree remains at {backup_root} for recovery."
+            ) from install_exc
+        raise
+    if backup_root.exists():
+        shutil.rmtree(backup_root, ignore_errors=True)
 
 
 def _write_pin_sentinel(
