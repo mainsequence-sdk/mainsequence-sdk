@@ -6,7 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
-The next final release is `9.0.2`. SDK skill copying now mirrors only the installed
+The next final release is `9.0.3`. CLI JSON output now converts UUID identity
+values to strings, including nested fields, and the authenticated-user helper
+returns a JSON-compatible model dump. This fixes issue #182 without changing
+authentication or error handling.
+
+Release `9.0.2` made SDK skill copying mirror only the installed
 SDK bundle without sign-in, deleting obsolete entries from its owned namespace.
 Authenticated platform skills use a separate command and namespace. SDK
 upgrades report missing or stale skill pins. This fixes issue #181.
