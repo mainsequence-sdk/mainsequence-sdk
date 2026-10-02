@@ -7,7 +7,7 @@ from uuid import uuid4
 
 import jwt
 import pytest
-from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives.asymmetric import ed25519
 from fastapi import FastAPI, Request, WebSocket
 from fastapi.testclient import TestClient
 
@@ -42,10 +42,10 @@ def clean_environment(monkeypatch):
 
 @pytest.fixture
 def signed(monkeypatch):
-    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    public = jwt.algorithms.RSAAlgorithm.to_jwk(key.public_key(), as_dict=True)
-    jwk = {name: public[name] for name in ("kty", "n", "e")}
-    fetch = Mock(return_value={"keys": [{"kid": "test", "alg": "RS256", "use": "sig", **jwk}]})
+    key = ed25519.Ed25519PrivateKey.generate()
+    public = jwt.algorithms.OKPAlgorithm.to_jwk(key.public_key(), as_dict=True)
+    jwk = {name: public[name] for name in ("kty", "crv", "x")}
+    fetch = Mock(return_value={"keys": [{"kid": "test", "alg": "EdDSA", "use": "sig", **jwk}]})
     verifier = CallerAssertionVerifier(
         issuer=ISSUER,
         jwks_url=ISSUER + "/fastapi/caller-keys/",
@@ -70,7 +70,7 @@ def signed(monkeypatch):
         )
         claims.update(changes)
         return jwt.encode(
-            claims, key, algorithm="RS256", headers={"kid": "test", "typ": ASSERTION_TYPE}
+            claims, key, algorithm="EdDSA", headers={"kid": "test", "typ": ASSERTION_TYPE}
         )
 
     return token, fetch, verifier

@@ -15,14 +15,14 @@ import requests
 
 try:
     import jwt
-    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
     from jwt import InvalidKeyError, InvalidTokenError
 except ImportError as exc:
     raise ImportError("Caller verification requires the mainsequence[server] extra.") from exc
 
 ASSERTION_HEADER = "X-MainSequence-Caller-Assertion"
 ASSERTION_TYPE = "mainsequence-caller-assertion+jwt"
-ASSERTION_ALGORITHM = "RS256"
+ASSERTION_ALGORITHM = "EdDSA"
 MAX_ASSERTION_SECONDS = 300
 KEY_CACHE_SECONDS = 60
 REQUIRED_CLAIMS = frozenset(
@@ -107,7 +107,7 @@ class CallerAssertionVerifier:
         self.issuer = issuer
         self.jwks_url = jwks_url
         self._fetch_jwks = fetch_jwks or self._fetch_public_keys
-        self._keys: dict[str, rsa.RSAPublicKey] = {}
+        self._keys: dict[str, Ed25519PublicKey] = {}
         self._keys_until = 0.0
         self._lock = threading.Lock()
 
@@ -141,35 +141,36 @@ class CallerAssertionVerifier:
             raise CallerAssertionUnavailable("Caller public keys are unavailable.") from None
 
     @staticmethod
-    def _parse_public_keys(document: object) -> dict[str, rsa.RSAPublicKey]:
+    def _parse_public_keys(document: object) -> dict[str, Ed25519PublicKey]:
         if not isinstance(document, dict) or set(document) != {"keys"}:
             raise CallerAssertionUnavailable("Caller public-key document is invalid.")
         entries = document["keys"]
         if not isinstance(entries, list) or not 1 <= len(entries) <= 16:
             raise CallerAssertionUnavailable("Caller public-key set is invalid.")
-        keys: dict[str, rsa.RSAPublicKey] = {}
+        keys: dict[str, Ed25519PublicKey] = {}
         for entry in entries:
             if (
                 not isinstance(entry, dict)
-                or set(entry) != {"kid", "alg", "use", "kty", "n", "e"}
+                or set(entry) != {"kid", "alg", "use", "kty", "crv", "x"}
                 or entry.get("alg") != ASSERTION_ALGORITHM
                 or entry.get("use") != "sig"
-                or entry.get("kty") != "RSA"
+                or entry.get("kty") != "OKP"
+                or entry.get("crv") != "Ed25519"
             ):
                 raise CallerAssertionUnavailable("Caller public key is invalid.")
             kid = entry["kid"]
             if not isinstance(kid, str) or not kid or len(kid) > 128 or kid in keys:
                 raise CallerAssertionUnavailable("Caller public-key ID is invalid.")
             try:
-                key = jwt.algorithms.RSAAlgorithm.from_jwk(entry)
+                key = jwt.algorithms.OKPAlgorithm.from_jwk(entry)
             except (ValueError, TypeError, InvalidKeyError) as exc:
                 raise CallerAssertionUnavailable("Caller public key is invalid.") from exc
-            if not isinstance(key, rsa.RSAPublicKey) or key.key_size < 2048:
-                raise CallerAssertionUnavailable("Caller public key is too small.")
+            if not isinstance(key, Ed25519PublicKey):
+                raise CallerAssertionUnavailable("Caller public key is not an Ed25519 public key.")
             keys[kid] = key
         return keys
 
-    def _key_for(self, kid: str) -> rsa.RSAPublicKey:
+    def _key_for(self, kid: str) -> Ed25519PublicKey:
         with self._lock:
             if time.monotonic() >= self._keys_until or kid not in self._keys:
                 self._keys = {}

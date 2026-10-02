@@ -8,7 +8,7 @@ import pytest
 import requests
 
 jwt = pytest.importorskip("jwt")
-rsa = pytest.importorskip("cryptography.hazmat.primitives.asymmetric.rsa")
+ed25519 = pytest.importorskip("cryptography.hazmat.primitives.asymmetric.ed25519")
 
 from mainsequence.server.caller_assertions import (  # noqa: E402
     ASSERTION_TYPE,
@@ -28,16 +28,16 @@ KEYS_URL = f"{ISSUER}/caller-keys/"
 def keys():
     result = []
     for kid in ("first", "second"):
-        key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-        public = jwt.algorithms.RSAAlgorithm.to_jwk(key.public_key(), as_dict=True)
+        key = ed25519.Ed25519PrivateKey.generate()
+        public = jwt.algorithms.OKPAlgorithm.to_jwk(key.public_key(), as_dict=True)
         result.append(
             (
                 key,
                 {
                     "kid": kid,
-                    "alg": "RS256",
+                    "alg": "EdDSA",
                     "use": "sig",
-                    **{name: public[name] for name in ("kty", "n", "e")},
+                    **{name: public[name] for name in ("kty", "crv", "x")},
                 },
             )
         )
@@ -58,7 +58,7 @@ def token(key, *, kid="first", headers=None, **changes):
     }
     claims.update(changes)
     return jwt.encode(
-        claims, key, algorithm="RS256", headers=headers or {"kid": kid, "typ": ASSERTION_TYPE}
+        claims, key, algorithm="EdDSA", headers=headers or {"kid": kid, "typ": ASSERTION_TYPE}
     )
 
 
@@ -131,7 +131,7 @@ def test_rejects_signature_algorithm_type_and_missing_claims(keys):
     with pytest.raises(InvalidCallerAssertion):
         check.verify(
             jwt.encode(
-                claims, key, algorithm="RS256", headers={"kid": "first", "typ": ASSERTION_TYPE}
+                claims, key, algorithm="EdDSA", headers={"kid": "first", "typ": ASSERTION_TYPE}
             )
         )
 
