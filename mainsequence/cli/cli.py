@@ -7,9 +7,8 @@ MainSequence CLI entrypoint.
 Parity with VS Code extension:
 - settings set-backend
 - logout (clear tokens)
-- code-repository freeze-env (compile environment)
 - code-repository build_local_venv (create local .venv from pyproject + uv sync)
-- code-repository sync (uv bump + lock/sync/export + git commit/push)
+- code-repository sync (uv lock + uv sync + requirements.txt export; no Git, no backend request)
 - code-repository build-docker-env (docker build + devcontainer config)
 - local `.env` provisioning during set-up-locally writes the backend endpoint and no credential
 - refresh-token (renew the saved session; it belongs to the machine, not to a checkout)
@@ -159,7 +158,6 @@ from .api import (
     remove_secret_user_from_view,
     remove_team_user_from_edit,
     remove_team_user_from_view,
-    render_code_repository_branch_default_redeployment_tag,
     repo_name_from_git_url,
     resolve_code_repository,
     run_code_repository_job,
@@ -188,11 +186,8 @@ from .local_ops import (
     ensure_venv,
     git_origin,
     normalize_path,
-    run_cmd,
     run_uv,
     uv_export_requirements,
-    uv_preview_patch_version,
-    uv_project_version,
 )
 from .model_filters import build_cli_model_filter_rows, parse_cli_model_filters
 from .pydantic_cli import (
@@ -206,12 +201,8 @@ from .ssh_utils import (
     open_folder,
     open_signed_terminal,
     repository_ssh_key_paths,
-    require_ssh_git_origin,
     start_agent_and_add_key,
-    verify_git_push_access,
     verify_git_remote_access,
-    verify_git_remote_tag_absent,
-    verify_git_tag_absent,
 )
 from .ui import error, info, print_kv, print_table, status, success, warn
 
@@ -7288,259 +7279,76 @@ def code_repository_build_local_venv(
     success(f"Local .venv built for Python requirement {python_request}.")
 
 
-@code_repository.command("freeze-env")
-def code_repository_freeze_env(
-    code_repository_id: str | None = typer.Argument(
-        None, help="Optional CodeRepository UID assertion against the current Git worktree"
-    ),
-    path: str | None = typer.Option(None, "--path", help="CodeRepository directory"),
-    ensure_uv: bool = typer.Option(
-        True,
-        "--ensure-uv/--no-ensure-uv",
-        help="Allow resolving uv from PATH when it is not present inside .venv.",
-    ),
-):
-    """
-    Export locked runtime dependencies into `requirements.txt` using `uv`.
-
-    Development dependency groups are excluded from the runtime export.
-
-    Parameters
-    ----------
-    code_repository_id:
-        Optional CodeRepository UID assertion against the current Git worktree.
-    path:
-        Explicit local path.
-    ensure_uv:
-        Allow resolving `uv` from PATH when it is not present inside `.venv`.
-
-    Examples
-    --------
-    ```bash
-    mainsequence code-repository freeze-env code-repository-uid-123
-    mainsequence code-repository freeze-env --path .
-    mainsequence code-repository freeze-env --path . --no-ensure-uv
-    ```
-    """
-    code_repository_dir = _resolve_code_repository_dir(code_repository_id, path)
-    ensure_venv(code_repository_dir)
-
-    uv = (
-        ensure_uv_installed(code_repository_dir)
-        if ensure_uv
-        else (ensure_venv(code_repository_dir).uv or None)
-    )
-    if not uv:
-        error("uv not found in .venv and --no-ensure-uv was used.")
-        raise typer.Exit(1)
-
-    with status("Exporting requirements.txt via uv..."):
-        uv_export_requirements(
-            uv,
-            cwd=code_repository_dir,
-            locked=True,
-            no_dev=True,
-            no_hashes=True,
-            output_file="requirements.txt",
-        )
-
-    success(f"Wrote: {code_repository_dir / 'requirements.txt'}")
-
-
 @code_repository.command("sync")
 def code_repository_sync(
-    message: str | None = typer.Argument(None, help="Git commit message"),
-    code_repository_id: str | None = typer.Argument(
-        None, help="Optional CodeRepository UID assertion against the current Git worktree"
-    ),
-    path: str | None = typer.Option(None, "--path", help="CodeRepository directory"),
-    message_opt: str | None = typer.Option(None, "--message", "-m", help="Git commit message"),
-    dry_run: bool = typer.Option(
-        False,
-        "--dry-run",
-        help=(
-            "Run read-only preflight and print steps without generating keys or "
-            "changing the CodeRepository"
-        ),
+    path: str | None = typer.Option(
+        None,
+        "--path",
+        help="Project root that holds pyproject.toml (default: the current directory)",
     ),
 ):
     """
-    Run the end-to-end sync workflow for CodeRepository dependencies and Git state.
+    Refresh the project's dependency files after a dependency change.
 
-    Workflow:
-    1. preview the patch version and backend-owned CodeRepositoryBranch tag,
-    2. reject local and remote collisions before mutating the CodeRepository,
-    3. apply and verify the patch version via `uv version`,
-    4. run `uv lock` + `uv sync`,
-    5. export locked `requirements.txt`,
-    6. commit the changes and create that annotated tag,
-    7. atomically push the branch and tag.
+    Runs three `uv` steps in the project root:
+
+    1. `uv lock`
+    2. `uv sync`
+    3. `uv export --locked --no-dev --no-hashes` into `requirements.txt`
+
+    The command changes local files only. It sends no request to the platform,
+    creates no SSH or deploy key, changes no version, and runs no Git command.
+    Review the changed files, then commit and push them yourself. Release tags,
+    when a repository uses them, are created by the repository's own CI.
 
     Parameters
     ----------
-    message:
-        Commit message. Can be passed positionally or via `--message`.
-    code_repository_id:
-        Optional CodeRepository UID assertion against the current Git worktree.
     path:
-        Explicit local path.
-    dry_run:
-        Run read-only preflight and print the plan without generating keys or
-        changing CodeRepository files, dependencies, Git state, or backend state.
+        Project root. Defaults to the current directory.
 
     Examples
     --------
     ```bash
-    mainsequence code-repository sync "Update environment"
-    mainsequence code-repository sync -m "Update environment" --path .
-    mainsequence code-repository sync -m "Preview only" --path . --dry-run
+    mainsequence code-repository sync
+    mainsequence code-repository sync --path .
     ```
     """
-    if message is not None and message_opt is not None:
-        error("Pass the commit message either positionally or with --message, not both.")
-        raise typer.Exit(2)
-
-    message = message if message is not None else message_opt
-    code_repository_dir = _resolve_code_repository_dir(code_repository_id, path)
-
-    safe_message = (
-        str(message or "").replace("\r", " ").replace("\n", " ").replace('"', "'").strip()
-    )
-    if not safe_message:
-        error("Commit message is required.")
+    project_dir = normalize_path(path) if path else pathlib.Path.cwd()
+    if not project_dir.is_dir():
+        error(f"Folder does not exist: {project_dir}")
+        raise typer.Exit(1)
+    if not (project_dir / "pyproject.toml").is_file():
+        error(
+            f"pyproject.toml not found in {project_dir}. "
+            "Run this command in the project root or pass --path."
+        )
         raise typer.Exit(1)
 
     try:
-        git_branch, code_repository_branch_uid = _resolve_git_code_repository_branch_context(
-            code_repository_id,
-            code_repository_dir=code_repository_dir,
-        )
-        code_repository_ref = str(get_code_repository_context().code_repository_uid or "").strip()
-    except ApiError as exc:
-        error(f"CodeRepository sync preflight failed: {exc}")
-        raise typer.Exit(1) from exc
-
-    info(
-        "CodeRepository sync preflight resolved "
-        f"Git branch {git_branch!r} to CodeRepositoryBranch {code_repository_branch_uid}."
-    )
-
-    origin = git_origin(code_repository_dir)
-    repo_name = repo_name_from_git_url(origin) or code_repository_dir.name
-    try:
-        require_ssh_git_origin(origin)
-    except ValueError as exc:
-        error(f"CodeRepository sync preflight failed: {exc}")
-        raise typer.Exit(1) from exc
-
-    try:
-        ensure_venv(code_repository_dir)
-        uv = ensure_uv_installed(code_repository_dir)
-        current_version = uv_project_version(uv, cwd=code_repository_dir)
-        next_version = uv_preview_patch_version(uv, cwd=code_repository_dir)
-        tag = render_code_repository_branch_default_redeployment_tag(
-            code_repository_branch_uid,
-            version=next_version,
-        )
-        verify_git_tag_absent(code_repository_dir, tag)
-    except (ApiError, RuntimeError) as exc:
-        error(f"CodeRepository sync tag preflight failed: {exc}")
-        raise typer.Exit(1) from exc
-
-    steps = [
-        "preview uv patch version",
-        "request backend default redeployment tag",
-        "verify backend tag does not exist locally",
-        "ensure repository SSH key",
-        "register a new or inaccessible SSH key through the owning CodeRepository",
-        "git push --dry-run --follow-tags origin HEAD:refs/heads/<branch>",
-        "verify exact backend tag does not exist remotely",
-        "uv version --bump patch",
-        "verify bumped version matches the preflight version",
-        "uv lock",
-        "uv sync",
-        "uv export (locked) -> requirements.txt",
-        "git add -A",
-        f'git commit -m "{safe_message}"',
-        "git tag -a <backend tag> -m <backend tag>",
-        "git push --atomic --follow-tags origin HEAD:refs/heads/<branch> refs/tags/<backend tag>:refs/tags/<backend tag>",
-    ]
-
-    print_kv(
-        "Sync release",
-        [
-            ("Current version", current_version),
-            ("Next version", next_version),
-            ("Branch tag", tag),
-        ],
-    )
-    print_table("Sync plan", ["Step"], [[s] for s in steps])
-
-    if dry_run:
-        warn("Dry run: read-only preflight complete; no changes made.")
-        return
-
-    try:
-        _key_path, _public_key, env = _ensure_code_repository_repository_ssh_access(
-            origin=origin,
-            code_repository_ref=code_repository_ref,
-            verify_access=lambda ssh_env: verify_git_push_access(
-                code_repository_dir,
-                git_branch,
-                ssh_env,
-            ),
-        )
-    except (ApiError, RuntimeError, ValueError) as exc:
-        error(f"CodeRepository sync SSH preflight failed: {exc}")
-        raise typer.Exit(1) from exc
-
-    try:
-        verify_git_remote_tag_absent(code_repository_dir, tag, env)
-    except RuntimeError as exc:
-        error(f"CodeRepository sync remote tag preflight failed: {exc}")
-        raise typer.Exit(1) from exc
-
-    with status("Running uv + git sync steps..."):
-        run_uv(uv, ["version", "--bump", "patch"], cwd=code_repository_dir, env=env)
-        version = uv_project_version(uv, cwd=code_repository_dir, env=env)
-        if version != next_version:
-            error(
-                f"CodeRepository sync version verification failed: uv produced {version}; "
-                f"preflight expected {next_version}."
+        uv = ensure_uv_installed(project_dir)
+        with status("Locking, syncing and exporting dependencies via uv..."):
+            run_uv(uv, ["lock"], cwd=project_dir)
+            run_uv(uv, ["sync"], cwd=project_dir)
+            # `uv sync` can prune ad hoc packages from `.venv`, including a `uv`
+            # executable that was installed there by hand.
+            uv = ensure_uv_installed(project_dir)
+            uv_export_requirements(
+                uv,
+                cwd=project_dir,
+                locked=True,
+                no_dev=True,
+                no_hashes=True,
+                output_file="requirements.txt",
             )
-            raise typer.Exit(1)
-        run_uv(uv, ["lock"], cwd=code_repository_dir, env=env)
-        run_uv(uv, ["sync"], cwd=code_repository_dir, env=env)
-        # `uv sync` can prune ad hoc packages from `.venv`, including a `uv`
-        # executable that was installed there just for this workflow.
-        uv = ensure_uv_installed(code_repository_dir)
-        uv_export_requirements(
-            uv,
-            cwd=code_repository_dir,
-            locked=True,
-            no_dev=True,
-            no_hashes=True,
-            output_file="requirements.txt",
-        )
+    except RuntimeError as exc:
+        error(f"CodeRepository sync failed: {exc}")
+        raise typer.Exit(1) from exc
 
-        run_cmd(["git", "add", "-A"], cwd=code_repository_dir, env=env)
-        run_cmd(["git", "commit", "-m", safe_message], cwd=code_repository_dir, env=env)
-        run_cmd(["git", "tag", "-a", tag, "-m", tag], cwd=code_repository_dir, env=env)
-        run_cmd(
-            [
-                "git",
-                "push",
-                "--atomic",
-                "--follow-tags",
-                "origin",
-                f"HEAD:refs/heads/{git_branch}",
-                f"refs/tags/{tag}:refs/tags/{tag}",
-            ],
-            cwd=code_repository_dir,
-            env=env,
-        )
-
-    success(f"Synced: {repo_name}")
+    success(f"Dependencies synced in {project_dir}.")
+    info(
+        "Nothing was committed or pushed. Review uv.lock and requirements.txt, "
+        "then commit and push them yourself."
+    )
 
 
 @code_repository.command("build-docker-env")

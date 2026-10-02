@@ -1,6 +1,6 @@
 ---
 name: mainsequence-code-repository-maintenance
-description: Maintain an existing Main Sequence CodeRepository checkout using the SDK-version-matched CLI. Use for inspecting repository state, building or repairing .venv, refreshing local authentication, performing explicitly requested SDK, skill, or AGENTS.md updates, publishing changes with CodeRepository sync, or diagnosing a partially completed maintenance workflow.
+description: Maintain an existing Main Sequence CodeRepository checkout using the SDK-version-matched CLI. Use for inspecting repository state, building or repairing .venv, refreshing local authentication, performing explicitly requested SDK, skill, or AGENTS.md updates, refreshing dependency files with CodeRepository sync, publishing changes with Git, or diagnosing a partially completed maintenance workflow.
 ---
 
 # Main Sequence CodeRepository Maintenance
@@ -16,7 +16,8 @@ workflows.
 Own:
 
 - local CodeRepository inspection and maintenance sequencing;
-- `.venv`, SDK, managed skill, `AGENTS.md`, and Git-release workflows;
+- `.venv`, SDK, managed skill, `AGENTS.md`, dependency sync, and Git publishing
+  workflows;
 - precondition checks, explicit approval gates, and partial-failure diagnosis.
 
 Do not own:
@@ -208,60 +209,96 @@ preserve the previous valid managed tree. Because this operation can update
 this skill, reload the refreshed `code_repository_maintenance/SKILL.md` before starting
 another maintenance routine.
 
-## Publish With Canonical CodeRepository Sync
+## Sync Dependencies After A Dependency Change
 
-Use CodeRepository sync only when the user intends to commit, tag, and push all
-reviewed repository changes.
+Run CodeRepository sync only after the dependencies changed, for example after
+editing `[project.dependencies]` in `pyproject.toml`:
 
-Before execution:
+```bash
+mainsequence code-repository sync --path .
+```
+
+In the project root it runs `uv lock`, `uv sync`, and the locked runtime export
+`uv export --locked --no-dev --no-hashes` into `requirements.txt`. It accepts
+only `--path`. It sends no request to the platform, creates no SSH or deploy
+key, changes no version, and runs no `git add`, `commit`, `tag`, or `push`.
+Review the changed `uv.lock` and `requirements.txt` and publish them with the
+dependency change.
+
+## Publish With Git
+
+Publish only when the user intends to commit and push the reviewed changes.
+Commit and push with Git as usual:
 
 ```bash
 git status --short
 git diff --stat
-mainsequence code-repository sync --path . -m "<specific commit message>" --dry-run
+git add <reviewed paths>
+git commit -m "<specific commit message>"
+git push
 ```
 
-Review every pending file because the command stages with `git add -A`. Do not
-continue when unrelated or unexplained changes would be included.
+Review every pending file and stage only the files that belong to the change.
+Do not continue when unrelated or unexplained changes would be included. Push
+to the attached branch that `mainsequence code-repository current` resolved; a
+detached checkout or an unregistered branch is a preflight failure.
 
-The command performs the same branch preflight even for `--dry-run`: it rejects
-a detached checkout and rejects a Git branch that is not registered under the
-logical CodeRepository. Do not bypass that validation or supply a CodeRepositoryBranch UID
-manually. Register or select the correct Git branch first.
+The platform deploys from the push according to the repository's
+`.mainsequence/workflows/*.yaml`. A declaration's `tag_regex` decides which
+pushes deploy:
 
-After that branch preflight, `--dry-run` resolves the existing `uv` executable,
-previews its patch version without mutation, requests the backend-owned tag for
-that future version, rejects an invalid or existing local tag, prints the
-complete plan, and returns without generating an SSH key, querying private
-remote refs, changing dependencies or repository files, or mutating Git state.
+- omitted or `null`: every push to the branch deploys;
+- a regular expression: a push deploys only when a matching tag points at the
+  branch's latest commit.
 
-After review:
+Automatic deployment and `tag_regex` are set in the workflow file only; a
+`ResourceRelease` or `Job` update does not accept them. The Main Sequence
+platform does not create tag names and the CLI does not tag. Versions and
+release tags belong to the repository: the version is raised in
+`pyproject.toml` (for example `uv version --bump patch`) in the commit to
+release, and the repository's own CI creates the tag. Do not create or push a
+release tag by hand unless the user asks for it. When the user wants tag-based
+releases and the repository has no such CI yet, propose a workflow like this
+example and wait for approval before adding it:
 
-```bash
-mainsequence code-repository sync --path . -m "<specific commit message>"
+```yaml
+# Example: .github/workflows/release.yml in the CodeRepository
+name: release
+on:
+  push:
+    branches: [main]
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --locked
+      - run: uv run pytest
+      - name: Tag the version declared in pyproject.toml
+        run: |
+          TAG="v$(uv version --short)"
+          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            echo "$TAG already exists; nothing to release"
+            exit 0
+          fi
+          git tag "$TAG" "$GITHUB_SHA"
+          git push origin "refs/tags/$TAG"
 ```
 
-The canonical command always:
+With that example, a `tag_regex` such as `^v[0-9]+\.[0-9]+\.[0-9]+$` deploys
+only the commits CI tagged. Details:
+<https://mainsequence-sdk.github.io/mainsequence-sdk/knowledge/infrastructure/scheduling_jobs/>
 
-1. selects `mainsequence-<repository-slug>-<first-16-sha256>` from the normalized
-   `host[:non-default-port]/repository/path`, never from the repository basename alone and never
-   from a legacy basename-only key;
-2. previews the `uv` patch version, requests the backend-owned CodeRepositoryBranch tag, and rejects an
-   invalid or existing local tag;
-3. registers a new or inaccessible key through the owning CodeRepository and verifies a dry-run push with
-   that forced identity;
-4. queries the exact tag ref on `origin` and stops if it exists or cannot be checked;
-5. applies the patch version bump and verifies it matches the preview;
-6. runs `uv lock` and `uv sync`;
-7. exports locked production requirements;
-8. stages and commits the changes;
-9. creates the returned annotated tag unchanged; and
-10. atomically pushes the explicit branch and tag refs with `--follow-tags`.
-
-Do not offer alternate bump modes, a no-push mode, or a hand-written sequence
-of equivalent commands. Do not call `sync-after-commit` or any backend repair
-endpoint. The GitHub branch-push webhook owns backend repository
-reconciliation.
+Do not call `sync-after-commit` or any backend repair endpoint. The GitHub
+branch-push webhook owns backend repository reconciliation.
 
 ## Diagnose Partial Completion Before Retrying
 
@@ -273,12 +310,10 @@ Never rerun an entire mutating workflow blindly.
   environment, and the failed command before retrying.
 - After a skill refresh failure, keep the previous managed tree and identify
   whether the SDK or platform lane failed.
-- After a sync failure, inspect `git status`, `git log -1`, the current package
-  version, tags pointing at `HEAD`, the upstream branch, and remote tags before
-  deciding which step remains.
-
-A blind sync retry may create another patch bump or collide with an existing
-commit or tag.
+- After a dependency sync failure, inspect `pyproject.toml`, `uv.lock`, and the
+  exact failing `uv` output; the command stops at the first failing step.
+- After a push failure, inspect `git status`, `git log -1`, and the upstream
+  branch before retrying.
 
 ## Validate And Report
 
@@ -289,7 +324,7 @@ documentation, and the changed files. Report:
 - the code repository path and installed SDK version;
 - files or generated state changed;
 - validation run and its result;
-- whether changes remain local or were committed, tagged, and pushed;
+- whether changes remain local or were committed and pushed;
 - any remaining authentication, environment, Git, or webhook verification
   gap.
 

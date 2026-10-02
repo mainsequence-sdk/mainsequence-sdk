@@ -105,15 +105,17 @@ class AutomaticRedeploymentPolicy(BaseModel):
         ...,
         title="Tag Regex",
         description=(
-            "Regular expression matched against immutable repository tags. "
-            "Null enables promotion for every qualifying exact commit."
+            "Regular expression matched against repository tags, set by `tag_regex` "
+            "in the repository's `.mainsequence/workflows/*.yaml`. Null deploys every "
+            "push; a regex deploys only when a matching tag points at the branch's "
+            "latest commit."
         ),
         examples=[None, r"^v(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)$"],
     )
     policy_revision: PositiveInt | None = Field(
         default=None,
         title="Policy Revision",
-        description=("Backend-owned immutable revision. Omit it from create and update requests."),
+        description="Read-only backend-owned immutable revision.",
         examples=[1, 3],
     )
 
@@ -278,13 +280,18 @@ class Job(CurrentCodeRepositoryBranchCollectionMixin, BaseObjectOrm, BasePydanti
     automatic_deployment: bool = Field(
         default=False,
         description=(
-            "Whether future qualifying immutable repository events may promote "
-            "this Job to another exact image. It never selects an initial image."
+            "Read-only. Whether future qualifying repository pushes may promote "
+            "this Job to another exact image. It never selects an initial image. "
+            "It is set in the repository's `.mainsequence/workflows/*.yaml`; a Job "
+            "update does not accept it."
         ),
     )
     automatic_redeployment_policy: AutomaticRedeploymentPolicy | None = Field(
         default=None,
-        description=("Standalone Job promotion policy. Target-owned backing Jobs return null."),
+        description=(
+            "Read-only standalone Job promotion policy, set in the repository's "
+            "workflow file. Target-owned backing Jobs return null."
+        ),
     )
 
 
@@ -1018,8 +1025,9 @@ class ResourceRelease(
         default=False,
         title="Automatic Deployment",
         description=(
-            "Whether repository synchronization should rotate this release to the "
-            "current CodeRepository commit."
+            "Read-only. Whether repository pushes rotate this release to the pushed "
+            "commit. It is set in the repository's `.mainsequence/workflows/*.yaml`; "
+            "a release update does not accept it."
         ),
         examples=[False, True],
     )
@@ -1027,8 +1035,8 @@ class ResourceRelease(
         default=None,
         title="Automatic Redeployment Policy",
         description=(
-            "Backend-owned tag matching policy and its current immutable revision. "
-            "The revision is returned by the API and is not part of create requests."
+            "Read-only tag matching policy and its current immutable revision, set "
+            "by `tag_regex` in the repository's workflow file."
         ),
     )
     COLLECTION_CREATE_SUPPORTED: ClassVar[bool] = False

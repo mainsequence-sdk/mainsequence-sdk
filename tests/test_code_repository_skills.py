@@ -550,7 +550,8 @@ def test_code_repository_maintenance_is_sdk_owned_and_uses_canonical_cli_workflo
     assert "\nmainsequence refresh-token\n" in content
     assert "code-repository refresh-token" not in content
     assert "mainsequence code-repository update-sdk --path ." in content
-    assert "mainsequence code-repository sync --path . -m" in content
+    assert "\nmainsequence code-repository sync --path .\n" in content
+    assert "code-repository sync --path . -m" not in content
     assert "mainsequence code-repository update-agent-skills --path ." in content
     assert "mainsequence code-repository update AGENTS.md --path ." in content
     assert "only when the user explicitly requests it" in content

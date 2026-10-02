@@ -4,8 +4,7 @@ This CLI mirrors key functionality from the MainSequence VS Code extension:
 - Login / logout
 - CodeRepository list + setup locally
 - Signed terminal support
-- Compile environment (`uv export`)
-- Sync code-repository workflow (bump, lock/sync/export, git commit/push)
+- Dependency sync (`uv lock`, `uv sync`, `requirements.txt` export)
 - Docker environment build + devcontainer config
 - Current code repository detection
 - SDK version status + update
@@ -116,15 +115,10 @@ mainsequence code-repository open-signed-terminal <CODE_REPOSITORY_UID>
 # CodeRepository operations
 mainsequence code-repository add-label <CODE_REPOSITORY_UID> --label rates --label research
 
-# Compile environment
-mainsequence code-repository freeze-env --path .
-# writes the locked runtime closure to requirements.txt and excludes the dev group
-
-# Sync CodeRepository (commit + push workflow)
-mainsequence code-repository sync -m "Update deps" --path .
-# first maps the Git repository, attached branch, and exact commit to CodeRepositoryBranch;
-# detached, unregistered, or mismatched CodeRepository assertions fail before mutations
-# then requests the backend-owned branch tag and runs lock/sync/export/commit/push
+# After changing dependencies
+mainsequence code-repository sync --path .
+# runs uv lock, uv sync and the locked runtime export to requirements.txt (dev group excluded);
+# no backend request and no Git command: commit and push the changed files yourself
 
 # Docker environment build
 mainsequence code-repository build-docker-env --path .
@@ -142,6 +136,27 @@ mainsequence code-repository update-sdk --path .
 # Diagnostics
 mainsequence doctor
 ```
+
+## Commit, push and release tags
+
+Publish changes with Git as usual: commit, then push. The platform deploys from
+the push according to the repository's `.mainsequence/workflows/*.yaml`.
+
+`mainsequence code-repository sync` is only for dependency changes. In the
+project root (`--path`, default the current directory) it runs `uv lock`,
+`uv sync`, and `uv export --locked --no-dev --no-hashes` into
+`requirements.txt`. It sends no request to the platform, creates no SSH or
+deploy key, changes no version, and runs no `git add`, `commit`, `tag` or
+`push`. Review `uv.lock` and `requirements.txt`, then commit and push them with
+the change.
+
+Whether a push deploys is decided by `tag_regex` in the workflow file. When it
+is omitted, every push deploys. When it is a regular expression, a push deploys
+only when a matching tag points at the branch's latest commit. The Main
+Sequence platform does not create tag names; release tags come from the
+repository's own CI. See
+[Deploy on every push or on release tags](infrastructure/scheduling_jobs.md#deploy-on-every-push-or-on-release-tags)
+for an example release workflow.
 
 ---
 
