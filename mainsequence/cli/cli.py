@@ -285,7 +285,7 @@ def _to_jsonable(value):
         return [_to_jsonable(item) for item in value]
     if isinstance(value, datetime.datetime | datetime.date | datetime.time):
         return value.isoformat()
-    if isinstance(value, pathlib.Path):
+    if isinstance(value, pathlib.Path | uuid.UUID):
         return str(value)
     if isinstance(value, PyEnum):
         return value.value

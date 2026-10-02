@@ -83,6 +83,9 @@ bundle. Platform skills are installed separately under
   `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
 - RBAC, sharing, constants, secrets, and access verification:
   `.agents/skills/mainsequence/platform_operations/access_control_and_sharing/SKILL.md`
+- Direct recorded model calls, structured extraction, thinking/provider options,
+  inference history and idempotent replay:
+  `.agents/skills/mainsequence/mainsequence-inference/SKILL.md`
 - A2A session discovery, messages, files, and SDK response handling:
   `.agents/skills/mainsequence/a2a_sdk_execution/SKILL.md`
 - Turning a CodeRepository into a platform coding agent or selecting other

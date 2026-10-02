@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import dataclasses
+import datetime
 import hashlib
 import importlib
 import json
@@ -8,8 +10,11 @@ import pathlib
 import subprocess
 import sys
 import types
+from enum import Enum
+from uuid import UUID
 
 import pytest
+from pydantic import BaseModel
 from typer.testing import CliRunner
 
 USER_UID = "8f5d6b54-2f5e-4a8b-bb10-0b17f3f4c123"
@@ -215,6 +220,102 @@ def test_user_show_json(cli_mod, runner, monkeypatch):
     assert payload["uid"] == "user-uid-7"
     assert payload["username"] == "jose"
     assert payload["organization"]["name"] == "Main Sequence"
+
+
+@pytest.mark.parametrize("json_output", [False, True])
+def test_user_show_handles_nested_uuid_identity(cli_mod, runner, monkeypatch, json_output):
+    organization_uid = "00000000-0000-4000-8000-000000000002"
+    identity = {
+        "uid": UUID(USER_UID),
+        "username": "jose",
+        "organization": {"uid": UUID(organization_uid), "name": "Main Sequence"},
+        "active_team_uids": [UUID(TEAM_UID)],
+    }
+    monkeypatch.setattr(cli_mod, "get_logged_user_details", lambda: identity)
+
+    result = runner.invoke(cli_mod.app, ["user"] + (["--json"] if json_output else []))
+
+    assert result.exit_code == 0
+    if json_output:
+        assert json.loads(result.output) == {
+            "uid": USER_UID,
+            "username": "jose",
+            "organization": {"uid": organization_uid, "name": "Main Sequence"},
+            "active_team_uids": [TEAM_UID],
+        }
+    else:
+        assert USER_UID in result.output
+        assert "Main Sequence" in result.output
+
+
+def test_to_jsonable_normalizes_uuid_in_nested_containers(cli_mod):
+    @dataclasses.dataclass
+    class Identity:
+        uid: UUID
+
+    class IdentityModel(BaseModel):
+        uid: UUID
+
+    class State(Enum):
+        ACTIVE = "active"
+
+    uid = UUID(USER_UID)
+    joined = datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
+    payload = {
+        "uid": uid,
+        "nested": {"uid": uid, "orm_class": object()},
+        "list": [uid],
+        "tuple": (uid,),
+        "set": {uid},
+        "dataclass": Identity(uid),
+        "model": IdentityModel(uid=uid),
+        "indexed": {uid: uid},
+        "date_joined": joined,
+        "path": pathlib.Path("skills"),
+        "state": State.ACTIVE,
+        "orm_class": object(),
+    }
+
+    assert json.loads(json.dumps(cli_mod._to_jsonable(payload))) == {
+        "uid": USER_UID,
+        "nested": {"uid": USER_UID},
+        "list": [USER_UID],
+        "tuple": [USER_UID],
+        "set": [USER_UID],
+        "dataclass": {"uid": USER_UID},
+        "model": {"uid": USER_UID},
+        "indexed": {USER_UID: USER_UID},
+        "date_joined": joined.isoformat(),
+        "path": "skills",
+        "state": "active",
+    }
+
+
+def test_to_jsonable_does_not_hide_unsupported_type_errors(cli_mod):
+    with pytest.raises(TypeError, match="not JSON serializable"):
+        json.dumps(cli_mod._to_jsonable(object()))
+
+
+@pytest.mark.parametrize("json_output", [False, True])
+@pytest.mark.parametrize(
+    ("error_type", "message", "expected_message"),
+    [
+        ("NotLoggedIn", "Invalid session", "Not logged in. Run: mainsequence login"),
+        ("ApiError", "Current user unavailable", "Current user unavailable"),
+    ],
+)
+def test_user_show_preserves_errors(
+    cli_mod, runner, monkeypatch, json_output, error_type, message, expected_message
+):
+    def rejected():
+        raise getattr(cli_mod, error_type)(message)
+
+    monkeypatch.setattr(cli_mod, "get_logged_user_details", rejected)
+
+    result = runner.invoke(cli_mod.app, ["user"] + (["--json"] if json_output else []))
+
+    assert result.exit_code == 1
+    assert expected_message in result.output
 
 
 def test_skills_list(cli_mod, runner, monkeypatch, tmp_path):
@@ -4134,9 +4235,34 @@ def test_validate_code_repository_name_uses_client_model(cli_mod, monkeypatch):
     assert out["normalized"]["repository_library_name"] == "rates_platform"
 
 
-def test_get_logged_user_details_uses_canonical_authenticated_user_method(cli_mod, monkeypatch):
+def test_get_logged_user_details_uses_canonical_authenticated_user_method(
+    cli_mod, runner, monkeypatch
+):
+    from mainsequence.client.models_user import User
+
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
+    user = User.model_validate(
+        {
+            "id": 7,
+            "uid": USER_UID,
+            "username": "jose",
+            "email": "jose@main-sequence.io",
+            "date_joined": "2026-01-01T00:00:00Z",
+            "is_active": True,
+            "api_request_limit": 10000,
+            "mfa_enabled": False,
+            "active_team_uids": [TEAM_UID],
+            "organization": {
+                "id": 2,
+                "uid": "00000000-0000-4000-8000-000000000003",
+                "name": "Main Sequence",
+                "organization_domain": "main-sequence.io",
+                "production_environment_uid": "00000000-0000-4000-8000-000000000002",
+            },
+        }
+    )
+    assert isinstance(user.model_dump()["active_team_uids"][0], UUID)
 
     monkeypatch.setattr(
         api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"}
@@ -4182,20 +4308,7 @@ def test_get_logged_user_details_uses_canonical_authenticated_user_method(cli_mo
         @classmethod
         def get_authenticated_user_details(cls):
             captured["current_user_url"] = f"{cls.ROOT_URL}/users/me/"
-            return types.SimpleNamespace(
-                model_dump=lambda: {
-                    "id": 7,
-                    "uid": "user-uid-7",
-                    "username": "jose",
-                    "email": "jose@main-sequence.io",
-                    "organization": {
-                        "id": 2,
-                        "uid": "org-uid-2",
-                        "name": "Main Sequence",
-                        "production_environment_uid": ("00000000-0000-4000-8000-000000000002"),
-                    },
-                }
-            )
+            return user
 
     fake_base.BaseObjectOrm = FakeBaseObjectOrm
     fake_models_user.User = FakeUser
@@ -4215,11 +4328,30 @@ def test_get_logged_user_details_uses_canonical_authenticated_user_method(cli_mo
     assert captured["current_user_url"] == "https://backend.test/api/v1/users/me/"
     assert "id" not in out
     assert "id" not in out["organization"]
-    assert out["uid"] == "user-uid-7"
+    assert out["uid"] == USER_UID
     assert out["username"] == "jose"
+    assert out["active_team_uids"] == [TEAM_UID]
+    assert json.loads(json.dumps(out))["uid"] == USER_UID
     assert (
         out["organization"]["production_environment_uid"] == "00000000-0000-4000-8000-000000000002"
     )
+
+    normal = runner.invoke(cli_mod.app, ["user"])
+    structured = runner.invoke(cli_mod.app, ["user", "--json"])
+
+    assert normal.exit_code == structured.exit_code == 0
+    assert USER_UID in normal.output
+    assert "Main Sequence" in normal.output
+    payload = json.loads(structured.output)
+    assert payload["uid"] == out["uid"]
+    assert payload["organization"]["uid"] == out["organization"]["uid"]
+    assert payload["active_team_uids"] == [TEAM_UID]
+    assert "id" not in payload
+    assert "id" not in payload["organization"]
+    assert "user_permissions" not in payload
+    assert "orm_class" not in payload
+    assert '"acc"' not in structured.output
+    assert '"ref"' not in structured.output
 
 
 def test_search_code_repositories_uses_client_model(cli_mod, monkeypatch):

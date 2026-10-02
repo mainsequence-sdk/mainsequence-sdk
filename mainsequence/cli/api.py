@@ -810,7 +810,7 @@ def get_logged_user_details() -> dict[str, Any]:
                 organization.pop("id", None)
             return user
         if hasattr(user, "model_dump"):
-            payload = user.model_dump()
+            payload = user.model_dump(mode="json")
             payload.pop("id", None)
             organization = payload.get("organization")
             if isinstance(organization, dict):
