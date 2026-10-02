@@ -60,6 +60,9 @@ Do not let this skill become a domain manual.
   `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
 - RBAC and sharing:
   `.agents/skills/mainsequence/platform_operations/access_control_and_sharing/SKILL.md`
+- direct recorded inference, structured extraction, thinking/provider controls,
+  conversation history and safe replay:
+  `.agents/skills/mainsequence/mainsequence-inference/SKILL.md`
 - TAU-based Harness Agent repository integration, local development, project
   customization, and runtime A2A adaptation: use the version-matched skills in
   `.agents/skills/ms_tau_sdk/` after the platform-owned skill defines the

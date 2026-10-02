@@ -112,3 +112,24 @@ Only the owner can append. Deletion removes protected content while retaining
 non-content outcomes, usage and idempotency identity. A replay of deleted content
 returns a recorded 410 error and never executes the model again. Content deleted
 during an active call is not recreated by the eventual provider response.
+
+
+## Agent scaffold skill
+
+The SDK bundles `agent_scaffold/skills/mainsequence-inference/SKILL.md`.
+It explains client/Environment setup, full-context messages, thinking levels,
+native options for OpenAI/Anthropic/Ollama/OpenRouter, provider storage versus
+Main Sequence history, structured results, idempotent replay, inspection and
+explicit deletion. The scaffold's managed instructions route direct model work
+to this skill.
+
+Inspect the installed copy without changing a repository:
+
+```bash
+mainsequence skills path mainsequence-inference
+```
+
+The existing explicit `mainsequence code-repository update-agent-skills --path .`
+workflow copies the bundled skill to
+`.agents/skills/mainsequence/mainsequence-inference/SKILL.md`. Run that update
+only when requested; adding the SDK skill does not refresh consumer repositories.
