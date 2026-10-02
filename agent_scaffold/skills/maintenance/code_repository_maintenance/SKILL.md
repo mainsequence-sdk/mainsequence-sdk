@@ -248,8 +248,8 @@ The platform deploys from the push according to the repository's
 pushes deploy:
 
 - omitted or `null`: every push to the branch deploys;
-- a regular expression: a push deploys only when a matching tag points at the
-  branch's latest commit.
+- a regular expression: a matching tag deploys the commit it points at, whether
+  that is the branch's latest commit or an older commit on the branch.
 
 Automatic deployment and `tag_regex` are set in the workflow file only; a
 `ResourceRelease` or `Job` update does not accept them. The Main Sequence

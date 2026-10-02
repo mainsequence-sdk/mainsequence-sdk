@@ -95,8 +95,8 @@ boundary and breaking changes.
   are repository code, for example a CI workflow that tags the version
   `pyproject.toml` declares, and `tag_regex` in the repository's
   `.mainsequence/workflows/*.yaml` decides which pushes deploy: omitted, every
-  push; a regular expression, only when a matching tag points at the branch's
-  latest commit. The CLI reference, the scheduling guide and the scaffold
+  push; a regular expression, the commit a matching tag points at, whether it
+  is the branch's latest commit or an older commit on the branch. The CLI reference, the scheduling guide and the scaffold
   skills say to commit and push with Git and show an example release workflow.
 - `automatic_deployment` and `automatic_redeployment_policy` on `Job` and
   `ResourceRelease` are documented as read-only. They are set in the

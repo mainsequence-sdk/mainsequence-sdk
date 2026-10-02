@@ -316,8 +316,9 @@ to `requirements.txt` (development dependencies are excluded). It makes no
 request to the platform, creates no SSH or deploy key, changes no version, and
 runs no Git command. Commit and push with Git as usual. Whether a push deploys
 is set by `tag_regex` in `.mainsequence/workflows/*.yaml`: when it is omitted,
-every push deploys; when it is a regular expression, a push deploys only when a
-matching tag points at the branch's latest commit. Release tags come from the
+every push deploys; when it is a regular expression, a matching tag deploys the
+commit it points at, whether that is the branch's latest commit or an older
+commit on the branch. Release tags come from the
 repository's own CI; see
 [Deploy on every push or on release tags](../knowledge/infrastructure/scheduling_jobs.md#deploy-on-every-push-or-on-release-tags).
 

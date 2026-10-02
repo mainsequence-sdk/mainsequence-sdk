@@ -151,8 +151,9 @@ deploy key, changes no version, and runs no `git add`, `commit`, `tag` or
 the change.
 
 Whether a push deploys is decided by `tag_regex` in the workflow file. When it
-is omitted, every push deploys. When it is a regular expression, a push deploys
-only when a matching tag points at the branch's latest commit. The Main
+is omitted, every push deploys. When it is a regular expression, a matching tag
+deploys the commit it points at, whether that is the branch's latest commit or
+an older commit on the branch. The Main
 Sequence platform does not create tag names; release tags come from the
 repository's own CI. See
 [Deploy on every push or on release tags](infrastructure/scheduling_jobs.md#deploy-on-every-push-or-on-release-tags)

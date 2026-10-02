@@ -38,8 +38,9 @@ The platform deploys from Git pushes according to the repository's
 pushes deploy:
 
 - `tag_regex` omitted, or `null`: every push to the branch deploys.
-- `tag_regex` set to a regular expression: a push deploys only when a tag that
-  matches it points at the branch's latest commit.
+- `tag_regex` set to a regular expression: a tag that matches it deploys the
+  commit it points at, whether that is the branch's latest commit or an older
+  commit on the branch. Every-push targets ignore tags.
 
 Automatic deployment and its `tag_regex` are set in the workflow file only.
 Use the current workflow template for where they go in a declaration. A
