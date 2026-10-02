@@ -300,6 +300,85 @@ only the commits CI tagged. Details:
 Do not call `sync-after-commit` or any backend repair endpoint. The GitHub
 branch-push webhook owns backend repository reconciliation.
 
+### Development Deploys Every Push, Production Deploys Tags
+
+A common setup uses two workflow files scoped to Environments. On the
+production branch only the first applies; on the development branch only the
+second:
+
+```yaml
+# .mainsequence/workflows/api-production.yaml
+api_version: "2.3.0"
+name: api-production
+scope:
+  environments: [production]
+resources:
+  - key: api
+    kind: fastapi
+    spec:
+      source_path: api/main.py
+      automatic_deployment: true
+      automatic_redeployment:
+        enabled: true
+        tag_regex: "^v[0-9]+\\.[0-9]+\\.[0-9]+$"
+```
+
+```yaml
+# .mainsequence/workflows/api-development.yaml
+api_version: "2.3.0"
+name: api-development
+scope:
+  environments: [development]  # the development Environment's exact name
+resources:
+  - key: api
+    kind: fastapi
+    spec:
+      source_path: api/main.py
+      automatic_deployment: true
+      automatic_redeployment:
+        enabled: true
+```
+
+A push to the development branch deploys at once. A merge to `main` deploys
+nothing until a matching tag points at a commit on `main`; with the release job
+above, CI creates that tag after the tests pass. Take the exact fields from the
+branch's workflow template and validate each file through the branch's
+`validate-workflow` action before committing it, as the
+`platform_operations/orchestration_and_releases` skill describes.
+
+### Creating A Release Tag
+
+The platform reacts to the tag push, however the tag was made. The short tag
+name must fully match `tag_regex`, and the tagged commit must be on the
+target's branch (its latest commit or an older one).
+
+- CI, as in the release job above. This is the recommended path.
+- By hand, only when the user asks for it:
+
+  ```bash
+  git tag v1.3.0 <commit>
+  git push origin v1.3.0
+  ```
+
+  Lightweight and annotated tags both work. Push one tag at a time: GitHub
+  sends no event when more than three tags are pushed at once, so
+  `git push --tags` can deploy nothing.
+- A GitHub Release: publishing a release with a new tag, in the web UI or with
+  `gh release create v1.3.0 --target main`, creates the tag, and that tag
+  deploys like a pushed one.
+
+A tag created with the Actions `GITHUB_TOKEN` starts no other GitHub Actions
+workflow, but it still reaches Main Sequence. Deleting a tag deploys nothing
+and removes nothing. A tag that does not match, or whose commit is only on
+another branch, deploys nothing for that target.
+
+### Going Back To An Older Version
+
+Revert the change and release a new version: `git revert <commit>`, raise the
+patch version with `uv version --bump patch`, commit, push, and let CI tag the
+result. The version keeps moving forward and every deployed commit matches its
+tag.
+
 ## Diagnose Partial Completion Before Retrying
 
 Never rerun an entire mutating workflow blindly.
