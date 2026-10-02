@@ -6,6 +6,7 @@
     - Server integrations
         - [Caller assertions](knowledge/server/caller_assertions.md)
     - Infrastructure
+        - [Recorded model conversations](knowledge/infrastructure/inference.md)
         - [Authentication](knowledge/infrastructure/auth.md)
         - [Git source and Environment context](knowledge/infrastructure/context.md)
         - [Resource releases](knowledge/infrastructure/resource_releases.md)
