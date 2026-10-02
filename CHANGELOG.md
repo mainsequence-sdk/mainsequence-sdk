@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+The FastAPI caller-assertion verifier now accepts EdDSA assertions and the
+platform's Ed25519 public key (`kty` `OKP`, `crv` `Ed25519`) instead of RS256
+RSA keys, matching how the platform now signs caller assertions. RS256
+assertions and RSA keys are rejected.
+
 The next final release is `9.0.3`. CLI JSON output now converts UUID identity
 values to strings, including nested fields, and the authenticated-user helper
 returns a JSON-compatible model dump. This fixes issue #182 without changing
