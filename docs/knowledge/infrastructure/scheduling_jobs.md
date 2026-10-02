@@ -19,15 +19,81 @@ The backend owns the accepted version, fields, defaults, permissions, and
 application semantics; use the current template rather than copying an old
 example as a schema.
 
-Commit the workflow file and use the normal CodeRepository sync path:
+Commit the workflow file and push it with Git as usual:
 
 ```bash
-mainsequence code-repository sync -m "Update job workflow"
+git add .mainsequence/workflows/jobs.yaml
+git commit -m "Update job workflow"
+git push
 ```
 
 Inspect the repository-event result and the Job or deployment history after the
 push. A successful Git push does not itself prove deployment success. Removing
 a workflow declaration does not delete an existing Job.
+
+## Deploy on every push or on release tags
+
+The platform deploys from Git pushes according to the repository's
+`.mainsequence/workflows/*.yaml`. A declaration's `tag_regex` decides which
+pushes deploy:
+
+- `tag_regex` omitted, or `null`: every push to the branch deploys.
+- `tag_regex` set to a regular expression: a push deploys only when a tag that
+  matches it points at the branch's latest commit.
+
+Automatic deployment and its `tag_regex` are set in the workflow file only.
+Use the current workflow template for where they go in a declaration. A
+`ResourceRelease` or `Job` update does not accept them, and the SDK models
+expose `automatic_deployment` and `automatic_redeployment_policy` as read-only
+fields.
+
+The Main Sequence platform does not create or name tags. Versions and release
+tags belong to the repository: raise the version in `pyproject.toml` (for
+example with `uv version --bump patch`) in the commit you want to release, and
+let the repository's own CI create the tag. The following GitHub Actions
+workflow is an example of such repository code, not a platform requirement. On
+every push to `main` it runs the tests and then tags the version that
+`pyproject.toml` declares, once:
+
+```yaml
+# Example: .github/workflows/release.yml in your repository
+name: release
+on:
+  push:
+    branches: [main]
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --locked
+      - run: uv run pytest
+      - name: Tag the version declared in pyproject.toml
+        run: |
+          TAG="v$(uv version --short)"
+          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            echo "$TAG already exists; nothing to release"
+            exit 0
+          fi
+          git tag "$TAG" "$GITHUB_SHA"
+          git push origin "refs/tags/$TAG"
+```
+
+With this example, a `tag_regex` such as `^v[0-9]+\.[0-9]+\.[0-9]+$` deploys
+the commits that CI tagged, and a push that does not raise the version deploys
+nothing.
+
+After a dependency change, run `mainsequence code-repository sync` to refresh
+`uv.lock`, the local environment and `requirements.txt`, then commit and push
+those files with the change. The command makes no Git commit, tag or push.
 
 ## Schedules and arguments
 

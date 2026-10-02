@@ -54,7 +54,7 @@ Do not let this skill become a domain manual.
 - CodeRepository audits, blocker analysis, and upstream SDK assessment:
   `.agents/skills/mainsequence/maintenance/bug_auditor/SKILL.md`
 - local environment repair, CodeRepository authentication refresh, SDK updates,
-  managed skill refresh, and canonical CodeRepository sync:
+  managed skill refresh, dependency sync, and publishing with Git:
   `.agents/skills/mainsequence/maintenance/code_repository_maintenance/SKILL.md`
 - jobs, schedules, artifacts, images, resources, and releases:
   `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`

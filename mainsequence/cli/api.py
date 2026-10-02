@@ -949,36 +949,6 @@ def get_code_repository_repository(
         raise ApiError(f"GitHubRepositoryBinding fetch failed: {e}") from e
 
 
-def render_code_repository_branch_default_redeployment_tag(
-    code_repository_branch_uid: str,
-    *,
-    version: str,
-) -> str:
-    normalized_uid = str(code_repository_branch_uid).strip()
-    normalized_version = str(version).strip()
-    if not normalized_uid:
-        raise ApiError("CodeRepositoryBranch UID is required.")
-    if not normalized_version:
-        raise ApiError("CodeRepository version is required.")
-
-    r = authed(
-        "POST",
-        f"/api/v1/code-repository-branches/{normalized_uid}/default-redeployment-tag/",
-        {"version": normalized_version},
-    )
-    if not r.ok:
-        raise ApiError(f"Default redeployment tag rendering failed ({r.status_code}).")
-    payload = r.json()
-    if not isinstance(payload, dict):
-        raise ApiError("Default redeployment tag rendering returned an unexpected payload.")
-    if str(payload.get("version") or "").strip() != normalized_version:
-        raise ApiError("Default redeployment tag rendering returned another version.")
-    tag_name = str(payload.get("tag_name") or "").strip()
-    if not tag_name:
-        raise ApiError("Default redeployment tag rendering returned no tag name.")
-    return tag_name
-
-
 def resolve_code_repository_branch_uid(code_repository_branch_ref: str) -> str:
     payload = get_code_repository_branch(code_repository_branch_ref)
     normalized_uid = str(payload.get("uid") or "").strip()

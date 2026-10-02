@@ -292,17 +292,15 @@ mainsequence code-repository set-up-locally <CODE_REPOSITORY_UID>
 mainsequence code-repository build-local-venv
 mainsequence code-repository build-local-venv --path .
 mainsequence code-repository build-local-venv --path . --recreate
-mainsequence code-repository freeze-env --path .
-# exports the locked runtime closure; development dependencies are excluded
 mainsequence code-repository update AGENTS.md
 mainsequence code-repository update AGENTS.md --path .
 mainsequence code-repository update-agent-skills
 mainsequence code-repository update-agent-skills --path .
 
-# 4) Day-to-day sync
-mainsequence code-repository sync "Update environment"
-mainsequence code-repository sync --path . -m "Update environment"
-mainsequence code-repository sync --path . -m "Preview environment" --dry-run
+# 4) After changing dependencies: uv lock, uv sync, export requirements.txt
+mainsequence code-repository sync
+mainsequence code-repository sync --path .
+# then commit and push uv.lock and requirements.txt with git
 
 # 5) Docker/devcontainer
 mainsequence code-repository build-docker-env --path .
@@ -311,6 +309,17 @@ mainsequence code-repository build-docker-env --path .
 mainsequence code-repository sdk-status --path .
 mainsequence code-repository update-sdk --path .
 ```
+
+`sync` changes local files only. In the project root (`--path`, default the
+current directory) it runs `uv lock`, `uv sync`, and the locked runtime export
+to `requirements.txt` (development dependencies are excluded). It makes no
+request to the platform, creates no SSH or deploy key, changes no version, and
+runs no Git command. Commit and push with Git as usual. Whether a push deploys
+is set by `tag_regex` in `.mainsequence/workflows/*.yaml`: when it is omitted,
+every push deploys; when it is a regular expression, a push deploys only when a
+matching tag points at the branch's latest commit. Release tags come from the
+repository's own CI; see
+[Deploy on every push or on release tags](../knowledge/infrastructure/scheduling_jobs.md#deploy-on-every-push-or-on-release-tags).
 
 `set-up-locally` writes `.env` with the backend endpoint and no credential.
 There is no per-checkout token command: the session belongs to the machine, and

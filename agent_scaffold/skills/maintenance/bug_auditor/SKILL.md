@@ -61,7 +61,8 @@ This skill audits. It does not implement by default.
 - RBAC and access issues:
   `.agents/skills/mainsequence/platform_operations/access_control_and_sharing/SKILL.md`
 - environment repair, authentication refresh, SDK updates, managed skill
-  refresh, and CodeRepository sync after the failure is classified:
+  refresh, dependency sync, and publishing with Git after the failure is
+  classified:
   `.agents/skills/mainsequence/maintenance/code_repository_maintenance/SKILL.md`
 
 ## Read First

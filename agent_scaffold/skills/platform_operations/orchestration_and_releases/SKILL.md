@@ -217,24 +217,33 @@ For deployed APIs, agents, or other supported resources:
 
 ### 6.1 Automatic ResourceRelease deployment
 
-`automatic_deployment` is the automated deployment opt-in flag on a `ResourceRelease`. It means repository synchronization can rotate an existing release to the latest synced CodeRepository commit for the same resource path.
+`automatic_deployment` is the automated deployment opt-in flag on a `ResourceRelease`. It means a Git push can rotate an existing release to the pushed CodeRepository commit for the same resource path.
 
-When `automatic_deployment=True`, repository-sync events may create a unified `DeploymentRun` with `target_type="resource_release"` and source `repository_event`. That run:
+Automatic deployment and its `tag_regex` are set in the repository's `.mainsequence/workflows/*.yaml` only. A `ResourceRelease` or `Job` update does not accept `automatic_deployment` or `automatic_redeployment_policy`; the SDK models expose both as read-only fields. Change the workflow file, commit it, and push it.
 
-- reads the CodeRepository's current synced commit
+The declaration's `tag_regex` decides which pushes deploy:
+
+- omitted or `null`: every push to the branch deploys
+- a regular expression: a push deploys only when a matching tag points at the branch's latest commit
+
+The platform does not create or name tags. Release tags come from the repository's own CI, for example a GitHub Actions workflow that tags the version declared in `pyproject.toml` after the tests pass. The maintenance skill `.agents/skills/mainsequence/maintenance/code_repository_maintenance/SKILL.md` has an example. `mainsequence code-repository sync` only refreshes `uv.lock`, the local environment, and `requirements.txt`; it does not commit, tag, or push.
+
+When `automatic_deployment=True`, a qualifying push may create a unified `DeploymentRun` with `target_type="resource_release"` and source `repository_event`. That run:
+
+- reads the pushed commit
 - resolves the current code repository resource at the release's existing resource path
 - resolves supporting resources required by the release kind
 - creates or resolves the code repository image for that commit
 - redeploys the existing release to the current resource, README, and code repository image
 - records state, phase, outcome, revision context, artifact context, steps, logs, result, and errors on the deployment run
 
-This is not a local development shortcut. It does not deploy unpushed local files. The repository must be pushed, the code repository must be synced, and code repository resource discovery must find the resource at the same path for the current commit.
+This is not a local development shortcut. It does not deploy unpushed local files. The commit must be pushed, carry a matching tag when the workflow sets a `tag_regex`, and code repository resource discovery must find the resource at the same path for that commit.
 
 Enable `automatic_deployment` only when:
 
-- the release should track the CodeRepository's synced version
+- the release should track the branch's pushed commits, or its tagged releases when a `tag_regex` is set
 - the resource path is stable across commits
-- the current synced branch/version is an acceptable deployment source for that release
+- the pushed branch, and its tags when a `tag_regex` is set, are an acceptable deployment source for that release
 - required supporting resources are available for the current commit
 - the team accepts CI/CD-style rotation for this release
 
@@ -244,7 +253,7 @@ Keep `automatic_deployment` disabled when:
 - each release rotation needs human approval
 - the resource path or entrypoint is still moving
 - API or widget contracts are not stable enough for automatic rotation
-- the current branch/CodeRepository sync target is not the intended deployment source
+- the pushed branch is not the intended deployment source
 
 Declare opted-in releases in the repository workflow and validate the file
 against the backend template. Repository events create deployment runs.
@@ -276,7 +285,8 @@ When reviewing an orchestration task, look for:
 - no run/log verification after creation
 - unsafe use of `--strict`
 - workflows depending on laptop-specific file paths instead of Artifacts
-- `automatic_deployment` enabled without an explicit decision about repository-sync CI/CD rotation
+- `automatic_deployment` enabled without an explicit decision about push-driven CI/CD rotation and `tag_regex`
+- client code that tries to set `automatic_deployment` or `automatic_redeployment_policy` through a release or Job update instead of the workflow file
 - assumptions that automatic deployment will deploy local unpushed changes
 - automatic release rotation where the resource path or required supporting resources are not stable
 - tasks that are really resource/release problems rather than simple job problems
@@ -297,7 +307,8 @@ Do not claim success until you have checked:
 - runs and logs were inspected when execution success matters
 - resources and releases were verified when deployment success matters
 - `automatic_deployment` is intentionally enabled or disabled on each release
-- automatic deployment runs were inspected when repository-sync rotation matters
+- the workflow's `tag_regex` is intentional, and the repository's CI creates matching tags when one is set
+- automatic deployment runs were inspected when push-driven rotation matters
 - automatic deployment results match the intended commit, resource, README, image, and terminal status
 
 If the workflow uses `.mainsequence/workflows/`, also check:
@@ -320,7 +331,7 @@ If the workflow uses Artifacts, also check:
 - a Job workflow cannot resolve an exact source image
 - an automatically deployed Job has no persisted synchronized CodeRepositoryBranch commit
 - the workflow depends on local file paths that should be platform Artifacts
-- automatic deployment is requested but the deployment source branch/current synced CodeRepository version is unclear
+- automatic deployment is requested but the deployment source branch or its `tag_regex` is unclear
 - automatic deployment is requested but the resource path or required README is not stable
 - the task is actually about RBAC policy rather than orchestration
 - the task is actually about producer semantics rather than platform execution

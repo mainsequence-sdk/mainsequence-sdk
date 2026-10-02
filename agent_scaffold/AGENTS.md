@@ -65,8 +65,8 @@ bundle. Platform skills are installed separately under
 - CodeRepository context, local SDK execution, repository structure, and
   implementation routing:
   `.agents/skills/mainsequence/sdk_code_repository_execution/SKILL.md`
-- Local environment repair, authentication, explicitly requested updates, and
-  canonical CodeRepository sync:
+- Local environment repair, authentication, explicitly requested updates,
+  dependency sync after a dependency change, and publishing with Git:
   `.agents/skills/mainsequence/maintenance/code_repository_maintenance/SKILL.md`
 - Blocker analysis, failure classification, and SDK/platform contract mismatches:
   `.agents/skills/mainsequence/maintenance/bug_auditor/SKILL.md`

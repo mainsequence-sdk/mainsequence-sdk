@@ -2674,40 +2674,13 @@ def test_add_deploy_key_uses_code_repository_route(cli_mod, monkeypatch):
     }
 
 
-def test_render_code_repository_branch_default_redeployment_tag_uses_backend_contract(
-    cli_mod,
-    monkeypatch,
-):
+def test_cli_api_requests_no_default_redeployment_tag(cli_mod):
+    """Release tags come from the repository's own CI, never from the platform."""
     api_mod = importlib.import_module("mainsequence.cli.api")
-    captured = {}
+    source = pathlib.Path(api_mod.__file__).read_text(encoding="utf-8")
 
-    class _Response:
-        ok = True
-        status_code = 200
-
-        @staticmethod
-        def json():
-            return {"version": "1.2.3", "tag_name": "v1.2.3-dev.1"}
-
-    def _authed(method, path, body=None):
-        captured.update(method=method, path=path, body=body)
-        return _Response()
-
-    monkeypatch.setattr(api_mod, "authed", _authed)
-
-    tag_name = api_mod.render_code_repository_branch_default_redeployment_tag(
-        "code-repository-branch-uid-123",
-        version="1.2.3",
-    )
-
-    assert tag_name == "v1.2.3-dev.1"
-    assert captured == {
-        "method": "POST",
-        "path": (
-            "/api/v1/code-repository-branches/code-repository-branch-uid-123/default-redeployment-tag/"
-        ),
-        "body": {"version": "1.2.3"},
-    }
+    assert not hasattr(api_mod, "render_code_repository_branch_default_redeployment_tag")
+    assert "default-redeployment-tag" not in source
 
 
 def test_org_slug_from_profile_handles_organization_object(cli_mod, monkeypatch):
@@ -7517,383 +7490,219 @@ def test_code_repository_build_local_venv_requires_pyproject(cli_mod, runner, tm
     assert "pyproject.toml not found in the CodeRepository root." in result.output
 
 
-def test_code_repository_freeze_env(cli_mod, runner, monkeypatch, tmp_path):
-    target = tmp_path / "code-repository"
-    target.mkdir(parents=True, exist_ok=True)
-    uv_path = target / ".venv" / "bin" / "uv"
-    calls = []
+def _init_sync_checkout(path: pathlib.Path) -> None:
+    """Make `path` a Git checkout before `subprocess` is replaced.
 
-    monkeypatch.setattr(cli_mod, "ensure_venv", lambda *_: None)
-    monkeypatch.setattr(cli_mod, "ensure_uv_installed", lambda *_: uv_path)
-    monkeypatch.setattr(
-        cli_mod,
-        "uv_export_requirements",
-        lambda uv, cwd, **kwargs: calls.append((uv, cwd, kwargs)),
-    )
-
-    result = runner.invoke(cli_mod.app, ["code-repository", "freeze-env", "--path", str(target)])
-    assert result.exit_code == 0
-    assert len(calls) == 1
-    assert calls[0][2] == {
-        "locked": True,
-        "no_dev": True,
-        "no_hashes": True,
-        "output_file": "requirements.txt",
-    }
+    The autouse CLI fixture otherwise creates the checkout inside `invoke`,
+    after the test has replaced `subprocess`.
+    """
+    path.mkdir(parents=True, exist_ok=True)
+    _REAL_SUBPROCESS_RUN(["git", "init", "-q", "-b", "main"], cwd=path, check=True)
 
 
-@pytest.mark.parametrize(
-    ("git_branch", "rendered_tag"),
-    [
-        ("main", "v1.2.4"),
-        ("dev", "v1.2.4-dev.1"),
-        ("feature/foo", "v1.2.4-feature-foo-12345678.1"),
-    ],
-)
-def test_code_repository_sync(
-    cli_mod,
-    runner,
-    monkeypatch,
-    tmp_path,
-    git_branch,
-    rendered_tag,
-):
-    target = tmp_path / "code-repository"
-    target.mkdir(parents=True, exist_ok=True)
-    (target / ".env").write_text("", encoding="utf-8")
-    key = tmp_path / "id_ed25519"
-    uv_path = target / ".venv" / "bin" / "uv"
-    uv_calls = []
-    git_calls = []
-    tag_requests = []
-
-    monkeypatch.setattr(cli_mod, "ensure_venv", lambda *_: None)
-    monkeypatch.setattr(
-        cli_mod,
-        "_resolve_git_code_repository_branch_context",
-        lambda *args, **kwargs: (git_branch, "code-repository-branch-uid-123"),
-    )
-    monkeypatch.setattr(cli_mod, "git_origin", lambda *_: "git@github.com:org/repo.git")
-    monkeypatch.setattr(
-        cli_mod,
-        "_ensure_code_repository_repository_ssh_access",
-        lambda **kwargs: (key, "pub", {"GIT_SSH_COMMAND": "forced"}),
-    )
-    monkeypatch.setattr(cli_mod, "ensure_uv_installed", lambda *_: uv_path)
-    monkeypatch.setattr(cli_mod, "uv_project_version", lambda *_, **__: "1.2.4")
-    monkeypatch.setattr(cli_mod, "uv_preview_patch_version", lambda *_, **__: "1.2.4")
-    monkeypatch.setattr(cli_mod, "verify_git_tag_absent", lambda *_, **__: None)
-    monkeypatch.setattr(cli_mod, "verify_git_remote_tag_absent", lambda *_, **__: None)
-    monkeypatch.setattr(
-        cli_mod,
-        "render_code_repository_branch_default_redeployment_tag",
-        lambda uid, *, version: tag_requests.append((uid, version)) or rendered_tag,
-    )
-    monkeypatch.setattr(
-        cli_mod,
-        "run_uv",
-        lambda uv, args, cwd, env=None: uv_calls.append(args),
-    )
-    monkeypatch.setattr(
-        cli_mod,
-        "uv_export_requirements",
-        lambda uv, cwd, **kwargs: uv_calls.append(["export"]),
-    )
-    monkeypatch.setattr(
-        cli_mod,
-        "run_cmd",
-        lambda cmd, cwd, env=None: git_calls.append(cmd),
-    )
-    result = runner.invoke(
-        cli_mod.app,
-        ["code-repository", "sync", "--message", "Update deps", "--path", str(target)],
-    )
-    assert result.exit_code == 0
-    assert ["version", "--bump", "patch"] in uv_calls
-    assert ["lock"] in uv_calls
-    assert ["sync"] in uv_calls
-    assert ["git", "add", "-A"] in git_calls
-    assert ["git", "commit", "-m", "Update deps"] in git_calls
-    assert ["git", "tag", "-a", rendered_tag, "-m", rendered_tag] in git_calls
-    assert [
-        "git",
-        "push",
-        "--atomic",
-        "--follow-tags",
-        "origin",
-        f"HEAD:refs/heads/{git_branch}",
-        f"refs/tags/{rendered_tag}:refs/tags/{rendered_tag}",
-    ] in git_calls
-    assert tag_requests == [("code-repository-branch-uid-123", "1.2.4")]
-
-
-def test_code_repository_sync_defaults_to_cwd_with_positional_message(
-    cli_mod, runner, monkeypatch, tmp_path
-):
-    target = tmp_path / "code-repository"
-    target.mkdir(parents=True, exist_ok=True)
-    (target / ".env").write_text("", encoding="utf-8")
-    key = tmp_path / "id_ed25519"
-    uv_path = target / ".venv" / "bin" / "uv"
-    git_calls = []
-
-    monkeypatch.chdir(target)
-    monkeypatch.setattr(cli_mod, "ensure_venv", lambda *_: None)
-    monkeypatch.setattr(
-        cli_mod,
-        "_resolve_git_code_repository_branch_context",
-        lambda *args, **kwargs: ("main", "code-repository-branch-uid-123"),
-    )
-    monkeypatch.setattr(cli_mod, "git_origin", lambda *_: "git@github.com:org/repo.git")
-    monkeypatch.setattr(
-        cli_mod,
-        "_ensure_code_repository_repository_ssh_access",
-        lambda **kwargs: (key, "pub", {"GIT_SSH_COMMAND": "forced"}),
-    )
-    monkeypatch.setattr(cli_mod, "ensure_uv_installed", lambda *_: uv_path)
-    monkeypatch.setattr(cli_mod, "uv_project_version", lambda *_, **__: "1.2.4")
-    monkeypatch.setattr(cli_mod, "uv_preview_patch_version", lambda *_, **__: "1.2.4")
-    monkeypatch.setattr(cli_mod, "verify_git_tag_absent", lambda *_, **__: None)
-    monkeypatch.setattr(cli_mod, "verify_git_remote_tag_absent", lambda *_, **__: None)
-    monkeypatch.setattr(
-        cli_mod,
-        "render_code_repository_branch_default_redeployment_tag",
-        lambda uid, *, version: "v1.2.4",
-    )
-    monkeypatch.setattr(cli_mod, "run_uv", lambda uv, args, cwd, env=None: None)
-    monkeypatch.setattr(cli_mod, "uv_export_requirements", lambda uv, cwd, **kwargs: None)
-    monkeypatch.setattr(
-        cli_mod,
-        "run_cmd",
-        lambda cmd, cwd, env=None: git_calls.append((cmd, pathlib.Path(cwd))),
-    )
-
-    result = runner.invoke(
-        cli_mod.app,
-        ["code-repository", "sync", "Update deps"],
-    )
-    assert result.exit_code == 0
-    assert (["git", "commit", "-m", "Update deps"], target) in git_calls
-    assert all(cwd == target for _, cwd in git_calls)
-
-
-@pytest.mark.parametrize(
-    "preflight_error",
-    [
-        "Current Git checkout is detached or has no named branch.",
-        "Git branch 'feature/missing' is not registered as a CodeRepositoryBranch for this CodeRepository.",
-    ],
-)
-def test_code_repository_sync_rejects_invalid_branch_before_local_mutation(
-    cli_mod,
-    runner,
-    monkeypatch,
-    tmp_path,
-    preflight_error,
-):
-    target = tmp_path / "code-repository"
-    target.mkdir(parents=True, exist_ok=True)
-    (target / ".env").write_text("", encoding="utf-8")
-
-    def fail_preflight(*args, **kwargs):
-        raise cli_mod.ApiError(preflight_error)
-
-    monkeypatch.setattr(cli_mod, "_resolve_git_code_repository_branch_context", fail_preflight)
-    monkeypatch.setattr(
-        cli_mod,
-        "ensure_venv",
-        lambda *_: pytest.fail("ensure_venv must not run before branch preflight"),
-    )
-
-    result = runner.invoke(
-        cli_mod.app,
-        [
-            "code-repository",
-            "sync",
-            "--message",
-            "Update deps",
-            "--path",
-            str(target),
-            "--dry-run",
-        ],
-    )
-
-    assert result.exit_code == 1
-    assert f"CodeRepository sync preflight failed: {preflight_error}" in result.output
-
-
-def test_code_repository_sync_dry_run_does_not_mutate(cli_mod, runner, monkeypatch, tmp_path):
-    target = tmp_path / "code-repository"
-    target.mkdir(parents=True, exist_ok=True)
-    (target / ".env").write_text(
-        "",
+def _sync_project(root: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path]:
+    """Create a project root with pyproject.toml and a `.venv` holding `uv`."""
+    project = root / "code-repository"
+    _init_sync_checkout(project)
+    bin_dir = project / ".venv" / "bin"
+    bin_dir.mkdir(parents=True)
+    (bin_dir / "python").write_text("", encoding="utf-8")
+    uv_path = bin_dir / "uv"
+    uv_path.write_text("", encoding="utf-8")
+    (project / "pyproject.toml").write_text(
+        '[project]\nname = "demo"\nversion = "1.2.3"\n',
         encoding="utf-8",
     )
+    return project, uv_path
 
-    monkeypatch.setattr(
-        cli_mod,
-        "_resolve_git_code_repository_branch_context",
-        lambda *args, **kwargs: ("main", "code-repository-branch-uid-123"),
-    )
-    monkeypatch.setattr(cli_mod, "ensure_venv", lambda *_: None)
-    monkeypatch.setattr(cli_mod, "git_origin", lambda *_: "git@github.com:org/repo.git")
-    monkeypatch.setattr(cli_mod, "ensure_uv_installed", lambda *_: target / ".venv/bin/uv")
-    monkeypatch.setattr(cli_mod, "uv_project_version", lambda *_, **__: "1.2.3")
-    monkeypatch.setattr(cli_mod, "uv_preview_patch_version", lambda *_, **__: "1.2.4")
-    monkeypatch.setattr(
-        cli_mod,
-        "render_code_repository_branch_default_redeployment_tag",
-        lambda uid, *, version: "v1.2.4",
-    )
-    monkeypatch.setattr(cli_mod, "verify_git_tag_absent", lambda *_, **__: None)
 
-    def fail_mutation(*args, **kwargs):
-        pytest.fail("dry-run must not execute sync mutations")
+def _record_sync_side_effects(monkeypatch, cli_mod) -> dict[str, list]:
+    """Record every process `sync` starts and every network access it attempts.
+
+    `subprocess.run` is replaced for the whole process, so a Git command run
+    through any helper is recorded too. HTTP is refused at the `requests`
+    session and at the socket, below every SDK client.
+    """
+    import socket
+
+    import requests
+
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    recorded: dict[str, list] = {"run": [], "popen": [], "network": []}
+
+    def _run(cmd, *args, **kwargs):
+        cwd = kwargs.get("cwd")
+        recorded["run"].append((list(cmd), pathlib.Path(cwd) if cwd else None))
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    def _popen(cmd, *args, **kwargs):
+        recorded["popen"].append(list(cmd))
+        raise OSError("sync must not start a process outside subprocess.run")
+
+    def _network(*args, **kwargs):
+        recorded["network"].append(args)
+        raise OSError("sync must not use the network")
+
+    monkeypatch.setattr(subprocess, "run", _run)
+    monkeypatch.setattr(subprocess, "Popen", _popen)
+    monkeypatch.setattr(requests.sessions.Session, "request", _network)
+    monkeypatch.setattr(socket.socket, "connect", _network)
+    monkeypatch.setattr(api_mod, "authed", _network)
+    return recorded
+
+
+def test_code_repository_sync_runs_only_lock_sync_and_export(
+    cli_mod, runner, monkeypatch, tmp_path
+):
+    project, uv_path = _sync_project(tmp_path)
+    recorded = _record_sync_side_effects(monkeypatch, cli_mod)
+
+    result = runner.invoke(cli_mod.app, ["code-repository", "sync", "--path", str(project)])
+
+    assert result.exit_code == 0, result.output
+    assert recorded["run"] == [
+        ([str(uv_path), "lock"], project),
+        ([str(uv_path), "sync"], project),
+        (
+            [
+                str(uv_path),
+                "export",
+                "--locked",
+                "--no-dev",
+                "--no-hashes",
+                "--format",
+                "requirements-txt",
+                "-o",
+                "requirements.txt",
+            ],
+            project,
+        ),
+    ]
+    assert not [cmd for cmd, _cwd in recorded["run"] if cmd[0] == "git"]
+    assert recorded["popen"] == []
+    assert recorded["network"] == []
+    assert "Nothing was committed or pushed" in result.output
+    assert "commit and push them yourself" in result.output
+
+
+def test_code_repository_sync_defaults_to_the_current_directory(
+    cli_mod, runner, monkeypatch, tmp_path
+):
+    project, uv_path = _sync_project(tmp_path)
+    recorded = _record_sync_side_effects(monkeypatch, cli_mod)
+    monkeypatch.chdir(project)
+
+    result = runner.invoke(cli_mod.app, ["code-repository", "sync"])
+
+    assert result.exit_code == 0, result.output
+    assert [cmd[1] for cmd, _cwd in recorded["run"]] == ["lock", "sync", "export"]
+    assert all(cwd == project for _cmd, cwd in recorded["run"])
+    assert recorded["network"] == []
+
+
+def test_code_repository_sync_creates_no_key_and_changes_no_version(
+    cli_mod, runner, monkeypatch, tmp_path
+):
+    project, _uv_path = _sync_project(tmp_path)
+    recorded = _record_sync_side_effects(monkeypatch, cli_mod)
+    pyproject_before = (project / "pyproject.toml").read_text(encoding="utf-8")
+
+    def _forbidden(*args, **kwargs):
+        raise AssertionError("sync must not touch SSH keys, deploy keys or the backend")
 
     for name in (
+        "ensure_key_for_repo",
+        "add_deploy_key",
         "_ensure_code_repository_repository_ssh_access",
-        "verify_git_remote_tag_absent",
-        "run_uv",
-        "uv_export_requirements",
-        "run_cmd",
+        "_resolve_git_code_repository_branch_context",
+        "git_origin",
     ):
-        monkeypatch.setattr(cli_mod, name, fail_mutation)
+        monkeypatch.setattr(cli_mod, name, _forbidden)
+
+    result = runner.invoke(cli_mod.app, ["code-repository", "sync", "--path", str(project)])
+
+    assert result.exit_code == 0, result.output
+    assert (project / "pyproject.toml").read_text(encoding="utf-8") == pyproject_before
+    assert not [cmd for cmd, _cwd in recorded["run"] if "version" in cmd]
+
+
+@pytest.mark.parametrize(
+    "removed_arguments",
+    [
+        ["Update deps"],
+        ["--message", "Update deps"],
+        ["-m", "Update deps"],
+        ["--dry-run"],
+        ["Update deps", "code-repository-uid-123"],
+    ],
+)
+def test_code_repository_sync_accepts_only_path(
+    cli_mod, runner, monkeypatch, tmp_path, removed_arguments
+):
+    project, _uv_path = _sync_project(tmp_path)
+    recorded = _record_sync_side_effects(monkeypatch, cli_mod)
 
     result = runner.invoke(
         cli_mod.app,
-        [
-            "code-repository",
-            "sync",
-            "--message",
-            "Preview release",
-            "--path",
-            str(target),
-            "--dry-run",
-        ],
+        ["code-repository", "sync", "--path", str(project), *removed_arguments],
     )
 
-    assert result.exit_code == 0
-    assert "ensure repository SSH key" in result.output
-    assert "Next version" in result.output
-    assert "1.2.4" in result.output
-    assert "v1.2.4" in result.output
-    assert "read-only preflight complete; no changes made" in result.output
+    assert result.exit_code == 2
+    assert recorded["run"] == []
 
 
-def test_code_repository_sync_remote_tag_collision_stops_before_mutation(
+def test_code_repository_sync_requires_pyproject_in_the_project_root(
     cli_mod, runner, monkeypatch, tmp_path
 ):
-    target = tmp_path / "code-repository"
-    target.mkdir(parents=True, exist_ok=True)
-    (target / ".env").write_text(
-        "",
-        encoding="utf-8",
-    )
-    uv_path = target / ".venv" / "bin" / "uv"
+    _init_sync_checkout(tmp_path)
+    recorded = _record_sync_side_effects(monkeypatch, cli_mod)
 
-    monkeypatch.setattr(cli_mod, "ensure_venv", lambda *_: None)
-    monkeypatch.setattr(
-        cli_mod,
-        "_resolve_git_code_repository_branch_context",
-        lambda *args, **kwargs: ("main", "code-repository-branch-uid-123"),
-    )
-    monkeypatch.setattr(cli_mod, "git_origin", lambda *_: "git@github.com:org/repo.git")
-    monkeypatch.setattr(cli_mod, "ensure_uv_installed", lambda *_: uv_path)
-    monkeypatch.setattr(cli_mod, "uv_project_version", lambda *_, **__: "1.2.3")
-    monkeypatch.setattr(cli_mod, "uv_preview_patch_version", lambda *_, **__: "1.2.4")
-    monkeypatch.setattr(
-        cli_mod,
-        "render_code_repository_branch_default_redeployment_tag",
-        lambda uid, *, version: "v1.2.4",
-    )
-    monkeypatch.setattr(cli_mod, "verify_git_tag_absent", lambda *_, **__: None)
-    monkeypatch.setattr(
-        cli_mod,
-        "_ensure_code_repository_repository_ssh_access",
-        lambda **kwargs: (tmp_path / "key", "pub", {"GIT_SSH_COMMAND": "forced"}),
-    )
-    monkeypatch.setattr(
-        cli_mod,
-        "verify_git_remote_tag_absent",
-        lambda *_, **__: (_ for _ in ()).throw(
-            RuntimeError("Git tag already exists remotely: v1.2.4")
-        ),
-    )
-    monkeypatch.setattr(
-        cli_mod,
-        "run_uv",
-        lambda *_, **__: pytest.fail("version mutation must not run after a collision"),
-    )
-    monkeypatch.setattr(
-        cli_mod,
-        "run_cmd",
-        lambda *_, **__: pytest.fail("Git mutation must not run after a collision"),
-    )
-
-    result = runner.invoke(
-        cli_mod.app,
-        ["code-repository", "sync", "--message", "Update deps", "--path", str(target)],
-    )
+    result = runner.invoke(cli_mod.app, ["code-repository", "sync", "--path", str(tmp_path)])
 
     assert result.exit_code == 1
-    assert "CodeRepository sync remote tag preflight failed" in result.output
-    assert "already exists remotely: v1.2.4" in result.output
+    assert "pyproject.toml not found" in result.output
+    assert recorded["run"] == []
 
 
-def test_code_repository_sync_version_mismatch_stops_before_lock_or_git_mutation(
-    cli_mod, runner, monkeypatch, tmp_path
-):
-    target = tmp_path / "code-repository"
-    target.mkdir(parents=True, exist_ok=True)
-    (target / ".env").write_text(
-        "",
-        encoding="utf-8",
-    )
-    uv_path = target / ".venv" / "bin" / "uv"
-    versions = iter(["1.2.3", "1.2.5"])
-    uv_calls = []
+def test_code_repository_sync_reports_a_missing_venv(cli_mod, runner, monkeypatch, tmp_path):
+    project = tmp_path / "code-repository"
+    _init_sync_checkout(project)
+    (project / "pyproject.toml").write_text('[project]\nname = "demo"\n', encoding="utf-8")
+    recorded = _record_sync_side_effects(monkeypatch, cli_mod)
 
-    monkeypatch.setattr(cli_mod, "ensure_venv", lambda *_: None)
-    monkeypatch.setattr(
-        cli_mod,
-        "_resolve_git_code_repository_branch_context",
-        lambda *args, **kwargs: ("main", "code-repository-branch-uid-123"),
-    )
-    monkeypatch.setattr(cli_mod, "git_origin", lambda *_: "git@github.com:org/repo.git")
-    monkeypatch.setattr(cli_mod, "ensure_uv_installed", lambda *_: uv_path)
-    monkeypatch.setattr(cli_mod, "uv_project_version", lambda *_, **__: next(versions))
-    monkeypatch.setattr(cli_mod, "uv_preview_patch_version", lambda *_, **__: "1.2.4")
-    monkeypatch.setattr(
-        cli_mod,
-        "render_code_repository_branch_default_redeployment_tag",
-        lambda uid, *, version: "v1.2.4",
-    )
-    monkeypatch.setattr(cli_mod, "verify_git_tag_absent", lambda *_, **__: None)
-    monkeypatch.setattr(cli_mod, "verify_git_remote_tag_absent", lambda *_, **__: None)
-    monkeypatch.setattr(
-        cli_mod,
-        "_ensure_code_repository_repository_ssh_access",
-        lambda **kwargs: (tmp_path / "key", "pub", {"GIT_SSH_COMMAND": "forced"}),
-    )
-    monkeypatch.setattr(
-        cli_mod,
-        "run_uv",
-        lambda uv, args, cwd, env=None: uv_calls.append(args),
-    )
-    monkeypatch.setattr(
-        cli_mod,
-        "run_cmd",
-        lambda *_, **__: pytest.fail("Git mutation must not run after a version mismatch"),
-    )
-
-    result = runner.invoke(
-        cli_mod.app,
-        ["code-repository", "sync", "--message", "Update deps", "--path", str(target)],
-    )
+    result = runner.invoke(cli_mod.app, ["code-repository", "sync", "--path", str(project)])
 
     assert result.exit_code == 1
-    assert "uv produced 1.2.5; preflight expected 1.2.4" in result.output
-    assert uv_calls == [["version", "--bump", "patch"]]
+    assert "CodeRepository sync failed" in result.output
+    assert ".venv not found" in result.output
+    assert recorded["run"] == []
+
+
+def test_code_repository_sync_stops_at_the_failing_uv_step(cli_mod, runner, monkeypatch, tmp_path):
+    project, uv_path = _sync_project(tmp_path)
+    recorded = _record_sync_side_effects(monkeypatch, cli_mod)
+
+    def _run(cmd, *args, **kwargs):
+        recorded["run"].append((list(cmd), pathlib.Path(kwargs["cwd"])))
+        return subprocess.CompletedProcess(cmd, 1 if cmd[1:] == ["sync"] else 0, "", "")
+
+    monkeypatch.setattr(subprocess, "run", _run)
+
+    result = runner.invoke(cli_mod.app, ["code-repository", "sync", "--path", str(project)])
+
+    assert result.exit_code == 1
+    assert "CodeRepository sync failed" in result.output
+    assert [cmd for cmd, _cwd in recorded["run"]] == [
+        [str(uv_path), "lock"],
+        [str(uv_path), "sync"],
+    ]
+
+
+def test_code_repository_freeze_env_is_removed(cli_mod, runner):
+    result = runner.invoke(cli_mod.app, ["code-repository", "freeze-env", "--path", "."])
+
+    assert result.exit_code == 2
+    assert "No such command" in result.output
 
 
 def test_code_repository_schedule_batch_jobs_is_removed(cli_mod, runner):
@@ -7901,136 +7710,6 @@ def test_code_repository_schedule_batch_jobs_is_removed(cli_mod, runner):
 
     assert result.exit_code == 2
     assert "No such command" in result.output
-
-
-def test_code_repository_sync_code_repository(cli_mod, runner, monkeypatch, tmp_path):
-    target = tmp_path / "code-repository"
-    target.mkdir(parents=True, exist_ok=True)
-    (target / ".env").write_text("", encoding="utf-8")
-    key = tmp_path / "id_ed25519"
-    uv_path = target / ".venv" / "bin" / "uv"
-    uv_calls = []
-    export_calls = []
-    git_calls = []
-    monkeypatch.setattr(cli_mod, "ensure_venv", lambda *_: None)
-    monkeypatch.setattr(
-        cli_mod,
-        "_resolve_git_code_repository_branch_context",
-        lambda *args, **kwargs: ("main", "code-repository-branch-uid-123"),
-    )
-    monkeypatch.setattr(cli_mod, "git_origin", lambda *_: "git@github.com:org/repo.git")
-    monkeypatch.setattr(
-        cli_mod,
-        "_ensure_code_repository_repository_ssh_access",
-        lambda **kwargs: (key, "pub", {"GIT_SSH_COMMAND": "forced"}),
-    )
-    monkeypatch.setattr(cli_mod, "ensure_uv_installed", lambda *_: uv_path)
-    monkeypatch.setattr(cli_mod, "uv_project_version", lambda *_, **__: "1.2.4")
-    monkeypatch.setattr(cli_mod, "uv_preview_patch_version", lambda *_, **__: "1.2.4")
-    monkeypatch.setattr(cli_mod, "verify_git_tag_absent", lambda *_, **__: None)
-    monkeypatch.setattr(cli_mod, "verify_git_remote_tag_absent", lambda *_, **__: None)
-    monkeypatch.setattr(
-        cli_mod,
-        "render_code_repository_branch_default_redeployment_tag",
-        lambda uid, *, version: "v1.2.4",
-    )
-    monkeypatch.setattr(
-        cli_mod,
-        "run_uv",
-        lambda uv, args, cwd, env=None: uv_calls.append(args),
-    )
-    monkeypatch.setattr(
-        cli_mod,
-        "uv_export_requirements",
-        lambda uv, cwd, **kwargs: export_calls.append(kwargs),
-    )
-    monkeypatch.setattr(
-        cli_mod,
-        "run_cmd",
-        lambda cmd, cwd, env=None: git_calls.append(cmd),
-    )
-    result = runner.invoke(
-        cli_mod.app,
-        ["code-repository", "sync", "Update deps", "--path", str(target)],
-    )
-    assert result.exit_code == 0
-    assert uv_calls == [["version", "--bump", "patch"], ["lock"], ["sync"]]
-    assert len(export_calls) == 1
-    assert export_calls[0]["locked"] is True
-    assert export_calls[0]["no_dev"] is True
-    assert export_calls[0]["no_hashes"] is True
-    assert export_calls[0]["output_file"] == "requirements.txt"
-    assert git_calls == [
-        ["git", "add", "-A"],
-        ["git", "commit", "-m", "Update deps"],
-        ["git", "tag", "-a", "v1.2.4", "-m", "v1.2.4"],
-        [
-            "git",
-            "push",
-            "--atomic",
-            "--follow-tags",
-            "origin",
-            "HEAD:refs/heads/main",
-            "refs/tags/v1.2.4:refs/tags/v1.2.4",
-        ],
-    ]
-
-
-def test_code_repository_sync_code_repository_defaults_to_current_code_repository_dir(
-    cli_mod, runner, monkeypatch, tmp_path
-):
-    target = tmp_path / "code-repository"
-    target.mkdir(parents=True, exist_ok=True)
-    (target / ".env").write_text("", encoding="utf-8")
-    key = tmp_path / "id_ed25519"
-    uv_path = target / ".venv" / "bin" / "uv"
-    seen = {"cwd": []}
-
-    monkeypatch.chdir(target)
-    monkeypatch.setattr(cli_mod, "ensure_venv", lambda *_: None)
-    monkeypatch.setattr(
-        cli_mod,
-        "_resolve_git_code_repository_branch_context",
-        lambda *args, **kwargs: ("main", "code-repository-branch-uid-123"),
-    )
-    monkeypatch.setattr(cli_mod, "git_origin", lambda *_: "git@github.com:org/repo.git")
-    monkeypatch.setattr(
-        cli_mod,
-        "_ensure_code_repository_repository_ssh_access",
-        lambda **kwargs: (key, "pub", {"GIT_SSH_COMMAND": "forced"}),
-    )
-    monkeypatch.setattr(cli_mod, "ensure_uv_installed", lambda *_: uv_path)
-    monkeypatch.setattr(cli_mod, "uv_project_version", lambda *_, **__: "1.2.4")
-    monkeypatch.setattr(cli_mod, "uv_preview_patch_version", lambda *_, **__: "1.2.4")
-    monkeypatch.setattr(cli_mod, "verify_git_tag_absent", lambda *_, **__: None)
-    monkeypatch.setattr(cli_mod, "verify_git_remote_tag_absent", lambda *_, **__: None)
-    monkeypatch.setattr(
-        cli_mod,
-        "render_code_repository_branch_default_redeployment_tag",
-        lambda uid, *, version: "v1.2.4",
-    )
-    monkeypatch.setattr(
-        cli_mod,
-        "run_uv",
-        lambda uv, args, cwd, env=None: seen["cwd"].append(cwd),
-    )
-    monkeypatch.setattr(
-        cli_mod,
-        "uv_export_requirements",
-        lambda uv, cwd, **kwargs: seen["cwd"].append(cwd),
-    )
-    monkeypatch.setattr(
-        cli_mod,
-        "run_cmd",
-        lambda cmd, cwd, env=None: seen["cwd"].append(cwd),
-    )
-    result = runner.invoke(
-        cli_mod.app,
-        ["code-repository", "sync", "Update deps"],
-    )
-    assert result.exit_code == 0
-    assert seen["cwd"]
-    assert all(pathlib.Path(cwd) == target for cwd in seen["cwd"])
 
 
 def test_code_repository_build_docker_env(cli_mod, runner, monkeypatch, tmp_path):

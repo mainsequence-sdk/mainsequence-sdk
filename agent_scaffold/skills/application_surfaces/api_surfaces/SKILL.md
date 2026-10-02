@@ -241,17 +241,24 @@ mainsequence code-repository current --debug --json
 ```
 
 Declare the FastAPI resource in `.mainsequence/workflows/`, validate the
-workflow against the backend template, then move the tested commit through the
-canonical lifecycle:
+workflow against the backend template, then commit and push the tested commit
+with Git and inspect the result:
 
 ```bash
-mainsequence code-repository sync -m "Release Command Center API"
+git commit -m "Release Command Center API"
+git push
 mainsequence code-repository resources list --filter resource_type=fastapi
 ```
 
+When the dependencies changed, run `mainsequence code-repository sync --path .`
+before the commit and include the refreshed `uv.lock` and `requirements.txt`.
+The command runs no Git command and makes no platform request.
+
 Verify that:
 
-- code-repository sync used the intended Git branch
+- the push went to the intended Git branch
+- when the workflow sets a `tag_regex`, the repository's CI tagged the pushed
+  commit with a matching tag; without a `tag_regex` every push deploys
 - the workflow declaration identifies the tested FastAPI source path
 - resource discovery found that path at the exact deployed commit
 - Django resolved and built the exact image for the workflow event
@@ -261,7 +268,8 @@ Verify that:
 
 Enable automatic deployment in the repository workflow when the route paths,
 resource path, and frontend contracts are stable enough for future repository
-events to promote exact images.
+events to promote exact images. Automatic deployment and its `tag_regex` are
+set in the workflow file only; a release update does not accept them.
 
 ### 6. Verify the deployed API
 

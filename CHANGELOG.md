@@ -83,6 +83,25 @@ boundary and breaking changes.
 
 ### Changed
 
+- `mainsequence code-repository sync` only refreshes dependency files. In the
+  project root (`--path`, default the current directory) it runs `uv lock`,
+  `uv sync`, and `uv export --locked --no-dev --no-hashes` into
+  `requirements.txt`. It sends no request to the platform, creates no SSH or
+  deploy key, changes no version, and runs no `git add`, `commit`, `tag` or
+  `push`; it ends by telling you to commit and push the changed files yourself.
+  `--path` is its only option: the positional or `--message` commit message,
+  the positional CodeRepository UID and `--dry-run` are removed. The Main
+  Sequence platform no longer provides tag names. Versions and release tags
+  are repository code, for example a CI workflow that tags the version
+  `pyproject.toml` declares, and `tag_regex` in the repository's
+  `.mainsequence/workflows/*.yaml` decides which pushes deploy: omitted, every
+  push; a regular expression, only when a matching tag points at the branch's
+  latest commit. The CLI reference, the scheduling guide and the scaffold
+  skills say to commit and push with Git and show an example release workflow.
+- `automatic_deployment` and `automatic_redeployment_policy` on `Job` and
+  `ResourceRelease` are documented as read-only. They are set in the
+  repository's workflow file only, and a Job or release update does not accept
+  them. No SDK method sent them.
 - Removed the remote `CodeRepositoryBranch.update_sdk()` action and retired
   SDK observation response fields. The local
   `mainsequence code-repository update-sdk --path .` command remains supported
@@ -163,6 +182,17 @@ boundary and breaking changes.
   deselected by default. The normal test run remains offline.
 
 ### Removed
+
+- Removed `mainsequence code-repository freeze-env`.
+  `mainsequence code-repository sync` runs the same locked `requirements.txt`
+  export after `uv lock` and `uv sync`.
+- Removed the CLI helpers that only the previous `sync` workflow used:
+  `mainsequence.cli.api.render_code_repository_branch_default_redeployment_tag()`,
+  `mainsequence.cli.ssh_utils.verify_git_push_access()`,
+  `verify_git_tag_absent()` and `verify_git_remote_tag_absent()`, and
+  `mainsequence.cli.local_ops.uv_project_version()` and
+  `uv_preview_patch_version()`. The SSH-key and deploy-key helpers that
+  `set-up-locally` and `open-signed-terminal` use are unchanged.
 
 - Removed `mainsequence code-repository refresh-token`. It rewrote tokens in the
   `.env` of one checkout, and no checkout holds a credential any more. Use
