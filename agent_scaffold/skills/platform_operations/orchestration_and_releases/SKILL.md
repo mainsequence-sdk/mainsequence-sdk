@@ -91,8 +91,16 @@ the SDK or CodeRepository code.
 
 Every file requires the backend-advertised `api_version`, a name, and resource
 declarations. Use the current template for accepted fields and resource kinds.
-There is no prune or strict-delete mode; removing a declaration does not delete
-an existing backend resource.
+A declaration owns its target. On the next push of the branch head, these
+delete the target:
+
+- removing the declaration or its file;
+- a `scope` that excludes the branch's Environment.
+
+Renaming a file or key deletes the old target and creates a new one, with new
+UIDs and URLs. An invalid file deletes nothing. The branch's Harness Agent
+stays while any workflow file declares a `harness_agent`, so moving its
+declaration keeps the same Agent.
 
 Do not hide important recurring schedules in ad hoc shell history or one-off manual commands.
 

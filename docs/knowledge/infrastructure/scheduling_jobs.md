@@ -28,8 +28,17 @@ git push
 ```
 
 Inspect the repository-event result and the Job or deployment history after the
-push. A successful Git push does not itself prove deployment success. Removing
-a workflow declaration does not delete an existing Job.
+push. A successful Git push does not itself prove deployment success.
+
+A workflow declaration owns its Job. On the next push of the branch head, these
+delete the Job:
+
+- removing the declaration or its file;
+- a `scope` that excludes the branch's Environment.
+
+Renaming the file or the key deletes the Job and creates a new one. An invalid
+file deletes nothing. The repository-event result lists deleted targets under
+`deletions`.
 
 ## Deploy on every push or on release tags
 
