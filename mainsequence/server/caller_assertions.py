@@ -11,14 +11,10 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from urllib.parse import urlsplit
 
+import jwt
 import requests
-
-try:
-    import jwt
-    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
-    from jwt import InvalidKeyError, InvalidTokenError
-except ImportError as exc:
-    raise ImportError("Caller verification requires the mainsequence[server] extra.") from exc
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+from jwt import InvalidKeyError, InvalidTokenError
 
 ASSERTION_HEADER = "X-MainSequence-Caller-Assertion"
 ASSERTION_TYPE = "mainsequence-caller-assertion+jwt"

@@ -1,5 +1,5 @@
 version = 1
-revision = 5
+revision = 3
 requires-python = ">=3.13"
 resolution-markers = [
     "python_full_version >= '3.14'",
@@ -692,16 +692,12 @@ dependencies = [
     { name = "psutil" },
     { name = "pydantic" },
     { name = "pygments" },
+    { name = "pyjwt", extra = ["crypto"] },
     { name = "pyyaml" },
     { name = "requests" },
     { name = "structlog" },
     { name = "typer" },
     { name = "urllib3" },
-]
-
-[package.optional-dependencies]
-server = [
-    { name = "pyjwt", extra = ["crypto"] },
 ]
 
 [package.dev-dependencies]
@@ -721,7 +717,6 @@ dev = [
     { name = "packaging" },
     { name = "pipdeptree" },
     { name = "pre-commit" },
-    { name = "pyjwt", extra = ["crypto"] },
     { name = "pymdown-extensions" },
     { name = "pytest" },
     { name = "ruff" },
@@ -742,14 +737,13 @@ requires-dist = [
     { name = "psutil" },
     { name = "pydantic", specifier = ">=2.11,<3" },
     { name = "pygments", specifier = ">=2.20.0" },
-    { name = "pyjwt", extras = ["crypto"], marker = "extra == 'server'", specifier = ">=2.10,<3" },
+    { name = "pyjwt", extras = ["crypto"], specifier = ">=2.10,<3" },
     { name = "pyyaml" },
     { name = "requests", specifier = ">=2.33.0" },
     { name = "structlog" },
     { name = "typer" },
     { name = "urllib3", specifier = ">=2.7.0" },
 ]
-provides-extras = ["server"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -768,7 +762,6 @@ dev = [
     { name = "packaging", specifier = ">=24.2" },
     { name = "pipdeptree" },
     { name = "pre-commit" },
-    { name = "pyjwt", extras = ["crypto"], specifier = ">=2.10,<3" },
     { name = "pymdown-extensions", specifier = ">=11.0.1" },
     { name = "pytest", specifier = ">=9.0.3" },
     { name = "ruff", specifier = ">=0.14.0" },

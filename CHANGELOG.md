@@ -6,12 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+The next final release is `9.0.6`. PyJWT and cryptography are included in a
+plain `mainsequence` installation; caller verification no longer requires a
+separate server extra.
+
 The FastAPI caller-assertion verifier now accepts EdDSA assertions and the
 platform's Ed25519 public key (`kty` `OKP`, `crv` `Ed25519`) instead of RS256
 RSA keys, matching how the platform now signs caller assertions. RS256
 assertions and RSA keys are rejected.
 
-The next final release is `9.0.3`. CLI JSON output now converts UUID identity
+Release `9.0.3` made CLI JSON output convert UUID identity
 values to strings, including nested fields, and the authenticated-user helper
 returns a JSON-compatible model dump. This fixes issue #182 without changing
 authentication or error handling.
@@ -65,8 +69,8 @@ boundary and breaking changes.
 - Moved application DataSource adapters to MetaTables; database registration
   belongs to that package and credentials use platform Secrets.
 
-- Added framework-independent caller assertion verification in the optional
-  `mainsequence[server]` extra, with release/Environment checks and bounded public-key discovery.
+- Added framework-independent caller assertion verification, with
+  release/Environment checks and bounded public-key discovery.
 - Declared `site_url` so the documentation site has a canonical root. The sitemap
   was previously empty and no page carried a canonical link; it now lists all 108
   pages as absolute URLs.
@@ -82,6 +86,9 @@ boundary and breaking changes.
   published while the suite is failing.
 
 ### Changed
+
+- PyJWT and cryptography are required SDK dependencies. A plain `mainsequence`
+  installation includes caller verification; the separate server extra is removed.
 
 - `mainsequence code-repository sync` only refreshes dependency files. In the
   project root (`--path`, default the current directory) it runs `uv lock`,
