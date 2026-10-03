@@ -39,7 +39,7 @@ Main package areas:
   authentication, platform resources, and local CodeRepository operations
 - `mainsequence.instrumentation` and `mainsequence.logconf`: SDK tracing and
   logging integration
-- `mainsequence.server`: optional server-side caller assertion verification
+- `mainsequence.server`: server-side caller assertion verification
 - `mainsequence.scaffold_skills`: reusable, version-pinned skill copying for
   this SDK and extension libraries
 
@@ -112,7 +112,7 @@ another repository, use the explicitly scoped `filter_admin` path. See
 [Resource releases](docs/knowledge/infrastructure/resource_releases.md) for
 supported filters and examples.
 
-Server integrations can install `mainsequence[server]` for the
+The standard `mainsequence` installation includes PyJWT and cryptography for the
 framework-independent [caller assertion verifier](docs/knowledge/server/caller_assertions.md).
 Applications remain responsible for resource authorization and storage
 operations.

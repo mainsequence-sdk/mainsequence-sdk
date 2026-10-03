@@ -6,6 +6,9 @@ This extends the retained authentication ownership in [ADR-0034](0034-extract-me
 
 ## Contract
 
+Caller verification is part of the standard SDK. PyJWT and cryptography are
+required runtime dependencies, supplied by a plain `mainsequence` installation.
+
 Application handlers use User.get_logged_user(). Applications install mainsequence.server.fastapi.install_request_identity(app) once. The SDK integration uses the existing caller assertion verifier, binds one isolated context, invokes the application, and invalidates/resets the context on completion, error, or cancellation. The verifier is an internal building block rather than another handler recipe.
 
 PodDeploymentOrchestrator remains independent of the SDK. It validates a package-neutral app.state.mainsequence_request_identity declaration (installed, mode, public_ingress) before serving. The declaration is a wiring check, not caller proof. Hosting, health, CORS, WebSocket transport policy and observability remain launcher responsibilities.

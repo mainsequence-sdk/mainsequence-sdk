@@ -107,8 +107,8 @@ class AutomaticRedeploymentPolicy(BaseModel):
         description=(
             "Regular expression matched against repository tags, set by `tag_regex` "
             "in the repository's `.mainsequence/workflows/*.yaml`. Null deploys every "
-            "push; a regex deploys only when a matching tag points at the branch's "
-            "latest commit."
+            "push; a regex deploys the commit a matching tag points at, whether it is "
+            "the branch's latest commit or an older commit on the branch."
         ),
         examples=[None, r"^v(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)$"],
     )
