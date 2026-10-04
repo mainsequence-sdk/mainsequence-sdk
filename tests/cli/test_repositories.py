@@ -1058,9 +1058,8 @@ def test_code_repository_current_debug_reports_authenticated_runtime_git_context
     }
 
 
-def test_code_repository_sdk_status(cli_mod, runner, monkeypatch, tmp_path):
-    target = tmp_path / "code-repository"
-    target.mkdir(parents=True, exist_ok=True)
+def test_code_repository_sdk_status(cli_mod, runner, monkeypatch, git_checkout):
+    target = git_checkout()
     monkeypatch.setattr(cli_mod, "read_local_sdk_version", lambda req: "1.2.3")
     monkeypatch.setattr(cli_mod, "fetch_latest_sdk_version", lambda: "v1.2.3")
 
@@ -1072,9 +1071,8 @@ def test_code_repository_sdk_status(cli_mod, runner, monkeypatch, tmp_path):
     assert "SDK Status" in result.output
 
 
-def test_code_repository_sdk_status_json(cli_mod, runner, monkeypatch, tmp_path):
-    target = tmp_path / "code-repository"
-    target.mkdir(parents=True, exist_ok=True)
+def test_code_repository_sdk_status_json(cli_mod, runner, monkeypatch, git_checkout):
+    target = git_checkout()
     monkeypatch.setattr(cli_mod, "read_local_sdk_version", lambda req: "1.2.3")
     monkeypatch.setattr(cli_mod, "fetch_latest_sdk_version", lambda: "v1.2.3")
 
@@ -1090,9 +1088,8 @@ def test_code_repository_sdk_status_json(cli_mod, runner, monkeypatch, tmp_path)
 
 
 @pytest.mark.parametrize("pin", [None, "8.1.25", "9.0.2"])
-def test_code_repository_update_sdk(cli_mod, runner, monkeypatch, tmp_path, pin):
-    target = tmp_path / "code-repository"
-    target.mkdir(parents=True, exist_ok=True)
+def test_code_repository_update_sdk(cli_mod, runner, monkeypatch, pin, git_checkout):
+    target = git_checkout()
     uv_path = target / ".venv" / "bin" / "uv"
     calls = []
     sentinel = target / ".agents" / "skills" / "mainsequence" / "PINNED_FROM.txt"

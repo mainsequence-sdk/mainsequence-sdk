@@ -699,8 +699,8 @@ def test_removed_data_node_commands_are_unknown(cli_mod, runner, arguments):
     assert "No such command" in result.output
 
 
-def test_platform_skill_refresh_uses_separate_namespace(cli_mod, runner, monkeypatch, tmp_path):
-    target = tmp_path / "repository"
+def test_platform_skill_refresh_uses_separate_namespace(cli_mod, runner, monkeypatch, git_checkout):
+    target = git_checkout("repository")
     sdk = target / ".agents" / "skills" / "mainsequence" / "SKILL.md"
     sdk.parent.mkdir(parents=True)
     sdk.write_text("SDK unchanged", encoding="utf-8")

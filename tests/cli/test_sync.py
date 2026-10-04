@@ -5,7 +5,7 @@ import subprocess
 
 import pytest
 
-from tests.cli.support import _init_sync_checkout, _record_sync_side_effects, _sync_project
+from tests.cli.support import _record_sync_side_effects, _sync_project
 
 
 def test_code_repository_sync_runs_only_lock_sync_and_export(
@@ -63,6 +63,7 @@ def test_code_repository_sync_creates_no_key_and_changes_no_version(
     project, _uv_path = _sync_project(tmp_path)
     recorded = _record_sync_side_effects(monkeypatch, cli_mod)
     pyproject_before = (project / "pyproject.toml").read_text(encoding="utf-8")
+    assert not (project / ".git").exists()
 
     def _forbidden(*args, **kwargs):
         raise AssertionError("sync must not touch SSH keys, deploy keys or the backend")
@@ -80,6 +81,7 @@ def test_code_repository_sync_creates_no_key_and_changes_no_version(
 
     assert result.exit_code == 0, result.output
     assert (project / "pyproject.toml").read_text(encoding="utf-8") == pyproject_before
+    assert not (project / ".git").exists()
     assert not [cmd for cmd, _cwd in recorded["run"] if "version" in cmd]
 
 
@@ -111,7 +113,6 @@ def test_code_repository_sync_accepts_only_path(
 def test_code_repository_sync_requires_pyproject_in_the_project_root(
     cli_mod, runner, monkeypatch, tmp_path
 ):
-    _init_sync_checkout(tmp_path)
     recorded = _record_sync_side_effects(monkeypatch, cli_mod)
 
     result = runner.invoke(cli_mod.app, ["code-repository", "sync", "--path", str(tmp_path)])
@@ -123,7 +124,7 @@ def test_code_repository_sync_requires_pyproject_in_the_project_root(
 
 def test_code_repository_sync_reports_a_missing_venv(cli_mod, runner, monkeypatch, tmp_path):
     project = tmp_path / "code-repository"
-    _init_sync_checkout(project)
+    project.mkdir()
     (project / "pyproject.toml").write_text('[project]\nname = "demo"\n', encoding="utf-8")
     recorded = _record_sync_side_effects(monkeypatch, cli_mod)
 

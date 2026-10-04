@@ -15,9 +15,6 @@ USER_UID = "8f5d6b54-2f5e-4a8b-bb10-0b17f3f4c123"
 TEAM_UID = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
 
 
-_REAL_SUBPROCESS_RUN = subprocess.run
-
-
 _REMOVED_DOMAIN_TOKEN = "PRO" + "JECT"
 
 
@@ -74,20 +71,9 @@ def _session_report(**overrides):
     return report
 
 
-def _init_sync_checkout(path: pathlib.Path) -> None:
-    """Make `path` a Git checkout before `subprocess` is replaced.
-
-    The autouse CLI fixture otherwise creates the checkout inside `invoke`,
-    after the test has replaced `subprocess`.
-    """
-    path.mkdir(parents=True, exist_ok=True)
-    _REAL_SUBPROCESS_RUN(["git", "init", "-q", "-b", "main"], cwd=path, check=True)
-
-
 def _sync_project(root: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path]:
     """Create a project root with pyproject.toml and a `.venv` holding `uv`."""
     project = root / "code-repository"
-    _init_sync_checkout(project)
     bin_dir = project / ".venv" / "bin"
     bin_dir.mkdir(parents=True)
     (bin_dir / "python").write_text("", encoding="utf-8")

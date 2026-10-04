@@ -79,14 +79,10 @@ def test_copy_llm_instructions_print(cli_mod, runner, tmp_path):
 
 
 def test_code_repository_update_agents_md_replaces_custom_unmarked_file(
-    cli_mod,
-    runner,
-    monkeypatch,
-    tmp_path,
+    cli_mod, runner, monkeypatch, tmp_path, git_checkout
 ):
     agents_md = _write_installed_agent_scaffold_bundle(tmp_path / "bundle")
-    target = tmp_path / "code-repository"
-    target.mkdir()
+    target = git_checkout()
     original = "# CodeRepository Agents\n\nKeep this repository-specific instruction.\n"
     (target / "AGENTS.md").write_text(original, encoding="utf-8")
     monkeypatch.setattr(cli_mod, "_installed_agent_scaffold_bundle_dir", lambda: agents_md.parent)
@@ -106,14 +102,10 @@ def test_code_repository_update_agents_md_replaces_custom_unmarked_file(
 
 
 def test_code_repository_update_agents_md_creates_file_when_missing(
-    cli_mod,
-    runner,
-    monkeypatch,
-    tmp_path,
+    cli_mod, runner, monkeypatch, tmp_path, git_checkout
 ):
     agents_md = _write_installed_agent_scaffold_bundle(tmp_path / "bundle")
-    target = tmp_path / "code-repository"
-    target.mkdir()
+    target = git_checkout()
     monkeypatch.setattr(cli_mod, "_installed_agent_scaffold_bundle_dir", lambda: agents_md.parent)
 
     result = runner.invoke(
@@ -129,14 +121,10 @@ def test_code_repository_update_agents_md_creates_file_when_missing(
 
 
 def test_code_repository_update_agents_md_replaces_existing_managed_block(
-    cli_mod,
-    runner,
-    monkeypatch,
-    tmp_path,
+    cli_mod, runner, monkeypatch, tmp_path, git_checkout
 ):
     agents_md = _write_installed_agent_scaffold_bundle(tmp_path / "bundle")
-    target = tmp_path / "code-repository"
-    target.mkdir()
+    target = git_checkout()
     old_block = "\n".join(
         [
             f"{cli_mod.AGENTS_MD_MANAGED_BLOCK_START_PREFIX} schema=old source=old -->",
@@ -164,14 +152,10 @@ def test_code_repository_update_agents_md_replaces_existing_managed_block(
 
 
 def test_code_repository_update_agents_md_json_reports_action(
-    cli_mod,
-    runner,
-    monkeypatch,
-    tmp_path,
+    cli_mod, runner, monkeypatch, tmp_path, git_checkout
 ):
     agents_md = _write_installed_agent_scaffold_bundle(tmp_path / "bundle")
-    target = tmp_path / "code-repository"
-    target.mkdir()
+    target = git_checkout()
     monkeypatch.setattr(cli_mod, "_installed_agent_scaffold_bundle_dir", lambda: agents_md.parent)
 
     result = runner.invoke(
@@ -190,14 +174,10 @@ def test_code_repository_update_agents_md_json_reports_action(
 
 
 def test_code_repository_update_agents_md_keeps_existing_scaffold_shaped_file_current(
-    cli_mod,
-    runner,
-    monkeypatch,
-    tmp_path,
+    cli_mod, runner, monkeypatch, tmp_path, git_checkout
 ):
     agents_md = _write_installed_agent_scaffold_bundle(tmp_path / "bundle")
-    target = tmp_path / "code-repository"
-    target.mkdir()
+    target = git_checkout()
     (target / "AGENTS.md").write_text(agents_md.read_text(encoding="utf-8"), encoding="utf-8")
     monkeypatch.setattr(cli_mod, "_installed_agent_scaffold_bundle_dir", lambda: agents_md.parent)
 
@@ -213,14 +193,10 @@ def test_code_repository_update_agents_md_keeps_existing_scaffold_shaped_file_cu
 
 
 def test_code_repository_update_agents_md_rejects_malformed_managed_block(
-    cli_mod,
-    runner,
-    monkeypatch,
-    tmp_path,
+    cli_mod, runner, monkeypatch, tmp_path, git_checkout
 ):
     agents_md = _write_installed_agent_scaffold_bundle(tmp_path / "bundle")
-    target = tmp_path / "code-repository"
-    target.mkdir()
+    target = git_checkout()
     start_marker = (
         f"{cli_mod.AGENTS_MD_MANAGED_BLOCK_START_PREFIX} schema=1 source=agent_scaffold -->"
     )
@@ -239,14 +215,10 @@ def test_code_repository_update_agents_md_rejects_malformed_managed_block(
 
 
 def test_code_repository_update_agents_md_rejects_duplicate_managed_blocks(
-    cli_mod,
-    runner,
-    monkeypatch,
-    tmp_path,
+    cli_mod, runner, monkeypatch, tmp_path, git_checkout
 ):
     agents_md = _write_installed_agent_scaffold_bundle(tmp_path / "bundle")
-    target = tmp_path / "code-repository"
-    target.mkdir()
+    target = git_checkout()
     block = "\n".join(
         [
             f"{cli_mod.AGENTS_MD_MANAGED_BLOCK_START_PREFIX} schema=1 source=agent_scaffold -->",
@@ -266,15 +238,11 @@ def test_code_repository_update_agents_md_rejects_duplicate_managed_blocks(
 
 
 def test_code_repository_update_agents_md_fails_when_installed_bundle_missing_agents_md(
-    cli_mod,
-    runner,
-    monkeypatch,
-    tmp_path,
+    cli_mod, runner, monkeypatch, tmp_path, git_checkout
 ):
     bundle_dir = tmp_path / "bundle"
     bundle_dir.mkdir()
-    target = tmp_path / "code-repository"
-    target.mkdir()
+    target = git_checkout()
     monkeypatch.setattr(cli_mod, "_installed_agent_scaffold_bundle_dir", lambda: bundle_dir)
 
     result = runner.invoke(
@@ -301,7 +269,7 @@ def test_installed_agent_scaffold_bundle_dir_falls_back_to_sibling_package(cli_m
 
 
 def test_code_repository_update_agent_skills_overwrites_matching_folders(
-    cli_mod, runner, monkeypatch, tmp_path
+    cli_mod, runner, monkeypatch, tmp_path, git_checkout
 ):
     bundle_dir = tmp_path / "bundle"
     bundle_dir.mkdir()
@@ -319,7 +287,7 @@ def test_code_repository_update_agent_skills_overwrites_matching_folders(
         "ignore me", encoding="utf-8"
     )
 
-    target = tmp_path / "code-repository"
+    target = git_checkout()
     stale_top_level = target / ".agents" / "skills" / "data_publishing"
     stale_top_level.mkdir(parents=True)
     (stale_top_level / "old.txt").write_text("stale but preserved", encoding="utf-8")
@@ -375,15 +343,14 @@ def test_code_repository_update_agent_skills_overwrites_matching_folders(
 
 
 def test_code_repository_update_agent_skills_json_reports_pin_sentinel(
-    cli_mod, runner, monkeypatch, tmp_path
+    cli_mod, runner, monkeypatch, tmp_path, git_checkout
 ):
     bundle_dir = tmp_path / "bundle"
     (bundle_dir / "skills" / "data_publishing").mkdir(parents=True)
     (bundle_dir / "skills" / "data_publishing" / "SKILL.md").write_text(
         "new data skill", encoding="utf-8"
     )
-    target = tmp_path / "code-repository"
-    target.mkdir()
+    target = git_checkout()
 
     monkeypatch.setattr(
         cli_mod,
@@ -426,10 +393,10 @@ def test_code_repository_update_agent_skills_json_reports_pin_sentinel(
 
 
 def test_sdk_skills_and_agents_refresh_without_authentication(
-    cli_mod, runner, monkeypatch, tmp_path
+    cli_mod, runner, monkeypatch, git_checkout
 ):
     bundle = REPOSITORY_ROOT / "agent_scaffold"
-    target = tmp_path / "repository"
+    target = git_checkout("repository")
     stale = target / ".agents" / "skills" / "mainsequence" / "data_publishing" / "SKILL.md"
     stale.parent.mkdir(parents=True)
     stale.write_text("retired SDK table instructions", encoding="utf-8")

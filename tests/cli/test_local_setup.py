@@ -436,9 +436,8 @@ def test_code_repository_set_up_locally_rejects_uninitialized_code_repository(
     assert clone_calls["count"] == 0
 
 
-def test_code_repository_open(cli_mod, runner, monkeypatch, tmp_path):
-    target = tmp_path / "code-repository"
-    target.mkdir(parents=True, exist_ok=True)
+def test_code_repository_open(cli_mod, runner, monkeypatch, git_checkout):
+    target = git_checkout()
     opened = {"path": None}
 
     monkeypatch.setattr(cli_mod, "open_folder", lambda p: opened.update(path=p))
@@ -447,10 +446,25 @@ def test_code_repository_open(cli_mod, runner, monkeypatch, tmp_path):
     assert opened["path"] == str(target.resolve())
 
 
-def test_code_repository_delete_local(cli_mod, runner, monkeypatch, tmp_path):
+def test_code_repository_open_rejects_non_checkout_without_creating_git_metadata(
+    cli_mod, runner, monkeypatch, tmp_path
+):
+    target = tmp_path / "not-a-checkout"
+    target.mkdir()
+    monkeypatch.setattr(
+        cli_mod, "open_folder", lambda *_: pytest.fail("A non-checkout must not be opened")
+    )
+
+    result = runner.invoke(cli_mod.app, ["code-repository", "open", "--path", str(target)])
+
+    assert result.exit_code == 1
+    assert "Git CodeRepository checkout" in result.output
+    assert not (target / ".git").exists()
+
+
+def test_code_repository_delete_local(cli_mod, runner, monkeypatch, tmp_path, git_checkout):
     base = tmp_path / "base"
-    code_repository_path = base / "org" / "code-repositories" / "demo-123"
-    code_repository_path.mkdir(parents=True, exist_ok=True)
+    code_repository_path = git_checkout("base/org/code-repositories/demo-123")
     (code_repository_path / "x.txt").write_text("x", encoding="utf-8")
 
     monkeypatch.setattr(
@@ -469,9 +483,8 @@ def test_code_repository_delete_local(cli_mod, runner, monkeypatch, tmp_path):
     assert not code_repository_path.exists()
 
 
-def test_code_repository_open_signed_terminal(cli_mod, runner, monkeypatch, tmp_path):
-    target = tmp_path / "code-repository"
-    target.mkdir(parents=True, exist_ok=True)
+def test_code_repository_open_signed_terminal(cli_mod, runner, monkeypatch, tmp_path, git_checkout):
+    target = git_checkout()
     key = tmp_path / "id_ed25519"
     called = {"args": None}
 
@@ -497,9 +510,8 @@ def test_code_repository_open_signed_terminal(cli_mod, runner, monkeypatch, tmp_
     assert called["args"] is not None
 
 
-def test_code_repository_build_local_venv(cli_mod, runner, monkeypatch, tmp_path):
-    target = tmp_path / "code-repository"
-    target.mkdir(parents=True, exist_ok=True)
+def test_code_repository_build_local_venv(cli_mod, runner, monkeypatch, git_checkout):
+    target = git_checkout()
     (target / "pyproject.toml").write_text(
         '[project]\nname = "demo"\nrequires-python = ">=3.13,<3.14"\n',
         encoding="utf-8",
@@ -527,10 +539,9 @@ def test_code_repository_build_local_venv(cli_mod, runner, monkeypatch, tmp_path
 
 
 def test_code_repository_build_local_venv_defaults_to_cwd_with_env_code_repository_id(
-    cli_mod, runner, monkeypatch, tmp_path
+    cli_mod, runner, monkeypatch, git_checkout
 ):
-    target = tmp_path / "demo-code-repository-uid-123"
-    target.mkdir(parents=True, exist_ok=True)
+    target = git_checkout("demo-code-repository-uid-123")
     (target / ".env").write_text("", encoding="utf-8")
     (target / "pyproject.toml").write_text(
         '[project]\nname = "demo"\nrequires-python = ">=3.13,<3.14"\n',
@@ -574,10 +585,9 @@ def test_normalize_python_version_request_rejects_invalid_constraint(cli_mod):
 
 
 def test_code_repository_build_local_venv_skips_compatible_existing_environment(
-    cli_mod, runner, monkeypatch, tmp_path
+    cli_mod, runner, monkeypatch, git_checkout
 ):
-    target = tmp_path / "code-repository"
-    target.mkdir(parents=True, exist_ok=True)
+    target = git_checkout()
     (target / ".venv").mkdir(parents=True, exist_ok=True)
     (target / "pyproject.toml").write_text(
         '[project]\nname = "demo"\nrequires-python = ">=3.13,<3.14"\n',
@@ -598,10 +608,9 @@ def test_code_repository_build_local_venv_skips_compatible_existing_environment(
 
 
 def test_code_repository_build_local_venv_rejects_incompatible_existing_environment(
-    cli_mod, runner, monkeypatch, tmp_path
+    cli_mod, runner, monkeypatch, git_checkout
 ):
-    target = tmp_path / "code-repository"
-    target.mkdir(parents=True, exist_ok=True)
+    target = git_checkout()
     (target / ".venv").mkdir(parents=True, exist_ok=True)
     (target / "pyproject.toml").write_text(
         '[project]\nname = "demo"\nrequires-python = ">=3.13"\n',
@@ -624,10 +633,9 @@ def test_code_repository_build_local_venv_rejects_incompatible_existing_environm
 
 
 def test_code_repository_build_local_venv_recreates_incompatible_environment(
-    cli_mod, runner, monkeypatch, tmp_path
+    cli_mod, runner, monkeypatch, git_checkout
 ):
-    target = tmp_path / "code-repository"
-    target.mkdir(parents=True, exist_ok=True)
+    target = git_checkout()
     venv_path = target / ".venv"
     venv_path.mkdir(parents=True, exist_ok=True)
     (venv_path / "old-environment").write_text("old", encoding="utf-8")
@@ -656,10 +664,9 @@ def test_code_repository_build_local_venv_recreates_incompatible_environment(
 
 
 def test_code_repository_build_local_venv_preserves_existing_environment_when_uv_is_unavailable(
-    cli_mod, runner, monkeypatch, tmp_path
+    cli_mod, runner, monkeypatch, git_checkout
 ):
-    target = tmp_path / "code-repository"
-    target.mkdir(parents=True, exist_ok=True)
+    target = git_checkout()
     marker = target / ".venv" / "existing-environment"
     marker.parent.mkdir(parents=True, exist_ok=True)
     marker.write_text("existing", encoding="utf-8")
@@ -680,9 +687,8 @@ def test_code_repository_build_local_venv_preserves_existing_environment_when_uv
     assert "automatic install failed: offline" in result.output
 
 
-def test_code_repository_build_local_venv_requires_pyproject(cli_mod, runner, tmp_path):
-    target = tmp_path / "code-repository"
-    target.mkdir(parents=True, exist_ok=True)
+def test_code_repository_build_local_venv_requires_pyproject(cli_mod, runner, git_checkout):
+    target = git_checkout()
 
     result = runner.invoke(
         cli_mod.app,
@@ -692,9 +698,8 @@ def test_code_repository_build_local_venv_requires_pyproject(cli_mod, runner, tm
     assert "pyproject.toml not found in the CodeRepository root." in result.output
 
 
-def test_code_repository_build_docker_env(cli_mod, runner, monkeypatch, tmp_path):
-    target = tmp_path / "code-repository"
-    target.mkdir(parents=True, exist_ok=True)
+def test_code_repository_build_docker_env(cli_mod, runner, monkeypatch, git_checkout):
+    target = git_checkout()
     (target / "Dockerfile").write_text("FROM python:3.11\n", encoding="utf-8")
 
     monkeypatch.setattr(cli_mod, "compute_docker_image_ref", lambda _: "demo-img:tag")

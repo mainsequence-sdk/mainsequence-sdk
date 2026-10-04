@@ -370,10 +370,9 @@ def test_get_code_repository_job_run_logs_uses_client_model(cli_mod, monkeypatch
 
 
 def test_code_repository_jobs_list_defaults_to_env_code_repository_id(
-    cli_mod, runner, monkeypatch, tmp_path
+    cli_mod, runner, monkeypatch, git_checkout
 ):
-    target = tmp_path / "demo-123"
-    target.mkdir(parents=True, exist_ok=True)
+    target = git_checkout("demo-123")
     (target / ".env").write_text("", encoding="utf-8")
 
     monkeypatch.chdir(target)

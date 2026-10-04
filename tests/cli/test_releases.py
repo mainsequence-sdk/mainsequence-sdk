@@ -174,10 +174,9 @@ def test_delete_resource_release_uses_client_model(cli_mod, monkeypatch):
 
 
 def test_code_repository_code_repository_resource_list_defaults_to_remote_branch_head(
-    cli_mod, runner, monkeypatch, tmp_path
+    cli_mod, runner, monkeypatch, git_checkout
 ):
-    target = tmp_path / "demo-123"
-    target.mkdir(parents=True, exist_ok=True)
+    target = git_checkout("demo-123")
     (target / ".env").write_text("", encoding="utf-8")
     captured = {}
 
@@ -224,10 +223,9 @@ def test_code_repository_code_repository_resource_list_defaults_to_remote_branch
 
 
 def test_code_repository_code_repository_resource_list_passes_extra_filters(
-    cli_mod, runner, monkeypatch, tmp_path
+    cli_mod, runner, monkeypatch, git_checkout
 ):
-    target = tmp_path / "demo-123"
-    target.mkdir(parents=True, exist_ok=True)
+    target = git_checkout("demo-123")
     (target / ".env").write_text("", encoding="utf-8")
     captured = {}
 

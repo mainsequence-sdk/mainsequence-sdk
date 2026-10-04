@@ -163,10 +163,9 @@ def test_delete_code_repository_image_uses_client_model(cli_mod, monkeypatch):
 
 
 def test_code_repository_images_defaults_to_env_code_repository_id(
-    cli_mod, runner, monkeypatch, tmp_path
+    cli_mod, runner, monkeypatch, git_checkout
 ):
-    target = tmp_path / "demo-123"
-    target.mkdir(parents=True, exist_ok=True)
+    target = git_checkout("demo-123")
     (target / ".env").write_text("", encoding="utf-8")
 
     monkeypatch.chdir(target)
@@ -196,9 +195,8 @@ def test_code_repository_images_defaults_to_env_code_repository_id(
     assert "Total images: 1" in result.output
 
 
-def test_code_repository_images_list_json(cli_mod, runner, monkeypatch, tmp_path):
-    target = tmp_path / "demo-123"
-    target.mkdir(parents=True, exist_ok=True)
+def test_code_repository_images_list_json(cli_mod, runner, monkeypatch, git_checkout):
+    target = git_checkout("demo-123")
     (target / ".env").write_text("", encoding="utf-8")
 
     monkeypatch.chdir(target)
