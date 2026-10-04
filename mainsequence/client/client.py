@@ -9,7 +9,7 @@ import requests
 from mainsequence.defaults import resolve_backend_endpoint
 
 from .exceptions import raise_for_response
-from .utils import AuthLoaders, build_session
+from .utils import AuthLoaders, build_session, make_request
 from .utils import loaders as _global_loaders
 from .utils import session as _global_session
 
@@ -35,6 +35,7 @@ class MainSequenceClient:
     - Uses ONE shared loaders + session (from utils) by default
     - Can be reconfigured once at startup
     """
+
     _default: MainSequenceClient | None = None
 
     def __init__(
@@ -72,15 +73,18 @@ class MainSequenceClient:
         timeout: tuple[float, float] | float | None = None,
     ) -> Any:
         url = self.config.api_root.rstrip("/") + "/" + path.lstrip("/")
-        to = timeout or self.config.timeout
-
-        r = self.session.request(method.upper(), url, params=params, json=json, files=files, timeout=to)
-
-        # Refresh auth once if needed
-        if r.status_code in (401, 403):
-            self.loaders.refresh_headers()
-            self.session.headers.update(self.loaders.auth_headers)
-            r = self.session.request(method.upper(), url, params=params, json=json, files=files, timeout=to)
+        to = self.config.timeout if timeout is None else timeout
+        payload = {"params": params, "json": json}
+        if files is not None:
+            payload["files"] = files
+        r = make_request(
+            self.session,
+            method,
+            url,
+            self.loaders,
+            payload=payload,
+            time_out=to,
+        )
 
         raise_for_response(r, payload={"params": params, "json": json})
 
@@ -95,7 +99,9 @@ class MainSequenceClient:
         """
         if cls._default is None:
             # Reuse the existing global singletons from utils to avoid two sessions in prod.
-            cls._default = cls(MainSequenceClientConfig(), loaders=_global_loaders, session=_global_session)
+            cls._default = cls(
+                MainSequenceClientConfig(), loaders=_global_loaders, session=_global_session
+            )
         return cls._default
 
     @classmethod

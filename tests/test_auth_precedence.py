@@ -76,6 +76,9 @@ class _FakeResponse:
     def json(self):
         return self._payload
 
+    def close(self):
+        pass
+
 
 def _jwt_with_exp(exp: int) -> str:
     header = base64.urlsafe_b64encode(json.dumps({"alg": "none"}).encode()).rstrip(b"=").decode()

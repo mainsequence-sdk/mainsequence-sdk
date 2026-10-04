@@ -87,6 +87,11 @@ boundary and breaking changes.
 
 ### Changed
 
+- Fixed retry amplification (#188): the shared SDK transport never automatically
+  replays POST, PUT, PATCH, or DELETE. Read-only retries use bounded exponential
+  backoff within one monotonic timeout budget, including authentication renewal;
+  the separate 60-attempt request loop is removed.
+
 - PyJWT and cryptography are required SDK dependencies. A plain `mainsequence`
   installation includes caller verification; the separate server extra is removed.
 

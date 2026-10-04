@@ -286,6 +286,9 @@ def test_request_reports_a_refused_renewal_with_its_reason(refused):
         status_code = 401
         text = '{"detail": "Given token not valid for any token type"}'
 
+        def close(self):
+            pass
+
     class Session:
         headers: dict = {}
 
