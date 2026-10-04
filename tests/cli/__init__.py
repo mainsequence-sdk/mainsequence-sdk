@@ -1,0 +1,1 @@
+"""Cli domain tests."""

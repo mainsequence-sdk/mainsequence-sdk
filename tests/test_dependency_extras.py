@@ -1,48 +1,9 @@
 from __future__ import annotations
 
 import pathlib
-import sys
 import tomllib
-import types
 
-import pytest
 from packaging.requirements import Requirement
-
-
-def _snapshot_mainsequence_modules() -> dict[str, types.ModuleType]:
-    return {
-        name: module
-        for name, module in sys.modules.items()
-        if name == "mainsequence" or name.startswith("mainsequence.")
-    }
-
-
-def _reset_mainsequence_modules() -> None:
-    for name in tuple(sys.modules):
-        if name == "mainsequence" or name.startswith("mainsequence."):
-            sys.modules.pop(name, None)
-
-
-@pytest.fixture(autouse=True)
-def _restore_mainsequence_modules_after_import_test():
-    snapshot = _snapshot_mainsequence_modules()
-    yield
-    _reset_mainsequence_modules()
-    sys.modules.update(snapshot)
-
-
-def _seed_mainsequence_packages() -> None:
-    repo_root = pathlib.Path(__file__).resolve().parents[1]
-    pkg_root = repo_root / "mainsequence"
-    client_pkg_root = pkg_root / "client"
-
-    pkg = types.ModuleType("mainsequence")
-    pkg.__path__ = [str(pkg_root)]
-    sys.modules["mainsequence"] = pkg
-
-    client_pkg = types.ModuleType("mainsequence.client")
-    client_pkg.__path__ = [str(client_pkg_root)]
-    sys.modules["mainsequence.client"] = client_pkg
 
 
 def test_streamlit_is_absent_from_dependency_contracts() -> None:

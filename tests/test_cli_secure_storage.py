@@ -7,6 +7,7 @@ import json
 from keyring import errors as keyring_errors
 
 from mainsequence.cli import config
+from tests._support import jwt_with_expiry as _jwt
 
 
 class MemoryKeyring:
@@ -895,14 +896,6 @@ def test_macos_record_updated_by_a_released_version_is_still_read(monkeypatch, t
         "refresh": "r",
     }
     assert config.clear_tokens() is True
-
-
-def _jwt(expiry: int | None) -> str:
-    import base64
-
-    claims = {} if expiry is None else {"exp": expiry}
-    body = base64.urlsafe_b64encode(json.dumps(claims).encode()).decode().rstrip("=")
-    return f"e30.{body}.signature"
 
 
 def test_token_expiry_reads_the_claim_and_tolerates_other_values():
