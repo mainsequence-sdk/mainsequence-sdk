@@ -31,9 +31,9 @@ jobs:
       matrix:
         include:
           - scope: production
-            export-arguments: --no-dev --all-extras
+            export-arguments: --no-dev
           - scope: development
-            export-arguments: --all-groups --all-extras
+            export-arguments: --all-groups
 
     steps:
       - uses: actions/checkout@v7

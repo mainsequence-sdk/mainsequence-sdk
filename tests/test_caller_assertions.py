@@ -4,13 +4,12 @@ import json
 import time
 from uuid import uuid4
 
+import jwt
 import pytest
 import requests
+from cryptography.hazmat.primitives.asymmetric import ed25519
 
-jwt = pytest.importorskip("jwt")
-ed25519 = pytest.importorskip("cryptography.hazmat.primitives.asymmetric.ed25519")
-
-from mainsequence.server.caller_assertions import (  # noqa: E402
+from mainsequence.server.caller_assertions import (
     ASSERTION_TYPE,
     CallerAssertionUnavailable,
     CallerAssertionVerifier,

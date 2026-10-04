@@ -69,8 +69,8 @@ class InferenceClient:
         if self.organization_environment_uid is not None:
             query["organization_environment_uid"] = self.organization_environment_uid
         url = f"{utils.API_ENDPOINT.rstrip('/')}/{path}"
-        # The shared make_request loop retries network failures. Inference uses
-        # the same auth loader with a dedicated zero-retry transport instead.
+        # Inference opts out of safe-read retries as well: an uncertain outcome
+        # must preserve the caller's explicit idempotency key.
         with utils.build_session(loaders=utils.loaders, retries=0) as session:
             headers = dict(utils.loaders.refresh_headers(force=False, session=session))
             if key is not None:

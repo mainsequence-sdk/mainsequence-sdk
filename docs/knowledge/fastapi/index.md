@@ -1,9 +1,10 @@
 # FastAPI requesting-user identity
 
-Install the optional server dependencies in the application's environment:
+Install the SDK in the application's environment. Caller verification dependencies
+are included in the standard installation:
 
 ```bash
-pip install 'mainsequence[server]'
+pip install mainsequence
 ```
 
 Install request identity once when creating the application:

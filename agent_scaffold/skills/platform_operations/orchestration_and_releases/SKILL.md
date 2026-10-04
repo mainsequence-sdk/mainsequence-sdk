@@ -91,8 +91,16 @@ the SDK or CodeRepository code.
 
 Every file requires the backend-advertised `api_version`, a name, and resource
 declarations. Use the current template for accepted fields and resource kinds.
-There is no prune or strict-delete mode; removing a declaration does not delete
-an existing backend resource.
+A declaration owns its target. On the next push of the branch head, these
+delete the target:
+
+- removing the declaration or its file;
+- a `scope` that excludes the branch's Environment.
+
+Renaming a file or key deletes the old target and creates a new one, with new
+UIDs and URLs. An invalid file deletes nothing. The branch's Harness Agent
+stays while any workflow file declares a `harness_agent`, so moving its
+declaration keeps the same Agent.
 
 Do not hide important recurring schedules in ad hoc shell history or one-off manual commands.
 
@@ -224,7 +232,7 @@ Automatic deployment and its `tag_regex` are set in the repository's `.mainseque
 The declaration's `tag_regex` decides which pushes deploy:
 
 - omitted or `null`: every push to the branch deploys
-- a regular expression: a push deploys only when a matching tag points at the branch's latest commit
+- a regular expression: a matching tag deploys the commit it points at, whether that is the branch's latest commit or an older commit on the branch
 
 The platform does not create or name tags. Release tags come from the repository's own CI, for example a GitHub Actions workflow that tags the version declared in `pyproject.toml` after the tests pass. The maintenance skill `.agents/skills/mainsequence/maintenance/code_repository_maintenance/SKILL.md` has an example. `mainsequence code-repository sync` only refreshes `uv.lock`, the local environment, and `requirements.txt`; it does not commit, tag, or push.
 

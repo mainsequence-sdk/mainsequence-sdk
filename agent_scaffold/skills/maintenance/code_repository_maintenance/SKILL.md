@@ -248,8 +248,8 @@ The platform deploys from the push according to the repository's
 pushes deploy:
 
 - omitted or `null`: every push to the branch deploys;
-- a regular expression: a push deploys only when a matching tag points at the
-  branch's latest commit.
+- a regular expression: a matching tag deploys the commit it points at, whether
+  that is the branch's latest commit or an older commit on the branch.
 
 Automatic deployment and `tag_regex` are set in the workflow file only; a
 `ResourceRelease` or `Job` update does not accept them. The Main Sequence
@@ -299,6 +299,104 @@ only the commits CI tagged. Details:
 
 Do not call `sync-after-commit` or any backend repair endpoint. The GitHub
 branch-push webhook owns backend repository reconciliation.
+
+### Development Deploys Every Push, Production Deploys Tags
+
+A common setup uses two workflow files scoped to Environments. On the
+production branch only the first applies; on the development branch only the
+second:
+
+```yaml
+# .mainsequence/workflows/api-production.yaml
+api_version: "2.3.0"
+name: api-production
+scope:
+  environments: [production]
+resources:
+  - key: api
+    kind: fastapi
+    spec:
+      source_path: api/main.py
+      automatic_deployment: true
+      automatic_redeployment:
+        enabled: true
+        tag_regex: "^v[0-9]+\\.[0-9]+\\.[0-9]+$"
+```
+
+```yaml
+# .mainsequence/workflows/api-development.yaml
+api_version: "2.3.0"
+name: api-development
+scope:
+  environments: [development]  # the development Environment's exact name
+resources:
+  - key: api
+    kind: fastapi
+    spec:
+      source_path: api/main.py
+      automatic_deployment: true
+      automatic_redeployment:
+        enabled: true
+```
+
+A push to the development branch deploys at once. A merge to `main` deploys
+nothing until a matching tag points at a commit on `main`; with the release job
+above, CI creates that tag after the tests pass. Take the exact fields from the
+branch's workflow template and validate each file through the branch's
+`validate-workflow` action before committing it, as the
+`platform_operations/orchestration_and_releases` skill describes.
+
+### Creating A Release Tag
+
+The platform reacts to the tag push, however the tag was made. The short tag
+name must fully match `tag_regex`, and the tagged commit must be on the
+target's branch (its latest commit or an older one).
+
+- CI, as in the release job above. This is the recommended path.
+- By hand, only when the user asks for it:
+
+  ```bash
+  git tag v1.3.0 <commit>
+  git push origin v1.3.0
+  ```
+
+  Lightweight and annotated tags both work. Push one tag at a time: GitHub
+  sends no event when more than three tags are pushed at once, so
+  `git push --tags` can deploy nothing.
+- A GitHub Release: publishing a release with a new tag, in the web UI or with
+  `gh release create v1.3.0 --target main`, creates the tag, and that tag
+  deploys like a pushed one.
+
+A tag created with the Actions `GITHUB_TOKEN` starts no other GitHub Actions
+workflow, but it still reaches Main Sequence. Deleting a tag deploys nothing
+and removes nothing. A tag that does not match, or whose commit is only on
+another branch, deploys nothing for that target.
+
+### Going Back To An Older Version
+
+Two ways work. Use either only when the user asks for it.
+
+- Revert and release a new version: `git revert <commit>`, raise the patch
+  version with `uv version --bump patch`, commit, push, and let CI tag the
+  result. This works for every target, including every-push targets, and keeps
+  the version moving forward.
+- For a target with a `tag_regex`, push the older version's tag again. GitHub
+  sends an event only when a tag is created, so delete the tag on GitHub and
+  push it again; it still points at the same commit:
+
+  ```bash
+  git fetch --tags origin
+  git push origin :refs/tags/v1.2.0
+  git push origin v1.2.0
+  ```
+
+  The target redeploys that commit exactly as it was released: its code, its
+  image and its workflow file, whose settings replace the current ones. The
+  commit must still be on the branch and the tag must match the target's
+  current `tag_regex`. Every-push targets ignore the tag. Re-pushing a tag
+  also re-runs any GitHub Actions workflow that the tag triggers, and a tag
+  ruleset may forbid deleting it; use the revert route then. The next release
+  tag deploys a newer version again.
 
 ## Diagnose Partial Completion Before Retrying
 

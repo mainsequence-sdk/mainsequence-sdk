@@ -1,1 +1,1 @@
-"""Optional server-side platform integrations. Import integrations explicitly."""
+"""Server-side platform integrations. Import integrations explicitly."""

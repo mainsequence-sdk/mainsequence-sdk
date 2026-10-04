@@ -17,25 +17,20 @@ from uuid import UUID, getnode
 
 import psutil
 import requests
-from requests.adapters import HTTPAdapter
 from requests.structures import CaseInsensitiveDict
-from urllib3.util.retry import Retry
 
 from mainsequence.defaults import resolve_backend_endpoint
 from mainsequence.logconf import logger
+
+from ._transport import DEFAULT_ALLOWED_METHODS as DEFAULT_ALLOWED_METHODS
+from ._transport import DEFAULT_STATUS_FORCELIST as DEFAULT_STATUS_FORCELIST
+from ._transport import DEFAULT_TIMEOUT as DEFAULT_TIMEOUT
+from ._transport import DeadlineHTTPAdapter, remaining_timeout, request_budget
 
 # ---- Backend defaults (single source of truth) ----
 MAINSEQUENCE_ENDPOINT = resolve_backend_endpoint()
 API_ENDPOINT = f"{MAINSEQUENCE_ENDPOINT}/api/v1"
 AUTH_ENDPOINT = MAINSEQUENCE_ENDPOINT.rstrip("/")
-
-DEFAULT_STATUS_FORCELIST = (429, 500, 502, 503, 504)
-DEFAULT_ALLOWED_METHODS = frozenset(["HEAD", "GET", "OPTIONS", "POST", "PUT", "PATCH", "DELETE"])
-
-# requests supports either a float or (connect, read). Preserve previous ~120s read behavior,
-# but add a sane connect timeout.
-DEFAULT_TIMEOUT: tuple[float, float] = (5.0, 120.0)
-
 
 DATE_FORMAT = "%Y-%m-%dT%H:%M:%S.%fZ"
 
@@ -383,7 +378,7 @@ class RuntimeCredentialAuthProvider(BaseAuthProvider):
                     "credential_secret": credential_secret,
                 },
                 headers={"Content-Type": "application/json"},
-                timeout=self.timeout,
+                timeout=remaining_timeout(self.timeout),
                 allow_redirects=False,
             )
             if response.status_code < 200 or response.status_code >= 300:
@@ -515,7 +510,7 @@ class JWTAuthProvider(BaseAuthProvider):
                 self.refresh_url,
                 json={"refresh": self.refresh_token},
                 headers={"Content-Type": "application/json"},
-                timeout=self.timeout,
+                timeout=remaining_timeout(self.timeout),
             )
 
             if r.status_code in _REFUSED_RENEWAL_STATUSES:
@@ -564,7 +559,7 @@ class JWTAuthProvider(BaseAuthProvider):
             self.obtain_url,
             json={"username": username, "password": password},
             headers={"Content-Type": "application/json"},
-            timeout=self.timeout,
+            timeout=remaining_timeout(self.timeout),
         )
         r.raise_for_status()
         data = r.json()
@@ -671,63 +666,46 @@ def make_request(
 ):
     from requests.models import Response
 
-    TIMEOFF = 0.25
-    TRIES = int(15 // TIMEOFF)
     timeout = DEFAULT_TIMEOUT if time_out is None else time_out
     payload = {} if payload is None else payload
-
-    def get_req(session):
-        if r_type == "GET":
-            return session.get
-        elif r_type == "POST":
-            return session.post
-        elif r_type == "PUT":
-            return session.put
-        elif r_type == "PATCH":
-            return session.patch
-        elif r_type == "DELETE":
-            return session.delete
-        else:
-            raise NotImplementedError(f"Unsupported method: {r_type}")
+    r_type = r_type.upper()
+    if r_type not in DEFAULT_ALLOWED_METHODS | {"POST", "PUT", "PATCH", "DELETE"}:
+        raise NotImplementedError(f"Unsupported method: {r_type}")
 
     request_kwargs = {}
     if r_type in ("POST", "PATCH") and "files" in payload:
-        request_kwargs["data"] = payload.get("json", {})
-        request_kwargs["files"] = payload["files"]
+        request_kwargs = dict(payload)
+        request_kwargs["data"] = request_kwargs.pop("json", {})
         s.headers.pop("Content-Type", None)
     else:
-        request_kwargs = payload
-
-    req = get_req(session=s)
-    keep_request = True
-    counter = 0
-    auth_retried = False
+        request_kwargs = dict(payload)
+    request_kwargs.setdefault("allow_redirects", False)
+    req = getattr(s, r_type.lower())
 
     if accept_gzip:
         s.headers.setdefault("Accept-Encoding", "gzip")
 
-    while keep_request:
+    with request_budget(timeout) as budget:
         try:
-            if loaders is not None:
-                s.headers.update(loaders.refresh_headers(force=False, session=s))
+            for auth_attempt in range(2):
+                if loaders is not None:
+                    budget.timeout()
+                    s.headers.update(loaders.refresh_headers(force=bool(auth_attempt), session=s))
 
-            start_time = time.perf_counter()
-            logger.debug(f"Requesting {r_type} from {url}")
-            r = req(url, timeout=timeout, **request_kwargs)
-            duration = time.perf_counter() - start_time
-            logger.debug(f"{url} took {duration:.4f} seconds.")
-
-            if r.status_code == 401 and loaders is not None and not auth_retried:
-                logger.warning(f"Error {r.status_code}; forcing auth refresh once")
-                # A refused renewal raises AuthError: it is reported below with the
-                # reason and the repair, not as a traceback.
-                s.headers.update(loaders.refresh_headers(force=True, session=s))
-                req = get_req(session=s)
-                auth_retried = True
-                continue
-
-            keep_request = False
-            break
+                start_time = time.perf_counter()
+                logger.debug(f"Requesting {r_type} from {url}")
+                r = req(url, timeout=budget.timeout(), **request_kwargs)
+                duration = time.perf_counter() - start_time
+                logger.debug(f"{url} took {duration:.4f} seconds.")
+                if (
+                    r.status_code != 401
+                    or loaders is None
+                    or auth_attempt
+                    or r_type not in DEFAULT_ALLOWED_METHODS
+                ):
+                    return r
+                r.close()
+                logger.warning("Error 401; forcing auth refresh once within the request budget")
 
         except AuthError as e:
             logger.warning(f"Auth error for {url}: {e}")
@@ -736,32 +714,15 @@ def make_request(
             r.error_type = "auth_error"
             r.status_code = 401
             r._content = str(e).encode("utf-8")
-            keep_request = False
-            break
-
-        except requests.exceptions.ConnectionError:
-            logger.exception(f"Error connecting {url}")
-        except TypeError as e:
-            logger.exception(f"Type error for {url} exception {e}")
-            raise e
-        except Exception as e:
-            logger.exception(f"Error connecting {url} exception {e}")
-
-        counter += 1
-        if counter >= TRIES:
-            keep_request = False
+            return r
+        except requests.RequestException as e:
+            logger.warning(f"Request {r_type} to {url} failed: {e}")
             r = Response()
             r.code = "expired"
             r.error_type = "expired"
             r.status_code = 500
-            break
-
-        logger.debug(
-            f"Trying request again after {TIMEOFF}s - Counter: {counter}/{TRIES} - URL: {url}"
-        )
-        time.sleep(TIMEOFF)
-
-    return r
+            r._content = str(e).encode("utf-8")
+            return r
 
 
 def build_session(
@@ -779,23 +740,7 @@ def build_session(
     if accept_gzip:
         s.headers.setdefault("Accept-Encoding", "gzip")
 
-    retry_kwargs = dict(
-        total=retries,
-        connect=retries,
-        read=retries,
-        status=retries,
-        backoff_factor=backoff_factor,
-        status_forcelist=DEFAULT_STATUS_FORCELIST,
-        respect_retry_after_header=True,
-        raise_on_status=False,
-    )
-
-    try:
-        retry_cfg = Retry(allowed_methods=DEFAULT_ALLOWED_METHODS, **retry_kwargs)
-    except TypeError:
-        retry_cfg = Retry(method_whitelist=DEFAULT_ALLOWED_METHODS, **retry_kwargs)
-
-    adapter = HTTPAdapter(max_retries=retry_cfg)
+    adapter = DeadlineHTTPAdapter(retries=retries, backoff_factor=backoff_factor)
     s.mount("https://", adapter)
     s.mount("http://", adapter)
     return s
@@ -929,24 +874,7 @@ def _install_retry_adapters_in_place(
     Configure retry adapters on an EXISTING session object (do not rebind 'session').
     This is critical so 'from utils import session' users still get the updated behavior.
     """
-    retry_kwargs = dict(
-        total=retries,
-        connect=retries,
-        read=retries,
-        status=retries,
-        backoff_factor=backoff_factor,
-        status_forcelist=DEFAULT_STATUS_FORCELIST,
-        respect_retry_after_header=True,
-        raise_on_status=False,
-    )
-
-    # urllib3 compatibility across versions
-    try:
-        retry_cfg = Retry(allowed_methods=DEFAULT_ALLOWED_METHODS, **retry_kwargs)
-    except TypeError:
-        retry_cfg = Retry(method_whitelist=DEFAULT_ALLOWED_METHODS, **retry_kwargs)
-
-    adapter = HTTPAdapter(max_retries=retry_cfg)
+    adapter = DeadlineHTTPAdapter(retries=retries, backoff_factor=backoff_factor)
 
     # Close old adapters' pools (best-effort), then mount new ones
     for prefix in ("https://", "http://"):

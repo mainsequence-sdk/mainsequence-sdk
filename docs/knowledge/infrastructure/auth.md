@@ -2,6 +2,29 @@
 
 Main Sequence SDK authentication is based on bearer access tokens.
 
+## Shared Client Request Budgets And Retries
+
+The shared SDK client automatically retries only `GET`, `HEAD`, and `OPTIONS`.
+The default is at most three retries, with exponential backoff, for transient
+connection/read failures and HTTP `429`, `500`, `502`, `503`, and `504` responses.
+`POST`, `PUT`, `PATCH`, and `DELETE` are sent once: connection failures, timeouts,
+server errors, and authentication rejection never trigger automatic replay.
+A timed-out write may still be running on the server; check its outcome before
+explicitly retrying, and preserve any operation-specific idempotency identity.
+
+A numeric `timeout` is one total budget in seconds, not a fresh timeout per
+attempt. A `(connect, read)` tuple retains those phase limits and has a total
+budget equal to their sum. The default `(5, 120)` therefore allows at most
+125 seconds across attempts and backoff. Each attempt receives only the remaining
+budget. A `Retry-After` delay that does not fit ends retries rather than sleeping
+past the deadline.
+
+Authentication renewal before sending uses the same budget. A rejected read-only
+request may renew credentials and replay once within that budget; a rejected
+write is returned to the caller without replay. There is no second outer retry
+loop. These are synchronous HTTP transport limits, not cancellation of work
+already accepted by the server or a deadline on consuming a streaming response.
+
 The practical question is not "which class handles auth?" but "where does the access token come from, and what happens when it expires?"
 
 There are three supported functional auth models:
@@ -257,7 +280,10 @@ Functionally:
 - the returned access token is used as `Authorization: Bearer <token>`
 - the returned access token is stored in `MAINSEQUENCE_ACCESS_TOKEN` for the current process environment
 - child processes launched after the exchange can inherit `MAINSEQUENCE_ACCESS_TOKEN`
-- when the access token is missing, near expiry, expired, or rejected with `401`, the SDK exchanges the runtime credential again
+- when the access token is missing, near expiry, or expired, the SDK exchanges
+  the runtime credential before sending the request; a read-only request rejected
+  with `401` may exchange again and replay once, within its remaining timeout
+- a write rejected with `401` is not automatically replayed
 
 Runtime credential auth behaves like JWT access-only auth for normal requests. The difference is how a new access token is obtained.
 
