@@ -122,7 +122,7 @@ Left closed, deliberately:
   does not declare it and that a response carrying it parses. Two such tests
   changed: the branch provisioning-state contract in
   `tests/test_code_repository_branch_contract.py`, and the retired-release-kind
-  contract in `tests/test_filter_normalization.py`.
+  contract in the domain-focused tests under `tests/client/`.
 - The SDK is now silent about drift by default except for one log line. The
   backend's pre-merge comparison against the newest SDK release is what reports
   it, as ADR 0032 already assumed.

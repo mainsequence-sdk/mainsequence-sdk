@@ -5,31 +5,7 @@ import types
 
 import pytest
 
-
-def _snapshot_mainsequence_modules() -> dict[str, types.ModuleType]:
-    return {
-        name: module
-        for name, module in sys.modules.items()
-        if name == "mainsequence" or name.startswith("mainsequence.")
-    }
-
-
-@pytest.fixture(autouse=True)
-def _restore_mainsequence_modules():
-    """Undo the stub packages this module installs into ``sys.modules``.
-
-    ``_load_models_helpers_module`` replaces the real ``mainsequence`` packages
-    with stubs so ``models_helpers`` can be imported without the heavy client
-    stack. Without this fixture the stubs leak into every test module that runs
-    afterwards, and ``monkeypatch.setattr("mainsequence.client....")`` there
-    fails with ``module 'mainsequence' has no attribute 'client'``.
-    """
-    snapshot = _snapshot_mainsequence_modules()
-    yield
-    for name in tuple(sys.modules):
-        if name == "mainsequence" or name.startswith("mainsequence."):
-            sys.modules.pop(name, None)
-    sys.modules.update(snapshot)
+pytestmark = pytest.mark.usefixtures("isolated_sdk_imports")
 
 
 def _load_models_helpers_module():
@@ -137,8 +113,7 @@ def test_job_run_job_posts_to_canonical_action(monkeypatch):
     assert captured == {
         "r_type": "POST",
         "url": (
-            "https://backend.test/api/v1/jobs/"
-            "7d0ab07c-d1c0-4b7f-9c69-3c1a41c0a4da/run-job/"
+            "https://backend.test/api/v1/jobs/" "7d0ab07c-d1c0-4b7f-9c69-3c1a41c0a4da/run-job/"
         ),
         "payload": {"json": {"command_args": ["--name", "demo-from-cli"]}},
         "timeout": 30,

@@ -4,67 +4,22 @@ import base64
 import importlib
 import json
 import os
-import pathlib
-import sys
 import time
-import types
 
 import pytest
 import requests
 
+from tests._support import load_sdk_submodule as _load_mainsequence_submodule
+
+pytestmark = pytest.mark.usefixtures("isolated_sdk_imports", "clean_runtime_context_environment")
+
+
 _REMOVED_DOMAIN_TOKEN = "PRO" + "JECT"
 _UNSUPPORTED_REPOSITORY_UID_ENV = "MAIN_SEQUENCE_" + _REMOVED_DOMAIN_TOKEN + "_UID"
-_UNSUPPORTED_REPOSITORY_BRANCH_UID_ENV = (
-    "MAIN_SEQUENCE_" + _REMOVED_DOMAIN_TOKEN + "_BRANCH_UID"
-)
+_UNSUPPORTED_REPOSITORY_BRANCH_UID_ENV = "MAIN_SEQUENCE_" + _REMOVED_DOMAIN_TOKEN + "_BRANCH_UID"
 _UNSUPPORTED_ENVIRONMENT_UID_ENV = (
     "MAIN_SEQUENCE_ORGANIZATION_" + _REMOVED_DOMAIN_TOKEN + "_ENVIRONMENT_UID"
 )
-
-_RUNTIME_CONTEXT_ENV_NAMES = (
-    _UNSUPPORTED_REPOSITORY_UID_ENV,
-    _UNSUPPORTED_REPOSITORY_BRANCH_UID_ENV,
-    "MAINSEQUENCE_REPOSITORY_BRANCH",
-    _UNSUPPORTED_ENVIRONMENT_UID_ENV,
-)
-
-
-@pytest.fixture(autouse=True)
-def _clear_runtime_context_environment():
-    original_modules = {
-        name: module
-        for name, module in sys.modules.items()
-        if name == "mainsequence" or name.startswith("mainsequence.")
-    }
-    for name in _RUNTIME_CONTEXT_ENV_NAMES:
-        os.environ.pop(name, None)
-    yield
-    for name in _RUNTIME_CONTEXT_ENV_NAMES:
-        os.environ.pop(name, None)
-    for name in tuple(sys.modules):
-        if name == "mainsequence" or name.startswith("mainsequence."):
-            sys.modules.pop(name, None)
-    sys.modules.update(original_modules)
-
-
-def _load_mainsequence_submodule(module_name: str):
-    repo_root = pathlib.Path(__file__).resolve().parents[1]
-    pkg_root = repo_root / "mainsequence"
-    client_pkg_root = pkg_root / "client"
-
-    for name in tuple(sys.modules):
-        if name == "mainsequence" or name.startswith("mainsequence."):
-            sys.modules.pop(name, None)
-
-    pkg = types.ModuleType("mainsequence")
-    pkg.__path__ = [str(pkg_root)]
-    sys.modules["mainsequence"] = pkg
-
-    client_pkg = types.ModuleType("mainsequence.client")
-    client_pkg.__path__ = [str(client_pkg_root)]
-    sys.modules["mainsequence.client"] = client_pkg
-
-    return importlib.import_module(module_name)
 
 
 class _FakeResponse:
@@ -363,7 +318,10 @@ def test_runtime_credential_provider_does_not_mutate_unsupported_identity_enviro
     assert first_headers["Authorization"] == "Bearer organization-runtime-access"
     assert second_headers == first_headers
     assert calls["count"] == 1
-    assert os.environ[_UNSUPPORTED_REPOSITORY_BRANCH_UID_ENV] == "caller-supplied-value-must-be-ignored"
+    assert (
+        os.environ[_UNSUPPORTED_REPOSITORY_BRANCH_UID_ENV]
+        == "caller-supplied-value-must-be-ignored"
+    )
 
 
 def test_runtime_credential_provider_force_refresh_exchanges_again(monkeypatch):

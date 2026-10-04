@@ -1,65 +1,23 @@
 from __future__ import annotations
 
-import importlib
 import os
-import pathlib
-import sys
-import types
 
 import pytest
 import requests
 
+from tests._support import RETIRED_RUNTIME_CONTEXT_ENV_NAMES as _RUNTIME_CONTEXT_ENV_NAMES
+from tests._support import load_sdk_submodule as _load_mainsequence_submodule
+
+pytestmark = pytest.mark.usefixtures("isolated_sdk_imports", "clean_runtime_context_environment")
+
+
 _REMOVED_DOMAIN_TOKEN = "PRO" + "JECT"
 _UNSUPPORTED_REPOSITORY_UID_ENV = "MAIN_SEQUENCE_" + _REMOVED_DOMAIN_TOKEN + "_UID"
-_UNSUPPORTED_REPOSITORY_BRANCH_UID_ENV = (
-    "MAIN_SEQUENCE_" + _REMOVED_DOMAIN_TOKEN + "_BRANCH_UID"
-)
-_UNSUPPORTED_REPOSITORY_NUMERIC_ID_ENV = (
-    "MAIN_SEQUENCE_" + _REMOVED_DOMAIN_TOKEN + "_ID"
-)
+_UNSUPPORTED_REPOSITORY_BRANCH_UID_ENV = "MAIN_SEQUENCE_" + _REMOVED_DOMAIN_TOKEN + "_BRANCH_UID"
+_UNSUPPORTED_REPOSITORY_NUMERIC_ID_ENV = "MAIN_SEQUENCE_" + _REMOVED_DOMAIN_TOKEN + "_ID"
 _UNSUPPORTED_ENVIRONMENT_UID_ENV = (
     "MAIN_SEQUENCE_ORGANIZATION_" + _REMOVED_DOMAIN_TOKEN + "_ENVIRONMENT_UID"
 )
-
-_RUNTIME_CONTEXT_ENV_NAMES = (
-    _UNSUPPORTED_REPOSITORY_UID_ENV,
-    _UNSUPPORTED_REPOSITORY_BRANCH_UID_ENV,
-    "MAINSEQUENCE_REPOSITORY_BRANCH",
-    _UNSUPPORTED_ENVIRONMENT_UID_ENV,
-)
-
-
-@pytest.fixture(autouse=True)
-def _clear_runtime_context_environment():
-    original_modules = {
-        name: module
-        for name, module in sys.modules.items()
-        if name == "mainsequence" or name.startswith("mainsequence.")
-    }
-    for name in _RUNTIME_CONTEXT_ENV_NAMES:
-        os.environ.pop(name, None)
-    yield
-    for name in _RUNTIME_CONTEXT_ENV_NAMES:
-        os.environ.pop(name, None)
-    for name in tuple(sys.modules):
-        if name == "mainsequence" or name.startswith("mainsequence."):
-            sys.modules.pop(name, None)
-    sys.modules.update(original_modules)
-
-
-def _load_mainsequence_submodule(module_name: str):
-    repo_root = pathlib.Path(__file__).resolve().parents[1]
-    pkg_root = repo_root / "mainsequence"
-
-    for name in tuple(sys.modules):
-        if name == "mainsequence" or name.startswith("mainsequence."):
-            sys.modules.pop(name, None)
-
-    pkg = types.ModuleType("mainsequence")
-    pkg.__path__ = [str(pkg_root)]
-    sys.modules["mainsequence"] = pkg
-
-    return importlib.import_module(module_name)
 
 
 def test_is_running_in_pod_uses_job_run_uid(monkeypatch):

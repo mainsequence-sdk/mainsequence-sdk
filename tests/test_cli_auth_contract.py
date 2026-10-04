@@ -9,6 +9,7 @@ import requests
 from typer.testing import CliRunner
 
 from mainsequence.cli import cli as cli_mod
+from tests._support import jwt_with_expiry as _jwt
 
 runner = CliRunner()
 
@@ -32,59 +33,6 @@ def test_cli_exposes_core_and_code_repository_commands():
     assert "code-repository" in result.output
 
 
-def test_manual_jwt_login_persists_tokens(monkeypatch):
-    saved = {}
-    monkeypatch.setattr(cli_mod.cfg, "backend_url", lambda: "https://backend.example")
-    monkeypatch.setattr(
-        cli_mod.cfg,
-        "save_tokens",
-        lambda username, access, refresh: (
-            saved.update(username=username, access=access, refresh=refresh) or True
-        ),
-    )
-
-    result = runner.invoke(
-        cli_mod.app, ["login", "--access-token", "access", "--refresh-token", "refresh"]
-    )
-
-    assert result.exit_code == 0
-    assert saved == {"username": "", "access": "access", "refresh": "refresh"}
-    assert "Signed in" in result.output
-
-
-def test_browser_login_uses_existing_auth_helper(monkeypatch):
-    monkeypatch.setattr(cli_mod.cfg, "backend_url", lambda: "https://backend.example")
-    monkeypatch.setattr(cli_mod.cfg, "save_tokens", lambda *_: True)
-    monkeypatch.setattr(
-        cli_mod,
-        "login_via_browser",
-        lambda **kwargs: {"access": "browser-access", "refresh": "browser-refresh"},
-    )
-
-    result = runner.invoke(cli_mod.app, ["login", "--no-open"])
-
-    assert result.exit_code == 0
-    assert "Signed in" in result.output
-
-
-def test_mcp_login_uses_existing_handoff_helper(monkeypatch):
-    monkeypatch.setattr(cli_mod.cfg, "backend_url", lambda: "https://backend.example")
-    monkeypatch.setattr(cli_mod.cfg, "save_tokens", lambda *_: True)
-
-    def handoff(**kwargs):
-        kwargs["on_handoff"](
-            {"mcp_tool": "auth.cli_authorize", "mcp_arguments": {"handoff_uid": "h"}}
-        )
-        return {"access": "mcp-access", "refresh": "mcp-refresh"}
-
-    monkeypatch.setattr(cli_mod, "login_via_mcp_handoff", handoff)
-
-    result = runner.invoke(cli_mod.app, ["login", "--mcp"])
-
-    assert result.exit_code == 0
-    assert "auth.cli_authorize" in result.output
-
-
 def test_logout_revokes_before_clearing(monkeypatch):
     calls = []
     monkeypatch.setattr(
@@ -99,6 +47,7 @@ def test_logout_revokes_before_clearing(monkeypatch):
 
     assert result.exit_code == 0
     assert calls == ["revoke", "clear", "overrides"]
+    assert "backend session revoked" in result.output
 
 
 def test_doctor_uses_full_local_diagnostics(monkeypatch):
@@ -394,14 +343,6 @@ def _now() -> int:
     import time
 
     return int(time.time())
-
-
-def _jwt(expiry: int | None) -> str:
-    import base64
-
-    claims = {} if expiry is None else {"exp": expiry}
-    body = base64.urlsafe_b64encode(json.dumps(claims).encode()).decode().rstrip("=")
-    return f"e30.{body}.signature"
 
 
 def test_current_access_token_reuses_a_token_that_is_still_valid(monkeypatch):
