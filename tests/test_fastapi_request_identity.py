@@ -106,6 +106,25 @@ def test_sync_getter_signed_proof_once_and_process_credentials_untouched(signed,
         User.get_logged_user()
 
 
+def test_signed_caller_facts_reach_the_logged_user(signed):
+    token, _, _ = signed
+    teams = sorted([str(uuid4()), str(uuid4())])
+
+    def handler():
+        user = User.get_logged_user()
+        return {"teams": list(user.team_uids), "admin": user.is_organization_admin}
+
+    with TestClient(app_for(handler)) as client:
+        with_facts = client.get(
+            "/me",
+            headers={ASSERTION_HEADER: token(team_uids=teams, is_organization_admin=True)},
+        )
+        without_facts = client.get("/me", headers={ASSERTION_HEADER: token()})
+
+    assert with_facts.json() == {"teams": teams, "admin": True}
+    assert without_facts.json() == {"teams": [], "admin": False}
+
+
 @pytest.mark.parametrize("case", ["missing", "invalid", "expired", "wrong_target", "duplicate"])
 def test_invalid_proof_never_reaches_route(signed, case):
     token, _, _ = signed

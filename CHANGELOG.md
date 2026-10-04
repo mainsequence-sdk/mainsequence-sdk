@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+The FastAPI caller identity carries the caller's active team UIDs and
+Organization-admin flag signed by the platform: `User.get_logged_user()` now has
+`team_uids` and `is_organization_admin` for signed HTTP requests, and
+`AuthenticatedCaller` exposes the same fields. Both default to no teams and not
+admin when the assertion carries no such facts. Earlier SDK releases reject the
+platform's assertions once it sends them, so hosted FastAPI applications must be
+rebuilt on this release.
+
 The next final release is `9.0.6`. PyJWT and cryptography are included in a
 plain `mainsequence` installation; caller verification no longer requires a
 separate server extra.

@@ -37,6 +37,22 @@ class RequestUserIdentity(BaseModel):
         title="Username",
         description="Optional display name authenticated by the runtime gateway.",
     )
+    team_uids: tuple[str, ...] = Field(
+        (),
+        title="Team UIDs",
+        description=(
+            "Canonical UIDs of the caller's active teams, as signed by the platform "
+            "in the caller assertion. Empty when the request carries no such facts."
+        ),
+    )
+    is_organization_admin: bool = Field(
+        False,
+        title="Organization admin",
+        description=(
+            "Whether the platform signed the caller as an admin of the application's "
+            "Organization. False when the request carries no such facts."
+        ),
+    )
 
     @field_validator("uid", mode="before")
     @classmethod
@@ -45,6 +61,14 @@ class RequestUserIdentity(BaseModel):
             return str(UUID(str(value).strip()))
         except (AttributeError, TypeError, ValueError) as exc:
             raise ValueError("Request user UID must be a valid UUID.") from exc
+
+    @field_validator("team_uids", mode="before")
+    @classmethod
+    def _canonicalize_team_uids(cls, value: Any) -> tuple[str, ...]:
+        try:
+            return tuple(str(UUID(str(item).strip())) for item in value or ())
+        except (AttributeError, TypeError, ValueError) as exc:
+            raise ValueError("Team UIDs must be valid UUIDs.") from exc
 
     @field_validator("username", mode="before")
     @classmethod
