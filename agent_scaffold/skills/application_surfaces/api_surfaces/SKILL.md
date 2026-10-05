@@ -92,46 +92,71 @@ Record:
 - whether the API uses backend transport or a contract-defined direct
   development transport
 
-Authenticated FastAPI routes receive the human caller from the Main Sequence
-platform through injected request state. No SDK authentication setup is
-required in repository code:
+Install the SDK's request-identity integration once when creating the FastAPI
+application. Inspect the existing application factory first: the generated
+platform template already calls `install_request_identity(app)`, and a second
+installation raises an error. For an application without that setup:
 
 ```python
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
+from mainsequence.client import User
+from mainsequence.server.fastapi import install_request_identity
 
 
 app = FastAPI()
+install_request_identity(app)
 
 
 @app.get("/me")
-def get_me(request: Request) -> dict[str, str | None]:
-    return {
-        "uid": request.state.user_uid,
-        "username": request.state.user.username,
-    }
+def get_me() -> dict[str, str | None]:
+    user = User.get_logged_user()
+    return {"uid": user.uid, "username": user.username}
 ```
 
-Protected route code must not detect local versus deployed execution, parse
-authentication headers, or resolve the request user itself. Consume the
-platform-injected human caller identity:
+Use `User.get_logged_user()` in authenticated synchronous or asynchronous
+handlers and their shared services. The middleware verifies the caller before
+the handler, binds one isolated request context, and invalidates it on
+completion, errors, or cancellation. Repeated getter calls do not perform
+additional authentication requests.
 
-- `request.state.user` contains canonical `uid` and optional `username`
-- `request.state.user_uid` is the canonical public user UUID
-- `request.state.user_id` does not exist
+The same installation handles both HTTP execution modes:
+
+- Local execution without hosted deployment markers validates the incoming
+  Bearer token against `MAINSEQUENCE_ENDPOINT/api/v1/users/me/`.
+- Platform-hosted execution verifies the gateway's signed caller assertion
+  using deployment-owned issuer, public-key, release, and Environment settings.
+  Hosted configuration cannot select local mode, and failed proof never falls
+  back to UID headers or the process's credentials.
+
+Route code must not select the mode, parse authentication headers, or implement
+another caller resolver. The launcher checks the application's installation
+declaration before serving; it does not install the middleware itself.
+
+The identity contains canonical `uid` and optional `username`; signed HTTP
+proofs contain no username. `request.state.user` and `request.state.user_uid`
+remain projections of the same identity, not a separate resolver. Outside an
+authenticated request, including public routes, `User.get_logged_user()` raises
+`RequestIdentityError`.
 
 On a protected route, this identity is the human making the current HTTP
 request. It is not the release creator, deployment owner, runtime workload
-principal, or runtime target. Pass request state explicitly to shared services;
-do not use `User.get_logged_user()` as a FastAPI entry point. Platform-injected identity is
-not resource authorization; use `request.state.user_uid` when applying the
-endpoint's authorization policy.
+principal, or the process account returned by `User.get_authenticated_user_details()`.
+Caller authentication is not resource authorization; apply the endpoint's
+application policy using the verified user UID.
+
+WebSockets retain the platform's gateway ticket/header contract rather than
+the HTTP Bearer/assertion flow; the getter is available while the authenticated
+connection is active. See the version-matched
+[FastAPI identity documentation](https://mainsequence-sdk.github.io/mainsequence-sdk/knowledge/fastapi/)
+for the lifecycle and trust contract.
 
 ### Public provider callbacks and webhooks
 
 An external OAuth redirect or webhook cannot supply a Main Sequence Bearer token.
 For a FastAPI release that needs one, use the platform's exact `public_ingress`
 policy. CORS configuration and an app-declared route alone do not make a path
-public. Ordinary routes remain Bearer authenticated.
+public. Ordinary routes still require an authenticated caller through the
+request-identity integration.
 
 1. Implement the provider handler in the FastAPI app loaded by the workflow's
    `source_path`. Declare only its exact `GET` or `POST` method and literal
@@ -166,7 +191,9 @@ public. Ordinary routes remain Bearer authenticated.
 4. Send a provider-style request without a Main Sequence Bearer token to the
    exact public pair. Check that an unlisted path or wrong method is denied.
    An admitted request has `request.state.user` and `user_uid` set to `None`
-   and `request.state.auth_outcome == "public_ingress"`. The handler must verify
+   and `request.state.auth_outcome == "public_ingress"`;
+   `User.get_logged_user()` raises `RequestIdentityError` in that anonymous
+   scope. The handler must verify
    OAuth state and exchange codes, or verify the webhook signature against the
    original body and reject replays. Public admission supplies no User or
    provider identity. Keep provider secrets and live codes out of workflow YAML,
