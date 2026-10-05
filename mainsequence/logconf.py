@@ -5,6 +5,7 @@ import logging
 import logging.config
 import os
 import sys
+import time
 import traceback
 from collections.abc import Mapping
 from importlib.metadata import PackageNotFoundError
@@ -22,6 +23,13 @@ from structlog.stdlib import BoundLogger
 from .defaults import resolve_backend_endpoint
 from .instrumentation import OTelJSONRenderer
 from .repository_identity_security import UNSUPPORTED_SOURCE_IDENTITY_ENV_NAMES
+from .runtime_credential_exchange import (
+    RUNTIME_CREDENTIAL_ID_ENV,
+    RUNTIME_CREDENTIAL_SECRET_ENV,
+    exchange_runtime_credential,
+    identity_token_file_from_environment,
+    runtime_credential_configured,
+)
 from .runtime_flags import is_running_in_pod
 
 logger = None
@@ -94,20 +102,31 @@ def _request_job_startup_state(*, timeout_s: float = 10.0) -> dict[str, Any]:
         return headers, False
 
     def _exchange_runtime_credential() -> bool:
-        credential_id = (os.getenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_ID") or "").strip()
-        credential_secret = (os.getenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET") or "").strip()
-        if not credential_id or not credential_secret:
+        if not runtime_credential_configured():
             return False
+        identity_token_file = identity_token_file_from_environment()
+        token_url = f"{_backend_base_url()}/api/v1/runtime-credentials/token/"
+
+        def _post(body: dict[str, str]) -> requests.Response:
+            return requests.post(
+                token_url,
+                headers={"Content-Type": "application/json"},
+                json=body,
+                timeout=timeout_s,
+                allow_redirects=False,
+            )
 
         try:
-            token_resp = requests.post(
-                f"{_backend_base_url()}/api/v1/runtime-credentials/token/",
-                headers={"Content-Type": "application/json"},
-                json={
-                    "credential_id": credential_id,
-                    "credential_secret": credential_secret,
-                },
-                timeout=timeout_s,
+            token_resp = exchange_runtime_credential(
+                _post,
+                credential_id=(os.getenv(RUNTIME_CREDENTIAL_ID_ENV) or "").strip(),
+                credential_secret=(
+                    None
+                    if identity_token_file
+                    else (os.getenv(RUNTIME_CREDENTIAL_SECRET_ENV) or "").strip()
+                ),
+                identity_token_file=identity_token_file,
+                deadline=time.monotonic() + timeout_s,
             )
         except Exception:
             return False

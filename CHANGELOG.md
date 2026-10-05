@@ -46,6 +46,15 @@ boundary and breaking changes.
 
 ### Added
 
+- Runtime credential auth accepts the platform's projected workload identity
+  token (#190). With `MAINSEQUENCE_RUNTIME_IDENTITY_TOKEN_FILE` set, every
+  exchange reads that file and sends `credential_id` with
+  `workload_identity_token`; `MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET` is then
+  never read or sent, and a missing, unreadable or empty file is an error, never
+  a fallback to the secret. Without the variable the bootstrap-secret exchange is
+  unchanged. The token is not copied into the environment, persisted, logged or
+  put in an error message. `mainsequence auth status` and the deployed
+  CodeRepository context accept the token file as a configured runtime credential.
 - `mainsequence auth token` hands a short-lived access token to a local tool
   that does not read the credential store. It renews the token when it is about
   to expire, never prints the refresh token, and with `--json` prints
@@ -94,6 +103,14 @@ boundary and breaking changes.
   published while the suite is failing.
 
 ### Changed
+
+- The runtime credential exchange retries a `429` (throttled) or `503`
+  (verification temporarily unavailable) answer up to three times, waiting the
+  longer of an exponential backoff and the answer's `Retry-After`, within the
+  request's timeout budget (#190). A `401` fails at once, without a retry and
+  without another proof. This applies to both proofs. The exchange made at
+  start-up for a job run's start-up state follows the same rules and no longer
+  follows redirects.
 
 - Fixed retry amplification (#188): the shared SDK transport never automatically
   replays POST, PUT, PATCH, or DELETE. Read-only retries use bounded exponential
