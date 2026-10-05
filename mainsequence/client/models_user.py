@@ -23,14 +23,21 @@ from .value_sets import OpenValueSet
 
 
 class RequestUserIdentity(BaseModel):
-    """Minimal identity of the human making the current runtime request."""
+    """Minimal identity of the caller of the current runtime request.
+
+    The caller is a person or a workload identity; ``User.get_by_uid(uid)``
+    reads its User.
+    """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     uid: str = Field(
         ...,
         title="User UID",
-        description="Canonical public UUID of the human making the current request.",
+        description=(
+            "Canonical public UUID of the User making the current request, a person or a "
+            "workload identity."
+        ),
     )
     username: str | None = Field(
         None,
@@ -954,6 +961,17 @@ class ShareableAccessState(BasePydanticModel):
 
 
 class User(UserApiBaseObjectOrm, BasePydanticModel):
+    """A platform User: a person, or the workload identity a deployed Job,
+    FastAPI release or Agent runs as.
+
+    A workload identity is read with ``User.get_by_uid(uid)`` or listed with
+    ``User.filter(identity_type="workload")``. Its row carries ``uid``,
+    ``identity_type`` (``"workload"``), ``is_active`` and the UID of its
+    workload in ``job_uid``, ``resource_release_uid`` or ``agent_uid``, without
+    a username, email, join date or name. Fields the row does not carry are
+    ``None``, or empty for lists.
+    """
+
     # Platform facts, not application authorization policy. None means the
     # connected platform has not supplied the versioned additive contract.
     is_organization_admin: StrictBool | None = None
@@ -963,6 +981,7 @@ class User(UserApiBaseObjectOrm, BasePydanticModel):
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]] | None] = {
         "uid": ["exact", "in"],
         "email": ["exact", "contains", "in"],
+        "identity_type": ["exact"],
     }
     FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
         "uid": "uid",
@@ -970,6 +989,7 @@ class User(UserApiBaseObjectOrm, BasePydanticModel):
         "email": "str",
         "email__contains": "str",
         "email__in": "str",
+        "identity_type": "str",
     }
 
     id: int | None = Field(
@@ -984,6 +1004,35 @@ class User(UserApiBaseObjectOrm, BasePydanticModel):
         title="User UID",
         description="Stable public unique identifier of the user.",
         examples=["8f5d6b54-2f5e-4a8b-bb10-0b17f3f4c123"],
+    )
+    identity_type: (
+        OpenValueSet[Literal["human", "service_account", "deleted_user", "workload"]] | None
+    ) = Field(
+        None,
+        title="Identity Type",
+        description=(
+            "Kind of identity: `workload` for the identity a deployed Job, FastAPI release "
+            "or Agent runs as. None when the response does not carry it."
+        ),
+        examples=["workload"],
+    )
+    job_uid: str | None = Field(
+        None,
+        title="Job UID",
+        description="UID of the Job a workload identity belongs to; None otherwise.",
+        examples=["88888888-8888-4888-8888-888888888888"],
+    )
+    resource_release_uid: str | None = Field(
+        None,
+        title="Resource Release UID",
+        description="UID of the release a workload identity belongs to; None otherwise.",
+        examples=[None],
+    )
+    agent_uid: str | None = Field(
+        None,
+        title="Agent UID",
+        description="UID of the Agent a workload identity belongs to; None otherwise.",
+        examples=[None],
     )
     profile_picture: str | None = Field(
         None,
@@ -1022,10 +1071,13 @@ class User(UserApiBaseObjectOrm, BasePydanticModel):
         examples=["enterprise"],
     )
 
-    date_joined: datetime.datetime = Field(
-        ...,
+    date_joined: datetime.datetime | None = Field(
+        None,
         title="Date Joined",
-        description="Timestamp when the user account was created.",
+        description=(
+            "Timestamp when the user account was created. None when the response does not "
+            "carry it, as for a workload identity."
+        ),
         examples=["2025-01-10T08:15:00Z"],
     )
     is_active: bool = Field(
@@ -1034,16 +1086,22 @@ class User(UserApiBaseObjectOrm, BasePydanticModel):
         description="Whether the user account is active.",
         examples=[True],
     )
-    username: str = Field(
-        ...,
+    username: str | None = Field(
+        None,
         title="Username",
-        description="Unique username used by the platform.",
+        description=(
+            "Unique username used by the platform. None when the response does not carry it, "
+            "as for a workload identity."
+        ),
         examples=["jose@main-sequence.io"],
     )
-    email: str = Field(
-        ...,
+    email: str | None = Field(
+        None,
         title="Email",
-        description="Primary email address of the user.",
+        description=(
+            "Primary email address of the user. None when the response does not carry it, "
+            "as for a workload identity."
+        ),
         examples=["jose@main-sequence.io"],
     )
     first_name: str | None = Field(
@@ -1064,16 +1122,22 @@ class User(UserApiBaseObjectOrm, BasePydanticModel):
         description="Timestamp of the last successful login.",
         examples=["2026-03-15T11:20:00Z"],
     )
-    api_request_limit: int = Field(
-        ...,
+    api_request_limit: int | None = Field(
+        None,
         title="API Request Limit",
-        description="Maximum number of API requests available to the user in the current limit window.",
+        description=(
+            "Maximum number of API requests available to the user in the current limit "
+            "window. None when the response does not carry it, as for a workload identity."
+        ),
         examples=[10000],
     )
-    mfa_enabled: bool = Field(
-        ...,
+    mfa_enabled: bool | None = Field(
+        None,
         title="MFA Enabled",
-        description="Whether multi-factor authentication is enabled for the user.",
+        description=(
+            "Whether multi-factor authentication is enabled for the user. None when the "
+            "response does not carry it, as for a workload identity."
+        ),
         examples=[True],
     )
     organization: Organization | None = Field(

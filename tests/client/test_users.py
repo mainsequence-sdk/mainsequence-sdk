@@ -1,8 +1,11 @@
+import datetime
+
 import pytest
 
 import mainsequence.client.base as base_mod
 import mainsequence.client.models_user as models_user_mod
-from tests.client.support import _UidRef
+from mainsequence._request_identity import _request_scope
+from tests.client.support import DemoShareableModel, _UidRef
 
 
 def test_team_uses_user_api_team_endpoint():
@@ -288,4 +291,221 @@ def test_user_get_by_uid_uses_user_uid_detail_route(monkeypatch):
         "url": f"{models_user_mod.User.get_object_url()}/{user_uid}/",
         "payload": {"params": {}},
         "timeout": 9,
+    }
+
+
+# --- Workload identities -------------------------------------------------------
+#
+# A deployed Job, FastAPI release or Agent runs as its own User. Looked up by UID
+# or listed with `identity_type=workload`, the platform answers such a User with
+# the form below: no username, email, join date or name.
+
+WORKLOAD_USER_UID = "66666666-6666-4666-8666-666666666666"
+WORKLOAD_JOB_UID = "88888888-8888-4888-8888-888888888888"
+PERSON_UID = "fdf409f7-d16f-4f71-986b-9057db6c7eca"
+PERSON_ONLY_FIELDS = (
+    "username",
+    "email",
+    "date_joined",
+    "api_request_limit",
+    "mfa_enabled",
+    "first_name",
+    "last_name",
+)
+
+
+def _workload_user_payload(**workload_uids):
+    return {
+        "uid": WORKLOAD_USER_UID,
+        "identity_type": "workload",
+        "is_active": True,
+        "job_uid": None,
+        "resource_release_uid": None,
+        "agent_uid": None,
+        **workload_uids,
+    }
+
+
+def _person_payload():
+    return {
+        "id": 4,
+        "uid": PERSON_UID,
+        "username": "jose",
+        "email": "jose@main-sequence.io",
+        "first_name": "Jose",
+        "last_name": "Ambrosino",
+        "profile_picture": None,
+        "phone_number": None,
+        "is_verified": True,
+        "blocked_access": False,
+        "api_request_limit": 10000,
+        "mfa_enabled": False,
+        "requires_password_change": False,
+        "identity_platform_uid": None,
+        "active_plan_type": None,
+        "is_active": True,
+        "date_joined": "2026-01-01T00:00:00Z",
+        "last_login": None,
+        "groups": [],
+        "user_permissions": [],
+        "organization_teams": [],
+    }
+
+
+class _JsonResponse:
+    status_code = 200
+    content = b'{"ok": true}'
+
+    def __init__(self, body):
+        self._body = body
+
+    def json(self):
+        return self._body
+
+
+def _serve(monkeypatch, *bodies):
+    """Answer each request with the next body and record what was sent."""
+    sent = []
+    answers = iter(bodies)
+
+    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
+        sent.append({"r_type": r_type, "url": url, "payload": payload, "timeout": time_out})
+        return _JsonResponse(next(answers))
+
+    monkeypatch.setattr(base_mod, "make_request", _fake_make_request)
+    return sent
+
+
+@pytest.mark.parametrize(
+    "workload_uids",
+    [
+        {"job_uid": WORKLOAD_JOB_UID},
+        {"resource_release_uid": "99999999-9999-4999-8999-999999999999"},
+        {"agent_uid": "77777777-7777-4777-8777-777777777777"},
+    ],
+    ids=["job", "resource_release", "agent"],
+)
+def test_user_get_by_uid_reads_a_workload_identity(monkeypatch, workload_uids):
+    sent = _serve(monkeypatch, _workload_user_payload(**workload_uids))
+
+    user = models_user_mod.User.get_by_uid(WORKLOAD_USER_UID, timeout=9)
+
+    assert sent == [
+        {
+            "r_type": "GET",
+            "url": f"{models_user_mod.User.get_object_url()}/{WORKLOAD_USER_UID}/",
+            "payload": {"params": {}},
+            "timeout": 9,
+        }
+    ]
+    assert user.uid == WORKLOAD_USER_UID
+    assert user.identity_type == "workload"
+    assert user.is_active is True
+    for field_name in ("job_uid", "resource_release_uid", "agent_uid"):
+        assert getattr(user, field_name) == workload_uids.get(field_name)
+    for field_name in PERSON_ONLY_FIELDS:
+        assert getattr(user, field_name) is None
+
+
+def test_user_filter_by_identity_type_sends_the_query_parameter(monkeypatch):
+    sent = _serve(
+        monkeypatch,
+        {"results": [_workload_user_payload(job_uid=WORKLOAD_JOB_UID)], "next": None},
+    )
+
+    workloads = models_user_mod.User.filter(identity_type="workload", timeout=7)
+
+    assert sent == [
+        {
+            "r_type": "GET",
+            "url": f"{models_user_mod.User.get_object_url()}/",
+            "payload": {"params": {"identity_type": "workload"}},
+            "timeout": 7,
+        }
+    ]
+    assert [(user.uid, user.identity_type, user.job_uid) for user in workloads] == [
+        (WORKLOAD_USER_UID, "workload", WORKLOAD_JOB_UID)
+    ]
+    assert models_user_mod.User._normalize_filter_kwargs({"identity_type": " workload "}) == {
+        "identity_type": "workload"
+    }
+    with pytest.raises(ValueError, match="Unsupported User filter"):
+        models_user_mod.User._normalize_filter_kwargs({"identity_type__in": ["workload"]})
+
+
+def test_user_people_read_exactly_as_before(monkeypatch):
+    person_payload = _person_payload()
+    sent = _serve(monkeypatch, [_person_payload()])
+
+    people = models_user_mod.User.filter()
+
+    # No identity_type is added: without the filter the listing is people only.
+    assert sent[0]["payload"] == {}
+    (person,) = people
+    dumped = person.model_dump(mode="json")
+    excluded_from_dump = {"id", "user_permissions"}
+    for field_name, value in person_payload.items():
+        if field_name in excluded_from_dump:
+            continue
+        assert dumped[field_name] == value, field_name
+    assert person.id == 4
+    assert person.user_permissions == []
+    assert person.date_joined == datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
+    assert person.identity_type is None
+    assert (person.job_uid, person.resource_release_uid, person.agent_uid) == (None, None, None)
+
+
+def test_identity_type_keeps_a_value_this_release_does_not_declare():
+    for declared in ("human", "service_account", "deleted_user", "workload"):
+        assert (
+            models_user_mod.User.model_validate(
+                {**_workload_user_payload(), "identity_type": declared}
+            ).identity_type
+            == declared
+        )
+
+    user = models_user_mod.User.model_validate(
+        {**_workload_user_payload(), "identity_type": "future_identity"}
+    )
+
+    assert user.identity_type == "future_identity"
+
+
+def test_workload_user_repr_str_hash_and_dump_need_no_username():
+    user = models_user_mod.User.model_validate(_workload_user_payload(job_uid=WORKLOAD_JOB_UID))
+
+    assert repr(user) == f"User: {WORKLOAD_USER_UID}"
+    assert WORKLOAD_USER_UID in str(user)
+    assert hash(user) == hash(WORKLOAD_USER_UID)
+    dumped = user.model_dump(mode="json")
+    assert dumped["identity_type"] == "workload"
+    assert dumped["job_uid"] == WORKLOAD_JOB_UID
+    assert dumped["username"] is None
+    assert dumped["email"] is None
+
+
+def test_application_resolves_a_workload_caller_and_grants_it_access(monkeypatch):
+    """Check the principal of a received request, then grant that workload access."""
+    sent = _serve(
+        monkeypatch,
+        _workload_user_payload(job_uid=WORKLOAD_JOB_UID),
+        {"detail": "ok"},
+    )
+    shareable_uid = "24001fc7-098c-40fa-b398-1d2352b7c224"
+
+    with _request_scope() as context:
+        context.user = models_user_mod.RequestUserIdentity(uid=WORKLOAD_USER_UID)
+        caller = models_user_mod.User.get_logged_user()
+        user = models_user_mod.User.get_by_uid(caller.uid)
+        assert caller.username is None
+        assert user.identity_type == "workload"
+        assert user.job_uid == WORKLOAD_JOB_UID
+        response = DemoShareableModel(shareable_uid).add_to_view(user)
+
+    assert response == {"detail": "ok"}
+    assert sent[1] == {
+        "r_type": "POST",
+        "url": f"https://backend.test/demo-shareable/{shareable_uid}/add-to-view/",
+        "payload": {"json": {"user_uid": WORKLOAD_USER_UID}},
+        "timeout": None,
     }

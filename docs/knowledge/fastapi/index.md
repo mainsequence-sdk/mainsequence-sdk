@@ -40,6 +40,8 @@ def can_publish(team_uid: str) -> bool:
 
 SDK releases before these facts reject every assertion that carries them, so hosted applications on an older SDK must be rebuilt on a current one.
 
+The caller is a person or a workload identity, the User a deployed Job, FastAPI release or Agent runs as. To tell which, read the caller's User with `User.get_by_uid(caller.uid)`: a workload identity has `identity_type` `"workload"` and the UID of its workload in `job_uid`, `resource_release_uid` or `agent_uid`. See [Workload identities](../infrastructure/users_and_access.md#workload-identities).
+
 ## Platform and SDK responsibilities
 
 Django authenticates and signs. The gateway forwards the proof. The application's SDK integration verifies it using deployment-owned trust configuration. PodDeploymentOrchestrator validates that the integration is installed and serves the app without importing or depending on the SDK.

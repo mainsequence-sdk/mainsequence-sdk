@@ -13,7 +13,7 @@ For notification delivery rules and client usage, see [Notifications](notificati
 There are five concepts to keep separate:
 
 1. `Organization`: the tenant boundary
-2. `User`: a person who signs in to the platform
+2. `User`: a person who signs in to the platform, or the workload identity a deployed Job, FastAPI release or Agent runs as
 3. `Role`: a broad level of responsibility inside the organization
 4. `Team`: a reusable group you can share resources with
 5. Resource sharing: the explicit grants that decide who can view or edit a specific resource
@@ -67,6 +67,55 @@ When you share a resource directly to a user, you are saying:
 > this specific person should be able to see or edit this specific thing
 
 That is the most explicit form of access.
+
+## Workload identities
+
+A deployed Job, FastAPI release or Agent runs as its own User: its workload
+identity. A workload identity belongs to the Organization like a person, but it
+is not a person: other Users see no username, email, join date or name for it.
+
+Any member of the Organization can read a workload identity by its UID, for
+example to check the caller of a request an application received:
+
+```python
+from mainsequence.client import User
+
+user = User.get_by_uid(user_uid)
+
+user.identity_type          # "workload"
+user.is_active
+user.job_uid                # the Job it belongs to, or None
+user.resource_release_uid   # the release it belongs to, or None
+user.agent_uid              # the Agent it belongs to, or None
+user.username, user.email   # None for a workload identity
+```
+
+For a workload identity the platform sends `uid`, `identity_type`, `is_active`,
+`job_uid`, `resource_release_uid` and `agent_uid`. The `User` fields it does not
+send are `None`, or empty for lists.
+
+`User.filter()` lists people only. Ask for workload identities with the
+`identity_type` filter; the listing holds the ones you can view:
+
+```python
+workloads = User.filter(identity_type="workload")
+```
+
+`identity_type` is one of `human`, `service_account`, `deleted_user` and
+`workload`. A person's row may not carry it, so test for `"workload"` rather
+than for `"human"`.
+
+The sharing methods take a workload identity like any other User. An
+application that received a request from a workload can give that workload
+access to its own objects, and the platform decides whether the grant is
+allowed:
+
+```python
+caller = User.get_logged_user()
+user = User.get_by_uid(caller.uid)
+if user.identity_type == "workload":
+    artifact.add_to_view(user)  # any shareable object the application created
+```
 
 ## Roles
 
@@ -286,3 +335,7 @@ Use `User.get_authenticated_user_details()` for the process user and
 existing platform directory permissions. These are ordinary User reads; they do
 not change the process identity or caller assertion contract. Refresh facts at
 the application's authorization boundary to apply Team/admin changes.
+
+The caller can be a person or a workload identity; see
+[Workload identities](#workload-identities) for what the lookup returns for a
+workload.

@@ -46,6 +46,15 @@ boundary and breaking changes.
 
 ### Added
 
+- `User` reads workload identities, the Users a deployed Job, FastAPI release or
+  Agent runs as. `User.get_by_uid(uid)` accepts the platform's workload form,
+  `uid`, `identity_type` (`"workload"`), `is_active`, `job_uid`,
+  `resource_release_uid` and `agent_uid` without a username, email or join
+  date, and `User` gains `identity_type`, `job_uid`, `resource_release_uid` and
+  `agent_uid`. `User.filter(identity_type="workload")` sends the
+  `identity_type` query parameter and lists the workload identities the caller
+  can view; without it the listing is people only, as before. People read
+  exactly as before.
 - Runtime credential auth accepts the platform's projected workload identity
   token (#190). With `MAINSEQUENCE_RUNTIME_IDENTITY_TOKEN_FILE` set, every
   exchange reads that file and sends `credential_id` with
@@ -104,6 +113,10 @@ boundary and breaking changes.
 
 ### Changed
 
+- `User.username`, `User.email`, `User.date_joined`, `User.api_request_limit`
+  and `User.mfa_enabled` are optional and `None` when a response does not carry
+  them, as for a workload identity. Their static types are now `X | None`; a
+  value the platform sends parses exactly as before.
 - The runtime credential exchange retries a `429` (throttled) or `503`
   (verification temporarily unavailable) answer up to three times, waiting the
   longer of an exponential backoff and the answer's `Retry-After`, within the
