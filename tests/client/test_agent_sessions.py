@@ -378,7 +378,8 @@ def test_agent_session_archive_actions_return_current_session_contract(monkeypat
     ]
 
 
-def test_agent_get_or_create_session_posts_new_contract(monkeypatch):
+@pytest.mark.parametrize("subscription_uid", [None, "11111111-1111-4111-8111-111111111111"])
+def test_agent_get_or_create_session_posts_new_contract(monkeypatch, subscription_uid):
     captured = {}
     agent_uid = "e0e75693-4110-464c-93e0-82c7fd9c9a23"
     session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
@@ -406,6 +407,7 @@ def test_agent_get_or_create_session_posts_new_contract(monkeypatch):
         def json():
             return {
                 "uid": session_uid,
+                "custom_id": subscription_uid,
                 "agent_uid": agent_uid,
                 "agent_name": "Research Copilot",
                 "organization_environment_uid": ENVIRONMENT_UID,
@@ -452,14 +454,16 @@ def test_agent_get_or_create_session_posts_new_contract(monkeypatch):
         llm_model="gpt-5.4",
         llm_thinking="",
         timeout=13,
+        custom_id=subscription_uid,
     )
 
+    assert session.custom_id == subscription_uid
     assert session.uid == session_uid
     assert session.name == "Quarterly portfolio review"
     assert session.parent_session_uid == parent_session_uid
     assert session.organization_environment_uid == ENVIRONMENT_UID
     assert session.catalog_digest == "sha256:" + ("c" * 64)
-    assert captured == {
+    expected = {
         "r_type": "POST",
         "url": (
             f"{agent_models_mod.Agent.get_object_url()}/{agent_uid}/sessions/get-or-create-session/"
@@ -476,6 +480,10 @@ def test_agent_get_or_create_session_posts_new_contract(monkeypatch):
         },
         "timeout": 13,
     }
+    if subscription_uid is not None:
+        expected["payload"]["json"]["custom_id"] = subscription_uid
+    assert captured == expected
+
 
 
 def test_agent_get_or_create_session_parses_reused_handle_capabilities(monkeypatch):

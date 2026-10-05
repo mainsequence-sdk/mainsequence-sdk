@@ -138,11 +138,14 @@ remain projections of the same identity, not a separate resolver. Outside an
 authenticated request, including public routes, `User.get_logged_user()` raises
 `RequestIdentityError`.
 
-On a protected route, this identity is the human making the current HTTP
-request. It is not the release creator, deployment owner, runtime workload
-principal, or the process account returned by `User.get_authenticated_user_details()`.
-Caller authentication is not resource authorization; apply the endpoint's
-application policy using the verified user UID.
+On a protected route, this identity is the caller of the current HTTP request:
+a person, or the workload identity a deployed Job, FastAPI release or Agent runs
+as. It is not the release creator, deployment owner, the application's own
+runtime workload principal, or the process account returned by
+`User.get_authenticated_user_details()`. To tell a workload caller from a
+person, read `User.get_by_uid(uid)`: a workload identity has `identity_type`
+`"workload"`. Caller authentication is not resource authorization; apply the
+endpoint's application policy using the verified user UID.
 
 WebSockets retain the platform's gateway ticket/header contract rather than
 the HTTP Bearer/assertion flow; the getter is available while the authenticated

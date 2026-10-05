@@ -394,12 +394,15 @@ Use `User.get_logged_user()` when SDK code is running with an SDK-bound identity
 
 Use `User.get_authenticated_user_details()` in standalone CLI or script code that is authenticated but not request-bound.
 
-`User.get_logged_user()` returns a UID-only `RequestUserIdentity` for the human
-making the current request. It does not return a full `User` account and it does
-not identify the release owner or runtime workload principal.
+`User.get_logged_user()` returns a UID-only `RequestUserIdentity` for the caller
+of the current request, a person or a workload identity. It does not return a
+full `User` account and it does not identify the release owner or the
+application's own runtime workload principal. `User.get_by_uid(uid)` reads the
+caller's User; see
+[Workload identities](users_and_access.md#workload-identities).
 
 For FastAPI releases, install SDK request identity once and use `User.get_logged_user()` in handlers and services. Request-state fields are compatibility projections of that same identity; resource policy remains application-owned.
 
-The distinction matters because request-bound code resolves the human caller
+The distinction matters because request-bound code resolves the caller
 from the active request identity, while standalone code resolves the account
 associated with the process authentication session.

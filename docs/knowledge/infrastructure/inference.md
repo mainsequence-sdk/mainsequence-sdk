@@ -42,13 +42,31 @@ print(client.insights(result.conversation_uid))
 
 Human credentials select an authorized Environment explicitly. Runtime credentials
 can use `InferenceClient()` and derive their exact Environment on the server;
-a contradictory selector is rejected. Provider credentials belong to the
-authenticated responsible User, or the selected Organization custom provider.
+a contradictory selector is rejected. Provider access and configured provider access
+are checked for that responsible User in the selected Environment.
 
-Every request supplies complete ordered messages (`system`, `user`, `assistant`,
-with text content). Set `conversation_uid` to group another request into that
-conversation. Earlier history is never automatically prepended. Main Sequence
-records each request/result and keeps content until explicitly deleted.
+`complete(..., custom_id="openai-work")` selects one named configuration
+for the chosen provider in the client's Environment. Omit the argument or pass
+`None` to retain the initial/default selection. The provider integration key is
+unchanged. `result.custom_id` identifies the selected name; custom endpoints
+continue to use their existing identifier without this argument.
+
+`Agent.get_or_create_session(..., custom_id="openai-work")` supports the same
+optional choice when creating a handle. Reused sessions retain their bound
+credential. The client rejects a response that ignores an explicit name.
+Provider management remains with the existing provider clients; these methods
+only select credentials for their existing session/inference operations.
+
+Sharing permits recipients to receive and copy the configured provider's
+credentials in their own runtime, including local Tau. Only share with people
+and workload operators you trust. Usage counts against the provider's quota or
+billing. Removing access stops future retrieval; already delivered credentials
+may remain usable until expiry or revocation at the provider. Ordinary SDK
+results contain selection metadata, not provider credentials.
+
+Keep the same selection, request body and idempotency key when retrying an
+uncertain outcome. Replay returns the recorded result and never selects another
+credential or calls the provider again.
 
 ## Provider controls
 

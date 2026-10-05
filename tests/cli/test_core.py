@@ -119,6 +119,39 @@ def test_user_show_handles_nested_uuid_identity(cli_mod, runner, monkeypatch, js
         assert "Main Sequence" in result.output
 
 
+@pytest.mark.parametrize("json_output", [False, True])
+def test_user_show_handles_a_workload_identity(cli_mod, runner, monkeypatch, json_output):
+    from mainsequence.client.models_user import User
+
+    workload_user_uid = "66666666-6666-4666-8666-666666666666"
+    job_uid = "88888888-8888-4888-8888-888888888888"
+    details = User.model_validate(
+        {
+            "uid": workload_user_uid,
+            "identity_type": "workload",
+            "is_active": True,
+            "job_uid": job_uid,
+            "resource_release_uid": None,
+            "agent_uid": None,
+        }
+    ).model_dump(mode="json")
+    monkeypatch.setattr(cli_mod, "get_logged_user_details", lambda: details)
+
+    result = runner.invoke(cli_mod.app, ["user"] + (["--json"] if json_output else []))
+
+    assert result.exit_code == 0, result.output
+    if json_output:
+        payload = json.loads(result.output)
+        assert payload["uid"] == workload_user_uid
+        assert payload["identity_type"] == "workload"
+        assert payload["job_uid"] == job_uid
+        assert payload["username"] is None
+        assert payload["email"] is None
+    else:
+        assert "MainSequence User" in result.output
+        assert workload_user_uid in result.output
+
+
 def test_to_jsonable_normalizes_uuid_in_nested_containers(cli_mod):
     @dataclasses.dataclass
     class Identity:

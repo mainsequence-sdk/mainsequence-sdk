@@ -165,3 +165,33 @@ def test_invalid_success_is_uncertain_and_never_retried(transport, invalid):
     assert exc.value.idempotency_key == "stable"
     assert session.request.call_count == 1
     assert session.request.call_args.kwargs["allow_redirects"] is False
+
+
+@pytest.mark.parametrize("subscription_uid", [None, "11111111-1111-4111-8111-111111111111"])
+def test_completion_subscription_is_optional_and_preserves_request_identity(transport, subscription_uid):
+    session, response, _ = transport
+    response.json.return_value = result(custom_id=subscription_uid)
+    answer = inference.InferenceClient().complete(
+        provider="openai", model="configured-model", messages=[], idempotency_key="stable",
+        custom_id=subscription_uid,
+    )
+    body = session.request.call_args.kwargs["json"]
+    assert answer.custom_id == subscription_uid
+    assert session.request.call_args.kwargs["headers"]["Idempotency-Key"] == "stable"
+    if subscription_uid is None:
+        assert "custom_id" not in body
+    else:
+        assert body["custom_id"] == subscription_uid
+
+
+@pytest.mark.parametrize("resolved", [None, "22222222-2222-4222-8222-222222222222"])
+def test_completion_does_not_accept_ignored_or_different_subscription(transport, resolved):
+    session, response, _ = transport
+    response.json.return_value = result(custom_id=resolved)
+    with pytest.raises(inference.InferenceTransportError) as error:
+        inference.InferenceClient().complete(
+            provider="openai", model="configured-model", messages=[], idempotency_key="stable",
+            custom_id="11111111-1111-4111-8111-111111111111",
+        )
+    assert error.value.idempotency_key == "stable"
+    assert session.request.call_count == 1
