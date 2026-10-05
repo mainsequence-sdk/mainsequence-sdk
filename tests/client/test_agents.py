@@ -205,6 +205,7 @@ def test_agent_client_contract_matches_backend_agent_serializer():
         "configuration",
         "last_session_at",
         "runtime_release_uid",
+        "workload_user_uid",
         "code_repository_branch_uid",
         "repository_branch",
         "organization_environment_uid",
@@ -577,3 +578,29 @@ def test_agent_has_no_one_shot_model_response_methods():
     assert not hasattr(agent_models_mod.Agent, "respond")
     assert not hasattr(agent_models_mod.Agent, "stream_response")
     assert not hasattr(agent_models_mod.Agent, "resolve_runtime_access")
+
+
+WORKLOAD_USER_UID = "88888888-8888-4888-8888-888888888888"
+
+
+@pytest.mark.parametrize(
+    ("extra", "expected"),
+    [
+        ({"workload_user_uid": WORKLOAD_USER_UID}, WORKLOAD_USER_UID),
+        ({"workload_user_uid": None}, None),
+        ({}, None),
+    ],
+)
+def test_agent_reads_workload_user_uid(extra, expected):
+    payload = {
+        "name": "Research Copilot",
+        "description": "Research assistant.",
+        "agent_card": {"name": "Research Copilot", "description": "Research assistant."},
+        "llm_thinking": "medium",
+        "repository_branch": "main",
+        "organization_environment_uid": ENVIRONMENT_UID,
+        "runtime_update": _agent_runtime_update_contract(),
+        **extra,
+    }
+
+    assert agent_models_mod.Agent.model_validate(payload).workload_user_uid == expected

@@ -415,3 +415,28 @@ def test_resource_release_name_admin_filter_uses_the_explicit_owning_branch(monk
 def test_resource_release_name_filter_supports_only_exact_matching():
     with pytest.raises(ValueError, match="Unsupported ResourceRelease filter"):
         models_helpers_mod.ResourceRelease._normalize_filter_kwargs({"name__contains": "API"})
+
+
+WORKLOAD_USER_UID = "88888888-8888-4888-8888-888888888888"
+
+
+@pytest.mark.parametrize(
+    ("extra", "expected"),
+    [
+        ({"workload_user_uid": WORKLOAD_USER_UID}, WORKLOAD_USER_UID),
+        ({"workload_user_uid": None}, None),
+        ({}, None),
+    ],
+)
+def test_resource_release_reads_workload_user_uid(extra, expected):
+    release = models_helpers_mod.ResourceRelease.model_validate(
+        {
+            "uid": "2f4c4c3d-5669-4da5-9d86-b84633c1e6ed",
+            "code_repository_branch_uid": CODE_REPOSITORY_BRANCH_UID,
+            "name": "Prices API",
+            "release_kind": "fastapi",
+            **extra,
+        }
+    )
+
+    assert release.workload_user_uid == expected
