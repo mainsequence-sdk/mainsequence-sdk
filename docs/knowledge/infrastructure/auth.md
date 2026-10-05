@@ -366,6 +366,24 @@ retries.
 | Request-bound access token | request-provided access token | no refresh | FastAPI and explicitly bound request-context code |
 | Runtime credential | runtime credential ID with an identity token file or a secret | exchange credential for new access | long-running non-interactive runtimes |
 
+## Credentials In Logs And Errors
+
+The SDK objects that hold a credential leave it out of `repr()` and `str()`, so
+printing, formatting or logging one does not show it:
+
+| Object | Left out |
+| --- | --- |
+| `JWTAuthProvider`, `SessionJWTAuthProvider` | `access_token`, `refresh_token` |
+| `RuntimeCredentialAuthProvider` | `credential_secret`, the bootstrap secret |
+| `AgentSessionRuntimeAccess` | `token` |
+| `ResourceReleaseRuntimeAccess` | `access`, which holds the runtime token |
+| `mainsequence.cli.browser_auth.BrowserAuthCallback` | `code`, the authorization code |
+
+A validation error raised while reading `AgentSessionRuntimeAccess`,
+`ResourceReleaseRuntimeAccess` or `Secret` does not echo its input either. The
+attributes still hold the values, and `model_dump()` still includes them: read
+them only where a request needs them, and do not log what they return.
+
 ## Getting The Current User
 
 Authentication and current-user resolution are related, but they are not the same thing.

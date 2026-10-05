@@ -278,8 +278,9 @@ class BaseAuthProvider:
 
 @dataclass
 class SessionJWTAuthProvider(BaseAuthProvider):
-    access_token: str | None = None
-    refresh_token: str | None = None
+    # Tokens stay out of repr() and str(), so logging the provider never shows them.
+    access_token: str | None = field(default=None, repr=False)
+    refresh_token: str | None = field(default=None, repr=False)
     header_keyword: str = "Bearer"
 
     def __post_init__(self):
@@ -324,12 +325,13 @@ class RuntimeCredentialAuthProvider(BaseAuthProvider):
     `MAINSEQUENCE_RUNTIME_IDENTITY_TOKEN_FILE` is set: the file is read for every
     exchange, and `MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET` is never read or sent.
     Otherwise the proof is that bootstrap secret. The token is never kept on the
-    provider. Throttled (`429`) and temporarily unavailable (`503`) exchanges are
-    retried within the timeout budget; a rejected one (`401`) fails at once.
+    provider, and the secret is left out of `repr()` and `str()`. Throttled
+    (`429`) and temporarily unavailable (`503`) exchanges are retried within the
+    timeout budget; a rejected one (`401`) fails at once.
     """
 
     credential_id: str | None = None
-    credential_secret: str | None = None
+    credential_secret: str | None = field(default=None, repr=False)
     token_url: str | None = None
     token_type: str = "Bearer"
     refresh_skew_seconds: int = 30
@@ -481,8 +483,9 @@ class RuntimeCredentialAuthProvider(BaseAuthProvider):
 
 @dataclass
 class JWTAuthProvider(BaseAuthProvider):
-    access_token: str | None = None
-    refresh_token: str | None = None
+    # Tokens stay out of repr() and str(), so logging the provider never shows them.
+    access_token: str | None = field(default=None, repr=False)
+    refresh_token: str | None = field(default=None, repr=False)
     refresh_url: str | None = None
     obtain_url: str | None = None
     header_keyword: str = "Bearer"

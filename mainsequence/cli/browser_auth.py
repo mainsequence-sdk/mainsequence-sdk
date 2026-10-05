@@ -15,7 +15,7 @@ import threading
 import time
 import webbrowser
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
@@ -37,7 +37,8 @@ class BrowserAuthError(RuntimeError):
 class BrowserAuthCallback:
     """Authorization callback payload captured from the local loopback receiver."""
 
-    code: str | None = None
+    # The authorization code is a bearer credential: it stays out of repr() and str().
+    code: str | None = field(default=None, repr=False)
     state: str | None = None
     error: str | None = None
     error_description: str | None = None

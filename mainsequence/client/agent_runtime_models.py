@@ -353,7 +353,8 @@ class AgentRuntimePresence(BasePydanticModel):
 
 
 class AgentSessionRuntimeAccess(BasePydanticModel):
-    model_config = ConfigDict(extra="allow")
+    # A validation error must not echo the input: it holds the bearer token.
+    model_config = ConfigDict(extra="allow", hide_input_in_errors=True)
 
     coding_agent_service_uid: str | None = Field(
         None,
@@ -373,6 +374,7 @@ class AgentSessionRuntimeAccess(BasePydanticModel):
     token: str | None = Field(
         None,
         description="Bearer token that authorizes calls to the coding-agent gateway.",
+        repr=False,
     )
     expires_at: str | None = Field(
         None,
