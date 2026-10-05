@@ -599,6 +599,7 @@ def test_agent_reads_workload_user_uid(extra, expected):
         "llm_thinking": "medium",
         "repository_branch": "main",
         "organization_environment_uid": ENVIRONMENT_UID,
+        "organization_environment_name": "Development",
         "runtime_update": _agent_runtime_update_contract(),
         **extra,
     }
