@@ -20,6 +20,8 @@ class InferenceResult(BaseModel):
     sequence: int
     provider: str
     model: str
+    custom_id: str | None = None
+    model_provider_credential_uid: str | None = None
     status: str
     error_code: str
     content_available: bool
@@ -125,6 +127,7 @@ class InferenceClient:
         messages: list[dict[str, str]],
         idempotency_key: str,
         conversation_uid: str | UUID | None = None,
+        custom_id: str | None = None,
         thinking_level: str | None = None,
         provider_options: dict[str, Any] | None = None,
         provider_storage: dict[str, Any] | None = None,
@@ -142,6 +145,8 @@ class InferenceClient:
                 "idempotency_key must contain 1–128 letters, digits, dots, underscores, colons or hyphens."
             )
         body = {"provider": provider, "model": model, "messages": deepcopy(messages)}
+        if custom_id is not None:
+            body["custom_id"] = custom_id
         if conversation_uid is not None:
             body["conversation_uid"] = str(UUID(str(conversation_uid)))
         for name, value in (
@@ -153,9 +158,15 @@ class InferenceClient:
         ):
             if value is not None:
                 body[name] = deepcopy(value)
-        return self._request(
+        result = self._request(
             "POST", "inference/completions/", body=body, key=idempotency_key, timeout=timeout
         )
+        if (
+            custom_id is not None
+            and result.custom_id != body["custom_id"]
+        ):
+            raise InferenceTransportError(idempotency_key)
+        return result
 
     def conversations(self, *, limit: int = 25, offset: int = 0) -> dict[str, Any]:
         return self._request(

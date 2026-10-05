@@ -727,6 +727,7 @@ class Agent(
         llm_provider: str | None = None,
         llm_model: str | None = None,
         llm_thinking: str | None = None,
+        custom_id: str | None = None,
         timeout=None,
     ) -> AgentSession:
         """
@@ -759,6 +760,10 @@ class Agent(
             "llm_provider": llm_provider,
             "llm_model": llm_model,
             "llm_thinking": llm_thinking,
+            "custom_id": (
+                custom_id
+                if custom_id is not None else None
+            ),
         }
         if resolved_session_uid and any(value is not None for value in creation_options.values()):
             raise ValueError("Creation options require handle_unique_id, not session_uid")
@@ -787,7 +792,14 @@ class Agent(
         session_payload = response.json()
         if not isinstance(session_payload, dict):
             raise TypeError("get_or_create_session response must be an AgentSession object")
-        return AgentSession(**session_payload)
+        session = AgentSession(**session_payload)
+        if (
+            custom_id is not None
+            and session.custom_id
+            != creation_options["custom_id"]
+        ):
+            raise ValueError("The returned session does not use the requested configured provider")
+        return session
 
 
 class AgentSessionInsightsBase(BasePydanticModel):
@@ -1744,6 +1756,10 @@ class AgentSession(
     archived_at: datetime.datetime | None = Field(
         None,
         description="Timestamp when the session was archived.",
+    )
+    model_provider_credential_uid: str | None = None
+    custom_id: str | None = Field(
+        None, description="Resolved configured provider name; None for custom endpoints."
     )
     llm_provider: str = Field(
         ...,

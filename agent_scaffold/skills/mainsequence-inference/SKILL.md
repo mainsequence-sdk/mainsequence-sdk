@@ -46,6 +46,21 @@ context. Never invent an Environment, use another branch as a fallback, or add
 inference environment variables. Provider secrets remain in existing server-side
 credential storage and must not appear in messages or `provider_options`.
 
+## Select a configured provider
+
+Pass optional `custom_id="openai-work"` to `client.complete()` to select that named
+credential within the caller's Environment. Omit it to retain the first available
+owned credential, then the first shared credential. A missing or ambiguous explicit
+name fails; do not retry using a different credential. Recorded requests retain the
+exact credential UID for replay. Custom endpoints use their existing provider
+identifier and do not accept `custom_id`.
+
+Sharing a configured provider authorizes recipients, including workload users,
+to use its credentials and receive them in local Tau. They may copy those credentials;
+revoking a share cannot remove copies already delivered. Explain this before
+guiding someone through sharing. This inference client executes on the server;
+provider management remains with the existing provider clients.
+
 ## Construct a completion envelope
 
 Every call supplies complete ordered text messages: `system`, `user`, `assistant`.
