@@ -257,6 +257,18 @@ boundary and breaking changes.
 
 ### Fixed
 
+- Printing, formatting or logging an SDK object that holds a credential no
+  longer shows the credential (#192). `RuntimeCredentialAuthProvider` leaves the
+  bootstrap secret (`credential_secret`) out of `repr()` and `str()`,
+  `JWTAuthProvider` and `SessionJWTAuthProvider` leave out `access_token` and
+  `refresh_token`, `AgentSessionRuntimeAccess` leaves out `token`,
+  `ResourceReleaseRuntimeAccess` leaves out `access`, which holds the runtime
+  token, and the CLI's `BrowserAuthCallback` leaves out the authorization
+  `code`. A validation error raised while reading `AgentSessionRuntimeAccess`,
+  `ResourceReleaseRuntimeAccess` or `Secret` no longer echoes its input, which
+  showed the token or the secret value. The values are read, stored, sent and
+  returned by `model_dump()` as before.
+
 - When the backend refuses to renew credentials that were in the process
   environment, the error now says what happened and what to do instead of
   "JWT refresh failed with status 401": when the refresh token expired, or that

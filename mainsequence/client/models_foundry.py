@@ -7,7 +7,7 @@ from uuid import UUID
 
 import yaml
 from cachetools import TTLCache, cachedmethod
-from pydantic import Field, SecretStr
+from pydantic import ConfigDict, Field, SecretStr
 
 from .base import (
     BaseObjectOrm,
@@ -891,6 +891,10 @@ class Secret(
     BasePydanticModel,
     BaseObjectOrm,
 ):
+    # `value` is a SecretStr once read, but a validation error would echo the
+    # plaintext it was given.
+    model_config = ConfigDict(hide_input_in_errors=True)
+
     HYDRATE_FILTER_GET_FROM_DETAIL: ClassVar[bool] = True
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
         "uid": ["in", "exact"],

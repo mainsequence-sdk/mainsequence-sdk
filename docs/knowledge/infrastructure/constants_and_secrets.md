@@ -317,6 +317,8 @@ polygon_key = secret.value.get_secret_value() if secret.value is not None else N
 then retrieves its value through the UID detail endpoint. `Secret.filter(...)`
 always remains metadata-only and never returns secret values. `Secret.value` is a
 Pydantic `SecretStr`; unwrap it only where plaintext is required and never log it.
+A validation error raised while reading a `Secret` does not include its input, so
+it does not show the value either.
 
 Filter secrets by name:
 

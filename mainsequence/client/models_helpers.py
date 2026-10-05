@@ -6,7 +6,7 @@ from decimal import Decimal
 from typing import Any, ClassVar, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, PositiveInt
+from pydantic import BaseModel, ConfigDict, Field, PositiveInt
 
 from .base import (
     BaseObjectOrm,
@@ -798,6 +798,10 @@ class ResourceReleaseRuntimePresence(BasePydanticModel):
 
 
 class ResourceReleaseRuntimeAccess(BasePydanticModel):
+    # `access` holds the runtime's bearer token, so neither repr() nor a
+    # validation error shows it.
+    model_config = ConfigDict(hide_input_in_errors=True)
+
     resource_release_uid: str
     # The canonical vocabulary ResourceRelease.release_kind reads (#119): this
     # payload names a release kind, so it names it the same way.
@@ -805,7 +809,7 @@ class ResourceReleaseRuntimeAccess(BasePydanticModel):
     routing: ResourceReleaseRuntimeRouting
     runtime_access: ResourceReleaseRuntimeAdmission
     runtime_presence: ResourceReleaseRuntimePresence
-    access: dict[str, Any] | None = None
+    access: dict[str, Any] | None = Field(default=None, repr=False)
 
 
 class ResourceRelease(
