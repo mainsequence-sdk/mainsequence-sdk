@@ -33,6 +33,10 @@ REQUIRED_CLAIMS = frozenset(
         "exp",
     }
 )
+# What the platform states about the caller: active team UIDs and the
+# Organization-admin flag. Sent together, or not at all by a platform that
+# predates them; then the caller has no teams and is not an admin.
+CALLER_FACT_CLAIMS = frozenset({"team_uids", "is_organization_admin"})
 
 
 class InvalidCallerAssertion(ValueError):
@@ -59,6 +63,25 @@ class AuthenticatedCaller:
     environment_uid: str
     issued_at: int
     expires_at: int
+    team_uids: tuple[str, ...] = ()
+    is_organization_admin: bool = False
+
+
+def _caller_facts(payload: dict) -> tuple[tuple[str, ...], bool]:
+    facts = set(payload) & CALLER_FACT_CLAIMS
+    if set(payload) - facts != REQUIRED_CLAIMS or facts not in (set(), set(CALLER_FACT_CLAIMS)):
+        raise InvalidCallerAssertion("Caller assertion claims are invalid.")
+    if not facts:
+        return (), False
+    raw_team_uids = payload["team_uids"]
+    if not isinstance(raw_team_uids, list):
+        raise InvalidCallerAssertion("Caller team UIDs are invalid.")
+    team_uids = tuple(_canonical_uid(value) for value in raw_team_uids)
+    if list(team_uids) != sorted(set(team_uids)):
+        raise InvalidCallerAssertion("Caller team UIDs must be sorted and unique.")
+    if type(payload["is_organization_admin"]) is not bool:
+        raise InvalidCallerAssertion("Caller admin flag is invalid.")
+    return team_uids, payload["is_organization_admin"]
 
 
 class CallerAssertionVerifier:
@@ -206,8 +229,7 @@ class CallerAssertionVerifier:
                 audience=f"urn:mainsequence:fapi:{self.release_uid}",
                 options={"require": list(REQUIRED_CLAIMS)},
             )
-            if set(payload) != REQUIRED_CLAIMS:
-                raise InvalidCallerAssertion("Caller assertion claims are invalid.")
+            team_uids, is_organization_admin = _caller_facts(payload)
             if (
                 payload["aud"] != f"urn:mainsequence:fapi:{self.release_uid}"
                 or _canonical_uid(payload["resource_release_uid"]) != self.release_uid
@@ -226,6 +248,8 @@ class CallerAssertionVerifier:
                 environment_uid=self.environment_uid,
                 issued_at=iat,
                 expires_at=exp,
+                team_uids=team_uids,
+                is_organization_admin=is_organization_admin,
             )
         except (InvalidTokenError, KeyError, TypeError, ValueError) as exc:
             raise InvalidCallerAssertion("Caller assertion is invalid.") from exc

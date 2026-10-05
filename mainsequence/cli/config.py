@@ -29,6 +29,7 @@ from keyring import core as keyring_core
 from keyring import errors as keyring_errors
 
 from mainsequence.defaults import CANONICAL_BACKEND_ENV, STANDARD_BACKEND_URL
+from mainsequence.runtime_credential_exchange import runtime_credential_configured
 
 APP_NAME = "MainSequenceCLI"
 
@@ -804,13 +805,8 @@ def session_report() -> dict:
     refresh_expires_at = token_expiry(refresh)
 
     if auth_mode == "runtime_credential":
-        authenticated = bool(
-            access
-            or (
-                (os.environ.get("MAINSEQUENCE_RUNTIME_CREDENTIAL_ID") or "").strip()
-                and (os.environ.get("MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET") or "").strip()
-            )
-        )
+        # The credential is an ID with a bootstrap secret or an identity token file.
+        authenticated = bool(access or runtime_credential_configured())
         session_expires_at = None
     elif refresh:
         authenticated = refresh_expires_at is None or refresh_expires_at > now

@@ -213,7 +213,11 @@ class _RequestIdentityMiddleware:
                     elif self.mode == "assertion":
                         assertion = _header(scope, ASSERTION_HEADER.lower().encode()) or ""
                         caller = await asyncio.to_thread(self.verifier.verify, assertion)
-                        user = RequestUserIdentity(uid=caller.user_uid)
+                        user = RequestUserIdentity(
+                            uid=caller.user_uid,
+                            team_uids=caller.team_uids,
+                            is_organization_admin=caller.is_organization_admin,
+                        )
                         state["resource_release_uid"] = caller.release_uid
                         state["organization_environment_uid"] = caller.environment_uid
                     else:

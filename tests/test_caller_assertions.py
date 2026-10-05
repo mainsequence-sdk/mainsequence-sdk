@@ -71,6 +71,47 @@ def verifier(fetch):
     )
 
 
+TEAMS = sorted([str(uuid4()), str(uuid4())])
+
+
+def test_exposes_the_callers_teams_and_admin_flag(keys):
+    key, public = keys[0]
+    check = verifier(lambda: {"keys": [public]})
+
+    caller = check.verify(token(key, team_uids=TEAMS, is_organization_admin=True))
+
+    assert caller.team_uids == tuple(TEAMS)
+    assert caller.is_organization_admin is True
+
+
+def test_a_platform_without_caller_facts_gives_no_teams_and_no_admin(keys):
+    key, public = keys[0]
+
+    caller = verifier(lambda: {"keys": [public]}).verify(token(key))
+
+    assert caller.team_uids == ()
+    assert caller.is_organization_admin is False
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"team_uids": TEAMS},
+        {"is_organization_admin": False},
+        {"team_uids": TEAMS[0], "is_organization_admin": False},
+        {"team_uids": list(reversed(TEAMS)), "is_organization_admin": False},
+        {"team_uids": [TEAMS[0], TEAMS[0]], "is_organization_admin": False},
+        {"team_uids": [TEAMS[0].upper()], "is_organization_admin": False},
+        {"team_uids": TEAMS, "is_organization_admin": "true"},
+        {"team_uids": TEAMS, "is_organization_admin": 1},
+    ],
+)
+def test_rejects_partial_or_malformed_caller_facts(keys, changes):
+    key, public = keys[0]
+    with pytest.raises(InvalidCallerAssertion):
+        verifier(lambda: {"keys": [public]}).verify(token(key, **changes))
+
+
 def test_returns_verified_identity_without_retaining_raw_assertion(keys):
     key, public = keys[0]
     proof = token(key)

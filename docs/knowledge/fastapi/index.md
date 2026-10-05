@@ -27,6 +27,19 @@ def me():
 
 The result contains a canonical User `uid` and optional `username`. Signed HTTP proofs contain no username, so it is null. Outside an authenticated request, including public routes, the getter raises `RequestIdentityError`. A copied task context cannot retain the user after its owning request ends.
 
+For a signed HTTP request the result also carries what the platform states about the caller: `team_uids`, the canonical UIDs of the caller's active teams, and `is_organization_admin`, whether the caller is an admin of the application's Organization. An application can evaluate its own policies from them without calling the platform; workload callers are covered through the teams they belong to. Local development and WebSocket requests carry no such facts, so `team_uids` is empty and `is_organization_admin` is false, as for an assertion from a platform that does not send them yet.
+
+```python
+from mainsequence.client import User
+
+
+def can_publish(team_uid: str) -> bool:
+    caller = User.get_logged_user()
+    return caller.is_organization_admin or team_uid in caller.team_uids
+```
+
+SDK releases before these facts reject every assertion that carries them, so hosted applications on an older SDK must be rebuilt on a current one.
+
 ## Platform and SDK responsibilities
 
 Django authenticates and signs. The gateway forwards the proof. The application's SDK integration verifies it using deployment-owned trust configuration. PodDeploymentOrchestrator validates that the integration is installed and serves the app without importing or depending on the SDK.

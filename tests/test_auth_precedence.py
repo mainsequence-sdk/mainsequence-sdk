@@ -150,6 +150,7 @@ def test_logconf_runtime_credential_exchanges_before_startup_state_request(monke
                 "credential_secret": "cred-secret",
             },
             "timeout": 10.0,
+            "allow_redirects": False,
         }
     ]
     assert os.environ["MAINSEQUENCE_ACCESS_TOKEN"] == "runtime-access"

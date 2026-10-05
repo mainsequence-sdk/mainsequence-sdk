@@ -25,6 +25,10 @@ write is returned to the caller without replay. There is no second outer retry
 loop. These are synchronous HTTP transport limits, not cancellation of work
 already accepted by the server or a deadline on consuming a streaming response.
 
+The runtime credential exchange is a `POST` that renews credentials. A `429` or
+`503` answer to it exchanged nothing, so it is retried a bounded number of times
+within the same budget; see [the exchange](#the-exchange).
+
 The practical question is not "which class handles auth?" but "where does the access token come from, and what happens when it expires?"
 
 There are three supported functional auth models:
@@ -55,7 +59,8 @@ Use request-bound access-token auth when:
 Use runtime credential auth when:
 
 - a long-running runtime needs to authenticate without a user login prompt
-- the backend launcher injects a runtime credential id and secret
+- the platform injects a runtime credential ID with its proof: a projected
+  workload identity token file or a bootstrap secret
 - the process should mint short-lived access tokens as needed
 
 ## JWT Auth
@@ -240,7 +245,16 @@ short-lived access tokens from a durable runtime credential. In deployed Main
 Sequence workloads, the backend injects this authentication mode and its
 credential. It is not a user-facing runtime or branch selector.
 
-The backend launcher supplies:
+The credential is an ID and one proof of the runtime's identity. A runtime
+deployed with a projected workload identity token receives:
+
+```bash
+MAINSEQUENCE_AUTH_MODE=runtime_credential
+MAINSEQUENCE_RUNTIME_CREDENTIAL_ID=<credential id>
+MAINSEQUENCE_RUNTIME_IDENTITY_TOKEN_FILE=/var/run/secrets/mainsequence.io/runtime-identity/token
+```
+
+A runtime deployed with a bootstrap secret receives:
 
 ```bash
 MAINSEQUENCE_AUTH_MODE=runtime_credential
@@ -275,7 +289,7 @@ keep their authenticated target scope. See [Git source and Environment context](
 
 Functionally:
 
-- the credential id and secret identify the runtime
+- the credential ID and its proof identify the runtime
 - the SDK exchanges that credential for a short-lived JWT access token
 - the returned access token is used as `Authorization: Bearer <token>`
 - the returned access token is stored in `MAINSEQUENCE_ACCESS_TOKEN` for the current process environment
@@ -308,6 +322,41 @@ Use this for:
 - service-like processes
 - long-running workers that cannot depend on a human login session
 
+### The Exchange
+
+The SDK exchanges the credential at `POST /api/v1/runtime-credentials/token/`.
+The request carries `credential_id` and exactly one proof:
+
+- With `MAINSEQUENCE_RUNTIME_IDENTITY_TOKEN_FILE` set, the proof is
+  `workload_identity_token`: the projected Kubernetes ServiceAccount token in
+  that file. The kubelet rotates the file, so the SDK reads it for every
+  exchange, never once at start-up. It never reads or sends
+  `MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET` in this mode. A missing, unreadable or
+  empty file is an error that names the file; the SDK does not fall back to the
+  secret.
+- Without it, the proof is `credential_secret`, the bootstrap secret, exactly as
+  in earlier releases.
+
+The token stays inside the exchange request. The SDK does not copy it into an
+environment variable, persist it, log it, put it in an error message, or hand it
+to application code. Only the access token it is exchanged for is kept, in
+`MAINSEQUENCE_ACCESS_TOKEN`. An access token obtained with the identity token
+lives 900 seconds, and the SDK exchanges again before it expires.
+
+| Exchange answer | SDK behavior |
+| --- | --- |
+| `200` | Uses the access token and stores it in `MAINSEQUENCE_ACCESS_TOKEN`. |
+| `401` | The proof was refused. Fails at once, without a retry and without trying another proof. |
+| `429` | The exchange was throttled. Retries. |
+| `503` | Verification is temporarily unavailable. Retries. |
+
+A retry waits the longer of an exponential backoff (0.5, 1 and 2 seconds) and
+the answer's `Retry-After`, at most three times, within the request's timeout
+budget. A wait that would not end before the budget does ends the retries, and
+the error reports the last answer's status. The exchange the SDK makes at
+start-up, to load a job run's start-up state, uses the same proof and the same
+retries.
+
 ## Auth Mode Summary
 
 | Mode | Main inputs | Refresh behavior | Best for |
@@ -315,7 +364,7 @@ Use this for:
 | JWT via CLI | `mainsequence login` credentials | refresh token renews access | local CLI and developer scripts |
 | JWT via environment | `MAINSEQUENCE_ACCESS_TOKEN` and `MAINSEQUENCE_REFRESH_TOKEN` | refresh token renews access | signed terminals and controlled launches |
 | Request-bound access token | request-provided access token | no refresh | FastAPI and explicitly bound request-context code |
-| Runtime credential | runtime credential id and secret | exchange credential for new access | long-running non-interactive runtimes |
+| Runtime credential | runtime credential ID with an identity token file or a secret | exchange credential for new access | long-running non-interactive runtimes |
 
 ## Getting The Current User
 

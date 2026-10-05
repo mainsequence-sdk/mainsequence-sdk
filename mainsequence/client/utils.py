@@ -21,6 +21,14 @@ from requests.structures import CaseInsensitiveDict
 
 from mainsequence.defaults import resolve_backend_endpoint
 from mainsequence.logconf import logger
+from mainsequence.runtime_credential_exchange import (
+    RUNTIME_CREDENTIAL_ID_ENV,
+    RUNTIME_CREDENTIAL_SECRET_ENV,
+    RUNTIME_IDENTITY_TOKEN_FILE_ENV,
+    RuntimeIdentityTokenError,
+    exchange_runtime_credential,
+    identity_token_file_from_environment,
+)
 
 from ._transport import DEFAULT_ALLOWED_METHODS as DEFAULT_ALLOWED_METHODS
 from ._transport import DEFAULT_STATUS_FORCELIST as DEFAULT_STATUS_FORCELIST
@@ -309,6 +317,17 @@ class SessionJWTAuthProvider(BaseAuthProvider):
 
 @dataclass
 class RuntimeCredentialAuthProvider(BaseAuthProvider):
+    """
+    Exchange the runtime credential the platform injected for short-lived access tokens.
+
+    The proof is the projected workload identity token when
+    `MAINSEQUENCE_RUNTIME_IDENTITY_TOKEN_FILE` is set: the file is read for every
+    exchange, and `MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET` is never read or sent.
+    Otherwise the proof is that bootstrap secret. The token is never kept on the
+    provider. Throttled (`429`) and temporarily unavailable (`503`) exchanges are
+    retried within the timeout budget; a rejected one (`401`) fails at once.
+    """
+
     credential_id: str | None = None
     credential_secret: str | None = None
     token_url: str | None = None
@@ -316,13 +335,18 @@ class RuntimeCredentialAuthProvider(BaseAuthProvider):
     refresh_skew_seconds: int = 30
     timeout: tuple[float, float] = DEFAULT_TIMEOUT
     expires_at: float | None = None
+    identity_token_file: str | None = None
     _lock: threading.RLock = field(default_factory=threading.RLock, init=False, repr=False)
 
     def __post_init__(self):
         if self.credential_id is None:
-            self.credential_id = os.getenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_ID")
-        if self.credential_secret is None:
-            self.credential_secret = os.getenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET")
+            self.credential_id = os.getenv(RUNTIME_CREDENTIAL_ID_ENV)
+        if self.identity_token_file is None:
+            self.identity_token_file = identity_token_file_from_environment()
+        else:
+            self.identity_token_file = str(self.identity_token_file).strip() or None
+        if self.credential_secret is None and not self.identity_token_file:
+            self.credential_secret = os.getenv(RUNTIME_CREDENTIAL_SECRET_ENV)
         if not self.token_url:
             self.token_url = f"{API_ENDPOINT}/runtime-credentials/token/"
 
@@ -344,20 +368,48 @@ class RuntimeCredentialAuthProvider(BaseAuthProvider):
 
         return exp <= int(time.time()) + self.refresh_skew_seconds
 
-    def _require_credentials(self) -> tuple[str, str]:
+    @staticmethod
+    def _log_exchange_retry(status: int, delay: float) -> None:
+        logger.warning(f"Runtime credential exchange returned {status}; retrying in {delay:.1f} s.")
+
+    def _exchange(self) -> requests.Response:
         credential_id = (self.credential_id or "").strip()
-        credential_secret = (self.credential_secret or "").strip()
+        identity_token_file = self.identity_token_file
+        credential_secret = None if identity_token_file else (self.credential_secret or "").strip()
         if not credential_id:
             raise AuthError(
                 "MAINSEQUENCE_RUNTIME_CREDENTIAL_ID is required when "
                 "MAINSEQUENCE_AUTH_MODE=runtime_credential."
             )
-        if not credential_secret:
+        if not identity_token_file and not credential_secret:
             raise AuthError(
                 "MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET is required when "
-                "MAINSEQUENCE_AUTH_MODE=runtime_credential."
+                "MAINSEQUENCE_AUTH_MODE=runtime_credential and "
+                f"{RUNTIME_IDENTITY_TOKEN_FILE_ENV} is not set."
             )
-        return credential_id, credential_secret
+        try:
+            # One budget for every attempt and wait, inside the caller's budget if any.
+            with request_budget(self.timeout) as budget:
+
+                def post(body: dict[str, str]) -> requests.Response:
+                    return requests.post(
+                        self.token_url,
+                        json=body,
+                        headers={"Content-Type": "application/json"},
+                        timeout=budget.timeout(),
+                        allow_redirects=False,
+                    )
+
+                return exchange_runtime_credential(
+                    post,
+                    credential_id=credential_id,
+                    credential_secret=credential_secret,
+                    identity_token_file=identity_token_file,
+                    deadline=budget.deadline,
+                    on_retry=self._log_exchange_retry,
+                )
+        except RuntimeIdentityTokenError as exc:
+            raise AuthError(str(exc)) from None
 
     def refresh(
         self,
@@ -370,17 +422,7 @@ class RuntimeCredentialAuthProvider(BaseAuthProvider):
             if not force and not self._needs_exchange():
                 return
 
-            credential_id, credential_secret = self._require_credentials()
-            response = requests.post(
-                self.token_url,
-                json={
-                    "credential_id": credential_id,
-                    "credential_secret": credential_secret,
-                },
-                headers={"Content-Type": "application/json"},
-                timeout=remaining_timeout(self.timeout),
-                allow_redirects=False,
-            )
+            response = self._exchange()
             if response.status_code < 200 or response.status_code >= 300:
                 raise AuthError(
                     f"Runtime credential exchange failed with status {response.status_code}."

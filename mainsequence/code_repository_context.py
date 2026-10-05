@@ -10,6 +10,8 @@ from dataclasses import dataclass, replace
 from typing import Any, Literal
 from urllib.parse import urlsplit
 
+from mainsequence.runtime_credential_exchange import runtime_credential_configured
+
 CodeRepositoryContextStatus = Literal[
     "resolved",
     "code_repository_branch_not_registered",
@@ -204,9 +206,7 @@ def _exchange_authenticated_runtime_context_if_configured() -> None:
         return
     if (os.getenv("MAINSEQUENCE_AUTH_MODE") or "").strip().lower() != "runtime_credential":
         return
-    if not (os.getenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_ID") or "").strip():
-        return
-    if not (os.getenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET") or "").strip():
+    if not runtime_credential_configured():
         return
 
     from mainsequence.client.utils import AuthError, loaders
