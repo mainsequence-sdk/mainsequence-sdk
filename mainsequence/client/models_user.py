@@ -970,6 +970,10 @@ class User(UserApiBaseObjectOrm, BasePydanticModel):
     workload in ``job_uid``, ``resource_release_uid`` or ``agent_uid``, without
     a username, email, join date or name. Fields the row does not carry are
     ``None``, or empty for lists.
+
+    The reverse direction is ``workload_user_uid`` on ``Job``,
+    ``ResourceRelease`` and ``Agent``: the UID of the User that workload runs
+    as, to pass to ``User.get_by_uid`` and to sharing calls.
     """
 
     # Platform facts, not application authorization policy. None means the

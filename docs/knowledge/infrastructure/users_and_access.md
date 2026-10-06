@@ -94,6 +94,19 @@ For a workload identity the platform sends `uid`, `identity_type`, `is_active`,
 `job_uid`, `resource_release_uid` and `agent_uid`. The `User` fields it does not
 send are `None`, or empty for lists.
 
+To go the other way, from a workload to its identity, read
+`workload_user_uid` on the `Job`, `ResourceRelease` or `Agent`. It is `None`
+when the object has no workload identity, for example a static-site release,
+a release's backing Job, or an Agent without a runtime release. An Agent and
+its runtime release report the same value.
+
+```python
+from mainsequence.client import Job, User
+
+job = Job.filter(name__contains="nightly-prices")[0]
+user = User.get_by_uid(job.workload_user_uid)  # identity_type == "workload"
+```
+
 `User.filter()` lists people only. Ask for workload identities with the
 `identity_type` filter; the listing holds the ones you can view:
 

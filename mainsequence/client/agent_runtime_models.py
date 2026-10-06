@@ -579,6 +579,14 @@ class Agent(
             "or null when the Agent has no deployed runtime release."
         ),
     )
+    workload_user_uid: str | None = Field(
+        None,
+        description=(
+            "Read-only UID of the workload identity, the User this Agent runs as; the "
+            "same value its runtime release reports. Pass it to `User.get_by_uid` and "
+            "to sharing calls. None when the Agent has no runtime release."
+        ),
+    )
     code_repository_branch_uid: str | None = Field(
         None,
         description=(

@@ -174,6 +174,16 @@ class Job(CurrentCodeRepositoryBranchCollectionMixin, BaseObjectOrm, BasePydanti
         examples=["58218213-5e4e-43de-a5bd-6757f4e1c8f6"],
     )
 
+    workload_user_uid: str | None = Field(
+        default=None,
+        description=(
+            "Read-only UID of the workload identity, the User this Job runs as. "
+            "Pass it to `User.get_by_uid` and to sharing calls. None when the Job "
+            "has no workload identity, for example a release's backing Job."
+        ),
+        examples=["88888888-8888-4888-8888-888888888888"],
+    )
+
     code_repository_commit_hash: str | None = Field(
         default=None,
         description=(
@@ -984,6 +994,16 @@ class ResourceRelease(
         title="Related Job UID",
         description="Public UID of the job associated with this resource release.",
         examples=["7d0ab07c-d1c0-4b7f-9c69-3c1a41c0a4da"],
+    )
+    workload_user_uid: str | None = Field(
+        None,
+        title="Workload User UID",
+        description=(
+            "Read-only UID of the workload identity, the User this release runs as. "
+            "Pass it to `User.get_by_uid` and to sharing calls. None when the release "
+            "has no workload identity, for example a static-site release."
+        ),
+        examples=["88888888-8888-4888-8888-888888888888"],
     )
     observability: ObservabilityLinks | None = Field(
         default=None,

@@ -253,3 +253,30 @@ def test_job_run_requires_immutable_runtime_image_snapshot():
                 "runtime_image_digest": "sha256:" + "b" * 64,
             }
         )
+
+
+WORKLOAD_USER_UID = "88888888-8888-4888-8888-888888888888"
+
+
+@pytest.mark.parametrize(
+    ("extra", "expected"),
+    [
+        ({"workload_user_uid": WORKLOAD_USER_UID}, WORKLOAD_USER_UID),
+        ({"workload_user_uid": None}, None),
+        ({}, None),
+    ],
+)
+def test_job_reads_workload_user_uid(extra, expected):
+    job = models_helpers_mod.Job.model_validate(
+        {
+            "uid": "7d0ab07c-d1c0-4b7f-9c69-3c1a41c0a4da",
+            "name": "Daily prices",
+            "code_repository_branch_uid": CODE_REPOSITORY_BRANCH_UID,
+            "related_image_uid": "6cfdb152-923e-45b9-a150-c4541c68b0d1",
+            "code_repository_commit_hash": "a" * 40,
+            "image_status": "ready",
+            **extra,
+        }
+    )
+
+    assert job.workload_user_uid == expected

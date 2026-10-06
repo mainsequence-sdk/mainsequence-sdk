@@ -46,6 +46,10 @@ boundary and breaking changes.
 
 ### Added
 
+- `Job`, `ResourceRelease` and `Agent` read `workload_user_uid`, the UID of the
+  workload identity the object runs as, to pass to `User.get_by_uid` and to
+  sharing calls (#196). It is `None` when the object has no workload identity;
+  responses without the field parse as before.
 - `User` reads workload identities, the Users a deployed Job, FastAPI release or
   Agent runs as. `User.get_by_uid(uid)` accepts the platform's workload form,
   `uid`, `identity_type` (`"workload"`), `is_active`, `job_uid`,
