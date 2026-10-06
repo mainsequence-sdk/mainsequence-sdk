@@ -20,6 +20,10 @@ class _RequestScope:
     # The verified assertion of a hosted HTTP request, kept only so that
     # reads_as_caller() can present it (ADR-0036, amended for #198).
     caller_assertion: str | None = field(default=None, repr=False)
+    # The person a requester-bound request works for, verified from its
+    # assertion; None on any other request. The user stays the caller, the
+    # acting application (ADR-0036, requester-bound calls).
+    requester: Any = None
 
 
 _current_scope: ContextVar[_RequestScope | None] = ContextVar(
@@ -42,17 +46,27 @@ def _request_scope():
         scope.active = False
         scope.user = None
         scope.caller_assertion = None
+        scope.requester = None
         _current_scope.reset(token)
 
 
-def _get_request_identity():
+def _authenticated_scope(getter: str) -> _RequestScope:
     scope = _current_scope.get()
     if scope is None or not scope.active or scope.user is None:
         raise RequestIdentityError(
             "No authenticated request user is available. Install request identity "
-            "once in the application and call User.get_logged_user() inside a request."
+            f"once in the application and call {getter} inside a request."
         )
-    return scope.user
+    return scope
+
+
+def _get_request_identity():
+    return _authenticated_scope("User.get_logged_user()").user
+
+
+def _get_requester():
+    """The requester of the current request; None when it is not requester-bound."""
+    return _authenticated_scope("User.get_requester()").requester
 
 
 @contextmanager
@@ -62,6 +76,11 @@ def _reads_as_caller():
         raise RequestIdentityError(
             "Reading as the caller needs an authenticated request. Install request "
             "identity once in the application and call reads_as_caller() inside a request."
+        )
+    if scope.requester is not None:
+        raise RequestIdentityError(
+            "This request is requester-bound. The requester's access is not passed on, "
+            "so a requester-bound request cannot read as its caller."
         )
     if scope.caller_assertion is None:
         raise RequestIdentityError(

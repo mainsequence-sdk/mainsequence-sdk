@@ -10,6 +10,7 @@ from mainsequence._request_identity import (
     RequestIdentityError,
     _caller_read_headers,
     _get_request_identity,
+    _get_requester,
 )
 from mainsequence.defaults import STANDARD_BACKEND_URL
 
@@ -30,7 +31,9 @@ class RequestUserIdentity(BaseModel):
     """Minimal identity of the caller of the current runtime request.
 
     The caller is a person or a workload identity; ``User.get_by_uid(uid)``
-    reads its User.
+    reads its User. ``User.get_requester()`` returns the same type for the
+    requester of a requester-bound request, the person the calling
+    application works for; its ``is_organization_admin`` is always ``False``.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -52,8 +55,9 @@ class RequestUserIdentity(BaseModel):
         (),
         title="Team UIDs",
         description=(
-            "Canonical UIDs of the caller's active teams, as signed by the platform "
-            "in the caller assertion. Empty when the request carries no such facts."
+            "Canonical UIDs of the caller's active teams, or the requester's, as signed "
+            "by the platform in the caller assertion. Empty when the request carries no "
+            "such facts."
         ),
     )
     is_organization_admin: bool = Field(
@@ -61,7 +65,8 @@ class RequestUserIdentity(BaseModel):
         title="Organization admin",
         description=(
             "Whether the platform signed the caller as an admin of the application's "
-            "Organization. False when the request carries no such facts."
+            "Organization. False when the request carries no such facts, and always "
+            "False for the requester of a requester-bound request."
         ),
     )
 
@@ -1299,3 +1304,30 @@ class User(_CallerDirectoryReadMixin, UserApiBaseObjectOrm, BasePydanticModel):
         if not isinstance(user, RequestUserIdentity):
             raise RequestIdentityError("Invalid request user context value.")
         return user
+
+    @classmethod
+    def get_requester(cls) -> RequestUserIdentity | None:
+        """Return the requester of a requester-bound request, or ``None``.
+
+        A requester-bound request comes from another application, for example
+        an Agent, while it works for a person: the requester. The platform
+        signs the requester into the caller assertion. ``get_logged_user()``
+        still returns the caller, the acting application. The requester has
+        the ``team_uids`` the platform signed and ``is_organization_admin``
+        ``False``: the requester's access reaches the application at member
+        level only.
+
+        Returns ``None`` when the request is not requester-bound, including
+        local mode and WebSockets. Raises ``RequestIdentityError`` outside an
+        authenticated request, as ``get_logged_user()`` does.
+
+        Authorize a requester-bound request against the requester, and give the
+        acting application no rights of its own unless your policy grants them.
+        An operation that needs a person fails closed when this is ``None``.
+        Never take a person's UID from a request body, header or query
+        parameter instead.
+        """
+        requester = _get_requester()
+        if requester is not None and not isinstance(requester, RequestUserIdentity):
+            raise RequestIdentityError("Invalid request requester context value.")
+        return requester

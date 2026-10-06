@@ -141,6 +141,45 @@ if user.identity_type == "workload":
     artifact.add_to_view(user)  # any shareable object the application created
 ```
 
+## Applications that act for their requester
+
+An application's own access comes from grants to its workload User: share
+objects with that User as with any person. Those grants cover every call the
+application makes for itself.
+
+An application can instead be enabled to act for its **requester**, the person
+whose own request it is serving, with the platform setting
+`acts_for_requester`:
+
+- It is `false` by default. Nothing changes for an application that leaves it
+  off.
+- Only Organization admins enable it: after the application exists, with
+  `PATCH /api/v1/workload-users/<workload_user_uid>/`, or in code, by declaring
+  `acts_for_requester: true` on the resource in the repository workflow file.
+  A declaration takes effect only when the person who pushed it is an
+  Organization admin; otherwise that resource fails before it deploys.
+- An application that should act only for people, for example a data analyst
+  Agent, holds no grants of its own.
+
+The requester's access is read only, at member level and never an admin's, and
+never reaches secret values. It lasts at most 24 hours after the person's
+request, and only while the work for that request runs. It is checked again on
+every call and is never passed on to another application.
+
+Nobody names the requester in a request. An application never accepts a
+person's UID from a request body, header or query parameter: the person comes
+only from the platform. An application that receives a requester-bound call
+reads the requester with `User.get_requester()`; see
+[Requester-bound calls](../fastapi/index.md#requester-bound-calls).
+
+Every client that shows such an application tells people:
+
+> **This Agent works with your identity, securely.** It reads only what you can already read, only to answer your own requests, and for at most 24 hours after you ask. It cannot act as anyone else, cannot change, share or delete anything, never sees your secret values, and stops the moment your access ends. Your Organization's administrator approved it to work this way.
+
+The plain limit: while it works on your request, the Agent's code can read what
+you can read, which is why only administrators decide which Agents may work
+this way.
+
 ## Roles
 
 Roles are the broad, organization-level classification of what kind of platform user someone is.

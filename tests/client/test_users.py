@@ -746,3 +746,18 @@ def test_caller_assertion_stays_out_of_repr_and_error_messages(monkeypatch):
 
     assert CALLER_ASSERTION not in str(refused.value)
     assert CALLER_ASSERTION not in repr(refused.value.payload)
+
+
+def test_reads_as_caller_refuses_a_requester_bound_request(monkeypatch):
+    """The requester's access is not passed on: the helper refuses before any read."""
+    sent = _record(monkeypatch)
+
+    with _request_scope() as context:
+        context.user = models_user_mod.RequestUserIdentity(uid=WORKLOAD_USER_UID)
+        context.caller_assertion = CALLER_ASSERTION
+        context.requester = models_user_mod.RequestUserIdentity(uid=PERSON_UID)
+        with pytest.raises(RequestIdentityError, match="requester-bound"):
+            with reads_as_caller():
+                models_user_mod.User.filter()
+
+    assert sent == []

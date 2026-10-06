@@ -7,6 +7,8 @@ Application handlers use `User.get_logged_user()`. Install request identity once
 
 The integration uses the existing framework-independent caller verifier internally. It checks the EdDSA (Ed25519) signature, purpose, issuer, audience, target release/Environment, canonical User UID and validity times. The platform publishes one Ed25519 public key (`kty` `OKP`, `crv` `Ed25519`) whose `kid` is its RFC 7638 thumbprint; a new key arrives with a new `kid`, and any other algorithm or key type is rejected. The maximum lifetime is five minutes. The immutable internal result does not retain the raw proof. The request scope keeps the verified assertion only so that `reads_as_caller()` can present it, and drops it when the request ends.
 
+A requester-bound call, made by another application while it works for a person, carries one more claim, `requester`: an object with exactly `sub`, the requester's canonical User UID, and `team_uids`, the requester's canonical team UIDs, sorted ascending and unique. It never carries an admin flag. The assertion's own `sub` and its optional `team_uids`/`is_organization_admin` pair stay the caller's: the acting application. A `requester` with a missing or extra key, a value of the wrong type, a UID that is not canonical, or unsorted or repeated team UIDs rejects the assertion, as any other unknown claim does. The verified requester is kept beside the caller, and the request scope binds it for `User.get_requester()`; see [Requester-bound calls](../fastapi/index.md#requester-bound-calls).
+
 ## Trusted hosted configuration
 
 Django projects these values into a deployed application:

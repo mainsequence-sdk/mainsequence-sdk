@@ -222,6 +222,12 @@ class _RequestIdentityMiddleware:
                         state["resource_release_uid"] = caller.release_uid
                         state["organization_environment_uid"] = caller.environment_uid
                         context.caller_assertion = assertion
+                        if caller._requester is not None:
+                            # Never an admin: the requester's access is member level.
+                            context.requester = RequestUserIdentity(
+                                uid=caller._requester.user_uid,
+                                team_uids=caller._requester.team_uids,
+                            )
                     else:
                         user = await asyncio.to_thread(_local_user, scope)
                     context.user = user
@@ -245,7 +251,11 @@ class _RequestIdentityMiddleware:
 
 
 def install_request_identity(app):
-    """Install once at application creation. Handlers use User.get_logged_user()."""
+    """Install once at application creation.
+
+    Handlers use User.get_logged_user() for the caller and, on a
+    requester-bound call, User.get_requester() for the person it works for.
+    """
     if getattr(app.state, _INSTALLATION, None) is not None:
         raise RuntimeError("Request identity is already installed.")
     mode = _mode()
@@ -278,7 +288,9 @@ def reads_as_caller():
     and the platform answers with what the caller may see. No other call sends
     it. Raises ``RequestIdentityError`` outside an authenticated request or when
     the request carries no assertion (local mode, WebSockets); it never reads as
-    the application instead. See ADR-0036.
+    the application instead. It also raises in a requester-bound request
+    (``User.get_requester()`` is not ``None``): the requester's access is not
+    passed on. See ADR-0036.
     """
     with _reads_as_caller():
         yield

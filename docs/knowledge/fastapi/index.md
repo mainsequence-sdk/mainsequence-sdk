@@ -73,6 +73,34 @@ Inside the block, `User.filter`, `User.get_by_uid`, `Team.filter` and `Team.get_
 
 The block needs a signed HTTP request. Outside an authenticated request, in local mode and on WebSockets it raises `RequestIdentityError`; it never reads as the application instead. In local mode the SDK session already belongs to the developer, so reads outside the block answer as that person. The assertion lives at most five minutes and is not renewed, so a read after it expires fails. See [ADR-0036](../../adr/0036-request-scoped-logged-user.md#reads-as-the-caller).
 
+## Requester-bound calls
+
+Another application, for example an Agent, can call this application while it works for a person: the **requester**. The platform then signs the requester into the caller assertion next to the caller. `User.get_logged_user()` still returns the caller, the acting application. `User.get_requester()` returns the requester, or `None` when the request is not requester-bound:
+
+```python
+from fastapi import HTTPException
+from mainsequence.client import User
+
+
+def team_report(team_uid: str) -> dict:
+    requester = User.get_requester()
+    if requester is None:
+        # This operation answers for a person: without a requester, refuse.
+        raise HTTPException(status_code=403, detail="This operation needs a requester.")
+    if team_uid not in requester.team_uids:
+        raise HTTPException(status_code=403, detail="The requester is not in this team.")
+    return {"team_uid": team_uid, "requested_by": requester.uid}
+```
+
+The requester is a `RequestUserIdentity` with the `team_uids` the platform signed, and `is_organization_admin` is always false: a requester's access reaches an application at member level, never an admin's. `get_requester()` returns `None` in local mode, on WebSockets and when the assertion names no requester. Outside an authenticated request, including public routes, it raises `RequestIdentityError`, as `get_logged_user()` does.
+
+- Authorize a requester-bound call against the requester. The acting application, the caller, has no rights of its own unless your policy grants them.
+- Fail closed: when an operation needs a person and `get_requester()` is `None`, refuse it. Never fall back to what the acting application may do.
+- Never trust a person's UID taken from a request body, header or query parameter. Only the signed assertion names the requester, and the SDK has verified that it is addressed to this release.
+- Inside a requester-bound request, `reads_as_caller()` raises `RequestIdentityError`: the requester's access is not passed on to another application, so the request cannot read the directory as its caller.
+
+Earlier SDK releases reject every assertion that carries a requester, so requester-bound calls to an application on an older SDK fail with 401 while its other calls are unchanged. Which applications may act for their requester, and what that access covers, is described in [Applications that act for their requester](../infrastructure/users_and_access.md#applications-that-act-for-their-requester). See [ADR-0036](../../adr/0036-request-scoped-logged-user.md#requester-bound-calls).
+
 ## Platform and SDK responsibilities
 
 Django authenticates and signs. The gateway forwards the proof. The application's SDK integration verifies it using deployment-owned trust configuration. PodDeploymentOrchestrator validates that the integration is installed and serves the app without importing or depending on the SDK.

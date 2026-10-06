@@ -46,6 +46,20 @@ boundary and breaking changes.
 
 ### Added
 
+- A FastAPI application receives requester-bound calls: calls another
+  application, for example an Agent, makes while it works for a person, the
+  requester. The platform signs the requester into the caller assertion as the
+  claim `requester`, an object with exactly `sub` and `team_uids`. The verifier
+  accepts that claim in this exact shape and rejects any other shape.
+  `User.get_requester()` returns the requester as a `RequestUserIdentity` with
+  the signed `team_uids` and `is_organization_admin` false, or `None` when the
+  request is not requester-bound; outside an authenticated request it raises
+  `RequestIdentityError`. `User.get_logged_user()` still returns the caller, the
+  acting application. Inside a requester-bound request `reads_as_caller()`
+  raises `RequestIdentityError`, because the requester's access is not passed
+  on. Earlier SDK releases reject assertions that carry `requester`, so
+  requester-bound calls to an application on an older release fail closed while
+  its other calls are unchanged. ADR-0036 is amended accordingly.
 - `User` reads `workload_name` on listed workload identities: the name of the
   Job, release or Agent, for workloads the caller can view, so search results
   can be labelled without UUIDs (#200). It is `None` on a person, on a lookup

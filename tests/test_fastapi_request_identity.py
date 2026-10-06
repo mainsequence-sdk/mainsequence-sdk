@@ -512,3 +512,184 @@ def test_reads_as_caller_needs_a_signed_http_request(monkeypatch):
     with pytest.raises(RequestIdentityError, match="authenticated request"):
         with reads_as_caller():
             pass
+
+
+# --- Requester-bound calls (ADR-0036) ----------------------------------------------
+#
+# Another application calls while it works for a person, the requester. The caller
+# stays that application; User.get_requester() returns the person the platform
+# signed into the assertion.
+
+PERSON = "5b0f9a8e-3c2d-4e1f-9a7b-6c5d4e3f2a1b"
+
+
+def _identities():
+    caller = User.get_logged_user()
+    requester = User.get_requester()
+    return {
+        "caller": [caller.uid, list(caller.team_uids), caller.is_organization_admin],
+        "requester": (
+            None
+            if requester is None
+            else [requester.uid, list(requester.team_uids), requester.is_organization_admin]
+        ),
+    }
+
+
+def test_requester_bound_call_binds_the_requester_beside_the_caller(signed):
+    token, _, _ = signed
+    caller_teams = sorted([str(uuid4()), str(uuid4())])
+    requester_teams = sorted([str(uuid4()), str(uuid4())])
+    # The caller's own facts never reach the requester, the admin flag included.
+    facts = dict(team_uids=caller_teams, is_organization_admin=True)
+
+    with TestClient(app_for(_identities)) as client:
+        bound = client.get(
+            "/me",
+            headers={
+                ASSERTION_HEADER: token(
+                    **facts, requester={"sub": PERSON, "team_uids": requester_teams}
+                )
+            },
+        )
+        # A person UID in a header or the query names no requester.
+        direct = client.get(
+            "/me",
+            params={"requester": PERSON},
+            headers={ASSERTION_HEADER: token(**facts), "X-User-UID": PERSON},
+        )
+
+    assert bound.json() == {
+        "caller": [USER, caller_teams, True],
+        "requester": [PERSON, requester_teams, False],
+    }
+    assert direct.json() == {"caller": [USER, caller_teams, True], "requester": None}
+    with pytest.raises(RequestIdentityError, match=r"User\.get_requester\(\)"):
+        User.get_requester()
+
+
+@pytest.mark.parametrize(
+    "requester",
+    [
+        None,
+        {"sub": PERSON},
+        {"sub": PERSON, "team_uids": [], "is_organization_admin": True},
+        {"sub": PERSON.upper(), "team_uids": []},
+    ],
+    ids=["null", "missing_team_uids", "admin_flag", "non_canonical_sub"],
+)
+def test_malformed_requester_never_reaches_route(signed, requester):
+    token, _, _ = signed
+
+    def handler():
+        pytest.fail("Rejected request reached handler")
+
+    response = TestClient(app_for(handler)).get(
+        "/me", headers={ASSERTION_HEADER: token(requester=requester)}
+    )
+    assert response.status_code == 401
+
+
+def test_requester_is_none_in_local_mode_and_on_websockets(monkeypatch):
+    monkeypatch.setenv("MAINSEQUENCE_ENDPOINT", ISSUER)
+    response = Mock(status_code=200)
+    response.json.return_value = {"uid": USER, "username": "local"}
+    monkeypatch.setattr("mainsequence.server.fastapi.requests.get", Mock(return_value=response))
+
+    async def ws(websocket: WebSocket):
+        await websocket.accept()
+        await websocket.send_json(_identities())
+        await websocket.close()
+
+    app = FastAPI()
+    app.get("/me")(_identities)
+    app.websocket("/ws")(ws)
+    install_request_identity(app)
+    client = TestClient(app)
+
+    expected = {"caller": [USER, [], False], "requester": None}
+    assert client.get("/me", headers={"Authorization": "Bearer local-token"}).json() == expected
+    with client.websocket_connect("/ws", headers={"X-User-UID": USER}) as connection:
+        assert connection.receive_json() == expected
+
+
+def test_public_route_has_no_requester(signed, monkeypatch):
+    token, _, _ = signed
+    monkeypatch.setenv(
+        "FASTAPI_PUBLIC_INGRESS", json.dumps([{"method": "GET", "path": "/callback"}])
+    )
+
+    def handler():
+        with pytest.raises(RequestIdentityError):
+            User.get_requester()
+        return {"anonymous": True}
+
+    response = TestClient(app_for(handler, path="/callback")).get(
+        "/callback",
+        headers={
+            "X-Public-Ingress": "1",
+            ASSERTION_HEADER: token(requester={"sub": PERSON, "team_uids": []}),
+        },
+    )
+    assert response.json() == {"anonymous": True}
+
+
+def test_requester_expires_with_its_request(signed):
+    from mainsequence.server.fastapi import _RequestIdentityMiddleware
+
+    token, _, verifier = signed
+    copied = []
+
+    async def application(scope, receive, send):
+        assert User.get_requester().uid == PERSON
+        copied.append(copy_context())
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": b""})
+
+    runtime = _RequestIdentityMiddleware(
+        application, mode="assertion", verifier=verifier, public_ingress=(), routes=()
+    )
+    proof = token(requester={"sub": PERSON, "team_uids": []})
+
+    async def run():
+        async def receive():
+            return {"type": "http.request", "body": b""}
+
+        async def send(message):
+            pass
+
+        await runtime(
+            {
+                "type": "http",
+                "method": "GET",
+                "path": "/",
+                "headers": [(ASSERTION_HEADER.lower().encode(), proof.encode())],
+            },
+            receive,
+            send,
+        )
+
+    asyncio.run(run())
+    assert len(copied) == 1
+    with pytest.raises(RequestIdentityError):
+        copied[0].run(User.get_requester)
+
+
+def test_reads_as_caller_refuses_a_requester_bound_request(signed, monkeypatch):
+    token, _, _ = signed
+    sent = []
+    monkeypatch.setattr(base_mod, "make_request", lambda **kwargs: sent.append(kwargs))
+
+    def handler():
+        with pytest.raises(RequestIdentityError, match="requester-bound"):
+            with reads_as_caller():
+                User.filter(search="prices")
+        return _identities()
+
+    with TestClient(app_for(handler)) as client:
+        response = client.get(
+            "/me", headers={ASSERTION_HEADER: token(requester={"sub": PERSON, "team_uids": []})}
+        )
+
+    assert response.json() == {"caller": [USER, [], False], "requester": [PERSON, [], False]}
+    assert sent == []
