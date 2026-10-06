@@ -72,7 +72,8 @@ That is the most explicit form of access.
 
 A deployed Job, FastAPI release or Agent runs as its own User: its workload
 identity. A workload identity belongs to the Organization like a person, but it
-is not a person: other Users see no username, email, join date or name for it.
+is not a person: other Users see no username, email, join date or first and
+last name for it.
 
 Any member of the Organization can read a workload identity by its UID, for
 example to check the caller of a request an application received:
@@ -113,6 +114,10 @@ user = User.get_by_uid(job.workload_user_uid)  # identity_type == "workload"
 ```python
 workloads = User.filter(identity_type="workload")
 ```
+
+A listed row of a workload you can view also carries `workload_name`, the name
+of its Job, release or Agent, to label it with. It is `None` on a lookup by UID
+and on any row that does not carry it.
 
 `identity_type` is one of `human`, `service_account`, `deleted_user` and
 `workload`. A person's row may not carry it, so test for `"workload"` rather

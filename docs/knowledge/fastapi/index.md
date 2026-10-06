@@ -59,7 +59,11 @@ def share_candidates(q: str):
     return {
         "people": [person.uid for person in people],
         "workloads": [
-            {"uid": workload.uid, "managed": workload.managed_by_caller}
+            {
+                "uid": workload.uid,
+                "name": workload.workload_name,
+                "managed": workload.managed_by_caller,
+            }
             for workload in workloads
         ],
     }

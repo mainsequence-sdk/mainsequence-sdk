@@ -46,6 +46,10 @@ boundary and breaking changes.
 
 ### Added
 
+- `User` reads `workload_name` on listed workload identities: the name of the
+  Job, release or Agent, for workloads the caller can view, so search results
+  can be labelled without UUIDs (#200). It is `None` on a person, on a lookup
+  by UID and on any response that does not carry it.
 - A FastAPI application reads the directory as its caller (#198). Inside
   `mainsequence.server.fastapi.reads_as_caller()`, `User.filter`,
   `User.get_by_uid`, `Team.filter` and `Team.get_by_uid` present the caller
