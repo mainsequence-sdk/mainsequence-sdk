@@ -16,7 +16,8 @@ import requests
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from jwt import InvalidKeyError, InvalidTokenError
 
-ASSERTION_HEADER = "X-MainSequence-Caller-Assertion"
+from mainsequence._request_identity import CALLER_ASSERTION_HEADER as ASSERTION_HEADER
+
 ASSERTION_TYPE = "mainsequence-caller-assertion+jwt"
 ASSERTION_ALGORITHM = "EdDSA"
 MAX_ASSERTION_SECONDS = 300

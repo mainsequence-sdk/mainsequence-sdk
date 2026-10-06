@@ -5,7 +5,7 @@ PyJWT and cryptography are required SDK dependencies, installed automatically by
 
 Application handlers use `User.get_logged_user()`. Install request identity once in the application as described in [FastAPI request identity](../fastapi/index.md). Handler code does not parse headers, call the verifier, or bind ContextVars.
 
-The integration uses the existing framework-independent caller verifier internally. It checks the EdDSA (Ed25519) signature, purpose, issuer, audience, target release/Environment, canonical User UID and validity times. The platform publishes one Ed25519 public key (`kty` `OKP`, `crv` `Ed25519`) whose `kid` is its RFC 7638 thumbprint; a new key arrives with a new `kid`, and any other algorithm or key type is rejected. The maximum lifetime is five minutes. The immutable internal result does not retain the raw proof.
+The integration uses the existing framework-independent caller verifier internally. It checks the EdDSA (Ed25519) signature, purpose, issuer, audience, target release/Environment, canonical User UID and validity times. The platform publishes one Ed25519 public key (`kty` `OKP`, `crv` `Ed25519`) whose `kid` is its RFC 7638 thumbprint; a new key arrives with a new `kid`, and any other algorithm or key type is rejected. The maximum lifetime is five minutes. The immutable internal result does not retain the raw proof. The request scope keeps the verified assertion only so that `reads_as_caller()` can present it, and drops it when the request ends.
 
 ## Trusted hosted configuration
 

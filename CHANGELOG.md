@@ -46,6 +46,17 @@ boundary and breaking changes.
 
 ### Added
 
+- A FastAPI application reads the directory as its caller (#198). Inside
+  `mainsequence.server.fastapi.reads_as_caller()`, `User.filter`,
+  `User.get_by_uid`, `Team.filter` and `Team.get_by_uid` present the caller
+  assertion the request arrived with, and the platform answers with what the
+  caller may see. No other call presents it. Outside a signed HTTP request,
+  including local mode and WebSockets, the helper raises
+  `RequestIdentityError` instead of reading as the application. ADR-0036 is
+  amended accordingly.
+- `User.filter(search=...)` sends the `search` query parameter, which matches a
+  person's email or name or a workload's Job, release or Agent name, and
+  `User` reads `managed_by_caller` on workload rows.
 - `Job`, `ResourceRelease` and `Agent` read `workload_user_uid`, the UID of the
   workload identity the object runs as, to pass to `User.get_by_uid` and to
   sharing calls (#196). It is `None` when the object has no workload identity;

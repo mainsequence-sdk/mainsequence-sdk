@@ -118,6 +118,12 @@ workloads = User.filter(identity_type="workload")
 `workload`. A person's row may not carry it, so test for `"workload"` rather
 than for `"human"`.
 
+Inside a FastAPI request, an application can read the directory as its caller
+sees it with `reads_as_caller()`: `User.filter(search=...)` then finds people by
+email or name and workloads by their Job, release or Agent name, and each
+workload row carries `managed_by_caller`. See
+[Reading the directory as the caller](../fastapi/index.md#reading-the-directory-as-the-caller).
+
 The sharing methods take a workload identity like any other User. An
 application that received a request from a workload can give that workload
 access to its own objects, and the platform decides whether the grant is

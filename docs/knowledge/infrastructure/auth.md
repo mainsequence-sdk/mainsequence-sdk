@@ -236,7 +236,7 @@ problem.
 
 FastAPI applications install the [SDK request identity integration](../fastapi/index.md) once. Handlers and services call `User.get_logged_user()`. The integration verifies the platform assertion and binds a request scope; it never changes process credentials.
 
-The gateway consumes the original release Bearer token. Do not put an inbound token into process `MAINSEQUENCE_ACCESS_TOKEN` or select `session_jwt` for each HTTP caller. The runtime's SDK authentication remains independent.
+The gateway consumes the original release Bearer token. Do not put an inbound token into process `MAINSEQUENCE_ACCESS_TOKEN` or select `session_jwt` for each HTTP caller. The runtime's SDK authentication remains independent. Inside `reads_as_caller()`, the directory reads also present the caller's assertion; see [Reading the directory as the caller](../fastapi/index.md#reading-the-directory-as-the-caller).
 
 ## Runtime Credential Auth
 
