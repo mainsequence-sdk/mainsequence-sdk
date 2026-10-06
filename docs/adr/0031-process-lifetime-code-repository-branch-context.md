@@ -17,9 +17,6 @@ historical MetaTables/DataSource implementation described in this record.
 > `GitHubRepositoryBinding` are the canonical public names. The Project-era
 > SDK ontology is retired and must not be reintroduced.
 
-Platform decision: `tdag-django` ADR-0037, stable fingerprint
-`git-native-project-source-context-v1`
-
 ## Context
 
 Application code runs in local checkouts and platform-built runtime images. The SDK

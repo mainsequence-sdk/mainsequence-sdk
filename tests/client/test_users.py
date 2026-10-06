@@ -461,6 +461,26 @@ def test_user_people_read_exactly_as_before(monkeypatch):
     assert person.date_joined == datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
     assert person.identity_type is None
     assert (person.job_uid, person.resource_release_uid, person.agent_uid) == (None, None, None)
+    assert person.workload_name is None
+
+
+@pytest.mark.parametrize(
+    ("row", "expected"),
+    [
+        ({"workload_name": "nightly-prices"}, "nightly-prices"),
+        ({"workload_name": None}, None),
+        ({}, None),
+    ],
+    ids=["named", "null", "absent"],
+)
+def test_workload_row_reads_workload_name(row, expected):
+    user = models_user_mod.User.model_validate(
+        {**_workload_user_payload(job_uid=WORKLOAD_JOB_UID), **row}
+    )
+
+    assert user.workload_name == expected
+    assert user.model_dump(mode="json")["workload_name"] == expected
+    assert user.job_uid == WORKLOAD_JOB_UID
 
 
 def test_identity_type_keeps_a_value_this_release_does_not_declare():

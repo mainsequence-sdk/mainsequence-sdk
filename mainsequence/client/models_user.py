@@ -983,8 +983,10 @@ class User(_CallerDirectoryReadMixin, UserApiBaseObjectOrm, BasePydanticModel):
     ``User.filter(identity_type="workload")``. Its row carries ``uid``,
     ``identity_type`` (``"workload"``), ``is_active`` and the UID of its
     workload in ``job_uid``, ``resource_release_uid`` or ``agent_uid``, without
-    a username, email, join date or name. Fields the row does not carry are
-    ``None``, or empty for lists.
+    a username, email, join date or person's name. A listed row of a workload
+    the caller can view also carries ``workload_name``, the name of that Job,
+    release or Agent; a lookup by UID does not. Fields the row does not carry
+    are ``None``, or empty for lists.
 
     The reverse direction is ``workload_user_uid`` on ``Job``,
     ``ResourceRelease`` and ``Agent``: the UID of the User that workload runs
@@ -1058,6 +1060,16 @@ class User(_CallerDirectoryReadMixin, UserApiBaseObjectOrm, BasePydanticModel):
         title="Agent UID",
         description="UID of the Agent a workload identity belongs to; None otherwise.",
         examples=[None],
+    )
+    workload_name: str | None = Field(
+        None,
+        title="Workload Name",
+        description=(
+            "Name of the Job, release or Agent a workload identity belongs to, on a "
+            "listed row of a workload the caller can view. None otherwise, including "
+            "on a lookup by UID and on a person."
+        ),
+        examples=["nightly-prices"],
     )
     managed_by_caller: bool | None = Field(
         None,
