@@ -76,7 +76,9 @@ def test_team_list_members_uses_team_members_endpoint(monkeypatch):
                     "last_name": "Smith",
                     "username": "ana@example.com",
                     "email": "ana@example.com",
-                }
+                    "member_kind": "person",
+                },
+                {"uid": WORKLOAD_USER_UID, "member_kind": "workload"},
             ]
 
     def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
@@ -91,10 +93,15 @@ def test_team_list_members_uses_team_members_endpoint(monkeypatch):
     team = models_user_mod.Team(id=11, uid=team_uid, name="Platform")
     members = team.list_members(timeout=12)
 
-    assert len(members) == 1
+    assert len(members) == 2
     assert members[0].uid == user_uid
+    assert members[0].member_kind == "person"
     assert not hasattr(members[0], "id")
     assert members[0].phone_number is None
+    assert members[1].uid == WORKLOAD_USER_UID
+    assert members[1].member_kind == "workload"
+    assert members[1].username is None
+    assert members[1].email is None
     assert captured == {
         "r_type": "GET",
         "url": f"{models_user_mod.Team.get_object_url()}/{team_uid}/members/",
@@ -473,14 +480,53 @@ def test_user_people_read_exactly_as_before(monkeypatch):
     ],
     ids=["named", "null", "absent"],
 )
-def test_workload_row_reads_workload_name(row, expected):
-    user = models_user_mod.User.model_validate(
-        {**_workload_user_payload(job_uid=WORKLOAD_JOB_UID), **row}
-    )
+def test_user_get_by_uid_preserves_workload_name(monkeypatch, row, expected):
+    sent = _serve(monkeypatch, {**_workload_user_payload(job_uid=WORKLOAD_JOB_UID), **row})
 
+    user = models_user_mod.User.get_by_uid(WORKLOAD_USER_UID)
+
+    assert sent[0]["url"] == (f"{models_user_mod.User.get_object_url()}/{WORKLOAD_USER_UID}/")
     assert user.workload_name == expected
     assert user.model_dump(mode="json")["workload_name"] == expected
     assert user.job_uid == WORKLOAD_JOB_UID
+
+
+@pytest.mark.parametrize(
+    "personal_fields",
+    [{}, dict.fromkeys(("username", "email", "first_name", "last_name"))],
+    ids=["absent", "null"],
+)
+def test_team_parses_workload_members_and_creator(personal_fields):
+    workload = {
+        "uid": WORKLOAD_USER_UID,
+        "member_kind": "workload",
+        **personal_fields,
+    }
+    person = {
+        key: value
+        for key, value in _person_payload().items()
+        if key in ("uid", "username", "email", "first_name", "last_name")
+    }
+    person["member_kind"] = "person"
+    team = models_user_mod.Team.model_validate(
+        {
+            "uid": "3f1cc452-43ec-49cb-b2ba-87dbac164d29",
+            "name": "Research",
+            "member_count": 2,
+            "members": [person, workload],
+            "created_by": workload,
+        }
+    )
+
+    assert [member.uid for member in team.members] == [PERSON_UID, WORKLOAD_USER_UID]
+    assert team.members[0].member_kind == "person"
+    for field_name in ("username", "email", "first_name", "last_name"):
+        assert getattr(team.members[0], field_name) == person[field_name]
+        assert getattr(team.members[1], field_name) is None
+        assert getattr(team.created_by, field_name) is None
+    assert team.members[1].member_kind == "workload"
+    assert team.created_by.uid == WORKLOAD_USER_UID
+    assert team.created_by.member_kind == "workload"
 
 
 def test_identity_type_keeps_a_value_this_release_does_not_declare():
@@ -604,13 +650,16 @@ def test_workload_row_reads_managed_by_caller(row, expected):
 
 def test_reads_as_caller_sends_the_assertion_only_on_directory_reads(monkeypatch):
     page_two = f"{models_user_mod.User.get_object_url()}/?search=prices&offset=1"
+    workload_member = {"uid": WORKLOAD_USER_UID, "member_kind": "workload"}
+    team_row = {**_team_payload(), "created_by": workload_member, "member_count": 1}
+    team_row.pop("members")
     sent = _record(
         monkeypatch,
         {"results": [_workload_user_payload(managed_by_caller=True)], "next": page_two},
         {"results": [_workload_user_payload()], "next": None},
         _workload_user_payload(managed_by_caller=False),
-        {"results": [_team_payload()], "next": None},
-        _team_payload(),
+        {"results": [team_row], "next": None},
+        {**team_row, "members": [workload_member]},
         _person_payload(),
         {"detail": "ok"},
         [_person_payload()],
@@ -620,8 +669,8 @@ def test_reads_as_caller_sends_the_assertion_only_on_directory_reads(monkeypatch
         with reads_as_caller():
             workloads = models_user_mod.User.filter(identity_type="workload", search="prices")
             models_user_mod.User.get_by_uid(WORKLOAD_USER_UID)
-            models_user_mod.Team.filter()
-            models_user_mod.Team.get_by_uid(TEAM_UID)
+            teams = models_user_mod.Team.filter()
+            team = models_user_mod.Team.get_by_uid(TEAM_UID)
             # Neither the session's own user nor a sharing call presents it.
             models_user_mod.User.get_authenticated_user_details()
             DemoShareableModel(SHAREABLE_UID).add_to_view(workloads[0])
@@ -633,6 +682,11 @@ def test_reads_as_caller_sends_the_assertion_only_on_directory_reads(monkeypatch
     assert sent[1]["url"] == page_two
     assert sent[5]["url"] == f"{models_user_mod.User.get_object_url()}/me/"
     assert workloads[0].managed_by_caller is True
+    assert teams[0].created_by.uid == WORKLOAD_USER_UID
+    assert teams[0].created_by.member_kind == "workload"
+    assert team.created_by.uid == WORKLOAD_USER_UID
+    assert team.members[0].uid == WORKLOAD_USER_UID
+    assert team.members[0].member_kind == "workload"
 
 
 def test_reads_as_caller_never_falls_back_to_the_application(monkeypatch):

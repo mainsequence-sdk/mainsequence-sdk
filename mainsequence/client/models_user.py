@@ -198,35 +198,47 @@ class Group(BasePydanticModel):
 
 
 class UserSummary(BasePydanticModel):
+    """A person or workload identity in a team or sharing response.
+
+    Personal fields are ``None`` for workload identities or when not supplied.
+    Team responses carry ``member_kind`` to distinguish people from workloads.
+    """
+
     uid: str | None = Field(
         None,
         title="User UID",
         description="Stable public unique identifier of the user.",
         examples=["8f5d6b54-2f5e-4a8b-bb10-0b17f3f4c123"],
     )
-    first_name: str = Field(
-        ...,
+    first_name: str | None = Field(
+        None,
         title="First Name",
-        description="User's given name.",
+        description="User's given name; None for workloads or when not supplied.",
         examples=["Jose"],
     )
-    last_name: str = Field(
-        ...,
+    last_name: str | None = Field(
+        None,
         title="Last Name",
-        description="User's family name.",
+        description="User's family name; None for workloads or when not supplied.",
         examples=["Ambrosino"],
     )
-    username: str = Field(
-        ...,
+    username: str | None = Field(
+        None,
         title="Username",
-        description="Unique username used to identify the user in the platform.",
+        description="Platform username; None for workloads or when not supplied.",
         examples=["jose@main-sequence.io"],
     )
-    email: str = Field(
-        ...,
+    email: str | None = Field(
+        None,
         title="Email",
-        description="Primary email address of the user.",
+        description="Primary email address; None for workloads or when not supplied.",
         examples=["jose@main-sequence.io"],
+    )
+    member_kind: OpenValueSet[Literal["person", "workload"]] | None = Field(
+        None,
+        title="Member Kind",
+        description="Kind of identity in a team response; None when not supplied.",
+        examples=["workload"],
     )
     phone_number: str | None = Field(
         None,
@@ -983,10 +995,11 @@ class User(_CallerDirectoryReadMixin, UserApiBaseObjectOrm, BasePydanticModel):
     ``User.filter(identity_type="workload")``. Its row carries ``uid``,
     ``identity_type`` (``"workload"``), ``is_active`` and the UID of its
     workload in ``job_uid``, ``resource_release_uid`` or ``agent_uid``, without
-    a username, email, join date or person's name. A listed row of a workload
-    the caller can view also carries ``workload_name``, the name of that Job,
-    release or Agent; a lookup by UID does not. Fields the row does not carry
-    are ``None``, or empty for lists.
+    a username, email, join date or person's name. Both listed rows and UID
+    lookups carry ``workload_name``, the name of that Job, release or Agent,
+    when the caller can view the workload. It is ``None`` for a workload the
+    caller cannot view, for a person, or when the response does not carry it.
+    Other fields the row does not carry are ``None``, or empty for lists.
 
     The reverse direction is ``workload_user_uid`` on ``Job``,
     ``ResourceRelease`` and ``Agent``: the UID of the User that workload runs
@@ -1066,8 +1079,8 @@ class User(_CallerDirectoryReadMixin, UserApiBaseObjectOrm, BasePydanticModel):
         title="Workload Name",
         description=(
             "Name of the Job, release or Agent a workload identity belongs to, on a "
-            "listed row of a workload the caller can view. None otherwise, including "
-            "on a lookup by UID and on a person."
+            "listed row or UID lookup when the caller can view the workload. None "
+            "for a workload the caller cannot view, for a person, or when not supplied."
         ),
         examples=["nightly-prices"],
     )

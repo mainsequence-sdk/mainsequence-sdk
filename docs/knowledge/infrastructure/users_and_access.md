@@ -115,9 +115,9 @@ user = User.get_by_uid(job.workload_user_uid)  # identity_type == "workload"
 workloads = User.filter(identity_type="workload")
 ```
 
-A listed row of a workload you can view also carries `workload_name`, the name
-of its Job, release or Agent, to label it with. It is `None` on a lookup by UID
-and on any row that does not carry it.
+Both listed rows and UID lookups carry `workload_name`, the name of the Job,
+release or Agent, when you can view the workload. It is `None` for a workload
+you cannot view, for a person, or when the response does not carry it.
 
 `identity_type` is one of `human`, `service_account`, `deleted_user` and
 `workload`. A person's row may not carry it, so test for `"workload"` rather
@@ -187,6 +187,11 @@ Examples:
 Teams are useful because they let you share once and reuse that decision many times.
 
 Instead of sharing several application resources and datasets to five people one by one, you can share them to one team and manage membership there.
+
+Team members and creators can be people or workload identities. Their summaries
+carry `uid` and, when supplied, `member_kind` (`"person"` or `"workload"`). For
+workloads, `username`, `email`, `first_name` and `last_name` are `None` when
+omitted or null in the response. Use `uid` for identity, not personal fields.
 
 ## What team membership means
 
