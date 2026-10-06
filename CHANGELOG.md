@@ -302,6 +302,19 @@ boundary and breaking changes.
 
 ### Fixed
 
+- Release `9.0.14` made `Team` read a member or creator that is a workload
+  identity (#202).
+  `Team.members` and `Team.created_by` are `UserSummary` rows, which required
+  `username`, `email`, `first_name` and `last_name`. A team row that omitted
+  them for a workload member or creator failed to validate, so `Team.filter`
+  and `Team.get_by_uid` raised for that team, including inside
+  `reads_as_caller()`. The four fields are now `None` when a row omits them or
+  sends `null`, and `UserSummary` reads `member_kind`, `"person"` or
+  `"workload"`, so code can tell workload members apart without parsing names;
+  a kind the SDK does not declare is kept as sent. The same applies to
+  `Team.list_members()`, `Team.list_candidate_members()` and
+  `ShareableAccessState.users`. People read as before.
+
 - Printing, formatting or logging an SDK object that holds a credential no
   longer shows the credential (#192). `RuntimeCredentialAuthProvider` leaves the
   bootstrap secret (`credential_secret`) out of `repr()` and `str()`,
