@@ -286,7 +286,7 @@ def test_code_repository_set_up_locally_runtime_credential(cli_mod, runner, monk
 
     monkeypatch.setenv("MAINSEQUENCE_AUTH_MODE", "runtime_credential")
     monkeypatch.setenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_ID", "cred-id")
-    monkeypatch.setenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET", "cred-secret")
+    monkeypatch.setenv("MAINSEQUENCE_RUNTIME_IDENTITY_TOKEN_FILE", str(tmp_path / "token"))
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(
         cli_mod.cfg,

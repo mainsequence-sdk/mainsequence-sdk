@@ -328,7 +328,9 @@ def test_upload_is_sent_once_and_preserves_query_payload(clock):
 
 
 @pytest.mark.parametrize("provider_kind", ["jwt", "runtime"])
-def test_credential_renewal_receives_only_remaining_budget(monkeypatch, clock, provider_kind):
+def test_credential_renewal_receives_only_remaining_budget(
+    monkeypatch, clock, provider_kind, tmp_path
+):
     monkeypatch.setenv("MAINSEQUENCE_ACCESS_TOKEN", "old")
     monkeypatch.setenv("MAINSEQUENCE_REFRESH_TOKEN", "refresh")
     response = Mock(status_code=200)
@@ -338,8 +340,10 @@ def test_credential_renewal_receives_only_remaining_budget(monkeypatch, clock, p
     if provider_kind == "jwt":
         provider = utils.JWTAuthProvider(access_token="old", refresh_token="refresh")
     else:
+        token_file = tmp_path / "token"
+        token_file.write_text("projected-token", encoding="utf-8")
         provider = utils.RuntimeCredentialAuthProvider(
-            credential_id="id", credential_secret="secret"
+            credential_id="id", identity_token_file=str(token_file)
         )
         monkeypatch.setattr(requests, "post", http.post)
     with transport.request_budget(1):

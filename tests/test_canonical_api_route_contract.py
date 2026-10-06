@@ -107,10 +107,7 @@ def test_client_auth_provider_routes_match_backend_contract(monkeypatch):
         access_token="access",
         refresh_token="refresh",
     )
-    runtime_provider = utils.RuntimeCredentialAuthProvider(
-        credential_id="credential-id",
-        credential_secret="credential-secret",
-    )
+    runtime_provider = utils.RuntimeCredentialAuthProvider(credential_id="credential-id")
 
     assert jwt_provider.obtain_url == "https://backend.example/auth/jwt-token/token/"
     assert jwt_provider.refresh_url == "https://backend.example/auth/jwt-token/token/refresh/"

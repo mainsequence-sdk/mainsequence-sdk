@@ -248,6 +248,19 @@ boundary and breaking changes.
 
 ### Removed
 
+- Runtime credential auth no longer exchanges a bootstrap secret, and requires
+  the projected identity token file. Every exchange sends exactly
+  `credential_id` and `workload_identity_token`, the token read from the file in
+  `MAINSEQUENCE_RUNTIME_IDENTITY_TOKEN_FILE` for that exchange. When the
+  variable is unset, or the file is missing, unreadable or empty, the SDK raises
+  an error that names the variable or the file instead of sending the exchange;
+  there is no fallback. `MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET` is no longer read,
+  `RuntimeCredentialAuthProvider` no longer takes `credential_secret`, and
+  `mainsequence auth status` and the deployed CodeRepository context count a
+  runtime credential as configured only with the token file. Retries on `429`
+  and `503`, the immediate failure on `401` and the token's handling are
+  unchanged. `mainsequence refresh-token` still removes a secret entry that an
+  earlier version left in a checkout's `.env`.
 - Removed `mainsequence code-repository freeze-env`.
   `mainsequence code-repository sync` runs the same locked `requirements.txt`
   export after `uv lock` and `uv sync`.

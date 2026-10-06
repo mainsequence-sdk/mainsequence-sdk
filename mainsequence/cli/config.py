@@ -75,6 +75,8 @@ KEYCHAIN_ACCOUNT = "default"
 AUTH_RECORD_VERSION = 1
 # Credential entries a project `.env` must not hold. The CLI removes them and
 # never writes them; the session lives in the operating system credential store.
+# The runtime credential secret and `MAINSEQUENCE_TOKEN` are no longer read: they
+# stay listed so that an entry an earlier version left in a checkout is removed.
 PROJECT_ENV_CREDENTIAL_KEYS = (
     "MAINSEQUENCE_ACCESS_TOKEN",
     "MAINSEQUENCE_REFRESH_TOKEN",
@@ -805,7 +807,7 @@ def session_report() -> dict:
     refresh_expires_at = token_expiry(refresh)
 
     if auth_mode == "runtime_credential":
-        # The credential is an ID with a bootstrap secret or an identity token file.
+        # The credential is an ID with the identity token file that proves it.
         authenticated = bool(access or runtime_credential_configured())
         session_expires_at = None
     elif refresh:

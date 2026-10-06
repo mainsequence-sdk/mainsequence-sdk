@@ -1011,30 +1011,28 @@ def test_session_report_judges_the_session_by_its_refresh_token(monkeypatch, tmp
 def test_session_report_for_a_runtime_credential_has_no_session_expiry(monkeypatch, tmp_path):
     _isolate_auth(monkeypatch, tmp_path, None)
     monkeypatch.setattr(config, "auth_persistence_label", lambda: "test store")
-    monkeypatch.setenv("MAINSEQUENCE_AUTH_MODE", "runtime_credential")
-    monkeypatch.setenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_ID", "cred-id")
-    monkeypatch.setenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET", "cred-secret")
-
-    report = config.session_report()
-
-    assert report["authenticated"] is True
-    assert report["session_expires_at"] is None
-    assert report["auth_mode"] == "runtime_credential"
-    assert "cred-secret" not in json.dumps(report)
-
-
-def test_session_report_accepts_a_runtime_identity_token_file(monkeypatch, tmp_path):
-    _isolate_auth(monkeypatch, tmp_path, None)
-    monkeypatch.setattr(config, "auth_persistence_label", lambda: "test store")
     token_file = tmp_path / "token"
     token_file.write_text("projected-token", encoding="utf-8")
     monkeypatch.setenv("MAINSEQUENCE_AUTH_MODE", "runtime_credential")
     monkeypatch.setenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_ID", "cred-id")
-    monkeypatch.delenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET", raising=False)
     monkeypatch.setenv("MAINSEQUENCE_RUNTIME_IDENTITY_TOKEN_FILE", str(token_file))
 
     report = config.session_report()
 
     assert report["authenticated"] is True
     assert report["session_expires_at"] is None
+    assert report["auth_mode"] == "runtime_credential"
     assert "projected-token" not in json.dumps(report)
+
+
+def test_session_report_needs_the_runtime_identity_token_file(monkeypatch, tmp_path):
+    _isolate_auth(monkeypatch, tmp_path, None)
+    monkeypatch.setattr(config, "auth_persistence_label", lambda: "test store")
+    monkeypatch.setenv("MAINSEQUENCE_AUTH_MODE", "runtime_credential")
+    monkeypatch.setenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_ID", "cred-id")
+    monkeypatch.delenv("MAINSEQUENCE_RUNTIME_IDENTITY_TOKEN_FILE", raising=False)
+
+    report = config.session_report()
+
+    assert report["authenticated"] is False
+    assert report["auth_mode"] == "runtime_credential"
