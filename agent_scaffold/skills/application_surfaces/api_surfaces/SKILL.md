@@ -147,6 +147,13 @@ person, read `User.get_by_uid(uid)`: a workload identity has `identity_type`
 `"workload"`. Caller authentication is not resource authorization; apply the
 endpoint's application policy using the verified user UID.
 
+To list the people, Teams and workloads the caller can see, for example to
+offer sharing candidates, read inside `reads_as_caller()` from
+`mainsequence.server.fastapi`: `User.filter`, `User.get_by_uid`, `Team.filter`
+and `Team.get_by_uid` then answer with the caller's visibility, and workload
+rows carry `managed_by_caller`. Outside a signed HTTP request it raises
+`RequestIdentityError`; it never reads as the application instead.
+
 WebSockets retain the platform's gateway ticket/header contract rather than
 the HTTP Bearer/assertion flow; the getter is available while the authenticated
 connection is active. See the version-matched

@@ -42,6 +42,33 @@ SDK releases before these facts reject every assertion that carries them, so hos
 
 The caller is a person or a workload identity, the User a deployed Job, FastAPI release or Agent runs as. To tell which, read the caller's User with `User.get_by_uid(caller.uid)`: a workload identity has `identity_type` `"workload"` and the UID of its workload in `job_uid`, `resource_release_uid` or `agent_uid`. See [Workload identities](../infrastructure/users_and_access.md#workload-identities).
 
+## Reading the directory as the caller
+
+The application calls the platform as its own workload identity, which usually has no teams and no grants. To show its caller the people, Teams and workloads that caller can see, for example to share one of the application's objects, read the directory as the caller:
+
+```python
+from mainsequence.client import User
+from mainsequence.server.fastapi import reads_as_caller
+
+
+@app.get("/share-candidates")
+def share_candidates(q: str):
+    with reads_as_caller():
+        people = User.filter(search=q)
+        workloads = User.filter(identity_type="workload", search=q)
+    return {
+        "people": [person.uid for person in people],
+        "workloads": [
+            {"uid": workload.uid, "managed": workload.managed_by_caller}
+            for workload in workloads
+        ],
+    }
+```
+
+Inside the block, `User.filter`, `User.get_by_uid`, `Team.filter` and `Team.get_by_uid` present the caller assertion the request arrived with, and the platform answers with what the caller may see. `search` matches a person's email or name, or a workload's Job, release or Agent name. A workload row carries `managed_by_caller`, true when the caller manages that workload. No other call presents the assertion, and nothing presents it outside the block.
+
+The block needs a signed HTTP request. Outside an authenticated request, in local mode and on WebSockets it raises `RequestIdentityError`; it never reads as the application instead. In local mode the SDK session already belongs to the developer, so reads outside the block answer as that person. The assertion lives at most five minutes and is not renewed, so a read after it expires fails. See [ADR-0036](../../adr/0036-request-scoped-logged-user.md#reads-as-the-caller).
+
 ## Platform and SDK responsibilities
 
 Django authenticates and signs. The gateway forwards the proof. The application's SDK integration verifies it using deployment-owned trust configuration. PodDeploymentOrchestrator validates that the integration is installed and serves the app without importing or depending on the SDK.

@@ -41,6 +41,13 @@ def _jwt_with_exp(exp: int) -> str:
     return f"{header}.{payload}.signature"
 
 
+def _use_identity_token_file(monkeypatch, directory) -> str:
+    token_file = directory / "token"
+    token_file.write_text("projected-token", encoding="utf-8")
+    monkeypatch.setenv("MAINSEQUENCE_RUNTIME_IDENTITY_TOKEN_FILE", str(token_file))
+    return str(token_file)
+
+
 def test_build_default_auth_provider_uses_jwt(monkeypatch):
     monkeypatch.delenv("MAINSEQUENCE_ACCESS_TOKEN", raising=False)
     monkeypatch.delenv("MAINSEQUENCE_REFRESH_TOKEN", raising=False)
@@ -110,12 +117,12 @@ def test_logconf_refreshes_jwt_before_startup_state_request(monkeypatch):
     assert get_calls[0]["headers"]["Authorization"] == "Bearer jwt-access"
 
 
-def test_logconf_runtime_credential_exchanges_before_startup_state_request(monkeypatch):
+def test_logconf_runtime_credential_exchanges_before_startup_state_request(monkeypatch, tmp_path):
     monkeypatch.delenv("MAINSEQUENCE_ACCESS_TOKEN", raising=False)
     monkeypatch.setenv("MAINSEQUENCE_REFRESH_TOKEN", "must-not-be-used")
     monkeypatch.setenv("MAINSEQUENCE_AUTH_MODE", "runtime_credential")
     monkeypatch.setenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_ID", "cred-id")
-    monkeypatch.setenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET", "cred-secret")
+    _use_identity_token_file(monkeypatch, tmp_path)
     monkeypatch.setenv("JOB_RUN_UID", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
     monkeypatch.setenv("MAINSEQUENCE_ENDPOINT", "https://backend.example")
 
@@ -147,7 +154,7 @@ def test_logconf_runtime_credential_exchanges_before_startup_state_request(monke
             "headers": {"Content-Type": "application/json"},
             "json": {
                 "credential_id": "cred-id",
-                "credential_secret": "cred-secret",
+                "workload_identity_token": "projected-token",
             },
             "timeout": 10.0,
             "allow_redirects": False,
@@ -158,12 +165,12 @@ def test_logconf_runtime_credential_exchanges_before_startup_state_request(monke
     assert get_calls[0]["headers"]["Authorization"] == "Bearer runtime-access"
 
 
-def test_logconf_runtime_credential_retries_after_auth_failure(monkeypatch):
+def test_logconf_runtime_credential_retries_after_auth_failure(monkeypatch, tmp_path):
     monkeypatch.setenv("MAINSEQUENCE_ACCESS_TOKEN", "stale-runtime-access")
     monkeypatch.setenv("MAINSEQUENCE_REFRESH_TOKEN", "must-not-be-used")
     monkeypatch.setenv("MAINSEQUENCE_AUTH_MODE", "runtime_credential")
     monkeypatch.setenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_ID", "cred-id")
-    monkeypatch.setenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET", "cred-secret")
+    _use_identity_token_file(monkeypatch, tmp_path)
     monkeypatch.setenv("JOB_RUN_UID", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
     monkeypatch.setenv("MAINSEQUENCE_ENDPOINT", "https://backend.example")
 
@@ -197,11 +204,11 @@ def test_logconf_runtime_credential_retries_after_auth_failure(monkeypatch):
     assert os.environ["MAINSEQUENCE_ACCESS_TOKEN"] == "fresh-runtime-access"
 
 
-def test_runtime_credential_provider_exchanges_and_writes_access_token(monkeypatch):
+def test_runtime_credential_provider_exchanges_and_writes_access_token(monkeypatch, tmp_path):
     monkeypatch.delenv("MAINSEQUENCE_ACCESS_TOKEN", raising=False)
     monkeypatch.setenv("MAINSEQUENCE_REFRESH_TOKEN", "must-not-be-used")
     monkeypatch.setenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_ID", "cred-id")
-    monkeypatch.setenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET", "cred-secret")
+    _use_identity_token_file(monkeypatch, tmp_path)
 
     utils = _load_mainsequence_submodule("mainsequence.client.utils")
     runtime_context_module = importlib.import_module("mainsequence.code_repository_context")
@@ -238,7 +245,7 @@ def test_runtime_credential_provider_exchanges_and_writes_access_token(monkeypat
     assert headers["Authorization"] == "Bearer runtime-access"
     assert calls[0]["json"] == {
         "credential_id": "cred-id",
-        "credential_secret": "cred-secret",
+        "workload_identity_token": "projected-token",
     }
     assert calls[0]["url"].endswith("/api/v1/runtime-credentials/token/")
     assert calls[0]["headers"]["Content-Type"] == "application/json"
@@ -254,11 +261,11 @@ def test_runtime_credential_provider_exchanges_and_writes_access_token(monkeypat
     ]
 
 
-def test_runtime_credential_provider_reuses_valid_exchanged_access_token(monkeypatch):
+def test_runtime_credential_provider_reuses_valid_exchanged_access_token(monkeypatch, tmp_path):
     monkeypatch.delenv("MAINSEQUENCE_ACCESS_TOKEN", raising=False)
     monkeypatch.delenv("MAINSEQUENCE_REFRESH_TOKEN", raising=False)
     monkeypatch.setenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_ID", "cred-id")
-    monkeypatch.setenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET", "cred-secret")
+    _use_identity_token_file(monkeypatch, tmp_path)
 
     utils = _load_mainsequence_submodule("mainsequence.client.utils")
     calls = {"count": 0}
@@ -286,11 +293,11 @@ def test_runtime_credential_provider_reuses_valid_exchanged_access_token(monkeyp
 
 
 def test_runtime_credential_provider_does_not_mutate_unsupported_identity_environment(
-    monkeypatch,
+    monkeypatch, tmp_path
 ):
     monkeypatch.delenv("MAINSEQUENCE_ACCESS_TOKEN", raising=False)
     monkeypatch.setenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_ID", "cred-id")
-    monkeypatch.setenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET", "cred-secret")
+    _use_identity_token_file(monkeypatch, tmp_path)
     monkeypatch.setenv(
         _UNSUPPORTED_REPOSITORY_BRANCH_UID_ENV,
         "caller-supplied-value-must-be-ignored",
@@ -325,11 +332,11 @@ def test_runtime_credential_provider_does_not_mutate_unsupported_identity_enviro
     )
 
 
-def test_runtime_credential_provider_force_refresh_exchanges_again(monkeypatch):
+def test_runtime_credential_provider_force_refresh_exchanges_again(monkeypatch, tmp_path):
     monkeypatch.delenv("MAINSEQUENCE_ACCESS_TOKEN", raising=False)
     monkeypatch.delenv("MAINSEQUENCE_REFRESH_TOKEN", raising=False)
     monkeypatch.setenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_ID", "cred-id")
-    monkeypatch.setenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET", "cred-secret")
+    _use_identity_token_file(monkeypatch, tmp_path)
 
     utils = _load_mainsequence_submodule("mainsequence.client.utils")
     calls = {"count": 0}
@@ -355,11 +362,11 @@ def test_runtime_credential_provider_force_refresh_exchanges_again(monkeypatch):
     assert calls["count"] == 2
 
 
-def test_runtime_credential_provider_exchanges_near_expiry_access_token(monkeypatch):
+def test_runtime_credential_provider_exchanges_near_expiry_access_token(monkeypatch, tmp_path):
     monkeypatch.setenv("MAINSEQUENCE_ACCESS_TOKEN", _jwt_with_exp(int(time.time()) + 10))
     monkeypatch.setenv("MAINSEQUENCE_REFRESH_TOKEN", "must-not-be-used")
     monkeypatch.setenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_ID", "cred-id")
-    monkeypatch.setenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET", "cred-secret")
+    _use_identity_token_file(monkeypatch, tmp_path)
 
     utils = _load_mainsequence_submodule("mainsequence.client.utils")
     calls: list[dict] = []
@@ -386,12 +393,12 @@ def test_runtime_credential_provider_exchanges_near_expiry_access_token(monkeypa
     assert len(calls) == 1
 
 
-def test_runtime_credential_make_request_401_forces_exchange_and_retry(monkeypatch):
+def test_runtime_credential_make_request_401_forces_exchange_and_retry(monkeypatch, tmp_path):
     monkeypatch.setenv("MAINSEQUENCE_AUTH_MODE", "runtime_credential")
     monkeypatch.setenv("MAINSEQUENCE_ACCESS_TOKEN", "stale-runtime-access")
     monkeypatch.setenv("MAINSEQUENCE_REFRESH_TOKEN", "must-not-be-used")
     monkeypatch.setenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_ID", "cred-id")
-    monkeypatch.setenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET", "cred-secret")
+    _use_identity_token_file(monkeypatch, tmp_path)
 
     utils = _load_mainsequence_submodule("mainsequence.client.utils")
     post_calls: list[dict] = []
@@ -441,7 +448,7 @@ def test_runtime_credential_make_request_401_forces_exchange_and_retry(monkeypat
     assert len(post_calls) == 1
     assert post_calls[0]["json"] == {
         "credential_id": "cred-id",
-        "credential_secret": "cred-secret",
+        "workload_identity_token": "projected-token",
     }
     assert os.environ["MAINSEQUENCE_ACCESS_TOKEN"] == "fresh-runtime-access"
     assert os.environ["MAINSEQUENCE_REFRESH_TOKEN"] == "must-not-be-used"
@@ -451,7 +458,7 @@ def test_runtime_credential_provider_requires_credential_env(monkeypatch):
     monkeypatch.delenv("MAINSEQUENCE_ACCESS_TOKEN", raising=False)
     monkeypatch.delenv("MAINSEQUENCE_REFRESH_TOKEN", raising=False)
     monkeypatch.delenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_ID", raising=False)
-    monkeypatch.delenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET", raising=False)
+    monkeypatch.delenv("MAINSEQUENCE_RUNTIME_IDENTITY_TOKEN_FILE", raising=False)
 
     utils = _load_mainsequence_submodule("mainsequence.client.utils")
 
@@ -463,12 +470,12 @@ def test_runtime_credential_provider_requires_credential_env(monkeypatch):
         assert "MAINSEQUENCE_RUNTIME_CREDENTIAL_ID is required" in str(exc)
 
 
-def test_build_default_auth_provider_uses_runtime_credential_mode(monkeypatch):
+def test_build_default_auth_provider_uses_runtime_credential_mode(monkeypatch, tmp_path):
     monkeypatch.setenv("MAINSEQUENCE_AUTH_MODE", "runtime_credential")
     monkeypatch.setenv("MAINSEQUENCE_ACCESS_TOKEN", "jwt-access")
     monkeypatch.setenv("MAINSEQUENCE_REFRESH_TOKEN", "jwt-refresh")
     monkeypatch.setenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_ID", "cred-id")
-    monkeypatch.setenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET", "cred-secret")
+    token_file = _use_identity_token_file(monkeypatch, tmp_path)
 
     utils = _load_mainsequence_submodule("mainsequence.client.utils")
 
@@ -476,15 +483,15 @@ def test_build_default_auth_provider_uses_runtime_credential_mode(monkeypatch):
 
     assert isinstance(provider, utils.RuntimeCredentialAuthProvider)
     assert provider.credential_id == "cred-id"
-    assert provider.credential_secret == "cred-secret"
+    assert provider.identity_token_file == token_file
 
 
-def test_auth_loaders_switch_to_runtime_credential_mode(monkeypatch):
+def test_auth_loaders_switch_to_runtime_credential_mode(monkeypatch, tmp_path):
     monkeypatch.setenv("MAINSEQUENCE_AUTH_MODE", "runtime_credential")
     monkeypatch.setenv("MAINSEQUENCE_ACCESS_TOKEN", "jwt-access")
     monkeypatch.setenv("MAINSEQUENCE_REFRESH_TOKEN", "jwt-refresh")
     monkeypatch.setenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_ID", "cred-id")
-    monkeypatch.setenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET", "cred-secret")
+    token_file = _use_identity_token_file(monkeypatch, tmp_path)
 
     utils = _load_mainsequence_submodule("mainsequence.client.utils")
     loaders = utils.AuthLoaders()
@@ -494,7 +501,7 @@ def test_auth_loaders_switch_to_runtime_credential_mode(monkeypatch):
 
     assert isinstance(provider, utils.RuntimeCredentialAuthProvider)
     assert provider.credential_id == "cred-id"
-    assert provider.credential_secret == "cred-secret"
+    assert provider.identity_token_file == token_file
 
 
 def test_build_default_auth_provider_defaults_to_jwt_when_mode_unset(monkeypatch):

@@ -11,13 +11,14 @@ from cryptography.hazmat.primitives.asymmetric import ed25519
 from fastapi import FastAPI, Request, WebSocket
 from fastapi.testclient import TestClient
 
+import mainsequence.client.base as base_mod
 from mainsequence.client import RequestIdentityError, User
 from mainsequence.server.caller_assertions import (
     ASSERTION_HEADER,
     ASSERTION_TYPE,
     CallerAssertionVerifier,
 )
-from mainsequence.server.fastapi import install_request_identity
+from mainsequence.server.fastapi import install_request_identity, reads_as_caller
 
 USER = str(uuid4())
 OTHER = str(uuid4())
@@ -372,3 +373,142 @@ def test_websocket_invalid_identity_cannot_reach_app(headers, denial_extension):
         assert messages[0]["code"] == 1008
     with pytest.raises(RequestIdentityError):
         User.get_logged_user()
+
+
+class _Page:
+    status_code = 200
+
+    def __init__(self, results=()):
+        self._results = list(results)
+
+    def json(self):
+        return {"results": self._results, "next": None}
+
+
+def test_sync_route_reads_as_its_caller(signed, monkeypatch):
+    token, _, _ = signed
+    proof = token()
+    workload = str(uuid4())
+    sent = []
+
+    def _fake_make_request(*, s, loaders, r_type, url, payload=None, time_out=None):
+        sent.append(payload)
+        row = {
+            "uid": workload,
+            "identity_type": "workload",
+            "is_active": True,
+            "managed_by_caller": True,
+        }
+        return _Page([row])
+
+    monkeypatch.setattr(base_mod, "make_request", _fake_make_request)
+
+    def handler(q: str):
+        with reads_as_caller():
+            rows = User.filter(identity_type="workload", search=q)
+        return [{"uid": row.uid, "managed": row.managed_by_caller} for row in rows]
+
+    with TestClient(app_for(handler, path="/candidates")) as client:
+        response = client.get(
+            "/candidates", params={"q": "prices"}, headers={ASSERTION_HEADER: proof}
+        )
+
+    assert response.json() == [{"uid": workload, "managed": True}]
+    assert sent == [
+        {
+            "params": {"identity_type": "workload", "search": "prices"},
+            "headers": {ASSERTION_HEADER: proof},
+        }
+    ]
+
+
+def test_concurrent_requests_present_their_own_assertions(signed, monkeypatch):
+    from mainsequence.server.fastapi import _RequestIdentityMiddleware
+
+    token, _, verifier = signed
+    proofs = {USER: token(USER), OTHER: token(OTHER)}
+    presented = {USER: [], OTHER: []}
+    entered = 0
+    release = asyncio.Event()
+
+    def _fake_make_request(*, s, loaders, r_type, url, payload=None, time_out=None):
+        presented[User.get_logged_user().uid].append((payload or {}).get("headers"))
+        return _Page()
+
+    monkeypatch.setattr(base_mod, "make_request", _fake_make_request)
+
+    async def application(scope, receive, send):
+        nonlocal entered
+        entered += 1
+        if entered == 2:
+            release.set()
+        await release.wait()
+        with reads_as_caller():
+            User.filter(search="prices")
+            await asyncio.sleep(0)  # the other request reads while this one is inside
+            User.filter(search="prices")
+        User.filter(search="prices")
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": b""})
+
+    runtime = _RequestIdentityMiddleware(
+        application, mode="assertion", verifier=verifier, public_ingress=(), routes=()
+    )
+
+    async def run():
+        async def request(user):
+            scope = {
+                "type": "http",
+                "method": "GET",
+                "path": "/",
+                "headers": [(ASSERTION_HEADER.lower().encode(), proofs[user].encode())],
+            }
+
+            async def receive():
+                return {"type": "http.request", "body": b""}
+
+            async def send(message):
+                pass
+
+            await runtime(scope, receive, send)
+
+        await asyncio.gather(request(USER), request(OTHER))
+
+    asyncio.run(run())
+    for user in (USER, OTHER):
+        assert presented[user] == [{ASSERTION_HEADER: proofs[user]}] * 2 + [None]
+
+
+def test_reads_as_caller_needs_a_signed_http_request(monkeypatch):
+    monkeypatch.setenv("MAINSEQUENCE_ENDPOINT", ISSUER)
+    response = Mock(status_code=200)
+    response.json.return_value = {"uid": USER, "username": "local"}
+    monkeypatch.setattr("mainsequence.server.fastapi.requests.get", Mock(return_value=response))
+
+    def handler():
+        with pytest.raises(RequestIdentityError, match="no caller assertion"):
+            with reads_as_caller():
+                pass
+        return {"uid": User.get_logged_user().uid}
+
+    async def ws(websocket: WebSocket):
+        await websocket.accept()
+        with pytest.raises(RequestIdentityError, match="no caller assertion"):
+            with reads_as_caller():
+                pass
+        await websocket.send_json({"uid": User.get_logged_user().uid})
+        await websocket.close()
+
+    app = FastAPI()
+    app.get("/me")(handler)
+    app.websocket("/ws")(ws)
+    install_request_identity(app)
+    client = TestClient(app)
+
+    local = client.get("/me", headers={"Authorization": "Bearer local-token"})
+    assert local.json() == {"uid": USER}
+    with client.websocket_connect("/ws", headers={"X-User-UID": USER}) as connection:
+        assert connection.receive_json() == {"uid": USER}
+    with pytest.raises(RequestIdentityError, match="authenticated request"):
+        with reads_as_caller():
+            pass

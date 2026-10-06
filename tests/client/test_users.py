@@ -1,10 +1,18 @@
 import datetime
+from contextlib import contextmanager
+from contextvars import copy_context
 
 import pytest
 
 import mainsequence.client.base as base_mod
 import mainsequence.client.models_user as models_user_mod
-from mainsequence._request_identity import _request_scope
+from mainsequence._request_identity import (
+    CALLER_ASSERTION_HEADER,
+    RequestIdentityError,
+    _request_scope,
+)
+from mainsequence.client.exceptions import ApiError
+from mainsequence.server.fastapi import reads_as_caller
 from tests.client.support import DemoShareableModel, _UidRef
 
 
@@ -509,3 +517,158 @@ def test_application_resolves_a_workload_caller_and_grants_it_access(monkeypatch
         "payload": {"json": {"user_uid": WORKLOAD_USER_UID}},
         "timeout": None,
     }
+
+
+# --- Reads as the request's caller (ADR-0036, amended for #198) ------------------
+#
+# With the caller assertion a hosted request arrived with, /users/ and /teams/
+# answer with what the caller may see. Only those reads present it, and only
+# inside reads_as_caller().
+
+CALLER_ASSERTION = "header.caller-proof-of-this-request.signature"
+TEAM_UID = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
+SHAREABLE_UID = "24001fc7-098c-40fa-b398-1d2352b7c224"
+
+
+def _team_payload():
+    return {"uid": TEAM_UID, "name": "Research", "members": [], "member_count": 0}
+
+
+def _record(monkeypatch, *bodies):
+    """Answer each request with the next body and record the headers it added."""
+    sent = []
+    answers = iter(bodies)
+
+    def _fake_make_request(*, s, loaders, r_type, url, payload=None, time_out=None):
+        sent.append({"r_type": r_type, "url": url, "headers": (payload or {}).get("headers")})
+        return _JsonResponse(next(answers))
+
+    monkeypatch.setattr(base_mod, "make_request", _fake_make_request)
+    monkeypatch.setattr(models_user_mod, "make_request", _fake_make_request)
+    return sent
+
+
+@contextmanager
+def _caller_request(assertion=CALLER_ASSERTION):
+    """A request admitted in assertion mode, as the request identity binds it."""
+    with _request_scope() as context:
+        context.user = models_user_mod.RequestUserIdentity(uid=PERSON_UID)
+        context.caller_assertion = assertion
+        yield context
+
+
+def test_user_filter_search_sends_the_query_parameter(monkeypatch):
+    sent = _serve(
+        monkeypatch,
+        {"results": [_workload_user_payload(job_uid=WORKLOAD_JOB_UID)], "next": None},
+    )
+
+    workloads = models_user_mod.User.filter(identity_type="workload", search="nightly-prices")
+
+    assert sent[0]["payload"] == {
+        "params": {"identity_type": "workload", "search": "nightly-prices"}
+    }
+    assert [user.uid for user in workloads] == [WORKLOAD_USER_UID]
+
+
+@pytest.mark.parametrize(
+    ("row", "expected"),
+    [({"managed_by_caller": True}, True), ({"managed_by_caller": False}, False), ({}, None)],
+    ids=["managed", "not_managed", "absent"],
+)
+def test_workload_row_reads_managed_by_caller(row, expected):
+    user = models_user_mod.User.model_validate({**_workload_user_payload(), **row})
+
+    assert user.managed_by_caller is expected
+
+
+def test_reads_as_caller_sends_the_assertion_only_on_directory_reads(monkeypatch):
+    page_two = f"{models_user_mod.User.get_object_url()}/?search=prices&offset=1"
+    sent = _record(
+        monkeypatch,
+        {"results": [_workload_user_payload(managed_by_caller=True)], "next": page_two},
+        {"results": [_workload_user_payload()], "next": None},
+        _workload_user_payload(managed_by_caller=False),
+        {"results": [_team_payload()], "next": None},
+        _team_payload(),
+        _person_payload(),
+        {"detail": "ok"},
+        [_person_payload()],
+    )
+
+    with _caller_request():
+        with reads_as_caller():
+            workloads = models_user_mod.User.filter(identity_type="workload", search="prices")
+            models_user_mod.User.get_by_uid(WORKLOAD_USER_UID)
+            models_user_mod.Team.filter()
+            models_user_mod.Team.get_by_uid(TEAM_UID)
+            # Neither the session's own user nor a sharing call presents it.
+            models_user_mod.User.get_authenticated_user_details()
+            DemoShareableModel(SHAREABLE_UID).add_to_view(workloads[0])
+        # Outside the helper the application reads as itself.
+        models_user_mod.User.filter()
+
+    caller = {CALLER_ASSERTION_HEADER: CALLER_ASSERTION}
+    assert [request["headers"] for request in sent] == [caller] * 5 + [None] * 3
+    assert sent[1]["url"] == page_two
+    assert sent[5]["url"] == f"{models_user_mod.User.get_object_url()}/me/"
+    assert workloads[0].managed_by_caller is True
+
+
+def test_reads_as_caller_never_falls_back_to_the_application(monkeypatch):
+    sent = _record(monkeypatch)
+
+    with pytest.raises(RequestIdentityError, match="authenticated request"):
+        with reads_as_caller():
+            pass
+    with _request_scope():  # a public route: no caller
+        with pytest.raises(RequestIdentityError, match="authenticated request"):
+            with reads_as_caller():
+                pass
+    with _caller_request(assertion=None):  # local mode or a WebSocket
+        with pytest.raises(RequestIdentityError, match="no caller assertion"):
+            with reads_as_caller():
+                pass
+
+    with _caller_request():
+        with reads_as_caller():
+            copied = copy_context()
+    with pytest.raises(RequestIdentityError, match="has ended"):
+        copied.run(models_user_mod.User.filter)
+
+    assert sent == []
+
+
+def test_caller_assertion_is_sent_only_to_the_platform_endpoint(monkeypatch):
+    sent = _record(
+        monkeypatch,
+        {
+            "results": [_workload_user_payload()],
+            "next": "https://elsewhere.test/api/v1/users/?offset=1",
+        },
+    )
+
+    with _caller_request(), reads_as_caller():
+        with pytest.raises(RequestIdentityError, match="configured platform endpoint"):
+            models_user_mod.User.filter(identity_type="workload")
+
+    assert [request["url"] for request in sent] == [f"{models_user_mod.User.get_object_url()}/"]
+
+
+class _RefusedResponse(_JsonResponse):
+    status_code = 403
+
+
+def test_caller_assertion_stays_out_of_repr_and_error_messages(monkeypatch):
+    def _refuse(*, s, loaders, r_type, url, payload=None, time_out=None):
+        return _RefusedResponse({"detail": "Refused."})
+
+    monkeypatch.setattr(base_mod, "make_request", _refuse)
+
+    with _caller_request() as context:
+        assert CALLER_ASSERTION not in repr(context)
+        with reads_as_caller(), pytest.raises(ApiError) as refused:
+            models_user_mod.User.filter()
+
+    assert CALLER_ASSERTION not in str(refused.value)
+    assert CALLER_ASSERTION not in repr(refused.value.payload)

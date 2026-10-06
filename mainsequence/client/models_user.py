@@ -6,7 +6,11 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator, model_validator
 
-from mainsequence._request_identity import RequestIdentityError, _get_request_identity
+from mainsequence._request_identity import (
+    RequestIdentityError,
+    _caller_read_headers,
+    _get_request_identity,
+)
 from mainsequence.defaults import STANDARD_BACKEND_URL
 
 from .base import (
@@ -336,7 +340,18 @@ class TeamMembershipUpdateResult(BasePydanticModel):
     )
 
 
-class Team(PermissionManagedObjectMixin, BasePydanticModel, UserApiBaseObjectOrm):
+class _CallerDirectoryReadMixin:
+    """Inside ``reads_as_caller()``, ``filter`` and ``get`` reads answer as the
+    request's caller (ADR-0036, amended for #198)."""
+
+    @classmethod
+    def _read_request_headers(cls, url: str) -> dict[str, str]:
+        return _caller_read_headers(url, cls.get_object_url())
+
+
+class Team(
+    _CallerDirectoryReadMixin, PermissionManagedObjectMixin, BasePydanticModel, UserApiBaseObjectOrm
+):
     ENDPOINT: ClassVar[str] = "teams"
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]] | None] = {
         "uid": ["exact", "in"],
@@ -960,7 +975,7 @@ class ShareableAccessState(BasePydanticModel):
     )
 
 
-class User(UserApiBaseObjectOrm, BasePydanticModel):
+class User(_CallerDirectoryReadMixin, UserApiBaseObjectOrm, BasePydanticModel):
     """A platform User: a person, or the workload identity a deployed Job,
     FastAPI release or Agent runs as.
 
@@ -974,6 +989,10 @@ class User(UserApiBaseObjectOrm, BasePydanticModel):
     The reverse direction is ``workload_user_uid`` on ``Job``,
     ``ResourceRelease`` and ``Agent``: the UID of the User that workload runs
     as, to pass to ``User.get_by_uid`` and to sharing calls.
+
+    Inside ``mainsequence.server.fastapi.reads_as_caller()``, ``User.filter``
+    and ``User.get_by_uid`` answer with what the request's caller may see, and
+    workload rows carry ``managed_by_caller``.
     """
 
     # Platform facts, not application authorization policy. None means the
@@ -986,6 +1005,7 @@ class User(UserApiBaseObjectOrm, BasePydanticModel):
         "uid": ["exact", "in"],
         "email": ["exact", "contains", "in"],
         "identity_type": ["exact"],
+        "search": ["exact"],
     }
     FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
         "uid": "uid",
@@ -994,6 +1014,7 @@ class User(UserApiBaseObjectOrm, BasePydanticModel):
         "email__contains": "str",
         "email__in": "str",
         "identity_type": "str",
+        "search": "str",
     }
 
     id: int | None = Field(
@@ -1037,6 +1058,15 @@ class User(UserApiBaseObjectOrm, BasePydanticModel):
         title="Agent UID",
         description="UID of the Agent a workload identity belongs to; None otherwise.",
         examples=[None],
+    )
+    managed_by_caller: bool | None = Field(
+        None,
+        title="Managed By Caller",
+        description=(
+            "On a workload identity read inside `reads_as_caller()`: whether the "
+            "request's caller manages that workload. None when the row does not carry it."
+        ),
+        examples=[True],
     )
     profile_picture: str | None = Field(
         None,

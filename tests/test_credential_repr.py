@@ -15,21 +15,15 @@ from mainsequence.cli.browser_auth import BrowserAuthCallback
 from mainsequence.client.agent_runtime_models import AgentSessionRuntimeAccess
 from mainsequence.client.models_foundry import Secret
 from mainsequence.client.models_helpers import ResourceReleaseRuntimeAccess
-from mainsequence.client.utils import (
-    JWTAuthProvider,
-    RuntimeCredentialAuthProvider,
-    SessionJWTAuthProvider,
-)
+from mainsequence.client.utils import JWTAuthProvider, SessionJWTAuthProvider
 from tests.client.support import _ready_runtime_contract, _runtime_access_payload
 
-BOOTSTRAP_SECRET = "bootstrap-secret-7c1d"
 ACCESS_TOKEN = "access-token-5e2a"
 REFRESH_TOKEN = "refresh-token-9b4f"
 GATEWAY_TOKEN = "gateway-token-3a8e"
 RELEASE_TOKEN = "release-token-6d0c"
 AUTHORIZATION_CODE = "authorization-code-2f7b"
 SECRET_VALUE = "secret-value-8e5a"
-TOKEN_URL = "https://backend.example/api/v1/runtime-credentials/token/"
 
 
 def _shown(obj, caplog) -> str:
@@ -42,26 +36,6 @@ def _shown(obj, caplog) -> str:
 
 def _error_text(raised: pytest.ExceptionInfo) -> str:
     return f"{raised.value}\n{raised.value!r}"
-
-
-@pytest.mark.parametrize("source", ["environment", "argument"])
-def test_runtime_credential_provider_leaves_the_bootstrap_secret_out(monkeypatch, caplog, source):
-    monkeypatch.delenv("MAINSEQUENCE_RUNTIME_IDENTITY_TOKEN_FILE", raising=False)
-    monkeypatch.setenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_ID", "cred-id")
-    if source == "environment":
-        monkeypatch.setenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET", BOOTSTRAP_SECRET)
-        provider = RuntimeCredentialAuthProvider(token_url=TOKEN_URL)
-    else:
-        monkeypatch.delenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET", raising=False)
-        provider = RuntimeCredentialAuthProvider(
-            credential_secret=BOOTSTRAP_SECRET, token_url=TOKEN_URL
-        )
-
-    shown = _shown(provider, caplog)
-
-    assert provider.credential_secret == BOOTSTRAP_SECRET
-    assert BOOTSTRAP_SECRET not in shown
-    assert "credential_id='cred-id'" in shown
 
 
 def test_jwt_provider_leaves_its_tokens_out(monkeypatch, caplog):

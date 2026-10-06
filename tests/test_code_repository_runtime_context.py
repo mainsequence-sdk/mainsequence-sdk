@@ -368,21 +368,12 @@ def test_authenticated_runtime_context_detects_git_drift(monkeypatch):
         code_repository_context.validate_code_repository_source_context(context=context)
 
 
-@pytest.mark.parametrize(
-    ("proof_variable", "proof_value"),
-    [
-        ("MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET", "credential-secret"),
-        ("MAINSEQUENCE_RUNTIME_IDENTITY_TOKEN_FILE", "/var/run/secrets/runtime-identity/token"),
-    ],
-)
-def test_configured_runtime_credential_exchanges_context_before_resolution(
-    monkeypatch, proof_variable, proof_value
-):
+def test_configured_runtime_credential_exchanges_context_before_resolution(monkeypatch):
     monkeypatch.setenv("MAINSEQUENCE_AUTH_MODE", "runtime_credential")
     monkeypatch.setenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_ID", "credential-id")
-    monkeypatch.delenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET", raising=False)
-    monkeypatch.delenv("MAINSEQUENCE_RUNTIME_IDENTITY_TOKEN_FILE", raising=False)
-    monkeypatch.setenv(proof_variable, proof_value)
+    monkeypatch.setenv(
+        "MAINSEQUENCE_RUNTIME_IDENTITY_TOKEN_FILE", "/var/run/secrets/runtime-identity/token"
+    )
     events = []
     monkeypatch.setattr(
         code_repository_context,

@@ -6,11 +6,12 @@ import asyncio
 import json
 import os
 import re
+from contextlib import contextmanager
 from uuid import UUID
 
 import requests
 
-from mainsequence._request_identity import _request_scope
+from mainsequence._request_identity import _reads_as_caller, _request_scope
 from mainsequence.client.models_user import RequestUserIdentity
 
 from .caller_assertions import (
@@ -220,6 +221,7 @@ class _RequestIdentityMiddleware:
                         )
                         state["resource_release_uid"] = caller.release_uid
                         state["organization_environment_uid"] = caller.environment_uid
+                        context.caller_assertion = assertion
                     else:
                         user = await asyncio.to_thread(_local_user, scope)
                     context.user = user
@@ -267,4 +269,19 @@ def install_request_identity(app):
     )
 
 
-__all__ = ["install_request_identity"]
+@contextmanager
+def reads_as_caller():
+    """Read the directory as the request's caller instead of as the application.
+
+    Inside the block, ``User.filter``, ``User.get_by_uid``, ``Team.filter`` and
+    ``Team.get_by_uid`` present the caller assertion the request arrived with,
+    and the platform answers with what the caller may see. No other call sends
+    it. Raises ``RequestIdentityError`` outside an authenticated request or when
+    the request carries no assertion (local mode, WebSockets); it never reads as
+    the application instead. See ADR-0036.
+    """
+    with _reads_as_caller():
+        yield
+
+
+__all__ = ["install_request_identity", "reads_as_caller"]

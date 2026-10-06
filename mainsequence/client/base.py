@@ -181,6 +181,11 @@ class BaseObjectOrm:
         return {}
 
     @classmethod
+    def _read_request_headers(cls, url: str) -> dict[str, str]:
+        """Headers a filter or detail read adds to its own request to ``url``."""
+        return {}
+
+    @classmethod
     def _sdk_owned_create_context(cls, operation: str) -> dict[str, Any]:
         return {}
 
@@ -540,12 +545,13 @@ class BaseObjectOrm:
 
         while next_url:
             req_payload = {"params": params} if params else {}
+            headers = cls._read_request_headers(next_url)
             r = make_request(
                 s=cls.build_session(),
                 loaders=cls.LOADERS,
                 r_type="GET",
                 url=next_url,
-                payload=req_payload,
+                payload={**req_payload, "headers": headers} if headers else req_payload,
                 time_out=timeout,
             )
             raise_for_response(r, payload=req_payload)
@@ -610,12 +616,16 @@ class BaseObjectOrm:
                 **cls._sdk_owned_query_context(operation),
             }
 
+            payload = {"params": params}  # neede to pass special serializer
+            headers = cls._read_request_headers(detail_url)
+            if headers:
+                payload["headers"] = headers
             r = make_request(
                 s=cls.build_session(),
                 loaders=cls.LOADERS,
                 r_type="GET",
                 url=detail_url,
-                payload={"params": params},  # neede to pass special serializer
+                payload=payload,
                 time_out=timeout,
             )
             raise_for_response(r)

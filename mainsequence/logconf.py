@@ -25,7 +25,6 @@ from .instrumentation import OTelJSONRenderer
 from .repository_identity_security import UNSUPPORTED_SOURCE_IDENTITY_ENV_NAMES
 from .runtime_credential_exchange import (
     RUNTIME_CREDENTIAL_ID_ENV,
-    RUNTIME_CREDENTIAL_SECRET_ENV,
     exchange_runtime_credential,
     identity_token_file_from_environment,
     runtime_credential_configured,
@@ -104,7 +103,6 @@ def _request_job_startup_state(*, timeout_s: float = 10.0) -> dict[str, Any]:
     def _exchange_runtime_credential() -> bool:
         if not runtime_credential_configured():
             return False
-        identity_token_file = identity_token_file_from_environment()
         token_url = f"{_backend_base_url()}/api/v1/runtime-credentials/token/"
 
         def _post(body: dict[str, str]) -> requests.Response:
@@ -120,12 +118,7 @@ def _request_job_startup_state(*, timeout_s: float = 10.0) -> dict[str, Any]:
             token_resp = exchange_runtime_credential(
                 _post,
                 credential_id=(os.getenv(RUNTIME_CREDENTIAL_ID_ENV) or "").strip(),
-                credential_secret=(
-                    None
-                    if identity_token_file
-                    else (os.getenv(RUNTIME_CREDENTIAL_SECRET_ENV) or "").strip()
-                ),
-                identity_token_file=identity_token_file,
+                identity_token_file=identity_token_file_from_environment(),
                 deadline=time.monotonic() + timeout_s,
             )
         except Exception:
