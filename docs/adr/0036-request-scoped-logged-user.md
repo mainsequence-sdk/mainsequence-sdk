@@ -1,6 +1,6 @@
 # ADR-0036: Request-scoped logged user
 
-Amended 2026-10-06 for [SDK issue #198](https://github.com/mainsequence-sdk/mainsequence-sdk/issues/198): an application can read the directory as its caller. The platform decided the call in its ADR-0046, amended 2026-10-05 for tdag-django #839: with the release's workload credential and the caller assertion the application received, `GET /api/v1/users/`, `/users/<uid>/`, `/teams/` and `/teams/<uid>/` answer with the caller's visibility, and every other action refuses the assertion. The request scope now keeps the verified assertion, and `mainsequence.server.fastapi.reads_as_caller()` is the only way to present it. See [Reads as the caller](#reads-as-the-caller).
+Amended 2026-10-06 for [SDK issue #198](https://github.com/mainsequence-sdk/mainsequence-sdk/issues/198): an application can read the directory as its caller. The platform API accepts the call: with the release's workload credential and the caller assertion the application received, `GET /api/v1/users/`, `/users/<uid>/`, `/teams/` and `/teams/<uid>/` answer with the caller's visibility, and every other action refuses the assertion. The request scope now keeps the verified assertion, and `mainsequence.server.fastapi.reads_as_caller()` is the only way to present it. See [Reads as the caller](#reads-as-the-caller).
 
 Implementation record 2026-09-28 for the owner's instruction to implement and commit the reviewed platform authentication plan.
 
