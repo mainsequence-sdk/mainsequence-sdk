@@ -46,6 +46,17 @@ boundary and breaking changes.
 
 ### Added
 
+- `mainsequence.server.fastapi.install_mcp(app, mcp_app, *, lifespan)` serves
+  an application-owned MCP server at `/mcp` inside the request identity
+  (ADR 0038). Only authenticated POSTs reach it; other methods answer 405, an
+  `Origin` other than the release's own or its CORS origins answers 403, an
+  `Mcp-Session-Id` header is removed, and the MCP lifespan runs once inside
+  the application's. Tools read the caller with `User.get_logged_user()`. The
+  launcher-facing declaration is `app.state.mainsequence_mcp`. The new `mcp`
+  extra adds the official MCP Python SDK (`mcp>=1.28,<2`); ordinary
+  installations do not import it.
+- `ResourceRelease` reads `mcp_enabled` and `mcp_connection` and filters on
+  `mcp_available`.
 - A FastAPI application receives requester-bound calls: calls another
   application, for example an Agent, makes while it works for a person, the
   requester. The platform signs the requester into the caller assertion as the

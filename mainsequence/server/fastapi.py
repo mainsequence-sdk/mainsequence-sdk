@@ -6,12 +6,18 @@ import asyncio
 import json
 import os
 import re
-from contextlib import contextmanager
+from contextlib import asynccontextmanager, contextmanager
+from urllib.parse import urlsplit
 from uuid import UUID
 
 import requests
 
-from mainsequence._request_identity import _reads_as_caller, _request_scope
+from mainsequence._request_identity import (
+    RequestIdentityError,
+    _get_request_identity,
+    _reads_as_caller,
+    _request_scope,
+)
 from mainsequence.client.models_user import RequestUserIdentity
 
 from .caller_assertions import (
@@ -296,4 +302,154 @@ def reads_as_caller():
         yield
 
 
-__all__ = ["install_request_identity", "reads_as_caller"]
+_MCP_INSTALLATION = "mainsequence_mcp"
+_MCP_PATH = "/mcp"
+_WILDCARD_ORIGIN = re.compile(r"(https?)://\*\.([a-z0-9.-]+)(?::([0-9]{1,5}))?", flags=re.ASCII)
+
+
+def _mcp_allowed_origins():
+    """The release's public origin and its CORS origins, read once at installation."""
+    entries = [os.environ.get("FASTAPI_PUBLIC_BASE_URL", "")]
+    entries += os.environ.get("FASTAPI_CORS_ALLOW_ORIGINS", "").split(",")
+    exact, patterns = set(), []
+    for entry in entries:
+        entry = entry.strip().rstrip("/").lower()
+        wildcard = _WILDCARD_ORIGIN.fullmatch(entry)
+        if wildcard:
+            scheme, host, port = wildcard.groups()
+            pattern = rf"{scheme}://[a-z0-9-]+\.{re.escape(host)}"
+            patterns.append(re.compile(pattern + (rf":{port}" if port else ""), flags=re.ASCII))
+            continue
+        parts = urlsplit(entry)
+        if parts.scheme in {"http", "https"} and parts.netloc and "*" not in parts.netloc:
+            exact.add(f"{parts.scheme}://{parts.netloc}")
+    return frozenset(exact), tuple(patterns)
+
+
+def _mcp_conflicts(routes, *, installed=None):
+    for route in routes:
+        path = getattr(route, "path", None)
+        if route is not installed and isinstance(path, str):
+            if path == _MCP_PATH or path.startswith(_MCP_PATH + "/"):
+                raise RuntimeError(f"Route {path} conflicts with the MCP endpoint at {_MCP_PATH}.")
+
+
+async def _reply(send, status, detail, headers=()):
+    await send(
+        {
+            "type": "http.response.start",
+            "status": status,
+            "headers": [
+                (b"content-type", b"application/json"),
+                (b"cache-control", b"no-store"),
+                *headers,
+            ],
+        }
+    )
+    await send({"type": "http.response.body", "body": json.dumps({"detail": detail}).encode()})
+
+
+class _McpEndpoint:
+    """Admit authenticated POSTs from an allowed Origin to the application's MCP app."""
+
+    def __init__(self, app, *, allowed_origins):
+        self.app = app
+        self.exact_origins, self.origin_patterns = allowed_origins
+
+    def _origin_allowed(self, origin):
+        origin = origin.strip().rstrip("/").lower()
+        return origin in self.exact_origins or any(
+            pattern.fullmatch(origin) for pattern in self.origin_patterns
+        )
+
+    async def __call__(self, scope, receive, send):
+        if scope.get("method") != "POST":
+            # Stateless profile: no standalone GET stream and no session to delete.
+            await _reply(send, 405, "Method Not Allowed.", headers=[(b"allow", b"POST")])
+            return
+        origins = [value for key, value in scope.get("headers", ()) if key.lower() == b"origin"]
+        if len(origins) > 1 or (origins and not self._origin_allowed(origins[0].decode("latin-1"))):
+            await _reply(send, 403, "Origin is not allowed.")
+            return
+        try:
+            _get_request_identity()
+        except RequestIdentityError:
+            await _reply(send, 401, "Authenticated request user could not be resolved.")
+            return
+        # Stateless profile: a session identifier never selects server-side state.
+        scope = dict(scope)
+        scope["headers"] = [
+            (key, value)
+            for key, value in scope.get("headers", ())
+            if key.lower() != b"mcp-session-id"
+        ]
+        await self.app(scope, receive, send)
+
+
+def install_mcp(app, mcp_app, *, lifespan):
+    """Serve an application-owned MCP server at ``/mcp`` inside request identity.
+
+    ``mcp_app`` is the server's ASGI application, answering Streamable HTTP at
+    ``/mcp`` statelessly with JSON responses. ``lifespan`` is a zero-argument
+    callable returning its async context manager. With the official MCP Python
+    SDK, pass ``mcp.streamable_http_app()`` and ``mcp.session_manager.run``.
+
+    Install request identity first. Tools read the caller with
+    ``User.get_logged_user()`` and, on a requester-bound call, the person it
+    works for with ``User.get_requester()``. Only authenticated POSTs reach the
+    server; other methods answer 405 and an ``Origin`` other than the release's
+    own or its CORS origins answers 403. See ADR 0038.
+    """
+    from starlette.routing import Route
+
+    identity = getattr(app.state, _INSTALLATION, None)
+    if not isinstance(identity, dict) or identity.get("installed") is not True:
+        raise RuntimeError(
+            "Install request identity before MCP: call install_request_identity(app)."
+        )
+    if getattr(app.state, _MCP_INSTALLATION, None) is not None:
+        raise RuntimeError("MCP is already installed.")
+    if any(
+        path == _MCP_PATH or path.startswith(_MCP_PATH + "/")
+        for _, path in identity.get("public_ingress", ())
+    ):
+        raise RuntimeError(f"{_MCP_PATH} cannot be public ingress; MCP requests are authenticated.")
+    if not callable(mcp_app) or not callable(lifespan):
+        raise TypeError("install_mcp needs the MCP ASGI app and its lifespan factory.")
+    _mcp_conflicts(app.router.routes)
+
+    route = Route(
+        _MCP_PATH,
+        endpoint=_McpEndpoint(mcp_app, allowed_origins=_mcp_allowed_origins()),
+        include_in_schema=False,
+    )
+    app.router.routes.insert(0, route)
+    application_lifespan = app.router.lifespan_context
+    started = False
+
+    @asynccontextmanager
+    async def composed_lifespan(application):
+        nonlocal started
+        if started:
+            raise RuntimeError("The MCP lifespan runs once per application.")
+        started = True
+        _mcp_conflicts(app.router.routes, installed=route)
+        async with application_lifespan(application) as state:
+            async with lifespan():
+                yield state
+
+    app.router.lifespan_context = composed_lifespan
+    setattr(
+        app.state,
+        _MCP_INSTALLATION,
+        {
+            "installed": True,
+            "path": _MCP_PATH,
+            "transport": "streamable-http",
+            "stateless": True,
+            "request_identity": True,
+        },
+    )
+
+
+__all__ = ["install_mcp", "install_request_identity", "reads_as_caller"]

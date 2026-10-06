@@ -211,6 +211,16 @@ what people are told:
 See also
 [Requester-bound calls](https://mainsequence-sdk.github.io/mainsequence-sdk/knowledge/fastapi/#requester-bound-calls).
 
+### MCP tools
+
+To serve MCP tools from the same application, add the `mcp` extra and call
+`install_mcp(app, mcp.streamable_http_app(), lifespan=mcp.session_manager.run)`
+after `install_request_identity(app)`, with a stateless FastMCP server that
+returns JSON. Tools authorize with `User.get_logged_user()` and
+`User.get_requester()` exactly like REST handlers; admission to the release
+does not authorize every tool. See
+[Serving MCP](https://mainsequence-sdk.github.io/mainsequence-sdk/knowledge/fastapi/#serving-mcp).
+
 ### Public provider callbacks and webhooks
 
 An external OAuth redirect or webhook cannot supply a Main Sequence Bearer token.
