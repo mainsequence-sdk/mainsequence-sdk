@@ -240,13 +240,17 @@ whose own request it is serving. The platform setting is `acts_for_requester`.
 
 ### What the requester's access covers
 
-- Reads and the creates, updates, runs, sharing changes and deletes the person
-  may make, where the platform endpoint supports requester-bound access.
+The platform applies one rule to every call an Agent makes for its work: with
+no delegation, the caller's own ordinary permissions; with a valid delegation,
+the person's ordinary permissions, including administrative ones; an invalid or
+expired delegation is rejected, never switched to another identity.
+
+- The reads, creates, updates, runs, sharing changes and deletes the person
+  may make through supported operations.
 - Check the person's permission for the exact object and operation on every
   call. A read grant or team membership alone does not authorize a write.
-- The requester's member level, never an admin's, even when the requester is
-  an Organization admin.
-- Hosted Agents never receive Secret values, including through this access.
+- Only the person's permissions: never the acting Agent's grants, and never
+  the two combined.
 - At most 24 hours after the person's request, and only while the work for that
   request runs.
 - Checked again on every call, so it stops the moment the person's access ends.
@@ -257,42 +261,38 @@ whose own request it is serving. The platform setting is `acts_for_requester`.
 - A receiving application cannot forward its inbound assertion to establish
   another requester binding. `reads_as_caller()` still refuses these requests.
 
-These writes and delegation require platform support; installing this SDK does
-not enable them. Treat a refused operation as refused, never retry it with the
-application's own grants.
+The platform decides which operations support requester-bound access;
+installing this SDK does not enable one. Treat a refused operation as refused,
+never retry it with the application's own grants.
 
 ### Never accept a person's UID from a request
 
 The requester comes only from the platform. An application never accepts a
-person's UID from a request body, header or query parameter, and never lets a
-caller choose whom it acts for. A FastAPI application that receives a
-requester-bound call reads the requester with `User.get_requester()` and
-authorizes reads and writes against that person's object- and operation-specific
-permissions:
+person's UID from a request body, header or query parameter, never parses the
+assertion, headers or MCP `_meta` itself, and never lets a caller choose whom
+it acts for. A FastAPI application that receives a requester-bound call reads
+the requester with `User.get_requester()`, the person's own `uid`, `team_uids`
+and `is_organization_admin`, and authorizes reads and writes against that
+person's object- and operation-specific permissions. Each handler or tool
+decides whether it needs a person. See
 `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`.
 
 ### What people are told
 
-Every client that shows an application with `acts_for_requester` uses the exact
-platform-approved statement from
-[Platform ADR-0051, What people are told](https://github.com/Main-Sequence-Server-Side/tdag-django/blob/development/docs/platform/adr/adr-0051-requester-bound-access-for-workloads.md#11-what-people-are-told).
-Do not invent or paraphrase a separate SDK statement. For write-enabled
-deployments, the approved wording must cover supported reads and writes within
-the person's member-level permissions, Organization-admin approval without
-admin powers or Secret values, the original 24-hour limit including delegation,
-access revocation, and prompt-injection risk. Never present a write-enabled
-Agent as read-only or claim that it cannot change, share or delete anything.
+Every client that shows an application with `acts_for_requester` shows the
+platform's statement, exactly:
 
-The platform behavior and approved write-enabled statement must ship together.
-If the platform still supplies only the earlier read-only text, do not claim
-the disclosure is ready for a write-enabled rollout or invent replacement words.
+> **This Agent works with your identity.** It can read, create, change, run, share or delete only what your permissions allow through supported operations, only while serving your request, and for at most 24 hours after you ask. It uses your ordinary permissions, including administrative permissions, and access is checked on every call. Your Organization's administrator approved it to work this way.
+
+Do not invent, paraphrase or shorten it. Never present such an Agent as
+read-only or claim that it cannot change, share or delete anything.
 
 Explain the risk alongside the statement: a model-driven Agent can be steered
 by prompt injection. Its reads and writes can reach as far as the person's
-member-level permissions allow, including sharing and deleting where
-supported, for at most 24 hours after the original request. Only Organization
-admins decide which Agents may receive this authority; the application's
-per-operation permission checks remain necessary.
+ordinary permissions allow, administrative ones included, such as sharing and
+deleting through supported operations, for at most 24 hours after the original
+request. Only Organization admins decide which Agents may receive this
+authority; the application's per-operation permission checks remain necessary.
 
 ## Review Rules
 
@@ -311,7 +311,8 @@ When reviewing an access-control task, look for:
 - an application that takes a person's UID from a request instead of from the
   platform
 - `acts_for_requester` presented as something a non-admin can enable
-- a requester-bound write authorized only by a read grant or the Agent's grants
+- a requester-bound write authorized by a read grant, by the Agent's grants, or
+  by the Agent's grants combined with the person's
 - prompt-injection risk hidden behind a claim that requester access is read-only
 
 ## Validation Checklist
@@ -332,7 +333,7 @@ Do not claim success until you have checked:
 - an application that acts for its requester takes the person only from the
   platform, and its own grants are intentional
 - requester-bound writes enforce the person's permission for the operation,
-  and clients explain both the write risk and the original 24-hour limit
+  and clients show the platform's exact statement and explain the write risk
 
 ## This Skill Must Stop And Escalate When
 

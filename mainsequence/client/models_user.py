@@ -33,7 +33,8 @@ class RequestUserIdentity(BaseModel):
     The caller is a person or a workload identity; ``User.get_by_uid(uid)``
     reads its User. ``User.get_requester()`` returns the same type for the
     requester of a requester-bound request, the person the calling
-    application works for; its ``is_organization_admin`` is always ``False``.
+    application works for, with that person's own ``team_uids`` and
+    ``is_organization_admin``.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -55,18 +56,18 @@ class RequestUserIdentity(BaseModel):
         (),
         title="Team UIDs",
         description=(
-            "Canonical UIDs of the caller's active teams, or the requester's, as signed "
-            "by the platform in the caller assertion. Empty when the request carries no "
-            "such facts."
+            "Canonical UIDs of the active teams the platform signed in the caller "
+            "assertion: the caller's, or for the requester the person's own. Empty in "
+            "local mode and on WebSockets, which carry no such facts."
         ),
     )
     is_organization_admin: bool = Field(
         False,
         title="Organization admin",
         description=(
-            "Whether the platform signed the caller as an admin of the application's "
-            "Organization. False when the request carries no such facts, and always "
-            "False for the requester of a requester-bound request."
+            "Whether the platform signed this identity as an admin of the application's "
+            "Organization: the caller, or for the requester the person. False in local "
+            "mode and on WebSockets, which carry no such facts."
         ),
     )
 
@@ -1307,34 +1308,40 @@ class User(_CallerDirectoryReadMixin, UserApiBaseObjectOrm, BasePydanticModel):
 
     @classmethod
     def get_requester(cls) -> RequestUserIdentity | None:
-        """Return the requester of a requester-bound request, or ``None``.
+        """Return the person a requester-bound request works for, or ``None``.
 
         A requester-bound request comes from another application, for example
         an Agent, while it works for a person: the requester. The platform
-        signs the requester into the caller assertion. ``get_logged_user()``
-        still returns the caller, the acting application. The requester has
-        the ``team_uids`` the platform signed and ``is_organization_admin``
-        ``False``: the requester's access reaches the application at member
-        level only.
+        signs that person into the caller assertion, and the request identity
+        integration verifies it before any handler or tool runs. The result is
+        that checked delegation: the person's own ``uid``, ``team_uids`` and
+        ``is_organization_admin``, as the platform signed them.
+        ``get_logged_user()`` still returns the caller, the acting application.
 
-        Returns ``None`` when the request is not requester-bound, including
+        Returns ``None`` when the request carries no delegation, including
         local mode and WebSockets. Raises ``RequestIdentityError`` outside an
-        authenticated request, as ``get_logged_user()`` does.
+        authenticated request, as ``get_logged_user()`` does. An invalid
+        delegation rejects the whole request before any handler or tool runs;
+        it never falls back to the caller.
 
-        Authorize reads and writes against the requester's permission for the
-        exact object and operation. This getter verifies identity, not
-        authorization; read access or team membership does not authorize a
-        write. Give the acting application no rights of its own unless your
-        policy grants them.
-        An operation that needs a person fails closed when this is ``None``.
-        Never take a person's UID from a request body, header or query
-        parameter instead. Platform-supported requester-bound writes stay
-        within the person's member-level rights, never admin powers or Secret
-        values. The platform checks access on every call and limits the work to
-        at most 24 hours after the original request, including across approved
-        Agent delegation. A model-driven Agent can be steered by prompt
-        injection, so per-operation checks remain necessary. This getter does
-        not enable platform write endpoints or extend its request scope.
+        Each handler or tool decides whether it needs a person:
+
+        - one that needs a person fails with its own error when this returns
+          ``None``;
+        - one where the person is optional authorizes against this result when
+          present, and against ``get_logged_user()`` otherwise;
+        - none parses assertions, headers or MCP ``_meta``, takes a person's
+          UID from a request body, header or query parameter, or combines the
+          caller's grants with the person's.
+
+        Authorize against the person's ordinary permissions, including
+        administrative ones, for the exact object and operation. This getter
+        verifies identity, not permission; read access or team membership does
+        not authorize a write. The platform checks access on every call and
+        limits the work to at most 24 hours after the person's request. A
+        model-driven Agent can be steered by prompt injection, so per-operation
+        checks remain necessary. This getter does not enable platform
+        endpoints or extend its request scope.
         """
         requester = _get_requester()
         if requester is not None and not isinstance(requester, RequestUserIdentity):

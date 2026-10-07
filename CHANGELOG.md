@@ -6,13 +6,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+Breaking, with no deprecation period: a requester-bound call carries the
+person's ordinary permissions, including administrative ones (#208). The
+verifier accepts a `requester` claim only with exactly `sub`, `team_uids` and a
+boolean `is_organization_admin`, the person's own facts, and requires the
+caller's `team_uids` and `is_organization_admin` in every assertion. The
+two-field requester (`sub` and `team_uids`) and assertions without the caller's
+facts are rejected with 401 before any handler or tool runs, with no fallback.
+`User.get_requester()` returns the person's own `is_organization_admin`, and
+`AuthenticatedCaller` requires `team_uids` and `is_organization_admin`.
+Releases up to `9.0.17` reject the platform's new requester claim, and this
+release works only with the updated platform, so hosted FastAPI applications
+must be rebuilt on it in the same cutover. The FastAPI guide, ADR-0036,
+ADR 0038 and the packaged skills describe how each handler or tool decides
+whether it needs a person, and quote the platform's statement for Agents that
+act for their requester exactly.
+
 The FastAPI caller identity carries the caller's active team UIDs and
 Organization-admin flag signed by the platform: `User.get_logged_user()` now has
 `team_uids` and `is_organization_admin` for signed HTTP requests, and
-`AuthenticatedCaller` exposes the same fields. Both default to no teams and not
-admin when the assertion carries no such facts. Earlier SDK releases reject the
-platform's assertions once it sends them, so hosted FastAPI applications must be
-rebuilt on this release.
+`AuthenticatedCaller` exposes the same fields. Local and WebSocket requests
+carry no such facts, so there they are empty and false. Earlier SDK releases
+reject the platform's assertions once it sends them, so hosted FastAPI
+applications must be rebuilt on this release.
 
 The next final release is `9.0.6`. PyJWT and cryptography are included in a
 plain `mainsequence` installation; caller verification no longer requires a
@@ -60,10 +76,11 @@ boundary and breaking changes.
 - A FastAPI application receives requester-bound calls: calls another
   application, for example an Agent, makes while it works for a person, the
   requester. The platform signs the requester into the caller assertion as the
-  claim `requester`, an object with exactly `sub` and `team_uids`. The verifier
-  accepts that claim in this exact shape and rejects any other shape.
-  `User.get_requester()` returns the requester as a `RequestUserIdentity` with
-  the signed `team_uids` and `is_organization_admin` false, or `None` when the
+  claim `requester`, an object with exactly `sub`, `team_uids` and
+  `is_organization_admin`. The verifier accepts that claim in this exact shape
+  and rejects any other shape. `User.get_requester()` returns the requester as
+  a `RequestUserIdentity` with the signed `team_uids` and
+  `is_organization_admin`, or `None` when the
   request is not requester-bound; outside an authenticated request it raises
   `RequestIdentityError`. `User.get_logged_user()` still returns the caller, the
   acting application. Inside a requester-bound request `reads_as_caller()`
@@ -158,16 +175,15 @@ boundary and breaking changes.
 
 ### Changed
 
-- Document requester-bound reads and platform-supported writes within the
-  person's own member-level permissions (#206), including the original
-  request's 24-hour maximum across platform-authorized Agent delegation,
-  Secret-value exclusion and prompt-injection risk. FastAPI/MCP guidance and
-  packaged skills require operation-specific authorization with
-  `User.get_requester()` and no fallback to the acting Agent's grants. The
-  retired read-only disclosure is removed; clients must use the platform's
-  exact approved statement coordinated with the write-enabled rollout. The
-  assertion schema, request lifetime and `reads_as_caller()` restrictions are
-  unchanged; this SDK update does not enable platform write endpoints.
+- Document requester-bound reads and platform-supported writes with the
+  person's own permissions (#206), including the original request's 24-hour
+  maximum across platform-authorized Agent delegation and prompt-injection
+  risk. FastAPI/MCP guidance and packaged skills require operation-specific
+  authorization with `User.get_requester()` and no fallback to the acting
+  Agent's grants. The retired read-only disclosure is removed; clients use the
+  platform's exact statement. The request lifetime and `reads_as_caller()`
+  restrictions are unchanged; this SDK update does not enable platform write
+  endpoints.
 
 - `User.username`, `User.email`, `User.date_joined`, `User.api_request_limit`
   and `User.mfa_enabled` are optional and `None` when a response does not carry

@@ -57,7 +57,8 @@ def signed(monkeypatch):
     monkeypatch.setenv("MAINSEQUENCE_CALLER_AUTH_MODE", "assertion")
     monkeypatch.setattr(CallerAssertionVerifier, "from_environment", lambda: verifier)
 
-    def token(user=USER, **changes):
+    def token(user=USER, *, omit=(), **changes):
+        """An assertion as the platform signs it, with the caller's facts; ``omit`` drops claims."""
         now = int(time.time())
         claims = dict(
             iss=ISSUER,
@@ -68,8 +69,12 @@ def signed(monkeypatch):
             iat=now,
             nbf=now,
             exp=now + 120,
+            team_uids=[],
+            is_organization_admin=False,
         )
         claims.update(changes)
+        for name in omit:
+            del claims[name]
         return jwt.encode(
             claims, key, algorithm="EdDSA", headers={"kid": "test", "typ": ASSERTION_TYPE}
         )
@@ -116,24 +121,42 @@ def test_signed_caller_facts_reach_the_logged_user(signed):
         return {"teams": list(user.team_uids), "admin": user.is_organization_admin}
 
     with TestClient(app_for(handler)) as client:
-        with_facts = client.get(
+        admin = client.get(
             "/me",
             headers={ASSERTION_HEADER: token(team_uids=teams, is_organization_admin=True)},
         )
-        without_facts = client.get("/me", headers={ASSERTION_HEADER: token()})
+        member_of_none = client.get("/me", headers={ASSERTION_HEADER: token()})
 
-    assert with_facts.json() == {"teams": teams, "admin": True}
-    assert without_facts.json() == {"teams": [], "admin": False}
+    assert admin.json() == {"teams": teams, "admin": True}
+    assert member_of_none.json() == {"teams": [], "admin": False}
 
 
-@pytest.mark.parametrize("case", ["missing", "invalid", "expired", "wrong_target", "duplicate"])
-def test_invalid_proof_never_reaches_route(signed, case):
+@pytest.mark.parametrize(
+    "case",
+    [
+        "missing",
+        "invalid",
+        "expired",
+        "wrong_target",
+        "duplicate",
+        "without_caller_facts",
+        "without_team_uids",
+        "without_admin_flag",
+    ],
+)
+def test_invalid_proof_never_reaches_route(signed, case, monkeypatch):
+    """A refused assertion is final: never the workload's or the developer's account instead."""
     token, _, _ = signed
+    monkeypatch.setenv("MAINSEQUENCE_ACCESS_TOKEN", "workload-session")
+    monkeypatch.setattr(
+        "mainsequence.server.fastapi.requests.get",
+        Mock(side_effect=AssertionError("A refused assertion resolved another account.")),
+    )
 
     def handler():
         pytest.fail("Rejected request reached handler")
 
-    headers = {"X-User-UID": USER}
+    headers = {"X-User-UID": USER, "Authorization": "Bearer developer-token"}
     if case == "invalid":
         headers[ASSERTION_HEADER] = "bad"
     elif case == "expired":
@@ -142,6 +165,12 @@ def test_invalid_proof_never_reaches_route(signed, case):
         headers[ASSERTION_HEADER] = token(resource_release_uid=OTHER)
     elif case == "duplicate":
         headers = [(ASSERTION_HEADER, token()), (ASSERTION_HEADER, token())]
+    elif case == "without_caller_facts":
+        headers[ASSERTION_HEADER] = token(omit=("team_uids", "is_organization_admin"))
+    elif case == "without_team_uids":
+        headers[ASSERTION_HEADER] = token(omit=("team_uids",))
+    elif case == "without_admin_flag":
+        headers[ASSERTION_HEADER] = token(omit=("is_organization_admin",))
     assert TestClient(app_for(handler)).get("/me", headers=headers).status_code == 401
 
 
@@ -233,6 +262,32 @@ def test_duplicate_installation_is_rejected():
     install_request_identity(app)
     with pytest.raises(RuntimeError, match="already installed"):
         install_request_identity(app)
+
+
+def test_launcher_declaration_states_the_installed_wiring(signed, monkeypatch):
+    """The launcher checks this before serving; a REST-only application declares no MCP."""
+    monkeypatch.setenv(
+        "FASTAPI_PUBLIC_INGRESS", json.dumps([{"method": "GET", "path": "/callback"}])
+    )
+    hosted = app_for(lambda: {"public": True}, path="/callback")
+    monkeypatch.delenv("FASTAPI_PUBLIC_INGRESS")
+    monkeypatch.delenv("MAINSEQUENCE_CALLER_AUTH_MODE")
+    local = app_for(lambda: {"local": True})
+
+    assert hosted.state.mainsequence_request_identity == {
+        "installed": True,
+        "mode": "assertion",
+        "public_ingress": (("GET", "/callback"),),
+    }
+    assert local.state.mainsequence_request_identity == {
+        "installed": True,
+        "mode": "local",
+        "public_ingress": (),
+    }
+    for app in (hosted, local):
+        assert getattr(app.state, "mainsequence_mcp", None) is None
+    with TestClient(hosted) as client:
+        assert client.get("/callback", headers={"X-Public-Ingress": "1"}).json() == {"public": True}
 
 
 def test_concurrency_streaming_and_copied_context_cleanup(signed):
@@ -518,9 +573,18 @@ def test_reads_as_caller_needs_a_signed_http_request(monkeypatch):
 #
 # Another application calls while it works for a person, the requester. The caller
 # stays that application; User.get_requester() returns the person the platform
-# signed into the assertion.
+# signed into the assertion, with the person's own facts.
 
 PERSON = "5b0f9a8e-3c2d-4e1f-9a7b-6c5d4e3f2a1b"
+
+
+def requester_claim(sub=PERSON, team_uids=(), is_organization_admin=False):
+    """The requester claim as the platform signs it."""
+    return {
+        "sub": sub,
+        "team_uids": list(team_uids),
+        "is_organization_admin": is_organization_admin,
+    }
 
 
 def _identities():
@@ -536,22 +600,23 @@ def _identities():
     }
 
 
-def test_requester_bound_call_binds_the_requester_beside_the_caller(signed):
+@pytest.mark.parametrize(
+    ("caller_admin", "person_admin"),
+    [(False, True), (True, False)],
+    ids=["admin_person", "admin_caller"],
+)
+def test_requester_bound_call_binds_the_requester_beside_the_caller(
+    signed, caller_admin, person_admin
+):
     token, _, _ = signed
     caller_teams = sorted([str(uuid4()), str(uuid4())])
     requester_teams = sorted([str(uuid4()), str(uuid4())])
-    # The caller's own facts never reach the requester, the admin flag included.
-    facts = dict(team_uids=caller_teams, is_organization_admin=True)
+    # Each identity keeps its own facts: neither admin flag reaches the other.
+    facts = dict(team_uids=caller_teams, is_organization_admin=caller_admin)
+    person = requester_claim(team_uids=requester_teams, is_organization_admin=person_admin)
 
     with TestClient(app_for(_identities)) as client:
-        bound = client.get(
-            "/me",
-            headers={
-                ASSERTION_HEADER: token(
-                    **facts, requester={"sub": PERSON, "team_uids": requester_teams}
-                )
-            },
-        )
+        bound = client.get("/me", headers={ASSERTION_HEADER: token(**facts, requester=person)})
         # A person UID in a header or the query names no requester.
         direct = client.get(
             "/me",
@@ -560,32 +625,47 @@ def test_requester_bound_call_binds_the_requester_beside_the_caller(signed):
         )
 
     assert bound.json() == {
-        "caller": [USER, caller_teams, True],
-        "requester": [PERSON, requester_teams, False],
+        "caller": [USER, caller_teams, caller_admin],
+        "requester": [PERSON, requester_teams, person_admin],
     }
-    assert direct.json() == {"caller": [USER, caller_teams, True], "requester": None}
+    assert direct.json() == {"caller": [USER, caller_teams, caller_admin], "requester": None}
     with pytest.raises(RequestIdentityError, match=r"User\.get_requester\(\)"):
         User.get_requester()
 
 
 @pytest.mark.parametrize(
-    "requester",
+    ("requester", "omit"),
     [
-        None,
-        {"sub": PERSON},
-        {"sub": PERSON, "team_uids": [], "is_organization_admin": True},
-        {"sub": PERSON.upper(), "team_uids": []},
+        (None, ()),
+        ({"sub": PERSON, "team_uids": []}, ()),
+        ({"sub": PERSON, "is_organization_admin": True}, ()),
+        ({**requester_claim(), "username": "person"}, ()),
+        (requester_claim(is_organization_admin=1), ()),
+        (requester_claim(is_organization_admin="true"), ()),
+        (requester_claim(is_organization_admin=None), ()),
+        (requester_claim(sub=PERSON.upper()), ()),
+        (requester_claim(), ("team_uids", "is_organization_admin")),
     ],
-    ids=["null", "missing_team_uids", "admin_flag", "non_canonical_sub"],
+    ids=[
+        "null",
+        "two_field_without_admin_flag",
+        "missing_team_uids",
+        "extra_key",
+        "integer_admin_flag",
+        "string_admin_flag",
+        "null_admin_flag",
+        "non_canonical_sub",
+        "without_caller_facts",
+    ],
 )
-def test_malformed_requester_never_reaches_route(signed, requester):
+def test_malformed_requester_never_reaches_route(signed, requester, omit):
     token, _, _ = signed
 
     def handler():
         pytest.fail("Rejected request reached handler")
 
     response = TestClient(app_for(handler)).get(
-        "/me", headers={ASSERTION_HEADER: token(requester=requester)}
+        "/me", headers={ASSERTION_HEADER: token(requester=requester, omit=omit)}
     )
     assert response.status_code == 401
 
@@ -628,7 +708,7 @@ def test_public_route_has_no_requester(signed, monkeypatch):
         "/callback",
         headers={
             "X-Public-Ingress": "1",
-            ASSERTION_HEADER: token(requester={"sub": PERSON, "team_uids": []}),
+            ASSERTION_HEADER: token(requester=requester_claim()),
         },
     )
     assert response.json() == {"anonymous": True}
@@ -649,7 +729,7 @@ def test_requester_expires_with_its_request(signed):
     runtime = _RequestIdentityMiddleware(
         application, mode="assertion", verifier=verifier, public_ingress=(), routes=()
     )
-    proof = token(requester={"sub": PERSON, "team_uids": []})
+    proof = token(requester=requester_claim())
 
     async def run():
         async def receive():
@@ -686,10 +766,10 @@ def test_reads_as_caller_refuses_a_requester_bound_request(signed, monkeypatch):
                 User.filter(search="prices")
         return _identities()
 
+    # Unchanged by the person's admin flag: the helper still forwards nothing.
+    person = requester_claim(is_organization_admin=True)
     with TestClient(app_for(handler)) as client:
-        response = client.get(
-            "/me", headers={ASSERTION_HEADER: token(requester={"sub": PERSON, "team_uids": []})}
-        )
+        response = client.get("/me", headers={ASSERTION_HEADER: token(requester=person)})
 
-    assert response.json() == {"caller": [USER, [], False], "requester": [PERSON, [], False]}
+    assert response.json() == {"caller": [USER, [], False], "requester": [PERSON, [], True]}
     assert sent == []

@@ -32,12 +32,14 @@ REQUIRED_CLAIMS = frozenset(
         "iat",
         "nbf",
         "exp",
+        # What the platform states about the caller: its active team UIDs and
+        # whether it is an admin of the application's Organization.
+        "team_uids",
+        "is_organization_admin",
     }
 )
-# What the platform states about the caller: active team UIDs and the
-# Organization-admin flag. Sent together, or not at all by a platform that
-# predates them; then the caller has no teams and is not an admin.
-CALLER_FACT_CLAIMS = frozenset({"team_uids", "is_organization_admin"})
+# The person a requester-bound call works for, with the person's own facts.
+REQUESTER_CLAIMS = frozenset({"sub", "team_uids", "is_organization_admin"})
 
 
 class InvalidCallerAssertion(ValueError):
@@ -62,7 +64,8 @@ class _VerifiedRequester:
     """The person a requester-bound call works for, as the platform signed it."""
 
     user_uid: str
-    team_uids: tuple[str, ...] = ()
+    team_uids: tuple[str, ...]
+    is_organization_admin: bool
 
 
 @dataclass(frozen=True)
@@ -72,9 +75,9 @@ class AuthenticatedCaller:
     environment_uid: str
     issued_at: int
     expires_at: int
-    team_uids: tuple[str, ...] = ()
-    is_organization_admin: bool = False
-    # The requester of a requester-bound call, None on any other call. The
+    team_uids: tuple[str, ...]
+    is_organization_admin: bool
+    # The person a requester-bound call works for, None on any other call. The
     # fields above stay the caller's: the acting application (ADR-0036).
     _requester: _VerifiedRequester | None = None
 
@@ -88,34 +91,38 @@ def _team_uids(value: object, *, owner: str) -> tuple[str, ...]:
     return team_uids
 
 
+def _admin_flag(value: object, *, owner: str) -> bool:
+    if type(value) is not bool:
+        raise InvalidCallerAssertion(f"{owner} admin flag is invalid.")
+    return value
+
+
 def _caller_facts(payload: dict) -> tuple[tuple[str, ...], bool]:
-    facts = set(payload) & CALLER_FACT_CLAIMS
+    """The caller's team UIDs and admin flag, which every assertion carries."""
     # A requester-bound call also carries "requester", which _requester() checks.
-    claims = set(payload) - facts - {"requester"}
-    if claims != REQUIRED_CLAIMS or facts not in (set(), set(CALLER_FACT_CLAIMS)):
+    if set(payload) - {"requester"} != REQUIRED_CLAIMS:
         raise InvalidCallerAssertion("Caller assertion claims are invalid.")
-    if not facts:
-        return (), False
-    team_uids = _team_uids(payload["team_uids"], owner="Caller")
-    if type(payload["is_organization_admin"]) is not bool:
-        raise InvalidCallerAssertion("Caller admin flag is invalid.")
-    return team_uids, payload["is_organization_admin"]
+    return (
+        _team_uids(payload["team_uids"], owner="Caller"),
+        _admin_flag(payload["is_organization_admin"], owner="Caller"),
+    )
 
 
 def _requester(payload: dict) -> _VerifiedRequester | None:
-    """The requester of a requester-bound call: exactly ``sub`` and ``team_uids``.
+    """The person a requester-bound call works for, or None on any other call.
 
-    It never carries an admin flag: the requester's access reaches the
-    application at member level only.
+    The claim has exactly ``sub``, ``team_uids`` and ``is_organization_admin``:
+    the person's own User UID, active team UIDs and Organization-admin flag.
     """
     if "requester" not in payload:
         return None
     claim = payload["requester"]
-    if not isinstance(claim, dict) or set(claim) != {"sub", "team_uids"}:
+    if not isinstance(claim, dict) or set(claim) != REQUESTER_CLAIMS:
         raise InvalidCallerAssertion("Caller assertion requester is invalid.")
     return _VerifiedRequester(
         user_uid=_canonical_uid(claim["sub"]),
         team_uids=_team_uids(claim["team_uids"], owner="Requester"),
+        is_organization_admin=_admin_flag(claim["is_organization_admin"], owner="Requester"),
     )
 
 

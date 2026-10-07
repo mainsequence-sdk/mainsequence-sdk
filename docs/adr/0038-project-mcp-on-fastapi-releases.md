@@ -1,5 +1,15 @@
 # ADR 0038: Project MCP on FastAPI releases
 
+Amended 2026-10-07 for [SDK issue #208](https://github.com/mainsequence-sdk/mainsequence-sdk/issues/208):
+a requester-bound tool call carries the person's ordinary permissions,
+including administrative ones, and `User.get_requester()` returns the person's
+own `team_uids` and `is_organization_admin`. Each tool decides whether it needs
+a person; the SDK keeps no list of tools that accept one. Tests at the tool
+handler cover asynchronous tasks, thread pools, concurrent calls for two people
+and for a workload, and reset after completion, failure and cancellation. See
+[section 3](#3-reuse-the-request-scoped-caller-identity) and
+[ADR 0036](0036-request-scoped-logged-user.md#requester-bound-calls).
+
 Date: 2026-10-06
 
 Status: Accepted 2026-10-06 and implemented in the SDK; see
@@ -101,10 +111,13 @@ process.
 ### 3. Reuse the request-scoped caller identity
 
 Hosted requests reach the app with the platform's signed caller assertion, as
-REST requests do. The existing verifier checks it and binds the request scope.
-Tools read the caller with `User.get_logged_user()` and, in a requester-bound
-call, the person the caller works for with `User.get_requester()`, keeping ADR
-0036's distinction between the two.
+REST requests do. The existing verifier checks it, including the `requester`
+claim of a requester-bound call, and binds the request scope before any tool
+runs. Tools read the caller with `User.get_logged_user()` and, in a
+requester-bound call, the person the caller works for with
+`User.get_requester()`, keeping ADR 0036's distinction between the two. The
+person is the checked delegation, with the person's own `team_uids` and
+`is_organization_admin`; without a delegation the getter returns `None`.
 
 MCP libraries may dispatch work into task groups created at startup or into
 thread pools. Context propagation from the middleware must be tested at the
@@ -122,11 +135,22 @@ the application's existing job authority.
 
 Application code owns operation and data permissions. Admission to a release
 does not authorize every tool, and a read-only tool annotation is not access
-control. A requester-bound write checks the verified person's permission for
-the target object and operation before mutating anything, and fails closed if
-the tool needs a requester and none is present. Reading the object or the
-calling Agent's own grants cannot authorize the write. Workload credentials
-stay separate from the inbound caller, and the
+control. Each tool decides whether it needs a person, and the SDK keeps no list
+of tools that accept one:
+
+- a tool that needs a person fails with its own error when
+  `User.get_requester()` is `None`;
+- a tool where the person is optional authorizes against
+  `User.get_requester()` when present, and against `User.get_logged_user()`
+  otherwise;
+- no tool parses assertions, headers or MCP `_meta`, or combines the caller's
+  grants with the person's.
+
+A requester-bound call carries the person's ordinary permissions, including
+administrative ones. A requester-bound write checks the verified person's
+permission for the target object and operation before mutating anything.
+Reading the object or the calling Agent's own grants cannot authorize the
+write. Workload credentials stay separate from the inbound caller, and the
 integration adds no delegation: `reads_as_caller()` keeps its directory-read
 scope and its refusal in requester-bound calls.
 
@@ -309,8 +333,13 @@ Implemented 2026-10-06:
   off: its default admits only localhost hosts, while the integration checks
   `Origin` and the platform routes the host.
 - With the official SDK in stateless mode, the caller's context reaches
-  asynchronous tools and tools that use worker threads without explicit
-  propagation, so ADR 0036 is not amended.
+  asynchronous tools, the tasks they start and the worker threads they use
+  through `asyncio.to_thread` or anyio's `to_thread.run_sync`, without explicit
+  propagation, so ADR 0036's request scope needs no adapter. A thread that
+  does not receive a copy of the context, such as one started with
+  `loop.run_in_executor`, has no identity and fails closed. Each call keeps its
+  own identity under concurrency, and its end, by completion, failure or
+  cancellation, also ends it for tasks and contexts copied from it.
 - `ResourceRelease` reads `mcp_enabled` and `mcp_connection`
   (`ResourceReleaseMcpConnection`), filters on `mcp_available`, and sends
   `mcp_enabled` in a PATCH only when the caller sets it.

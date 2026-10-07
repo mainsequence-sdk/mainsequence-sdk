@@ -229,10 +229,11 @@ class _RequestIdentityMiddleware:
                         state["organization_environment_uid"] = caller.environment_uid
                         context.caller_assertion = assertion
                         if caller._requester is not None:
-                            # Never an admin: the requester's access is member level.
+                            # The person this call works for, with the person's own facts.
                             context.requester = RequestUserIdentity(
                                 uid=caller._requester.user_uid,
                                 team_uids=caller._requester.team_uids,
+                                is_organization_admin=caller._requester.is_organization_admin,
                             )
                     else:
                         user = await asyncio.to_thread(_local_user, scope)
@@ -397,9 +398,10 @@ def install_mcp(app, mcp_app, *, lifespan):
 
     Install request identity first. Tools read the caller with
     ``User.get_logged_user()`` and, on a requester-bound call, the person it
-    works for with ``User.get_requester()``. Only authenticated POSTs reach the
-    server; other methods answer 405 and an ``Origin`` other than the release's
-    own or its CORS origins answers 403. See ADR 0038.
+    works for with ``User.get_requester()``; each tool decides whether it needs
+    that person. Only authenticated POSTs reach the server; other methods
+    answer 405 and an ``Origin`` other than the release's own or its CORS
+    origins answers 403. See ADR 0038.
     """
     from starlette.routing import Route
 

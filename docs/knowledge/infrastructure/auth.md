@@ -397,13 +397,16 @@ caller's User; see
 [Workload identities](users_and_access.md#workload-identities).
 
 `User.get_requester()` returns the requester of a requester-bound request, the
-person the calling application works for, as the same type, or `None` when the
-request is not requester-bound. Authorize reads and writes against that person's
-permission for the exact object and operation; the getter verifies identity,
-not permission. Never substitute the Agent's grants for the person's. Give
-the acting application no rights of its own unless your policy grants
-them, fail closed when an operation needs a person and there is none, and never
-take a person's UID from a request body, header or query parameter. See
+person the calling application works for, as the same type with the person's
+own `team_uids` and `is_organization_admin`, or `None` when the request is not
+requester-bound. Authorize reads and writes against that person's ordinary
+permissions, including administrative ones, for the exact object and
+operation; the getter verifies identity, not permission. Never substitute the
+Agent's grants for the person's or add them to the person's. A handler or tool
+that needs a person fails with its own error when there is none; one where the
+person is optional authorizes against the person when present and the caller
+otherwise. Never take a person's UID from a request body, header or query
+parameter. See
 [Requester-bound calls](../fastapi/index.md#requester-bound-calls) for MCP tools
 and [requester access and write risk](users_and_access.md#applications-that-act-for-their-requester).
 
