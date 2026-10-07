@@ -158,6 +158,14 @@ The existing `request.state.user` and `request.state.user_uid` fields are compat
 
 Without hosted deployment markers, the integration uses a direct incoming Bearer token and validates it against `MAINSEQUENCE_ENDPOINT/api/v1/users/me/`. The handler still calls the same getter. Local mode cannot override a deployed target or replace a failed assertion. Missing local identity returns 401; an unavailable authenticator returns 503.
 
+MCP behaves the same way locally. `/mcp` takes the same Bearer token as your routes, and there is no sign-in challenge locally, so configure the client, for example Codex, to send your platform token as a fixed `Authorization: Bearer` header.
+
+The `Origin` check reads `FASTAPI_PUBLIC_BASE_URL` and `FASTAPI_CORS_ALLOW_ORIGINS` once, when `install_mcp` runs. In a deployment the platform sets both: the release's URL and its allowed origins. Locally they are usually unset, so the list is empty. A browser, which always sends `Origin`, then gets 403, while Codex, curl and scripts, which send none, are unaffected. To try a browser-based MCP client locally, allow its origin in the environment the app starts with:
+
+```bash
+export FASTAPI_CORS_ALLOW_ORIGINS=http://localhost:3000
+```
+
 ## Public ingress, preflight and WebSockets
 
 Exact public method/path pairs require the backend-owned `FASTAPI_PUBLIC_INGRESS` declaration and the gateway's matching admission marker. Anonymous requests have no logged user, and credential/identity headers are stripped. Unlisted routes and methods require authentication. Applications still validate provider callback state or webhook signatures.
