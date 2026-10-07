@@ -1,5 +1,7 @@
 # ADR-0036: Request-scoped logged user
 
+Amended 2026-10-06: an application can receive requester-bound calls. Another application, for example an Agent, calls it while it works for a person, the requester, and the platform signs that person into the caller assertion it already sends, as the claim `requester`. The assertion's `sub` stays the calling application. The verifier accepts the claim in its exact shape, the request scope binds the verified requester next to the caller, `User.get_requester()` returns it, `User.get_logged_user()` is unchanged, and `reads_as_caller()` refuses a requester-bound request. See [Requester-bound calls](#requester-bound-calls).
+
 Amended 2026-10-06 for [SDK issue #198](https://github.com/mainsequence-sdk/mainsequence-sdk/issues/198): an application can read the directory as its caller. The platform API accepts the call: with the release's workload credential and the caller assertion the application received, `GET /api/v1/users/`, `/users/<uid>/`, `/teams/` and `/teams/<uid>/` answer with the caller's visibility, and every other action refuses the assertion. The request scope now keeps the verified assertion, and `mainsequence.server.fastapi.reads_as_caller()` is the only way to present it. See [Reads as the caller](#reads-as-the-caller).
 
 Implementation record 2026-09-28 for the owner's instruction to implement and commit the reviewed platform authentication plan.
@@ -35,3 +37,15 @@ Added 2026-10-06 for #198.
 - No fallback. Entering the helper outside an authenticated request, or in a request without an assertion, raises `RequestIdentityError`, and so does a read inside the helper after its request ended. Neither reads as the workload instead. The assertion lives at most 300 seconds and is not refreshed; a read after it expires fails with the platform's answer.
 - The platform answers these reads `no-store`; the SDK does not cache them.
 - Process credentials are unchanged. The workload credential still authenticates every call; the assertion only selects whose visibility the answer has.
+
+## Requester-bound calls
+
+Added 2026-10-06.
+
+- The assertion of a requester-bound call carries one more claim, `requester`: a JSON object with exactly `sub`, the requester's User UID as a canonical lowercase UUID, and `team_uids`, the requester's team UIDs, canonical, sorted ascending and unique. It never carries an admin flag. The assertion's own `sub` and its optional `team_uids`/`is_organization_admin` pair stay the caller's: the acting application.
+- The verifier accepts the base claims, the optional caller facts pair and the optional `requester` claim, and nothing else. A `requester` with a missing or extra key, a value of the wrong type, a UID that is not canonical, or unsorted or repeated team UIDs rejects the whole assertion, so the request gets 401. The verifier's result keeps the verified requester beside the caller, under a private attribute.
+- The request scope binds the requester next to the caller, as a `RequestUserIdentity` with the claim's `team_uids` and `is_organization_admin` false. It expires with the scope, also in copied child contexts. Local mode, WebSockets and public or OPTIONS requests have none.
+- `User.get_requester()` returns it, or `None` when the request is not requester-bound. Outside an authenticated request it raises `RequestIdentityError`, as `User.get_logged_user()` does. `get_logged_user()` is unchanged: it returns the caller, the acting application.
+- An application authorizes a requester-bound call against the requester and gives the acting application no rights of its own unless its policy grants them. It fails closed when an operation needs a person and `get_requester()` is `None`, and never takes a person's UID from a request body, header or query parameter.
+- `reads_as_caller()` raises `RequestIdentityError` as soon as it is entered in a requester-bound request, and never reads as the application instead. The requester's access is not passed on to another application, so the platform API refuses such an assertion on the directory reads; the SDK fails early and says why.
+- SDK releases before this amendment reject every assertion that carries `requester`. Requester-bound calls to an application on such a release fail closed, and its other calls are unchanged.

@@ -82,8 +82,31 @@ The SDK exposes these filters through `ResourceRelease.FILTERSET_FIELDS`:
 | `resource__uid` | exact, `in` | Runtime repository-resource UID |
 | `related_job__uid` | exact, `in` | Runtime backing Job UID |
 | `release_kind` | exact, `in` | `fastapi`, `harness_agent`, or `static_site` |
+| `mcp_available` | exact | Whether the active revision advertises an MCP endpoint |
 
 An exact lookup uses the field directly, such as `name="Shared MetaTables"`.
 An `in` lookup uses the suffix and a sequence, such as
 `release_kind__in=["fastapi", "static_site"]`. Unsupported filter names fail
 locally before an HTTP request is sent.
+
+## MCP endpoints
+
+A FastAPI release can serve MCP at its URL plus `/mcp`. `mcp_enabled` is the
+desired capability, applied by the release's next successful deployment, and
+`mcp_connection` describes the endpoint its active revision advertises, or is
+`None`:
+
+```python
+from mainsequence.client import ResourceRelease
+
+for release in ResourceRelease.filter(mcp_available=True):
+    connection = release.mcp_connection
+    print(release.name, connection.url, connection.transport)
+```
+
+`mcp_connection` carries `url`, `transport` (`streamable-http`),
+`resource_metadata_url`, `organization_environment_uid` and
+`active_revision_uid`. Availability is an advertised capability, not a health
+check. A response without these fields reads as `False` and `None`. To serve
+MCP from a FastAPI application, see
+[Serving MCP](../fastapi/index.md#serving-mcp).

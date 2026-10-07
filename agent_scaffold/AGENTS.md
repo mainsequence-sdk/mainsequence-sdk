@@ -81,7 +81,8 @@ bundle. Platform skills are installed separately under
   `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
 - Jobs, schedules, images, resources, releases, and Artifacts:
   `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
-- RBAC, sharing, constants, secrets, and access verification:
+- RBAC, sharing, constants, secrets, access verification, and whether an
+  application uses its own grants or acts for its requester:
   `.agents/skills/mainsequence/platform_operations/access_control_and_sharing/SKILL.md`
 - Direct recorded model calls, structured extraction, thinking/provider options,
   inference history and idempotent replay:

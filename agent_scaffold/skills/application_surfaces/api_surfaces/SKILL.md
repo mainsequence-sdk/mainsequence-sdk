@@ -160,6 +160,67 @@ connection is active. See the version-matched
 [FastAPI identity documentation](https://mainsequence-sdk.github.io/mainsequence-sdk/knowledge/fastapi/)
 for the lifecycle and trust contract.
 
+### Requester-bound calls
+
+Another application, for example an Agent, can call the API while it works for
+a person: the requester. The platform signs the requester into the caller
+assertion it sends to the API. `User.get_logged_user()` still returns the
+caller, the acting application. `User.get_requester()` returns the requester,
+or `None` when the call is not requester-bound:
+
+```python
+from fastapi import HTTPException
+from mainsequence.client import RequestUserIdentity, User
+
+
+def require_requester() -> RequestUserIdentity:
+    """The person this call works for; refuse the call when there is none."""
+    requester = User.get_requester()
+    if requester is None:
+        raise HTTPException(status_code=403, detail="This operation needs a requester.")
+    return requester
+
+
+@app.get("/team-reports/{team_uid}")
+def team_report(team_uid: str) -> dict[str, str]:
+    requester = require_requester()
+    if team_uid not in requester.team_uids:
+        raise HTTPException(status_code=403, detail="The requester is not in this team.")
+    return {"team_uid": team_uid, "requested_by": requester.uid}
+```
+
+- Authorize a requester-bound call against the requester. The acting
+  application has no rights of its own unless the API's policy grants them.
+- Fail closed: an operation that needs a person refuses the call when
+  `User.get_requester()` is `None`. Never fall back to the caller's rights.
+- Never read a person's UID from the request body, a header or a query
+  parameter, and never let a caller name whom it acts for. Anyone can write a
+  UID there. Only the signed assertion names the requester, and the SDK has
+  verified that it is addressed to this release.
+- The requester carries the `team_uids` the platform signed, and its
+  `is_organization_admin` is always `False`: a requester's access reaches the
+  API at member level only.
+- Inside a requester-bound call, `reads_as_caller()` raises
+  `RequestIdentityError`: the requester's access is not passed on.
+- Test both paths: the requester-bound call authorized against the requester,
+  and the same operation refused without a requester.
+
+Which applications may act for their requester, what that access covers, and
+what people are told:
+`.agents/skills/mainsequence/platform_operations/access_control_and_sharing/SKILL.md`.
+See also
+[Requester-bound calls](https://mainsequence-sdk.github.io/mainsequence-sdk/knowledge/fastapi/#requester-bound-calls).
+
+### MCP tools
+
+To serve MCP tools from the same application, add the `mcp` extra and call
+`install_mcp(app, mcp.streamable_http_app(), lifespan=mcp.session_manager.run)`
+after `install_request_identity(app)`, with a stateless FastMCP server that
+returns JSON. Tools authorize with `User.get_logged_user()` and
+`User.get_requester()` exactly like REST handlers; admission to the release
+does not authorize every tool. See
+[Serving MCP](https://mainsequence-sdk.github.io/mainsequence-sdk/knowledge/fastapi/#serving-mcp).
+
 ### Public provider callbacks and webhooks
 
 An external OAuth redirect or webhook cannot supply a Main Sequence Bearer token.

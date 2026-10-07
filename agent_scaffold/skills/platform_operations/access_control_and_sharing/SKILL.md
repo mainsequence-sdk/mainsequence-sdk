@@ -1,6 +1,6 @@
 ---
 name: mainsequence-access-control-and-sharing
-description: Use this skill when the task is about RBAC, resource sharing, or access verification in a Main Sequence CodeRepository. This skill owns organization and team access concepts, view and edit semantics, choosing the correct shareable resource boundary, and access checks across CodeRepositories, constants, secrets, buckets, artifacts, and releases. It does not own job scheduling, domain-package data behavior, or API route design.
+description: Use this skill when the task is about RBAC, resource sharing, or access verification in a Main Sequence CodeRepository. This skill owns organization and team access concepts, view and edit semantics, choosing the correct shareable resource boundary, access checks across CodeRepositories, constants, secrets, buckets, artifacts, and releases, and whether an application uses its own grants or acts for its requester (`acts_for_requester`). It does not own job scheduling, domain-package data behavior, or API route design.
 ---
 
 # Main Sequence Access Control And Sharing
@@ -34,6 +34,8 @@ This skill is for:
 - choose whether configuration belongs in a `Constant` or a `Secret`
 - review CLI sharing flows for existing resources
 - verify access assumptions before claiming a workflow is shareable
+- decide whether an application uses its own grants or acts for its
+  requester, and explain what acting for the requester allows
 
 ## This Skill Must Not Claim
 
@@ -192,6 +194,81 @@ If the task claims a resource is shareable, readable, or maintainable by another
 
 Do not claim access based only on naming, role titles, or intuition.
 
+## Application Access: Own Grants Or Acting For Its Requester
+
+This section is the reference for how a deployed application, a FastAPI
+release or an Agent, reaches platform data.
+
+### Its own access: grants to its workload User
+
+An application runs as its own workload User (`workload_user_uid` on the
+`ResourceRelease`, `Job` or `Agent`). Its own access comes from grants to that
+User: share what it needs with that User as with any person, with `view`
+unless it must maintain the object. These grants cover every call the
+application makes for itself.
+
+### Acting for its requester: `acts_for_requester`
+
+An application can instead be enabled to act for its requester: the person
+whose own request it is serving. The platform setting is `acts_for_requester`.
+
+- It is `false` by default. Nothing changes for an application that leaves it
+  off.
+- Only Organization admins enable it, in one of two ways:
+  - after the application exists, with
+    `PATCH /api/v1/workload-users/<workload_user_uid>/`;
+  - in code, by declaring `acts_for_requester: true` on the resource, a
+    `fastapi` or `harness_agent` one, in the repository workflow file:
+
+    ```yaml
+    resources:
+      - key: api
+        kind: fastapi
+        spec:
+          source_path: api/main.py
+        acts_for_requester: true
+    ```
+
+    Take the exact field from the branch's workflow template and validate the
+    file before committing it. A declaration takes effect only when the person
+    who pushed it is an Organization admin. Otherwise that resource fails
+    before it deploys.
+- An application that should act only for people, for example a data analyst
+  Agent, holds no grants of its own. Do not share data with its workload User
+  to make it work: everyone who can use the application could then reach that
+  data through it.
+
+### What the requester's access covers
+
+- Read only: the application never changes, shares or deletes anything with it.
+- The requester's member level, never an admin's, even when the requester is
+  an Organization admin.
+- Never secret values.
+- At most 24 hours after the person's request, and only while the work for that
+  request runs.
+- Checked again on every call, so it stops the moment the person's access ends.
+- Never passed on to another application.
+
+### Never accept a person's UID from a request
+
+The requester comes only from the platform. An application never accepts a
+person's UID from a request body, header or query parameter, and never lets a
+caller choose whom it acts for. A FastAPI application that receives a
+requester-bound call reads the requester with `User.get_requester()` and
+authorizes the call against that person:
+`.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`.
+
+### What people are told
+
+Every client that shows an application with `acts_for_requester` shows this
+statement:
+
+> **This Agent works with your identity, securely.** It reads only what you can already read, only to answer your own requests, and for at most 24 hours after you ask. It cannot act as anyone else, cannot change, share or delete anything, never sees your secret values, and stops the moment your access ends. Your Organization's administrator approved it to work this way.
+
+Show the plain limit with it: while it works on your request, the Agent's code
+can read what you can read, which is why only administrators decide which
+Agents may work this way.
+
 ## Review Rules
 
 When reviewing an access-control task, look for:
@@ -205,6 +282,10 @@ When reviewing an access-control task, look for:
 - creating a `Constant` or `Secret` blindly without resolving whether the name already exists
 - weak or unverified claims about who can access a resource
 - confusion between access policy and deployment workflow
+- grants to an application that should act only for people
+- an application that takes a person's UID from a request instead of from the
+  platform
+- `acts_for_requester` presented as something a non-admin can enable
 
 ## Validation Checklist
 
@@ -221,6 +302,8 @@ Do not claim success until you have checked:
 - any `Constant` or `Secret` creation path first resolved existence by name when idempotency matters
 - the access claim was verified against the actual resource path
 - the task did not confuse sharing policy with orchestration or producer logic
+- an application that acts for its requester takes the person only from the
+  platform, and its own grants are intentional
 
 ## This Skill Must Stop And Escalate When
 
@@ -230,5 +313,7 @@ Do not claim success until you have checked:
 - the task asks for sensitive data to be stored in a `Constant`
 - the task assumes cross-organization sharing without explicit documentation
 - the request requires a policy decision the user has not made
+- the task needs `acts_for_requester` and no Organization admin has decided to
+  enable it
 
 Do not guess through security boundaries.

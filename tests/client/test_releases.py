@@ -440,3 +440,108 @@ def test_resource_release_reads_workload_user_uid(extra, expected):
     )
 
     assert release.workload_user_uid == expected
+
+
+MCP_CONNECTION = {
+    "url": "https://prices.example.test/mcp",
+    "transport": "streamable-http",
+    "resource_metadata_url": "https://platform.example.test/.well-known/oauth-protected-resource/prices",
+    "organization_environment_uid": "58218213-5e4e-43de-a5bd-6757f4e1c8f6",
+    "active_revision_uid": "6cfdb152-923e-45b9-a150-c4541c68b0d1",
+}
+
+
+@pytest.mark.parametrize(
+    ("release_kind", "extra", "enabled", "url"),
+    [
+        (
+            "fastapi",
+            {"mcp_enabled": True, "mcp_connection": MCP_CONNECTION},
+            True,
+            MCP_CONNECTION["url"],
+        ),
+        ("fastapi", {"mcp_enabled": True, "mcp_connection": None}, True, None),
+        ("static_site", {"mcp_enabled": False, "mcp_connection": None}, False, None),
+        ("fastapi", {}, False, None),
+    ],
+    ids=["advertised", "desired_not_yet_advertised", "other_release_kind", "older_response"],
+)
+def test_resource_release_reads_the_mcp_capability(release_kind, extra, enabled, url):
+    release = models_helpers_mod.ResourceRelease.model_validate(
+        {
+            "uid": "2f4c4c3d-5669-4da5-9d86-b84633c1e6ed",
+            "code_repository_branch_uid": CODE_REPOSITORY_BRANCH_UID,
+            "name": "Prices API",
+            "release_kind": release_kind,
+            **extra,
+        }
+    )
+
+    assert release.mcp_enabled is enabled
+    assert (release.mcp_connection.url if release.mcp_connection else None) == url
+
+
+def test_resource_release_mcp_connection_keeps_its_fields_and_unknown_transports():
+    def read(connection):
+        return models_helpers_mod.ResourceRelease.model_validate(
+            {
+                "uid": "2f4c4c3d-5669-4da5-9d86-b84633c1e6ed",
+                "release_kind": "fastapi",
+                "mcp_enabled": True,
+                "mcp_connection": connection,
+            }
+        ).mcp_connection
+
+    connection = read(MCP_CONNECTION)
+    assert {name: getattr(connection, name) for name in MCP_CONNECTION} == MCP_CONNECTION
+    assert read({**MCP_CONNECTION, "transport": "future-transport"}).transport == "future-transport"
+
+
+def test_resource_release_filters_by_mcp_availability(monkeypatch):
+    sent = []
+
+    class FakeResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return []
+
+    def _fake_make_request(**kwargs):
+        sent.append(kwargs["payload"])
+        return FakeResponse()
+
+    monkeypatch.setattr(base_mod, "make_request", _fake_make_request)
+
+    models_helpers_mod.ResourceRelease.filter(
+        code_repository_branch_uid=CODE_REPOSITORY_BRANCH_UID, mcp_available="true"
+    )
+
+    assert sent[0]["params"]["mcp_available"] is True
+    with pytest.raises(ValueError, match="Unsupported ResourceRelease filter"):
+        models_helpers_mod.ResourceRelease._normalize_filter_kwargs({"mcp_available__in": [True]})
+
+
+def test_resource_release_patch_sends_mcp_enabled_only_when_set(monkeypatch):
+    sent = []
+    release = models_helpers_mod.ResourceRelease(
+        uid="2f4c4c3d-5669-4da5-9d86-b84633c1e6ed", release_kind="fastapi", mcp_enabled=True
+    )
+
+    class FakeResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {"active_revision": None, "desired_revision": None}
+
+    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
+        sent.append(payload["json"])
+        return FakeResponse()
+
+    monkeypatch.setattr(base_mod, "make_request", _fake_make_request)
+
+    release.patch(mcp_enabled=False)
+    release.patch(revision_retention_count=4)
+
+    assert sent == [{"mcp_enabled": False}, {"revision_retention_count": 4}]

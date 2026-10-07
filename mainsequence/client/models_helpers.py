@@ -822,6 +822,34 @@ class ResourceReleaseRuntimeAccess(BasePydanticModel):
     access: dict[str, Any] | None = Field(default=None, repr=False)
 
 
+class ResourceReleaseMcpConnection(BasePydanticModel):
+    """How to connect to the MCP endpoint of a FastAPI release's active revision."""
+
+    url: str = Field(
+        ...,
+        description="Public MCP endpoint: the release URL plus `/mcp`.",
+        examples=["https://prices.example.test/mcp"],
+    )
+    transport: OpenValueSet[Literal["streamable-http"]] = Field(
+        ...,
+        description=(
+            "MCP transport of the endpoint. A value this SDK does not declare is kept "
+            "but is not a transport to connect with."
+        ),
+        examples=["streamable-http"],
+    )
+    resource_metadata_url: str | None = Field(
+        None,
+        description="OAuth protected-resource metadata URL the endpoint's challenge points to.",
+    )
+    organization_environment_uid: str | None = Field(
+        None, description="Public UID of the connection's Organization Environment."
+    )
+    active_revision_uid: str | None = Field(
+        None, description="Public UID of the revision that advertises the endpoint."
+    )
+
+
 class ResourceRelease(
     CurrentCodeRepositoryBranchCollectionMixin,
     EnvironmentLogSearchMixin,
@@ -853,6 +881,7 @@ class ResourceRelease(
         "resource__uid": ["exact", "in"],
         "related_job__uid": ["exact", "in"],
         "release_kind": ["exact", "in"],
+        "mcp_available": ["exact"],
     }
     FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
         "uid": "uid",
@@ -861,6 +890,7 @@ class ResourceRelease(
         "resource__uid": "uid",
         "related_job__uid": "uid",
         "release_kind": "str",
+        "mcp_available": "bool",
     }
 
     @classmethod
@@ -1004,6 +1034,23 @@ class ResourceRelease(
             "has no workload identity, for example a static-site release."
         ),
         examples=["88888888-8888-4888-8888-888888888888"],
+    )
+    mcp_enabled: bool = Field(
+        False,
+        title="MCP Enabled",
+        description=(
+            "Desired MCP capability of a FastAPI release, applied by its next successful "
+            "deployment. False when the response does not carry it."
+        ),
+        examples=[True],
+    )
+    mcp_connection: ResourceReleaseMcpConnection | None = Field(
+        None,
+        title="MCP Connection",
+        description=(
+            "MCP endpoint of the active MCP-enabled revision; None when no active revision "
+            "advertises one. An advertised capability, not a health check."
+        ),
     )
     observability: ObservabilityLinks | None = Field(
         default=None,

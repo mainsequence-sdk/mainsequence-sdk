@@ -46,6 +46,31 @@ boundary and breaking changes.
 
 ### Added
 
+- `mainsequence.server.fastapi.install_mcp(app, mcp_app, *, lifespan)` serves
+  an application-owned MCP server at `/mcp` inside the request identity
+  (ADR 0038). Only authenticated POSTs reach it; other methods answer 405, an
+  `Origin` other than the release's own or its CORS origins answers 403, an
+  `Mcp-Session-Id` header is removed, and the MCP lifespan runs once inside
+  the application's. Tools read the caller with `User.get_logged_user()`. The
+  launcher-facing declaration is `app.state.mainsequence_mcp`. The new `mcp`
+  extra adds the official MCP Python SDK (`mcp>=1.28,<2`); ordinary
+  installations do not import it.
+- `ResourceRelease` reads `mcp_enabled` and `mcp_connection` and filters on
+  `mcp_available`.
+- A FastAPI application receives requester-bound calls: calls another
+  application, for example an Agent, makes while it works for a person, the
+  requester. The platform signs the requester into the caller assertion as the
+  claim `requester`, an object with exactly `sub` and `team_uids`. The verifier
+  accepts that claim in this exact shape and rejects any other shape.
+  `User.get_requester()` returns the requester as a `RequestUserIdentity` with
+  the signed `team_uids` and `is_organization_admin` false, or `None` when the
+  request is not requester-bound; outside an authenticated request it raises
+  `RequestIdentityError`. `User.get_logged_user()` still returns the caller, the
+  acting application. Inside a requester-bound request `reads_as_caller()`
+  raises `RequestIdentityError`, because the requester's access is not passed
+  on. Earlier SDK releases reject assertions that carry `requester`, so
+  requester-bound calls to an application on an older release fail closed while
+  its other calls are unchanged. ADR-0036 is amended accordingly.
 - `User` reads `workload_name` on listed workload identities: the name of the
   Job, release or Agent, for workloads the caller can view, so search results
   can be labelled without UUIDs (#200). It is `None` on a person, on a lookup
@@ -301,6 +326,19 @@ boundary and breaking changes.
   The backend no longer serves `import-branch/`.
 
 ### Fixed
+
+- Release `9.0.14` made `Team` read a member or creator that is a workload
+  identity (#202).
+  `Team.members` and `Team.created_by` are `UserSummary` rows, which required
+  `username`, `email`, `first_name` and `last_name`. A team row that omitted
+  them for a workload member or creator failed to validate, so `Team.filter`
+  and `Team.get_by_uid` raised for that team, including inside
+  `reads_as_caller()`. The four fields are now `None` when a row omits them or
+  sends `null`, and `UserSummary` reads `member_kind`, `"person"` or
+  `"workload"`, so code can tell workload members apart without parsing names;
+  a kind the SDK does not declare is kept as sent. The same applies to
+  `Team.list_members()`, `Team.list_candidate_members()` and
+  `ShareableAccessState.users`. People read as before.
 
 - Printing, formatting or logging an SDK object that holds a credential no
   longer shows the credential (#192). `RuntimeCredentialAuthProvider` leaves the

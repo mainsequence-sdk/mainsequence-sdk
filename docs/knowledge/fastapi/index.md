@@ -73,6 +73,79 @@ Inside the block, `User.filter`, `User.get_by_uid`, `Team.filter` and `Team.get_
 
 The block needs a signed HTTP request. Outside an authenticated request, in local mode and on WebSockets it raises `RequestIdentityError`; it never reads as the application instead. In local mode the SDK session already belongs to the developer, so reads outside the block answer as that person. The assertion lives at most five minutes and is not renewed, so a read after it expires fails. See [ADR-0036](../../adr/0036-request-scoped-logged-user.md#reads-as-the-caller).
 
+## Requester-bound calls
+
+Another application, for example an Agent, can call this application while it works for a person: the **requester**. The platform then signs the requester into the caller assertion next to the caller. `User.get_logged_user()` still returns the caller, the acting application. `User.get_requester()` returns the requester, or `None` when the request is not requester-bound:
+
+```python
+from fastapi import HTTPException
+from mainsequence.client import User
+
+
+def team_report(team_uid: str) -> dict:
+    requester = User.get_requester()
+    if requester is None:
+        # This operation answers for a person: without a requester, refuse.
+        raise HTTPException(status_code=403, detail="This operation needs a requester.")
+    if team_uid not in requester.team_uids:
+        raise HTTPException(status_code=403, detail="The requester is not in this team.")
+    return {"team_uid": team_uid, "requested_by": requester.uid}
+```
+
+The requester is a `RequestUserIdentity` with the `team_uids` the platform signed, and `is_organization_admin` is always false: a requester's access reaches an application at member level, never an admin's. `get_requester()` returns `None` in local mode, on WebSockets and when the assertion names no requester. Outside an authenticated request, including public routes, it raises `RequestIdentityError`, as `get_logged_user()` does.
+
+- Authorize a requester-bound call against the requester. The acting application, the caller, has no rights of its own unless your policy grants them.
+- Fail closed: when an operation needs a person and `get_requester()` is `None`, refuse it. Never fall back to what the acting application may do.
+- Never trust a person's UID taken from a request body, header or query parameter. Only the signed assertion names the requester, and the SDK has verified that it is addressed to this release.
+- Inside a requester-bound request, `reads_as_caller()` raises `RequestIdentityError`: the requester's access is not passed on to another application, so the request cannot read the directory as its caller.
+
+Earlier SDK releases reject every assertion that carries a requester, so requester-bound calls to an application on an older SDK fail with 401 while its other calls are unchanged. Which applications may act for their requester, and what that access covers, is described in [Applications that act for their requester](../infrastructure/users_and_access.md#applications-that-act-for-their-requester). See [ADR-0036](../../adr/0036-request-scoped-logged-user.md#requester-bound-calls).
+
+## Serving MCP
+
+An application can serve its own MCP server at `/mcp`, next to its HTTP API. Install the `mcp` extra, `pip install "mainsequence[mcp]"`, and pass the server's ASGI app and lifespan to `install_mcp` after `install_request_identity`:
+
+```python
+from fastapi import FastAPI
+from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
+
+from mainsequence.client import User
+from mainsequence.server.fastapi import install_mcp, install_request_identity
+
+mcp = FastMCP(
+    "prices",
+    stateless_http=True,
+    json_response=True,
+    transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
+)
+
+
+@mcp.tool()
+async def latest_price(symbol: str) -> float:
+    caller = User.get_logged_user()
+    ...  # check what this caller may read, then answer
+
+
+app = FastAPI()
+install_request_identity(app)
+install_mcp(app, mcp.streamable_http_app(), lifespan=mcp.session_manager.run)
+```
+
+Tools read the caller with `User.get_logged_user()` and, on a requester-bound call, the person it works for with `User.get_requester()`, as REST handlers do. Admission to the release does not authorize every tool: each tool checks what its caller may do.
+
+The integration:
+
+- serves exactly `/mcp` inside the request identity: only authenticated POSTs reach the server, and a request without a valid caller answers 401 as on any route;
+- serves statelessly: other methods answer 405, and an `Mcp-Session-Id` header is removed, so no request reuses another request's server state;
+- answers 403 to a request whose `Origin` is neither the release's public origin nor one of its CORS origins; clients that send no `Origin`, such as Codex, are unaffected;
+- starts the MCP lifespan once, after the application's, and stops it first; a failed MCP start unwinds the application's and fails startup;
+- refuses a second installation, an existing route under `/mcp` and a public-ingress entry for `/mcp`.
+
+Configure the server as above: stateless, JSON responses, and FastMCP's DNS-rebinding protection off, because its default admits only localhost hosts while the integration checks `Origin` and the platform routes the host. Keep its default path, `/mcp`.
+
+The release advertises its endpoint once its workflow declares `spec.mcp_enabled: true` (workflow API `2.3.0`) and a deployment with it succeeds. Clients connect to that URL and sign in with the platform; the application receives the caller assertion, never the client's token. `ResourceRelease.mcp_connection` gives the URL, and `ResourceRelease.filter(mcp_available=True)` lists releases that advertise one. See [ADR 0038](../../adr/0038-project-mcp-on-fastapi-releases.md).
+
 ## Platform and SDK responsibilities
 
 Django authenticates and signs. The gateway forwards the proof. The application's SDK integration verifies it using deployment-owned trust configuration. PodDeploymentOrchestrator validates that the integration is installed and serves the app without importing or depending on the SDK.

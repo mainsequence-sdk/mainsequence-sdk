@@ -234,7 +234,7 @@ problem.
 
 ## Request-bound caller identity
 
-FastAPI applications install the [SDK request identity integration](../fastapi/index.md) once. Handlers and services call `User.get_logged_user()`. The integration verifies the platform assertion and binds a request scope; it never changes process credentials.
+FastAPI applications install the [SDK request identity integration](../fastapi/index.md) once. Handlers and services call `User.get_logged_user()`. The integration verifies the platform assertion and binds a request scope; it never changes process credentials. On a requester-bound call, made by another application while it works for a person, `User.get_requester()` returns that person; see [Requester-bound calls](../fastapi/index.md#requester-bound-calls).
 
 The gateway consumes the original release Bearer token. Do not put an inbound token into process `MAINSEQUENCE_ACCESS_TOKEN` or select `session_jwt` for each HTTP caller. The runtime's SDK authentication remains independent. Inside `reads_as_caller()`, the directory reads also present the caller's assertion; see [Reading the directory as the caller](../fastapi/index.md#reading-the-directory-as-the-caller).
 
@@ -395,6 +395,14 @@ full `User` account and it does not identify the release owner or the
 application's own runtime workload principal. `User.get_by_uid(uid)` reads the
 caller's User; see
 [Workload identities](users_and_access.md#workload-identities).
+
+`User.get_requester()` returns the requester of a requester-bound request, the
+person the calling application works for, as the same type, or `None` when the
+request is not requester-bound. Authorize such a request against the requester,
+give the acting application no rights of its own unless your policy grants
+them, fail closed when an operation needs a person and there is none, and never
+take a person's UID from a request body, header or query parameter. See
+[Requester-bound calls](../fastapi/index.md#requester-bound-calls).
 
 For FastAPI releases, install SDK request identity once and use `User.get_logged_user()` in handlers and services. Request-state fields are compatibility projections of that same identity; resource policy remains application-owned.
 

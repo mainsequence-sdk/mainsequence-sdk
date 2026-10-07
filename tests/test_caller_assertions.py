@@ -112,6 +112,121 @@ def test_rejects_partial_or_malformed_caller_facts(keys, changes):
         verifier(lambda: {"keys": [public]}).verify(token(key, **changes))
 
 
+# --- Requester-bound calls (ADR-0036) ----------------------------------------------
+#
+# Another application calls while it works for a person, the requester. The
+# assertion's `sub` and facts stay the caller's, the acting application, and
+# `requester` names the person: exactly `sub` and `team_uids`, never an admin flag.
+
+PERSON = "5b0f9a8e-3c2d-4e1f-9a7b-6c5d4e3f2a1b"
+REQUESTER = {"sub": PERSON, "team_uids": TEAMS}
+
+
+def test_exposes_the_requester_beside_the_acting_caller(keys):
+    key, public = keys[0]
+    check = verifier(lambda: {"keys": [public]})
+
+    caller = check.verify(
+        token(key, team_uids=TEAMS, is_organization_admin=False, requester=REQUESTER)
+    )
+
+    assert (caller.user_uid, caller.team_uids, caller.is_organization_admin) == (
+        USER,
+        tuple(TEAMS),
+        False,
+    )
+    assert caller._requester.user_uid == PERSON
+    assert caller._requester.team_uids == tuple(TEAMS)
+    assert not hasattr(caller._requester, "is_organization_admin")
+
+
+def test_a_requester_without_teams_beside_a_caller_without_facts(keys):
+    key, public = keys[0]
+
+    caller = verifier(lambda: {"keys": [public]}).verify(
+        token(key, requester={"sub": PERSON, "team_uids": []})
+    )
+
+    assert (caller.user_uid, caller.team_uids, caller.is_organization_admin) == (USER, (), False)
+    assert caller._requester.user_uid == PERSON
+    assert caller._requester.team_uids == ()
+
+
+def test_a_call_that_is_not_requester_bound_has_no_requester(keys):
+    key, public = keys[0]
+    check = verifier(lambda: {"keys": [public]})
+
+    assert check.verify(token(key))._requester is None
+    assert check.verify(token(key, team_uids=TEAMS, is_organization_admin=True))._requester is None
+
+
+@pytest.mark.parametrize(
+    "requester",
+    [
+        None,
+        PERSON,
+        [PERSON, TEAMS],
+        {},
+        {"sub": PERSON},
+        {"team_uids": TEAMS},
+        {"sub": PERSON, "team_uids": TEAMS, "is_organization_admin": False},
+        {"sub": PERSON, "team_uids": TEAMS, "username": "person"},
+        {"sub": PERSON.upper(), "team_uids": TEAMS},
+        {"sub": PERSON.replace("-", ""), "team_uids": TEAMS},
+        {"sub": "not-a-uuid", "team_uids": TEAMS},
+        {"sub": None, "team_uids": TEAMS},
+        {"sub": 1, "team_uids": TEAMS},
+        {"sub": PERSON, "team_uids": None},
+        {"sub": PERSON, "team_uids": TEAMS[0]},
+        {"sub": PERSON, "team_uids": [1]},
+        {"sub": PERSON, "team_uids": [TEAMS[0].upper()]},
+        {"sub": PERSON, "team_uids": list(reversed(TEAMS))},
+        {"sub": PERSON, "team_uids": [TEAMS[0], TEAMS[0]]},
+    ],
+    ids=[
+        "null",
+        "string",
+        "list",
+        "empty",
+        "missing_team_uids",
+        "missing_sub",
+        "admin_flag",
+        "extra_key",
+        "uppercase_sub",
+        "unhyphenated_sub",
+        "invalid_sub",
+        "null_sub",
+        "integer_sub",
+        "null_team_uids",
+        "string_team_uids",
+        "integer_team_uid",
+        "uppercase_team_uid",
+        "unsorted_team_uids",
+        "duplicate_team_uids",
+    ],
+)
+def test_rejects_a_malformed_requester(keys, requester):
+    key, public = keys[0]
+    with pytest.raises(InvalidCallerAssertion):
+        verifier(lambda: {"keys": [public]}).verify(token(key, requester=requester))
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"extra": "not an identity claim"},
+        {"team_uids": TEAMS},
+        {"is_organization_admin": False},
+        {"requester_is_organization_admin": False},
+    ],
+    ids=["unknown_claim", "partial_facts_teams", "partial_facts_admin", "requester_admin_claim"],
+)
+def test_a_requester_admits_no_other_claim(keys, changes):
+    key, public = keys[0]
+    with pytest.raises(InvalidCallerAssertion):
+        verifier(lambda: {"keys": [public]}).verify(token(key, requester=REQUESTER, **changes))
+
+
 def test_returns_verified_identity_without_retaining_raw_assertion(keys):
     key, public = keys[0]
     proof = token(key)
