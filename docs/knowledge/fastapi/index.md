@@ -92,12 +92,20 @@ def team_report(team_uid: str) -> dict:
     return {"team_uid": team_uid, "requested_by": requester.uid}
 ```
 
-The requester is a `RequestUserIdentity` with the `team_uids` the platform signed, and `is_organization_admin` is always false: a requester's access reaches an application at member level, never an admin's. `get_requester()` returns `None` in local mode, on WebSockets and when the assertion names no requester. Outside an authenticated request, including public routes, it raises `RequestIdentityError`, as `get_logged_user()` does.
+The requester is a `RequestUserIdentity` with the `team_uids` the platform signed, and `is_organization_admin` is always false: a requester's access reaches an application at member level, never an admin's. This identity can authorize reads and writes within the person's own rights; it is not a read-only identity or an authorization decision. `get_requester()` returns `None` in local mode, on WebSockets and when the assertion names no requester. Outside an authenticated request, including public routes, it raises `RequestIdentityError`, as `get_logged_user()` does.
 
 - Authorize a requester-bound call against the requester. The acting application, the caller, has no rights of its own unless your policy grants them.
+- For a write, check the requester's permission for the exact object and action before mutating anything. A read grant or team membership alone does not establish edit, run, share or delete permission. The SDK verifies identity; the application owns these checks.
 - Fail closed: when an operation needs a person and `get_requester()` is `None`, refuse it. Never fall back to what the acting application may do.
 - Never trust a person's UID taken from a request body, header or query parameter. Only the signed assertion names the requester, and the SDK has verified that it is addressed to this release.
-- Inside a requester-bound request, `reads_as_caller()` raises `RequestIdentityError`: the requester's access is not passed on to another application, so the request cannot read the directory as its caller.
+- Inside a requester-bound request, `reads_as_caller()` raises `RequestIdentityError`: the receiving application cannot forward a requester-bearing assertion to the platform's directory endpoints. Platform-authorized Agent delegation is a separate platform-owned path; this helper cannot create a binding or forward write authority.
+
+Platform-supported requester-bound writes and Agent delegation keep the original
+person's member-level permissions and request time, with a maximum of 24 hours
+while the work runs. Hosted Agents never receive Secret values. A model-driven
+Agent can be steered by prompt injection, so write tools need explicit
+operation-specific checks. The SDK does not select the person, enable write
+endpoints or extend the lifetime of an inbound request scope.
 
 Earlier SDK releases reject every assertion that carries a requester, so requester-bound calls to an application on an older SDK fail with 401 while its other calls are unchanged. Which applications may act for their requester, and what that access covers, is described in [Applications that act for their requester](../infrastructure/users_and_access.md#applications-that-act-for-their-requester). See [ADR-0036](../../adr/0036-request-scoped-logged-user.md#requester-bound-calls).
 
@@ -134,6 +142,16 @@ install_mcp(app, mcp.streamable_http_app(), lifespan=mcp.session_manager.run)
 
 Tools read the caller with `User.get_logged_user()` and, on a requester-bound call, the person it works for with `User.get_requester()`, as REST handlers do. Admission to the release does not authorize every tool: each tool checks what its caller may do.
 
+A tool called by an Agent on a person's behalf authorizes with
+`User.get_requester()`, for reads and writes alike. A write tool must check that
+person's permission for the target object and action before calling the
+mutating service; it cannot use the calling Agent's grants instead. If the tool
+requires requester-bound authority and there is no requester, fail closed.
+Ordinary calls that do not act for a requester keep their own caller policy.
+MCP tool annotations, a successful connection and permission to read the same
+object do not authorize writes. Keep any required mutation approval in the
+application's policy, not in a model's claim that the user approved it.
+
 The integration:
 
 - serves exactly `/mcp` inside the request identity: only authenticated POSTs reach the server, and a request without a valid caller answers 401 as on any route;
@@ -157,6 +175,14 @@ The existing `request.state.user` and `request.state.user_uid` fields are compat
 ## Local development
 
 Without hosted deployment markers, the integration uses a direct incoming Bearer token and validates it against `MAINSEQUENCE_ENDPOINT/api/v1/users/me/`. The handler still calls the same getter. Local mode cannot override a deployed target or replace a failed assertion. Missing local identity returns 401; an unavailable authenticator returns 503.
+
+MCP behaves the same way locally. `/mcp` takes the same Bearer token as your routes, and there is no sign-in challenge locally, so configure the client, for example Codex, to send your platform token as a fixed `Authorization: Bearer` header.
+
+The `Origin` check reads `FASTAPI_PUBLIC_BASE_URL` and `FASTAPI_CORS_ALLOW_ORIGINS` once, when `install_mcp` runs. In a deployment the platform sets both: the release's URL and its allowed origins. Locally they are usually unset, so the list is empty. A browser, which always sends `Origin`, then gets 403, while Codex, curl and scripts, which send none, are unaffected. To try a browser-based MCP client locally, allow its origin in the environment the app starts with:
+
+```bash
+export FASTAPI_CORS_ALLOW_ORIGINS=http://localhost:3000
+```
 
 ## Public ingress, preflight and WebSockets
 

@@ -398,11 +398,14 @@ caller's User; see
 
 `User.get_requester()` returns the requester of a requester-bound request, the
 person the calling application works for, as the same type, or `None` when the
-request is not requester-bound. Authorize such a request against the requester,
-give the acting application no rights of its own unless your policy grants
+request is not requester-bound. Authorize reads and writes against that person's
+permission for the exact object and operation; the getter verifies identity,
+not permission. Never substitute the Agent's grants for the person's. Give
+the acting application no rights of its own unless your policy grants
 them, fail closed when an operation needs a person and there is none, and never
 take a person's UID from a request body, header or query parameter. See
-[Requester-bound calls](../fastapi/index.md#requester-bound-calls).
+[Requester-bound calls](../fastapi/index.md#requester-bound-calls) for MCP tools
+and [requester access and write risk](users_and_access.md#applications-that-act-for-their-requester).
 
 For FastAPI releases, install SDK request identity once and use `User.get_logged_user()` in handlers and services. Request-state fields are compatibility projections of that same identity; resource policy remains application-owned.
 

@@ -295,8 +295,9 @@ def reads_as_caller():
     it. Raises ``RequestIdentityError`` outside an authenticated request or when
     the request carries no assertion (local mode, WebSockets); it never reads as
     the application instead. It also raises in a requester-bound request
-    (``User.get_requester()`` is not ``None``): the requester's access is not
-    passed on. See ADR-0036.
+    (``User.get_requester()`` is not ``None``): this helper cannot forward a
+    requester-bearing assertion to the directory endpoints. Platform-owned
+    Agent delegation is separate. See ADR-0036.
     """
     with _reads_as_caller():
         yield

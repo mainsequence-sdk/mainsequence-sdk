@@ -135,6 +135,47 @@ def test_tools_read_the_verified_caller_and_rest_routes_keep_working(signed):
     assert "/mcp" not in app.openapi()["paths"]
 
 
+def test_requester_bound_write_checks_the_person_without_workload_fallback(signed):
+    token, _, _ = signed
+    server = _server()
+    report_editors = {USER, OTHER}
+    writes = []
+
+    @server.tool()
+    async def publish_report() -> str:
+        requester = User.get_requester()
+        if requester is None or requester.uid not in report_editors:
+            raise PermissionError("The requester cannot publish this report.")
+        writes.append((User.get_logged_user().uid, requester.uid))
+        return requester.uid
+
+    app = _install(FastAPI(), server)
+    with TestClient(app) as client:
+        allowed = client.post(
+            "/mcp",
+            json=_call("publish_report"),
+            headers={
+                **MCP_HEADERS,
+                ASSERTION_HEADER: token(requester={"sub": OTHER, "team_uids": []}),
+            },
+        )
+        assert _text(allowed) == OTHER
+
+        for proof in (
+            token(requester={"sub": str(uuid4()), "team_uids": []}),
+            token(),
+        ):
+            refused = client.post(
+                "/mcp",
+                json=_call("publish_report"),
+                headers={**MCP_HEADERS, ASSERTION_HEADER: proof},
+            )
+            assert refused.status_code == 200
+            assert refused.json()["result"]["isError"] is True
+
+    assert writes == [(USER, OTHER)]
+
+
 def test_concurrent_callers_keep_their_own_identity(signed):
     token, _, _ = signed
     server = _server()

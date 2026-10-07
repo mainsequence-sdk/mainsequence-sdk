@@ -240,14 +240,26 @@ whose own request it is serving. The platform setting is `acts_for_requester`.
 
 ### What the requester's access covers
 
-- Read only: the application never changes, shares or deletes anything with it.
+- Reads and the creates, updates, runs, sharing changes and deletes the person
+  may make, where the platform endpoint supports requester-bound access.
+- Check the person's permission for the exact object and operation on every
+  call. A read grant or team membership alone does not authorize a write.
 - The requester's member level, never an admin's, even when the requester is
   an Organization admin.
-- Never secret values.
+- Hosted Agents never receive Secret values, including through this access.
 - At most 24 hours after the person's request, and only while the work for that
   request runs.
 - Checked again on every call, so it stops the moment the person's access ends.
-- Never passed on to another application.
+- Platform-authorized Agent-to-Agent delegation keeps the person who started
+  the work and the original request time. Each delegated Agent must itself be
+  enabled to act for its requester. Delegation cannot restart the time limit,
+  select another person or increase their permissions.
+- A receiving application cannot forward its inbound assertion to establish
+  another requester binding. `reads_as_caller()` still refuses these requests.
+
+These writes and delegation require platform support; installing this SDK does
+not enable them. Treat a refused operation as refused, never retry it with the
+application's own grants.
 
 ### Never accept a person's UID from a request
 
@@ -255,19 +267,32 @@ The requester comes only from the platform. An application never accepts a
 person's UID from a request body, header or query parameter, and never lets a
 caller choose whom it acts for. A FastAPI application that receives a
 requester-bound call reads the requester with `User.get_requester()` and
-authorizes the call against that person:
+authorizes reads and writes against that person's object- and operation-specific
+permissions:
 `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`.
 
 ### What people are told
 
-Every client that shows an application with `acts_for_requester` shows this
-statement:
+Every client that shows an application with `acts_for_requester` uses the exact
+platform-approved statement from
+[Platform ADR-0051, What people are told](https://github.com/Main-Sequence-Server-Side/tdag-django/blob/development/docs/platform/adr/adr-0051-requester-bound-access-for-workloads.md#11-what-people-are-told).
+Do not invent or paraphrase a separate SDK statement. For write-enabled
+deployments, the approved wording must cover supported reads and writes within
+the person's member-level permissions, Organization-admin approval without
+admin powers or Secret values, the original 24-hour limit including delegation,
+access revocation, and prompt-injection risk. Never present a write-enabled
+Agent as read-only or claim that it cannot change, share or delete anything.
 
-> **This Agent works with your identity, securely.** It reads only what you can already read, only to answer your own requests, and for at most 24 hours after you ask. It cannot act as anyone else, cannot change, share or delete anything, never sees your secret values, and stops the moment your access ends. Your Organization's administrator approved it to work this way.
+The platform behavior and approved write-enabled statement must ship together.
+If the platform still supplies only the earlier read-only text, do not claim
+the disclosure is ready for a write-enabled rollout or invent replacement words.
 
-Show the plain limit with it: while it works on your request, the Agent's code
-can read what you can read, which is why only administrators decide which
-Agents may work this way.
+Explain the risk alongside the statement: a model-driven Agent can be steered
+by prompt injection. Its reads and writes can reach as far as the person's
+member-level permissions allow, including sharing and deleting where
+supported, for at most 24 hours after the original request. Only Organization
+admins decide which Agents may receive this authority; the application's
+per-operation permission checks remain necessary.
 
 ## Review Rules
 
@@ -286,6 +311,8 @@ When reviewing an access-control task, look for:
 - an application that takes a person's UID from a request instead of from the
   platform
 - `acts_for_requester` presented as something a non-admin can enable
+- a requester-bound write authorized only by a read grant or the Agent's grants
+- prompt-injection risk hidden behind a claim that requester access is read-only
 
 ## Validation Checklist
 
@@ -304,6 +331,8 @@ Do not claim success until you have checked:
 - the task did not confuse sharing policy with orchestration or producer logic
 - an application that acts for its requester takes the person only from the
   platform, and its own grants are intentional
+- requester-bound writes enforce the person's permission for the operation,
+  and clients explain both the write risk and the original 24-hour limit
 
 ## This Skill Must Stop And Escalate When
 

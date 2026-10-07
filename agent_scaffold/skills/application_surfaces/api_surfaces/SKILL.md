@@ -191,6 +191,10 @@ def team_report(team_uid: str) -> dict[str, str]:
 
 - Authorize a requester-bound call against the requester. The acting
   application has no rights of its own unless the API's policy grants them.
+- The requester can authorize reads and writes within that person's own
+  member-level permissions. Before a write, check the exact object and action;
+  the example's team-membership check is not a general edit, run, share or
+  delete grant. The getter verifies identity, not operation permission.
 - Fail closed: an operation that needs a person refuses the call when
   `User.get_requester()` is `None`. Never fall back to the caller's rights.
 - Never read a person's UID from the request body, a header or a query
@@ -201,9 +205,20 @@ def team_report(team_uid: str) -> dict[str, str]:
   `is_organization_admin` is always `False`: a requester's access reaches the
   API at member level only.
 - Inside a requester-bound call, `reads_as_caller()` raises
-  `RequestIdentityError`: the requester's access is not passed on.
-- Test both paths: the requester-bound call authorized against the requester,
-  and the same operation refused without a requester.
+  `RequestIdentityError`: a receiving application cannot forward its inbound
+  requester-bearing assertion to the directory endpoints. Platform-authorized
+  Agent delegation is separate and keeps the original person and request time.
+- Hosted Agents never receive Secret values. The platform bounds work to at
+  most 24 hours after the original request and checks access on every call;
+  delegation does not restart that limit. This SDK does not enable platform
+  write endpoints or extend the inbound request scope.
+- A model-driven Agent can be steered by prompt injection. Its writes can
+  cause damage within the person's permissions; keep object/action checks and
+  any mutation approval required by the application's policy outside model
+  claims or tool arguments.
+- Test requester-authorized reads and writes, writes refused for a requester
+  without the necessary grant, and requester-required operations refused
+  without a requester even when the calling Agent has its own grants.
 
 Which applications may act for their requester, what that access covers, and
 what people are told:
@@ -218,7 +233,12 @@ To serve MCP tools from the same application, add the `mcp` extra and call
 after `install_request_identity(app)`, with a stateless FastMCP server that
 returns JSON. Tools authorize with `User.get_logged_user()` and
 `User.get_requester()` exactly like REST handlers; admission to the release
-does not authorize every tool. See
+does not authorize every tool. For a tool invoked by an Agent on a person's
+behalf, check that requester for both reads and writes. Refuse a
+requester-required write when the getter returns `None`, and verify object- and
+action-specific permission before mutation; read access and MCP annotations are not
+write authority. Ordinary non-requester calls retain their own caller policy.
+See
 [Serving MCP](https://mainsequence-sdk.github.io/mainsequence-sdk/knowledge/fastapi/#serving-mcp).
 
 ### Public provider callbacks and webhooks
