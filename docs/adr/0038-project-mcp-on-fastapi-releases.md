@@ -122,7 +122,11 @@ the application's existing job authority.
 
 Application code owns operation and data permissions. Admission to a release
 does not authorize every tool, and a read-only tool annotation is not access
-control. Workload credentials stay separate from the inbound caller, and the
+control. A requester-bound write checks the verified person's permission for
+the target object and operation before mutating anything, and fails closed if
+the tool needs a requester and none is present. Reading the object or the
+calling Agent's own grants cannot authorize the write. Workload credentials
+stay separate from the inbound caller, and the
 integration adds no delegation: `reads_as_caller()` keeps its directory-read
 scope and its refusal in requester-bound calls.
 

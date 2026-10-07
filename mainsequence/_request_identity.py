@@ -79,8 +79,8 @@ def _reads_as_caller():
         )
     if scope.requester is not None:
         raise RequestIdentityError(
-            "This request is requester-bound. The requester's access is not passed on, "
-            "so a requester-bound request cannot read as its caller."
+            "This request is requester-bound. reads_as_caller() cannot forward a "
+            "requester-bearing assertion to the directory endpoints."
         )
     if scope.caller_assertion is None:
         raise RequestIdentityError(

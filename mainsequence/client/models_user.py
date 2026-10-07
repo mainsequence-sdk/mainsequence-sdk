@@ -1321,11 +1321,20 @@ class User(_CallerDirectoryReadMixin, UserApiBaseObjectOrm, BasePydanticModel):
         local mode and WebSockets. Raises ``RequestIdentityError`` outside an
         authenticated request, as ``get_logged_user()`` does.
 
-        Authorize a requester-bound request against the requester, and give the
-        acting application no rights of its own unless your policy grants them.
+        Authorize reads and writes against the requester's permission for the
+        exact object and operation. This getter verifies identity, not
+        authorization; read access or team membership does not authorize a
+        write. Give the acting application no rights of its own unless your
+        policy grants them.
         An operation that needs a person fails closed when this is ``None``.
         Never take a person's UID from a request body, header or query
-        parameter instead.
+        parameter instead. Platform-supported requester-bound writes stay
+        within the person's member-level rights, never admin powers or Secret
+        values. The platform checks access on every call and limits the work to
+        at most 24 hours after the original request, including across approved
+        Agent delegation. A model-driven Agent can be steered by prompt
+        injection, so per-operation checks remain necessary. This getter does
+        not enable platform write endpoints or extend its request scope.
         """
         requester = _get_requester()
         if requester is not None and not isinstance(requester, RequestUserIdentity):

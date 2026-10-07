@@ -749,7 +749,7 @@ def test_caller_assertion_stays_out_of_repr_and_error_messages(monkeypatch):
 
 
 def test_reads_as_caller_refuses_a_requester_bound_request(monkeypatch):
-    """The requester's access is not passed on: the helper refuses before any read."""
+    """The helper refuses requester-bearing assertions before any directory read."""
     sent = _record(monkeypatch)
 
     with _request_scope() as context:

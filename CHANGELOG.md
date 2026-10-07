@@ -67,8 +67,9 @@ boundary and breaking changes.
   request is not requester-bound; outside an authenticated request it raises
   `RequestIdentityError`. `User.get_logged_user()` still returns the caller, the
   acting application. Inside a requester-bound request `reads_as_caller()`
-  raises `RequestIdentityError`, because the requester's access is not passed
-  on. Earlier SDK releases reject assertions that carry `requester`, so
+  raises `RequestIdentityError`: it cannot forward a requester-bearing
+  assertion to the directory endpoints. Earlier SDK releases reject
+  assertions that carry `requester`, so
   requester-bound calls to an application on an older release fail closed while
   its other calls are unchanged. ADR-0036 is amended accordingly.
 - `User` reads `workload_name` on listed workload identities: the name of the
@@ -156,6 +157,17 @@ boundary and breaking changes.
   published while the suite is failing.
 
 ### Changed
+
+- Document requester-bound reads and platform-supported writes within the
+  person's own member-level permissions (#206), including the original
+  request's 24-hour maximum across platform-authorized Agent delegation,
+  Secret-value exclusion and prompt-injection risk. FastAPI/MCP guidance and
+  packaged skills require operation-specific authorization with
+  `User.get_requester()` and no fallback to the acting Agent's grants. The
+  retired read-only disclosure is removed; clients must use the platform's
+  exact approved statement coordinated with the write-enabled rollout. The
+  assertion schema, request lifetime and `reads_as_caller()` restrictions are
+  unchanged; this SDK update does not enable platform write endpoints.
 
 - `User.username`, `User.email`, `User.date_joined`, `User.api_request_limit`
   and `User.mfa_enabled` are optional and `None` when a response does not carry
