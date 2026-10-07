@@ -161,11 +161,18 @@ whose own request it is serving, with the platform setting
 - An application that should act only for people, for example a data analyst
   Agent, holds no grants of its own.
 
-Requester-bound access covers reads and, where the platform endpoint opts in,
-the creates, updates, runs, sharing changes and deletes the person may make.
-Every operation is checked against that person's own member-level permissions,
-never the acting Agent's grants or Organization-admin powers. Hosted Agents
-never receive Secret values, including through requester-bound access.
+The platform applies one rule to every call an Agent makes for its work:
+
+| Request | Permissions used |
+| --- | --- |
+| No delegation | The caller's own ordinary permissions: a person, or the calling workload |
+| Valid delegation | The person's ordinary permissions, including administrative ones |
+| Invalid or expired delegation | None: the call is rejected, never switched to another identity |
+
+Requester-bound access covers the reads, creates, updates, runs, sharing
+changes and deletes the person may make through supported operations. Every
+operation is checked against that person, never against the acting Agent's
+grants, and the two are never combined.
 
 The access lasts at most 24 hours after the person's original request, and only
 while the turn or Task serving it runs. The platform checks it again on every
@@ -177,46 +184,36 @@ to act for its requester; delegation cannot select another person, increase
 their permissions or restart the 24-hour limit. A receiving application cannot
 forward its inbound assertion to create another requester binding.
 
-Write support and this delegation behavior require the corresponding platform
-implementation. Updating the SDK does not enable them or turn a refused call
-into the application's own call.
+The platform decides which operations support requester-bound access. Updating
+the SDK does not enable an operation or turn a refused call into the
+application's own call.
 
 Nobody names the requester in a request. An application never accepts a
 person's UID from a request body, header or query parameter: the person comes
 only from the platform. An application that receives a requester-bound call
-reads the requester with `User.get_requester()` and checks that person's
-permission for the exact object and operation, for reads and writes alike; see
+reads the requester with `User.get_requester()`, the person's own `uid`,
+`team_uids` and `is_organization_admin`, and checks that person's permission
+for the exact object and operation, for reads and writes alike. Each handler or
+tool decides whether it needs a person; see
 [Requester-bound calls](../fastapi/index.md#requester-bound-calls).
 
 ### What people are told
 
-Every client that shows an application with `acts_for_requester` uses the exact
-platform-approved statement from
-[Platform ADR-0051, What people are told](https://github.com/Main-Sequence-Server-Side/tdag-django/blob/development/docs/platform/adr/adr-0051-requester-bound-access-for-workloads.md#11-what-people-are-told).
-The platform owns that wording; do not create a separate SDK or client version.
-For a write-enabled deployment it must disclose:
+Every client that shows an application with `acts_for_requester` shows the
+platform's statement, exactly:
 
-- reads and supported writes, including creates, updates, runs, sharing and
-  deletes, within the person's own member-level permissions;
-- approval by an Organization admin, without granting admin powers or access
-  to Secret values;
-- at most 24 hours from the person's original request, with access checked
-  again on every call and no extension through Agent delegation; and
-- prompt-injection risk: a model-driven Agent's writes can cause damage within
-  those permissions.
+> **This Agent works with your identity.** It can read, create, change, run, share or delete only what your permissions allow through supported operations, only while serving your request, and for at most 24 hours after you ask. It uses your ordinary permissions, including administrative permissions, and access is checked on every call. Your Organization's administrator approved it to work this way.
 
-Do not describe a write-enabled Agent as read-only or promise that it cannot
-change, share or delete anything. The approved write-enabled statement and the
-matching platform behavior must ship together. If the platform still publishes
-only the earlier read-only wording, the client disclosure is not ready for a
-write-enabled rollout; this SDK update does not approve replacement words.
+Do not paraphrase or shorten it, and do not describe such an Agent as
+read-only or promise that it cannot change, share or delete anything.
 
 The plain risk: a model-driven Agent can be steered by prompt injection. Its
-reads and writes can reach as far as the person's member-level permissions
-allow, including sharing or deleting accessible objects where supported, for
-at most 24 hours after the original request. A read grant does not authorize a
-write. This is why only Organization admins decide which Agents may act for
-people, and why every operation still needs its own authorization check.
+reads and writes can reach as far as the person's ordinary permissions allow,
+administrative ones included, such as sharing or deleting accessible objects
+through supported operations, for at most 24 hours after the original request.
+A read grant does not authorize a write. This is why only Organization admins
+decide which Agents may act for people, and why every operation still needs its
+own authorization check.
 
 ## Roles
 

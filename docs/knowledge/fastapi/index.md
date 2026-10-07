@@ -27,7 +27,7 @@ def me():
 
 The result contains a canonical User `uid` and optional `username`. Signed HTTP proofs contain no username, so it is null. Outside an authenticated request, including public routes, the getter raises `RequestIdentityError`. A copied task context cannot retain the user after its owning request ends.
 
-For a signed HTTP request the result also carries what the platform states about the caller: `team_uids`, the canonical UIDs of the caller's active teams, and `is_organization_admin`, whether the caller is an admin of the application's Organization. An application can evaluate its own policies from them without calling the platform; workload callers are covered through the teams they belong to. Local development and WebSocket requests carry no such facts, so `team_uids` is empty and `is_organization_admin` is false, as for an assertion from a platform that does not send them yet.
+For a signed HTTP request the result also carries what the platform states about the caller: `team_uids`, the canonical UIDs of the caller's active teams, and `is_organization_admin`, whether the caller is an admin of the application's Organization. An application can evaluate its own policies from them without calling the platform; workload callers are covered through the teams they belong to. The platform signs both into every assertion, and an assertion without them is rejected with 401. Local development and WebSocket requests carry no such facts, so `team_uids` is empty and `is_organization_admin` is false.
 
 ```python
 from mainsequence.client import User
@@ -75,7 +75,11 @@ The block needs a signed HTTP request. Outside an authenticated request, in loca
 
 ## Requester-bound calls
 
-Another application, for example an Agent, can call this application while it works for a person: the **requester**. The platform then signs the requester into the caller assertion next to the caller. `User.get_logged_user()` still returns the caller, the acting application. `User.get_requester()` returns the requester, or `None` when the request is not requester-bound:
+Another application, for example an Agent, can call this application while it works for a person: the **requester**. The platform then signs the requester into the caller assertion next to the caller. `User.get_logged_user()` still returns the caller, the acting application. `User.get_requester()` returns the requester, the checked delegation, or `None` when the request carries no delegation.
+
+The requester is a `RequestUserIdentity` with the person's own `uid`, `team_uids` and `is_organization_admin`, as the platform signed them. A requester-bound call carries the person's ordinary permissions, including administrative ones. The SDK verifies the delegation before any handler runs: an invalid one rejects the request with 401 and never falls back to the caller. `get_requester()` returns `None` in local mode, on WebSockets and when the assertion names no requester. Outside an authenticated request, including public routes, it raises `RequestIdentityError`, as `get_logged_user()` does.
+
+Each handler decides whether it needs a person. One that needs a person fails with its own error when there is none:
 
 ```python
 from fastapi import HTTPException
@@ -87,27 +91,27 @@ def team_report(team_uid: str) -> dict:
     if requester is None:
         # This operation answers for a person: without a requester, refuse.
         raise HTTPException(status_code=403, detail="This operation needs a requester.")
-    if team_uid not in requester.team_uids:
-        raise HTTPException(status_code=403, detail="The requester is not in this team.")
+    if not (requester.is_organization_admin or team_uid in requester.team_uids):
+        raise HTTPException(status_code=403, detail="The requester cannot read this report.")
     return {"team_uid": team_uid, "requested_by": requester.uid}
 ```
 
-The requester is a `RequestUserIdentity` with the `team_uids` the platform signed, and `is_organization_admin` is always false: a requester's access reaches an application at member level, never an admin's. This identity can authorize reads and writes within the person's own rights; it is not a read-only identity or an authorization decision. `get_requester()` returns `None` in local mode, on WebSockets and when the assertion names no requester. Outside an authenticated request, including public routes, it raises `RequestIdentityError`, as `get_logged_user()` does.
+One where the person is optional authorizes against the person when present, and against the caller otherwise:
 
-- Authorize a requester-bound call against the requester. The acting application, the caller, has no rights of its own unless your policy grants them.
-- For a write, check the requester's permission for the exact object and action before mutating anything. A read grant or team membership alone does not establish edit, run, share or delete permission. The SDK verifies identity; the application owns these checks.
-- Fail closed: when an operation needs a person and `get_requester()` is `None`, refuse it. Never fall back to what the acting application may do.
-- Never trust a person's UID taken from a request body, header or query parameter. Only the signed assertion names the requester, and the SDK has verified that it is addressed to this release.
+```python
+def can_publish(team_uid: str) -> bool:
+    actor = User.get_requester() or User.get_logged_user()
+    return actor.is_organization_admin or team_uid in actor.team_uids
+```
+
+- Authorize against one identity: the person on a requester-bound call, the caller on any other. Never combine the caller's grants with the person's, and never fall back to what the acting application may do when the person may not.
+- For a write, check that identity's permission for the exact object and action before mutating anything. A read grant or team membership alone does not establish edit, run, share or delete permission. The SDK verifies identity; the application owns these checks.
+- Never parse the assertion, headers or MCP `_meta` yourself, and never trust a person's UID taken from a request body, header or query parameter. Only the signed assertion names the requester, and the SDK has verified that it is addressed to this release.
 - Inside a requester-bound request, `reads_as_caller()` raises `RequestIdentityError`: the receiving application cannot forward a requester-bearing assertion to the platform's directory endpoints. Platform-authorized Agent delegation is a separate platform-owned path; this helper cannot create a binding or forward write authority.
 
-Platform-supported requester-bound writes and Agent delegation keep the original
-person's member-level permissions and request time, with a maximum of 24 hours
-while the work runs. Hosted Agents never receive Secret values. A model-driven
-Agent can be steered by prompt injection, so write tools need explicit
-operation-specific checks. The SDK does not select the person, enable write
-endpoints or extend the lifetime of an inbound request scope.
+The platform checks access on every call and limits requester-bound work to at most 24 hours after the person's request, including across Agent delegation. A model-driven Agent can be steered by prompt injection, so write tools need explicit operation-specific checks. The SDK does not select the person, enable platform endpoints or extend the lifetime of an inbound request scope.
 
-Earlier SDK releases reject every assertion that carries a requester, so requester-bound calls to an application on an older SDK fail with 401 while its other calls are unchanged. Which applications may act for their requester, and what that access covers, is described in [Applications that act for their requester](../infrastructure/users_and_access.md#applications-that-act-for-their-requester). See [ADR-0036](../../adr/0036-request-scoped-logged-user.md#requester-bound-calls).
+SDK releases up to 9.0.17 reject the requester claim the platform now signs, with its `is_organization_admin`, so requester-bound calls to an application on such a release fail with 401 while its other calls are unchanged. This release rejects the earlier two-field requester and any assertion without the caller's `team_uids` and `is_organization_admin`, so it works only with the updated platform. Which applications may act for their requester, and what that access covers, is described in [Applications that act for their requester](../infrastructure/users_and_access.md#applications-that-act-for-their-requester). See [ADR-0036](../../adr/0036-request-scoped-logged-user.md#requester-bound-calls).
 
 ## Serving MCP
 
@@ -142,19 +146,23 @@ install_mcp(app, mcp.streamable_http_app(), lifespan=mcp.session_manager.run)
 
 Tools read the caller with `User.get_logged_user()` and, on a requester-bound call, the person it works for with `User.get_requester()`, as REST handlers do. Admission to the release does not authorize every tool: each tool checks what its caller may do.
 
-A tool called by an Agent on a person's behalf authorizes with
-`User.get_requester()`, for reads and writes alike. A write tool must check that
-person's permission for the target object and action before calling the
-mutating service; it cannot use the calling Agent's grants instead. If the tool
-requires requester-bound authority and there is no requester, fail closed.
-Ordinary calls that do not act for a requester keep their own caller policy.
-MCP tool annotations, a successful connection and permission to read the same
-object do not authorize writes. Keep any required mutation approval in the
-application's policy, not in a model's claim that the user approved it.
+Each tool decides whether it needs a person, as in
+[Requester-bound calls](#requester-bound-calls). A tool that needs one fails
+with its own error when `User.get_requester()` is `None`. A tool where the
+person is optional authorizes against `User.get_requester()` when present, and
+against `User.get_logged_user()` otherwise. A write tool checks that identity's
+permission for the target object and action before calling the mutating
+service; on a requester-bound call it can neither use the calling Agent's
+grants instead of the person's nor add them to the person's. Tools never read
+the assertion, headers or MCP `_meta` to find a person. MCP tool annotations, a
+successful connection and permission to read the same object do not authorize
+writes. Keep any required mutation approval in the application's policy, not in
+a model's claim that the user approved it.
 
 The integration:
 
 - serves exactly `/mcp` inside the request identity: only authenticated POSTs reach the server, and a request without a valid caller answers 401 as on any route;
+- keeps each call's identity in the tasks its tool starts and in the worker threads it uses through `asyncio.to_thread` or anyio's `to_thread.run_sync`, and ends it with the call, by completion, failure or cancellation; a thread that receives no copy of the context, such as one from `loop.run_in_executor`, has no identity;
 - serves statelessly: other methods answer 405, and an `Mcp-Session-Id` header is removed, so no request reuses another request's server state;
 - answers 403 to a request whose `Origin` is neither the release's public origin nor one of its CORS origins; clients that send no `Origin`, such as Codex, are unaffected;
 - starts the MCP lifespan once, after the application's, and stops it first; a failed MCP start unwinds the application's and fails startup;

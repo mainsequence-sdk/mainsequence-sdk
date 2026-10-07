@@ -67,14 +67,18 @@ def test_requester_getter_requires_authenticated_request():
 
 def test_requester_getter_returns_the_requester_beside_the_unchanged_caller():
     caller = RequestUserIdentity(uid=USER_UID)
-    requester = RequestUserIdentity(uid=REQUESTER_UID, team_uids=[TEAM_UID])
+    requester = RequestUserIdentity(
+        uid=REQUESTER_UID, team_uids=[TEAM_UID], is_organization_admin=True
+    )
     with _request_scope() as context:
         context.user = caller
         assert User.get_requester() is None
         context.requester = requester
         assert User.get_requester() is requester
         assert User.get_requester().team_uids == (TEAM_UID,)
-        assert User.get_requester().is_organization_admin is False
+        # The person's own admin flag, never the caller's.
+        assert User.get_requester().is_organization_admin is True
+        assert User.get_logged_user().is_organization_admin is False
         assert User.get_logged_user() is caller
     assert context.requester is None
     with pytest.raises(RequestIdentityError):
