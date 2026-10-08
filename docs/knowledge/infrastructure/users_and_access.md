@@ -157,7 +157,10 @@ whose own request it is serving, with the platform setting
   `PATCH /api/v1/workload-users/<workload_user_uid>/`, or in code, by declaring
   `acts_for_requester: true` on the resource in the repository workflow file.
   A declaration takes effect only when the person who pushed it is an
-  Organization admin; otherwise that resource fails before it deploys.
+  Organization admin; otherwise that resource fails before it deploys. A push
+  made by a bot right after an admin's push, for example a GitHub Actions
+  release job that commits the next version, keeps that admin's authority when
+  it leaves the workflow file unchanged.
 - An application that should act only for people, for example a data analyst
   Agent, holds no grants of its own.
 
