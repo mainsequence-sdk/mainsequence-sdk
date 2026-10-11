@@ -355,6 +355,18 @@ boundary and breaking changes.
 
 ### Fixed
 
+- A2A calls end within their `timeout` (#214). On
+  `AgentSession.send_a2a_message`, `get_a2a_task` and `cancel_a2a_task`, and on
+  `mainsequence agent session a2a send --timeout`, a numeric `timeout` limited
+  only the silence between two socket reads, so a runtime that kept sending its
+  answer slowly held the call open with no overall limit. It is now one total
+  budget for the whole call, response body included, as for other SDK calls. A
+  `(connect, read)` tuple keeps its phase limits with a total equal to their
+  sum, and the default stays `(5, 900)`, 905 seconds in total. When the budget
+  runs out the call raises `requests.Timeout`, and the message may already have
+  reached the runtime. A budget can only shorten a wait; it cannot extend a
+  platform limit.
+
 - Release `9.0.14` made `Team` read a member or creator that is a workload
   identity (#202).
   `Team.members` and `Team.created_by` are `UserSummary` rows, which required

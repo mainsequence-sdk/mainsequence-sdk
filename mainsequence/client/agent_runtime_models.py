@@ -11,6 +11,7 @@ from typing import Any, ClassVar, Literal
 import requests
 from pydantic import ConfigDict, Field, model_validator
 
+from ._transport import request_budget, request_within_budget
 from .base import (
     BaseObjectOrm,
     BasePydanticModel,
@@ -463,6 +464,11 @@ def _runtime_access_blocked_message(access: AgentSessionRuntimeAccess) -> str:
     if access.detail and access.detail.strip():
         return f"Coding-agent runtime access is unavailable. {access.detail.strip()}"
     return "Coding-agent runtime access is unavailable."
+
+
+def _a2a_call_timeout(timeout):
+    """The total budget of one A2A call: the caller's timeout or the A2A default."""
+    return DEFAULT_AGENT_SESSION_LONG_REQUEST_TIMEOUT if timeout is None else timeout
 
 
 def _runtime_access_retry_seconds(access: AgentSessionRuntimeAccess) -> float:
@@ -1258,18 +1264,18 @@ class AgentSession(
         if not isinstance(access.token, str) or not access.token.strip():
             raise ApiError("Runtime access response is missing token.")
         url = _join_runtime_url(access.rpc_url, STANDARD_A2A_MESSAGE_SEND_PATH)
-        request_timeout = DEFAULT_AGENT_SESSION_LONG_REQUEST_TIMEOUT if timeout is None else timeout
         headers = {
             "Authorization": f"Bearer {access.token.strip()}",
             "Content-Type": STANDARD_A2A_CONTENT_TYPE,
             "Accept": STANDARD_A2A_CONTENT_TYPE,
             "A2A-Extensions": STANDARD_A2A_RESPONSE_KIND_EXTENSION_URI,
         }
-        return requests.post(
+        return request_within_budget(
+            "POST",
             url,
             headers=headers,
             data=json.dumps(serialize_to_json(body)),
-            timeout=request_timeout,
+            timeout=_a2a_call_timeout(timeout),
         )
 
     @staticmethod
@@ -1306,53 +1312,53 @@ class AgentSession(
     ) -> A2AMessageSendResult:
         """
         Send one standard A2A message to the runtime for this agent session.
+
+        ``timeout`` is one total budget for the whole call: a number of seconds,
+        or a ``(connect, read)`` tuple whose total is their sum. It covers Agent
+        discovery for Task mode, resolving runtime access, the request and the
+        whole response, and is ``(5, 900)`` when omitted. It can only shorten
+        the wait; it cannot extend a platform limit. When it runs out the call
+        raises ``requests.Timeout``, and the message may already have reached
+        the runtime. The message is never sent again automatically, except
+        once with the same ``messageId`` after the runtime rejects the
+        credentials with ``401`` or ``403``.
         """
         session_uid = cls._resolve_agent_session_uid(agent_session)
         normalized_response_kind = A2AResponseKind(response_kind)
-        resolved_profile: AgentA2AProfile | None = None
-        if a2a_profile is not None:
-            resolved_profile = (
-                a2a_profile
-                if isinstance(a2a_profile, AgentA2AProfile)
-                else AgentA2AProfile.model_validate(a2a_profile)
+        with request_budget(_a2a_call_timeout(timeout)):
+            resolved_profile: AgentA2AProfile | None = None
+            if a2a_profile is not None:
+                resolved_profile = (
+                    a2a_profile
+                    if isinstance(a2a_profile, AgentA2AProfile)
+                    else AgentA2AProfile.model_validate(a2a_profile)
+                )
+            elif normalized_response_kind is A2AResponseKind.TASK:
+                session = (
+                    agent_session
+                    if isinstance(agent_session, AgentSession)
+                    else cls.get(pk=session_uid, timeout=timeout)
+                )
+                if not session.agent_uid:
+                    raise ValueError("Task response_kind requires a session with an agent_uid")
+                resolved_profile = Agent.get(pk=session.agent_uid, timeout=timeout).a2a_profile
+            if (
+                resolved_profile is not None
+                and normalized_response_kind not in resolved_profile.supported_response_kinds
+            ):
+                raise ValueError(
+                    f"response_kind {normalized_response_kind.value!r} is not advertised by the agent"
+                )
+            body = cls._build_standard_a2a_message_send_body(
+                agent_session_uid=session_uid,
+                message=message,
+                files=files,
+                message_id=message_id,
+                strict_dictionary=strict_dictionary,
+                json_repair_attempts=json_repair_attempts,
+                response_kind=normalized_response_kind,
             )
-        elif normalized_response_kind is A2AResponseKind.TASK:
-            session = (
-                agent_session
-                if isinstance(agent_session, AgentSession)
-                else cls.get(pk=session_uid, timeout=timeout)
-            )
-            if not session.agent_uid:
-                raise ValueError("Task response_kind requires a session with an agent_uid")
-            resolved_profile = Agent.get(pk=session.agent_uid, timeout=timeout).a2a_profile
-        if (
-            resolved_profile is not None
-            and normalized_response_kind not in resolved_profile.supported_response_kinds
-        ):
-            raise ValueError(
-                f"response_kind {normalized_response_kind.value!r} is not advertised by the agent"
-            )
-        body = cls._build_standard_a2a_message_send_body(
-            agent_session_uid=session_uid,
-            message=message,
-            files=files,
-            message_id=message_id,
-            strict_dictionary=strict_dictionary,
-            json_repair_attempts=json_repair_attempts,
-            response_kind=normalized_response_kind,
-        )
-        access = cls._resolve_runtime_access_for_message_send(session_uid, timeout=timeout)
-        response = cls._post_standard_a2a_message(
-            access,
-            body=body,
-            timeout=timeout,
-        )
-        if response.status_code in (401, 403):
-            cls.clear_cached_runtime_access(session_uid)
-            access = cls._resolve_runtime_access_for_message_send(
-                session_uid,
-                timeout=timeout,
-            )
+            access = cls._resolve_runtime_access_for_message_send(session_uid, timeout=timeout)
             response = cls._post_standard_a2a_message(
                 access,
                 body=body,
@@ -1360,6 +1366,17 @@ class AgentSession(
             )
             if response.status_code in (401, 403):
                 cls.clear_cached_runtime_access(session_uid)
+                access = cls._resolve_runtime_access_for_message_send(
+                    session_uid,
+                    timeout=timeout,
+                )
+                response = cls._post_standard_a2a_message(
+                    access,
+                    body=body,
+                    timeout=timeout,
+                )
+                if response.status_code in (401, 403):
+                    cls.clear_cached_runtime_access(session_uid)
         if not (200 <= response.status_code < 300):
             raise_for_response(response, payload=body)
         try:
@@ -1418,30 +1435,29 @@ class AgentSession(
             if cancel:
                 path = f"{path}:cancel"
                 method = "POST"
-            request_timeout = (
-                DEFAULT_AGENT_SESSION_LONG_REQUEST_TIMEOUT if timeout is None else timeout
-            )
-            return requests.request(
+            return request_within_budget(
                 method,
                 _join_runtime_url(access.rpc_url, path),
                 headers={
                     "Authorization": f"Bearer {access.token.strip()}",
                     "Accept": STANDARD_A2A_CONTENT_TYPE,
                 },
-                timeout=request_timeout,
+                timeout=_a2a_call_timeout(timeout),
             )
 
-        access = cls._resolve_runtime_access_for_message_send(session_uid, timeout=timeout)
-        response = request(access)
-        if response.status_code in (401, 403):
-            cls.clear_cached_runtime_access(session_uid)
-            access = cls._resolve_runtime_access_for_message_send(
-                session_uid,
-                timeout=timeout,
-            )
+        # One total budget for the whole call, as for send_a2a_message.
+        with request_budget(_a2a_call_timeout(timeout)):
+            access = cls._resolve_runtime_access_for_message_send(session_uid, timeout=timeout)
             response = request(access)
             if response.status_code in (401, 403):
                 cls.clear_cached_runtime_access(session_uid)
+                access = cls._resolve_runtime_access_for_message_send(
+                    session_uid,
+                    timeout=timeout,
+                )
+                response = request(access)
+                if response.status_code in (401, 403):
+                    cls.clear_cached_runtime_access(session_uid)
         if not (200 <= response.status_code < 300):
             raise_for_response(response)
         try:
@@ -1467,6 +1483,7 @@ class AgentSession(
         task_id: str,
         timeout=None,
     ) -> A2ATask:
+        """Read one A2A Task; ``timeout`` is one total budget, as for ``send_a2a_message``."""
         return cls._request_a2a_task(
             agent_session,
             task_id=task_id,
@@ -1482,6 +1499,7 @@ class AgentSession(
         task_id: str,
         timeout=None,
     ) -> A2ATask:
+        """Cancel one A2A Task; ``timeout`` is one total budget, as for ``send_a2a_message``."""
         return cls._request_a2a_task(
             agent_session,
             task_id=task_id,

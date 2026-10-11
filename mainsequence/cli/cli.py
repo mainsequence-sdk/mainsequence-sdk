@@ -4388,7 +4388,15 @@ def agent_session_a2a_send_cmd(
         "--response-kind",
         help="Select the A2A result contract: message or task.",
     ),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+    timeout: int | None = typer.Option(
+        None,
+        "--timeout",
+        help=(
+            "Total time budget in seconds for the A2A send, response included. "
+            "Resolving a handle first is a separate request with the same budget. "
+            "It can only shorten waits; it cannot extend the platform's limits."
+        ),
+    ),
 ):
     """
     Send one standard A2A message to an existing session UID or cached handle.

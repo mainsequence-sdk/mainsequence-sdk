@@ -25,6 +25,16 @@ write is returned to the caller without replay. There is no second outer retry
 loop. These are synchronous HTTP transport limits, not cancellation of work
 already accepted by the server or a deadline on consuming a streaming response.
 
+The A2A calls `AgentSession.send_a2a_message`, `AgentSession.get_a2a_task` and
+`AgentSession.cancel_a2a_task`, and `mainsequence agent session a2a send
+--timeout`, apply one such budget to the whole call, response body included: a
+runtime that sends its answer slowly cannot extend it. Their default is
+`(5, 900)`, 905 seconds in total. They are not retried automatically; the only
+resend is the same request, with the same `messageId`, after the runtime rejects
+the credentials with `401` or `403`. When the budget runs out the call raises
+`requests.Timeout`, and the request may already have reached the runtime. A
+budget can only shorten a wait; it cannot extend a platform limit.
+
 The runtime credential exchange is a `POST` that renews credentials. A `429` or
 `503` answer to it exchanged nothing, so it is retried a bounded number of times
 within the same budget; see [the exchange](#the-exchange).

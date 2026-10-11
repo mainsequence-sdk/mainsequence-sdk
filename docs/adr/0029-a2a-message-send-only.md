@@ -9,6 +9,14 @@
 > backend `retry_after_ms`; ready and terminal outcomes never create a polling
 > loop.
 
+Amended 2026-10-11 for [SDK issue #214](https://github.com/mainsequence-sdk/mainsequence-sdk/issues/214):
+a numeric `timeout` on `send_a2a_message`, `get_a2a_task` and `cancel_a2a_task`
+is one total budget for the whole call, response body included, as for every
+other SDK call. A `(connect, read)` tuple keeps its phase limits with a total
+equal to their sum, and the default stays `(5, 900)`. The budget can only
+shorten a wait; it cannot extend a platform limit. See
+[Timeouts](#timeouts).
+
 ## Status
 
 Superseded by Astro ADR 47, Explicit A2A Response Kind
@@ -69,6 +77,18 @@ Under the superseding ADR 47 contract, explicit Task selection additionally
 uses backend Agent discovery (and, when necessary, the session's `agent_uid`)
 to verify that the target advertises Task support before the runtime request.
 That discovery call is not part of direct Message execution.
+
+### Timeouts
+
+The whole call shares one total budget: the caller's `timeout`, or `(5, 900)`
+when it is omitted. A number is a total in seconds; a `(connect, read)` tuple
+keeps those phase limits and has a total equal to their sum. The budget covers
+Agent discovery for Task mode, runtime access resolution, the runtime request
+and its whole response, so a runtime that sends its answer slowly cannot extend
+it. When it runs out the call raises `requests.Timeout`; the message may already
+have reached the runtime and is not sent again. `get_a2a_task` and
+`cancel_a2a_task` follow the same rule. A budget can only shorten a wait; it
+cannot extend a platform limit.
 
 ## Request Shape
 

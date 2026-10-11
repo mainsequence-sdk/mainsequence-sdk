@@ -187,6 +187,12 @@ name and description become the Agent's display identity. `agent list` supports
 UID and exact `name` filters, plus broad text search; it does not support an
 `agent_type` filter. Names need not be unique across branches.
 
+`agent session a2a send --timeout N` is one total budget of `N` seconds for the
+send, the Agent's response included; without it the send's budget is
+`(5, 900)`, 905 seconds in total. Resolving a handle first is a separate
+request with the same budget. The value can only shorten a wait; it cannot
+extend the platform's limits.
+
 ```bash
 # Agents
 mainsequence agent list --filter name=SentinelExecutor
