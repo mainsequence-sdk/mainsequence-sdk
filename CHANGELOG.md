@@ -371,6 +371,19 @@ boundary and breaking changes.
 
 ### Fixed
 
+- Every CLI request ends within the SDK's default request budget (#219). Apart
+  from its MCP requests, the CLI sent its requests with no timeout: the login
+  code exchange, the MCP CLI login handoff start and poll, logout, revoke,
+  session renewal and every authenticated request, including the session check
+  each command runs first. A backend or network that stopped answering left the
+  command waiting forever. A request without its own timeout now has the
+  default budget, 5 seconds to connect, 120 seconds to read, 125 seconds in
+  total, inside any budget already running, and it is still sent once. A
+  command whose backend does not answer ends with an error such as
+  `The backend at <url> could not be reached (ReadTimeout).`; `mainsequence
+  login` now reports a backend it cannot reach that way too, instead of a
+  traceback.
+
 - The CLI's MCP requests end within the SDK's default request budget (#217).
   `mainsequence code-repository update-platform-skills` fetches the platform
   skill catalog with MCP `initialize`, `resources/list` and `resources/read`

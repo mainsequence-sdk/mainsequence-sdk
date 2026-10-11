@@ -1946,6 +1946,10 @@ def login(
     except ApiError as e:
         error(f"Login failed: {e}")
         raise typer.Exit(1) from e
+    except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+        # Never echo the exception: a transport error can carry request details.
+        error(f"The backend at {normalized_backend} could not be reached ({type(e).__name__}).")
+        raise typer.Exit(1) from e
     finally:
         if previous_backend_override is None:
             os.environ.pop("MAINSEQUENCE_ENDPOINT", None)

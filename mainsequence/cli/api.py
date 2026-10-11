@@ -63,7 +63,27 @@ MCP_PROTOCOL_VERSION = "2025-11-25"
 MCP_CLIENT_NAME = "mainsequence-cli"
 MCP_MAX_RESOURCE_PAGES = 100
 
-S = requests.Session()
+
+class _CliSession(requests.Session):
+    """The CLI's HTTP session.
+
+    A request sent without its own timeout gets the SDK's default request
+    budget: 5 s to connect, 120 s to read and 125 s in total, inside any budget
+    that is already running.
+    """
+
+    def request(self, method, url, **kwargs):
+        if kwargs.get("timeout") is not None:
+            return super().request(method, url, **kwargs)
+        # The CLI imports the SDK client on its first request, not when it starts.
+        from mainsequence.client._transport import DEFAULT_TIMEOUT, request_budget
+
+        with request_budget(DEFAULT_TIMEOUT) as budget:
+            kwargs["timeout"] = budget.timeout()
+            return super().request(method, url, **kwargs)
+
+
+S = _CliSession()
 S.headers.update({"Content-Type": "application/json"})
 
 

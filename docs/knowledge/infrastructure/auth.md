@@ -25,6 +25,10 @@ write is returned to the caller without replay. There is no second outer retry
 loop. These are synchronous HTTP transport limits, not cancellation of work
 already accepted by the server or a deadline on consuming a streaming response.
 
+The CLI's own requests (login, logout, session renewal and the session check of
+every authenticated command) use the same default budget when the command sets
+no timeout of its own, and are not retried automatically.
+
 The A2A calls `AgentSession.send_a2a_message`, `AgentSession.get_a2a_task` and
 `AgentSession.cancel_a2a_task`, and `mainsequence agent session a2a send
 --timeout`, apply one such budget to the whole call, response body included: a

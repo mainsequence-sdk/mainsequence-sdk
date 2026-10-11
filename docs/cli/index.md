@@ -41,6 +41,14 @@ A CodeRepository `.env` holds the backend endpoint and no credential. See
 You only need `--export` if you explicitly want shell-managed environment variables.
 `--export` cannot be combined with `--mcp`.
 
+Every request the CLI sends to the backend, from login, logout and session
+renewal to the session check of each authenticated command, has the SDK's
+default request budget unless the command sets its own: 5 seconds to connect,
+120 seconds to read, 125 seconds in total. A backend that does not answer in
+time ends the command with an error, for example
+`The backend at <url> could not be reached (ReadTimeout).`, instead of leaving
+it waiting.
+
 ### Renewing the session
 
 ```bash
