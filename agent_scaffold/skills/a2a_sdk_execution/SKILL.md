@@ -312,6 +312,11 @@ handle for a different task or conversation.
   task` for an Agent whose discovery profile advertises it. Preserve its ID and
   follow it with the SDK task get/wait/cancel helpers.
 - Treat a result kind different from the requested kind as a protocol error.
+- `timeout` (CLI `--timeout`) is one total budget for the send, including the
+  wait for a target runtime that is still starting or waking; it can only
+  shorten waits. If the runtime does not become ready within it, the send fails
+  with `AgentRuntimeNotReadyError` ("did not become ready") and nothing was
+  sent, so sending again later is safe.
 - Do not depend on reasoning, tool traces, runtime paths, or transport metadata.
 - If a send times out or disconnects and must be retried, reuse the same
   `--message-id` value to preserve request identity. Direct `message` sends do

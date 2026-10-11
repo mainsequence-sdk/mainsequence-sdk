@@ -103,3 +103,14 @@ def answer_after(delay, status, payload):
         answer(handler, stop)
 
     return route
+
+
+def answer_sequence(*routes):
+    """Answer with each route in turn, then keep answering with the last one."""
+    pending = list(routes)
+
+    def route(handler, stop):
+        current = pending.pop(0) if len(pending) > 1 else pending[0]
+        current(handler, stop)
+
+    return route

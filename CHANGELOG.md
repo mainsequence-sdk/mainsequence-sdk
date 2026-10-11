@@ -355,6 +355,16 @@ boundary and breaking changes.
 
 ### Fixed
 
+- Waiting for an Agent runtime before an A2A call ends within the call's budget
+  (#216). While the platform reported the runtime as `checking`, `starting`,
+  `waking` or `updating`, `AgentSession.send_a2a_message`, `get_a2a_task` and
+  `cancel_a2a_task`, and `mainsequence agent session a2a send`, re-resolved
+  runtime access with no deadline, so a runtime that never became ready held
+  the call indefinitely. The wait now spends the call's total budget: the
+  `timeout` you pass, or 905 seconds by default. When the platform's next retry
+  no longer fits, the call raises `AgentRuntimeNotReadyError`, an `ApiError`
+  whose `state` is the last state reported, and nothing is sent to the runtime.
+
 - A2A calls end within their `timeout` (#214). On
   `AgentSession.send_a2a_message`, `get_a2a_task` and `cancel_a2a_task`, and on
   `mainsequence agent session a2a send --timeout`, a numeric `timeout` limited

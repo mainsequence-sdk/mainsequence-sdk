@@ -188,10 +188,13 @@ UID and exact `name` filters, plus broad text search; it does not support an
 `agent_type` filter. Names need not be unique across branches.
 
 `agent session a2a send --timeout N` is one total budget of `N` seconds for the
-send, the Agent's response included; without it the send's budget is
-`(5, 900)`, 905 seconds in total. Resolving a handle first is a separate
-request with the same budget. The value can only shorten a wait; it cannot
-extend the platform's limits.
+send: waiting for the Agent runtime to become ready, the request and the
+Agent's response. Without it the send's budget is `(5, 900)`, 905 seconds in
+total. A runtime that is still starting or waking when the budget can no
+longer fit the platform's next retry ends the command with an error, and
+nothing is sent. Resolving a handle first is a separate request with the same
+budget. The value can only shorten a wait; it cannot extend the platform's
+limits.
 
 ```bash
 # Agents

@@ -7,13 +7,48 @@ import pytest
 import requests
 
 import mainsequence.client.agent_runtime_models as agent_models_mod
-from tests._http_server import answer_json, serve, trickle_body, trickle_headers
+from mainsequence.client import _transport as transport
+from mainsequence.client import utils
+from tests._http_server import (
+    answer_json,
+    answer_sequence,
+    serve,
+    trickle_body,
+    trickle_headers,
+)
 from tests.client.support import _ready_runtime_contract
 
 SESSION_UID = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
 MESSAGE_PATH = "/api/a2a/v1/message:send"
 TASK_PATH = "/api/a2a/v1/tasks/task-1"
 CANCEL_PATH = "/api/a2a/v1/tasks/task-1:cancel"
+RESOLVE_PATH = f"/agent-sessions/{SESSION_UID}/resolve-runtime-access/"
+
+
+def _waking_access(retry_after_ms):
+    return {
+        "mode": "unavailable",
+        "rpc_url": None,
+        "token": None,
+        "runtime_interaction": {
+            "state": "waking",
+            "can_submit": False,
+            "notice": None,
+            "operation": None,
+            "retry_after_ms": retry_after_ms,
+        },
+        "runtime_presence": {
+            "phase": "starting",
+            "replicas": {"desired": 1, "actual": 0},
+            "detail": "The runtime is starting.",
+            "observed_at": "2026-10-11T10:00:00Z",
+            "wake": None,
+        },
+    }
+
+
+def _ready_access(rpc_url):
+    return {"mode": "token", "rpc_url": rpc_url, "token": "tok-secret", **_ready_runtime_contract()}
 
 
 @pytest.fixture
@@ -21,19 +56,36 @@ def ready_runtime():
     """Cache ready runtime access that points at the given test server."""
 
     def cache(rpc_url):
-        agent_models_mod.AgentSession.cache_runtime_access(
-            SESSION_UID,
-            {
-                "mode": "token",
-                "rpc_url": rpc_url,
-                "token": "tok-secret",
-                **_ready_runtime_contract(),
-            },
-        )
+        agent_models_mod.AgentSession.cache_runtime_access(SESSION_UID, _ready_access(rpc_url))
 
     agent_models_mod.AgentSession.clear_cached_runtime_access(SESSION_UID)
     yield cache
     agent_models_mod.AgentSession.clear_cached_runtime_access(SESSION_UID)
+
+
+@pytest.fixture
+def platform_at(monkeypatch):
+    """Resolve runtime access through the platform route of the given test server."""
+    sessions = []
+
+    def point(url):
+        session = utils.build_session()
+        sessions.append(session)
+        monkeypatch.setattr(
+            agent_models_mod.AgentSession,
+            "get_object_url",
+            classmethod(lambda cls, custom_endpoint_name=None: f"{url}agent-sessions"),
+        )
+        monkeypatch.setattr(
+            agent_models_mod.AgentSession, "build_session", classmethod(lambda cls: session)
+        )
+        monkeypatch.setattr(agent_models_mod.AgentSession, "LOADERS", None)
+
+    agent_models_mod.AgentSession.clear_cached_runtime_access(SESSION_UID)
+    yield point
+    agent_models_mod.AgentSession.clear_cached_runtime_access(SESSION_UID)
+    for session in sessions:
+        session.close()
 
 
 def _send(timeout):
@@ -106,3 +158,87 @@ def test_send_reads_a_complete_answer_within_its_budget(ready_runtime):
     assert result.message == message
     assert len(calls) == 1
     assert json.loads(calls[0][2])["configuration"]["responseKind"] == "message"
+
+
+@pytest.mark.parametrize(
+    ("path", "call"),
+    [(MESSAGE_PATH, _send), (TASK_PATH, _get), (CANCEL_PATH, _cancel)],
+    ids=["send", "task-get", "task-cancel"],
+)
+def test_runtime_that_stays_waking_ends_the_call_within_its_budget_and_nothing_is_sent(
+    platform_at, path, call
+):
+    # The platform asks for a retry every 0.5 s; checks run at about 0, 0.5 and 1.0 s, and
+    # the third retry no longer fits in 1.25 s.
+    routes = {("POST", RESOLVE_PATH): answer_json(200, _waking_access(500))}
+    with serve(routes) as (url, calls):
+        platform_at(url)
+        started = time.monotonic()
+        with pytest.raises(agent_models_mod.AgentRuntimeNotReadyError) as error:
+            call(1.25)
+        elapsed = time.monotonic() - started
+
+    assert elapsed < 1.25
+    assert error.value.state == "waking"
+    assert "did not become ready" in str(error.value)
+    assert "Nothing was sent" in str(error.value)
+    assert [sent_path for _method, sent_path, _body in calls] == [RESOLVE_PATH] * 3
+    assert path not in [sent_path for _method, sent_path, _body in calls]
+
+
+def test_runtime_that_becomes_ready_within_the_budget_receives_the_message_once(platform_at):
+    message = {
+        "messageId": "msg-runtime-output",
+        "role": "ROLE_AGENT",
+        "contextId": SESSION_UID,
+        "parts": [{"text": "Ready."}],
+    }
+    routes = {}
+    with serve(routes) as (url, calls):
+        routes[("POST", RESOLVE_PATH)] = answer_sequence(
+            answer_json(200, _waking_access(500)), answer_json(200, _ready_access(url))
+        )
+        routes[("POST", MESSAGE_PATH)] = answer_json(
+            200, {"message": message}, content_type="application/a2a+json"
+        )
+        platform_at(url)
+        result = _send(5)
+
+    assert result.message == message
+    assert [sent_path for _method, sent_path, _body in calls] == [
+        RESOLVE_PATH,
+        RESOLVE_PATH,
+        MESSAGE_PATH,
+    ]
+
+
+def test_wait_without_a_timeout_ends_at_the_default_a2a_budget(monkeypatch):
+    # The default A2A budget is (5, 900): 905 s in total. The platform asks for the longest
+    # retry the SDK honours, 30 s, so the wait ends after 30 sleeps, at 900 s.
+    clock = {"now": 0.0}
+    sleeps = []
+
+    def sleep(seconds):
+        sleeps.append(seconds)
+        clock["now"] += seconds
+
+    resolves = []
+
+    def resolve(cls, agent_session, *, cache=True, timeout=None):
+        resolves.append(timeout)
+        return agent_models_mod.AgentSessionRuntimeAccess(**_waking_access(30_000))
+
+    monkeypatch.setattr(transport.time, "monotonic", lambda: clock["now"])
+    monkeypatch.setattr(agent_models_mod.time, "sleep", sleep)
+    monkeypatch.setattr(
+        agent_models_mod.AgentSession, "resolve_runtime_access", classmethod(resolve)
+    )
+    agent_models_mod.AgentSession.clear_cached_runtime_access(SESSION_UID)
+
+    with pytest.raises(agent_models_mod.AgentRuntimeNotReadyError):
+        agent_models_mod.AgentSession._resolve_runtime_access_for_message_send(SESSION_UID)
+
+    assert sleeps == [30.0] * 30
+    assert clock["now"] == 900.0
+    assert len(resolves) == 31
+    agent_models_mod.AgentSession.clear_cached_runtime_access(SESSION_UID)

@@ -471,6 +471,31 @@ def _a2a_call_timeout(timeout):
     return DEFAULT_AGENT_SESSION_LONG_REQUEST_TIMEOUT if timeout is None else timeout
 
 
+class AgentRuntimeNotReadyError(ApiError):
+    """The Agent runtime did not become ready within the call's budget.
+
+    Nothing was sent to the runtime, so sending again later is safe. ``state``
+    is the last runtime interaction state the platform reported, for example
+    ``"waking"``.
+    """
+
+    def __init__(self, message: str, *, state: str):
+        super().__init__(message)
+        self.state = state
+
+
+def _runtime_not_ready_error(access: AgentSessionRuntimeAccess) -> AgentRuntimeNotReadyError:
+    state = str(access.runtime_interaction.state)
+    message = (
+        f"The Agent runtime did not become ready within this call's timeout budget "
+        f"(last state: {state}). Nothing was sent to it."
+    )
+    notice = access.runtime_interaction.notice
+    if notice is not None and notice.message.strip():
+        message = f"{message} {notice.message.strip()}"
+    return AgentRuntimeNotReadyError(message, state=state)
+
+
 def _runtime_access_retry_seconds(access: AgentSessionRuntimeAccess) -> float:
     retry_after_ms = access.runtime_interaction.retry_after_ms
     if retry_after_ms is None:
@@ -1135,24 +1160,25 @@ class AgentSession(
     ) -> AgentSessionRuntimeAccess:
         session_uid = cls._resolve_agent_session_uid(agent_session)
         access = cls.get_cached_runtime_access(session_uid)
-        while True:
-            if access is None:
-                access = cls.resolve_runtime_access(
-                    session_uid,
-                    cache=True,
-                    timeout=timeout,
-                )
-            interaction = access.runtime_interaction
-            if interaction.can_submit:
-                return access
-            if interaction.state not in TRANSIENT_RUNTIME_INTERACTION_STATES:
-                raise ApiError(_runtime_access_blocked_message(access))
-            time.sleep(_runtime_access_retry_seconds(access))
-            access = cls.resolve_runtime_access(
-                session_uid,
-                cache=True,
-                timeout=timeout,
-            )
+        # Waiting for a transient runtime spends the call's own total budget.
+        with request_budget(_a2a_call_timeout(timeout)) as budget:
+            while True:
+                if access is None:
+                    access = cls.resolve_runtime_access(
+                        session_uid,
+                        cache=True,
+                        timeout=timeout,
+                    )
+                interaction = access.runtime_interaction
+                if interaction.can_submit:
+                    return access
+                if interaction.state not in TRANSIENT_RUNTIME_INTERACTION_STATES:
+                    raise ApiError(_runtime_access_blocked_message(access))
+                delay = _runtime_access_retry_seconds(access)
+                if delay >= budget.remaining:
+                    raise _runtime_not_ready_error(access)
+                time.sleep(delay)
+                access = None
 
     @staticmethod
     def _build_standard_a2a_message_send_body(
@@ -1315,13 +1341,16 @@ class AgentSession(
 
         ``timeout`` is one total budget for the whole call: a number of seconds,
         or a ``(connect, read)`` tuple whose total is their sum. It covers Agent
-        discovery for Task mode, resolving runtime access, the request and the
-        whole response, and is ``(5, 900)`` when omitted. It can only shorten
-        the wait; it cannot extend a platform limit. When it runs out the call
-        raises ``requests.Timeout``, and the message may already have reached
-        the runtime. The message is never sent again automatically, except
-        once with the same ``messageId`` after the runtime rejects the
-        credentials with ``401`` or ``403``.
+        discovery for Task mode, resolving runtime access and waiting for the
+        runtime to become ready, the request and the whole response, and is
+        ``(5, 900)`` when omitted. It can only shorten the wait; it cannot
+        extend a platform limit. If the runtime is still starting or waking
+        when the platform's next retry no longer fits in the budget, the call
+        raises ``AgentRuntimeNotReadyError`` and sends nothing. When the budget
+        runs out later the call raises ``requests.Timeout``, and the message
+        may already have reached the runtime. The message is never sent again
+        automatically, except once with the same ``messageId`` after the
+        runtime rejects the credentials with ``401`` or ``403``.
         """
         session_uid = cls._resolve_agent_session_uid(agent_session)
         normalized_response_kind = A2AResponseKind(response_kind)
@@ -1858,6 +1887,7 @@ __all__ = [
     "AgentA2AProfile",
     "AgentRuntimeImageDrift",
     "AgentRuntimeImageDriftCheck",
+    "AgentRuntimeNotReadyError",
     "AgentRuntimeUpdate",
     "AgentRuntimeUpdateRemediation",
     "AgentHarnessKind",

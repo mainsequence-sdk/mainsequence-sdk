@@ -17,6 +17,13 @@ equal to their sum, and the default stays `(5, 900)`. The budget can only
 shorten a wait; it cannot extend a platform limit. See
 [Timeouts](#timeouts).
 
+Amended 2026-10-11 for [SDK issue #216](https://github.com/mainsequence-sdk/mainsequence-sdk/issues/216):
+the re-resolution while runtime access is transient now ends with the call's
+total budget. When the platform's next `retry_after_ms` no longer fits in it,
+the SDK raises `AgentRuntimeNotReadyError` and sends nothing; before, the wait
+had no deadline. See step 3 of the [Decision](#decision) and
+[Timeouts](#timeouts).
+
 ## Status
 
 Superseded by Astro ADR 47, Explicit A2A Response Kind
@@ -38,7 +45,9 @@ The canonical A2A send flow is:
 2. Resolve runtime access through Django if no valid cached access exists and
    enforce `runtime_interaction.can_submit` as the sole admission decision.
 3. If the decision is transient, re-resolve at `retry_after_ms` only for the
-   lifetime of this active call; stop on `can_submit=true` or a terminal state.
+   lifetime of this active call and within its total budget; stop on
+   `can_submit=true` or a terminal state. When the next re-resolution no longer
+   fits in the budget, raise `AgentRuntimeNotReadyError` without sending.
 4. Send the exact body to the standard runtime A2A message endpoint.
 5. If runtime credentials are rejected with `401` or `403`, clear cached access,
    resolve fresh access, and retry once with the exact same body and
@@ -69,9 +78,10 @@ A2A-Extensions: https://mainsequence.ai/a2a/extensions/response-kind/v1
 ```
 
 The SDK must not call legacy runtime attach/status endpoints or perform idle,
-fixed-cadence, or provider readiness polling. Its only wait is the bounded,
-server-directed re-resolution of the existing runtime-access route while an
-active send is blocked by a backend-declared transient interaction.
+fixed-cadence, or provider readiness polling. Its only wait before sending is
+the server-directed re-resolution of the existing runtime-access route while an
+active send is blocked by a backend-declared transient interaction, and that
+wait ends with the call's total budget.
 
 Under the superseding ADR 47 contract, explicit Task selection additionally
 uses backend Agent discovery (and, when necessary, the session's `agent_uid`)
@@ -83,12 +93,14 @@ That discovery call is not part of direct Message execution.
 The whole call shares one total budget: the caller's `timeout`, or `(5, 900)`
 when it is omitted. A number is a total in seconds; a `(connect, read)` tuple
 keeps those phase limits and has a total equal to their sum. The budget covers
-Agent discovery for Task mode, runtime access resolution, the runtime request
-and its whole response, so a runtime that sends its answer slowly cannot extend
-it. When it runs out the call raises `requests.Timeout`; the message may already
-have reached the runtime and is not sent again. `get_a2a_task` and
-`cancel_a2a_task` follow the same rule. A budget can only shorten a wait; it
-cannot extend a platform limit.
+Agent discovery for Task mode, runtime access resolution and the wait for a
+transient runtime, the runtime request and its whole response, so a runtime
+that sends its answer slowly cannot extend it. If the runtime is still
+transient when the platform's next retry no longer fits, the call raises
+`AgentRuntimeNotReadyError` and nothing is sent. When the budget runs out later
+the call raises `requests.Timeout`; the message may already have reached the
+runtime and is not sent again. `get_a2a_task` and `cancel_a2a_task` follow the
+same rule. A budget can only shorten a wait; it cannot extend a platform limit.
 
 ## Request Shape
 

@@ -4392,7 +4392,8 @@ def agent_session_a2a_send_cmd(
         None,
         "--timeout",
         help=(
-            "Total time budget in seconds for the A2A send, response included. "
+            "Total time budget in seconds for the A2A send: waiting for the Agent "
+            "runtime to become ready, the request and the response. "
             "Resolving a handle first is a separate request with the same budget. "
             "It can only shorten waits; it cannot extend the platform's limits."
         ),

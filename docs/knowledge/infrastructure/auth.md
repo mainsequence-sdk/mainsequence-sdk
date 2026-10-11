@@ -29,7 +29,13 @@ The A2A calls `AgentSession.send_a2a_message`, `AgentSession.get_a2a_task` and
 `AgentSession.cancel_a2a_task`, and `mainsequence agent session a2a send
 --timeout`, apply one such budget to the whole call, response body included: a
 runtime that sends its answer slowly cannot extend it. Their default is
-`(5, 900)`, 905 seconds in total. They are not retried automatically; the only
+`(5, 900)`, 905 seconds in total. Waiting for an Agent runtime that is still
+checking, starting, waking or updating spends the same budget: the SDK
+re-resolves runtime access when the platform asks, and when the platform's next
+retry no longer fits in the budget the call raises `AgentRuntimeNotReadyError`
+and nothing is sent to the runtime. So the SDK waits for a waking runtime at
+most for the call's `timeout`, or 905 seconds when none is given. The calls
+are not retried automatically; the only
 resend is the same request, with the same `messageId`, after the runtime rejects
 the credentials with `401` or `403`. When the budget runs out the call raises
 `requests.Timeout`, and the request may already have reached the runtime. A
