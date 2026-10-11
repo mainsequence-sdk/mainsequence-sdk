@@ -204,7 +204,7 @@ def test_agent_session_send_a2a_message_posts_standard_contract(monkeypatch):
             return {
                 "message": {
                     "messageId": "msg-runtime-output",
-                    "role": "ROLE_RESPONDER",
+                    "role": "ROLE_AGENT",
                     "contextId": session_uid,
                     "parts": [{"text": "I can analyze workspaces."}],
                 }
@@ -270,7 +270,7 @@ def test_agent_session_send_a2a_message_posts_standard_contract(monkeypatch):
     assert request_body == {
         "message": {
             "messageId": "msg-00000000-0000-4000-8000-000000000001",
-            "role": "ROLE_REQUESTER",
+            "role": "ROLE_USER",
             "contextId": session_uid,
             "parts": [{"text": "What can this agent do?"}],
         },
@@ -282,9 +282,11 @@ def test_agent_session_send_a2a_message_posts_standard_contract(monkeypatch):
     assert "omit_reasoning" not in captured["runtime"]["data"]
 
 
-@pytest.mark.parametrize("invalid_role", [None, "ROLE_REQUESTER", "requester"])
-def test_a2a_message_result_requires_responder_role(invalid_role):
-    with pytest.raises(ValidationError, match="ROLE_RESPONDER"):
+@pytest.mark.parametrize(
+    "invalid_role", [None, "ROLE_USER", "ROLE_REQUESTER", "ROLE_RESPONDER", "agent"]
+)
+def test_a2a_message_result_requires_public_agent_role(invalid_role):
+    with pytest.raises(ValidationError, match="ROLE_AGENT"):
         agent_models_mod.A2AMessageSendResult.model_validate(
             {
                 "message": {
@@ -295,6 +297,135 @@ def test_a2a_message_result_requires_responder_role(invalid_role):
                 }
             }
         )
+
+
+@pytest.mark.parametrize("response_kind", ["message", "task"])
+def test_a2a_message_send_body_uses_public_user_role(response_kind):
+    body = agent_models_mod.AgentSession._build_standard_a2a_message_send_body(
+        agent_session_uid="session-uid",
+        message="Explain the two updaters.",
+        message_id="msg-request",
+        response_kind=response_kind,
+    )
+
+    assert body["message"] == {
+        "messageId": "msg-request",
+        "role": "ROLE_USER",
+        "contextId": "session-uid",
+        "parts": [{"text": "Explain the two updaters."}],
+    }
+    assert body["configuration"]["responseKind"] == response_kind
+
+
+@pytest.mark.parametrize(
+    "part",
+    [
+        {"text": "Result."},
+        {"data": {"ok": True}, "mediaType": "application/json"},
+        {"raw": "JVBERi0xLjQK", "mediaType": "application/pdf", "filename": "result.pdf"},
+    ],
+)
+def test_a2a_message_result_preserves_public_message_contents(part):
+    message = {
+        "messageId": "msg-output",
+        "role": "ROLE_AGENT",
+        "contextId": "session-uid",
+        "parts": [part],
+        "extensions": ["https://example.test/a2a/extension"],
+        "metadata": {"https://example.test/a2a/extension": {"detail": "kept"}},
+        "referenceTaskIds": ["task-reference"],
+        "futureField": {"value": "kept"},
+    }
+
+    result = agent_models_mod.A2AMessageSendResult.model_validate({"message": message})
+
+    assert result.response_kind is agent_models_mod.A2AResponseKind.MESSAGE
+    assert result.message == message
+    assert result.model_dump()["message"] == message
+
+
+@pytest.mark.parametrize("message_id", [None, "", " \t\n", 42, [], {}])
+def test_a2a_message_result_rejects_invalid_message_id(message_id):
+    with pytest.raises(ValidationError, match="messageId must be a non-empty string"):
+        agent_models_mod.A2AMessageSendResult.model_validate(
+            {
+                "message": {
+                    "messageId": message_id,
+                    "role": "ROLE_AGENT",
+                    "contextId": "session-uid",
+                    "parts": [{"text": "Result."}],
+                }
+            }
+        )
+
+
+@pytest.mark.parametrize("parts", [None, [], {}, "Result."])
+def test_a2a_message_result_rejects_invalid_parts(parts):
+    with pytest.raises(ValidationError, match="parts must be a non-empty array"):
+        agent_models_mod.A2AMessageSendResult.model_validate(
+            {
+                "message": {
+                    "messageId": "msg-output",
+                    "role": "ROLE_AGENT",
+                    "contextId": "session-uid",
+                    "parts": parts,
+                }
+            }
+        )
+
+
+@pytest.mark.parametrize("missing_field", ["messageId", "parts"])
+def test_agent_session_send_rejects_missing_message_fields(monkeypatch, missing_field):
+    message = {
+        "messageId": "msg-output",
+        "role": "ROLE_AGENT",
+        "contextId": "session-uid",
+        "parts": [{"text": "Result."}],
+    }
+    message.pop(missing_field)
+    response = SimpleNamespace(status_code=200, json=lambda: {"message": message})
+    monkeypatch.setattr(
+        agent_models_mod.AgentSession,
+        "_resolve_runtime_access_for_message_send",
+        classmethod(lambda cls, agent_session, timeout=None: object()),
+    )
+    monkeypatch.setattr(
+        agent_models_mod.AgentSession,
+        "_post_standard_a2a_message",
+        classmethod(lambda cls, access, *, body, timeout=None: response),
+    )
+
+    with pytest.raises(agent_models_mod.ApiError, match="one valid message or task") as error:
+        agent_models_mod.AgentSession.send_a2a_message("session-uid", message="Return a result.")
+
+    assert isinstance(error.value.__cause__, ValidationError)
+    assert missing_field in str(error.value.__cause__)
+
+
+def test_agent_session_direct_message_rejects_task_response(monkeypatch):
+    response = SimpleNamespace(
+        status_code=200,
+        json=lambda: {
+            "task": {
+                "id": "task-1",
+                "contextId": "session-uid",
+                "status": {"state": "TASK_STATE_SUBMITTED"},
+            }
+        },
+    )
+    monkeypatch.setattr(
+        agent_models_mod.AgentSession,
+        "_resolve_runtime_access_for_message_send",
+        classmethod(lambda cls, agent_session, timeout=None: object()),
+    )
+    monkeypatch.setattr(
+        agent_models_mod.AgentSession,
+        "_post_standard_a2a_message",
+        classmethod(lambda cls, access, *, body, timeout=None: response),
+    )
+
+    with pytest.raises(agent_models_mod.ApiError, match="does not match.*response_kind"):
+        agent_models_mod.AgentSession.send_a2a_message("session-uid", message="Return a result.")
 
 
 def test_agent_session_send_rejects_mismatched_response_context(monkeypatch):
@@ -308,7 +439,7 @@ def test_agent_session_send_rejects_mismatched_response_context(monkeypatch):
             return {
                 "message": {
                     "messageId": "msg-output",
-                    "role": "ROLE_RESPONDER",
+                    "role": "ROLE_AGENT",
                     "contextId": "different-session",
                     "parts": [{"text": "Result."}],
                 }
@@ -385,7 +516,7 @@ def test_agent_session_send_waits_only_while_runtime_interaction_is_transient(
             return {
                 "message": {
                     "messageId": "msg-output",
-                    "role": "ROLE_RESPONDER",
+                    "role": "ROLE_AGENT",
                     "contextId": session_uid,
                     "parts": [{"text": "Ready."}],
                 }
@@ -667,7 +798,7 @@ def test_agent_session_send_a2a_message_posts_strict_dictionary_contract(monkeyp
             return {
                 "message": {
                     "messageId": "msg-runtime-output",
-                    "role": "ROLE_RESPONDER",
+                    "role": "ROLE_AGENT",
                     "contextId": session_uid,
                     "parts": [{"text": '{"ok": true}'}],
                 }
@@ -750,7 +881,7 @@ def test_agent_session_send_a2a_message_refreshes_access_and_reuses_body(monkeyp
             return {
                 "message": {
                     "messageId": "msg-runtime-output",
-                    "role": "ROLE_RESPONDER",
+                    "role": "ROLE_AGENT",
                     "contextId": session_uid,
                     "parts": [{"text": "Done."}],
                 }

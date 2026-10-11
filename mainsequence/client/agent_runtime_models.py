@@ -38,8 +38,9 @@ DEFAULT_AGENT_RUNTIME_ACCESS_CACHE_EXPIRY_SKEW_SECONDS = 30.0
 STANDARD_A2A_MESSAGE_SEND_PATH = "/api/a2a/v1/message:send"
 STANDARD_A2A_TASKS_PATH = "/api/a2a/v1/tasks"
 STANDARD_A2A_CONTENT_TYPE = "application/a2a+json"
-STANDARD_A2A_REQUESTER_ROLE = "ROLE_REQUESTER"
-STANDARD_A2A_RESPONDER_ROLE = "ROLE_RESPONDER"
+# Public A2A v1 roles; requester/responder directions belong to the runtime binding.
+STANDARD_A2A_REQUESTER_ROLE = "ROLE_USER"
+STANDARD_A2A_RESPONDER_ROLE = "ROLE_AGENT"
 STANDARD_A2A_RESPONSE_KIND_EXTENSION_URI = "https://mainsequence.ai/a2a/extensions/response-kind/v1"
 STANDARD_A2A_OUTPUT_CONTRACT_METADATA_KEY = (
     "https://mainsequence.ai/a2a/extensions/output-contract/v1"
@@ -112,8 +113,15 @@ class A2AMessageSendResult(BasePydanticModel):
     def _require_exact_result(self) -> A2AMessageSendResult:
         if (self.message is None) == (self.task is None):
             raise ValueError("A2A message-send result must contain exactly one of message or task")
-        if self.message is not None and self.message.get("role") != STANDARD_A2A_RESPONDER_ROLE:
-            raise ValueError(f"A2A message result role must be {STANDARD_A2A_RESPONDER_ROLE}.")
+        if self.message is not None:
+            if self.message.get("role") != STANDARD_A2A_RESPONDER_ROLE:
+                raise ValueError(f"A2A message result role must be {STANDARD_A2A_RESPONDER_ROLE}.")
+            message_id = self.message.get("messageId")
+            if not isinstance(message_id, str) or not message_id.strip():
+                raise ValueError("A2A message result messageId must be a non-empty string.")
+            parts = self.message.get("parts")
+            if not isinstance(parts, list) or not parts:
+                raise ValueError("A2A message result parts must be a non-empty array.")
         return self
 
     @property
@@ -768,10 +776,7 @@ class Agent(
             "llm_provider": llm_provider,
             "llm_model": llm_model,
             "llm_thinking": llm_thinking,
-            "custom_id": (
-                custom_id
-                if custom_id is not None else None
-            ),
+            "custom_id": (custom_id if custom_id is not None else None),
         }
         if resolved_session_uid and any(value is not None for value in creation_options.values()):
             raise ValueError("Creation options require handle_unique_id, not session_uid")
@@ -801,11 +806,7 @@ class Agent(
         if not isinstance(session_payload, dict):
             raise TypeError("get_or_create_session response must be an AgentSession object")
         session = AgentSession(**session_payload)
-        if (
-            custom_id is not None
-            and session.custom_id
-            != creation_options["custom_id"]
-        ):
+        if custom_id is not None and session.custom_id != creation_options["custom_id"]:
             raise ValueError("The returned session does not use the requested configured provider")
         return session
 

@@ -78,7 +78,7 @@ Plain text:
 {
   "message": {
     "messageId": "msg-client-uuid-1",
-    "role": "ROLE_REQUESTER",
+    "role": "ROLE_USER",
     "contextId": "0b2701a1-e777-4cfe-8437-b94025f00069",
     "parts": [
       {
@@ -99,7 +99,7 @@ Strict dictionary:
 {
   "message": {
     "messageId": "msg-client-json-1",
-    "role": "ROLE_REQUESTER",
+    "role": "ROLE_USER",
     "contextId": "0b2701a1-e777-4cfe-8437-b94025f00069",
     "parts": [
       {
@@ -123,9 +123,20 @@ Strict dictionary:
 }
 ```
 
-The request role is always `ROLE_REQUESTER`. A successful direct Message must
-return `ROLE_RESPONDER` and the same target `AgentSession.uid` as its
-`contextId`; the SDK rejects any other role or session context.
+The public A2A v1 request role is always `ROLE_USER`. A successful direct
+Message must return `ROLE_AGENT`, a non-blank string `messageId`, a non-empty
+`parts` array, and the same target `AgentSession.uid` as its `contextId`. The
+SDK rejects an invalid Message envelope or a different session context. Text,
+structured data, file Parts, metadata, extension URIs, and additional Message
+fields are preserved; validation does not require a text-only answer.
+
+`ROLE_REQUESTER` and `ROLE_RESPONDER` are internal Main Sequence binding
+directions, not public A2A v1 roles. The runtime explicitly translates
+`ROLE_USER` to `ROLE_REQUESTER` on entry and `ROLE_RESPONDER` to `ROLE_AGENT`
+on exit. The SDK neither emits nor accepts internal direction values at this
+public HTTP boundary. This amends the older role contract from issue #110;
+issue #211 records the mismatch after the runtime introduced that translation.
+See the [A2A v1 Message and Role definitions](https://a2a-protocol.org/v1.0.1/specification/#414-message).
 
 ADR 47 replaces the timing Boolean with an explicit result contract. The SDK
 uses `response_kind="message"` for direct execution and
