@@ -62,6 +62,22 @@ boundary and breaking changes.
 
 ### Added
 
+- `A2AMessageLimitExceededError`, raised for the platform's Message limit. The
+  platform answers a direct A2A Message (`response_kind="message"`) within its
+  Message limit, 90 seconds; when the target Agent does not answer in time it
+  stops the turn and answers `504` with the A2A `google.rpc` error whose
+  `ErrorInfo` has reason `MESSAGE_RESPONSE_LIMIT_EXCEEDED` and domain
+  `mainsequence.ai`. `AgentSession.send_a2a_message` and
+  `mainsequence agent session a2a send` now raise this error, a `ServerError`
+  whose `limit_seconds` is the limit the Agent reported, saying the Agent did
+  not answer within the platform's limit and that longer work uses Task mode
+  (`response_kind="task"`, CLI `--response-kind task`). The SDK never retries
+  it and never turns it into a Task; work the turn already did is not undone.
+  Any other `502` or `504`, for example from a gateway, raises `ServerError` as
+  before. No client setting extends the limit: a `timeout` can only shorten the
+  SDK's wait. ADR 0029, the CLI reference and the A2A scaffold skill describe
+  the limit; the skill also states the `wait_for_a2a_task` defaults.
+
 - `mainsequence.server.fastapi.install_mcp(app, mcp_app, *, lifespan)` serves
   an application-owned MCP server at `/mcp` inside the request identity
   (ADR 0038). Only authenticated POSTs reach it; other methods answer 405, an
@@ -354,6 +370,50 @@ boundary and breaking changes.
   The backend no longer serves `import-branch/`.
 
 ### Fixed
+
+- Every CLI request ends within the SDK's default request budget (#219). Apart
+  from its MCP requests, the CLI sent its requests with no timeout: the login
+  code exchange, the MCP CLI login handoff start and poll, logout, revoke,
+  session renewal and every authenticated request, including the session check
+  each command runs first. A backend or network that stopped answering left the
+  command waiting forever. A request without its own timeout now has the
+  default budget, 5 seconds to connect, 120 seconds to read, 125 seconds in
+  total, inside any budget already running, and it is still sent once. A
+  command whose backend does not answer ends with an error such as
+  `The backend at <url> could not be reached (ReadTimeout).`; `mainsequence
+  login` now reports a backend it cannot reach that way too, instead of a
+  traceback.
+
+- The CLI's MCP requests end within the SDK's default request budget (#217).
+  `mainsequence code-repository update-platform-skills` fetches the platform
+  skill catalog with MCP `initialize`, `resources/list` and `resources/read`
+  requests, which were sent with no timeout, so a platform or network that
+  stopped answering blocked the command forever. Each request, with a token
+  renewal and resend after `401`, now has the default budget: 5 seconds to
+  connect, 120 seconds to read, 125 seconds in total. A request that does not
+  finish in time ends the command with an error, and nothing is installed.
+
+- Waiting for an Agent runtime before an A2A call ends within the call's budget
+  (#216). While the platform reported the runtime as `checking`, `starting`,
+  `waking` or `updating`, `AgentSession.send_a2a_message`, `get_a2a_task` and
+  `cancel_a2a_task`, and `mainsequence agent session a2a send`, re-resolved
+  runtime access with no deadline, so a runtime that never became ready held
+  the call indefinitely. The wait now spends the call's total budget: the
+  `timeout` you pass, or 905 seconds by default. When the platform's next retry
+  no longer fits, the call raises `AgentRuntimeNotReadyError`, an `ApiError`
+  whose `state` is the last state reported, and nothing is sent to the runtime.
+
+- A2A calls end within their `timeout` (#214). On
+  `AgentSession.send_a2a_message`, `get_a2a_task` and `cancel_a2a_task`, and on
+  `mainsequence agent session a2a send --timeout`, a numeric `timeout` limited
+  only the silence between two socket reads, so a runtime that kept sending its
+  answer slowly held the call open with no overall limit. It is now one total
+  budget for the whole call, response body included, as for other SDK calls. A
+  `(connect, read)` tuple keeps its phase limits with a total equal to their
+  sum, and the default stays `(5, 900)`, 905 seconds in total. When the budget
+  runs out the call raises `requests.Timeout`, and the message may already have
+  reached the runtime. A budget can only shorten a wait; it cannot extend a
+  platform limit.
 
 - Release `9.0.14` made `Team` read a member or creator that is a workload
   identity (#202).

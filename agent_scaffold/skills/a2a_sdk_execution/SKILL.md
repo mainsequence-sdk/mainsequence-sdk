@@ -33,6 +33,9 @@ internally and sends a standard A2A message.
 - Read `a2a_profile` from discovery, default to `message`, and never infer Task
   support.
 - Use `--response-kind task` only when the selected Agent advertises `task`.
+- The platform answers a direct `message` send within its Message limit, 90
+  seconds, or the send fails with `A2AMessageLimitExceededError`. No client
+  setting extends that limit; send work that can take longer as a Task.
 - Do not send or request reasoning/thinking traces; standard A2A responses expose only message parts.
 
 ## Discovery Flow
@@ -244,6 +247,12 @@ result = AgentSession.send_a2a_message(
 task = AgentSession.wait_for_a2a_task(session, task_id=result.task.id)
 ```
 
+`wait_for_a2a_task` reads the Task every `poll_interval_seconds` (default 1)
+until it reaches a final state. Once `wait_timeout_seconds` (default 900) have
+passed it raises `TimeoutError`; the Task keeps running, so read it again with
+`AgentSession.get_a2a_task` or stop it with `AgentSession.cancel_a2a_task`. Its
+`timeout` is the total budget of each read, as for the other A2A calls.
+
 For another message in the same conversation, reuse the same `session.uid`:
 
 ```python
@@ -312,7 +321,18 @@ handle for a different task or conversation.
   task` for an Agent whose discovery profile advertises it. Preserve its ID and
   follow it with the SDK task get/wait/cancel helpers.
 - Treat a result kind different from the requested kind as a protocol error.
+- `timeout` (CLI `--timeout`) is one total budget for the send, including the
+  wait for a target runtime that is still starting or waking; it can only
+  shorten waits. If the runtime does not become ready within it, the send fails
+  with `AgentRuntimeNotReadyError` ("did not become ready") and nothing was
+  sent, so sending again later is safe.
 - Do not depend on reasoning, tool traces, runtime paths, or transport metadata.
+- If a direct `message` send fails with `A2AMessageLimitExceededError` (the
+  error says the Agent did not answer within the platform's limit), the Agent
+  stopped the turn after the platform's 90-second Message limit, and work it
+  already did is not undone. Do not resend it as a Message; when the Agent
+  advertises `task`, send the work with `--response-kind task`
+  (`response_kind=A2AResponseKind.TASK`) and follow the Task.
 - If a send times out or disconnects and must be retried, reuse the same
   `--message-id` value to preserve request identity. Direct `message` sends do
   not have durable replay protection, so do not retry automatically: the first

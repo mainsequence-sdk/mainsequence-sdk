@@ -16,6 +16,7 @@ from mainsequence.client.exceptions import (
     TransportError,
 )
 from mainsequence.client.models_helpers import ResourceRelease
+from tests._http_server import answer_after, answer_json, serve, trickle_body, trickle_headers
 
 
 def answer(status=200, headers=None):
@@ -423,3 +424,68 @@ def test_release_runtime_access_does_not_amplify_slow_post(monkeypatch):
         assert calls == ["POST"]
         time.sleep(0.16)
         assert calls == ["POST"]
+
+
+def test_request_within_budget_returns_the_complete_response():
+    with serve({("GET", "/ok"): answer_json(200, {"ok": True})}) as (url, calls):
+        response = transport.request_within_budget("GET", f"{url}ok", timeout=1)
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}
+    assert calls == [("GET", "/ok", b"")]
+
+
+@pytest.mark.parametrize("method", ["GET", "POST"])
+def test_request_within_budget_never_retries(method):
+    with serve({(method, "/busy"): answer_json(503, {"detail": "busy"})}) as (url, calls):
+        response = transport.request_within_budget(method, f"{url}busy", timeout=1)
+
+    assert response.status_code == 503
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize(
+    "route",
+    [trickle_body(interval=0.05, size=400), trickle_headers(interval=0.05)],
+    ids=["body", "status-line-and-headers"],
+)
+def test_request_within_budget_ends_a_trickling_answer_at_the_deadline(route):
+    # Every byte arrives well within the read limit, so only the total deadline can stop it.
+    with serve({("GET", "/slow"): route}) as (url, calls):
+        started = time.monotonic()
+        with pytest.raises(requests.Timeout, match="total timeout budget"):
+            transport.request_within_budget("GET", f"{url}slow", timeout=0.3)
+        elapsed = time.monotonic() - started
+
+    assert 0.3 <= elapsed < 0.6
+    assert len(calls) == 1
+
+
+def test_request_within_budget_tuple_total_is_the_sum_of_its_phases():
+    with serve({("GET", "/slow"): trickle_body(interval=0.05, size=400)}) as (url, _calls):
+        started = time.monotonic()
+        with pytest.raises(requests.Timeout):
+            transport.request_within_budget("GET", f"{url}slow", timeout=(0.1, 0.3))
+        elapsed = time.monotonic() - started
+
+    assert 0.4 <= elapsed < 0.7
+
+
+def test_request_within_budget_tuple_keeps_its_read_limit():
+    with serve({("GET", "/late"): answer_after(1.0, 200, {"ok": True})}) as (url, _calls):
+        started = time.monotonic()
+        with pytest.raises(requests.ReadTimeout):
+            transport.request_within_budget("GET", f"{url}late", timeout=(0.5, 0.2))
+        elapsed = time.monotonic() - started
+
+    assert elapsed < 0.5
+
+
+def test_enclosing_budget_shortens_request_within_budget():
+    with serve({("GET", "/slow"): trickle_body(interval=0.05, size=400)}) as (url, _calls):
+        started = time.monotonic()
+        with transport.request_budget(0.3), pytest.raises(requests.Timeout):
+            transport.request_within_budget("GET", f"{url}slow", timeout=30)
+        elapsed = time.monotonic() - started
+
+    assert elapsed < 0.6

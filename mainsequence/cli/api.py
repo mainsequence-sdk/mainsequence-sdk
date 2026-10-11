@@ -63,7 +63,27 @@ MCP_PROTOCOL_VERSION = "2025-11-25"
 MCP_CLIENT_NAME = "mainsequence-cli"
 MCP_MAX_RESOURCE_PAGES = 100
 
-S = requests.Session()
+
+class _CliSession(requests.Session):
+    """The CLI's HTTP session.
+
+    A request sent without its own timeout gets the SDK's default request
+    budget: 5 s to connect, 120 s to read and 125 s in total, inside any budget
+    that is already running.
+    """
+
+    def request(self, method, url, **kwargs):
+        if kwargs.get("timeout") is not None:
+            return super().request(method, url, **kwargs)
+        # The CLI imports the SDK client on its first request, not when it starts.
+        from mainsequence.client._transport import DEFAULT_TIMEOUT, request_budget
+
+        with request_budget(DEFAULT_TIMEOUT) as budget:
+            kwargs["timeout"] = budget.timeout()
+            return super().request(method, url, **kwargs)
+
+
+S = _CliSession()
 S.headers.update({"Content-Type": "application/json"})
 
 
@@ -488,11 +508,13 @@ def _mcp_json_rpc(
     request_id: int,
     protocol_version: str | None = None,
 ) -> dict[str, Any]:
-    """Send one authenticated stateless MCP JSON-RPC request."""
+    """Send one authenticated stateless MCP JSON-RPC request.
 
-    access = _access_token()
-    if not access:
-        access = refresh_access()
+    The request, a token renewal after ``401`` and the resend share the SDK's
+    default request budget: 5 s to connect, 120 s to read, 125 s in total.
+    """
+    # The CLI imports the SDK client only where it needs it.
+    from mainsequence.client._transport import DEFAULT_TIMEOUT, request_budget
 
     payload = {
         "jsonrpc": "2.0",
@@ -501,24 +523,36 @@ def _mcp_json_rpc(
         "params": params,
     }
 
-    def _send(token: str) -> requests.Response:
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        }
-        if protocol_version is not None:
-            headers["MCP-Protocol-Version"] = protocol_version
-        return S.request(
-            "POST",
-            _full(MCP_RESOURCE_PATH),
-            headers=headers,
-            data=json.dumps(payload),
-        )
+    with request_budget(DEFAULT_TIMEOUT) as budget:
 
-    response = _send(access)
-    if response.status_code == 401:
-        response = _send(refresh_access())
+        def _send(token: str) -> requests.Response:
+            headers = {
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            }
+            if protocol_version is not None:
+                headers["MCP-Protocol-Version"] = protocol_version
+            return S.request(
+                "POST",
+                _full(MCP_RESOURCE_PATH),
+                headers=headers,
+                data=json.dumps(payload),
+                timeout=budget.timeout(),
+            )
+
+        try:
+            access = _access_token()
+            if not access:
+                access = refresh_access()
+            response = _send(access)
+            if response.status_code == 401:
+                response = _send(refresh_access())
+        except requests.Timeout as exc:
+            raise ApiError(
+                f"MCP {method} request timed out: the platform did not answer within "
+                "the request's timeout budget."
+            ) from exc
     if response.status_code == 401:
         raise NotLoggedIn("Not logged in.")
     if not response.ok:

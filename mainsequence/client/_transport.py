@@ -1,8 +1,10 @@
 """One bounded retry policy for SDK HTTP sessions."""
 
+import contextvars
 import math
+import threading
 import time
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from contextvars import ContextVar
 
 import requests
@@ -78,6 +80,78 @@ def remaining_timeout(timeout):
     connect, read = timeout
     remaining = budget.timeout().total
     return Timeout(total=remaining, connect=min(connect, remaining), read=min(read, remaining))
+
+
+def request_within_budget(method, url, *, timeout, **kwargs):
+    """Send one request, never retried, whose whole exchange ends by one deadline.
+
+    ``timeout`` has the shared transport's meaning: a number is one total budget
+    in seconds, and a ``(connect, read)`` tuple keeps those phase limits with a
+    total equal to their sum. An enclosing :func:`request_budget` can only
+    shorten it. The deadline covers connecting, sending, the response headers
+    and the whole body, so a server that keeps sending bytes slowly cannot
+    extend it.
+
+    A socket read that keeps receiving bytes never times out on its own, so the
+    exchange runs on a helper thread and the caller stops waiting at the
+    deadline. Then the response, when it has started, is shut down and
+    ``requests.Timeout`` is raised. The request may already have reached the
+    server.
+    """
+    with request_budget(timeout) as budget:
+        attempt_timeout = budget.timeout()
+        lock = threading.Lock()
+        finished = threading.Event()
+        state = {"abandoned": False, "response": None, "outcome": None}
+
+        def exchange():
+            response = None
+            try:
+                with requests.Session() as session:
+                    response = session.request(
+                        method, url, timeout=attempt_timeout, stream=True, **kwargs
+                    )
+                    with lock:
+                        state["response"] = response
+                        abandoned = state["abandoned"]
+                    if not abandoned:
+                        # Read the body here, so the caller's deadline bounds it too.
+                        _ = response.content
+                outcome = response
+            except BaseException as exc:  # handed to the waiting caller
+                outcome = exc
+            with lock:
+                state["outcome"] = outcome
+                abandoned = state["abandoned"]
+            if abandoned and response is not None:
+                response.close()
+            finished.set()
+
+        threading.Thread(
+            target=contextvars.copy_context().run,
+            args=(exchange,),
+            name="mainsequence-request-within-budget",
+            daemon=True,
+        ).start()
+        try:
+            finished.wait(budget.remaining)
+        finally:
+            with lock:
+                outcome = state["outcome"]
+                if outcome is None:
+                    state["abandoned"] = True
+                started = state["response"]
+            if outcome is None and started is not None:
+                # Wakes a read that is still waiting for bytes.
+                with suppress(OSError, RuntimeError, ValueError):
+                    started.raw.shutdown()
+        if outcome is None:
+            raise requests.Timeout(
+                "The SDK request did not finish within its total timeout budget."
+            )
+        if isinstance(outcome, BaseException):
+            raise outcome
+        return outcome
 
 
 class DeadlineHTTPAdapter(HTTPAdapter):

@@ -41,6 +41,14 @@ A CodeRepository `.env` holds the backend endpoint and no credential. See
 You only need `--export` if you explicitly want shell-managed environment variables.
 `--export` cannot be combined with `--mcp`.
 
+Every request the CLI sends to the backend, from login, logout and session
+renewal to the session check of each authenticated command, has the SDK's
+default request budget unless the command sets its own: 5 seconds to connect,
+120 seconds to read, 125 seconds in total. A backend that does not answer in
+time ends the command with an error, for example
+`The backend at <url> could not be reached (ReadTimeout).`, instead of leaving
+it waiting.
+
 ### Renewing the session
 
 ```bash
@@ -186,6 +194,19 @@ Agents are created by Django when a CodeRepository branch reconciles a
 name and description become the Agent's display identity. `agent list` supports
 UID and exact `name` filters, plus broad text search; it does not support an
 `agent_type` filter. Names need not be unique across branches.
+
+`agent session a2a send --timeout N` is one total budget of `N` seconds for the
+send: waiting for the Agent runtime to become ready, the request and the
+Agent's response. Without it the send's budget is `(5, 900)`, 905 seconds in
+total. A runtime that is still starting or waking when the budget can no
+longer fit the platform's next retry ends the command with an error, and
+nothing is sent. Resolving a handle first is a separate request with the same
+budget. The value can only shorten a wait; it cannot extend the platform's
+limits. In particular, the platform answers a direct Message (the default
+`--response-kind message`) within its Message limit, 90 seconds; when the Agent
+does not answer in time it stops the turn and the command fails with an error
+that says so, without retrying. Send longer work with `--response-kind task`
+when the Agent advertises it.
 
 ```bash
 # Agents
@@ -429,6 +450,9 @@ matter, and content hashes, then atomically replaces only
 `.agents/skills/mainsequence_platform/`. The SDK-owned `mainsequence`
 namespace and other libraries are untouched. The platform sentinel records the
 catalog's original source, retrieval time, and manifest/resource hashes.
+Each MCP request has the SDK's default request budget: 5 seconds to connect,
+120 seconds to read, 125 seconds in total. A request the platform does not
+answer in time ends the command with an error, and nothing is installed.
 
 Existing mixed installations are not retained in the SDK namespace. Refresh
 SDK skills to remove those entries, then explicitly refresh platform skills

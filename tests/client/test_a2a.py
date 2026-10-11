@@ -220,8 +220,9 @@ def test_agent_session_send_a2a_message_posts_standard_contract(monkeypatch):
         }
         return FakeResolveResponse()
 
-    def _fake_post(url, *, headers, data, timeout):
+    def _fake_request(method, url, *, headers, data, timeout):
         captured["runtime"] = {
+            "method": method,
             "url": url,
             "headers": headers,
             "data": data,
@@ -230,7 +231,7 @@ def test_agent_session_send_a2a_message_posts_standard_contract(monkeypatch):
         return FakeRuntimeResponse()
 
     monkeypatch.setattr(agent_models_mod, "make_request", _fake_make_request)
-    monkeypatch.setattr(agent_models_mod.requests, "post", _fake_post)
+    monkeypatch.setattr(agent_models_mod, "request_within_budget", _fake_request)
     monkeypatch.setattr(
         agent_models_mod.uuid,
         "uuid4",
@@ -256,6 +257,8 @@ def test_agent_session_send_a2a_message_posts_standard_contract(monkeypatch):
     }
     assert payload.message is not None
     assert payload.message["parts"] == [{"text": "I can analyze workspaces."}]
+    assert captured["runtime"]["method"] == "POST"
+    assert captured["runtime"]["timeout"] == 15
     assert captured["runtime"]["url"] == (
         "https://7bd86be3-d11a-4ad1-8fe2-9260ccdbca7f.coding-agent.main-sequence.app/"
         "api/a2a/v1/message:send"
@@ -529,8 +532,8 @@ def test_agent_session_send_waits_only_while_runtime_interaction_is_transient(
     )
     monkeypatch.setattr(agent_models_mod.time, "sleep", sleeps.append)
     monkeypatch.setattr(
-        agent_models_mod.requests,
-        "post",
+        agent_models_mod,
+        "request_within_budget",
         lambda *_args, **_kwargs: FakeRuntimeResponse(),
     )
 
@@ -573,11 +576,11 @@ def test_agent_session_send_a2a_task_returns_typed_task(monkeypatch):
                 }
             }
 
-    def _fake_post(url, *, headers, data, timeout):
-        captured.update(url=url, headers=headers, data=data, timeout=timeout)
+    def _fake_request(method, url, *, headers, data, timeout):
+        captured.update(method=method, url=url, headers=headers, data=data, timeout=timeout)
         return FakeRuntimeResponse()
 
-    monkeypatch.setattr(agent_models_mod.requests, "post", _fake_post)
+    monkeypatch.setattr(agent_models_mod, "request_within_budget", _fake_request)
 
     result = agent_models_mod.AgentSession.send_a2a_message(
         session_uid,
@@ -594,6 +597,9 @@ def test_agent_session_send_a2a_task_returns_typed_task(monkeypatch):
     assert result.task.id == "task-1"
     assert result.task.context_id == session_uid
     assert json.loads(captured["data"])["configuration"]["responseKind"] == "task"
+    # An omitted timeout keeps the A2A default: 5 s to connect, 900 s to read, 905 s in total.
+    assert captured["method"] == "POST"
+    assert captured["timeout"] == (5.0, 900.0)
 
 
 def test_agent_a2a_profile_requires_message_default_and_support():
@@ -694,7 +700,7 @@ def test_agent_session_a2a_task_helpers_get_wait_and_cancel(monkeypatch):
         calls.append((method, url, headers, timeout))
         return FakeTaskResponse(next(states))
 
-    monkeypatch.setattr(agent_models_mod.requests, "request", _fake_request)
+    monkeypatch.setattr(agent_models_mod, "request_within_budget", _fake_request)
     monkeypatch.setattr(agent_models_mod.time, "sleep", lambda _seconds: None)
 
     completed = agent_models_mod.AgentSession.wait_for_a2a_task(
@@ -757,7 +763,7 @@ def test_agent_session_send_a2a_message_reports_unavailable_runtime_without_post
     def _unexpected_post(*args, **kwargs):
         pytest.fail("A2A HTTP request must not run for unavailable runtime access")
 
-    monkeypatch.setattr(agent_models_mod.requests, "post", _unexpected_post)
+    monkeypatch.setattr(agent_models_mod, "request_within_budget", _unexpected_post)
 
     with pytest.raises(
         agent_models_mod.ApiError,
@@ -808,12 +814,12 @@ def test_agent_session_send_a2a_message_posts_strict_dictionary_contract(monkeyp
         captured["resolve_count"] += 1
         return FakeResolveResponse()
 
-    def _fake_post(url, *, headers, data, timeout):
+    def _fake_request(method, url, *, headers, data, timeout):
         captured["data"] = data
         return FakeRuntimeResponse()
 
     monkeypatch.setattr(agent_models_mod, "make_request", _fake_make_request)
-    monkeypatch.setattr(agent_models_mod.requests, "post", _fake_post)
+    monkeypatch.setattr(agent_models_mod, "request_within_budget", _fake_request)
     monkeypatch.setattr(
         agent_models_mod.uuid,
         "uuid4",
@@ -890,7 +896,7 @@ def test_agent_session_send_a2a_message_refreshes_access_and_reuses_body(monkeyp
     def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
         return FakeResolveResponse()
 
-    def _fake_post(url, *, headers, data, timeout):
+    def _fake_request(method, url, *, headers, data, timeout):
         captured["runtime_bodies"].append(data)
         captured.setdefault("tokens", []).append(headers["Authorization"])
         if len(captured["runtime_bodies"]) == 1:
@@ -898,7 +904,7 @@ def test_agent_session_send_a2a_message_refreshes_access_and_reuses_body(monkeyp
         return FakeRuntimeResponse()
 
     monkeypatch.setattr(agent_models_mod, "make_request", _fake_make_request)
-    monkeypatch.setattr(agent_models_mod.requests, "post", _fake_post)
+    monkeypatch.setattr(agent_models_mod, "request_within_budget", _fake_request)
 
     payload = agent_models_mod.AgentSession.send_a2a_message(
         session_uid,

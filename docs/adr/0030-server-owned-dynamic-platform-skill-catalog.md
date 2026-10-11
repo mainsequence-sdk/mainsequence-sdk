@@ -3,6 +3,10 @@
 Amended 2026-10-01 for SDK issue #181: catalog validation remains current, but
 SDK and platform skills no longer share an installation namespace.
 
+Amended 2026-10-11 for [SDK issue #217](https://github.com/mainsequence-sdk/mainsequence-sdk/issues/217):
+every MCP request of the discovery has the SDK's default request budget; before,
+the CLI sent them with no timeout. See [Discovery](#discovery).
+
 ## Status
 
 Accepted
@@ -77,6 +81,11 @@ The SDK:
 6. requires the listed platform skill set to match the ontology declaration;
 7. reads only the ontology-declared platform skills; and
 8. validates the complete selected catalog before installing anything.
+
+Each MCP request, with a token renewal and resend after `401`, has the SDK's
+default request budget: 5 seconds to connect, 120 seconds to read, 125 seconds
+in total. A request that does not finish in time fails the discovery with an
+error before anything is installed.
 
 An unrelated MCP resource does not participate in project skill assembly. A
 resource under `mainsequence://platform/skills/` that is not declared by the

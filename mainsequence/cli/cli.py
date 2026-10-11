@@ -1946,6 +1946,10 @@ def login(
     except ApiError as e:
         error(f"Login failed: {e}")
         raise typer.Exit(1) from e
+    except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+        # Never echo the exception: a transport error can carry request details.
+        error(f"The backend at {normalized_backend} could not be reached ({type(e).__name__}).")
+        raise typer.Exit(1) from e
     finally:
         if previous_backend_override is None:
             os.environ.pop("MAINSEQUENCE_ENDPOINT", None)
@@ -4386,9 +4390,23 @@ def agent_session_a2a_send_cmd(
     response_kind: str = typer.Option(
         "message",
         "--response-kind",
-        help="Select the A2A result contract: message or task.",
+        help=(
+            "Select the A2A result contract. message: wait for the Agent's answer "
+            "within the platform's Message limit; a Message that reaches the limit "
+            "fails and is not retried. task: get a Task back for longer work, when "
+            "the Agent advertises it."
+        ),
     ),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+    timeout: int | None = typer.Option(
+        None,
+        "--timeout",
+        help=(
+            "Total time budget in seconds for the A2A send: waiting for the Agent "
+            "runtime to become ready, the request and the response. "
+            "Resolving a handle first is a separate request with the same budget. "
+            "It can only shorten waits; it cannot extend the platform's limits."
+        ),
+    ),
 ):
     """
     Send one standard A2A message to an existing session UID or cached handle.
