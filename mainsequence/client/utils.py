@@ -28,10 +28,10 @@ from mainsequence.runtime_credential_exchange import (
     identity_token_file_from_environment,
 )
 
-from ._transport import DEFAULT_ALLOWED_METHODS as DEFAULT_ALLOWED_METHODS
-from ._transport import DEFAULT_STATUS_FORCELIST as DEFAULT_STATUS_FORCELIST
-from ._transport import DEFAULT_TIMEOUT as DEFAULT_TIMEOUT
-from ._transport import DeadlineHTTPAdapter, remaining_timeout, request_budget
+from .._transport import DEFAULT_ALLOWED_METHODS as DEFAULT_ALLOWED_METHODS
+from .._transport import DEFAULT_STATUS_FORCELIST as DEFAULT_STATUS_FORCELIST
+from .._transport import DEFAULT_TIMEOUT as DEFAULT_TIMEOUT
+from .._transport import DeadlineHTTPAdapter, remaining_timeout, request_budget
 
 # ---- Backend defaults (single source of truth) ----
 MAINSEQUENCE_ENDPOINT = resolve_backend_endpoint()

@@ -76,7 +76,7 @@ class _CliSession(requests.Session):
         if kwargs.get("timeout") is not None:
             return super().request(method, url, **kwargs)
         # The CLI imports the SDK client on its first request, not when it starts.
-        from mainsequence.client._transport import DEFAULT_TIMEOUT, request_budget
+        from mainsequence._transport import DEFAULT_TIMEOUT, request_budget
 
         with request_budget(DEFAULT_TIMEOUT) as budget:
             kwargs["timeout"] = budget.timeout()
@@ -514,7 +514,7 @@ def _mcp_json_rpc(
     default request budget: 5 s to connect, 120 s to read, 125 s in total.
     """
     # The CLI imports the SDK client only where it needs it.
-    from mainsequence.client._transport import DEFAULT_TIMEOUT, request_budget
+    from mainsequence._transport import DEFAULT_TIMEOUT, request_budget
 
     payload = {
         "jsonrpc": "2.0",

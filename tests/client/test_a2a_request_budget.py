@@ -7,7 +7,7 @@ import pytest
 import requests
 
 import mainsequence.client.agent_runtime_models as agent_models_mod
-from mainsequence.client import _transport as transport
+from mainsequence import _transport as transport
 from mainsequence.client import utils
 from tests._http_server import (
     answer_json,

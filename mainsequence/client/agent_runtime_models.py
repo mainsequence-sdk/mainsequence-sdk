@@ -12,7 +12,7 @@ from typing import Any, ClassVar, Literal
 import requests
 from pydantic import ConfigDict, Field, model_validator
 
-from ._transport import request_budget, request_within_budget
+from .._transport import request_budget, request_within_budget
 from .base import (
     BaseObjectOrm,
     BasePydanticModel,

@@ -8,9 +8,9 @@ from pathlib import Path
 
 import pytest
 
+from mainsequence import _transport as transport
 from mainsequence.cli import api as cli_api
 from mainsequence.cli.api import ApiError
-from mainsequence.client import _transport as transport
 from mainsequence.code_repository_skills import (
     PLATFORM_ONTOLOGY_URI,
     PLATFORM_SKILL_URI_PREFIX,
