@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import datetime
 import json
+import math
 import pathlib
 import time
 import uuid
@@ -18,7 +19,7 @@ from .base import (
     CurrentCodeRepositoryEnvironmentResourceMixin,
     ShareableObjectMixin,
 )
-from .exceptions import ApiError, raise_for_response
+from .exceptions import ApiError, ServerError, raise_for_response
 from .observability import (
     EnvironmentLogSearchMixin,
     EnvironmentLogSearchPage,
@@ -482,6 +483,78 @@ class AgentRuntimeNotReadyError(ApiError):
     def __init__(self, message: str, *, state: str):
         super().__init__(message)
         self.state = state
+
+
+class A2AMessageLimitExceededError(ServerError):
+    """The target Agent did not answer a direct Message within the platform's limit.
+
+    The platform answers a direct A2A Message within its Message limit, or the
+    target Agent stops the turn and answers ``504`` with this error; work the
+    turn already did is not undone. The SDK never retries it and never turns
+    it into a Task: send longer work in Task mode, ``response_kind="task"``
+    (CLI ``--response-kind task``). ``limit_seconds`` is the limit that
+    expired as the Agent reported it, or ``None`` when it reported none.
+    """
+
+    def __init__(
+        self,
+        *,
+        limit_seconds: float | None,
+        response: requests.Response | None = None,
+        payload: Any = None,
+    ):
+        limit = (
+            "the platform's limit"
+            if limit_seconds is None
+            else f"the platform's {limit_seconds:g}-second limit"
+        )
+        super().__init__(
+            f"The Agent did not answer within {limit} for a direct Message and stopped "
+            "the turn; work it already did is not undone. Send longer work in Task "
+            'mode: response_kind="task" in Python, --response-kind task in the CLI.',
+            response=response,
+            payload=payload,
+        )
+        self.limit_seconds = limit_seconds
+
+
+def _message_limit_error(response: requests.Response) -> A2AMessageLimitExceededError | None:
+    """Return the typed error when the target answered a direct Message at its limit.
+
+    That answer is ``504`` with the A2A ``google.rpc`` error whose ``ErrorInfo``
+    has reason ``MESSAGE_RESPONSE_LIMIT_EXCEEDED`` and domain
+    ``mainsequence.ai``. Any other ``502`` or ``504``, for example from a
+    gateway, is not that answer and keeps the ordinary error.
+    """
+    if response.status_code != 504:
+        return None
+    try:
+        payload = response.json()
+    except ValueError:
+        return None
+    error = payload.get("error") if isinstance(payload, dict) else None
+    details = error.get("details") if isinstance(error, dict) else None
+    for detail in details if isinstance(details, list) else []:
+        if (
+            isinstance(detail, dict)
+            and detail.get("@type") == "type.googleapis.com/google.rpc.ErrorInfo"
+            and detail.get("reason") == "MESSAGE_RESPONSE_LIMIT_EXCEEDED"
+            and detail.get("domain") == "mainsequence.ai"
+        ):
+            metadata = detail.get("metadata")
+            raw_limit = metadata.get("limitSeconds") if isinstance(metadata, dict) else None
+            try:
+                limit_seconds = float(raw_limit)
+            except (TypeError, ValueError):
+                limit_seconds = None
+            if limit_seconds is not None and not (
+                math.isfinite(limit_seconds) and limit_seconds > 0
+            ):
+                limit_seconds = None
+            return A2AMessageLimitExceededError(
+                limit_seconds=limit_seconds, response=response, payload=payload
+            )
+    return None
 
 
 def _runtime_not_ready_error(access: AgentSessionRuntimeAccess) -> AgentRuntimeNotReadyError:
@@ -1339,6 +1412,12 @@ class AgentSession(
         """
         Send one standard A2A message to the runtime for this agent session.
 
+        A direct Message (``response_kind="message"``) holds the request open
+        until the Agent answers. The platform answers it within its Message
+        limit, or the Agent stops the turn and the call raises
+        ``A2AMessageLimitExceededError``; it is never retried or turned into a
+        Task. Send longer work with ``response_kind="task"``.
+
         ``timeout`` is one total budget for the whole call: a number of seconds,
         or a ``(connect, read)`` tuple whose total is their sum. It covers Agent
         discovery for Task mode, resolving runtime access and waiting for the
@@ -1407,6 +1486,10 @@ class AgentSession(
                 if response.status_code in (401, 403):
                     cls.clear_cached_runtime_access(session_uid)
         if not (200 <= response.status_code < 300):
+            if normalized_response_kind is A2AResponseKind.MESSAGE:
+                limit_error = _message_limit_error(response)
+                if limit_error is not None:
+                    raise limit_error
             raise_for_response(response, payload=body)
         try:
             payload = response.json()
@@ -1879,6 +1962,7 @@ class AgentSession(
 
 
 __all__ = [
+    "A2AMessageLimitExceededError",
     "A2AMessageSendResult",
     "A2AResponseKind",
     "A2ATask",

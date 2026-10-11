@@ -62,6 +62,22 @@ boundary and breaking changes.
 
 ### Added
 
+- `A2AMessageLimitExceededError`, raised for the platform's Message limit. The
+  platform answers a direct A2A Message (`response_kind="message"`) within its
+  Message limit, 90 seconds; when the target Agent does not answer in time it
+  stops the turn and answers `504` with the A2A `google.rpc` error whose
+  `ErrorInfo` has reason `MESSAGE_RESPONSE_LIMIT_EXCEEDED` and domain
+  `mainsequence.ai`. `AgentSession.send_a2a_message` and
+  `mainsequence agent session a2a send` now raise this error, a `ServerError`
+  whose `limit_seconds` is the limit the Agent reported, saying the Agent did
+  not answer within the platform's limit and that longer work uses Task mode
+  (`response_kind="task"`, CLI `--response-kind task`). The SDK never retries
+  it and never turns it into a Task; work the turn already did is not undone.
+  Any other `502` or `504`, for example from a gateway, raises `ServerError` as
+  before. No client setting extends the limit: a `timeout` can only shorten the
+  SDK's wait. ADR 0029, the CLI reference and the A2A scaffold skill describe
+  the limit; the skill also states the `wait_for_a2a_task` defaults.
+
 - `mainsequence.server.fastapi.install_mcp(app, mcp_app, *, lifespan)` serves
   an application-owned MCP server at `/mcp` inside the request identity
   (ADR 0038). Only authenticated POSTs reach it; other methods answer 405, an

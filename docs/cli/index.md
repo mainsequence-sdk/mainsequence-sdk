@@ -194,7 +194,11 @@ total. A runtime that is still starting or waking when the budget can no
 longer fit the platform's next retry ends the command with an error, and
 nothing is sent. Resolving a handle first is a separate request with the same
 budget. The value can only shorten a wait; it cannot extend the platform's
-limits.
+limits. In particular, the platform answers a direct Message (the default
+`--response-kind message`) within its Message limit, 90 seconds; when the Agent
+does not answer in time it stops the turn and the command fails with an error
+that says so, without retrying. Send longer work with `--response-kind task`
+when the Agent advertises it.
 
 ```bash
 # Agents

@@ -39,7 +39,9 @@ are not retried automatically; the only
 resend is the same request, with the same `messageId`, after the runtime rejects
 the credentials with `401` or `403`. When the budget runs out the call raises
 `requests.Timeout`, and the request may already have reached the runtime. A
-budget can only shorten a wait; it cannot extend a platform limit.
+budget can only shorten a wait; it cannot extend a platform limit, such as the
+platform's 90-second limit for answering a direct A2A Message (see
+[ADR 0029](../../adr/0029-a2a-message-send-only.md#message-limit)).
 
 The runtime credential exchange is a `POST` that renews credentials. A `429` or
 `503` answer to it exchanged nothing, so it is retried a bounded number of times

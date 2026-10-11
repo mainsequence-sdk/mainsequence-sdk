@@ -4386,7 +4386,12 @@ def agent_session_a2a_send_cmd(
     response_kind: str = typer.Option(
         "message",
         "--response-kind",
-        help="Select the A2A result contract: message or task.",
+        help=(
+            "Select the A2A result contract. message: wait for the Agent's answer "
+            "within the platform's Message limit; a Message that reaches the limit "
+            "fails and is not retried. task: get a Task back for longer work, when "
+            "the Agent advertises it."
+        ),
     ),
     timeout: int | None = typer.Option(
         None,

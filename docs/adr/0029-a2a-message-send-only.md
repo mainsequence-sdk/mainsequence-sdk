@@ -24,6 +24,15 @@ the SDK raises `AgentRuntimeNotReadyError` and sends nothing; before, the wait
 had no deadline. See step 3 of the [Decision](#decision) and
 [Timeouts](#timeouts).
 
+Amended 2026-10-11 for the platform Message limit: a direct Message is
+answered within the platform's Message limit, 90 seconds, or the target Agent
+stops the turn and answers `504` with the A2A `google.rpc` error whose
+`ErrorInfo` has reason `MESSAGE_RESPONSE_LIMIT_EXCEEDED` and domain
+`mainsequence.ai`. The SDK raises `A2AMessageLimitExceededError`, never retries
+it and never turns it into a Task; longer work uses Task mode. The sentence
+that called the re-resolution the SDK's only wait now also names the wait for
+the Agent's answer. See [Message limit](#message-limit).
+
 ## Status
 
 Superseded by Astro ADR 47, Explicit A2A Response Kind
@@ -81,7 +90,10 @@ The SDK must not call legacy runtime attach/status endpoints or perform idle,
 fixed-cadence, or provider readiness polling. Its only wait before sending is
 the server-directed re-resolution of the existing runtime-access route while an
 active send is blocked by a backend-declared transient interaction, and that
-wait ends with the call's total budget.
+wait ends with the call's total budget. After sending, a direct Message waits
+for the Agent's answer, which the platform gives within its
+[Message limit](#message-limit); a Task is followed only through the get, wait
+and cancel helpers.
 
 Under the superseding ADR 47 contract, explicit Task selection additionally
 uses backend Agent discovery (and, when necessary, the session's `agent_uid`)
@@ -101,6 +113,44 @@ transient when the platform's next retry no longer fits, the call raises
 the call raises `requests.Timeout`; the message may already have reached the
 runtime and is not sent again. `get_a2a_task` and `cancel_a2a_task` follow the
 same rule. A budget can only shorten a wait; it cannot extend a platform limit.
+
+### Message limit
+
+A direct Message holds one HTTP request open until the Agent answers. The
+platform answers it within its Message limit, 90 seconds. This is a platform
+characteristic: no client setting changes it, and anything longer uses Task
+mode. When the limit expires, the target Agent stops the turn, does not undo
+work the turn already did, and answers HTTP `504` with media type
+`application/a2a+json`:
+
+```json
+{
+  "error": {
+    "code": 504,
+    "status": "DEADLINE_EXCEEDED",
+    "message": "The Agent did not answer the Message within 90 seconds. Use Task mode for longer work.",
+    "details": [
+      {
+        "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+        "reason": "MESSAGE_RESPONSE_LIMIT_EXCEEDED",
+        "domain": "mainsequence.ai",
+        "metadata": {"limitSeconds": "90"}
+      }
+    ]
+  }
+}
+```
+
+For a direct Message the SDK raises `A2AMessageLimitExceededError`, a
+`ServerError` whose `limit_seconds` comes from `metadata.limitSeconds`. Its
+message says that the Agent did not answer within the platform's limit and that
+longer work uses `response_kind="task"` (CLI `--response-kind task`). The SDK
+never retries it automatically and never converts it into a Task. Any other
+`502` or `504`, for example from a gateway, keeps the ordinary `ServerError`.
+
+A `timeout` can only shorten the SDK's own wait. A value above the limit does
+not extend it, and a shorter one ends the SDK's wait while the Agent may go on
+working until the limit.
 
 ## Request Shape
 
