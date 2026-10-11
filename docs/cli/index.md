@@ -438,6 +438,9 @@ matter, and content hashes, then atomically replaces only
 `.agents/skills/mainsequence_platform/`. The SDK-owned `mainsequence`
 namespace and other libraries are untouched. The platform sentinel records the
 catalog's original source, retrieval time, and manifest/resource hashes.
+Each MCP request has the SDK's default request budget: 5 seconds to connect,
+120 seconds to read, 125 seconds in total. A request the platform does not
+answer in time ends the command with an error, and nothing is installed.
 
 Existing mixed installations are not retained in the SDK namespace. Refresh
 SDK skills to remove those entries, then explicitly refresh platform skills

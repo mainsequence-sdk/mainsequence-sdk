@@ -114,3 +114,12 @@ def answer_sequence(*routes):
         current(handler, stop)
 
     return route
+
+
+def never_answer():
+    """Read the request and never send anything back."""
+
+    def route(handler, stop):
+        stop.wait()
+
+    return route

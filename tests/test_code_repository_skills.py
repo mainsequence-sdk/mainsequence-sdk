@@ -3,12 +3,14 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import time
 from pathlib import Path
 
 import pytest
 
 from mainsequence.cli import api as cli_api
 from mainsequence.cli.api import ApiError
+from mainsequence.client import _transport as transport
 from mainsequence.code_repository_skills import (
     PLATFORM_ONTOLOGY_URI,
     PLATFORM_SKILL_URI_PREFIX,
@@ -17,6 +19,7 @@ from mainsequence.code_repository_skills import (
     install_platform_code_repository_skills,
     parse_platform_code_repository_skill_catalog,
 )
+from tests._http_server import answer_json, never_answer, serve
 
 _DEFAULT_TEST_SKILLS = ("alpha_skill", "beta_skill", "gamma_skill")
 _CURRENT_BACKEND_SKILL_PATHS = {
@@ -445,8 +448,8 @@ def test_mcp_json_rpc_uses_existing_jwt_and_refreshes_once(monkeypatch):
     ]
     calls = []
 
-    def _request(method, url, *, headers, data):
-        calls.append((method, url, headers, data))
+    def _request(method, url, *, headers, data, timeout):
+        calls.append((method, url, headers, data, timeout))
         return responses.pop(0)
 
     monkeypatch.setattr(cli_api, "_access_token", lambda: "existing-jwt")
@@ -473,6 +476,54 @@ def test_mcp_json_rpc_uses_existing_jwt_and_refreshes_once(monkeypatch):
     assert calls[0][2]["Authorization"] == "Bearer existing-jwt"
     assert calls[1][2]["Authorization"] == "Bearer refreshed-jwt"
     assert calls[1][2]["MCP-Protocol-Version"] == cli_api.MCP_PROTOCOL_VERSION
+    # Both sends share the SDK's default request budget: 5 s connect, 120 s read, 125 s total.
+    first_timeout, second_timeout = calls[0][4], calls[1][4]
+    assert (first_timeout.connect_timeout, first_timeout.read_timeout) == (5.0, 120.0)
+    assert 0 < second_timeout.total <= first_timeout.total <= 125.0
+
+
+def test_mcp_json_rpc_fails_within_the_default_budget_when_the_platform_never_answers(
+    monkeypatch,
+):
+    # A short stand-in for the default (5, 120) keeps the test fast; the request reads the
+    # default when it starts.
+    monkeypatch.setattr(transport, "DEFAULT_TIMEOUT", (0.2, 0.3))
+    monkeypatch.setattr(cli_api, "_access_token", lambda: "existing-jwt")
+    with serve({("POST", "/mcp"): never_answer()}) as (url, calls):
+        monkeypatch.setattr(cli_api, "backend_url", lambda: url.rstrip("/"))
+        started = time.monotonic()
+        with pytest.raises(ApiError, match="MCP resources/list request timed out"):
+            cli_api._mcp_json_rpc(
+                "resources/list",
+                {},
+                request_id=7,
+                protocol_version=cli_api.MCP_PROTOCOL_VERSION,
+            )
+        elapsed = time.monotonic() - started
+
+    assert elapsed < 0.8
+    assert [(method, path) for method, path, _body in calls] == [("POST", "/mcp")]
+
+
+def test_mcp_json_rpc_reads_a_responsive_platform(monkeypatch):
+    monkeypatch.setattr(cli_api, "_access_token", lambda: "existing-jwt")
+    route = answer_json(200, {"jsonrpc": "2.0", "id": 7, "result": {"resources": []}})
+    with serve({("POST", "/mcp"): route}) as (url, calls):
+        monkeypatch.setattr(cli_api, "backend_url", lambda: url.rstrip("/"))
+        result = cli_api._mcp_json_rpc(
+            "resources/list",
+            {},
+            request_id=7,
+            protocol_version=cli_api.MCP_PROTOCOL_VERSION,
+        )
+
+    assert result == {"resources": []}
+    assert json.loads(calls[0][2]) == {
+        "jsonrpc": "2.0",
+        "id": 7,
+        "method": "resources/list",
+        "params": {},
+    }
 
 
 def test_cli_fetch_rejects_mcp_or_resource_contract_failures(monkeypatch):

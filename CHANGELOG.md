@@ -355,6 +355,15 @@ boundary and breaking changes.
 
 ### Fixed
 
+- The CLI's MCP requests end within the SDK's default request budget (#217).
+  `mainsequence code-repository update-platform-skills` fetches the platform
+  skill catalog with MCP `initialize`, `resources/list` and `resources/read`
+  requests, which were sent with no timeout, so a platform or network that
+  stopped answering blocked the command forever. Each request, with a token
+  renewal and resend after `401`, now has the default budget: 5 seconds to
+  connect, 120 seconds to read, 125 seconds in total. A request that does not
+  finish in time ends the command with an error, and nothing is installed.
+
 - Waiting for an Agent runtime before an A2A call ends within the call's budget
   (#216). While the platform reported the runtime as `checking`, `starting`,
   `waking` or `updating`, `AgentSession.send_a2a_message`, `get_a2a_task` and
