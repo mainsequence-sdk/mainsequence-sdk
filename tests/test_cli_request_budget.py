@@ -15,9 +15,9 @@ import pytest
 import requests
 from typer.testing import CliRunner
 
+from mainsequence import _transport as transport
 from mainsequence.cli import api as cli_api
 from mainsequence.cli import cli as cli_mod
-from mainsequence.client import _transport as transport
 from tests._http_server import answer_json, answer_sequence, never_answer, serve
 
 runner = CliRunner()

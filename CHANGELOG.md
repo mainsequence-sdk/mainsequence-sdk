@@ -371,6 +371,21 @@ boundary and breaking changes.
 
 ### Fixed
 
+- A Job's startup-state read no longer aborts importing the SDK (#215). In a
+  Job, building the logger reads the Job run's startup state with a raw
+  10-second GET outside the SDK's request handling, and a `ReadTimeout` or
+  connection error escaped the import before any application code ran. The
+  read, with its token renewal and resend after `401` or `403`, now ends within
+  the SDK's default request budget, 5 seconds to connect, 120 seconds to read,
+  125 seconds in total, and the GET is retried like any other SDK read. The
+  startup state only enriches the logger: when it still cannot be read, the SDK
+  writes `mainsequence: the Job startup state could not be read
+  (<error type>); continuing without it.` to stderr and starts without it. The
+  exception text is not echoed. A denied read is not treated as granted and no
+  Job context is bound. `refresh_application_logger_bindings(timeout_s=...)`
+  now takes `timeout_s` as the read's total budget, and its default is the
+  SDK's default budget instead of 10 seconds.
+
 - Every CLI request ends within the SDK's default request budget (#219). Apart
   from its MCP requests, the CLI sent its requests with no timeout: the login
   code exchange, the MCP CLI login handoff start and poll, logout, revoke,

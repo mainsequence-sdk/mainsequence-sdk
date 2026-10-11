@@ -138,7 +138,7 @@ def test_no_code_path_reads_the_secret_variable(monkeypatch, runtime):
     # os.getenv() reads os.environ, so every lookup by name goes through the recorder.
     monkeypatch.setattr(os, "environ", environ)
     exchange = _Exchange(monkeypatch, _granted(), _granted())
-    monkeypatch.setattr(requests, "get", lambda url, **kwargs: _Answer(200, {}))
+    monkeypatch.setattr(requests.Session, "get", lambda _session, url, **kwargs: _Answer(200, {}))
 
     # Importing the client configures the logger, whose start-up exchange runs first.
     utils = load_sdk_submodule("mainsequence.client.utils")
@@ -306,7 +306,7 @@ def test_exchange_retries_are_bounded(monkeypatch, runtime):
 def test_each_attempt_receives_only_the_remaining_budget(monkeypatch, runtime):
     _use_token_file(monkeypatch, runtime)
     utils = load_sdk_submodule("mainsequence.client.utils")
-    transport = importlib.import_module("mainsequence.client._transport")
+    transport = importlib.import_module("mainsequence._transport")
     exchange = _Exchange(monkeypatch, _Answer(503, headers={"Retry-After": "4"}), _granted())
     now = [100.0]
 
@@ -434,7 +434,7 @@ def test_logger_start_up_exchange_sends_the_identity_token_and_retries(monkeypat
         authorizations.append(kwargs["headers"].get("Authorization"))
         return _Answer(200, {"job_run_uid": JOB_RUN_UID})
 
-    monkeypatch.setattr(requests, "get", _get)
+    monkeypatch.setattr(requests.Session, "get", lambda _session, url, **kw: _get(url, **kw))
 
     load_sdk_submodule("mainsequence.logconf")
 
@@ -452,7 +452,7 @@ def test_logger_start_up_exchange_needs_the_identity_token_file(monkeypatch, run
     monkeypatch.setenv(SECRET_ENV, SECRET)
     monkeypatch.setenv("JOB_RUN_UID", JOB_RUN_UID)
     exchange = _Exchange(monkeypatch)
-    monkeypatch.setattr(requests, "get", lambda url, **kwargs: _Answer(401))
+    monkeypatch.setattr(requests.Session, "get", lambda _session, url, **kwargs: _Answer(401))
 
     load_sdk_submodule("mainsequence.logconf")
 

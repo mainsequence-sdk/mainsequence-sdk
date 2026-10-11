@@ -7,7 +7,7 @@ from unittest.mock import Mock, PropertyMock
 import pytest
 import requests
 
-from mainsequence.client import _transport as transport
+from mainsequence import _transport as transport
 from mainsequence.client import utils
 from mainsequence.client.client import MainSequenceClient, MainSequenceClientConfig
 from mainsequence.client.exceptions import (

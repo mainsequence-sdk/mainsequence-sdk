@@ -5,7 +5,6 @@ import logging
 import logging.config
 import os
 import sys
-import time
 import traceback
 from collections.abc import Mapping
 from importlib.metadata import PackageNotFoundError
@@ -20,6 +19,7 @@ from structlog.contextvars import bind_contextvars, unbind_contextvars
 from structlog.dev import ConsoleRenderer
 from structlog.stdlib import BoundLogger
 
+from ._transport import DeadlineHTTPAdapter, request_budget
 from .defaults import resolve_backend_endpoint
 from .instrumentation import OTelJSONRenderer
 from .repository_identity_security import UNSUPPORTED_SOURCE_IDENTITY_ENV_NAMES
@@ -76,13 +76,26 @@ class CustomConsoleRenderer(ConsoleRenderer):
         return rendered
 
 
-def _request_job_startup_state(*, timeout_s: float = 10.0) -> dict[str, Any]:
+def _request_job_startup_state(*, timeout_s: float | None = None) -> dict[str, Any]:
     """
     Fetch startup state from backend using current env vars (JWT auth, endpoint, job_run_uid).
     Safe to call later after auth when access/refresh tokens become available.
+
+    The whole read, token renewal included, ends within one request budget:
+    ``timeout_s`` seconds in total, or the SDK's default request budget when it is
+    None. The GET is retried like any other SDK read. The startup state only
+    enriches the logger, so when the backend cannot be reached or does not answer
+    in time this reports it on stderr and returns an empty state instead of
+    failing the import.
     """
     if not is_running_in_pod():
         return {}
+
+    with request_budget(timeout_s) as budget:
+        return _read_job_startup_state(budget)
+
+
+def _read_job_startup_state(budget) -> dict[str, Any]:
 
     auth_mode = (os.getenv("MAINSEQUENCE_AUTH_MODE") or "jwt").strip().lower()
 
@@ -110,7 +123,7 @@ def _request_job_startup_state(*, timeout_s: float = 10.0) -> dict[str, Any]:
                 token_url,
                 headers={"Content-Type": "application/json"},
                 json=body,
-                timeout=timeout_s,
+                timeout=budget.timeout(),
                 allow_redirects=False,
             )
 
@@ -119,7 +132,7 @@ def _request_job_startup_state(*, timeout_s: float = 10.0) -> dict[str, Any]:
                 _post,
                 credential_id=(os.getenv(RUNTIME_CREDENTIAL_ID_ENV) or "").strip(),
                 identity_token_file=identity_token_file_from_environment(),
-                deadline=time.monotonic() + timeout_s,
+                deadline=budget.deadline,
             )
         except Exception:
             return False
@@ -155,7 +168,7 @@ def _request_job_startup_state(*, timeout_s: float = 10.0) -> dict[str, Any]:
                 f"{_backend_base_url()}/auth/jwt-token/token/refresh/",
                 headers={"Content-Type": "application/json"},
                 json={"refresh": refresh_token},
-                timeout=timeout_s,
+                timeout=budget.timeout(),
             )
         except Exception:
             return False
@@ -202,10 +215,25 @@ def _request_job_startup_state(*, timeout_s: float = 10.0) -> dict[str, Any]:
     endpoint = f"{_backend_base_url()}/api/v1/job-runs/{job_run_uid}/startup-state/"
     params: dict[str, Any] = {}
 
-    resp = requests.get(endpoint, headers=headers, params=params, timeout=timeout_s)
-    if resp.status_code in {401, 403} and using_jwt and _refresh_access_token():
-        headers, _ = _auth_headers()
-        resp = requests.get(endpoint, headers=headers, params=params, timeout=timeout_s)
+    try:
+        with requests.Session() as session:
+            adapter = DeadlineHTTPAdapter(retries=3, backoff_factor=0.5)
+            session.mount("https://", adapter)
+            session.mount("http://", adapter)
+            resp = session.get(endpoint, headers=headers, params=params, timeout=budget.timeout())
+            if resp.status_code in {401, 403} and using_jwt and _refresh_access_token():
+                headers, _ = _auth_headers()
+                resp = session.get(
+                    endpoint, headers=headers, params=params, timeout=budget.timeout()
+                )
+    except requests.RequestException as exc:
+        # The exception text is not echoed: it can carry the request URL and headers.
+        print(
+            "mainsequence: the Job startup state could not be read "
+            f"({type(exc).__name__}); continuing without it.",
+            file=sys.stderr,
+        )
+        return {}
 
     if resp.status_code != 200:
         # Do not spam stdout during CLI usage when auth context is not present yet.
@@ -426,7 +454,7 @@ def build_application_logger(application_name: str = "ms-sdk", **metadata):
     return logger
 
 
-def refresh_application_logger_bindings(*, timeout_s: float = 10.0) -> BoundLogger:
+def refresh_application_logger_bindings(*, timeout_s: float | None = None) -> BoundLogger:
     """
     Importable helper: call this AFTER the user authenticates / token exists.
     It re-fetches backend state and binds the same keys as build_application_logger().

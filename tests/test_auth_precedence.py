@@ -22,6 +22,12 @@ _UNSUPPORTED_ENVIRONMENT_UID_ENV = (
 )
 
 
+def _stub_startup_state_get(monkeypatch, fake_get):
+    monkeypatch.setattr(
+        requests.Session, "get", lambda _session, url, **kwargs: fake_get(url, **kwargs)
+    )
+
+
 class _FakeResponse:
     def __init__(self, status_code: int, payload: dict | None = None):
         self.status_code = status_code
@@ -107,7 +113,7 @@ def test_logconf_refreshes_jwt_before_startup_state_request(monkeypatch):
         post_calls.append({"url": url, **kwargs})
         return _FakeResponse(200, {"access": "jwt-access"})
 
-    monkeypatch.setattr(requests, "get", _fake_get)
+    _stub_startup_state_get(monkeypatch, _fake_get)
     monkeypatch.setattr(requests, "post", _fake_post)
 
     _load_mainsequence_submodule("mainsequence.logconf")
@@ -143,11 +149,14 @@ def test_logconf_runtime_credential_exchanges_before_startup_state_request(monke
             },
         )
 
-    monkeypatch.setattr(requests, "get", _fake_get)
+    _stub_startup_state_get(monkeypatch, _fake_get)
     monkeypatch.setattr(requests, "post", _fake_post)
 
     _load_mainsequence_submodule("mainsequence.logconf")
 
+    # The exchange receives what is left of the startup-state read's request budget.
+    timeout = post_calls[0].pop("timeout")
+    assert 0 < timeout.total <= 125.0
     assert post_calls == [
         {
             "url": "https://backend.example/api/v1/runtime-credentials/token/",
@@ -156,7 +165,6 @@ def test_logconf_runtime_credential_exchanges_before_startup_state_request(monke
                 "credential_id": "cred-id",
                 "workload_identity_token": "projected-token",
             },
-            "timeout": 10.0,
             "allow_redirects": False,
         }
     ]
@@ -192,7 +200,7 @@ def test_logconf_runtime_credential_retries_after_auth_failure(monkeypatch, tmp_
             },
         )
 
-    monkeypatch.setattr(requests, "get", _fake_get)
+    _stub_startup_state_get(monkeypatch, _fake_get)
     monkeypatch.setattr(requests, "post", _fake_post)
 
     _load_mainsequence_submodule("mainsequence.logconf")
@@ -594,7 +602,7 @@ def test_logconf_session_jwt_does_not_refresh(monkeypatch):
         post_calls.append({"url": url, **kwargs})
         return _FakeResponse(200, {"access": "unexpected"})
 
-    monkeypatch.setattr(requests, "get", _fake_get)
+    _stub_startup_state_get(monkeypatch, _fake_get)
     monkeypatch.setattr(requests, "post", _fake_post)
 
     _load_mainsequence_submodule("mainsequence.logconf")
