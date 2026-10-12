@@ -1,6 +1,6 @@
 ---
 name: mainsequence-command-center-fastapi
-description: Build, contract-test, release, and verify a FastAPI code repository resource serving the Command Center frontend, including applications with public OAuth callback or webhook routes. Use when implementing a Command Center wire contract, declaring exact public ingress, or validating the deployed API.
+description: Build, contract-test, release, and verify a FastAPI code repository resource serving the Command Center frontend, including applications with public OAuth callback or webhook routes. Use when implementing a Command Center wire contract, declaring exact public ingress, serving MCP tools or publishing MCP skills from the app (including setting the folder of skills it publishes), or validating the deployed API.
 ---
 
 # Command Center FastAPI Release Lifecycle
@@ -236,10 +236,11 @@ See also
 
 ### MCP tools
 
-To serve MCP tools from the same application, add the `mcp` extra and call
-`install_mcp(app, mcp.streamable_http_app(), lifespan=mcp.session_manager.run)`
-after `install_request_identity(app)`, with a stateless FastMCP server that
-returns JSON. Tools authorize with `User.get_logged_user()` and
+To serve MCP tools from the same application, add the `mcp` extra (the
+official MCP Python SDK 2.x) and call
+`install_mcp(app, mcp.streamable_http_app(stateless_http=True, json_response=True, transport_security=...), lifespan=mcp.session_manager.run)`
+after `install_request_identity(app)`, with an `MCPServer`; 1.x's `FastMCP`
+is not supported by the extra. Tools authorize with `User.get_logged_user()` and
 `User.get_requester()` exactly like REST handlers; admission to the release
 does not authorize every tool. Each tool decides whether it needs a person: a
 tool that needs one fails with its own error when the getter returns `None`,
@@ -250,6 +251,59 @@ are not write authority. The identity reaches tasks a tool starts and worker
 threads it uses through `asyncio.to_thread` or anyio's `to_thread.run_sync`,
 and ends with the call. See
 [Serving MCP](https://mainsequence-sdk.github.io/mainsequence-sdk/knowledge/fastapi/#serving-mcp).
+
+### MCP skills
+
+The MCP server publishes skills to its clients only from the folder set with
+`skills_extension`. Setting it is required: without it, the server exposes no
+skills and declares no Skills extension, whatever the repository holds.
+
+1. Ask the user which folder holds the skills to publish. Its name and place
+   are the user's choice; the SDK neither requires nor suggests one. The
+   examples below use `.agents/skills/mcp_only`. Only that folder is published;
+   the coding agents' other skill folders are not.
+2. In that folder, a folder with a `SKILL.md` is a skill, and a folder without
+   one groups skills; the group's path prefixes the URIs of the skills in it.
+   Each `SKILL.md` has frontmatter with `name`, equal to its folder's name, and
+   `description`. Supporting files sit beside it, in any subfolders:
+
+   ```text
+   .agents/skills/mcp_only/      # the folder set below (an example)
+     billing/                    # a group: no SKILL.md
+       refund-review/
+         SKILL.md                # skill://billing/refund-review/SKILL.md
+         references/policy.md
+       chargebacks/
+         SKILL.md                # skill://billing/chargebacks/SKILL.md
+     daily-close/
+       SKILL.md                  # skill://daily-close/SKILL.md
+   ```
+
+   Skill and group folder names are 1 to 64 characters of `a-z`, `0-9` and
+   single hyphens. A skill inside another skill is refused.
+3. Set the folder when constructing the server. A relative path is
+   repository-relative: it is looked up from the module that calls
+   `skills_extension` upwards, so it works from any module of the repository
+   and any working directory. Point at the folder that holds the skills, never
+   at `.agents/skills` itself:
+
+   ```python
+   from mcp.server.mcpserver import MCPServer
+
+   from mainsequence.server.mcp_skills import skills_extension
+
+   mcp = MCPServer("refunds", extensions=[skills_extension(".agents/skills/mcp_only")])
+   ```
+
+4. Commit the folder and start the app. Every skill in it is published; add or
+   remove a skill folder and redeploy to change the list. An invalid skill
+   fails startup with the file and the rule; quote frontmatter values such as
+   `yes`, dates and `0755`.
+
+Clients list the skills with `skills/list` and read them with `skills/get`
+and `resources/read` on the release's `/mcp`, behind the same authentication
+as tools. Do not register your own `skill://` resources. See
+[Skills](https://mainsequence-sdk.github.io/mainsequence-sdk/knowledge/fastapi/#skills).
 
 ### Public provider callbacks and webhooks
 

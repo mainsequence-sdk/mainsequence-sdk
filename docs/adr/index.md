@@ -39,3 +39,5 @@ ownership boundary is recorded in [ADR 0034](0034-extract-metatables-python-pack
 - [ADR 0037: The session lives in the operating system credential store](0037-machine-session-in-the-os-credential-store.md)
 
 - [ADR 0038: Project MCP on FastAPI releases](0038-project-mcp-on-fastapi-releases.md)
+
+- [ADR 0039: Application skills through the MCP Skills extension](0039-application-skills-through-the-mcp-skills-extension.md)

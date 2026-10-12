@@ -6,6 +6,41 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+Applications can publish Agent Skills from their MCP server (#221, ADR 0039).
+`mainsequence.server.mcp_skills.skills_extension(directory)` reads the folder
+the application chooses, any folder of the repository such as
+`.agents/skills/mcp_only`, once and returns the official MCP Skills extension,
+`io.modelcontextprotocol/skills`, for `MCPServer(extensions=[...])`. The
+folder is required: a server without it exposes no skills, and only that
+folder is published. A relative path is repository-relative, looked up from
+the calling module upwards, so it does not depend on the working directory.
+In the folder, a folder with a `SKILL.md` is a skill and a folder without one
+groups skills, its path prefixing their URIs, as in
+`skill://billing/refund-review/SKILL.md`. `skills/list` and `skills/get` return each
+skill's frontmatter and a manifest of its files' SHA-256 digests and sizes,
+and every file is served through `resources/read` with exactly those bytes,
+behind the same request identity as tools. A skill that breaks the Agent
+Skills format or the extension's limits fails startup with the file and the
+rule, as does frontmatter that YAML 1.1 and YAML 1.2 parsers read
+differently. No `mcp` release contains the extension yet, so the SDK ships a
+verbatim copy of the official implementation from commit `9a754b0` and uses
+`mcp.server.skills` as soon as an installed `mcp` has it.
+
+Breaking for applications that serve MCP: the `mcp` extra installs the
+official MCP Python SDK 2.x, `mcp>=2.3,<3`, instead of 1.x (#221).
+`install_mcp` is unchanged. Construct `MCPServer` instead of `FastMCP` and
+pass `stateless_http=True`, `json_response=True` and the transport security
+settings to `streamable_http_app()`; the server then serves protocol
+`2026-07-28` as well as the earlier revisions. An application that must stay
+on 1.x installs `mainsequence` without the extra and pins `mcp<2` itself.
+
+`mainsequence code-repository update-sdk` now refreshes SDK-owned repository
+skills and their version sentinel after installation, using the newly installed
+CLI in a fresh process. Retired SDK skills are removed. A refresh failure exits
+with an error instead of reporting overall success; the SDK remains upgraded
+and the error provides a retry command. Platform skills and `AGENTS.md` are
+unchanged, and `--dry-run` previews the refresh without executing it.
+
 Breaking, with no deprecation period: a requester-bound call carries the
 person's ordinary permissions, including administrative ones (#208). The
 verifier accepts a `requester` claim only with exactly `sub`, `team_uids` and a

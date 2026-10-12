@@ -7633,7 +7633,10 @@ def code_repository_update_sdk(
     dry_run: bool = typer.Option(False, "--dry-run", help="Print steps but do not execute"),
 ):
     """
-    Upgrade the CodeRepository SDK dependency (`mainsequence`) using `uv`.
+    Upgrade the CodeRepository SDK dependency and refresh its SDK-owned skills.
+
+    After installing with `uv`, run the updated SDK's skill copier in a fresh
+    process. Platform skills and AGENTS.md are not changed.
 
     Parameters
     ----------
@@ -7655,10 +7658,20 @@ def code_repository_update_sdk(
     code_repository_dir = _resolve_code_repository_dir(code_repository_id, path)
     ensure_venv(code_repository_dir)
 
+    refresh_args = [
+        "run",
+        "--no-sync",
+        "mainsequence",
+        "code-repository",
+        "update-agent-skills",
+        "--path",
+        str(code_repository_dir),
+    ]
     steps = [
         "resolve uv executable",
         "uv lock --upgrade-package mainsequence",
         "uv sync",
+        f"uv {shlex.join(refresh_args)}",
     ]
     print_table("Update SDK plan", ["Step"], [[s] for s in steps])
 
@@ -7671,34 +7684,18 @@ def code_repository_update_sdk(
         run_uv(uv, ["lock", "--upgrade-package", "mainsequence"], cwd=code_repository_dir)
         run_uv(uv, ["sync"], cwd=code_repository_dir)
 
-    success("SDK update complete.")
-    _warn_if_sdk_skills_stale(code_repository_dir)
-
-
-def _warn_if_sdk_skills_stale(code_repository_dir: pathlib.Path) -> None:
+    # The current process still has the pre-upgrade CLI loaded.
     try:
-        version = _code_repository_installed_package_version(code_repository_dir, "mainsequence")
-        sentinel = code_repository_dir / ".agents" / "skills" / "mainsequence" / "PINNED_FROM.txt"
-        values = (
-            dict(
-                line.split("=", 1)
-                for line in sentinel.read_text(encoding="utf-8").splitlines()
-                if "=" in line
-            )
-            if sentinel.is_file()
-            else {}
+        run_uv(uv, refresh_args, cwd=code_repository_dir)
+    except (OSError, RuntimeError) as exc:
+        error(
+            f"SDK upgraded, but SDK skill refresh failed: {exc}\n"
+            "The SDK upgrade has not been rolled back. "
+            f"Retry from {code_repository_dir} with: uv {shlex.join(refresh_args)}"
         )
-    except (OSError, ValueError, typer.Exit):
-        warn("Could not check the vendored SDK skill pin. Run update-agent-skills to refresh it.")
-        return
-    pinned = values.get("pinned_version", values.get("sdk_version"))
-    if pinned != version:
-        warn(
-            f"Vendored SDK skills are stale or missing (pinned: {pinned or 'missing'}; installed: {version}). "
-            "No scaffold files were changed. Refresh with "
-            "`uv run --offline mainsequence code-repository update-agent-skills --path .` "
-            "and `uv run --offline mainsequence code-repository update AGENTS.md --path .`."
-        )
+        raise typer.Exit(1) from exc
+
+    success("SDK update and SDK skill refresh complete.")
 
 
 @code_repository.command("update")

@@ -49,7 +49,8 @@ Do not let this skill become a domain manual.
 
 - MetaTables, table updates, and domain data discovery: use the installed
   `metatables` package skills and documentation
-- FastAPI APIs serving the Command Center frontend:
+- FastAPI APIs serving the Command Center frontend, and MCP tools and skills
+  served from a FastAPI release:
   `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
 - CodeRepository audits, blocker analysis, and upstream SDK assessment:
   `.agents/skills/mainsequence/maintenance/bug_auditor/SKILL.md`

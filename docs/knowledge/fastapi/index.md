@@ -119,18 +119,13 @@ An application can serve its own MCP server at `/mcp`, next to its HTTP API. Ins
 
 ```python
 from fastapi import FastAPI
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
 
 from mainsequence.client import User
 from mainsequence.server.fastapi import install_mcp, install_request_identity
 
-mcp = FastMCP(
-    "prices",
-    stateless_http=True,
-    json_response=True,
-    transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
-)
+mcp = MCPServer("prices")
 
 
 @mcp.tool()
@@ -141,7 +136,15 @@ async def latest_price(symbol: str) -> float:
 
 app = FastAPI()
 install_request_identity(app)
-install_mcp(app, mcp.streamable_http_app(), lifespan=mcp.session_manager.run)
+install_mcp(
+    app,
+    mcp.streamable_http_app(
+        stateless_http=True,
+        json_response=True,
+        transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
+    ),
+    lifespan=mcp.session_manager.run,
+)
 ```
 
 Tools read the caller with `User.get_logged_user()` and, on a requester-bound call, the person it works for with `User.get_requester()`, as REST handlers do. Admission to the release does not authorize every tool: each tool checks what its caller may do.
@@ -168,9 +171,66 @@ The integration:
 - starts the MCP lifespan once, after the application's, and stops it first; a failed MCP start unwinds the application's and fails startup;
 - refuses a second installation, an existing route under `/mcp` and a public-ingress entry for `/mcp`.
 
-Configure the server as above: stateless, JSON responses, and FastMCP's DNS-rebinding protection off, because its default admits only localhost hosts while the integration checks `Origin` and the platform routes the host. Keep its default path, `/mcp`.
+Configure the HTTP app as above: stateless, JSON responses, and the MCP SDK's DNS-rebinding protection off, because its default admits only localhost hosts while the integration checks `Origin` and the platform routes the host. Keep its default path, `/mcp`.
+
+The `mcp` extra installs the official MCP Python SDK 2.x, which serves protocol `2026-07-28` and the earlier revisions from the same server. An application written for 1.x's `FastMCP` constructs `MCPServer` instead and passes the settings above to `streamable_http_app()`.
 
 The release advertises its endpoint once its workflow declares `spec.mcp_enabled: true` (workflow API `2.3.0`) and a deployment with it succeeds. Clients connect to that URL and sign in with the platform; the application receives the caller assertion, never the client's token. `ResourceRelease.mcp_connection` gives the URL, and `ResourceRelease.filter(mcp_available=True)` lists releases that advertise one. See [ADR 0038](../../adr/0038-project-mcp-on-fastapi-releases.md).
+
+### Skills
+
+The MCP server can also publish [Agent Skills](https://agentskills.io/specification): workflows across several tools, checklists and reference files that travel with the service that owns them. The SDK serves them through the MCP Skills extension, `io.modelcontextprotocol/skills`, exactly as its [specification](https://github.com/modelcontextprotocol/ext-skills/blob/main/specification/stable/skills.mdx) defines it.
+
+Skills are published only from the folder you set with `skills_extension`, and setting it is required: without it, the server exposes no skills and declares no Skills extension, whatever the repository holds. The folder's name and place are yours to choose; the SDK neither requires nor suggests one, and the examples here use `.agents/skills/mcp_only`. Only that folder is published; the coding agents' other skill folders are not.
+
+In that folder, a folder with a `SKILL.md` is a skill, and a folder without one groups skills. A group's path prefixes the URIs of the skills in it, as the specification's organizational prefix:
+
+```text
+.agents/skills/mcp_only/      # the folder set below (an example)
+  billing/                    # a group: no SKILL.md
+    refund-review/
+      SKILL.md                # skill://billing/refund-review/SKILL.md
+      references/policy.md
+    chargebacks/
+      SKILL.md                # skill://billing/chargebacks/SKILL.md
+  daily-close/
+    SKILL.md                  # skill://daily-close/SKILL.md
+```
+
+Each `SKILL.md` begins with YAML frontmatter whose `name` equals its directory's name:
+
+```markdown
+---
+name: refund-review
+description: Review a refund request against the refund policy. Use when a customer asks for money back.
+---
+
+# Refund review
+
+Read `references/policy.md`, then call the `refund_status` tool.
+```
+
+Set the folder when constructing the server:
+
+```python
+from mainsequence.server.mcp_skills import skills_extension
+
+mcp = MCPServer("refunds", extensions=[skills_extension(".agents/skills/mcp_only")])
+```
+
+A relative path is repository-relative: `skills_extension` looks it up from the directory of the module that calls it upwards, so the same path works from any module of the repository and whatever the working directory. An absolute path is used as given. Point at the folder that holds the skills, never at `.agents/skills` itself.
+
+The list of skills is the folder: every skill in it is published, and adding or removing a skill folder changes the list at the next deployment. A client that supports the extension, connected to the release's `/mcp`, finds it in `server/discover`, lists the skills with `skills/list` and reads them with `skills/get` and `resources/read`. Each entry carries the skill's frontmatter and a manifest of its files with their SHA-256 digests and sizes, which the client checks against what it reads.
+
+`skills_extension`:
+
+- reads every file once, when it runs, and serves exactly those bytes; a changed skill takes effect with the next deployment;
+- skips names beginning with `.` inside the folder, and ignores files beside skills, such as a README in the folder or in a group;
+- fails startup with a `ValueError` naming the file and the rule when the folder is missing or holds no skill, a group holds no skill, a skill or group folder's name is not 1 to 64 characters of `a-z`, `0-9` and single hyphens, or a skill breaks the Agent Skills format: frontmatter that is missing or unclosed, a `name` that differs from its folder, a `description` outside 1 to 1024 characters, a `compatibility` over 500, or `metadata` that does not map strings to strings;
+- fails startup as well for a skill over 512 files or 16 MiB, a symbolic link, a skill inside another skill, or a file path with characters other than `A-Z a-z 0-9 . _ ~ -`;
+- refuses frontmatter values that YAML 1.1 and YAML 1.2 parsers read differently, such as an unquoted `yes`, a date or `0755`, because a client compares the frontmatter it parses with the entry: quote them.
+
+Skills are served only behind the same authenticated `/mcp` as tools. Every caller admitted to the release sees every skill: a skill is instructions, and the tools it mentions still check their caller. The server's `skill://` resources belong to the extension, so do not register your own under `skill://`. Clients on protocol `2025-11-25` can call the methods too, but that revision has no field in which the server can declare the extension. See [ADR 0039](../../adr/0039-application-skills-through-the-mcp-skills-extension.md).
 
 ## Platform and SDK responsibilities
 

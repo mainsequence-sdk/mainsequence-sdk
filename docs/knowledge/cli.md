@@ -137,6 +137,15 @@ mainsequence code-repository update-sdk --path .
 mainsequence doctor
 ```
 
+`update-sdk` upgrades `mainsequence` in the lockfile and local environment, then
+runs the newly installed SDK's `update-agent-skills` in a fresh process against
+the same repository. This replaces `.agents/skills/mainsequence/`, removes
+retired SDK skills, and updates `PINNED_FROM.txt`. Platform skills, other skill
+namespaces, and `AGENTS.md` are not changed. Use `--dry-run` to preview all steps.
+The command reports success only after the skill refresh succeeds. If it fails,
+the SDK remains upgraded and the command exits with an error and a refresh retry
+command. Direct `uv` upgrades do not trigger this refresh.
+
 ## Commit, push and release tags
 
 Publish changes with Git as usual: commit, then push. The platform deploys from

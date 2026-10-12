@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mainsequence"
-version = "9.0.22"
+version = "9.0.23"
 description = "Main Sequence SDK"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -43,9 +43,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Serving an application-owned MCP server with install_mcp (ADR 0038).
+# Serving an application-owned MCP server with install_mcp (ADR 0038) and
+# its skills with mainsequence.server.mcp_skills (ADR 0039).
 mcp = [
-  "mcp>=1.28,<2",
+  "mcp>=2.3,<3",
 ]
 
 [project.urls]
@@ -60,7 +61,7 @@ ms = "mainsequence.cli.cli:app"
 dev = [
   "fastapi>=0.110,<1",
   "httpx>=0.27,<1",
-  "mcp>=1.28,<2",
+  "mcp>=2.3,<3",
   "black>=26.3.1",
   "IPython",
   "mkdocs",
@@ -116,6 +117,8 @@ markers = [
 [tool.black]
 line-length = 100
 target-version = ["py313"]
+# Verbatim copies of the official MCP Skills extension and its tests (ADR 0039).
+extend-exclude = "mainsequence/server/_mcp_skills_upstream/|tests/mcp_skills_upstream/"
 
 # --------------------
 # Linting & import sort (Ruff)
@@ -123,7 +126,17 @@ target-version = ["py313"]
 [tool.ruff]
 line-length = 100
 target-version = "py313"
-extend-exclude = ["build", "dist", ".venv", ".tox", ".mypy_cache", ".ruff_cache"]
+extend-exclude = [
+  "build",
+  "dist",
+  ".venv",
+  ".tox",
+  ".mypy_cache",
+  ".ruff_cache",
+  # Verbatim copies of the official MCP Skills extension and its tests (ADR 0039).
+  "mainsequence/server/_mcp_skills_upstream",
+  "tests/mcp_skills_upstream",
+]
 fix = true
 
 [tool.ruff.lint]
