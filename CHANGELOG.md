@@ -6,6 +6,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+Applications can publish Agent Skills from their MCP server (#221, ADR 0039).
+`mainsequence.server.mcp_skills.skills_extension(directory)` reads a skills
+directory from the repository once and returns the official MCP Skills
+extension, `io.modelcontextprotocol/skills`, for
+`MCPServer(extensions=[...])`. `skills/list` and `skills/get` return each
+skill's frontmatter and a manifest of its files' SHA-256 digests and sizes,
+and every file is served through `resources/read` with exactly those bytes,
+behind the same request identity as tools. A skill that breaks the Agent
+Skills format or the extension's limits fails startup with the file and the
+rule, as does frontmatter that YAML 1.1 and YAML 1.2 parsers read
+differently. No `mcp` release contains the extension yet, so the SDK ships a
+verbatim copy of the official implementation from commit `9a754b0` and uses
+`mcp.server.skills` as soon as an installed `mcp` has it.
+
+Breaking for applications that serve MCP: the `mcp` extra installs the
+official MCP Python SDK 2.x, `mcp>=2.3,<3`, instead of 1.x (#221).
+`install_mcp` is unchanged. Construct `MCPServer` instead of `FastMCP` and
+pass `stateless_http=True`, `json_response=True` and the transport security
+settings to `streamable_http_app()`; the server then serves protocol
+`2026-07-28` as well as the earlier revisions. An application that must stay
+on 1.x installs `mainsequence` without the extra and pins `mcp<2` itself.
+
 Breaking, with no deprecation period: a requester-bound call carries the
 person's ordinary permissions, including administrative ones (#208). The
 verifier accepts a `requester` claim only with exactly `sub`, `team_uids` and a

@@ -394,7 +394,9 @@ def install_mcp(app, mcp_app, *, lifespan):
     ``mcp_app`` is the server's ASGI application, answering Streamable HTTP at
     ``/mcp`` statelessly with JSON responses. ``lifespan`` is a zero-argument
     callable returning its async context manager. With the official MCP Python
-    SDK, pass ``mcp.streamable_http_app()`` and ``mcp.session_manager.run``.
+    SDK's ``MCPServer``, pass ``mcp.streamable_http_app(stateless_http=True,
+    json_response=True, transport_security=...)`` and ``mcp.session_manager.run``;
+    its skills come from ``mainsequence.server.mcp_skills`` (ADR 0039).
 
     Install request identity first. Tools read the caller with
     ``User.get_logged_user()`` and, on a requester-bound call, the person it

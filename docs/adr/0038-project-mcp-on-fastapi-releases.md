@@ -1,5 +1,13 @@
 # ADR 0038: Project MCP on FastAPI releases
 
+Amended 2026-10-12 by [ADR 0039](0039-application-skills-through-the-mcp-skills-extension.md)
+for [SDK issue #221](https://github.com/mainsequence-sdk/mainsequence-sdk/issues/221):
+the compatibility target becomes protocol `2026-07-28`, with `2025-11-25`
+still served by the official SDK, and the `mcp` extra moves to the official
+SDK's 2.x line, `mcp>=2.3,<3`. Applications construct `MCPServer` and pass the
+stateless settings to its `streamable_http_app()`. `install_mcp` is unchanged,
+and this record's tests pass on mcp 2.3.0. See [Implementation](#implementation).
+
 Amended 2026-10-07 for [SDK issue #208](https://github.com/mainsequence-sdk/mainsequence-sdk/issues/208):
 a requester-bound tool call carries the person's ordinary permissions,
 including administrative ones, and `User.get_requester()` returns the person's
@@ -308,9 +316,9 @@ Implemented 2026-10-06:
 
 - `mainsequence.server.fastapi.install_mcp(app, mcp_app, *, lifespan)`.
   `mcp_app` answers Streamable HTTP at `/mcp`; `lifespan` is a zero-argument
-  callable returning its async context manager. With the official SDK they are
-  `mcp.streamable_http_app()` and `mcp.session_manager.run`. Request identity
-  is installed first.
+  callable returning its async context manager. With the official SDK's
+  `MCPServer` they are `mcp.streamable_http_app(...)` and
+  `mcp.session_manager.run`. Request identity is installed first.
 - The `/mcp` route is the application's first route, inside the
   request-identity middleware, and is left out of the OpenAPI schema. Only
   authenticated POSTs reach the server. Other methods answer 405 with
@@ -326,12 +334,14 @@ Implemented 2026-10-06:
 - Declaration: `app.state.mainsequence_mcp` is
   `{"installed": True, "path": "/mcp", "transport": "streamable-http",
   "stateless": True, "request_identity": True}`.
-- Packaging: the `mcp` extra adds `mcp>=1.28,<2`; ordinary installations and
-  `mainsequence.server.fastapi` do not import it. Tested with mcp 1.30.0,
-  FastAPI 0.141.1 and Starlette 1.7.0. FastMCP is configured with
-  `stateless_http=True`, `json_response=True` and DNS-rebinding protection
-  off: its default admits only localhost hosts, while the integration checks
-  `Origin` and the platform routes the host.
+- Packaging: the `mcp` extra adds `mcp>=2.3,<3`; ordinary installations and
+  `mainsequence.server.fastapi` do not import it. First shipped as
+  `mcp>=1.28,<2` and tested with mcp 1.30.0; ADR 0039 moved it to 2.x, tested
+  with mcp 2.3.0, FastAPI 0.141.1 and Starlette 1.7.0.
+  `MCPServer.streamable_http_app()` is called with `stateless_http=True`,
+  `json_response=True` and DNS-rebinding protection off: its default admits
+  only localhost hosts, while the integration checks `Origin` and the platform
+  routes the host.
 - With the official SDK in stateless mode, the caller's context reaches
   asynchronous tools, the tasks they start and the worker threads they use
   through `asyncio.to_thread` or anyio's `to_thread.run_sync`, without explicit

@@ -2,11 +2,13 @@
 
 Date: 2026-10-12
 
-Status: Proposed for
-[SDK issue #221](https://github.com/mainsequence-sdk/mainsequence-sdk/issues/221).
-Not implemented. It ships now on the released `mcp` 2.3.0 with a verbatim
-copy of the official `Skills` extension, until an `mcp` release contains it;
-see [Release order](#7-release-order).
+Status: Accepted 2026-10-12 for
+[SDK issue #221](https://github.com/mainsequence-sdk/mainsequence-sdk/issues/221)
+and implemented in the SDK; see [Implementation](#implementation). It ships on
+the released `mcp` 2.3.0 with a verbatim copy of the official `Skills`
+extension until an `mcp` release contains it; see
+[Release order](#7-release-order). A client that supports the extension against
+a deployed release remains open.
 
 Owners: Main Sequence SDK maintainers.
 
@@ -106,37 +108,38 @@ skills/
     SKILL.md
 ```
 
-The application enables them on its own MCP server before building the ASGI
-app:
+The application passes them to its own MCP server when it constructs it:
 
 ```python
 from pathlib import Path
 
 from mcp.server.mcpserver import MCPServer
 from mainsequence.server.fastapi import install_mcp, install_request_identity
-from mainsequence.server.mcp_skills import add_skills
+from mainsequence.server.mcp_skills import skills_extension
 
-mcp = MCPServer("refunds")
-add_skills(mcp, Path(__file__).parent / "skills")
+mcp = MCPServer("refunds", extensions=[skills_extension(Path(__file__).parent / "skills")])
 
 install_request_identity(app)
 install_mcp(
     app,
-    mcp.streamable_http_app(stateless_http=True, json_response=True),
+    mcp.streamable_http_app(stateless_http=True, json_response=True, transport_security=...),
     lifespan=mcp.session_manager.run,
 )
 ```
 
-- `mainsequence.server.mcp_skills.add_skills(server, directory)` takes the
-  application's `MCPServer` and an absolute directory path. A relative path is
-  refused: under the launcher the working directory is not the repository's.
-  There is no default location and no discovery; `skills/` is the documented
-  convention, not an assumption.
-- It registers the official `Skills` extension and one resource per file on
-  that server, and returns nothing.
+- `mainsequence.server.mcp_skills.skills_extension(directory)` takes an
+  absolute directory path and returns the official `Skills` extension serving
+  it. A relative path is refused: under the launcher the working directory is
+  not the repository's. There is no default location and no discovery;
+  `skills/` is the documented convention, not an assumption.
+- The official SDK applies extensions only when `MCPServer` is constructed, and
+  an extension contributes resources through its public `resources()` hook.
+  The returned extension uses that hook for its files, so the SDK touches no
+  private server API. Hence an extension, not a function that changes an
+  existing server.
 - `install_mcp` keeps its signature. It receives an ASGI app and cannot see the
   server's resources, so skills attach to the server, not to the installer.
-  Without `add_skills`, nothing changes.
+  Without the extension, nothing changes.
 - The module imports `mcp` and is imported only by applications that use it.
   `mainsequence` and `mainsequence.server.fastapi` still import without the
   `mcp` extra.
@@ -145,7 +148,9 @@ install_mcp(
 
 - Each direct child directory of `directory` is one skill. Its URI is
   `skill://<name>/SKILL.md`, with no organizational prefix: a skill URI is
-  already scoped to the server that serves it.
+  already scoped to the server that serves it. Files directly in `directory`,
+  such as a README, belong to no skill and are ignored, except a `SKILL.md`:
+  it means a skill was passed instead of the directory that holds skills.
 - Every regular file under the skill directory is part of the skill and appears
   once in its manifest as `skill://<name>/<relative path>`. Names beginning
   with `.` (files and directories) are skipped: not served and not listed.
@@ -155,7 +160,7 @@ install_mcp(
 - A `SKILL.md` below a skill's root is refused. The extension allows nested
   skills, but publishing them is a separate decision; refusing keeps every
   served `SKILL.md` a published skill.
-- Files are read once, in binary, when `add_skills` runs. Digests and sizes are
+- Files are read once, in binary, when `skills_extension` runs. Digests and sizes are
   computed from those bytes, and the same in-memory bytes are served. A change
   on disk after startup has no effect until the next start. No newline or
   encoding normalization is applied.
@@ -167,37 +172,52 @@ install_mcp(
   frontmatter, as the specification recommends.
 - Frontmatter is the YAML block between the opening `---` line and the next
   `---` line, loaded with the SDK's existing `pyyaml` dependency. It must be a
-  mapping with string keys whose values are JSON types (strings, numbers,
-  booleans, null, lists and mappings). The entry carries it unchanged.
+  mapping with string keys whose values are JSON types (strings, finite
+  numbers, booleans, null, lists and mappings). The entry carries it
+  unchanged.
+- A client parses the `SKILL.md` it reads and must find the entry's
+  frontmatter field for field, or refuse the skill. Clients parse YAML 1.1
+  (PyYAML) or YAML 1.2, which read some plain scalars differently: `yes` is a
+  boolean or a string, `2026-10-12` a date or a string, `0755` 493 or 755. The
+  SDK parses the frontmatter both ways and refuses any value on which they
+  disagree, and any repeated key, so every client reads the entry's
+  frontmatter. Quoting the value fixes it.
 
 ### 4. Startup validation
 
-`add_skills` raises a `ValueError` naming the skill, the file and the broken
-rule, and registers nothing, when:
+`skills_extension` raises a `ValueError` naming the file and the broken rule,
+and returns no extension, when:
 
-- the directory is missing, relative, unreadable or holds no skill;
-- a skill directory has no `SKILL.md`, or its frontmatter is missing,
-  unparsable, not a mapping, or holds a value that is not a JSON type (for
-  example an unquoted YAML date);
-- `name` breaks the Agent Skills rules (1 to 64 characters of `a-z`, `0-9` and
-  `-`, no leading, trailing or consecutive hyphen) or differs from the
-  directory name;
-- `description` is not 1 to 1024 characters, `compatibility` is present and
-  not 1 to 500 characters, or `metadata` is present and not a mapping from
-  strings to strings;
+- the directory is missing, relative, unreadable or holds no skill, or holds a
+  `SKILL.md` itself;
+- a skill directory's name breaks the Agent Skills name rule (1 to 64
+  characters of `a-z`, `0-9` and `-`, no leading, trailing or consecutive
+  hyphen), or it has no `SKILL.md`;
+- `SKILL.md` is not UTF-8, or its frontmatter is missing, unclosed,
+  unparsable, not a mapping, repeats a key, holds a non-string key, a value
+  that is not a JSON type or a non-finite number, or a value YAML 1.1 and
+  YAML 1.2 read differently;
+- `name` breaks the name rule or differs from the directory name;
+  `description` is not 1 to 1024 characters; `compatibility` is present and
+  not 1 to 500 characters; `license` or `allowed-tools` is present and not a
+  non-empty string; or `metadata` is present and not a mapping from strings to
+  strings;
 - a skill has more than 512 files or more than 16,777,216 bytes in total
   (`SKILL.md` included). The extension says a server should not serve such a
   skill; the SDK refuses it;
 - a path segment is outside the allowed characters, a nested `SKILL.md`
-  exists, or a symbolic link is found (it could leave the skill directory);
-- the server already has the Skills extension, or a resource or resource
-  template under `skill://`. The `skill://` scheme on that server belongs to
-  `add_skills`.
+  exists, a symbolic link is found (it could leave the skill directory), an
+  entry is neither a regular file nor a directory, or a file cannot be read.
 
-`add_skills` runs while the application module is imported, so a violation
-fails startup before readiness, as an invalid `install_mcp` does. An
-application that registers its own `skill://` resource after `add_skills` is
-unsupported; the guide says so.
+The extension is built while the application module is imported, so a
+violation fails startup before readiness, as an invalid `install_mcp` does.
+
+The `skill://` resources on that server belong to the extension. The official
+SDK keeps the first resource registered under a URI and logs a warning for a
+later one, and resources passed to the `MCPServer` constructor register before
+an extension's. An application resource under a skill's URI could therefore
+replace the bytes the manifest digests. The extension cannot see the server, so
+this is not checked: the guide says not to register `skill://` resources.
 
 ### 5. Protocol revision and the `mcp` extra
 
@@ -219,8 +239,8 @@ This amends ADR 0038:
   upstream and cannot serve the extension.
 - `install_mcp` is not tied to a library and still accepts any compliant ASGI
   app. An application that must stay on 1.x installs `mainsequence` without the
-  extra and pins `mcp<2` itself; it cannot use `add_skills`, which fails with a
-  message naming the required range.
+  extra and pins `mcp<2` itself; it cannot use `skills_extension`, whose module
+  fails to import with a message naming the extra.
 - The guide, the example and the API-surfaces scaffold skill move from
   `FastMCP` to `MCPServer`. The CHANGELOG lists the extra's new range as a
   breaking change.
@@ -237,7 +257,8 @@ This amends ADR 0038:
   entry alone. Declaring it would commit the server to every directory,
   including empty and hidden ones. It can be added later without a wire break.
 - `skills/list` returns every skill on one page; pagination is not needed for
-  a repository catalog. `ttlMs` is 300000 (five minutes): content changes only
+  a repository catalog. A request with a cursor answers `-32602`, as the base
+  protocol prescribes for a cursor the server did not issue. `ttlMs` is 300000 (five minutes): content changes only
   with a new revision, and digests catch a stale entry regardless.
   `cacheScope` is `"private"`, the official default. The catalog is the same
   for every caller, but it belongs to a release that admits only authenticated
@@ -263,11 +284,13 @@ v2.3.0 (2026-10-02) predates it, and upstream has announced no date.
   only import paths change, and the upstream MIT notice and the commit are
   recorded in the module. Nothing in them is edited, fixed or extended; an
   upstream fix is taken by copying again from a later commit.
-- `add_skills` uses `mcp.server.skills` when it imports, and the copy
-  otherwise. Once an installed `mcp` has the extension, the copy is never used.
+- `mainsequence.server.mcp_skills` uses `mcp.server.skills` when it imports,
+  and the copy otherwise. Once an installed `mcp` has the extension, the copy
+  is never used. A test checks that the copied files still hash to the
+  upstream files once the one changed import is reversed.
 - The SDK's tests run the copied upstream Skills tests against `mcp` 2.3.0, and
-  the SDK's own `add_skills` tests against both 2.3.0 with the copy and the
-  merge commit's `mcp`.
+  the SDK's own skills tests against both 2.3.0 with the copy and the merge
+  commit's `mcp`.
 - The copy carries the open bug #3685. It does not affect this server: the
   missed check applies to percent-encoded URIs, and decision 3 never produces
   one.
@@ -291,7 +314,7 @@ content of the application's server, not wiring the launcher checks.
 
 ## Acceptance criteria before release
 
-1. With `add_skills`, the server declares `resources` and
+1. With the extension, the server declares `resources` and
    `io.modelcontextprotocol/skills` as the specification defines, without
    `directoryRead`. The tests read the declaration from `server/discover` on
    `2026-07-28` and record what `initialize` returns on `2025-11-25`.
@@ -303,9 +326,8 @@ content of the application's server, not wiring the launcher checks.
 4. `resources/read` returns, for every manifest entry, bytes whose SHA-256 and
    length the tests compute independently, for text and binary files,
    including CRLF line endings, a UTF-8 BOM and a non-UTF-8 file.
-5. Each rule in decision 4 has a test that fails `add_skills` and registers
-   nothing.
-6. Without `add_skills`, `install_mcp` behaves as before, and ADR 0038's tests
+5. Each rule in decision 4 has a test that fails `skills_extension`.
+6. Without the extension, `install_mcp` behaves as before, and ADR 0038's tests
    pass on the new `mcp` range. A plain `mainsequence` import needs no `mcp`.
 7. All skills traffic is admitted only with request identity: 401 without an
    assertion, as for tools.
@@ -314,6 +336,49 @@ content of the application's server, not wiring the launcher checks.
    library, protocol and launcher versions.
 9. The FastAPI guide and the API-surfaces scaffold skill document publishing
    skills.
+
+## Implementation
+
+Implemented 2026-10-12:
+
+- `mainsequence.server.mcp_skills.skills_extension(directory)` returns a
+  subclass of the official `Skills` extension. Its `resources()` contributes a
+  `TextResource` or `BinaryResource` per file, and `skills/list` and
+  `skills/get` answer from the entries built at startup.
+- `mainsequence/server/_mcp_skills_upstream/` holds the copy from commit
+  `9a754b0aabb873d9707d52dc165b569fb442ec8c` with the upstream MIT notice, the
+  upstream files' SHA-256 digests and the one changed import.
+  `tests/mcp_skills_upstream/` holds upstream's own Skills tests, pointed at
+  the copy. Ruff and Black skip both.
+- Packaging: the `mcp` extra and the development group require
+  `mcp>=2.3,<3`; the lock resolves mcp 2.3.0 and mcp-types 2.3.0.
+- Tested on Linux with Python 3.13, FastAPI 0.141.1, Starlette 1.7.0 and
+  PyYAML 6.0.3: the full suite on mcp 2.3.0, which uses the copy; and the
+  skills, `install_mcp` and copied upstream tests on mcp and mcp-types built
+  from the merge commit (`2.3.1.dev2+9a754b0a`), which use `mcp.server.skills`.
+  The unreadable-file test runs only without root.
+- Observed with mcp 2.3.0. On `2026-07-28`, `server/discover` declares
+  `resources` and `extensions: {"io.modelcontextprotocol/skills": {}}`;
+  `skills/list` and `skills/get` carry `resultType: "complete"`,
+  `ttlMs: 300000` and `cacheScope: "private"`; an unknown skill, a malformed
+  skill URI, a cursor and an unknown resource answer `-32602`; and
+  `resources/read` needs the `Mcp-Name` header the transport specification
+  requires. On `2025-11-25`, `initialize` declares `resources` but no
+  extension, because that revision has no field for it, and `skills/list`
+  answers without the cache fields.
+- The official client from the merge commit, with its `Skills` client
+  extension, negotiated `2026-07-28` through `install_mcp` and request
+  identity, listed and fetched every skill, and read every file with matching
+  size, SHA-256 digest and frontmatter. That ran in process, not against a
+  deployed release.
+- ADR 0038's tests pass on mcp 2.3.0; they changed only to construct
+  `MCPServer` and pass the stateless settings to `streamable_http_app()`.
+  Request identity reaches asynchronous tools, their tasks and worker threads,
+  and ends with each call.
+
+Acceptance criteria 1 to 7 and 9 are covered by SDK tests. Open: 8, a client
+that supports the extension, such as the MCP Inspector, against a deployed
+release.
 
 ## Consequences
 
@@ -330,5 +395,5 @@ without the extension sees the skill files as ordinary resources, which the
 specification intends.
 
 Change classification: a new ADR for a feature, amending ADR 0038's
-compatibility target and dependency range. On acceptance, ADR 0038 gets an
-amendment note pointing here.
+compatibility target and dependency range; ADR 0038 carries the amendment
+note.

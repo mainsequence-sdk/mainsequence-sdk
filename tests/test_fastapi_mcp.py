@@ -12,7 +12,7 @@ import httpx
 import pytest
 from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
 
 import tests.test_fastapi_request_identity as identity_tests
@@ -86,13 +86,7 @@ def _reachable():
 
 
 def _server():
-    """A stateless JSON server; the SDK checks Origin and the platform routes Host."""
-    return FastMCP(
-        "identity",
-        stateless_http=True,
-        json_response=True,
-        transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
-    )
+    return MCPServer("identity")
 
 
 def _identity_server():
@@ -115,8 +109,14 @@ def _identity_server():
 
 
 def _install(app, server):
+    """Stateless JSON over HTTP; the SDK checks Origin and the platform routes Host."""
     install_request_identity(app)
-    install_mcp(app, server.streamable_http_app(), lifespan=server.session_manager.run)
+    http_app = server.streamable_http_app(
+        stateless_http=True,
+        json_response=True,
+        transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
+    )
+    install_mcp(app, http_app, lifespan=server.session_manager.run)
     return app
 
 

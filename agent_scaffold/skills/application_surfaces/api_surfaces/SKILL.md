@@ -236,10 +236,11 @@ See also
 
 ### MCP tools
 
-To serve MCP tools from the same application, add the `mcp` extra and call
-`install_mcp(app, mcp.streamable_http_app(), lifespan=mcp.session_manager.run)`
-after `install_request_identity(app)`, with a stateless FastMCP server that
-returns JSON. Tools authorize with `User.get_logged_user()` and
+To serve MCP tools from the same application, add the `mcp` extra (the
+official MCP Python SDK 2.x) and call
+`install_mcp(app, mcp.streamable_http_app(stateless_http=True, json_response=True, transport_security=...), lifespan=mcp.session_manager.run)`
+after `install_request_identity(app)`, with an `MCPServer`; 1.x's `FastMCP`
+is not supported by the extra. Tools authorize with `User.get_logged_user()` and
 `User.get_requester()` exactly like REST handlers; admission to the release
 does not authorize every tool. Each tool decides whether it needs a person: a
 tool that needs one fails with its own error when the getter returns `None`,
@@ -250,6 +251,17 @@ are not write authority. The identity reaches tasks a tool starts and worker
 threads it uses through `asyncio.to_thread` or anyio's `to_thread.run_sync`,
 and ends with the call. See
 [Serving MCP](https://mainsequence-sdk.github.io/mainsequence-sdk/knowledge/fastapi/#serving-mcp).
+
+To publish skills with the MCP server, keep them in the repository as an Agent
+Skills directory, one `skills/<name>/SKILL.md` per skill with frontmatter whose
+`name` equals the directory, and construct the server with
+`MCPServer(name, extensions=[skills_extension(Path(__file__).parent / "skills")])`
+from `mainsequence.server.mcp_skills`. It serves the official MCP Skills
+extension: `skills/list`, `skills/get` and every file through `resources/read`,
+behind the same authenticated `/mcp`. An invalid skill fails startup with the
+file and the rule; quote frontmatter values such as `yes`, dates and `0755`.
+Do not register your own `skill://` resources. See
+[Skills](https://mainsequence-sdk.github.io/mainsequence-sdk/knowledge/fastapi/#skills).
 
 ### Public provider callbacks and webhooks
 
