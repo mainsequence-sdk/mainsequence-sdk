@@ -207,6 +207,59 @@ def test_an_extension_aware_client_lists_gets_and_reads_every_skill(signed, cata
     assert _error(hidden) == INVALID_PARAMS
 
 
+GROUPED = {
+    "billing/refund-review/SKILL.md": REFUND_REVIEW.encode(),
+    "billing/refund-review/references/policy.md": SERVED["refund-review/references/policy.md"],
+    "billing/chargebacks/SKILL.md": b"---\nname: chargebacks\ndescription: Dispute one.\n---\n",
+    # Beside skills, a file belongs to none.
+    "billing/README.md": b"# Billing skills\n",
+    "daily-close/SKILL.md": SERVED["daily-close/SKILL.md"],
+}
+
+
+def test_group_folders_prefix_the_skills_they_hold(signed, tmp_path):
+    token, _, _ = signed
+    catalog = _write(tmp_path / "skills", GROUPED)
+    with TestClient(_app(skills_extension(catalog))) as client:
+        listed = _result(_rpc(client, "skills/list", proof=token()))
+        fetched = [
+            _result(_rpc(client, "skills/get", {"uri": skill["uri"]}, proof=token()))["skill"]
+            for skill in listed["skills"]
+        ]
+        served = {
+            resource["uri"]: _served_bytes(
+                _result(_rpc(client, "resources/read", {"uri": resource["uri"]}, proof=token()))[
+                    "contents"
+                ][0]
+            )
+            for skill in listed["skills"]
+            for resource in skill["resources"]
+        }
+        unprefixed = _rpc(
+            client, "skills/get", {"uri": "skill://refund-review/SKILL.md"}, proof=token()
+        )
+
+    assert [skill["uri"] for skill in listed["skills"]] == [
+        "skill://billing/chargebacks/SKILL.md",
+        "skill://billing/refund-review/SKILL.md",
+        "skill://daily-close/SKILL.md",
+    ]
+    assert [skill["frontmatter"]["name"] for skill in listed["skills"]] == [
+        "chargebacks",
+        "refund-review",
+        "daily-close",
+    ]
+    assert fetched == listed["skills"]
+    for skill in listed["skills"]:
+        for resource in skill["resources"]:
+            data = served[resource["uri"]]
+            assert (_digest(data), len(data)) == (resource["digest"], resource["size"])
+    assert served == {
+        f"skill://{path}": data for path, data in GROUPED.items() if path != "billing/README.md"
+    }
+    assert _error(unprefixed) == INVALID_PARAMS
+
+
 def test_files_are_served_as_read_at_startup(signed, catalog):
     token, _, _ = signed
     app = _app(skills_extension(catalog))
@@ -337,7 +390,7 @@ def test_a_repository_relative_folder_is_found_from_the_calling_module(tmp_path,
 
 
 def test_the_coding_agents_skills_folder_itself_is_not_a_folder_of_skills(tmp_path):
-    with pytest.raises(ValueError, match="nested skills are not served"):
+    with pytest.raises(ValueError, match="application_surfaces: a skill or group folder's name"):
         skills_extension(_repository(tmp_path) / ".agents" / "skills")
 
 
@@ -374,10 +427,10 @@ SKILL_MD = "refund-review/SKILL.md"
 INVALID_CATALOGS = {
     "no skill": ({"README.md": b"# Skills\n"}, "holds no skill"),
     "a skill instead of its parent": ({"SKILL.md": _skill_md(GOOD)}, "not a skill"),
-    "no SKILL.md": ({"refund-review/notes.md": b"notes"}, "must hold a SKILL.md"),
+    "no SKILL.md": ({"refund-review/notes.md": b"notes"}, "holds no SKILL.md and no skill"),
     "directory name": (
         {"Refund_Review/SKILL.md": _skill_md("name: Refund_Review\ndescription: d")},
-        "directory's name must be",
+        "folder's name must be",
     ),
     "name rule": (
         {SKILL_MD: _skill_md("name: refund--review\ndescription: d")},
@@ -427,8 +480,13 @@ INVALID_CATALOGS = {
     ),
     "nested skill": (
         {SKILL_MD: _skill_md(GOOD), "refund-review/inner/SKILL.md": _skill_md(GOOD)},
-        "nested skills are not served",
+        "a skill inside another skill is not served",
     ),
+    "group without skills": (
+        {"billing/README.md": b"notes", "daily-close/SKILL.md": _skill_md(GOOD)},
+        "billing: holds no SKILL.md and no skill",
+    ),
+    "group name": ({"Billing/refund-review/SKILL.md": _skill_md(GOOD)}, "folder's name must be"),
     "path characters": (
         {SKILL_MD: _skill_md(GOOD), "refund-review/my notes.md": b"notes"},
         "may use only",
@@ -471,7 +529,7 @@ def _sixteen_mib(path):
         (
             "linked-skill",
             lambda path: os.symlink(path.parent / "daily-close", path),
-            "is a symbolic link; a skill is a directory",
+            "is a symbolic link; skills and group folders are directories",
         ),
         ("refund-review/pipe", os.mkfifo, "is not a regular file or directory"),
         # With SKILL.md and the other files, more than 16 MiB in total.

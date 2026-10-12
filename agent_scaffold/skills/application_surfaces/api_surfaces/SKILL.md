@@ -256,29 +256,36 @@ and ends with the call. See
 
 The MCP server publishes skills to its clients only from the folder set with
 `skills_extension`. Setting it is required: without it, the server exposes no
-skills and declares no Skills extension, whatever `.agents/skills/` holds.
+skills and declares no Skills extension, whatever the repository holds.
 
-1. Ask the user which folder holds the skills to publish, for example
-   `.agents/skills/mcp_only`. Only that folder is published. The other
-   `.agents/skills/` folders, such as the SDK-owned `mainsequence/`, are not.
-2. Put one directory per skill directly in that folder. Each holds a
-   `SKILL.md` whose frontmatter has `name`, equal to the directory name, and
-   `description`; supporting files sit beside it:
+1. Ask the user which folder holds the skills to publish. Its name and place
+   are the user's choice; the SDK neither requires nor suggests one. The
+   examples below use `.agents/skills/mcp_only`. Only that folder is published;
+   the coding agents' other skill folders are not.
+2. In that folder, a folder with a `SKILL.md` is a skill, and a folder without
+   one groups skills; the group's path prefixes the URIs of the skills in it.
+   Each `SKILL.md` has frontmatter with `name`, equal to its folder's name, and
+   `description`. Supporting files sit beside it, in any subfolders:
 
    ```text
-   .agents/skills/
-     mainsequence/            # coding-agent skills: not published
-     mcp_only/                # the folder set below: published over MCP
+   .agents/skills/mcp_only/      # the folder set below (an example)
+     billing/                    # a group: no SKILL.md
        refund-review/
-         SKILL.md
+         SKILL.md                # skill://billing/refund-review/SKILL.md
          references/policy.md
+       chargebacks/
+         SKILL.md                # skill://billing/chargebacks/SKILL.md
+     daily-close/
+       SKILL.md                  # skill://daily-close/SKILL.md
    ```
 
+   Skill and group folder names are 1 to 64 characters of `a-z`, `0-9` and
+   single hyphens. A skill inside another skill is refused.
 3. Set the folder when constructing the server. A relative path is
    repository-relative: it is looked up from the module that calls
    `skills_extension` upwards, so it works from any module of the repository
-   and any working directory. Point at the folder that holds the skill
-   directories, never at `.agents/skills` itself:
+   and any working directory. Point at the folder that holds the skills, never
+   at `.agents/skills` itself:
 
    ```python
    from mcp.server.mcpserver import MCPServer
@@ -288,10 +295,10 @@ skills and declares no Skills extension, whatever `.agents/skills/` holds.
    mcp = MCPServer("refunds", extensions=[skills_extension(".agents/skills/mcp_only")])
    ```
 
-4. Commit the folder and start the app. Every skill directory in it is
-   published; add or remove a directory and redeploy to change the list. An
-   invalid skill fails startup with the file and the rule; quote frontmatter
-   values such as `yes`, dates and `0755`.
+4. Commit the folder and start the app. Every skill in it is published; add or
+   remove a skill folder and redeploy to change the list. An invalid skill
+   fails startup with the file and the rule; quote frontmatter values such as
+   `yes`, dates and `0755`.
 
 Clients list the skills with `skills/list` and read them with `skills/get`
 and `resources/read` on the release's `/mcp`, behind the same authentication

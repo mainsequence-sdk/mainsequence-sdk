@@ -248,15 +248,17 @@ def _resource(uri, data, *, name, description=None):
     return TextResource(uri=uri, name=name, description=description, mime_type=mime_type, text=text)
 
 
-def _skill(root):
-    """One skill directory, read once: its entry and the resources serving its files."""
+def _skill(root, skill_path):
+    """One skill folder, read once: its entry and the resources serving its files."""
     name = root.name
-    if not (len(name) <= 64 and _NAME.fullmatch(name)):
-        raise _invalid(root, f"a skill directory's name must be {_NAME_RULE}")
     files, total = {}, 0
     for parts, path in _files(root):
         if parts[-1] == _SKILL_MD and len(parts) > 1:
-            raise _invalid(path, "nested skills are not served; only a skill's root holds SKILL.md")
+            raise _invalid(
+                path,
+                "a skill inside another skill is not served; "
+                "give it its own folder beside that skill or in a group folder",
+            )
         try:
             if len(files) == _MAX_FILES or total + path.stat().st_size > _MAX_BYTES:
                 raise _invalid(root, f"a skill may hold at most {_MAX_FILES} files and 16 MiB")
@@ -268,10 +270,10 @@ def _skill(root):
             raise _invalid(root, f"a skill may hold at most {_MAX_FILES} files and 16 MiB")
         files["/".join(parts)] = data
     if _SKILL_MD not in files:
-        raise _invalid(root, "a skill directory must hold a SKILL.md")
+        raise _invalid(root, "a skill folder must hold a SKILL.md")
     frontmatter = _frontmatter(root / _SKILL_MD, files[_SKILL_MD], name)
     order = [_SKILL_MD, *sorted(path for path in files if path != _SKILL_MD)]
-    uris = {path: f"skill://{name}/{path}" for path in order}
+    uris = {path: f"skill://{skill_path}/{path}" for path in order}
     try:
         entry = Skill(
             uri=uris[_SKILL_MD],
@@ -339,36 +341,68 @@ def _skills_directory(directory, caller):
     )
 
 
+def _holds_skill_md(folder):
+    return any(
+        entry.name == _SKILL_MD and entry.is_file(follow_symlinks=False)
+        for entry in _listing(folder)
+    )
+
+
+def _collect(folder, prefix, catalog):
+    """The skills under ``folder``: a folder with a SKILL.md is a skill, one without groups."""
+    for entry in _listing(folder):
+        path = Path(entry.path)
+        if entry.is_symlink():
+            raise _invalid(path, "is a symbolic link; skills and group folders are directories")
+        if not entry.is_dir(follow_symlinks=False):
+            continue  # A file beside skills, such as a README, belongs to no skill.
+        # The first folder becomes the skill URI's host, so every name keeps the name rule.
+        if not (len(entry.name) <= 64 and _NAME.fullmatch(entry.name)):
+            raise _invalid(path, f"a skill or group folder's name must be {_NAME_RULE}")
+        segments = (*prefix, entry.name)
+        if _holds_skill_md(path):
+            catalog.append(_skill(path, "/".join(segments)))
+            continue
+        found = len(catalog)
+        _collect(path, segments, catalog)
+        if len(catalog) == found:
+            raise _invalid(
+                path,
+                "holds no SKILL.md and no skill: a skill folder needs a SKILL.md, "
+                "a group folder needs skills",
+            )
+
+
 def skills_extension(directory):
     """The MCP Skills extension serving the Agent Skills in ``directory``.
 
     Pass it when constructing the application's server,
-    ``MCPServer(name, extensions=[skills_extension(".agents/skills/mcp_only")])``.
-    ``directory`` is the folder the application chooses for the skills it
-    publishes: an absolute path, or a path relative to the repository, found
-    from the calling module's directory upwards. Each of its child directories is
-    one skill with a ``SKILL.md``; nothing outside it is published, and hidden
-    names inside it are skipped. Every file is read now: manifests digest the
-    bytes served, and a change on disk takes effect at the next start. A folder
-    that breaks the Agent Skills format or the extension's limits raises
+    ``MCPServer(name, extensions=[skills_extension(directory)])``. ``directory``
+    is the folder the application chooses for the skills it publishes, with any
+    name and place in the repository: an absolute path, or a path relative to the
+    repository, found from the calling module's directory upwards. Without the
+    extension the server exposes no skills, and nothing outside ``directory`` is
+    published.
+
+    A folder in ``directory`` that holds a ``SKILL.md`` is a skill; a folder
+    without one groups skills, and its path prefixes their URIs:
+    ``billing/refund-review/SKILL.md`` is ``skill://billing/refund-review/SKILL.md``.
+    Hidden names are skipped. Every file is read now: manifests digest the bytes
+    served, and a change on disk takes effect at the next start. A folder that
+    breaks the Agent Skills format or the extension's limits raises
     ``ValueError`` naming the file and the rule. The server's ``skill://``
     resources belong to this extension. See ADR 0039.
     """
     directory = _skills_directory(directory, sys._getframe(1).f_globals.get("__file__"))
     if not directory.is_dir():
-        raise _invalid(directory, "the skills directory does not exist")
+        raise _invalid(directory, "the skills folder does not exist")
+    if _holds_skill_md(directory):
+        raise _invalid(directory, "pass the folder that contains the skills, not a skill")
     catalog = []
-    for entry in _listing(directory):
-        path = Path(entry.path)
-        if entry.is_symlink():
-            raise _invalid(path, "is a symbolic link; a skill is a directory")
-        if entry.is_dir(follow_symlinks=False):
-            catalog.append(_skill(path))
-        elif entry.name == _SKILL_MD:
-            raise _invalid(path, "pass the directory that contains the skills, not a skill")
+    _collect(directory, (), catalog)
     if not catalog:
-        raise _invalid(directory, "the skills directory holds no skill")
-    return _DirectorySkills(catalog)
+        raise _invalid(directory, "the skills folder holds no skill")
+    return _DirectorySkills(sorted(catalog, key=lambda skill: skill[0].uri))
 
 
 __all__ = ["skills_extension"]

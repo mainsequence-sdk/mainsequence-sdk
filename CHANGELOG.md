@@ -8,12 +8,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 Applications can publish Agent Skills from their MCP server (#221, ADR 0039).
 `mainsequence.server.mcp_skills.skills_extension(directory)` reads the folder
-the application chooses, for example `.agents/skills/mcp_only`, once and
-returns the official MCP Skills extension, `io.modelcontextprotocol/skills`,
-for `MCPServer(extensions=[...])`. The folder is required: a server without it
-exposes no skills, and only that folder is published. A relative path is
-repository-relative, looked up from the calling module upwards, so it does
-not depend on the working directory. `skills/list` and `skills/get` return each
+the application chooses, any folder of the repository such as
+`.agents/skills/mcp_only`, once and returns the official MCP Skills extension,
+`io.modelcontextprotocol/skills`, for `MCPServer(extensions=[...])`. The
+folder is required: a server without it exposes no skills, and only that
+folder is published. A relative path is repository-relative, looked up from
+the calling module upwards, so it does not depend on the working directory.
+In the folder, a folder with a `SKILL.md` is a skill and a folder without one
+groups skills, its path prefixing their URIs, as in
+`skill://billing/refund-review/SKILL.md`. `skills/list` and `skills/get` return each
 skill's frontmatter and a manifest of its files' SHA-256 digests and sizes,
 and every file is served through `resources/read` with exactly those bytes,
 behind the same request identity as tools. A skill that breaks the Agent

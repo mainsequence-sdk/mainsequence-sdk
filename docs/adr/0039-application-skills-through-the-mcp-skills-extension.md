@@ -98,18 +98,21 @@ switches to it and keeps its own interface.
 ### 2. Packaging and interface
 
 Skills live in the application's repository, in a folder the application
-chooses, for example `.agents/skills/mcp_only` beside the coding agents' skills.
-Each directory directly in that folder is one Agent Skills skill:
+chooses. Its name and place are the application's; the SDK neither requires nor
+suggests one, and this record's examples use `.agents/skills/mcp_only`. In that
+folder, a folder with a `SKILL.md` is an Agent Skills skill, and a folder
+without one groups skills (decision 3):
 
 ```text
-.agents/skills/
-  mainsequence/            # coding-agent skills: not published
-  mcp_only/                # the folder passed below: published over MCP
+.agents/skills/mcp_only/      # the folder passed below (an example)
+  billing/                    # a group: no SKILL.md
     refund-review/
-      SKILL.md
+      SKILL.md                # skill://billing/refund-review/SKILL.md
       references/policy.md
-    daily-close/
-      SKILL.md
+    chargebacks/
+      SKILL.md                # skill://billing/chargebacks/SKILL.md
+  daily-close/
+    SKILL.md                  # skill://daily-close/SKILL.md
 ```
 
 The application passes that folder to its MCP server when it constructs it:
@@ -155,20 +158,29 @@ install_mcp(
 
 ### 3. Catalog, URIs and bytes
 
-- Each direct child directory of `directory` is one skill. Its URI is
-  `skill://<name>/SKILL.md`, with no organizational prefix: a skill URI is
-  already scoped to the server that serves it. Files directly in `directory`,
-  such as a README, belong to no skill and are ignored, except a `SKILL.md`:
-  it means a skill was passed instead of the directory that holds skills.
+- A folder in `directory`, at any depth, that holds a `SKILL.md` is a skill.
+  A folder without one is a group: its path is the specification's
+  organizational prefix for the skills in it, so
+  `billing/refund-review/SKILL.md` is `skill://billing/refund-review/SKILL.md`
+  and `daily-close/SKILL.md` is `skill://daily-close/SKILL.md`. The final
+  segment is the skill's `name`. The listing is flat and sorted by URI.
+- Skill and group folder names follow the Agent Skills name rule (1 to 64
+  characters of `a-z`, `0-9` and single hyphens). The first folder becomes the
+  URI's authority, which URI parsers may lowercase, and the rule keeps every
+  segment stable.
+- Files beside skills, in `directory` or in a group, such as a README, belong
+  to no skill and are ignored, except a `SKILL.md` directly in `directory`: it
+  means a skill was passed instead of the folder that holds skills.
 - Every regular file under the skill directory is part of the skill and appears
   once in its manifest as `skill://<name>/<relative path>`. Names beginning
   with `.` (files and directories) are skipped: not served and not listed.
 - Every path segment must use only `A-Z a-z 0-9 . _ ~ -`. Such URIs need no
   percent-encoding, so a served URI and its manifest entry are the same string,
   and the check in #3685 has nothing to miss.
-- A `SKILL.md` below a skill's root is refused. The extension allows nested
-  skills, but publishing them is a separate decision; refusing keeps every
-  served `SKILL.md` a published skill.
+- A skill inside another skill, a `SKILL.md` below a skill's root, is refused.
+  The extension allows such nested skills, but publishing them is a separate
+  decision; refusing keeps every served `SKILL.md` a published skill. Groups
+  cover organizing skills.
 - Files are read once, in binary, when `skills_extension` runs. Digests and sizes are
   computed from those bytes, and the same in-memory bytes are served. A change
   on disk after startup has no effect until the next start. No newline or
@@ -200,11 +212,13 @@ and returns no extension, when:
 - the folder is missing (for a relative path, not found from the calling
   module upwards), unreadable or holds no skill, or holds a `SKILL.md` itself,
   as when a skill is passed instead of the folder of skills. Passing
-  `.agents/skills` itself fails too, because the coding agents' namespace
-  folders in it are not skills;
-- a skill directory's name breaks the Agent Skills name rule (1 to 64
+  `.agents/skills` itself is not supported: the SDK-owned folders in it have
+  names such as `application_surfaces`, which no skill or group folder may
+  have, so startup fails;
+- a skill or group folder's name breaks the Agent Skills name rule (1 to 64
   characters of `a-z`, `0-9` and `-`, no leading, trailing or consecutive
-  hyphen), or it has no `SKILL.md`;
+  hyphen), or a group holds no skill, as a skill folder without its
+  `SKILL.md` does;
 - `SKILL.md` is not UTF-8, or its frontmatter is missing, unclosed,
   unparsable, not a mapping, repeats a key, holds a non-string key, a value
   that is not a JSON type or a non-finite number, or a value YAML 1.1 and
@@ -217,9 +231,10 @@ and returns no extension, when:
 - a skill has more than 512 files or more than 16,777,216 bytes in total
   (`SKILL.md` included). The extension says a server should not serve such a
   skill; the SDK refuses it;
-- a path segment is outside the allowed characters, a nested `SKILL.md`
-  exists, a symbolic link is found (it could leave the skill directory), an
-  entry is neither a regular file nor a directory, or a file cannot be read.
+- a file path segment is outside the allowed characters, a skill holds
+  another skill, a symbolic link is found (it could leave the folder), an
+  entry in a skill is neither a regular file nor a directory, or a file cannot
+  be read.
 
 The extension is built while the application module is imported, so a
 violation fails startup before readiness, as an invalid `install_mcp` does.
