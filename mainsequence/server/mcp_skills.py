@@ -14,6 +14,7 @@ import math
 import mimetypes
 import os
 import re
+import sys
 from pathlib import Path
 
 import yaml
@@ -323,24 +324,37 @@ class _DirectorySkills(Skills):
         return GetSkillResult(skill=skill, ttl_ms=_TTL_MS, cache_scope="private")
 
 
+def _skills_directory(directory, caller):
+    """``directory`` as an absolute path; a relative one is found above the calling module."""
+    path = Path(directory)
+    if path.is_absolute():
+        return path
+    start = Path(caller).resolve().parent if caller else Path.cwd()
+    for base in (start, *start.parents):
+        if (base / path).is_dir():
+            return base / path
+    raise ValueError(
+        f"No directory {path} was found in {start} or above it: a relative skills directory "
+        "is resolved from the module that calls skills_extension, up to the repository root."
+    )
+
+
 def skills_extension(directory):
     """The MCP Skills extension serving the Agent Skills in ``directory``.
 
     Pass it when constructing the application's server,
-    ``MCPServer(name, extensions=[skills_extension(path)])``. ``directory`` is an
-    absolute path; each child directory is one skill with a ``SKILL.md``, and
-    hidden names are skipped. Every file is read now: manifests digest the bytes
-    served, and a change on disk takes effect at the next start. A directory that
-    breaks the Agent Skills format or the extension's limits raises
+    ``MCPServer(name, extensions=[skills_extension(".agents/skills/mcp_only")])``.
+    ``directory`` is the folder the application chooses for the skills it
+    publishes: an absolute path, or a path relative to the repository, found
+    from the calling module's directory upwards. Each of its child directories is
+    one skill with a ``SKILL.md``; nothing outside it is published, and hidden
+    names inside it are skipped. Every file is read now: manifests digest the
+    bytes served, and a change on disk takes effect at the next start. A folder
+    that breaks the Agent Skills format or the extension's limits raises
     ``ValueError`` naming the file and the rule. The server's ``skill://``
     resources belong to this extension. See ADR 0039.
     """
-    directory = Path(directory)
-    if not directory.is_absolute():
-        raise ValueError(
-            f"The skills directory {directory} must be an absolute path, such as "
-            "Path(__file__).parent / 'skills': the working directory is not the repository's."
-        )
+    directory = _skills_directory(directory, sys._getframe(1).f_globals.get("__file__"))
     if not directory.is_dir():
         raise _invalid(directory, "the skills directory does not exist")
     catalog = []

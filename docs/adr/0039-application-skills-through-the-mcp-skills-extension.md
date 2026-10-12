@@ -97,27 +97,29 @@ switches to it and keeps its own interface.
 
 ### 2. Packaging and interface
 
-Skills live in the application's repository as an Agent Skills directory:
+Skills live in the application's repository, in a folder the application
+chooses, for example `.agents/skills/mcp_only` beside the coding agents' skills.
+Each directory directly in that folder is one Agent Skills skill:
 
 ```text
-skills/
-  refund-review/
-    SKILL.md
-    references/policy.md
-  daily-close/
-    SKILL.md
+.agents/skills/
+  mainsequence/            # coding-agent skills: not published
+  mcp_only/                # the folder passed below: published over MCP
+    refund-review/
+      SKILL.md
+      references/policy.md
+    daily-close/
+      SKILL.md
 ```
 
-The application passes them to its own MCP server when it constructs it:
+The application passes that folder to its MCP server when it constructs it:
 
 ```python
-from pathlib import Path
-
 from mcp.server.mcpserver import MCPServer
 from mainsequence.server.fastapi import install_mcp, install_request_identity
 from mainsequence.server.mcp_skills import skills_extension
 
-mcp = MCPServer("refunds", extensions=[skills_extension(Path(__file__).parent / "skills")])
+mcp = MCPServer("refunds", extensions=[skills_extension(".agents/skills/mcp_only")])
 
 install_request_identity(app)
 install_mcp(
@@ -127,11 +129,18 @@ install_mcp(
 )
 ```
 
-- `mainsequence.server.mcp_skills.skills_extension(directory)` takes an
-  absolute directory path and returns the official `Skills` extension serving
-  it. A relative path is refused: under the launcher the working directory is
-  not the repository's. There is no default location and no discovery;
-  `skills/` is the documented convention, not an assumption.
+- `mainsequence.server.mcp_skills.skills_extension(directory)` returns the
+  official `Skills` extension serving that folder. The folder is required and
+  there is no default and no discovery: a server without the extension
+  exposes no skills and declares no Skills extension, whatever the repository
+  holds, `.agents/skills/` included. Only the folder passed is published.
+- `directory` is an absolute path, or a path relative to the repository. A
+  relative path is looked up from the directory of the module that calls
+  `skills_extension` upwards, and the first directory that contains it is
+  used, as Git finds `.git`. It therefore does not depend on the process's
+  working directory, which the SDK does not control under the launcher. A
+  caller without a module file, such as an interactive session, starts from
+  the working directory.
 - The official SDK applies extensions only when `MCPServer` is constructed, and
   an extension contributes resources through its public `resources()` hook.
   The returned extension uses that hook for its files, so the SDK touches no
@@ -188,8 +197,11 @@ install_mcp(
 `skills_extension` raises a `ValueError` naming the file and the broken rule,
 and returns no extension, when:
 
-- the directory is missing, relative, unreadable or holds no skill, or holds a
-  `SKILL.md` itself;
+- the folder is missing (for a relative path, not found from the calling
+  module upwards), unreadable or holds no skill, or holds a `SKILL.md` itself,
+  as when a skill is passed instead of the folder of skills. Passing
+  `.agents/skills` itself fails too, because the coding agents' namespace
+  folders in it are not skills;
 - a skill directory's name breaks the Agent Skills name rule (1 to 64
   characters of `a-z`, `0-9` and `-`, no leading, trailing or consecutive
   hyphen), or it has no `SKILL.md`;

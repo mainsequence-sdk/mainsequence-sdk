@@ -296,14 +296,64 @@ def test_skills_and_their_files_need_an_authenticated_caller(signed, catalog):
     assert statuses == [401] * 8
 
 
-def test_a_server_without_skills_declares_no_extension(signed):
+def _repository(tmp_path):
+    """A repository whose MCP skills folder sits beside the coding agents' skills."""
+    root = tmp_path / "repository"
+    _write(root / ".agents" / "skills" / "mcp_only", SERVED)
+    coding_agent_skill = _skill_md("name: api-surfaces\ndescription: For coding agents.")
+    _write(
+        root / ".agents" / "skills" / "mainsequence",
+        {
+            "PINNED_FROM.txt": b"9.0.23\n",
+            "application_surfaces/api_surfaces/SKILL.md": coding_agent_skill,
+        },
+    )
+    module = root / "api" / "provider" / "main.py"
+    module.parent.mkdir(parents=True)
+    module.write_text(
+        "from mainsequence.server.mcp_skills import skills_extension\n\n"
+        'extension = skills_extension(".agents/skills/mcp_only")\n'
+    )
+    return root
+
+
+def _load(path):
+    spec = importlib.util.spec_from_file_location(f"application_{uuid4().hex}", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_a_repository_relative_folder_is_found_from_the_calling_module(tmp_path, monkeypatch):
+    """Whatever the working directory; only the folder passed is published."""
+    root = _repository(tmp_path)
+    monkeypatch.chdir(tmp_path)
+
+    extension = _load(root / "api" / "provider" / "main.py").extension
+
+    assert {binding.resource.uri for binding in extension.resources()} == {
+        f"skill://{path}" for path in SERVED
+    }
+
+
+def test_the_coding_agents_skills_folder_itself_is_not_a_folder_of_skills(tmp_path):
+    with pytest.raises(ValueError, match="nested skills are not served"):
+        skills_extension(_repository(tmp_path) / ".agents" / "skills")
+
+
+def test_without_the_folder_the_server_exposes_no_skill(signed, tmp_path, monkeypatch):
+    """Nothing is discovered: not from the working directory, not from .agents/skills."""
     token, _, _ = signed
+    monkeypatch.chdir(_repository(tmp_path))
     with TestClient(_app()) as client:
         discovered = _result(_rpc(client, "server/discover", proof=token()))
         listed = _rpc(client, "skills/list", proof=token())
+        uri = {"uri": "skill://refund-review/SKILL.md"}
+        read = _rpc(client, "resources/read", uri, proof=token())
 
     assert EXTENSION not in discovered["capabilities"].get("extensions", {})
     assert _error(listed) == METHOD_NOT_FOUND
+    assert _error(read) == INVALID_PARAMS
 
 
 def test_a_skill_may_hold_up_to_512_files(catalog):
@@ -398,9 +448,9 @@ def test_an_invalid_skill_fails_before_anything_is_served(tmp_path, case):
         skills_extension(_write(tmp_path / "skills", files))
 
 
-def test_the_directory_is_absolute_and_exists(tmp_path):
-    with pytest.raises(ValueError, match="must be an absolute path"):
-        skills_extension("skills")
+def test_a_missing_folder_fails(tmp_path):
+    with pytest.raises(ValueError, match="No directory no-such-skills-folder was found in"):
+        skills_extension("no-such-skills-folder")
     with pytest.raises(ValueError, match="does not exist"):
         skills_extension(tmp_path / "missing")
 

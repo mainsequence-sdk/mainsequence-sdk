@@ -77,7 +77,8 @@ bundle. Platform skills are installed separately under
   `mainsequence.client.metatables`, or calls the retired `mainsequence` table
   and migration commands:
   `.agents/skills/mainsequence/maintenance/metatables_transition/SKILL.md`
-- FastAPI APIs serving the Command Center frontend:
+- FastAPI APIs serving the Command Center frontend, and MCP tools and skills
+  served from a FastAPI release:
   `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
 - Jobs, schedules, images, resources, releases, and Artifacts:
   `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`

@@ -179,15 +179,19 @@ The release advertises its endpoint once its workflow declares `spec.mcp_enabled
 
 ### Skills
 
-The MCP server can also publish [Agent Skills](https://agentskills.io/specification): workflows across several tools, checklists and reference files that travel with the service that owns them. The SDK serves them through the MCP Skills extension, `io.modelcontextprotocol/skills`, exactly as its [specification](https://github.com/modelcontextprotocol/ext-skills/blob/main/specification/stable/skills.mdx) defines it. Keep them in the repository, one directory per skill:
+The MCP server can also publish [Agent Skills](https://agentskills.io/specification): workflows across several tools, checklists and reference files that travel with the service that owns them. The SDK serves them through the MCP Skills extension, `io.modelcontextprotocol/skills`, exactly as its [specification](https://github.com/modelcontextprotocol/ext-skills/blob/main/specification/stable/skills.mdx) defines it.
+
+Skills are published only from the folder you set with `skills_extension`, and setting it is required: without it, the server exposes no skills and declares no Skills extension, whatever the repository holds. You choose the folder, for example `.agents/skills/mcp_only` next to the coding agents' skills. Only that folder is published; the other `.agents/skills/` folders, such as the SDK-owned `mainsequence/`, are not. Each directory directly in it is one skill:
 
 ```text
-skills/
-  refund-review/
-    SKILL.md
-    references/policy.md
-  daily-close/
-    SKILL.md
+.agents/skills/
+  mainsequence/            # coding-agent skills: not published
+  mcp_only/                # the folder set below: published over MCP
+    refund-review/
+      SKILL.md
+      references/policy.md
+    daily-close/
+      SKILL.md
 ```
 
 Each `SKILL.md` begins with YAML frontmatter whose `name` equals its directory's name:
@@ -203,23 +207,23 @@ description: Review a refund request against the refund policy. Use when a custo
 Read `references/policy.md`, then call the `refund_status` tool.
 ```
 
-Pass the extension when constructing the server, with the directory's absolute path:
+Set the folder when constructing the server:
 
 ```python
-from pathlib import Path
-
 from mainsequence.server.mcp_skills import skills_extension
 
-mcp = MCPServer("refunds", extensions=[skills_extension(Path(__file__).parent / "skills")])
+mcp = MCPServer("refunds", extensions=[skills_extension(".agents/skills/mcp_only")])
 ```
 
-A client that supports the extension, connected to the release's `/mcp`, finds it in `server/discover` and calls `skills/list`, `skills/get` and `resources/read`. Each entry carries the skill's frontmatter and a manifest of its files with their SHA-256 digests and sizes, which the client checks against what it reads.
+A relative path is repository-relative: `skills_extension` looks it up from the directory of the module that calls it upwards, so the same path works from any module of the repository and whatever the working directory. An absolute path is used as given. Point at the folder that holds the skill directories, never at `.agents/skills` itself.
+
+The list of skills is the folder: every skill directory in it is published, and adding or removing one changes the list at the next deployment. A client that supports the extension, connected to the release's `/mcp`, finds it in `server/discover`, lists the skills with `skills/list` and reads them with `skills/get` and `resources/read`. Each entry carries the skill's frontmatter and a manifest of its files with their SHA-256 digests and sizes, which the client checks against what it reads.
 
 `skills_extension`:
 
 - reads every file once, when it runs, and serves exactly those bytes; a changed skill takes effect with the next deployment;
-- skips names beginning with `.`, and ignores files directly in the skills directory, such as a README;
-- fails startup with a `ValueError` naming the file and the rule when a skill breaks the Agent Skills format: no `SKILL.md`, frontmatter that is missing or unclosed, a `name` that is not 1 to 64 characters of `a-z`, `0-9` and single hyphens or differs from its directory, a `description` outside 1 to 1024 characters, a `compatibility` over 500, or `metadata` that does not map strings to strings;
+- skips names beginning with `.` inside the folder, and ignores files directly in it, such as a README;
+- fails startup with a `ValueError` naming the file and the rule when the folder is missing or holds no skill, or a skill breaks the Agent Skills format: no `SKILL.md`, frontmatter that is missing or unclosed, a `name` that is not 1 to 64 characters of `a-z`, `0-9` and single hyphens or differs from its directory, a `description` outside 1 to 1024 characters, a `compatibility` over 500, or `metadata` that does not map strings to strings;
 - fails startup as well for a skill over 512 files or 16 MiB, a symbolic link, a nested `SKILL.md`, or a path with characters other than `A-Z a-z 0-9 . _ ~ -`;
 - refuses frontmatter values that YAML 1.1 and YAML 1.2 parsers read differently, such as an unquoted `yes`, a date or `0755`, because a client compares the frontmatter it parses with the entry: quote them.
 
