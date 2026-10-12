@@ -162,18 +162,22 @@ mainsequence code-repository update-sdk --path . --dry-run
 mainsequence code-repository update-sdk --path .
 ```
 
-`update-sdk` updates the lock and local environment. It does not publish the
-working tree or authorize a managed-skill or `AGENTS.md` refresh. Report any
-resulting pin mismatch and run those updates only when the user explicitly
-requests them.
+`update-sdk` updates the lock and local environment, then runs the newly
+installed SDK's skill copier in a fresh process against the same repository.
+It replaces SDK-owned skills, removes retired ones, and updates their sentinel.
+It does not refresh platform skills or `AGENTS.md`, or publish the working tree.
+If copying fails, the command fails but the SDK remains upgraded; report that
+partial result and use the printed refresh command to retry after addressing
+the failure. On success, reload this maintenance skill before continuing.
 
 Do not automatically commit or push an SDK update unless the user also asked
 to publish the CodeRepository changes.
 
 ## Refresh Managed Skills And Instructions
 
-Run either managed-scaffold command only when the user explicitly requests that
-specific update. When both are requested, refresh the SDK-owned skills first,
+Outside the skill refresh included in `update-sdk`, run either managed-scaffold
+command only when the user explicitly requests that specific update. When both
+are requested, refresh the SDK-owned skills first,
 then update the managed Main Sequence block in
 `AGENTS.md`:
 

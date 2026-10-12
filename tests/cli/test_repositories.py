@@ -1087,30 +1087,96 @@ def test_code_repository_sdk_status_json(cli_mod, runner, monkeypatch, git_check
     assert payload["local_requirements_txt"] == "1.2.3"
 
 
-@pytest.mark.parametrize("pin", [None, "8.1.25", "9.0.2"])
-def test_code_repository_update_sdk(cli_mod, runner, monkeypatch, pin, git_checkout):
-    target = git_checkout()
+def test_code_repository_update_sdk(cli_mod, runner, monkeypatch, git_checkout):
+    target = git_checkout("code repository")
     uv_path = target / ".venv" / "bin" / "uv"
     calls = []
-    sentinel = target / ".agents" / "skills" / "mainsequence" / "PINNED_FROM.txt"
-    if pin is not None:
-        sentinel.parent.mkdir(parents=True)
-        sentinel.write_text(f"pinned_version={pin}\n", encoding="utf-8")
 
     monkeypatch.setattr(cli_mod, "ensure_venv", lambda *_: None)
     monkeypatch.setattr(cli_mod, "ensure_uv_installed", lambda *_: uv_path)
-    monkeypatch.setattr(cli_mod, "run_uv", lambda uv, args, cwd, env=None: calls.append(args))
-    monkeypatch.setattr(cli_mod, "_code_repository_installed_package_version", lambda *_: "9.0.2")
+    monkeypatch.setattr(cli_mod, "run_uv", lambda uv, args, cwd: calls.append((uv, args, cwd)))
 
     result = runner.invoke(
         cli_mod.app,
         ["code-repository", "update-sdk", "--path", str(target)],
     )
-    assert result.exit_code == 0
-    assert ["lock", "--upgrade-package", "mainsequence"] in calls
-    assert ["sync"] in calls
-    assert ("Vendored SDK skills are stale or missing" in result.output) == (pin != "9.0.2")
-    if pin is not None:
-        assert sentinel.read_text() == f"pinned_version={pin}\n"
-    else:
-        assert not sentinel.exists()
+    assert result.exit_code == 0, result.output
+    assert calls == [
+        (uv_path, ["lock", "--upgrade-package", "mainsequence"], target),
+        (uv_path, ["sync"], target),
+        (
+            uv_path,
+            [
+                "run",
+                "--no-sync",
+                "mainsequence",
+                "code-repository",
+                "update-agent-skills",
+                "--path",
+                str(target),
+            ],
+            target,
+        ),
+    ]
+    assert "SDK update and SDK skill refresh complete." in result.output
+
+
+@pytest.mark.parametrize(
+    ("failed_step", "failure"),
+    [
+        ("lock", RuntimeError("resolution failed")),
+        ("sync", RuntimeError("installation failed")),
+        ("run", RuntimeError("skill copy failed")),
+        ("run", OSError("could not start child process")),
+    ],
+)
+def test_code_repository_update_sdk_stops_on_failure(
+    cli_mod, runner, monkeypatch, git_checkout, failed_step, failure
+):
+    target = git_checkout()
+    calls = []
+
+    def run_uv(uv, args, cwd):
+        calls.append(args[0])
+        if args[0] == failed_step:
+            raise failure
+
+    monkeypatch.setattr(cli_mod, "ensure_venv", lambda *_: None)
+    monkeypatch.setattr(cli_mod, "ensure_uv_installed", lambda *_: target / ".venv" / "bin" / "uv")
+    monkeypatch.setattr(cli_mod, "run_uv", run_uv)
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["code-repository", "update-sdk", "--path", str(target)],
+    )
+
+    assert result.exit_code != 0
+    steps = ["lock", "sync", "run"]
+    assert calls == steps[: steps.index(failed_step) + 1]
+    assert "SDK update and SDK skill refresh complete." not in result.output
+    if failed_step == "run":
+        assert "SDK upgraded, but SDK skill refresh failed" in result.output
+        assert str(failure) in result.output
+        assert "not been rolled back" in result.output
+        assert "Retry from" in result.output
+
+
+def test_code_repository_update_sdk_dry_run(cli_mod, runner, monkeypatch, git_checkout):
+    target = git_checkout()
+    monkeypatch.setattr(cli_mod, "ensure_venv", lambda *_: None)
+    monkeypatch.setattr(
+        cli_mod, "ensure_uv_installed", lambda *_: pytest.fail("dry run must not resolve uv")
+    )
+    monkeypatch.setattr(
+        cli_mod, "run_uv", lambda *args, **kwargs: pytest.fail("dry run must not run uv")
+    )
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["code-repository", "update-sdk", "--path", str(target), "--dry-run"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "update-agent-skills" in result.output
+    assert "Dry run: no commands executed." in result.output
+    assert "SDK update and SDK skill refresh complete." not in result.output

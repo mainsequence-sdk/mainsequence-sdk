@@ -7,6 +7,9 @@ Amended 2026-10-11 for [SDK issue #217](https://github.com/mainsequence-sdk/main
 every MCP request of the discovery has the SDK's default request budget; before,
 the CLI sent them with no timeout. See [Discovery](#discovery).
 
+Amended 2026-10-11: an explicit SDK update now also refreshes SDK-owned skills
+from the newly installed version, as described under Installation Ownership.
+
 ## Status
 
 Accepted
@@ -51,9 +54,14 @@ platform authentication or availability. Existing mixed trees are replaced,
 not grandfathered in. Platform skills can then be explicitly installed in
 their separate namespace; their content and membership remain backend-owned.
 
-An SDK upgrade reports stale or missing SDK skill pins. It does not grant
-permission to change vendored skills or `AGENTS.md` implicitly. Both local
-refreshes remain explicit user-requested operations.
+An explicit `update-sdk` operation upgrades the dependency and then runs the
+newly installed SDK's `update-agent-skills` in a fresh process against the same
+repository. It succeeds only when the SDK-owned skill namespace and sentinel
+have been refreshed. If copying fails, it exits with an error explaining that
+the package remains upgraded and how to retry the refresh. `--dry-run` previews
+both phases without executing them. This does not refresh `AGENTS.md` or
+platform skills; those remain separately requested operations. Direct package
+manager upgrades do not trigger the SDK's skill refresh.
 
 The backend owns platform skill membership and content. The SDK uses
 `ontology.skill_resources` as the authoritative project-skill index.

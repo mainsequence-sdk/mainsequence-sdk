@@ -34,6 +34,13 @@ settings to `streamable_http_app()`; the server then serves protocol
 `2026-07-28` as well as the earlier revisions. An application that must stay
 on 1.x installs `mainsequence` without the extra and pins `mcp<2` itself.
 
+`mainsequence code-repository update-sdk` now refreshes SDK-owned repository
+skills and their version sentinel after installation, using the newly installed
+CLI in a fresh process. Retired SDK skills are removed. A refresh failure exits
+with an error instead of reporting overall success; the SDK remains upgraded
+and the error provides a retry command. Platform skills and `AGENTS.md` are
+unchanged, and `--dry-run` previews the refresh without executing it.
+
 Breaking, with no deprecation period: a requester-bound call carries the
 person's ordinary permissions, including administrative ones (#208). The
 verifier accepts a `requester` claim only with exactly `sub`, `team_uids` and a
