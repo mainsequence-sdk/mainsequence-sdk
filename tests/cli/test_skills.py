@@ -6,7 +6,7 @@ import pathlib
 import pytest
 
 from tests._support import REPOSITORY_ROOT
-from tests.cli.support import _cli_platform_skill_catalog, _write_installed_agent_scaffold_bundle
+from tests.cli.support import _cli_platform_skill_catalog
 
 
 def test_skills_list(cli_mod, runner, monkeypatch, tmp_path):
@@ -76,181 +76,6 @@ def test_copy_llm_instructions_print(cli_mod, runner, tmp_path):
     assert result.exit_code == 0
     assert "AI Instructions" in result.output
     assert "hello" in result.output
-
-
-def test_code_repository_update_agents_md_replaces_custom_unmarked_file(
-    cli_mod, runner, monkeypatch, tmp_path, git_checkout
-):
-    agents_md = _write_installed_agent_scaffold_bundle(tmp_path / "bundle")
-    target = git_checkout()
-    original = "# CodeRepository Agents\n\nKeep this repository-specific instruction.\n"
-    (target / "AGENTS.md").write_text(original, encoding="utf-8")
-    monkeypatch.setattr(cli_mod, "_installed_agent_scaffold_bundle_dir", lambda: agents_md.parent)
-
-    result = runner.invoke(
-        cli_mod.app,
-        ["code-repository", "update", "AGENTS.md", "--path", str(target)],
-    )
-    assert result.exit_code == 0
-    content = (target / "AGENTS.md").read_text(encoding="utf-8")
-    assert content == agents_md.read_text(encoding="utf-8")
-    assert "Installed managed block." in cli_mod._extract_agents_md_managed_block(content)
-    assert "Installed managed block." in content
-    assert "Keep this repository-specific instruction." not in content
-    assert "Action" in result.output
-    assert "replaced" in result.output
-
-
-def test_code_repository_update_agents_md_creates_file_when_missing(
-    cli_mod, runner, monkeypatch, tmp_path, git_checkout
-):
-    agents_md = _write_installed_agent_scaffold_bundle(tmp_path / "bundle")
-    target = git_checkout()
-    monkeypatch.setattr(cli_mod, "_installed_agent_scaffold_bundle_dir", lambda: agents_md.parent)
-
-    result = runner.invoke(
-        cli_mod.app,
-        ["code-repository", "update", "AGENTS.md", "--path", str(target)],
-    )
-    assert result.exit_code == 0
-    content = (target / "AGENTS.md").read_text(encoding="utf-8")
-    assert content == agents_md.read_text(encoding="utf-8")
-    assert cli_mod.AGENTS_MD_MANAGED_BLOCK_START_PREFIX in content
-    assert "Action" in result.output
-    assert "created" in result.output
-
-
-def test_code_repository_update_agents_md_replaces_existing_managed_block(
-    cli_mod, runner, monkeypatch, tmp_path, git_checkout
-):
-    agents_md = _write_installed_agent_scaffold_bundle(tmp_path / "bundle")
-    target = git_checkout()
-    old_block = "\n".join(
-        [
-            f"{cli_mod.AGENTS_MD_MANAGED_BLOCK_START_PREFIX} schema=old source=old -->",
-            "old managed content",
-            cli_mod.AGENTS_MD_MANAGED_BLOCK_END,
-        ]
-    )
-    (target / "AGENTS.md").write_text(
-        f"# CodeRepository Agents\n\n{old_block}\n\nCustom tail.\n",
-        encoding="utf-8",
-    )
-    monkeypatch.setattr(cli_mod, "_installed_agent_scaffold_bundle_dir", lambda: agents_md.parent)
-
-    result = runner.invoke(
-        cli_mod.app,
-        ["code-repository", "update", "AGENTS.md", "--path", str(target)],
-    )
-    assert result.exit_code == 0
-    content = (target / "AGENTS.md").read_text(encoding="utf-8")
-    assert "old managed content" not in content
-    assert "Installed managed block." in content
-    assert "Custom tail.\n" in content
-    assert "Installed managed block." in cli_mod._extract_agents_md_managed_block(content)
-    assert "updated" in result.output
-
-
-def test_code_repository_update_agents_md_json_reports_action(
-    cli_mod, runner, monkeypatch, tmp_path, git_checkout
-):
-    agents_md = _write_installed_agent_scaffold_bundle(tmp_path / "bundle")
-    target = git_checkout()
-    monkeypatch.setattr(cli_mod, "_installed_agent_scaffold_bundle_dir", lambda: agents_md.parent)
-
-    result = runner.invoke(
-        cli_mod.app,
-        ["code-repository", "update", "AGENTS.md", "--path", str(target), "--json"],
-    )
-    assert result.exit_code == 0
-    payload = json.loads(result.output)
-    assert payload["target"] == "AGENTS.md"
-    assert payload["code_repository"] == str(target)
-    assert payload["source"] == str(agents_md)
-    assert payload["destination"] == str(target / "AGENTS.md")
-    assert payload["action"] == "created"
-    assert payload["changed"] is True
-    assert payload["overwritten"] is False
-
-
-def test_code_repository_update_agents_md_keeps_existing_scaffold_shaped_file_current(
-    cli_mod, runner, monkeypatch, tmp_path, git_checkout
-):
-    agents_md = _write_installed_agent_scaffold_bundle(tmp_path / "bundle")
-    target = git_checkout()
-    (target / "AGENTS.md").write_text(agents_md.read_text(encoding="utf-8"), encoding="utf-8")
-    monkeypatch.setattr(cli_mod, "_installed_agent_scaffold_bundle_dir", lambda: agents_md.parent)
-
-    result = runner.invoke(
-        cli_mod.app,
-        ["code-repository", "update", "AGENTS.md", "--path", str(target)],
-    )
-    assert result.exit_code == 0
-    assert (target / "AGENTS.md").read_text(encoding="utf-8") == agents_md.read_text(
-        encoding="utf-8"
-    )
-    assert "already current" in result.output
-
-
-def test_code_repository_update_agents_md_rejects_malformed_managed_block(
-    cli_mod, runner, monkeypatch, tmp_path, git_checkout
-):
-    agents_md = _write_installed_agent_scaffold_bundle(tmp_path / "bundle")
-    target = git_checkout()
-    start_marker = (
-        f"{cli_mod.AGENTS_MD_MANAGED_BLOCK_START_PREFIX} schema=1 source=agent_scaffold -->"
-    )
-    (target / "AGENTS.md").write_text(
-        f"# CodeRepository Agents\n\n{start_marker}\n",
-        encoding="utf-8",
-    )
-    monkeypatch.setattr(cli_mod, "_installed_agent_scaffold_bundle_dir", lambda: agents_md.parent)
-
-    result = runner.invoke(
-        cli_mod.app,
-        ["code-repository", "update", "AGENTS.md", "--path", str(target)],
-    )
-    assert result.exit_code == 1
-    assert "malformed" in result.output
-
-
-def test_code_repository_update_agents_md_rejects_duplicate_managed_blocks(
-    cli_mod, runner, monkeypatch, tmp_path, git_checkout
-):
-    agents_md = _write_installed_agent_scaffold_bundle(tmp_path / "bundle")
-    target = git_checkout()
-    block = "\n".join(
-        [
-            f"{cli_mod.AGENTS_MD_MANAGED_BLOCK_START_PREFIX} schema=1 source=agent_scaffold -->",
-            "managed content",
-            cli_mod.AGENTS_MD_MANAGED_BLOCK_END,
-        ]
-    )
-    (target / "AGENTS.md").write_text(f"{block}\n\n{block}\n", encoding="utf-8")
-    monkeypatch.setattr(cli_mod, "_installed_agent_scaffold_bundle_dir", lambda: agents_md.parent)
-
-    result = runner.invoke(
-        cli_mod.app,
-        ["code-repository", "update", "AGENTS.md", "--path", str(target)],
-    )
-    assert result.exit_code == 1
-    assert "multiple" in result.output
-
-
-def test_code_repository_update_agents_md_fails_when_installed_bundle_missing_agents_md(
-    cli_mod, runner, monkeypatch, tmp_path, git_checkout
-):
-    bundle_dir = tmp_path / "bundle"
-    bundle_dir.mkdir()
-    target = git_checkout()
-    monkeypatch.setattr(cli_mod, "_installed_agent_scaffold_bundle_dir", lambda: bundle_dir)
-
-    result = runner.invoke(
-        cli_mod.app,
-        ["code-repository", "update", "AGENTS.md", "--path", str(target)],
-    )
-    assert result.exit_code == 1
-    assert "Installed agent_scaffold bundle is missing AGENTS.md" in result.output
 
 
 def test_installed_agent_scaffold_bundle_dir_falls_back_to_sibling_package(cli_mod, monkeypatch):
@@ -340,6 +165,7 @@ def test_code_repository_update_agent_skills_overwrites_matching_folders(
         "maintenance",
         "PINNED_FROM.txt",
     }
+    assert not (target / "AGENTS.md").exists()
 
 
 def test_code_repository_update_agent_skills_json_reports_pin_sentinel(
@@ -392,8 +218,18 @@ def test_code_repository_update_agent_skills_json_reports_pin_sentinel(
     assert "pinned_version=4.4.3" in sentinel.read_text(encoding="utf-8")
 
 
-def test_sdk_skills_and_agents_refresh_without_authentication(
-    cli_mod, runner, monkeypatch, git_checkout
+@pytest.mark.parametrize(
+    "agents_content",
+    [
+        None,
+        b"# Repository instructions\r\n\r\nKeep this file exactly as written.\r\n",
+        b"Repository preface.\n<!-- mainsequence-agent-scaffold:start schema=1 -->\n"
+        b"Old managed routing.\n<!-- mainsequence-agent-scaffold:end -->\nRepository suffix.\n",
+    ],
+    ids=["missing", "repository-owned", "previously-scaffolded"],
+)
+def test_sdk_skill_refresh_preserves_repository_instructions_without_authentication(
+    cli_mod, runner, monkeypatch, git_checkout, agents_content
 ):
     bundle = REPOSITORY_ROOT / "agent_scaffold"
     target = git_checkout("repository")
@@ -410,11 +246,8 @@ def test_sdk_skills_and_agents_refresh_without_authentication(
     extension.parent.mkdir(parents=True)
     extension.write_text("domain package instructions", encoding="utf-8")
     agents = target / "AGENTS.md"
-    agents.write_text(
-        "Repository preface.\n<!-- mainsequence-agent-scaffold:start schema=1 -->\n"
-        "Old managed routing.\n<!-- mainsequence-agent-scaffold:end -->\nRepository suffix.\n",
-        encoding="utf-8",
-    )
+    if agents_content is not None:
+        agents.write_bytes(agents_content)
     monkeypatch.setattr(cli_mod, "_code_repository_agent_scaffold_bundle_dir", lambda *_: bundle)
     monkeypatch.setattr(cli_mod, "_code_repository_installed_package_version", lambda *_: "9.0.2")
     monkeypatch.setattr(cli_mod, "_installed_agent_scaffold_bundle_dir", lambda: bundle)
@@ -450,11 +283,23 @@ def test_sdk_skills_and_agents_refresh_without_authentication(
     assert platform.read_text() == "platform instructions"
     assert extension.read_text() == "domain package instructions"
 
+    if agents_content is None:
+        assert not agents.exists()
+    else:
+        assert agents.read_bytes() == agents_content
+
+
+def test_removed_agents_update_command_preserves_repository_instructions(
+    cli_mod, runner, git_checkout
+):
+    target = git_checkout()
+    agents = target / "AGENTS.md"
+    content = b"# Repository-owned instructions\r\n"
+    agents.write_bytes(content)
+
     result = runner.invoke(
         cli_mod.app, ["code-repository", "update", "AGENTS.md", "--path", str(target)]
     )
-    assert result.exit_code == 0, result.output
-    content = agents.read_text(encoding="utf-8")
-    assert cli_mod._extract_agents_md_managed_block((bundle / "AGENTS.md").read_text()) in content
-    assert content.startswith("Repository preface.\n")
-    assert content.endswith("Repository suffix.\n")
+
+    assert result.exit_code != 0
+    assert agents.read_bytes() == content

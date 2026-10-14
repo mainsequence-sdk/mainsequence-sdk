@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mainsequence"
-version = "9.0.23"
+version = "9.0.24"
 description = "Main Sequence SDK"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -88,7 +88,7 @@ include = ["mainsequence", "mainsequence.*", "agent_scaffold", "agent_scaffold.*
 
 [tool.setuptools.package-data]
 "mainsequence" = ["**/*.html", "**/*.css", "**/*.png", "**/*.toml", "**/*.json", "**/*.mako"]
-"agent_scaffold" = ["*.md", "**/*.md"]
+"agent_scaffold" = ["skills/**/*.md"]
 
 [[tool.uv.index]]
 name = "testpypi"

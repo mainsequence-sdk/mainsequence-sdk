@@ -313,8 +313,6 @@ mainsequence code-repository set-up-locally <CODE_REPOSITORY_UID>
 mainsequence code-repository build-local-venv
 mainsequence code-repository build-local-venv --path .
 mainsequence code-repository build-local-venv --path . --recreate
-mainsequence code-repository update AGENTS.md
-mainsequence code-repository update AGENTS.md --path .
 mainsequence code-repository update-agent-skills
 mainsequence code-repository update-agent-skills --path .
 
@@ -414,21 +412,23 @@ library's `pinned_version` and source path. Source checkouts, overlapping paths,
 and destinations escaping the checkout are protected. Failed replacement
 restores the previous namespace. Other libraries' skill folders are untouched.
 
-After an SDK upgrade, refresh both SDK-owned skills and the managed Main
-Sequence instructions when the user requests those updates:
+SDK guidance and domain instructions ship together inside the skills bundle.
+To explicitly refresh that bundle from the installed package:
 
 ```bash
 uv run --offline mainsequence code-repository update-agent-skills --path .
-uv run --offline mainsequence code-repository update AGENTS.md --path .
 ```
 
-The first command deletes retired skills, including the old table workflow
-folders. The second updates the Main Sequence managed block in `AGENTS.md`;
-text outside that block is preserved. Without managed markers, the existing
-`update AGENTS.md` command replaces the file from the template.
+The command deletes retired SDK skills, including the old table workflow
+folders, and updates the sentinel. It never creates, copies, updates, or removes
+the repository's `AGENTS.md`, including files with older managed blocks. The
+SDK no longer ships an `AGENTS.md` template or a command for editing that file.
 
-`update-sdk` upgrades the dependency and reports a missing or mismatched skill
-pin. It does not silently modify skills or `AGENTS.md`. Use the refreshed
+`update-sdk` upgrades the dependency, then runs the newly installed SDK's skill
+updater in a fresh process against the same repository. It reports success only
+after the skills and sentinel are refreshed. If refreshing fails, it exits with
+an error and a retry command; the installed SDK remains upgraded. Direct `uv`
+upgrades require the explicit skill refresh above. Use the refreshed
 checkout's CLI, not an older global CLI installation. Supplying
 `--code-repository-uid` requests a platform identity assertion and may require
 backend access; omit it for a local copy.

@@ -121,36 +121,6 @@ def _record_sync_side_effects(monkeypatch, cli_mod) -> dict[str, list]:
     return recorded
 
 
-def _write_installed_agent_scaffold_bundle(bundle_dir: pathlib.Path) -> pathlib.Path:
-    bundle_dir.mkdir(parents=True, exist_ok=True)
-    agents_md = bundle_dir / "AGENTS.md"
-    agents_md.write_text(
-        "\n".join(
-            [
-                "# AGENTS.md",
-                "",
-                "Installed scaffold preface.",
-                "",
-                "Do not remove the `<!-- mainsequence-agent-scaffold:start schema=1 "
-                "source=agent_scaffold -->`",
-                "or `<!-- mainsequence-agent-scaffold:end -->` markers.",
-                "",
-                "<!-- mainsequence-agent-scaffold:start schema=1 source=agent_scaffold -->",
-                "## Main Sequence Instructions",
-                "",
-                "Installed managed block.",
-                "",
-                "<!-- mainsequence-agent-scaffold:end -->",
-                "",
-                "Installed scaffold footer.",
-                "",
-            ]
-        ),
-        encoding="utf-8",
-    )
-    return agents_md
-
-
 def _cli_platform_skill_catalog():
     from pathlib import PurePosixPath
 

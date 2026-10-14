@@ -45,7 +45,8 @@ Main package areas:
 
 Repository areas:
 
-- `agent_scaffold/`: version-matched SDK skills and managed `AGENTS.md` content
+- `agent_scaffold/skills/`: version-matched SDK guidance and domain skills;
+  repository-owned `AGENTS.md` files are never scaffolded or updated
 - `docs/`: knowledge guides, CLI docs, architecture decisions, and generated
   reference docs
 - `tests/`: offline tests plus explicitly marked live-backend tests

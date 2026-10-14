@@ -1059,117 +1059,6 @@ def _resolve_installed_agent_scaffold_skill(skill_name: str) -> dict[str, pathli
     raise typer.Exit(1)
 
 
-AGENTS_MD_MANAGED_BLOCK_START_PREFIX = "<!-- mainsequence-agent-scaffold:start"
-AGENTS_MD_MANAGED_BLOCK_END = "<!-- mainsequence-agent-scaffold:end -->"
-AGENTS_MD_MANAGED_BLOCK_SCHEMA = "1"
-AGENTS_MD_MANAGED_BLOCK_START_LINE_RE = re.compile(
-    rf"(?m)^[ \t]*{re.escape(AGENTS_MD_MANAGED_BLOCK_START_PREFIX)}\b[^\n]*-->[ \t]*$"
-)
-AGENTS_MD_MANAGED_BLOCK_END_LINE_RE = re.compile(
-    rf"(?m)^[ \t]*{re.escape(AGENTS_MD_MANAGED_BLOCK_END)}[ \t]*$"
-)
-
-
-@dataclasses.dataclass(frozen=True)
-class AgentsMdManagedBlockUpdate:
-    action: str
-    changed: bool
-
-
-def _installed_agent_scaffold_agents_md_file() -> pathlib.Path:
-    source = _installed_agent_scaffold_bundle_dir() / "AGENTS.md"
-    if not source.is_file():
-        error(f"Installed agent_scaffold bundle is missing {source.name}: {source}")
-        raise typer.Exit(1)
-    return source
-
-
-def _agents_md_managed_block_line_matches(
-    source_content: str,
-) -> tuple[list[re.Match[str]], list[re.Match[str]]]:
-    start_matches = list(AGENTS_MD_MANAGED_BLOCK_START_LINE_RE.finditer(source_content))
-    end_matches = list(AGENTS_MD_MANAGED_BLOCK_END_LINE_RE.finditer(source_content))
-    return start_matches, end_matches
-
-
-def _extract_agents_md_managed_block(source_content: str) -> str:
-    start_matches, end_matches = _agents_md_managed_block_line_matches(source_content)
-    if len(start_matches) != 1 or len(end_matches) != 1:
-        raise ValueError(
-            "Installed agent_scaffold AGENTS.md must contain exactly one Main Sequence "
-            "managed block."
-        )
-
-    start_match = start_matches[0]
-    end_match = end_matches[0]
-    if end_match.start() < start_match.start():
-        raise ValueError(
-            "Installed agent_scaffold AGENTS.md contains malformed Main Sequence managed "
-            "block markers."
-        )
-
-    return source_content[start_match.start() : end_match.end()]
-
-
-def _load_installed_agents_md_template() -> tuple[pathlib.Path, str, str]:
-    source = _installed_agent_scaffold_agents_md_file()
-    content = source.read_text(encoding="utf-8")
-    managed_block = _extract_agents_md_managed_block(content)
-    return source, content, managed_block
-
-
-def _apply_agents_md_managed_block(
-    content: str,
-    bootstrap_content: str,
-    managed_block: str,
-) -> tuple[str, str]:
-    start_matches, end_matches = _agents_md_managed_block_line_matches(content)
-
-    if len(start_matches) > 1 or len(end_matches) > 1:
-        raise ValueError(
-            "AGENTS.md contains multiple Main Sequence managed block markers; resolve it manually."
-        )
-    if len(start_matches) != len(end_matches):
-        raise ValueError(
-            "AGENTS.md contains malformed Main Sequence managed block markers; resolve it manually."
-        )
-
-    if not start_matches:
-        return bootstrap_content, "replaced"
-
-    start_match = start_matches[0]
-    end_match = end_matches[0]
-    if end_match.start() < start_match.start():
-        raise ValueError(
-            "AGENTS.md contains malformed Main Sequence managed block markers; resolve it manually."
-        )
-
-    updated = (
-        f"{content[: start_match.start()]}{managed_block.rstrip()}{content[end_match.end() :]}"
-    )
-    action = "unchanged" if updated == content else "updated"
-    return updated, action
-
-
-def _update_agents_md_managed_block_file(
-    destination: pathlib.Path,
-    bootstrap_content: str,
-    managed_block: str,
-) -> AgentsMdManagedBlockUpdate:
-    destination.parent.mkdir(parents=True, exist_ok=True)
-
-    if not destination.exists():
-        destination.write_text(bootstrap_content, encoding="utf-8")
-        return AgentsMdManagedBlockUpdate(action="created", changed=True)
-
-    original = destination.read_text(encoding="utf-8")
-    updated, action = _apply_agents_md_managed_block(original, bootstrap_content, managed_block)
-    changed = updated != original
-    if changed:
-        destination.write_text(updated, encoding="utf-8")
-    return AgentsMdManagedBlockUpdate(action=action, changed=changed)
-
-
 def _parse_env_var_entries(entries: list[str]) -> dict[str, str]:
     """
     Parse env var entries from repeated KEY=VALUE args and/or comma-separated chunks.
@@ -7698,84 +7587,6 @@ def code_repository_update_sdk(
     success("SDK update and SDK skill refresh complete.")
 
 
-@code_repository.command("update")
-def code_repository_update_scaffold_target(
-    target: str = typer.Argument(
-        ..., help="Scaffold target to update. Currently supported: AGENTS.md"
-    ),
-    code_repository_id: str | None = typer.Option(
-        None,
-        "--code-repository-uid",
-        help="Optional CodeRepository UID assertion against the current Git worktree",
-    ),
-    path: str | None = typer.Option(None, "--path", help="CodeRepository directory"),
-):
-    """
-    Update a scaffold-managed file in the local CodeRepository root.
-
-    Currently this command supports only `AGENTS.md`.
-    If the Main Sequence managed marker is present, only that block is updated.
-    If the marker is absent, the whole file is replaced from the installed
-    scaffold template.
-
-    Examples
-    --------
-    ```bash
-    mainsequence code-repository update AGENTS.md
-    mainsequence code-repository update AGENTS.md --path .
-    mainsequence code-repository update AGENTS.md --code-repository-uid code-repository-uid-123
-    ```
-    """
-    if target != "AGENTS.md":
-        error(f"Unsupported scaffold update target: {target}. Supported target: AGENTS.md")
-        raise typer.Exit(1)
-
-    code_repository_dir = _resolve_code_repository_dir(code_repository_id, path)
-    destination = code_repository_dir / "AGENTS.md"
-
-    try:
-        source, bootstrap_content, managed_block = _load_installed_agents_md_template()
-        update_result = _update_agents_md_managed_block_file(
-            destination,
-            bootstrap_content,
-            managed_block,
-        )
-    except ValueError as exc:
-        error(str(exc))
-        raise typer.Exit(1) from exc
-
-    payload = {
-        "target": target,
-        "code_repository": code_repository_dir,
-        "source": source,
-        "destination": destination,
-        "action": update_result.action,
-        "changed": update_result.changed,
-        "overwritten": False,
-        "managed_block": {
-            "start": AGENTS_MD_MANAGED_BLOCK_START_PREFIX,
-            "end": AGENTS_MD_MANAGED_BLOCK_END,
-        },
-    }
-    if _emit_json(payload):
-        return
-
-    if update_result.action == "unchanged":
-        success(f"{target} Main Sequence managed block already current.")
-    else:
-        success(f"Updated scaffold-managed {target}.")
-    print_kv(
-        "Scaffold Update",
-        [
-            ("Target", target),
-            ("Action", update_result.action),
-            ("CodeRepository", str(code_repository_dir)),
-            ("Source", str(source)),
-            ("Destination", str(destination)),
-        ],
-    )
-
-
 @code_repository.command("update-agent-skills")
 def code_repository_update_agent_skills(
     code_repository_id: str | None = typer.Option(
@@ -7791,8 +7602,8 @@ def code_repository_update_agent_skills(
     No sign-in or backend access is required unless a CodeRepository UID
     assertion is supplied. The SDK owns all of .agents/skills/mainsequence:
     files and folders absent from the installed bundle are deleted. Other
-    namespaces are untouched. AGENTS.md is refreshed separately with
-    code-repository update AGENTS.md. Platform skills use update-platform-skills.
+    namespaces and repository-owned AGENTS.md are untouched. SDK instructions
+    ship inside the skills. Platform skills use update-platform-skills.
 
     Examples
     --------

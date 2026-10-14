@@ -58,7 +58,7 @@ This skill only reasons about access to deployed resources such as `ResourceRele
 
 ## Read First
 
-1. `AGENTS.md`
+1. Repository instructions, including `AGENTS.md` when present.
 2. <https://mainsequence-sdk.github.io/mainsequence-sdk/knowledge/infrastructure/users_and_access/>
 3. <https://mainsequence-sdk.github.io/mainsequence-sdk/knowledge/infrastructure/constants_and_secrets/>
 

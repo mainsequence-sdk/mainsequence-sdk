@@ -21,13 +21,9 @@ SKILL_CROSS_REFERENCE = re.compile(r"`\.agents/skills/[A-Za-z0-9_]+/([A-Za-z0-9_
 
 
 def _shipped_scaffold_documents() -> tuple[Path, ...]:
-    """Every Markdown file the wheel ships under `agent_scaffold`.
+    """SDK skill instructions and references shipped by the wheel."""
 
-    `AGENTS.md` ships beside the skills and several skills make it their first
-    mandatory read, so it carries the same reference obligations they do.
-    """
-
-    return tuple(sorted((REPOSITORY_ROOT / "agent_scaffold").rglob("*.md")))
+    return tuple(sorted(SKILL_ROOT.rglob("*.md")))
 
 
 def _documentation_page_for_url_path(url_path: str) -> Path | None:
@@ -85,8 +81,7 @@ def test_skill_documentation_urls_render_an_existing_page(path: Path) -> None:
     )
 
     assert not unrendered, (
-        f"{relative_path} links documentation-site paths that no `docs/` page "
-        f"renders: {unrendered}"
+        f"{relative_path} links documentation-site paths that no `docs/` page renders: {unrendered}"
     )
 
 

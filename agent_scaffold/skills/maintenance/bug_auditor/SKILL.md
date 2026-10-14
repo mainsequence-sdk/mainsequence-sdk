@@ -67,7 +67,7 @@ This skill audits. It does not implement by default.
 
 ## Read First
 
-1. `AGENTS.md`
+1. Repository instructions, including `AGENTS.md` when present.
 2. the relevant installed skill and version-aligned documentation for the failing workflow
 
 ## Inputs This Skill Needs
