@@ -26,13 +26,16 @@ authored migration registries continue to use the class name recorded in their
 own immutable history, while regenerated examples and new scaffolds use the
 canonical name.
 
-Refresh the platform-owned agent skills and repository instructions after the
-upgrade:
+After a direct package-manager upgrade, refresh the SDK-owned skills and their
+instructions. Platform skills have a separate authenticated update:
 
 ```bash
 mainsequence code-repository update-agent-skills --path .
-mainsequence code-repository update AGENTS.md --path .
+mainsequence code-repository update-platform-skills --path .
 ```
+
+Repository-owned `AGENTS.md` files are preserved. The SDK distributes its
+instructions inside the skills bundle.
 
 ## Source Context Verification
 

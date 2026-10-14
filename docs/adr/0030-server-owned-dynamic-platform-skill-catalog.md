@@ -10,6 +10,9 @@ the CLI sent them with no timeout. See [Discovery](#discovery).
 Amended 2026-10-11: an explicit SDK update now also refreshes SDK-owned skills
 from the newly installed version, as described under Installation Ownership.
 
+Amended 2026-10-14: SDK instructions are distributed only through SDK-owned
+skills. Repository-owned `AGENTS.md` is outside the SDK's installation ownership.
+
 ## Status
 
 Accepted
@@ -48,6 +51,15 @@ bundle, requires no authenticated platform catalog, and never retains platform
 content there. Its sentinel records the installed library version. Source
 checkout protections, staging, and rollback remain required.
 
+The SDK's execution, contract-authority, routing, and maintenance instructions
+ship inside those skills and share their version and update lifecycle. The
+SDK does not ship an `AGENTS.md` template or create, copy, edit, or remove a
+repository-owned `AGENTS.md`. The former managed-block writer and its command
+are removed. Existing files, including previously scaffolded blocks, remain
+as written; any cleanup is a repository edit explicitly requested by its owner.
+Skills respect repository instructions when present without requiring that file
+or imposing a general repository layout.
+
 `update-platform-skills` fetches the authenticated catalog and owns only
 `.agents/skills/mainsequence_platform/`. SDK copying cannot be blocked by
 platform authentication or availability. Existing mixed trees are replaced,
@@ -59,8 +71,8 @@ newly installed SDK's `update-agent-skills` in a fresh process against the same
 repository. It succeeds only when the SDK-owned skill namespace and sentinel
 have been refreshed. If copying fails, it exits with an error explaining that
 the package remains upgraded and how to retry the refresh. `--dry-run` previews
-both phases without executing them. This does not refresh `AGENTS.md` or
-platform skills; those remain separately requested operations. Direct package
+both phases without executing them. Platform skill refresh remains a separately
+requested operation. Repository-owned `AGENTS.md` is untouched. Direct package
 manager upgrades do not trigger the SDK's skill refresh.
 
 The backend owns platform skill membership and content. The SDK uses

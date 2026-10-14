@@ -48,7 +48,7 @@ This skill must not claim ownership of:
 
 ## Read First
 
-1. `AGENTS.md`
+1. Repository instructions, including `AGENTS.md` when present.
 2. <https://mainsequence-sdk.github.io/mainsequence-sdk/knowledge/infrastructure/scheduling_jobs/>
 3. <https://mainsequence-sdk.github.io/mainsequence-sdk/knowledge/infrastructure/artifacts/>
 4. <https://mainsequence-sdk.github.io/mainsequence-sdk/knowledge/infrastructure/owner_observability/> when inspecting logs or resource usage

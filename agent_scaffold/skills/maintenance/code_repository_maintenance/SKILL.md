@@ -1,6 +1,6 @@
 ---
 name: mainsequence-code-repository-maintenance
-description: Maintain an existing Main Sequence CodeRepository checkout using the SDK-version-matched CLI. Use for inspecting repository state, building or repairing .venv, refreshing local authentication, performing explicitly requested SDK, skill, or AGENTS.md updates, refreshing dependency files with CodeRepository sync, publishing changes with Git, or diagnosing a partially completed maintenance workflow.
+description: Maintain an existing Main Sequence CodeRepository checkout using the SDK-version-matched CLI. Use for inspecting repository state, building or repairing .venv, refreshing local authentication, performing explicitly requested SDK or skill updates, refreshing dependency files with CodeRepository sync, publishing changes with Git, or diagnosing a partially completed maintenance workflow.
 ---
 
 # Main Sequence CodeRepository Maintenance
@@ -16,7 +16,7 @@ workflows.
 Own:
 
 - local CodeRepository inspection and maintenance sequencing;
-- `.venv`, SDK, managed skill, `AGENTS.md`, dependency sync, and Git publishing
+- `.venv`, SDK, managed skill, dependency sync, and Git publishing
   workflows;
 - precondition checks, explicit approval gates, and partial-failure diagnosis.
 
@@ -45,7 +45,8 @@ fall back to credential claims or injected CodeRepositoryBranch values.
 
 ## Inspect Before Changing State
 
-1. Read `AGENTS.md` and the relevant repository skills.
+1. Follow repository instructions, including `AGENTS.md` when present, and read
+   the relevant skills. The SDK never scaffolds or edits repository `AGENTS.md`.
 2. Confirm the repository root and the user's requested maintenance outcome.
 3. Inspect code repository and Git state:
 
@@ -55,11 +56,10 @@ fall back to credential claims or injected CodeRepositoryBranch values.
    git status --short
    ```
 
-   The `code-repository current` result must report the logical `code_repository_uid`, current
-   `git_branch`, `code_repository_branch_uid`, and `code_repository_branch_status=resolved`.
-   Treat a detached checkout, unresolved repository, or unresolved/unregistered
-   Git branch as a maintenance preflight failure before any
-   mutating workflow.
+   Before branch-owned platform operations, require the current Git branch,
+   `code_repository_branch_uid`, and `code_repository_branch_status=resolved`.
+   Local environment and skill updates do not require a registered platform
+   branch or a signed-in session.
 
 4. Separate existing user changes from changes created by the maintenance
    task. Never assume every uncommitted file belongs to the current task.
@@ -173,17 +173,14 @@ the failure. On success, reload this maintenance skill before continuing.
 Do not automatically commit or push an SDK update unless the user also asked
 to publish the CodeRepository changes.
 
-## Refresh Managed Skills And Instructions
+## Refresh SDK Skills And Instructions
 
-Outside the skill refresh included in `update-sdk`, run either managed-scaffold
-command only when the user explicitly requests that specific update. When both
-are requested, refresh the SDK-owned skills first,
-then update the managed Main Sequence block in
-`AGENTS.md`:
+SDK instructions and domain skills are one versioned bundle. Outside the
+refresh included in `update-sdk`, run this command only when the user explicitly
+requests a skill update:
 
 ```bash
 uv run --offline mainsequence code-repository update-agent-skills --path .
-uv run --offline mainsequence code-repository update AGENTS.md --path .
 ```
 
 Verify `.agents/skills/mainsequence/PINNED_FROM.txt` after success:
@@ -197,6 +194,13 @@ The SDK owns the whole `mainsequence` namespace. Copying it requires no login
 or platform access and deletes obsolete folders, including retired table
 workflow skills. Do not preserve old or platform-owned content in that folder.
 The installed `metatables` package owns table workflows in its own namespace.
+
+A missing or mismatched sentinel is a condition to report, not permission to
+update. The same applies to other libraries' sentinels. The `mainsequence` CLI
+does not manage `.agents/skills/ms_tau_sdk/`; its owner refreshes that namespace
+with `uv run ms-tau skills sync --path .` when requested. Keep repository-owned
+`AGENTS.md` as written, including any older managed blocks. Removing such a
+block is a separate repository edit requested by its owner.
 
 When the user requests platform skills, use the separate authenticated command:
 
@@ -419,7 +423,7 @@ Never rerun an entire mutating workflow blindly.
 
 ## Validate And Report
 
-Run only repository-relevant validation discovered from `AGENTS.md`, repository
+Run only repository-relevant validation discovered from existing repository instructions,
 documentation, and the changed files. Report:
 
 - the maintenance routine performed;

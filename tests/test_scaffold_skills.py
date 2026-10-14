@@ -259,4 +259,4 @@ def test_packaged_scaffold_keeps_retained_sdk_skills():
         "platform_operations/orchestration_and_releases/SKILL.md",
         "sdk_code_repository_execution/SKILL.md",
     }
-    assert (SCAFFOLD_ROOT / "AGENTS.md").is_file()
+    assert not (SCAFFOLD_ROOT / "AGENTS.md").exists()

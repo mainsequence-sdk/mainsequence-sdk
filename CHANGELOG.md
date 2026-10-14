@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+Removed SDK `AGENTS.md` scaffolding: the packaged template, managed-block writer,
+and `code-repository update` command are gone. SDK execution, contract authority,
+and maintenance instructions are distributed with the existing skills and their
+version sentinel. Skill updates leave repository-owned `AGENTS.md` byte-for-byte
+unchanged, including older managed blocks, and do not create a missing file.
+The SDK execution skill follows the consuming repository's layout and other
+instructions when present.
+
 Applications can publish Agent Skills from their MCP server (#221, ADR 0039).
 `mainsequence.server.mcp_skills.skills_extension(directory)` reads the folder
 the application chooses, any folder of the repository such as

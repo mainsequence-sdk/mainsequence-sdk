@@ -351,7 +351,7 @@ It must not overwrite:
   - copied skill entries.
 - [x] Extend human output to show the pinned version and sentinel path.
 - [x] Update `docs/cli/index.md`.
-- [x] Update `agent_scaffold/AGENTS.md` to tell agents to inspect
+- [x] Update the SDK maintenance skill to tell agents to inspect
   `.agents/skills/mainsequence/PINNED_FROM.txt` when checking whether managed
   skills are current.
 - [ ] Optionally add a future project-health command that compares sentinel versions

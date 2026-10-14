@@ -1,241 +1,131 @@
 ---
 name: mainsequence-sdk-code-repository-execution
-description: Use the installed Main Sequence SDK and repository-local tools to verify CodeRepository context, apply local scaffold conventions, and route concrete implementation work. Use a platform-owned design skill first only when architecture or ontology is unresolved.
+description: Use the installed Main Sequence SDK and CLI for Git-derived CodeRepository context, version-matched contract authority, and selecting the relevant SDK or domain-package skill. Use for repository integration and SDK execution questions; use a platform-owned design skill when architecture or ontology is unresolved.
 ---
 
 # Main Sequence SDK CodeRepository Execution
 
-## Overview
+Use this skill for SDK execution and CodeRepository integration. Follow the
+repository's own instructions, including `AGENTS.md` when present. A repository
+does not need that file to use the SDK or its skills, and the SDK does not
+create, copy, update, or remove it.
 
-Use this SDK-owned skill for local SDK, CLI, filesystem, repository mechanics,
-and implementation routing. A platform-owned design skill is required first
-only when product architecture, ontology, or the CodeRepository Blueprint is
-unresolved. Maintenance, audits, and already-scoped implementation work do not
-require a design-first sequence.
+## Contract Authority
 
-This skill is for:
+- Installed SDK code, CLI help, SDK skills, and version-matched documentation
+  define client behavior.
+- Installed platform skills and backend-advertised schemas, templates, and
+  capabilities define the platform contract.
+- Use the owning domain package and its installed skills before implementing
+  against an unfamiliar domain contract.
+- Treat the public SDK documentation as supplemental when its version differs
+  from the installed package:
+  `https://mainsequence-sdk.github.io/mainsequence-sdk/`
+- When the client and platform disagree, record the exact failing operation
+  and evidence with the bug-auditor skill. Do not guess or upgrade automatically.
 
-- establishing code repository context
-- defining success up front
-- enforcing a docs-first workflow
-- verifying platform context before making claims
-- routing work to the correct specialized skill
+## Select The Relevant Skill
 
-## This Skill Can Do
+Use skill descriptions to select the domain involved in the request. This skill
+is not a mandatory first step for maintenance, audits, or already-scoped domain
+work. A platform design skill is useful when product architecture, ontology, or
+the CodeRepository Blueprint is unresolved; select it from the installed
+platform catalog rather than assuming its filesystem path.
+Use that catalog to select platform-owned CodeRepository-to-Agent setup and
+other platform capabilities as well.
 
-- determine the correct startup and read order
-- define a concrete success condition before implementation starts
-- verify current code repository and platform context
-- decide which specialized skill owns the actual domain work
-- enforce standard Main Sequence repository structure expectations
-- separate verified facts from assumptions
-- surface documentation mismatches to the user
-
-## This Skill Must Not Claim
-
-This skill must not claim ownership of:
-
-- domain-package data modeling and execution
-- Command Center-serving FastAPI contract and release design
-- jobs, schedules, images, resources, or releases
-- RBAC or sharing semantics
-- domain assets, translation tables, or construction logic
-- unsupported application deployment targets
-- pricing-runtime semantics
-
-Do not let this skill become a domain manual.
-
-## Route Adjacent Work
-
-- MetaTables, table updates, and domain data discovery: use the installed
-  `metatables` package skills and documentation
-- FastAPI APIs serving the Command Center frontend, and MCP tools and skills
-  served from a FastAPI release:
-  `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
-- CodeRepository audits, blocker analysis, and upstream SDK assessment:
-  `.agents/skills/mainsequence/maintenance/bug_auditor/SKILL.md`
-- local environment repair, CodeRepository authentication refresh, SDK updates,
-  managed skill refresh, dependency sync, and publishing with Git:
+- Environment repair, authentication, explicitly requested updates, dependency
+  sync, and Git publishing:
   `.agents/skills/mainsequence/maintenance/code_repository_maintenance/SKILL.md`
-- jobs, schedules, artifacts, images, resources, and releases:
+- Failure classification and SDK/platform contract mismatches:
+  `.agents/skills/mainsequence/maintenance/bug_auditor/SKILL.md`
+- FastAPI APIs serving Command Center, including MCP tools and skills:
+  `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
+- Jobs, schedules, images, resources, releases, and Artifacts:
   `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
-- RBAC and sharing:
+- RBAC, sharing, constants, secrets, and acting for a requester:
   `.agents/skills/mainsequence/platform_operations/access_control_and_sharing/SKILL.md`
-- direct recorded inference, structured extraction, thinking/provider controls,
-  conversation history and safe replay:
+- Recorded model calls, structured extraction, provider options, history, and replay:
   `.agents/skills/mainsequence/mainsequence-inference/SKILL.md`
-- TAU-based Harness Agent repository integration, local development, project
-  customization, and runtime A2A adaptation: use the version-matched skills in
-  `.agents/skills/ms_tau_sdk/` after the platform-owned skill defines the
-  platform contract. If the namespace is absent, report it; synchronize it with
+- A2A session discovery, messages, files, and SDK response handling:
+  `.agents/skills/mainsequence/a2a_sdk_execution/SKILL.md`
+- Retired SDK MetaTables imports or commands:
+  `.agents/skills/mainsequence/maintenance/metatables_transition/SKILL.md`
+- Current MetaTable modeling, queries, table updates, and Alembic changes:
+  use the installed `metatables` package's skills and documentation.
+- TAU Harness Agent implementation: use the version-matched skills under
+  `.agents/skills/ms_tau_sdk/` after the relevant platform skill establishes
+  its contract. If those skills are missing, report that; run
   `uv run ms-tau skills sync --path .` only when the user requests that update.
 
-## Read First
-
-1. `AGENTS.md`
-2. the relevant documentation for the installed SDK and current platform contract
-
-Canonical documentation root:
-`https://mainsequence-sdk.github.io/mainsequence-sdk/`
-
-## Inputs This Skill Needs
-
-Before starting non-trivial work, collect or infer:
-
-- the user goal
-- the concrete success condition
-- the repository path and current code repository context
-- whether live platform verification is required
-- which specialized skill should own the domain behavior
-
-If the user goal or code repository context is unclear, stop before routing domain work.
-
-## Resolve Local CodeRepository Context From Git
+## Resolve CodeRepository Context From Git
 
 The containing Git worktree is the only source of repository, attached branch,
 and exact commit identity. The SDK normalizes the non-secret repository remote,
-maps it to CodeRepository and CodeRepositoryBranch through the platform API, resolves once for
-the process, and reuses the immutable result. Authentication selects credentials
-and permissions; it does not select source identity. A `git switch` performed in
-a long-running process takes effect only in the next CLI invocation, worker,
-script, or other process run.
+maps it to CodeRepository and CodeRepositoryBranch through the platform API,
+resolves once for the process, and reuses the immutable result. Authentication
+selects credentials and permissions; it does not select source identity.
+A `git switch` in a long-running process takes effect in the next CLI invocation,
+worker, script, or other process run.
 
-Use `mainsequence code-repository current --debug --json` to verify that Git context resolves
-to `code_repository_branch_status=resolved` and a nonempty `code_repository_branch_uid`. The UID
-is an internal resolution result for branch-owned platform calls; it is not a
-local or environment configuration input. Never require the user to look it up,
-persist CodeRepository identity in `.env`, accept a branch environment override, or
-infer a branch from collection order. Local and deployed code repository images use the
-same Git algorithm. A detached checkout or an unregistered Git branch is
-unresolved context and must block only live branch-owned operations.
+For a live branch-owned operation, use
+`mainsequence code-repository current --debug --json` to verify that Git context
+resolves to `code_repository_branch_status=resolved` and a nonempty
+`code_repository_branch_uid`. The UID is an internal resolution result, not a
+local configuration input. Never ask the user to look it up, persist repository
+identity in `.env`, accept a branch environment override, or infer a branch
+from collection order. Local and deployed images use the same Git algorithm.
 
-Keep the platform boundaries explicit:
+A detached checkout or an unregistered Git branch remains usable for ordinary
+local development but has no resolved CodeRepositoryBranch or Environment.
+Only operations requiring that context fail. Register the branch before
+using branch-owned Jobs, images, releases, resources, pods, or other platform
+APIs. Never fall back to another branch.
 
-- use the Git-resolved logical CodeRepository UID for aggregate identity and CodeRepository operations;
-- let the SDK resolve the current Git branch to CodeRepositoryBranch only when Jobs,
-  images, releases, resources, pods, or other branch-owned APIs require it;
-- treat GitHubRepositoryBinding as repository metadata and clone-location ownership;
+Keep these platform identities distinct:
+
+- Git-resolved CodeRepository UID: aggregate identity and repository operations.
+- CodeRepositoryBranch: resolved by the SDK when branch-owned APIs require it.
+- GitHubRepositoryBinding: repository metadata and clone-location ownership;
   `git_ssh_url` is not CodeRepositoryBranch state.
 
-For ordinary local implementation, work naturally in the current Git branch.
-Do not make CodeRepositoryBranch selection a separate user workflow.
-An unregistered local branch remains valid for ordinary local development, but
-it has no CodeRepositoryBranch or Environment. Only branch-owned operations
-fail. Register the branch before using Jobs, images, releases, resources, pods,
-or other branch-owned platform APIs. Never fall back to another branch.
+## Use The Installed CLI
 
-## Required Decisions
+Use `mainsequence` as the default platform control surface for SDK-supported
+operations. Prefer `--json` when parsing output or collecting evidence. Check
+installed command help when documentation and local behavior differ.
 
-For every non-trivial task, decide:
+Before live platform checks, inspect the saved session with
+`mainsequence auth status --check` when needed. Authentication belongs to the
+machine, not to a checkout. The SDK reads the saved operating-system credential
+store session; credentials must not be copied into repository instructions.
 
-1. What does success look like in observable terms?
-2. Which specialized skill owns the domain behavior?
-3. Does platform state need live verification?
-4. Are the docs and local implementation aligned, or is there a discrepancy to surface?
+Verify only the platform objects relevant to the requested outcome. Separate
+verified facts from assumptions, and state any live checks that could not be
+performed.
 
-## Build Rules
+## SDK Skills And Repository Files
 
-### 1. Use the authority that owns the contract
+The SDK owns `.agents/skills/mainsequence/`. Its copier installs SDK guidance
+and domain skills together from the target repository's installed package,
+removes retired files, and writes `PINNED_FROM.txt` with the installed version.
+SDK skill copying needs no sign-in or platform catalog.
 
-Use installed SDK skills, CLI help, and version-matched documentation for
-client behavior. Use installed platform-owned skills and backend-advertised
-schemas, templates, and capabilities for platform behavior. Treat the public
-documentation site as supplemental when it describes another SDK version. If
-the client and platform contracts disagree, stop and route the evidence to the
-bug-auditor skill instead of guessing or updating automatically.
+An explicit `update-sdk` also refreshes SDK skills after installing the package.
+Other skill refreshes require the user's request; a stale or missing sentinel
+is a condition to report, not permission to update. Use the maintenance skill
+for the update workflow.
 
-The `mainsequence` CLI owns `.agents/skills/mainsequence/`. It must not copy,
-refresh, or remove `.agents/skills/ms_tau_sdk/`; that independent namespace is
-owned by the installed `ms-tau-sdk` command.
+Platform skills belong to `.agents/skills/mainsequence_platform/` and use the
+authenticated platform updater. Other libraries, including `metatables` and
+`ms-tau-sdk`, own their independent namespaces and update commands.
 
-### 2. Maintain the standard Main Sequence CodeRepository structure
+Follow the repository's existing layout. The SDK does not require `src/`,
+`scripts/`, `tests/`, `docs/`, or `api/` directories merely because it is
+installed. When recurring Jobs or releases use backend-managed workflow
+declarations, keep their YAML files as direct children of
+`.mainsequence/workflows/` and validate the current backend workflow contract.
 
-Also maintain these standard repository areas when relevant:
-
-- `src/`
-- `scripts/`
-- `tests/`
-- `docs/`
-- `api/`
-
-If the CodeRepository has recurring scheduled jobs or repository-managed releases,
-keep backend-managed declarations as direct `.yaml` or `.yml` children of
-`.mainsequence/workflows/`. Never create `scheduled_jobs.yaml`; retrieve and
-validate the current workflow contract through the backend-owned CodeRepositoryBranch
-workflow endpoints.
-
-Use the standard Main Sequence CodeRepository structure unless the repository explicitly documents a different layout.
-
-Repository-local execution paths for jobs must:
-
-- be relative to the repository root
-- use forward slashes, even on Windows
-- point to a supported file inside the repository
-
-Do not treat:
-
-- `.env` as long-term documentation
-- `.venv` as source code
-- local absolute paths as reusable repository instructions
-
-### 3. Define success before implementation
-
-Make the end state explicit before changing code, docs, or platform objects.
-
-Do not start domain work with a vague target.
-
-### 4. Verify code repository context before making platform claims
-
-Use the CLI to confirm the active CodeRepository and the saved session before live checks when needed.
-
-When the result will be consumed programmatically or used as machine-readable evidence, prefer the CLI `--json` flag.
-
-Typical bootstrap checks:
-
-- `mainsequence code-repository current --debug`
-- `mainsequence auth status --check`
-- `mainsequence refresh-token`
-
-The session lives in the operating system credential store, not in `.env`, and
-belongs to the machine, not to a checkout. `auth status` reports it without
-printing a token value. `refresh-token` renews it; run in a checkout, it also
-removes credential entries an earlier version left in `.env`.
-
-Do not proceed with a live branch-owned check unless `code-repository current` reports
-the current Git branch and a resolved CodeRepositoryBranch UID.
-
-### 5. Route domain work instead of expanding the bootstrap skill
-
-Once the task boundary is clear, move into the correct specialized skill.
-
-Do not teach domain semantics here.
-
-## Review Rules
-
-When reviewing bootstrap behavior, look for:
-
-- domain work happening without a clear owner skill
-- implementation starting without a concrete success condition
-- platform claims made without verification
-- docs mismatches that were noticed but not surfaced
-- the bootstrap skill growing back into a catch-all domain manual
-
-## Validation Checklist
-
-Do not claim bootstrap success until you have checked:
-
-- the correct code repository context is selected
-- the relevant docs were checked
-- the success condition is explicit
-- the correct specialized skill was chosen
-- any platform-state claims were verified with CLI or platform tooling
-
-## This Skill Must Stop And Escalate When
-
-- the relevant docs cannot be accessed
-- the code repository context is unclear
-- the success condition is still ambiguous
-- live platform state is required but has not been verified
-- domain work is proceeding without the relevant specialized skill or docs
-
-Do not guess through missing context.
+Repository-local execution paths passed to platform Jobs must be relative to
+the repository root, use forward slashes on every operating system, and refer
+to supported files inside the checkout.

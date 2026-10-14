@@ -20,12 +20,12 @@ cannot be reused, so this major-version transition starts at `9.0.1`.
 
 ## Install
 
-After upgrading the SDK, refresh its owned skill namespace and managed routing
-instructions with the installed checkout's CLI. Neither command requires login:
+After a direct package-manager upgrade, refresh the SDK's owned skills and
+instructions with the installed checkout's CLI. This requires no login;
+`update-sdk` already includes this refresh:
 
 ```bash
 uv run --offline mainsequence code-repository update-agent-skills --path .
-uv run --offline mainsequence code-repository update AGENTS.md --path .
 ```
 
 The copy completely replaces `.agents/skills/mainsequence/` with the installed
@@ -33,6 +33,7 @@ SDK bundle, deleting retired SDK table skills. It does not change
 `.agents/skills/metatables/` or other libraries' skills. Platform skills use
 the separate authenticated `update-platform-skills` command and namespace;
 they are no longer mixed into the SDK-owned folder.
+SDK guidance now lives in skills; repository-owned `AGENTS.md` is left untouched.
 
 ```bash
 uv add mainsequence-metatable

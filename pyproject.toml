@@ -88,7 +88,7 @@ include = ["mainsequence", "mainsequence.*", "agent_scaffold", "agent_scaffold.*
 
 [tool.setuptools.package-data]
 "mainsequence" = ["**/*.html", "**/*.css", "**/*.png", "**/*.toml", "**/*.json", "**/*.mako"]
-"agent_scaffold" = ["*.md", "**/*.md"]
+"agent_scaffold" = ["skills/**/*.md"]
 
 [[tool.uv.index]]
 name = "testpypi"
