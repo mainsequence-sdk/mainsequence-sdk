@@ -42,7 +42,7 @@ def can_publish(team_uids: list[str]) -> bool:
     return caller.is_organization_admin or bool(caller.in_teams(team_uids))
 ```
 
-`in_teams(team_uids, *, max_age_seconds=None)` returns the subset of `team_uids` the person is an active member of, as a `frozenset` of canonical UIDs. Teams the platform does not count, such as unknown or inactive ones, are left out. It works on `User.get_logged_user()` and `User.get_requester()` inside a signed HTTP request, and asks only about that request's caller or requester. Longer lists are sent in calls of at most 100 teams. In local mode and on WebSockets it raises `RequestIdentityError`; when the platform cannot answer it raises the SDK's API error, never "not a member".
+`in_teams(team_uids, *, max_age_seconds=None)` returns the subset of `team_uids` the person is an active member of, as a `frozenset` of canonical UIDs. Teams the platform does not count, such as unknown or inactive ones, are left out. It works on `User.get_logged_user()` and `User.get_requester()` inside a signed HTTP request, and asks only about that request's caller or requester. Longer lists are sent in calls of at most 100 teams. In local mode and on WebSockets it raises `RequestIdentityError`; when the platform cannot answer it raises the SDK's API error, never "not a member". When no answer can be reused it calls the platform, and the call blocks: call it from a `def` handler, or from an `async def` handler with `await asyncio.to_thread(caller.in_teams, team_uids)`, which keeps the request's identity.
 
 How long an answer may be reused is the application's choice:
 

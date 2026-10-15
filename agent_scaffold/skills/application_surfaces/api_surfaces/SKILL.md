@@ -160,6 +160,52 @@ connection is active. See the version-matched
 [FastAPI identity documentation](https://mainsequence-sdk.github.io/mainsequence-sdk/knowledge/fastapi/)
 for the lifecycle and trust contract.
 
+### Team membership
+
+The application owns its team policies. Check whether the caller belongs to
+the teams a policy names with `in_teams()`. Never take team facts from the
+request body, a header, a query parameter or the assertion:
+
+```python
+from fastapi import HTTPException
+from mainsequence.client import User
+
+
+@app.post("/teams/{team_uid}/reports")
+def publish_report(team_uid: str) -> dict[str, str]:
+    caller = User.get_logged_user()
+    # A write: ask the platform now instead of reusing an older answer.
+    if team_uid not in caller.in_teams([team_uid], max_age_seconds=0):
+        raise HTTPException(status_code=403, detail="Only the team's members can publish.")
+    return {"team_uid": team_uid, "published_by": caller.uid}
+```
+
+- `in_teams(team_uids, *, max_age_seconds=None)` returns the subset of
+  `team_uids` the person is an active member of, as a `frozenset` of canonical
+  UIDs; an empty set means none. Unknown and inactive teams are left out. It
+  works on `User.get_logged_user()` and `User.get_requester()`, asks only about
+  that request's caller or requester, and sends longer lists in calls of at
+  most 100 teams.
+- How long an answer may be reused is the application's choice.
+  `install_request_identity(app, team_membership_cache_seconds=60)` reuses an
+  answer across requests while it is younger than 60 seconds; the default, `0`,
+  reuses it only within its request. `max_age_seconds` sets the lifetime for
+  one call, and `max_age_seconds=0` always asks the platform: use it before a
+  write or anything that must see a removal at once.
+- It raises `RequestIdentityError` outside a signed HTTP request, in local mode
+  and on WebSockets, and the SDK's API error when the platform cannot answer.
+  Let the request fail: never read an exception as "member" or "not a member".
+- It calls the platform when it has no answer to reuse, and that call blocks.
+  Call it from a `def` handler, or from an `async def` handler with
+  `await asyncio.to_thread(caller.in_teams, team_uids)`, which keeps the
+  request's identity.
+- `team_uids` on the identity is deprecated and warns when read. In a signed
+  HTTP request it raises `RequestIdentityError` when the assertion carried no
+  team list, as every assertion will once the platform stops signing them.
+  Replace every check that reads it with `in_teams()`.
+- Membership is not team administration and not a grant on an object: check
+  the exact object and action as well.
+
 ### Requester-bound calls
 
 Another application, for example an Agent, can call the API while it works for
@@ -168,9 +214,9 @@ assertion it sends to the API, and the SDK verifies it before the handler runs.
 `User.get_logged_user()` still returns the caller, the acting application.
 `User.get_requester()` returns the requester, the checked delegation, with the
 person's own `uid` and `is_organization_admin`, or `None` when the call carries
-no delegation. `in_teams(team_uids)` on either identity asks the platform which
-of those teams the person belongs to; `team_uids` is deprecated. A requester-bound call carries the person's
-ordinary permissions, including administrative ones.
+no delegation. `in_teams()` on the requester answers for the person's teams
+([Team membership](#team-membership)). A requester-bound call carries the
+person's ordinary permissions, including administrative ones.
 
 Each handler decides whether it needs a person. One that needs a person fails
 with its own error when there is none; one where the person is optional

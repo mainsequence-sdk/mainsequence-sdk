@@ -136,6 +136,10 @@ Keep these separate:
 - inherited access to shared resources
 - administration of the team itself
 
+An application that checks whether its caller or requester belongs to a team
+uses `in_teams()`, never the deprecated `team_uids`; see
+`.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`.
+
 ### 5. `Constant` vs `Secret` is a security boundary
 
 Use `Constant` for non-sensitive runtime values.
@@ -304,6 +308,9 @@ When reviewing an access-control task, look for:
 - using direct user grants where a team should be used
 - using a team when the access is clearly one-off
 - treating team membership as team administration
+- team checks that read the deprecated `team_uids` instead of `in_teams()`,
+  that read an `in_teams()` error as "not a member", or that reuse an older
+  answer (no `max_age_seconds=0`) before a write that must see a removal
 - storing sensitive data in a `Constant`
 - creating a `Constant` or `Secret` blindly without resolving whether the name already exists
 - weak or unverified claims about who can access a resource

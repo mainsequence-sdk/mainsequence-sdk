@@ -5,6 +5,7 @@ membership check is a fake ``make_request`` that answers from a set of
 memberships and records every call.
 """
 
+import asyncio
 import time
 import warnings
 from types import SimpleNamespace
@@ -154,6 +155,26 @@ def test_the_caller_learns_which_of_the_asked_teams_it_belongs_to(sign, platform
     (call,) = platform.calls
     assert call.url.endswith(f"/users/{CALLER}/team-memberships/")
     assert sorted(call.asked) == sorted([research, operations, unknown])
+    assert call.payload["headers"] == {ASSERTION_HEADER: proof}
+
+
+def test_an_async_handler_asks_through_a_worker_thread_as_its_caller(sign, platform):
+    # The call blocks, so an async handler runs it in a worker thread; the
+    # thread keeps the request's identity (the skill and knowledge page say so).
+    research, operations = teams(2)
+    platform.members = {(CALLER, research)}
+    proof = sign()
+
+    async def handler():
+        caller = User.get_logged_user()
+        return sorted(await asyncio.to_thread(caller.in_teams, [research, operations]))
+
+    with TestClient(app_with(handler)) as client:
+        answer = client.get("/check", headers={ASSERTION_HEADER: proof}).json()
+
+    assert answer == [research]
+    (call,) = platform.calls
+    assert call.person == CALLER
     assert call.payload["headers"] == {ASSERTION_HEADER: proof}
 
 
