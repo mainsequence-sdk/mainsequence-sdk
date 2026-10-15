@@ -140,7 +140,6 @@ def test_signed_caller_facts_reach_the_logged_user(signed):
         "wrong_target",
         "duplicate",
         "without_caller_facts",
-        "without_team_uids",
         "without_admin_flag",
     ],
 )
@@ -167,8 +166,6 @@ def test_invalid_proof_never_reaches_route(signed, case, monkeypatch):
         headers = [(ASSERTION_HEADER, token()), (ASSERTION_HEADER, token())]
     elif case == "without_caller_facts":
         headers[ASSERTION_HEADER] = token(omit=("team_uids", "is_organization_admin"))
-    elif case == "without_team_uids":
-        headers[ASSERTION_HEADER] = token(omit=("team_uids",))
     elif case == "without_admin_flag":
         headers[ASSERTION_HEADER] = token(omit=("is_organization_admin",))
     assert TestClient(app_for(handler)).get("/me", headers=headers).status_code == 401
@@ -638,7 +635,6 @@ def test_requester_bound_call_binds_the_requester_beside_the_caller(
     [
         (None, ()),
         ({"sub": PERSON, "team_uids": []}, ()),
-        ({"sub": PERSON, "is_organization_admin": True}, ()),
         ({**requester_claim(), "username": "person"}, ()),
         (requester_claim(is_organization_admin=1), ()),
         (requester_claim(is_organization_admin="true"), ()),
@@ -649,7 +645,6 @@ def test_requester_bound_call_binds_the_requester_beside_the_caller(
     ids=[
         "null",
         "two_field_without_admin_flag",
-        "missing_team_uids",
         "extra_key",
         "integer_admin_flag",
         "string_admin_flag",

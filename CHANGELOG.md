@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+Team membership is checked on demand (#225). The caller assertion's team list
+grows with an Organization and passes the verifier's 16,384-byte limit at about
+300 teams; the platform is replacing it with a membership check.
+
+- `RequestUserIdentity.in_teams(team_uids, *, max_age_seconds=None)` returns the
+  given teams the request's caller or requester belongs to. It asks the platform
+  in calls of at most 100 teams.
+- `install_request_identity(app, team_membership_cache_seconds=0)` sets how long
+  an answer is reused across requests. Within a request each question is asked
+  once, and `max_age_seconds=0` is a fresh check that skips both kinds of reuse.
+- Answers are keyed by the verified release and Environment, at most 10,000 per
+  process.
+- The verifier accepts the caller's facts and a `requester` with or without
+  `team_uids`.
+- `RequestUserIdentity.team_uids` is deprecated and warns when read. It raises
+  `RequestIdentityError` when the assertion carried no list. The field is now
+  `signed_team_uids`: `model_dump()` names it so, and `model_dump(by_alias=True)`
+  keeps `team_uids`.
+
 Removed SDK `AGENTS.md` scaffolding: the packaged template, managed-block writer,
 and `code-repository update` command are gone. SDK execution, contract authority,
 and maintenance instructions are distributed with the existing skills and their

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 import os
 import re
 from contextlib import asynccontextmanager, contextmanager
@@ -18,6 +19,7 @@ from mainsequence._request_identity import (
     _reads_as_caller,
     _request_scope,
 )
+from mainsequence._team_memberships import TeamMembershipCache
 from mainsequence.client.models_user import RequestUserIdentity
 
 from .caller_assertions import (
@@ -175,11 +177,16 @@ async def _deny(scope, receive, send, error):
 
 
 class _RequestIdentityMiddleware:
-    def __init__(self, app, *, mode, verifier, public_ingress, routes):
+    def __init__(
+        self, app, *, mode, verifier, public_ingress, routes, team_membership_cache_seconds=0
+    ):
         self.app = app
         self.mode = mode
         self.verifier = verifier
         self.public_ingress = frozenset(public_ingress)
+        # Membership answers reused across this application's requests (#225).
+        self.team_memberships = TeamMembershipCache()
+        self.team_membership_cache_seconds = team_membership_cache_seconds
         for method, path in public_ingress:
             if not any(
                 getattr(route, "path", None) == path
@@ -228,6 +235,11 @@ class _RequestIdentityMiddleware:
                         state["resource_release_uid"] = caller.release_uid
                         state["organization_environment_uid"] = caller.environment_uid
                         context.caller_assertion = assertion
+                        # The verifier's trusted target keys membership answers.
+                        context.release_uid = caller.release_uid
+                        context.environment_uid = caller.environment_uid
+                        context.team_membership_cache = self.team_memberships
+                        context.team_membership_cache_seconds = self.team_membership_cache_seconds
                         if caller._requester is not None:
                             # The person this call works for, with the person's own facts.
                             context.requester = RequestUserIdentity(
@@ -257,14 +269,28 @@ class _RequestIdentityMiddleware:
             await self.app(scope, receive, send)
 
 
-def install_request_identity(app):
+def install_request_identity(app, *, team_membership_cache_seconds=0):
     """Install once at application creation.
 
     Handlers use User.get_logged_user() for the caller and, on a
     requester-bound call, User.get_requester() for the person it works for.
+    ``in_teams()`` on either asks the platform about team membership.
+
+    ``team_membership_cache_seconds`` is how long a membership answer may be
+    reused across requests in this process. ``0``, the default, reuses an
+    answer only within the same request. A longer lifetime means fewer calls
+    and a membership change seen up to that much later; the choice belongs to
+    the application (ADR 0036, #225).
     """
     if getattr(app.state, _INSTALLATION, None) is not None:
         raise RuntimeError("Request identity is already installed.")
+    if (
+        isinstance(team_membership_cache_seconds, bool)
+        or not isinstance(team_membership_cache_seconds, (int, float))
+        or not math.isfinite(team_membership_cache_seconds)
+        or team_membership_cache_seconds < 0
+    ):
+        raise ValueError("team_membership_cache_seconds must be a non-negative number.")
     mode = _mode()
     public_ingress = _public_routes()
     verifier = CallerAssertionVerifier.from_environment() if mode == "assertion" else None
@@ -274,6 +300,7 @@ def install_request_identity(app):
         verifier=verifier,
         public_ingress=public_ingress,
         routes=app.routes,
+        team_membership_cache_seconds=team_membership_cache_seconds,
     )
     setattr(
         app.state,

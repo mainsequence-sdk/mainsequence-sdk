@@ -420,7 +420,8 @@ caller's User; see
 
 `User.get_requester()` returns the requester of a requester-bound request, the
 person the calling application works for, as the same type with the person's
-own `team_uids` and `is_organization_admin`, or `None` when the request is not
+own `is_organization_admin` and `in_teams()` for its teams, or `None` when the
+request is not
 requester-bound. Authorize reads and writes against that person's ordinary
 permissions, including administrative ones, for the exact object and
 operation; the getter verifies identity, not permission. Never substitute the

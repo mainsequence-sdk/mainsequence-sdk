@@ -195,8 +195,9 @@ application's own call.
 Nobody names the requester in a request. An application never accepts a
 person's UID from a request body, header or query parameter: the person comes
 only from the platform. An application that receives a requester-bound call
-reads the requester with `User.get_requester()`, the person's own `uid`,
-`team_uids` and `is_organization_admin`, and checks that person's permission
+reads the requester with `User.get_requester()`, the person's own `uid` and
+`is_organization_admin`, asks about the person's teams with `in_teams()`, and
+checks that person's permission
 for the exact object and operation, for reads and writes alike. Each handler or
 tool decides whether it needs a person; see
 [Requester-bound calls](../fastapi/index.md#requester-bound-calls).

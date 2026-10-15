@@ -24,6 +24,15 @@ class _RequestScope:
     # assertion; None on any other request. The user stays the caller, the
     # acting application (ADR-0036, requester-bound calls).
     requester: Any = None
+    # The release and Environment the verifier trusts, from deployment
+    # configuration, never from the request. They key membership answers (#225).
+    release_uid: str | None = None
+    environment_uid: str | None = None
+    # in_teams() answers within this request, and the application's cache of
+    # answers across requests with its lifetime (ADR-0036, #225).
+    team_memberships: dict = field(default_factory=dict, repr=False)
+    team_membership_cache: Any = field(default=None, repr=False)
+    team_membership_cache_seconds: float = 0
 
 
 _current_scope: ContextVar[_RequestScope | None] = ContextVar(
@@ -47,6 +56,8 @@ def _request_scope():
         scope.user = None
         scope.caller_assertion = None
         scope.requester = None
+        scope.team_memberships = {}
+        scope.team_membership_cache = None
         _current_scope.reset(token)
 
 
@@ -62,6 +73,24 @@ def _authenticated_scope(getter: str) -> _RequestScope:
 
 def _get_request_identity():
     return _authenticated_scope("User.get_logged_user()").user
+
+
+def _team_membership_scope(person_uid: str) -> _RequestScope:
+    """The request whose caller or requester ``person_uid`` is, for in_teams()."""
+    scope = _authenticated_scope("in_teams()")
+    if scope.caller_assertion is None:
+        raise RequestIdentityError(
+            "This request carries no caller assertion. Team membership checks need a "
+            "hosted HTTP request in assertion mode, not local mode or a WebSocket."
+        )
+    people = {scope.user.uid}
+    if scope.requester is not None:
+        people.add(scope.requester.uid)
+    if person_uid not in people:
+        raise RequestIdentityError(
+            "in_teams() answers only for the request's caller or its requester."
+        )
+    return scope
 
 
 def _get_requester():

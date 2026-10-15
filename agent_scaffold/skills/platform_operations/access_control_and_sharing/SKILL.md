@@ -271,8 +271,9 @@ The requester comes only from the platform. An application never accepts a
 person's UID from a request body, header or query parameter, never parses the
 assertion, headers or MCP `_meta` itself, and never lets a caller choose whom
 it acts for. A FastAPI application that receives a requester-bound call reads
-the requester with `User.get_requester()`, the person's own `uid`, `team_uids`
-and `is_organization_admin`, and authorizes reads and writes against that
+the requester with `User.get_requester()`, the person's own `uid` and
+`is_organization_admin`, checks the person's teams with `in_teams()`, and
+authorizes reads and writes against that
 person's object- and operation-specific permissions. Each handler or tool
 decides whether it needs a person. See
 `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`.

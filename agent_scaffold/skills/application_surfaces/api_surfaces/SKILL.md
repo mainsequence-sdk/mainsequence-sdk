@@ -167,8 +167,9 @@ a person: the requester. The platform signs the requester into the caller
 assertion it sends to the API, and the SDK verifies it before the handler runs.
 `User.get_logged_user()` still returns the caller, the acting application.
 `User.get_requester()` returns the requester, the checked delegation, with the
-person's own `uid`, `team_uids` and `is_organization_admin`, or `None` when the
-call carries no delegation. A requester-bound call carries the person's
+person's own `uid` and `is_organization_admin`, or `None` when the call carries
+no delegation. `in_teams(team_uids)` on either identity asks the platform which
+of those teams the person belongs to; `team_uids` is deprecated. A requester-bound call carries the person's
 ordinary permissions, including administrative ones.
 
 Each handler decides whether it needs a person. One that needs a person fails
@@ -191,7 +192,7 @@ def require_requester() -> RequestUserIdentity:
 @app.get("/team-reports/{team_uid}")
 def team_report(team_uid: str) -> dict[str, str]:
     requester = require_requester()
-    if not (requester.is_organization_admin or team_uid in requester.team_uids):
+    if not (requester.is_organization_admin or requester.in_teams([team_uid])):
         raise HTTPException(status_code=403, detail="The requester cannot read this report.")
     return {"team_uid": team_uid, "requested_by": requester.uid}
 

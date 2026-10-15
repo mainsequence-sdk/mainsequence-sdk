@@ -1,17 +1,23 @@
 from __future__ import annotations
 
 import datetime
+import math
+import warnings
+from collections.abc import Iterable
 from typing import Any, ClassVar, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator, model_validator
 
 from mainsequence._request_identity import (
+    CALLER_ASSERTION_HEADER,
     RequestIdentityError,
     _caller_read_headers,
     _get_request_identity,
     _get_requester,
+    _team_membership_scope,
 )
+from mainsequence._team_memberships import MAX_TEAMS_PER_CALL
 from mainsequence.defaults import STANDARD_BACKEND_URL
 
 from .base import (
@@ -33,11 +39,11 @@ class RequestUserIdentity(BaseModel):
     The caller is a person or a workload identity; ``User.get_by_uid(uid)``
     reads its User. ``User.get_requester()`` returns the same type for the
     requester of a requester-bound request, the person the calling
-    application works for, with that person's own ``team_uids`` and
-    ``is_organization_admin``.
+    application works for, with that person's own ``is_organization_admin``.
+    ``in_teams()`` asks the platform which teams either of them belongs to.
     """
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(extra="forbid", frozen=True, populate_by_name=True)
 
     uid: str = Field(
         ...,
@@ -52,13 +58,15 @@ class RequestUserIdentity(BaseModel):
         title="Username",
         description="Optional display name authenticated by the runtime gateway.",
     )
-    team_uids: tuple[str, ...] = Field(
+    signed_team_uids: tuple[str, ...] | None = Field(
         (),
-        title="Team UIDs",
+        alias="team_uids",
+        title="Signed team UIDs (deprecated)",
         description=(
             "Canonical UIDs of the active teams the platform signed in the caller "
-            "assertion: the caller's, or for the requester the person's own. Empty in "
-            "local mode and on WebSockets, which carry no such facts."
+            "assertion, None when it signed none. Deprecated: read membership with "
+            "in_teams() (#225). Empty in local mode and on WebSockets, which carry no "
+            "such facts."
         ),
     )
     is_organization_admin: bool = Field(
@@ -79,13 +87,63 @@ class RequestUserIdentity(BaseModel):
         except (AttributeError, TypeError, ValueError) as exc:
             raise ValueError("Request user UID must be a valid UUID.") from exc
 
-    @field_validator("team_uids", mode="before")
+    @field_validator("signed_team_uids", mode="before")
     @classmethod
-    def _canonicalize_team_uids(cls, value: Any) -> tuple[str, ...]:
+    def _canonicalize_team_uids(cls, value: Any) -> tuple[str, ...] | None:
+        if value is None:
+            return None
         try:
-            return tuple(str(UUID(str(item).strip())) for item in value or ())
+            return tuple(str(UUID(str(item).strip())) for item in value)
         except (AttributeError, TypeError, ValueError) as exc:
             raise ValueError("Team UIDs must be valid UUIDs.") from exc
+
+    @property
+    def team_uids(self) -> tuple[str, ...]:
+        """Deprecated: the team UIDs the platform signed. Use ``in_teams()``.
+
+        Warns when read. When the caller assertion carried no team list it
+        raises ``RequestIdentityError``; it never answers an empty list for
+        that. Empty in local mode and on WebSockets, as before (#225).
+        """
+        warnings.warn(
+            "RequestUserIdentity.team_uids is deprecated; check membership with "
+            "in_teams() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        if self.signed_team_uids is None:
+            raise RequestIdentityError(
+                "The caller assertion carries no team list. Check team membership "
+                "with in_teams()."
+            )
+        return self.signed_team_uids
+
+    def in_teams(
+        self, team_uids: Iterable[str | UUID], *, max_age_seconds: float | None = None
+    ) -> frozenset[str]:
+        """Which of ``team_uids`` this person is an active member of.
+
+        Works on ``User.get_logged_user()`` and ``User.get_requester()`` inside
+        an authenticated hosted request, and asks the platform for the request's
+        caller or requester only. Returns canonical team UIDs; an empty set
+        means none. Teams the platform does not count, such as unknown or
+        inactive ones, are left out.
+
+        Reuse is the application's choice (``install_request_identity``):
+
+        - within one request the same question is asked once;
+        - across requests an answer is reused while it is younger than
+          ``team_membership_cache_seconds``, or than ``max_age_seconds`` when
+          given; ``0``, the default, reuses none across requests;
+        - ``max_age_seconds=0`` is a fresh check: it always asks the platform,
+          skips both kinds of reuse and stores the new answer. Ask for one
+          before acting on a membership that must be current.
+
+        Raises ``RequestIdentityError`` outside such a request, in local mode
+        and on WebSockets, and the SDK's API error when the platform cannot
+        answer; it never answers "not a member" because a call failed.
+        """
+        return _member_team_uids(self.uid, team_uids, max_age_seconds)
 
     @field_validator("username", mode="before")
     @classmethod
@@ -1314,8 +1372,9 @@ class User(_CallerDirectoryReadMixin, UserApiBaseObjectOrm, BasePydanticModel):
         an Agent, while it works for a person: the requester. The platform
         signs that person into the caller assertion, and the request identity
         integration verifies it before any handler or tool runs. The result is
-        that checked delegation: the person's own ``uid``, ``team_uids`` and
-        ``is_organization_admin``, as the platform signed them.
+        that checked delegation: the person's own ``uid`` and
+        ``is_organization_admin``, as the platform signed them, and
+        ``in_teams()`` for the person's teams.
         ``get_logged_user()`` still returns the caller, the acting application.
 
         Returns ``None`` when the request carries no delegation, including
@@ -1347,3 +1406,73 @@ class User(_CallerDirectoryReadMixin, UserApiBaseObjectOrm, BasePydanticModel):
         if requester is not None and not isinstance(requester, RequestUserIdentity):
             raise RequestIdentityError("Invalid request requester context value.")
         return requester
+
+    @classmethod
+    def _team_memberships(cls, person_uid: str, team_uids: list[str], assertion: str) -> set[str]:
+        """Which of ``team_uids`` the platform says the person belongs to (#225)."""
+        response = make_request(
+            s=cls.build_session(),
+            loaders=cls.LOADERS,
+            r_type="GET",
+            url=f"{cls.get_object_url()}/{person_uid}/team-memberships/",
+            payload={
+                "params": {"team_uid__in": ",".join(team_uids)},
+                "headers": {CALLER_ASSERTION_HEADER: assertion},
+            },
+        )
+        if response.status_code != 200:
+            # Never pass the payload: it holds the caller assertion.
+            raise_for_response(response)
+        answered = response.json().get("team_uids")
+        if not isinstance(answered, list):
+            raise ApiError("Invalid team membership answer.", response=response)
+        return set(_canonical_team_uids(answered)) & set(team_uids)
+
+
+def _canonical_team_uids(team_uids: Iterable[str | UUID]) -> list[str]:
+    if isinstance(team_uids, (str, bytes, UUID)):
+        raise TypeError("in_teams() takes a collection of team UIDs, not a single UID.")
+    try:
+        return sorted({str(UUID(str(team_uid).strip())) for team_uid in team_uids})
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise ValueError("Team UIDs must be valid UUIDs.") from exc
+
+
+def _member_team_uids(
+    person_uid: str, team_uids: Iterable[str | UUID], max_age_seconds: float | None
+) -> frozenset[str]:
+    """RequestUserIdentity.in_teams(): reuse answers as allowed, ask for the rest."""
+    asked = _canonical_team_uids(team_uids)
+    if max_age_seconds is not None and (
+        isinstance(max_age_seconds, bool)
+        or not isinstance(max_age_seconds, (int, float))
+        or not math.isfinite(max_age_seconds)
+        or max_age_seconds < 0
+    ):
+        raise ValueError("max_age_seconds must be None or a non-negative number of seconds.")
+    scope = _team_membership_scope(person_uid)
+    fresh = max_age_seconds == 0
+    lifetime = scope.team_membership_cache_seconds if max_age_seconds is None else max_age_seconds
+    cache = scope.team_membership_cache
+    answers: dict[str, bool] = {}
+    unanswered: list[str] = []
+    for team_uid in asked:
+        key = (scope.release_uid, scope.environment_uid, person_uid, team_uid)
+        reused = None
+        if not fresh:
+            reused = scope.team_memberships.get(key)
+            if reused is None and cache is not None:
+                reused = cache.get(key, max_age=lifetime)
+        if reused is None:
+            unanswered.append(team_uid)
+        else:
+            answers[team_uid] = scope.team_memberships[key] = reused
+    for start in range(0, len(unanswered), MAX_TEAMS_PER_CALL):
+        batch = unanswered[start : start + MAX_TEAMS_PER_CALL]
+        members = User._team_memberships(person_uid, batch, scope.caller_assertion)
+        for team_uid in batch:
+            key = (scope.release_uid, scope.environment_uid, person_uid, team_uid)
+            answers[team_uid] = scope.team_memberships[key] = team_uid in members
+            if cache is not None:
+                cache.put(key, answers[team_uid])
+    return frozenset(team_uid for team_uid, member in answers.items() if member)
