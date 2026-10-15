@@ -229,7 +229,6 @@ class _RequestIdentityMiddleware:
                         caller = await asyncio.to_thread(self.verifier.verify, assertion)
                         user = RequestUserIdentity(
                             uid=caller.user_uid,
-                            team_uids=caller.team_uids,
                             is_organization_admin=caller.is_organization_admin,
                         )
                         state["resource_release_uid"] = caller.release_uid
@@ -244,7 +243,6 @@ class _RequestIdentityMiddleware:
                             # The person this call works for, with the person's own facts.
                             context.requester = RequestUserIdentity(
                                 uid=caller._requester.user_uid,
-                                team_uids=caller._requester.team_uids,
                                 is_organization_admin=caller._requester.is_organization_admin,
                             )
                     else:

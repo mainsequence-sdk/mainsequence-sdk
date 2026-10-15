@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+**`team_uids` is removed; the verifier refuses assertions that list teams (#225).**
+The platform no longer signs a team list in the caller assertion. Checking membership
+with `in_teams()` is unchanged.
+
+- `RequestUserIdentity` has no `team_uids` and no `signed_team_uids`. Constructing
+  it with either raises a validation error.
+- The verifier refuses an assertion that carries `team_uids`, and a `requester` that
+  carries it, empty lists included. Hosted on a platform that still signs team lists,
+  this release would reject every caller.
+
 Team membership is checked on demand (#225). The caller assertion's team list
 grows with an Organization and passes the verifier's 16,384-byte limit at about
 300 teams; the platform is replacing it with a membership check.

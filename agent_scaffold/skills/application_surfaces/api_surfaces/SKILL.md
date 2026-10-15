@@ -199,10 +199,8 @@ def publish_report(team_uid: str) -> dict[str, str]:
   Call it from a `def` handler, or from an `async def` handler with
   `await asyncio.to_thread(caller.in_teams, team_uids)`, which keeps the
   request's identity.
-- `team_uids` on the identity is deprecated and warns when read. In a signed
-  HTTP request it raises `RequestIdentityError` when the assertion carried no
-  team list, as every assertion will once the platform stops signing them.
-  Replace every check that reads it with `in_teams()`.
+- The identity has no `team_uids`; the platform signs no team list. Code
+  written for releases that had it reads `in_teams()` instead.
 - Membership is not team administration and not a grant on an object: check
   the exact object and action as well.
 

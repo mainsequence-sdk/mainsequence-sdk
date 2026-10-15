@@ -63,8 +63,6 @@ class _VerifiedRequester:
     """The person a requester-bound call works for, as the platform signed it."""
 
     user_uid: str
-    # None when the assertion carries no team list (#225).
-    team_uids: tuple[str, ...] | None
     is_organization_admin: bool
 
 
@@ -75,21 +73,10 @@ class AuthenticatedCaller:
     environment_uid: str
     issued_at: int
     expires_at: int
-    # None when the assertion carries no team list (#225).
-    team_uids: tuple[str, ...] | None
     is_organization_admin: bool
     # The person a requester-bound call works for, None on any other call. The
     # fields above stay the caller's: the acting application (ADR-0036).
     _requester: _VerifiedRequester | None = None
-
-
-def _team_uids(value: object, *, owner: str) -> tuple[str, ...]:
-    if not isinstance(value, list):
-        raise InvalidCallerAssertion(f"{owner} team UIDs are invalid.")
-    team_uids = tuple(_canonical_uid(item) for item in value)
-    if list(team_uids) != sorted(set(team_uids)):
-        raise InvalidCallerAssertion(f"{owner} team UIDs must be sorted and unique.")
-    return team_uids
 
 
 def _admin_flag(value: object, *, owner: str) -> bool:
@@ -98,43 +85,32 @@ def _admin_flag(value: object, *, owner: str) -> bool:
     return value
 
 
-def _signed_team_uids(claims: dict, *, owner: str) -> tuple[str, ...] | None:
-    """The deprecated ``team_uids`` while the platform still signs it, else None.
+def _caller_admin_flag(payload: dict) -> bool:
+    """The caller's admin flag, after checking the exact claim set.
 
-    Membership is checked on demand with ``RequestUserIdentity.in_teams()``
-    (#225); a list that is still signed is checked as before.
+    The assertion names no teams: membership is checked on demand with
+    ``RequestUserIdentity.in_teams()`` (#225), and an assertion that lists
+    teams is refused.
     """
-    if "team_uids" not in claims:
-        return None
-    return _team_uids(claims["team_uids"], owner=owner)
-
-
-def _caller_facts(payload: dict) -> tuple[tuple[str, ...] | None, bool]:
-    """The caller's admin flag, and its team UIDs while the platform signs them."""
     # A requester-bound call also carries "requester", which _requester() checks.
-    if set(payload) - {"requester", "team_uids"} != REQUIRED_CLAIMS:
+    if set(payload) - {"requester"} != REQUIRED_CLAIMS:
         raise InvalidCallerAssertion("Caller assertion claims are invalid.")
-    return (
-        _signed_team_uids(payload, owner="Caller"),
-        _admin_flag(payload["is_organization_admin"], owner="Caller"),
-    )
+    return _admin_flag(payload["is_organization_admin"], owner="Caller")
 
 
 def _requester(payload: dict) -> _VerifiedRequester | None:
     """The person a requester-bound call works for, or None on any other call.
 
     The claim has exactly ``sub`` and ``is_organization_admin``, the person's
-    own User UID and Organization-admin flag, and may still carry the
-    deprecated ``team_uids`` (#225).
+    own User UID and Organization-admin flag.
     """
     if "requester" not in payload:
         return None
     claim = payload["requester"]
-    if not isinstance(claim, dict) or set(claim) - {"team_uids"} != REQUESTER_CLAIMS:
+    if not isinstance(claim, dict) or set(claim) != REQUESTER_CLAIMS:
         raise InvalidCallerAssertion("Caller assertion requester is invalid.")
     return _VerifiedRequester(
         user_uid=_canonical_uid(claim["sub"]),
-        team_uids=_signed_team_uids(claim, owner="Requester"),
         is_organization_admin=_admin_flag(claim["is_organization_admin"], owner="Requester"),
     )
 
@@ -284,7 +260,7 @@ class CallerAssertionVerifier:
                 audience=f"urn:mainsequence:fapi:{self.release_uid}",
                 options={"require": list(REQUIRED_CLAIMS)},
             )
-            team_uids, is_organization_admin = _caller_facts(payload)
+            is_organization_admin = _caller_admin_flag(payload)
             requester = _requester(payload)
             if (
                 payload["aud"] != f"urn:mainsequence:fapi:{self.release_uid}"
@@ -304,7 +280,6 @@ class CallerAssertionVerifier:
                 environment_uid=self.environment_uid,
                 issued_at=iat,
                 expires_at=exp,
-                team_uids=team_uids,
                 is_organization_admin=is_organization_admin,
                 _requester=requester,
             )

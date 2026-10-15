@@ -7,7 +7,6 @@ memberships and records every call.
 
 import asyncio
 import time
-import warnings
 from types import SimpleNamespace
 from unittest.mock import Mock
 from uuid import uuid4
@@ -393,11 +392,7 @@ def test_local_mode_has_no_assertion_to_ask_with(platform, monkeypatch):
     )
 
     def handler():
-        user = User.get_logged_user()
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", DeprecationWarning)
-            assert user.team_uids == ()
-        user.in_teams(teams(1))
+        User.get_logged_user().in_teams(teams(1))
 
     with TestClient(app_with(handler), raise_server_exceptions=True) as client:
         with pytest.raises(RequestIdentityError):
@@ -405,26 +400,20 @@ def test_local_mode_has_no_assertion_to_ask_with(platform, monkeypatch):
     assert platform.calls == []
 
 
-def test_team_uids_is_deprecated_and_never_answers_empty_for_a_missing_list(sign, platform):
-    (research,) = teams(1)
+def test_the_identity_has_no_team_list(sign, platform):
+    # Step 5 (#225): the deprecated team_uids is gone; in_teams() answers.
     seen = {}
 
     def handler():
         user = User.get_logged_user()
-        with pytest.warns(DeprecationWarning):
-            try:
-                seen["teams"] = user.team_uids
-            except RequestIdentityError as error:
-                seen["error"] = str(error)
+        seen["has_team_uids"] = hasattr(user, "team_uids")
 
     with TestClient(app_with(handler)) as client:
-        client.get("/check", headers={ASSERTION_HEADER: sign(team_uids=[research])})
-        signed = dict(seen)
-        seen.clear()
         client.get("/check", headers={ASSERTION_HEADER: sign()})
 
-    assert signed == {"teams": (research,)}
-    assert "in_teams()" in seen["error"]
+    assert seen == {"has_team_uids": False}
+    with pytest.raises(ValueError):
+        RequestUserIdentity(uid=CALLER, team_uids=[])
 
 
 @pytest.mark.parametrize(

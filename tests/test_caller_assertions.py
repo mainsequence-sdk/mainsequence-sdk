@@ -55,7 +55,6 @@ def token(key, *, kid="first", headers=None, omit=(), **changes):
         "iat": now,
         "nbf": now,
         "exp": now + 120,
-        "team_uids": [],
         "is_organization_admin": False,
     }
     claims.update(changes)
@@ -79,57 +78,43 @@ def verifier(fetch):
 TEAMS = sorted([str(uuid4()), str(uuid4())])
 
 
-def test_exposes_the_callers_teams_and_admin_flag(keys):
+def test_exposes_the_callers_admin_flag_and_names_no_teams(keys):
     key, public = keys[0]
     check = verifier(lambda: {"keys": [public]})
 
-    caller = check.verify(token(key, team_uids=TEAMS, is_organization_admin=True))
+    caller = check.verify(token(key, is_organization_admin=True))
 
-    assert caller.team_uids == tuple(TEAMS)
     assert caller.is_organization_admin is True
+    # Membership is checked on demand with in_teams() (#225).
+    assert not hasattr(caller, "team_uids")
 
 
-def test_a_caller_in_no_team_who_is_not_an_admin(keys):
+def test_a_caller_who_is_not_an_admin(keys):
     key, public = keys[0]
 
     caller = verifier(lambda: {"keys": [public]}).verify(token(key))
 
-    assert caller.team_uids == ()
     assert caller.is_organization_admin is False
 
 
-@pytest.mark.parametrize(
-    "omit",
-    [("team_uids", "is_organization_admin"), ("is_organization_admin",)],
-    ids=["no_facts", "no_admin_flag"],
-)
-def test_rejects_an_assertion_without_the_callers_admin_flag(keys, omit):
+def test_rejects_an_assertion_without_the_callers_admin_flag(keys):
     """Every assertion states the caller's admin flag; there is no older shape."""
     key, public = keys[0]
     with pytest.raises(InvalidCallerAssertion):
-        verifier(lambda: {"keys": [public]}).verify(token(key, omit=omit))
+        verifier(lambda: {"keys": [public]}).verify(token(key, omit=("is_organization_admin",)))
 
 
-def test_accepts_an_assertion_without_a_team_list(keys):
-    """The platform stops signing team lists; membership is checked with in_teams (#225)."""
+@pytest.mark.parametrize("team_uids", [TEAMS, [], None], ids=["team_list", "empty_list", "null"])
+def test_rejects_an_assertion_that_lists_teams(keys, team_uids):
+    """The platform signs no team list; an assertion that carries one is refused (#225)."""
     key, public = keys[0]
-
-    caller = verifier(lambda: {"keys": [public]}).verify(
-        token(key, omit=("team_uids",), is_organization_admin=True)
-    )
-
-    assert caller.team_uids is None
-    assert caller.is_organization_admin is True
+    with pytest.raises(InvalidCallerAssertion):
+        verifier(lambda: {"keys": [public]}).verify(token(key, team_uids=team_uids))
 
 
 @pytest.mark.parametrize(
     "changes",
     [
-        {"team_uids": None},
-        {"team_uids": TEAMS[0]},
-        {"team_uids": list(reversed(TEAMS))},
-        {"team_uids": [TEAMS[0], TEAMS[0]]},
-        {"team_uids": [TEAMS[0].upper()]},
         {"is_organization_admin": None},
         {"is_organization_admin": "true"},
         {"is_organization_admin": 1},
@@ -146,11 +131,11 @@ def test_rejects_malformed_caller_facts(keys, changes):
 #
 # Another application calls while it works for a person, the requester. The
 # assertion's `sub` and facts stay the caller's, the acting application, and
-# `requester` names the person with the person's own facts: exactly `sub`,
-# `team_uids` and `is_organization_admin`.
+# `requester` names the person with the person's own facts: exactly `sub` and
+# `is_organization_admin`.
 
 PERSON = "5b0f9a8e-3c2d-4e1f-9a7b-6c5d4e3f2a1b"
-REQUESTER = {"sub": PERSON, "team_uids": TEAMS, "is_organization_admin": True}
+REQUESTER = {"sub": PERSON, "is_organization_admin": True}
 
 
 @pytest.mark.parametrize(
@@ -160,45 +145,32 @@ REQUESTER = {"sub": PERSON, "team_uids": TEAMS, "is_organization_admin": True}
 )
 def test_exposes_the_requester_beside_the_acting_caller(keys, caller_admin, person_admin):
     key, public = keys[0]
-    caller_teams = [str(uuid4())]
     check = verifier(lambda: {"keys": [public]})
 
     caller = check.verify(
         token(
             key,
-            team_uids=caller_teams,
             is_organization_admin=caller_admin,
             requester={**REQUESTER, "is_organization_admin": person_admin},
         )
     )
 
     # Each identity keeps its own facts: neither admin flag reaches the other.
-    assert (caller.user_uid, caller.team_uids, caller.is_organization_admin) == (
-        USER,
-        tuple(caller_teams),
-        caller_admin,
-    )
+    assert (caller.user_uid, caller.is_organization_admin) == (USER, caller_admin)
     requester = caller._requester
-    assert (requester.user_uid, requester.team_uids, requester.is_organization_admin) == (
-        PERSON,
-        tuple(TEAMS),
-        person_admin,
-    )
+    assert (requester.user_uid, requester.is_organization_admin) == (PERSON, person_admin)
+    assert not hasattr(requester, "team_uids")
 
 
-def test_a_requester_in_no_team_who_is_not_an_admin(keys):
+def test_a_requester_who_is_not_an_admin(keys):
     key, public = keys[0]
 
     caller = verifier(lambda: {"keys": [public]}).verify(
-        token(key, requester={"sub": PERSON, "team_uids": [], "is_organization_admin": False})
+        token(key, requester={"sub": PERSON, "is_organization_admin": False})
     )
 
     requester = caller._requester
-    assert (requester.user_uid, requester.team_uids, requester.is_organization_admin) == (
-        PERSON,
-        (),
-        False,
-    )
+    assert (requester.user_uid, requester.is_organization_admin) == (PERSON, False)
 
 
 def test_a_call_that_is_not_requester_bound_has_no_requester(keys):
@@ -206,7 +178,7 @@ def test_a_call_that_is_not_requester_bound_has_no_requester(keys):
     check = verifier(lambda: {"keys": [public]})
 
     assert check.verify(token(key))._requester is None
-    assert check.verify(token(key, team_uids=TEAMS, is_organization_admin=True))._requester is None
+    assert check.verify(token(key, is_organization_admin=True))._requester is None
 
 
 @pytest.mark.parametrize(
@@ -214,12 +186,14 @@ def test_a_call_that_is_not_requester_bound_has_no_requester(keys):
     [
         None,
         PERSON,
-        [PERSON, TEAMS, True],
+        [PERSON, True],
         {},
-        {"sub": PERSON, "team_uids": TEAMS},
-        {"team_uids": TEAMS, "is_organization_admin": True},
+        {"sub": PERSON},
+        {"is_organization_admin": True},
         {**REQUESTER, "username": "person"},
         {**REQUESTER, "requester": {"sub": PERSON}},
+        {**REQUESTER, "team_uids": TEAMS},
+        {**REQUESTER, "team_uids": []},
         {**REQUESTER, "is_organization_admin": None},
         {**REQUESTER, "is_organization_admin": 1},
         {**REQUESTER, "is_organization_admin": 0},
@@ -230,22 +204,18 @@ def test_a_call_that_is_not_requester_bound_has_no_requester(keys):
         {**REQUESTER, "sub": "not-a-uuid"},
         {**REQUESTER, "sub": None},
         {**REQUESTER, "sub": 1},
-        {**REQUESTER, "team_uids": None},
-        {**REQUESTER, "team_uids": TEAMS[0]},
-        {**REQUESTER, "team_uids": [1]},
-        {**REQUESTER, "team_uids": [TEAMS[0].upper()]},
-        {**REQUESTER, "team_uids": list(reversed(TEAMS))},
-        {**REQUESTER, "team_uids": [TEAMS[0], TEAMS[0]]},
     ],
     ids=[
         "null",
         "string",
         "list",
         "empty",
-        "two_field_without_admin_flag",
+        "missing_admin_flag",
         "missing_sub",
         "extra_key",
         "nested_requester",
+        "team_list",
+        "empty_team_list",
         "null_admin_flag",
         "integer_true_admin_flag",
         "integer_false_admin_flag",
@@ -256,12 +226,6 @@ def test_a_call_that_is_not_requester_bound_has_no_requester(keys):
         "invalid_sub",
         "null_sub",
         "integer_sub",
-        "null_team_uids",
-        "string_team_uids",
-        "integer_team_uid",
-        "uppercase_team_uid",
-        "unsorted_team_uids",
-        "duplicate_team_uids",
     ],
 )
 def test_rejects_a_malformed_requester(keys, requester):
@@ -270,35 +234,18 @@ def test_rejects_a_malformed_requester(keys, requester):
         verifier(lambda: {"keys": [public]}).verify(token(key, requester=requester))
 
 
-def test_a_requester_and_caller_without_team_lists_are_accepted(keys):
-    """Neither the caller's facts nor the requester's need a team list (#225)."""
-    key, public = keys[0]
-
-    caller = verifier(lambda: {"keys": [public]}).verify(
-        token(
-            key,
-            omit=("team_uids",),
-            requester={"sub": PERSON, "is_organization_admin": True},
-        )
-    )
-
-    assert caller.team_uids is None
-    assert (caller._requester.user_uid, caller._requester.team_uids) == (PERSON, None)
-    assert caller._requester.is_organization_admin is True
-
-
 @pytest.mark.parametrize(
     ("changes", "omit"),
     [
         ({"extra": "not an identity claim"}, ()),
         ({"requester_is_organization_admin": True}, ()),
-        ({}, ("team_uids", "is_organization_admin")),
+        ({"team_uids": TEAMS}, ()),
         ({}, ("is_organization_admin",)),
     ],
     ids=[
         "unknown_claim",
         "requester_admin_claim",
-        "no_caller_facts",
+        "caller_team_list",
         "no_caller_admin_flag",
     ],
 )

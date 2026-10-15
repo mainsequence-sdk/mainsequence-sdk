@@ -69,7 +69,6 @@ def signed(monkeypatch):
             iat=now,
             nbf=now,
             exp=now + 120,
-            team_uids=[],
             is_organization_admin=False,
         )
         claims.update(changes)
@@ -114,21 +113,18 @@ def test_sync_getter_signed_proof_once_and_process_credentials_untouched(signed,
 
 def test_signed_caller_facts_reach_the_logged_user(signed):
     token, _, _ = signed
-    teams = sorted([str(uuid4()), str(uuid4())])
 
     def handler():
         user = User.get_logged_user()
-        return {"teams": list(user.team_uids), "admin": user.is_organization_admin}
+        return {"admin": user.is_organization_admin, "teams": hasattr(user, "team_uids")}
 
     with TestClient(app_for(handler)) as client:
-        admin = client.get(
-            "/me",
-            headers={ASSERTION_HEADER: token(team_uids=teams, is_organization_admin=True)},
-        )
-        member_of_none = client.get("/me", headers={ASSERTION_HEADER: token()})
+        admin = client.get("/me", headers={ASSERTION_HEADER: token(is_organization_admin=True)})
+        member = client.get("/me", headers={ASSERTION_HEADER: token()})
 
-    assert admin.json() == {"teams": teams, "admin": True}
-    assert member_of_none.json() == {"teams": [], "admin": False}
+    # The identity names no teams: membership is checked with in_teams() (#225).
+    assert admin.json() == {"admin": True, "teams": False}
+    assert member.json() == {"admin": False, "teams": False}
 
 
 @pytest.mark.parametrize(
@@ -139,7 +135,7 @@ def test_signed_caller_facts_reach_the_logged_user(signed):
         "expired",
         "wrong_target",
         "duplicate",
-        "without_caller_facts",
+        "with_a_team_list",
         "without_admin_flag",
     ],
 )
@@ -164,8 +160,8 @@ def test_invalid_proof_never_reaches_route(signed, case, monkeypatch):
         headers[ASSERTION_HEADER] = token(resource_release_uid=OTHER)
     elif case == "duplicate":
         headers = [(ASSERTION_HEADER, token()), (ASSERTION_HEADER, token())]
-    elif case == "without_caller_facts":
-        headers[ASSERTION_HEADER] = token(omit=("team_uids", "is_organization_admin"))
+    elif case == "with_a_team_list":
+        headers[ASSERTION_HEADER] = token(team_uids=[])
     elif case == "without_admin_flag":
         headers[ASSERTION_HEADER] = token(omit=("is_organization_admin",))
     assert TestClient(app_for(handler)).get("/me", headers=headers).status_code == 401
@@ -575,24 +571,18 @@ def test_reads_as_caller_needs_a_signed_http_request(monkeypatch):
 PERSON = "5b0f9a8e-3c2d-4e1f-9a7b-6c5d4e3f2a1b"
 
 
-def requester_claim(sub=PERSON, team_uids=(), is_organization_admin=False):
+def requester_claim(sub=PERSON, is_organization_admin=False):
     """The requester claim as the platform signs it."""
-    return {
-        "sub": sub,
-        "team_uids": list(team_uids),
-        "is_organization_admin": is_organization_admin,
-    }
+    return {"sub": sub, "is_organization_admin": is_organization_admin}
 
 
 def _identities():
     caller = User.get_logged_user()
     requester = User.get_requester()
     return {
-        "caller": [caller.uid, list(caller.team_uids), caller.is_organization_admin],
+        "caller": [caller.uid, caller.is_organization_admin],
         "requester": (
-            None
-            if requester is None
-            else [requester.uid, list(requester.team_uids), requester.is_organization_admin]
+            None if requester is None else [requester.uid, requester.is_organization_admin]
         ),
     }
 
@@ -606,11 +596,9 @@ def test_requester_bound_call_binds_the_requester_beside_the_caller(
     signed, caller_admin, person_admin
 ):
     token, _, _ = signed
-    caller_teams = sorted([str(uuid4()), str(uuid4())])
-    requester_teams = sorted([str(uuid4()), str(uuid4())])
     # Each identity keeps its own facts: neither admin flag reaches the other.
-    facts = dict(team_uids=caller_teams, is_organization_admin=caller_admin)
-    person = requester_claim(team_uids=requester_teams, is_organization_admin=person_admin)
+    facts = dict(is_organization_admin=caller_admin)
+    person = requester_claim(is_organization_admin=person_admin)
 
     with TestClient(app_for(_identities)) as client:
         bound = client.get("/me", headers={ASSERTION_HEADER: token(**facts, requester=person)})
@@ -622,10 +610,10 @@ def test_requester_bound_call_binds_the_requester_beside_the_caller(
         )
 
     assert bound.json() == {
-        "caller": [USER, caller_teams, caller_admin],
-        "requester": [PERSON, requester_teams, person_admin],
+        "caller": [USER, caller_admin],
+        "requester": [PERSON, person_admin],
     }
-    assert direct.json() == {"caller": [USER, caller_teams, caller_admin], "requester": None}
+    assert direct.json() == {"caller": [USER, caller_admin], "requester": None}
     with pytest.raises(RequestIdentityError, match=r"User\.get_requester\(\)"):
         User.get_requester()
 
@@ -634,23 +622,25 @@ def test_requester_bound_call_binds_the_requester_beside_the_caller(
     ("requester", "omit"),
     [
         (None, ()),
-        ({"sub": PERSON, "team_uids": []}, ()),
+        ({"sub": PERSON}, ()),
+        ({**requester_claim(), "team_uids": []}, ()),
         ({**requester_claim(), "username": "person"}, ()),
         (requester_claim(is_organization_admin=1), ()),
         (requester_claim(is_organization_admin="true"), ()),
         (requester_claim(is_organization_admin=None), ()),
         (requester_claim(sub=PERSON.upper()), ()),
-        (requester_claim(), ("team_uids", "is_organization_admin")),
+        (requester_claim(), ("is_organization_admin",)),
     ],
     ids=[
         "null",
-        "two_field_without_admin_flag",
+        "without_admin_flag",
+        "with_a_team_list",
         "extra_key",
         "integer_admin_flag",
         "string_admin_flag",
         "null_admin_flag",
         "non_canonical_sub",
-        "without_caller_facts",
+        "without_caller_admin_flag",
     ],
 )
 def test_malformed_requester_never_reaches_route(signed, requester, omit):
@@ -682,7 +672,7 @@ def test_requester_is_none_in_local_mode_and_on_websockets(monkeypatch):
     install_request_identity(app)
     client = TestClient(app)
 
-    expected = {"caller": [USER, [], False], "requester": None}
+    expected = {"caller": [USER, False], "requester": None}
     assert client.get("/me", headers={"Authorization": "Bearer local-token"}).json() == expected
     with client.websocket_connect("/ws", headers={"X-User-UID": USER}) as connection:
         assert connection.receive_json() == expected
@@ -766,5 +756,5 @@ def test_reads_as_caller_refuses_a_requester_bound_request(signed, monkeypatch):
     with TestClient(app_for(handler)) as client:
         response = client.get("/me", headers={ASSERTION_HEADER: token(requester=person)})
 
-    assert response.json() == {"caller": [USER, [], False], "requester": [PERSON, [], True]}
+    assert response.json() == {"caller": [USER, False], "requester": [PERSON, True]}
     assert sent == []

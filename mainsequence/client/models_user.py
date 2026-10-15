@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import datetime
 import math
-import warnings
 from collections.abc import Iterable
 from typing import Any, ClassVar, Literal
 from uuid import UUID
@@ -43,7 +42,7 @@ class RequestUserIdentity(BaseModel):
     ``in_teams()`` asks the platform which teams either of them belongs to.
     """
 
-    model_config = ConfigDict(extra="forbid", frozen=True, populate_by_name=True)
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     uid: str = Field(
         ...,
@@ -57,17 +56,6 @@ class RequestUserIdentity(BaseModel):
         None,
         title="Username",
         description="Optional display name authenticated by the runtime gateway.",
-    )
-    signed_team_uids: tuple[str, ...] | None = Field(
-        (),
-        alias="team_uids",
-        title="Signed team UIDs (deprecated)",
-        description=(
-            "Canonical UIDs of the active teams the platform signed in the caller "
-            "assertion, None when it signed none. Deprecated: read membership with "
-            "in_teams() (#225). Empty in local mode and on WebSockets, which carry no "
-            "such facts."
-        ),
     )
     is_organization_admin: bool = Field(
         False,
@@ -86,37 +74,6 @@ class RequestUserIdentity(BaseModel):
             return str(UUID(str(value).strip()))
         except (AttributeError, TypeError, ValueError) as exc:
             raise ValueError("Request user UID must be a valid UUID.") from exc
-
-    @field_validator("signed_team_uids", mode="before")
-    @classmethod
-    def _canonicalize_team_uids(cls, value: Any) -> tuple[str, ...] | None:
-        if value is None:
-            return None
-        try:
-            return tuple(str(UUID(str(item).strip())) for item in value)
-        except (AttributeError, TypeError, ValueError) as exc:
-            raise ValueError("Team UIDs must be valid UUIDs.") from exc
-
-    @property
-    def team_uids(self) -> tuple[str, ...]:
-        """Deprecated: the team UIDs the platform signed. Use ``in_teams()``.
-
-        Warns when read. When the caller assertion carried no team list it
-        raises ``RequestIdentityError``; it never answers an empty list for
-        that. Empty in local mode and on WebSockets, as before (#225).
-        """
-        warnings.warn(
-            "RequestUserIdentity.team_uids is deprecated; check membership with "
-            "in_teams() instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        if self.signed_team_uids is None:
-            raise RequestIdentityError(
-                "The caller assertion carries no team list. Check team membership "
-                "with in_teams()."
-            )
-        return self.signed_team_uids
 
     def in_teams(
         self, team_uids: Iterable[str | UUID], *, max_age_seconds: float | None = None
