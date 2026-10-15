@@ -1407,6 +1407,27 @@ class User(_CallerDirectoryReadMixin, UserApiBaseObjectOrm, BasePydanticModel):
             raise RequestIdentityError("Invalid request requester context value.")
         return requester
 
+    @classmethod
+    def _team_memberships(cls, person_uid: str, team_uids: list[str], assertion: str) -> set[str]:
+        """Which of ``team_uids`` the platform says the person belongs to (#225)."""
+        response = make_request(
+            s=cls.build_session(),
+            loaders=cls.LOADERS,
+            r_type="GET",
+            url=f"{cls.get_object_url()}/{person_uid}/team-memberships/",
+            payload={
+                "params": {"team_uid__in": ",".join(team_uids)},
+                "headers": {CALLER_ASSERTION_HEADER: assertion},
+            },
+        )
+        if response.status_code != 200:
+            # Never pass the payload: it holds the caller assertion.
+            raise_for_response(response)
+        answered = response.json().get("team_uids")
+        if not isinstance(answered, list):
+            raise ApiError("Invalid team membership answer.", response=response)
+        return set(_canonical_team_uids(answered)) & set(team_uids)
+
 
 def _canonical_team_uids(team_uids: Iterable[str | UUID]) -> list[str]:
     if isinstance(team_uids, (str, bytes, UUID)):
@@ -1448,31 +1469,10 @@ def _member_team_uids(
             answers[team_uid] = scope.team_memberships[key] = reused
     for start in range(0, len(unanswered), MAX_TEAMS_PER_CALL):
         batch = unanswered[start : start + MAX_TEAMS_PER_CALL]
-        members = _platform_team_memberships(person_uid, batch, scope.caller_assertion)
+        members = User._team_memberships(person_uid, batch, scope.caller_assertion)
         for team_uid in batch:
             key = (scope.release_uid, scope.environment_uid, person_uid, team_uid)
             answers[team_uid] = scope.team_memberships[key] = team_uid in members
             if cache is not None:
                 cache.put(key, answers[team_uid])
     return frozenset(team_uid for team_uid, member in answers.items() if member)
-
-
-def _platform_team_memberships(person_uid: str, team_uids: list[str], assertion: str) -> set[str]:
-    """Which of ``team_uids`` the platform says the person belongs to (#225)."""
-    response = make_request(
-        s=User.build_session(),
-        loaders=User.LOADERS,
-        r_type="GET",
-        url=f"{User.get_object_url()}/{person_uid}/team-memberships/",
-        payload={
-            "params": {"team_uid__in": ",".join(team_uids)},
-            "headers": {CALLER_ASSERTION_HEADER: assertion},
-        },
-    )
-    if response.status_code != 200:
-        # Never pass the payload: it holds the caller assertion.
-        raise_for_response(response)
-    answered = response.json().get("team_uids")
-    if not isinstance(answered, list):
-        raise ApiError("Invalid team membership answer.", response=response)
-    return set(_canonical_team_uids(answered)) & set(team_uids)
