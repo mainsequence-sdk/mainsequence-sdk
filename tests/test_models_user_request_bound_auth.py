@@ -51,7 +51,6 @@ def test_process_profile_still_uses_process_session(monkeypatch):
 # A requester-bound request: the caller is the acting application, and the
 # request scope also holds the person it works for (ADR-0036).
 REQUESTER_UID = "5b0f9a8e-3c2d-4e1f-9a7b-6c5d4e3f2a1b"
-TEAM_UID = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
 
 
 def test_requester_getter_requires_authenticated_request():
@@ -67,15 +66,12 @@ def test_requester_getter_requires_authenticated_request():
 
 def test_requester_getter_returns_the_requester_beside_the_unchanged_caller():
     caller = RequestUserIdentity(uid=USER_UID)
-    requester = RequestUserIdentity(
-        uid=REQUESTER_UID, team_uids=[TEAM_UID], is_organization_admin=True
-    )
+    requester = RequestUserIdentity(uid=REQUESTER_UID, is_organization_admin=True)
     with _request_scope() as context:
         context.user = caller
         assert User.get_requester() is None
         context.requester = requester
         assert User.get_requester() is requester
-        assert User.get_requester().team_uids == (TEAM_UID,)
         # The person's own admin flag, never the caller's.
         assert User.get_requester().is_organization_admin is True
         assert User.get_logged_user().is_organization_admin is False

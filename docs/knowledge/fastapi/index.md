@@ -52,7 +52,7 @@ How long an answer may be reused is the application's choice:
 
 A reused answer can outlive a membership change by up to the lifetime chosen. Answers are kept per process, at most 10,000, and are keyed by the release and Environment the SDK verified, so an answer for one never answers another.
 
-`RequestUserIdentity.team_uids`, the team list earlier assertions carried, is deprecated and warns when read. Once the platform stops signing the list, reading it raises `RequestIdentityError`, never an empty list; move policies to `in_teams()` before then. Local mode and WebSockets keep it empty. See [ADR-0036](../../adr/0036-request-scoped-logged-user.md#team-membership-on-demand).
+`RequestUserIdentity` has no `team_uids`: the platform no longer signs a team list, and an assertion that carries one is refused. `in_teams()` is the only membership check. See [ADR-0036](../../adr/0036-request-scoped-logged-user.md#team-membership-on-demand).
 
 The caller is a person or a workload identity, the User a deployed Job, FastAPI release or Agent runs as. To tell which, read the caller's User with `User.get_by_uid(caller.uid)`: a workload identity has `identity_type` `"workload"` and the UID of its workload in `job_uid`, `resource_release_uid` or `agent_uid`. See [Workload identities](../infrastructure/users_and_access.md#workload-identities).
 
@@ -125,7 +125,7 @@ def can_publish(team_uid: str) -> bool:
 
 The platform checks access on every call and limits requester-bound work to at most 24 hours after the person's request, including across Agent delegation. A model-driven Agent can be steered by prompt injection, so write tools need explicit operation-specific checks. The SDK does not select the person, enable platform endpoints or extend the lifetime of an inbound request scope.
 
-SDK releases up to 9.0.17 reject the requester claim the platform now signs, with its `is_organization_admin`, so requester-bound calls to an application on such a release fail with 401 while its other calls are unchanged. This release rejects the earlier two-field requester and any assertion without the caller's `is_organization_admin`; it accepts the caller's and the requester's `team_uids` while the platform still signs them. Which applications may act for their requester, and what that access covers, is described in [Applications that act for their requester](../infrastructure/users_and_access.md#applications-that-act-for-their-requester). See [ADR-0036](../../adr/0036-request-scoped-logged-user.md#requester-bound-calls).
+SDK releases up to 9.0.17 reject the requester claim the platform now signs, with its `is_organization_admin`, so requester-bound calls to an application on such a release fail with 401 while its other calls are unchanged. This release rejects the earlier two-field requester and any assertion without the caller's `is_organization_admin`; it also rejects a caller or requester that lists `team_uids`, which the platform no longer signs. Which applications may act for their requester, and what that access covers, is described in [Applications that act for their requester](../infrastructure/users_and_access.md#applications-that-act-for-their-requester). See [ADR-0036](../../adr/0036-request-scoped-logged-user.md#requester-bound-calls).
 
 ## Serving MCP
 

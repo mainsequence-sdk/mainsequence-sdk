@@ -254,14 +254,16 @@ def test_a_tool_with_an_optional_person_never_combines_grants(signed):
 
 REJECTED_ASSERTIONS = {
     "missing": None,
-    "two_field_requester": dict(requester={"sub": PERSON, "team_uids": []}),
+    "requester_without_admin_flag": dict(requester={"sub": PERSON}),
+    "requester_with_a_team_list": dict(requester={**requester_claim(PERSON), "team_uids": []}),
     "requester_extra_key": dict(requester={**requester_claim(PERSON), "username": "person"}),
     "requester_integer_admin_flag": dict(
         requester=requester_claim(PERSON, is_organization_admin=1)
     ),
-    "without_caller_facts": dict(omit=("team_uids", "is_organization_admin")),
-    "requester_bound_without_caller_facts": dict(
-        requester=requester_claim(PERSON), omit=("team_uids", "is_organization_admin")
+    "without_caller_admin_flag": dict(omit=("is_organization_admin",)),
+    "with_a_caller_team_list": dict(team_uids=[]),
+    "requester_bound_without_caller_admin_flag": dict(
+        requester=requester_claim(PERSON), omit=("is_organization_admin",)
     ),
 }
 
