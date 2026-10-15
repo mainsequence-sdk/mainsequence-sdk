@@ -21,7 +21,9 @@ grows with an Organization and passes the verifier's 16,384-byte limit at about
 - The verifier accepts the caller's facts and a `requester` with or without
   `team_uids`.
 - `RequestUserIdentity.team_uids` is deprecated and warns when read. It raises
-  `RequestIdentityError` when the assertion carried no list.
+  `RequestIdentityError` when the assertion carried no list. The field is now
+  `signed_team_uids`: `model_dump()` names it so, and `model_dump(by_alias=True)`
+  keeps `team_uids`.
 
 Removed SDK `AGENTS.md` scaffolding: the packaged template, managed-block writer,
 and `code-repository update` command are gone. SDK execution, contract authority,
