@@ -24,6 +24,10 @@ grows with an Organization and passes the verifier's 16,384-byte limit at about
   `RequestIdentityError` when the assertion carried no list. The field is now
   `signed_team_uids`: `model_dump()` names it so, and `model_dump(by_alias=True)`
   keeps `team_uids`.
+- The API-surfaces skill has a Team membership section: how to check, the
+  cache and fresh checks, failures, and calling `in_teams()` from an `async def`
+  handler through `asyncio.to_thread`. The access-control skill reviews team
+  checks.
 
 Removed SDK `AGENTS.md` scaffolding: the packaged template, managed-block writer,
 and `code-repository update` command are gone. SDK execution, contract authority,
