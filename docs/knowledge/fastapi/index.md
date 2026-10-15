@@ -27,18 +27,32 @@ def me():
 
 The result contains a canonical User `uid` and optional `username`. Signed HTTP proofs contain no username, so it is null. Outside an authenticated request, including public routes, the getter raises `RequestIdentityError`. A copied task context cannot retain the user after its owning request ends.
 
-For a signed HTTP request the result also carries what the platform states about the caller: `team_uids`, the canonical UIDs of the caller's active teams, and `is_organization_admin`, whether the caller is an admin of the application's Organization. An application can evaluate its own policies from them without calling the platform; workload callers are covered through the teams they belong to. The platform signs both into every assertion, and an assertion without them is rejected with 401. Local development and WebSocket requests carry no such facts, so `team_uids` is empty and `is_organization_admin` is false.
+For a signed HTTP request the result also carries `is_organization_admin`, whether the platform signed the caller as an admin of the application's Organization. An assertion without it is rejected with 401. Local development and WebSocket requests carry no such facts, so it is false.
+
+### Team membership
+
+The application owns its team policies. It asks the platform which of the teams a policy names the caller belongs to with `in_teams()`, and decides how often to ask. Workload callers are covered through the teams they belong to.
 
 ```python
 from mainsequence.client import User
 
 
-def can_publish(team_uid: str) -> bool:
+def can_publish(team_uids: list[str]) -> bool:
     caller = User.get_logged_user()
-    return caller.is_organization_admin or team_uid in caller.team_uids
+    return caller.is_organization_admin or bool(caller.in_teams(team_uids))
 ```
 
-SDK releases before these facts reject every assertion that carries them, so hosted applications on an older SDK must be rebuilt on a current one.
+`in_teams(team_uids, *, max_age_seconds=None)` returns the subset of `team_uids` the person is an active member of, as a `frozenset` of canonical UIDs. Teams the platform does not count, such as unknown or inactive ones, are left out. It works on `User.get_logged_user()` and `User.get_requester()` inside a signed HTTP request, and asks only about that request's caller or requester. Longer lists are sent in calls of at most 100 teams. In local mode and on WebSockets it raises `RequestIdentityError`; when the platform cannot answer it raises the SDK's API error, never "not a member".
+
+How long an answer may be reused is the application's choice:
+
+- Within one request, the same question is asked once.
+- Across requests, an answer is reused while it is younger than `team_membership_cache_seconds`, set with `install_request_identity(app, team_membership_cache_seconds=60)`, or than `max_age_seconds` when a call gives one. `0`, the default, reuses nothing across requests.
+- `max_age_seconds=0` is a fresh check: it always asks the platform, skips both kinds of reuse and stores the new answer. Ask for one before acting on a membership that must be current, such as before a write.
+
+A reused answer can outlive a membership change by up to the lifetime chosen. Answers are kept per process, at most 10,000, and are keyed by the release and Environment the SDK verified, so an answer for one never answers another.
+
+`RequestUserIdentity.team_uids`, the team list earlier assertions carried, is deprecated and warns when read. Once the platform stops signing the list, reading it raises `RequestIdentityError`, never an empty list; move policies to `in_teams()` before then. Local mode and WebSockets keep it empty. See [ADR-0036](../../adr/0036-request-scoped-logged-user.md#team-membership-on-demand).
 
 The caller is a person or a workload identity, the User a deployed Job, FastAPI release or Agent runs as. To tell which, read the caller's User with `User.get_by_uid(caller.uid)`: a workload identity has `identity_type` `"workload"` and the UID of its workload in `job_uid`, `resource_release_uid` or `agent_uid`. See [Workload identities](../infrastructure/users_and_access.md#workload-identities).
 
@@ -77,7 +91,7 @@ The block needs a signed HTTP request. Outside an authenticated request, in loca
 
 Another application, for example an Agent, can call this application while it works for a person: the **requester**. The platform then signs the requester into the caller assertion next to the caller. `User.get_logged_user()` still returns the caller, the acting application. `User.get_requester()` returns the requester, the checked delegation, or `None` when the request carries no delegation.
 
-The requester is a `RequestUserIdentity` with the person's own `uid`, `team_uids` and `is_organization_admin`, as the platform signed them. A requester-bound call carries the person's ordinary permissions, including administrative ones. The SDK verifies the delegation before any handler runs: an invalid one rejects the request with 401 and never falls back to the caller. `get_requester()` returns `None` in local mode, on WebSockets and when the assertion names no requester. Outside an authenticated request, including public routes, it raises `RequestIdentityError`, as `get_logged_user()` does.
+The requester is a `RequestUserIdentity` with the person's own `uid` and `is_organization_admin`, as the platform signed them; `in_teams()` answers for the person's teams. A requester-bound call carries the person's ordinary permissions, including administrative ones. The SDK verifies the delegation before any handler runs: an invalid one rejects the request with 401 and never falls back to the caller. `get_requester()` returns `None` in local mode, on WebSockets and when the assertion names no requester. Outside an authenticated request, including public routes, it raises `RequestIdentityError`, as `get_logged_user()` does.
 
 Each handler decides whether it needs a person. One that needs a person fails with its own error when there is none:
 
@@ -91,7 +105,7 @@ def team_report(team_uid: str) -> dict:
     if requester is None:
         # This operation answers for a person: without a requester, refuse.
         raise HTTPException(status_code=403, detail="This operation needs a requester.")
-    if not (requester.is_organization_admin or team_uid in requester.team_uids):
+    if not (requester.is_organization_admin or requester.in_teams([team_uid])):
         raise HTTPException(status_code=403, detail="The requester cannot read this report.")
     return {"team_uid": team_uid, "requested_by": requester.uid}
 ```
@@ -101,7 +115,7 @@ One where the person is optional authorizes against the person when present, and
 ```python
 def can_publish(team_uid: str) -> bool:
     actor = User.get_requester() or User.get_logged_user()
-    return actor.is_organization_admin or team_uid in actor.team_uids
+    return actor.is_organization_admin or bool(actor.in_teams([team_uid]))
 ```
 
 - Authorize against one identity: the person on a requester-bound call, the caller on any other. Never combine the caller's grants with the person's, and never fall back to what the acting application may do when the person may not.
@@ -111,7 +125,7 @@ def can_publish(team_uid: str) -> bool:
 
 The platform checks access on every call and limits requester-bound work to at most 24 hours after the person's request, including across Agent delegation. A model-driven Agent can be steered by prompt injection, so write tools need explicit operation-specific checks. The SDK does not select the person, enable platform endpoints or extend the lifetime of an inbound request scope.
 
-SDK releases up to 9.0.17 reject the requester claim the platform now signs, with its `is_organization_admin`, so requester-bound calls to an application on such a release fail with 401 while its other calls are unchanged. This release rejects the earlier two-field requester and any assertion without the caller's `team_uids` and `is_organization_admin`, so it works only with the updated platform. Which applications may act for their requester, and what that access covers, is described in [Applications that act for their requester](../infrastructure/users_and_access.md#applications-that-act-for-their-requester). See [ADR-0036](../../adr/0036-request-scoped-logged-user.md#requester-bound-calls).
+SDK releases up to 9.0.17 reject the requester claim the platform now signs, with its `is_organization_admin`, so requester-bound calls to an application on such a release fail with 401 while its other calls are unchanged. This release rejects the earlier two-field requester and any assertion without the caller's `is_organization_admin`; it accepts the caller's and the requester's `team_uids` while the platform still signs them. Which applications may act for their requester, and what that access covers, is described in [Applications that act for their requester](../infrastructure/users_and_access.md#applications-that-act-for-their-requester). See [ADR-0036](../../adr/0036-request-scoped-logged-user.md#requester-bound-calls).
 
 ## Serving MCP
 

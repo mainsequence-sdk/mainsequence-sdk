@@ -32,14 +32,13 @@ REQUIRED_CLAIMS = frozenset(
         "iat",
         "nbf",
         "exp",
-        # What the platform states about the caller: its active team UIDs and
-        # whether it is an admin of the application's Organization.
-        "team_uids",
+        # What the platform states about the caller: whether it is an admin of
+        # the application's Organization.
         "is_organization_admin",
     }
 )
-# The person a requester-bound call works for, with the person's own facts.
-REQUESTER_CLAIMS = frozenset({"sub", "team_uids", "is_organization_admin"})
+# The person a requester-bound call works for, with the person's own admin flag.
+REQUESTER_CLAIMS = frozenset({"sub", "is_organization_admin"})
 
 
 class InvalidCallerAssertion(ValueError):
@@ -64,7 +63,8 @@ class _VerifiedRequester:
     """The person a requester-bound call works for, as the platform signed it."""
 
     user_uid: str
-    team_uids: tuple[str, ...]
+    # None when the assertion carries no team list (#225).
+    team_uids: tuple[str, ...] | None
     is_organization_admin: bool
 
 
@@ -75,7 +75,8 @@ class AuthenticatedCaller:
     environment_uid: str
     issued_at: int
     expires_at: int
-    team_uids: tuple[str, ...]
+    # None when the assertion carries no team list (#225).
+    team_uids: tuple[str, ...] | None
     is_organization_admin: bool
     # The person a requester-bound call works for, None on any other call. The
     # fields above stay the caller's: the acting application (ADR-0036).
@@ -97,13 +98,24 @@ def _admin_flag(value: object, *, owner: str) -> bool:
     return value
 
 
-def _caller_facts(payload: dict) -> tuple[tuple[str, ...], bool]:
-    """The caller's team UIDs and admin flag, which every assertion carries."""
+def _signed_team_uids(claims: dict, *, owner: str) -> tuple[str, ...] | None:
+    """The deprecated ``team_uids`` while the platform still signs it, else None.
+
+    Membership is checked on demand with ``RequestUserIdentity.in_teams()``
+    (#225); a list that is still signed is checked as before.
+    """
+    if "team_uids" not in claims:
+        return None
+    return _team_uids(claims["team_uids"], owner=owner)
+
+
+def _caller_facts(payload: dict) -> tuple[tuple[str, ...] | None, bool]:
+    """The caller's admin flag, and its team UIDs while the platform signs them."""
     # A requester-bound call also carries "requester", which _requester() checks.
-    if set(payload) - {"requester"} != REQUIRED_CLAIMS:
+    if set(payload) - {"requester", "team_uids"} != REQUIRED_CLAIMS:
         raise InvalidCallerAssertion("Caller assertion claims are invalid.")
     return (
-        _team_uids(payload["team_uids"], owner="Caller"),
+        _signed_team_uids(payload, owner="Caller"),
         _admin_flag(payload["is_organization_admin"], owner="Caller"),
     )
 
@@ -111,17 +123,18 @@ def _caller_facts(payload: dict) -> tuple[tuple[str, ...], bool]:
 def _requester(payload: dict) -> _VerifiedRequester | None:
     """The person a requester-bound call works for, or None on any other call.
 
-    The claim has exactly ``sub``, ``team_uids`` and ``is_organization_admin``:
-    the person's own User UID, active team UIDs and Organization-admin flag.
+    The claim has exactly ``sub`` and ``is_organization_admin``, the person's
+    own User UID and Organization-admin flag, and may still carry the
+    deprecated ``team_uids`` (#225).
     """
     if "requester" not in payload:
         return None
     claim = payload["requester"]
-    if not isinstance(claim, dict) or set(claim) != REQUESTER_CLAIMS:
+    if not isinstance(claim, dict) or set(claim) - {"team_uids"} != REQUESTER_CLAIMS:
         raise InvalidCallerAssertion("Caller assertion requester is invalid.")
     return _VerifiedRequester(
         user_uid=_canonical_uid(claim["sub"]),
-        team_uids=_team_uids(claim["team_uids"], owner="Requester"),
+        team_uids=_signed_team_uids(claim, owner="Requester"),
         is_organization_admin=_admin_flag(claim["is_organization_admin"], owner="Requester"),
     )
 

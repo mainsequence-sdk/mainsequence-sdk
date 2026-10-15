@@ -11,7 +11,8 @@ and this record's tests pass on mcp 2.3.0. See [Implementation](#implementation)
 Amended 2026-10-07 for [SDK issue #208](https://github.com/mainsequence-sdk/mainsequence-sdk/issues/208):
 a requester-bound tool call carries the person's ordinary permissions,
 including administrative ones, and `User.get_requester()` returns the person's
-own `team_uids` and `is_organization_admin`. Each tool decides whether it needs
+own `is_organization_admin`, with `in_teams()` for the person's teams (ADR 0036,
+amended for #225). Each tool decides whether it needs
 a person; the SDK keeps no list of tools that accept one. Tests at the tool
 handler cover asynchronous tasks, thread pools, concurrent calls for two people
 and for a workload, and reset after completion, failure and cancellation. See
@@ -124,8 +125,9 @@ claim of a requester-bound call, and binds the request scope before any tool
 runs. Tools read the caller with `User.get_logged_user()` and, in a
 requester-bound call, the person the caller works for with
 `User.get_requester()`, keeping ADR 0036's distinction between the two. The
-person is the checked delegation, with the person's own `team_uids` and
-`is_organization_admin`; without a delegation the getter returns `None`.
+person is the checked delegation, with the person's own
+`is_organization_admin` and `in_teams()` for its teams; without a delegation the
+getter returns `None`.
 
 MCP libraries may dispatch work into task groups created at startup or into
 thread pools. Context propagation from the middleware must be tested at the
