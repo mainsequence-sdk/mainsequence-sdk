@@ -1193,6 +1193,209 @@ def delete_organization_team(
         raise ApiError(f"Organization team deletion failed: {e}") from e
 
 
+def _permission_refusal(exc: BaseException) -> tuple[BaseException, str] | None:
+    """
+    Find the platform's 403 behind `exc`, and name the policies that would allow the action.
+
+    `_run_sdk_model_operation` reports a 403 as `NotLoggedIn`; the SDK's
+    `PermissionDeniedError` stays its cause. A refused action has `code`
+    `missing_action` and lists `granting_policies` in the body the SDK keeps as
+    the error's `payload`.
+    """
+    seen: BaseException | None = exc
+    while seen is not None:
+        if type(seen).__name__ == "PermissionDeniedError":
+            payload = getattr(seen, "payload", None)
+            policies = payload.get("granting_policies") if isinstance(payload, dict) else None
+            if isinstance(policies, list) and policies:
+                return seen, f" Policies that give it: {', '.join(str(item) for item in policies)}."
+            return seen, ""
+        seen = seen.__cause__
+    return None
+
+
+def _run_organization_team_operation(
+    team_uid: str,
+    operation,
+    *,
+    timeout: int | None,
+):
+    """
+    Read one Team through the SDK client model and run `operation(team)` on it.
+
+    A Team that cannot be read is reported as not found. A refused action is
+    not a missing session: it keeps the platform's message and names the
+    policies that would allow it. Every other failure keeps its message; the
+    command that called says what failed.
+    """
+
+    def _run(ClientTeam):
+        try:
+            team = ClientTeam.get_by_uid(str(team_uid), timeout=timeout)
+        except Exception as e:
+            if type(e).__name__ == "NotFoundError":
+                raise ApiError(f"Team not found: {team_uid}") from e
+            raise
+        return operation(team)
+
+    try:
+        return _run_sdk_model_operation(
+            module_name="mainsequence.client.models_user",
+            class_name="Team",
+            operation=_run,
+        )
+    except Exception as e:
+        refusal = _permission_refusal(e)
+        if refusal is not None:
+            denied, policies = refusal
+            raise ApiError(f"{denied}{policies}") from e
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(str(e)) from e
+
+
+def list_organization_team_members(
+    team_uid: str,
+    *,
+    timeout: int | None = None,
+) -> list[dict[str, Any]]:
+    """
+    List one team's members via `Team.list_members()`.
+    """
+    members = _run_organization_team_operation(
+        team_uid,
+        lambda team: team.list_members(timeout=timeout),
+        timeout=timeout,
+    )
+    return [_sdk_object_to_dict(member) for member in list(members or [])]
+
+
+def add_organization_team_member(
+    team_uid: str,
+    user_uid: str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Add a person or a workload identity to a team via `Team.add_member()`.
+    """
+    member = _run_organization_team_operation(
+        team_uid,
+        lambda team: team.add_member(str(user_uid), timeout=timeout),
+        timeout=timeout,
+    )
+    return _sdk_object_to_dict(member)
+
+
+def remove_organization_team_member(
+    team_uid: str,
+    user_uid: str,
+    *,
+    timeout: int | None = None,
+) -> None:
+    """
+    Remove a member from a team via `Team.remove_member()`.
+    """
+    _run_organization_team_operation(
+        team_uid,
+        lambda team: team.remove_member(str(user_uid), timeout=timeout),
+        timeout=timeout,
+    )
+
+
+def leave_organization_team(
+    team_uid: str,
+    *,
+    timeout: int | None = None,
+) -> None:
+    """
+    Leave a team via `Team.leave()`.
+    """
+    _run_organization_team_operation(
+        team_uid,
+        lambda team: team.leave(timeout=timeout),
+        timeout=timeout,
+    )
+
+
+def get_organization_team_access(
+    team_uid: str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Read the policies attached to a team via `Team.get_access()`.
+    """
+    listing = _run_organization_team_operation(
+        team_uid,
+        lambda team: team.get_access(timeout=timeout),
+        timeout=timeout,
+    )
+    return _sdk_object_to_dict(listing)
+
+
+def attach_organization_team_policy(
+    team_uid: str,
+    *,
+    policy: str,
+    principal_type: str,
+    principal_uid: str,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Attach a policy on a team to a user or a team via `Team.attach_policy()`.
+    """
+    binding = _run_organization_team_operation(
+        team_uid,
+        lambda team: team.attach_policy(
+            policy,
+            principal_type=principal_type,
+            principal_uid=str(principal_uid),
+            timeout=timeout,
+        ),
+        timeout=timeout,
+    )
+    return _sdk_object_to_dict(binding)
+
+
+def detach_organization_team_policy(
+    team_uid: str,
+    binding_uid: str,
+    *,
+    timeout: int | None = None,
+) -> None:
+    """
+    Detach one policy binding from a team via `Team.detach_policy()`.
+    """
+    _run_organization_team_operation(
+        team_uid,
+        lambda team: team.detach_policy(str(binding_uid), timeout=timeout),
+        timeout=timeout,
+    )
+
+
+def explain_organization_team_access(
+    team_uid: str,
+    *,
+    action: str,
+    principal_uid: str | None = None,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Explain why a user may or may not perform an action on a team via `Team.explain_access()`.
+    """
+    explanation = _run_organization_team_operation(
+        team_uid,
+        lambda team: team.explain_access(
+            action,
+            principal_uid=str(principal_uid) if principal_uid is not None else None,
+            timeout=timeout,
+        ),
+        timeout=timeout,
+    )
+    return _sdk_object_to_dict(explanation)
+
+
 def list_access_policies(
     *,
     resource_type: str | None = None,
@@ -1967,104 +2170,6 @@ def remove_code_repository_user_from_edit(
         module_name="mainsequence.client.models_foundry",
         class_name="CodeRepository",
         object_uid=code_repository_id,
-        action_name="remove_from_edit",
-        user_uid=user_uid,
-        timeout=timeout,
-    )
-
-
-def list_team_users_can_view(
-    team_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    """
-    Fetch the view-access state for a team via `Team.can_view()`.
-    """
-    return _get_shareable_object_access_state(
-        module_name="mainsequence.client.models_user",
-        class_name="Team",
-        object_uid=team_uid,
-        accessor_name="can_view",
-        timeout=timeout,
-    )
-
-
-def list_team_users_can_edit(
-    team_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    """
-    Fetch the edit-access state for a team via `Team.can_edit()`.
-    """
-    return _get_shareable_object_access_state(
-        module_name="mainsequence.client.models_user",
-        class_name="Team",
-        object_uid=team_uid,
-        accessor_name="can_edit",
-        timeout=timeout,
-    )
-
-
-def add_team_user_to_view(
-    team_uid: str,
-    user_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    return _mutate_shareable_object_access(
-        module_name="mainsequence.client.models_user",
-        class_name="Team",
-        object_uid=team_uid,
-        action_name="add_to_view",
-        user_uid=user_uid,
-        timeout=timeout,
-    )
-
-
-def add_team_user_to_edit(
-    team_uid: str,
-    user_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    return _mutate_shareable_object_access(
-        module_name="mainsequence.client.models_user",
-        class_name="Team",
-        object_uid=team_uid,
-        action_name="add_to_edit",
-        user_uid=user_uid,
-        timeout=timeout,
-    )
-
-
-def remove_team_user_from_view(
-    team_uid: str,
-    user_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    return _mutate_shareable_object_access(
-        module_name="mainsequence.client.models_user",
-        class_name="Team",
-        object_uid=team_uid,
-        action_name="remove_from_view",
-        user_uid=user_uid,
-        timeout=timeout,
-    )
-
-
-def remove_team_user_from_edit(
-    team_uid: str,
-    user_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    return _mutate_shareable_object_access(
-        module_name="mainsequence.client.models_user",
-        class_name="Team",
-        object_uid=team_uid,
         action_name="remove_from_edit",
         user_uid=user_uid,
         timeout=timeout,

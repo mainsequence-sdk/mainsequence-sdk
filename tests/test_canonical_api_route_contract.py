@@ -173,4 +173,13 @@ def test_cli_does_not_reintroduce_legacy_numeric_detail_routes_or_agent_runs():
     assert "/auth/rest-auth/user/" not in cli_sources
     assert not hasattr(api, "list_agent_runs")
     assert not hasattr(api, "get_agent_run")
+    for retired_team_sharing in (
+        "list_team_users_can_view",
+        "list_team_users_can_edit",
+        "add_team_user_to_view",
+        "add_team_user_to_edit",
+        "remove_team_user_from_view",
+        "remove_team_user_from_edit",
+    ):
+        assert not hasattr(api, retired_team_sharing)
     assert not hasattr(agent_runtime_models, "AgentRun")
