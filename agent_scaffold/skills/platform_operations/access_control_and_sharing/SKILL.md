@@ -64,7 +64,7 @@ This skill only reasons about access to deployed resources such as `ResourceRele
 2. <https://mainsequence-sdk.github.io/mainsequence-sdk/knowledge/infrastructure/users_and_access/>
 3. <https://mainsequence-sdk.github.io/mainsequence-sdk/knowledge/infrastructure/constants_and_secrets/>
 4. <https://mainsequence-sdk.github.io/mainsequence-sdk/knowledge/infrastructure/object_access/>
-   for teams, whose access is decided by policies
+   for teams and Organization Environments, whose access is decided by policies
 
 The pages above are the authoritative reference for access control and sharing.
 If the task is specifically about a resource type, also read that resource's own
@@ -155,6 +155,13 @@ Any person can create a team and becomes its owner and first member. Use
 `mainsequence organization teams members ...`, `leave` and `access ...`. A
 team has no `add_to_view()` or `add_to_edit()`. Before saying who can change a
 team, read it with `team.get_access()` or `explain_access()`.
+
+Working in an Organization Environment is a policy too: `member` works in it
+and creates Projects, Buckets, Constants, Secrets, model providers and
+repositories there; `observer` works in it without creating anything. Only
+Organization admins attach them, to people and Teams, with the access methods
+on `OrganizationEnvironment`. Admission never shows objects that are not shared
+with the person.
 
 An application that checks whether its caller or requester belongs to a team
 uses `in_teams()`; the identity carries no team list. See

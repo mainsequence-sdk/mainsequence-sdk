@@ -6,10 +6,29 @@ its own access routes. A policy from the
 person, a workload identity or a Team, on one object. That attachment is a
 **binding**.
 
-Teams are decided this way. Other shareable objects, such as constants,
-secrets, buckets, artifacts, CodeRepositories and releases, still use view and
-edit sharing, as [Users and Access](users_and_access.md#resource-sharing)
-describes.
+Teams and Organization Environments are decided this way. Other shareable
+objects, such as constants, secrets, buckets, artifacts, CodeRepositories and
+releases, still use view and edit sharing, as
+[Users and Access](users_and_access.md#resource-sharing) describes.
+
+Working in an Environment is a policy. `member` works in it, opens what is
+shared with the person there, and creates Projects, Buckets, Constants,
+Secrets, model providers and repositories in it; `observer` works in it
+without creating anything. Both go to people and Teams, never to workload
+identities, and only Organization admins attach or detach them, with the same
+methods on `OrganizationEnvironment`:
+
+```python
+from mainsequence.client import OrganizationEnvironment
+
+environment = OrganizationEnvironment.get_by_uid(environment_uid)
+environment.attach_policy("observer", principal_type="team", principal_uid=team_uid)
+```
+
+Being admitted to an Environment never shows objects that are not shared with
+the person. Creating inside it without the create action, for example a
+Constant as an `observer`, raises `PermissionDeniedError` with
+`required_action` `organization-environments.create_constant`.
 
 ## Read and change access in Python
 

@@ -20,7 +20,7 @@ from mainsequence.client.exceptions import (
     NotFoundError,
     PermissionDeniedError,
 )
-from mainsequence.client.models_user import Team
+from mainsequence.client.models_user import OrganizationEnvironment, Team
 from mainsequence.client.object_access import (
     AccessBinding,
     AccessListing,
@@ -619,3 +619,47 @@ def test_the_mixin_addresses_the_routes_under_its_models_detail_url(monkeypatch)
             f"https://backend.test/api/v1/demo-objects/{USER_UID}/access/bindings/{BINDING_UID}/",
         ),
     ]
+
+
+ENVIRONMENT_UID = "2c4e6a8b-1d3f-4a5b-9c7d-8e9f0a1b2c3d"
+
+
+def test_an_environment_serves_the_access_routes_under_its_detail_url(monkeypatch):
+    environment = OrganizationEnvironment(
+        uid=ENVIRONMENT_UID,
+        name="research",
+        organization_owner_uid=TEAM_UID,
+        required_repository_branch="research",
+        is_production=False,
+    )
+    sent = _install(
+        monkeypatch,
+        FakeResponse(
+            201,
+            _binding(policy={"id": "organization-environments.member", "label": "Environment member"}),
+        ),
+        FakeResponse(
+            403,
+            {
+                "detail": "This needs the organization-environments.manage_access action.",
+                "code": "missing_action",
+                "required_action": "organization-environments.manage_access",
+                "granting_policies": [],
+            },
+        ),
+    )
+
+    binding = environment.attach_policy("member", principal_type="user", principal_uid=USER_UID)
+    with pytest.raises(PermissionDeniedError) as refused:
+        environment.attach_policy("observer", principal_type="user", principal_uid=USER_UID)
+
+    base = f"{OrganizationEnvironment.get_object_url()}/{ENVIRONMENT_UID}/access/bindings/"
+    assert [(item["r_type"], item["url"]) for item in sent] == [("POST", base), ("POST", base)]
+    assert sent[0]["payload"]["json"] == {
+        "policy": "member",
+        "principal_type": "user",
+        "principal_uid": USER_UID,
+    }
+    assert binding.policy.id == "organization-environments.member"
+    assert refused.value.payload["required_action"] == "organization-environments.manage_access"
+

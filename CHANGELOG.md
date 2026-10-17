@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+**Organization Environments are decided by policies: `OrganizationEnvironment`
+gains the access methods.** Working in an Environment is the `member` policy
+(work in it and create Projects, Buckets, Constants, Secrets, model providers and
+repositories there) or the `observer` policy (work in it without creating
+anything), given to people and Teams by Organization admins. `get_access()`,
+`get_my_access()`, `list_access_candidates()`, `attach_policy()`,
+`detach_policy()`, `apply_access_changes()` and `explain_access()` address
+`/api/v1/organization-environments/{uid}/access/...`. Creating inside an
+Environment without its create action raises `PermissionDeniedError` with
+`required_action`, for example `organization-environments.create_constant`. The
+SDK never called the Environment sharing routes the platform removed.
+
 **CLI commands describe a failed request once (#230).** When an SDK client call
 failed, many commands printed their failure prefix twice, for example
 `Organization teams fetch failed: Organization teams fetch failed: 500 GET ...`, or

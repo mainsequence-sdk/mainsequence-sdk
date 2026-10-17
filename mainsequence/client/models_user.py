@@ -128,8 +128,17 @@ class UserApiBaseObjectOrm(BaseObjectOrm):
         return f"{cls._user_api_root().rstrip('/')}/{endpoint.strip('/')}"
 
 
-class OrganizationEnvironment(UserApiBaseObjectOrm, BasePydanticModel):
-    """Public Environment metadata, scoped by authenticated platform visibility."""
+class OrganizationEnvironment(AccessManagedObjectMixin, UserApiBaseObjectOrm, BasePydanticModel):
+    """Public Environment metadata, scoped by authenticated platform visibility.
+
+    Working in an Environment is a policy. `member` works in it, opens what is
+    shared with the person there, and creates Projects, Buckets, Constants,
+    Secrets, model providers and repositories in it; `observer` works in it
+    without creating anything. Both go to people and Teams, never to workload
+    identities, and only Organization admins attach or detach them. The access
+    methods (`get_access()`, `attach_policy()`, ...) read and change them;
+    being admitted never shows objects that are not shared with the person.
+    """
 
     ENDPOINT: ClassVar[str] = "organization-environments"
 
