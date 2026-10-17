@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+**CLI commands describe a failed request once (#230).** When an SDK client call
+failed, many commands printed their failure prefix twice, for example
+`Organization teams fetch failed: Organization teams fetch failed: 500 GET ...`, or
+two descriptions of the same failure, such as
+`Constant view fetch failed: Constant share access fetch failed: ...`. The CLI's
+helpers now keep the SDK error's message, and the command alone names the
+operation: `Organization teams fetch failed: 500 GET ...`.
+
 **Teams are controlled by policies: `Team` gains membership and access methods, and
 the Team sharing calls are removed.** The platform no longer serves view and edit
 sharing, `candidate-members` or `manage-members` on teams. A team's membership is who

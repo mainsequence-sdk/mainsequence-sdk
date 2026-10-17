@@ -751,6 +751,16 @@ def _run_sdk_model_operation(
                 os.environ[k] = v
 
 
+def _as_cli_error(exc: Exception) -> ApiError:
+    """
+    Turn an exception from the SDK client into the CLI's `ApiError`, keeping its message.
+
+    The command that called the helper names the operation that failed, so the
+    message gets no prefix here: a prefix in both places printed it twice.
+    """
+    return ApiError(str(exc) or type(exc).__name__)
+
+
 def get_current_user_profile() -> dict:
     """
     Return current user profile (username + organization name) via the canonical user-details endpoint.
@@ -1018,7 +1028,7 @@ def search_code_repositories(
     except Exception as e:
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"CodeRepository search failed: {e}") from e
+        raise _as_cli_error(e) from e
 
 
 def validate_code_repository_name(
@@ -1045,7 +1055,7 @@ def validate_code_repository_name(
     except Exception as e:
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"CodeRepository name validation failed: {e}") from e
+        raise _as_cli_error(e) from e
 
 
 def list_organization_teams(
@@ -1069,7 +1079,7 @@ def list_organization_teams(
     except Exception as e:
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Organization teams fetch failed: {e}") from e
+        raise _as_cli_error(e) from e
 
 
 def get_organization_team(
@@ -1093,7 +1103,7 @@ def get_organization_team(
             raise ApiError(f"Team not found: {team_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Organization team fetch failed: {e}") from e
+        raise _as_cli_error(e) from e
 
 
 def create_organization_team(
@@ -1119,7 +1129,7 @@ def create_organization_team(
     except Exception as e:
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Organization team creation failed: {e}") from e
+        raise _as_cli_error(e) from e
 
 
 def update_organization_team(
@@ -1160,7 +1170,7 @@ def update_organization_team(
             raise ApiError(f"Team not found: {team_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Organization team update failed: {e}") from e
+        raise _as_cli_error(e) from e
 
 
 def delete_organization_team(
@@ -1190,7 +1200,7 @@ def delete_organization_team(
             raise ApiError(f"Team not found: {team_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Organization team deletion failed: {e}") from e
+        raise _as_cli_error(e) from e
 
 
 def _permission_refusal(exc: BaseException) -> tuple[BaseException, str] | None:
@@ -1251,7 +1261,7 @@ def _run_organization_team_operation(
             raise ApiError(f"{denied}{policies}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(str(e)) from e
+        raise _as_cli_error(e) from e
 
 
 def list_organization_team_members(
@@ -1420,7 +1430,7 @@ def list_access_policies(
     except Exception as e:
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Access policies fetch failed: {e}") from e
+        raise _as_cli_error(e) from e
 
 
 def get_access_policy(
@@ -1464,7 +1474,7 @@ def get_access_policy(
             raise ApiError(f"Access policy not found: {reference}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Access policy fetch failed: {e}") from e
+        raise _as_cli_error(e) from e
     if policy is None:
         raise ApiError(f"Access policy not found: {reference}")
     return _sdk_object_to_dict(policy)
@@ -1489,7 +1499,7 @@ def list_agents(
     except Exception as e:
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Agents fetch failed: {e}") from e
+        raise _as_cli_error(e) from e
 
 
 def get_agent(
@@ -1513,7 +1523,7 @@ def get_agent(
             raise ApiError(f"Agent not found: {agent_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Agent fetch failed: {e}") from e
+        raise _as_cli_error(e) from e
 
 
 def _get_owner_observability(
@@ -1545,7 +1555,7 @@ def _get_owner_observability(
             raise ApiError(f"{class_name} not found: {owner_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"{class_name} {action_name} failed: {e}") from e
+        raise _as_cli_error(e) from e
 
 
 def get_agent_logs(
@@ -1622,7 +1632,7 @@ def semantic_search_agents(
     except Exception as e:
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Agent search failed: {e}") from e
+        raise _as_cli_error(e) from e
 
 
 def delete_agent(
@@ -1652,7 +1662,7 @@ def delete_agent(
             raise ApiError(f"Agent not found: {agent_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Agent deletion failed: {e}") from e
+        raise _as_cli_error(e) from e
 
 
 def get_or_create_agent_session(
@@ -1697,7 +1707,7 @@ def get_or_create_agent_session(
             raise ApiError(f"Agent not found: {agent_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Agent session get-or-create failed: {e}") from e
+        raise _as_cli_error(e) from e
 
 
 def list_agent_sessions(
@@ -1725,7 +1735,7 @@ def list_agent_sessions(
     except Exception as e:
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Agent sessions fetch failed: {e}") from e
+        raise _as_cli_error(e) from e
 
 
 def get_agent_session(
@@ -1751,7 +1761,7 @@ def get_agent_session(
             raise ApiError(f"Agent session not found: {agent_session_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Agent session fetch failed: {e}") from e
+        raise _as_cli_error(e) from e
 
 
 def get_agent_session_logs(
@@ -2359,7 +2369,7 @@ def list_code_repository_images(
             raise ApiError(
                 f"CodeRepositoryBranch not found: {related_code_repository_branch_uid}"
             ) from e
-        raise ApiError(f"CodeRepository images fetch failed: {e}") from e
+        raise _as_cli_error(e) from e
     finally:
         if client_utils is not None:
             try:
@@ -2411,7 +2421,7 @@ def get_code_repository_image(
             raise ApiError(f"CodeRepository image not found: {image_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"CodeRepository image fetch failed: {e}") from e
+        raise _as_cli_error(e) from e
 
 
 def delete_code_repository_image(
@@ -2438,7 +2448,7 @@ def delete_code_repository_image(
             raise ApiError(f"CodeRepository image not found: {image_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"CodeRepository image deletion failed: {e}") from e
+        raise _as_cli_error(e) from e
 
 
 def _normalize_release_kind_value(value: Any) -> str | None:
@@ -2475,7 +2485,7 @@ def get_resource_release(
             raise ApiError(f"Resource release not found: {release_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Resource release fetch failed: {e}") from e
+        raise _as_cli_error(e) from e
 
 
 def get_resource_release_logs(
@@ -2555,7 +2565,7 @@ def delete_resource_release(
             raise ApiError(f"Resource release not found: {release_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Resource release deletion failed: {e}") from e
+        raise _as_cli_error(e) from e
 
 
 def list_code_repository_jobs(
@@ -2638,7 +2648,7 @@ def list_code_repository_jobs(
             raise NotLoggedIn(str(e) or "Not logged in.") from e
         if err_name == "NotFoundError":
             raise ApiError(f"CodeRepositoryBranch not found: {code_repository_branch_uid}") from e
-        raise ApiError(f"CodeRepository jobs fetch failed: {e}") from e
+        raise _as_cli_error(e) from e
     finally:
         if client_utils is not None:
             try:
@@ -2758,7 +2768,7 @@ def list_code_repository_resources(
             raise NotLoggedIn(str(e) or "Not logged in.") from e
         if err_name == "NotFoundError":
             raise ApiError(f"CodeRepositoryBranch not found: {code_repository_branch_uid}") from e
-        raise ApiError(f"CodeRepository resources fetch failed: {e}") from e
+        raise _as_cli_error(e) from e
     finally:
         if client_utils is not None:
             try:
@@ -2815,7 +2825,7 @@ def list_constants(
     except Exception as e:
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Constants fetch failed: {e}") from e
+        raise _as_cli_error(e) from e
 
 
 def list_secrets(
@@ -2842,7 +2852,7 @@ def list_secrets(
     except Exception as e:
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Secrets fetch failed: {e}") from e
+        raise _as_cli_error(e) from e
 
 
 def get_secret(
@@ -2872,7 +2882,7 @@ def get_secret(
             raise ApiError(f"Secret not found: {secret_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Secret fetch failed: {e}") from e
+        raise _as_cli_error(e) from e
 
 
 def create_secret(
@@ -2901,7 +2911,7 @@ def create_secret(
     except Exception as e:
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Secret creation failed: {e}") from e
+        raise _as_cli_error(e) from e
 
 
 def delete_secret(
@@ -2934,7 +2944,7 @@ def delete_secret(
             raise ApiError(f"Secret not found: {secret_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Secret deletion failed: {e}") from e
+        raise _as_cli_error(e) from e
 
 
 def list_secret_users_can_view(
@@ -3138,7 +3148,7 @@ def get_constant(
             raise ApiError(f"Constant not found: {constant_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Constant fetch failed: {e}") from e
+        raise _as_cli_error(e) from e
 
 
 def create_constant(
@@ -3167,7 +3177,7 @@ def create_constant(
     except Exception as e:
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Constant creation failed: {e}") from e
+        raise _as_cli_error(e) from e
 
 
 def delete_constant(
@@ -3200,7 +3210,7 @@ def delete_constant(
             raise ApiError(f"Constant not found: {constant_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Constant deletion failed: {e}") from e
+        raise _as_cli_error(e) from e
 
 
 def _get_client_object_by_lookup(
@@ -3245,7 +3255,7 @@ def _get_shareable_object_access_state(
             raise ApiError(f"{class_name} not found: {object_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"{class_name} share access fetch failed: {e}") from e
+        raise _as_cli_error(e) from e
 
 
 def _mutate_shareable_object_access(
@@ -3279,7 +3289,7 @@ def _mutate_shareable_object_access(
             raise ApiError(f"{class_name} not found: {object_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"{class_name} share access update failed: {e}") from e
+        raise _as_cli_error(e) from e
 
 
 def _mutate_shareable_object_team_access(
@@ -3313,7 +3323,7 @@ def _mutate_shareable_object_team_access(
             raise ApiError(f"{class_name} not found: {object_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"{class_name} team share access update failed: {e}") from e
+        raise _as_cli_error(e) from e
 
 
 def _mutate_labelable_object_labels(
@@ -3347,7 +3357,7 @@ def _mutate_labelable_object_labels(
             raise ApiError(f"{class_name} not found: {object_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"{class_name} label update failed: {e}") from e
+        raise _as_cli_error(e) from e
 
 
 def list_constant_users_can_view(
@@ -3546,7 +3556,7 @@ def update_code_repository_job_scheduled_command_args(
             raise ApiError(f"Job not found: {job_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"CodeRepository job update failed: {e}") from e
+        raise _as_cli_error(e) from e
 
 
 def get_code_repository_job(
@@ -3570,7 +3580,7 @@ def get_code_repository_job(
             raise ApiError(f"Job not found: {job_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"CodeRepository job fetch failed: {e}") from e
+        raise _as_cli_error(e) from e
 
 
 def run_code_repository_job(
@@ -3665,7 +3675,7 @@ def run_code_repository_job(
             raise NotLoggedIn(str(e) or "Not logged in.") from e
         if err_name == "NotFoundError":
             raise ApiError(f"Job not found: {job_uid}") from e
-        raise ApiError(f"CodeRepository job run failed: {e}") from e
+        raise _as_cli_error(e) from e
     finally:
         if client_utils is not None:
             try:
@@ -3770,7 +3780,7 @@ def list_code_repository_job_runs(
             raise NotLoggedIn(str(e) or "Not logged in.") from e
         if err_name == "NotFoundError":
             raise ApiError(f"Job not found: {job_uid}") from e
-        raise ApiError(f"CodeRepository job runs fetch failed: {e}") from e
+        raise _as_cli_error(e) from e
     finally:
         if client_utils is not None:
             try:
@@ -3886,7 +3896,7 @@ def get_code_repository_job_run_logs(
             raise NotLoggedIn(str(e) or "Not logged in.") from e
         if err_name == "NotFoundError":
             raise ApiError(f"Job run not found: {job_run_uid}") from e
-        raise ApiError(f"CodeRepository job run logs fetch failed: {e}") from e
+        raise _as_cli_error(e) from e
     finally:
         if client_utils is not None:
             try:
