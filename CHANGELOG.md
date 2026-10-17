@@ -6,6 +6,48 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+**Teams are controlled by policies: `Team` gains membership and access methods, and
+the Team sharing calls are removed.** The platform no longer serves view and edit
+sharing, `candidate-members` or `manage-members` on teams. A team's membership is who
+is in it; who controls it is the policies on it: `viewer`, `membership_manager`,
+`editor`, `owner`, and `member`, which every member holds. Any person can create a
+team and becomes its owner and first member. Other shareable objects keep view and
+edit sharing.
+
+- Removed from `Team`: `can_view()`, `can_edit()`, `users_can_view()`,
+  `users_can_edit()`, `list_users_can_view()`, `list_users_can_edit()`,
+  `add_to_view()`, `add_to_edit()`, `remove_from_view()`, `remove_from_edit()`,
+  `add_team_to_view()`, `add_team_to_edit()`, `remove_team_from_view()`,
+  `remove_team_from_edit()`, `list_candidate_members()`, `manage_members()`,
+  `add_members()` and `remove_members()`, and the `TeamMembershipUpdateResult` model.
+- What replaces them: `add_member(user_uid)` and `remove_member(user_uid)`, one User
+  per call, replace `add_members()`, `remove_members()` and `manage_members()`;
+  adding a member again changes nothing. `list_member_candidates(identity_type=None,
+  search=None)` replaces `list_candidate_members()`. `leave()` ends your own
+  membership, and `list_held_access()` returns the policies the team holds on other
+  objects as `TeamHeldAccess` rows. A team's detail carries `allowed_actions`, your
+  actions on it. `Team.create()` is unchanged and returns the detail.
+- Who controls a team, which view and edit sharing used to decide, is read and changed
+  with `AccessManagedObjectMixin`, which `Team` now uses: `get_access()`,
+  `get_my_access()`, `list_access_candidates()`, `attach_policy()`, `detach_policy()`,
+  `apply_access_changes()` and `explain_access()`, on the team's `access/` routes. The
+  models are `AccessListing`, `AccessObjectReference`, `AccessBinding`,
+  `AccessPolicyReference`, `AccessGrantor`, `AccessWorkflowDeclaration`,
+  `AccessPrincipal`, `AccessComputedRow`, `CallerAccess`, `AccessExplanation` and
+  `AccessExplanationPath`. A refusal raises `PermissionDeniedError`, whose `payload`
+  names the `required_action` and the `granting_policies`.
+- CLI: `mainsequence organization teams members list|add|remove`,
+  `mainsequence organization teams leave` and
+  `mainsequence organization teams access list|grant|revoke|explain` replace
+  `organization teams can_view`, `can_edit`, `add_to_view`, `add_to_edit`,
+  `remove_from_view` and `remove_from_edit`, which are removed. A refused command
+  prints the platform's message and the policies that would allow it.
+  `organization teams create` says the creator owns the team.
+- Docs: a new page, [Who Has Access to an Object](docs/knowledge/infrastructure/object_access.md);
+  [Users and Access](docs/knowledge/infrastructure/users_and_access.md) describes team
+  membership and control; the CLI reference has a Teams section; the access-control
+  skill explains team policies.
+
 **`AccessCatalog` reads the platform's access catalog, and `mainsequence access policies`
 lists its policies.** The catalog, which every signed-in user can read, lists each
 resource type's actions, the policies that bundle them, the inheritance rules and

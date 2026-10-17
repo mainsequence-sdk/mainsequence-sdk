@@ -33,6 +33,8 @@ This skill is for:
   - `ResourceRelease`
 - choose whether configuration belongs in a `Constant` or a `Secret`
 - review CLI sharing flows for existing resources
+- manage a team's members and decide who controls the team, through the
+  team's policies
 - verify access assumptions before claiming a workflow is shareable
 - decide whether an application uses its own grants or acts for its
   requester, and explain what acting for the requester allows
@@ -61,6 +63,8 @@ This skill only reasons about access to deployed resources such as `ResourceRele
 1. Repository instructions, including `AGENTS.md` when present.
 2. <https://mainsequence-sdk.github.io/mainsequence-sdk/knowledge/infrastructure/users_and_access/>
 3. <https://mainsequence-sdk.github.io/mainsequence-sdk/knowledge/infrastructure/constants_and_secrets/>
+4. <https://mainsequence-sdk.github.io/mainsequence-sdk/knowledge/infrastructure/object_access/>
+   for teams, whose access is decided by policies
 
 The pages above are the authoritative reference for access control and sharing.
 If the task is specifically about a resource type, also read that resource's own
@@ -135,6 +139,22 @@ Keep these separate:
 
 - inherited access to shared resources
 - administration of the team itself
+
+Membership is who is in the team. Control is the policies on the team, not view
+and edit sharing:
+
+- `viewer` sees the team and its members;
+- `membership_manager` adds and removes members;
+- `editor` renames, describes, activates or deactivates it and sees its policies;
+- `owner` does everything, including deleting it and deciding who manages it;
+- every member holds `member`: they can see the team and its members, and leave it.
+
+Any person can create a team and becomes its owner and first member. Use
+`Team.add_member()`, `remove_member()`, `leave()` and the access methods
+(`get_access()`, `attach_policy()`, `detach_policy()`, `explain_access()`), or
+`mainsequence organization teams members ...`, `leave` and `access ...`. A
+team has no `add_to_view()` or `add_to_edit()`. Before saying who can change a
+team, read it with `team.get_access()` or `explain_access()`.
 
 An application that checks whether its caller or requester belongs to a team
 uses `in_teams()`; the identity carries no team list. See

@@ -265,12 +265,14 @@ mainsequence organization teams list
 mainsequence organization teams list --show-filters
 mainsequence organization teams create Research --description "Model validation"
 mainsequence organization teams edit <TEAM_UID> --name "Research Core" --inactive
-mainsequence organization teams can_view <TEAM_UID>
-mainsequence organization teams can_edit <TEAM_UID>
-mainsequence organization teams add_to_view <TEAM_UID> <USER_UID>
-mainsequence organization teams add_to_edit <TEAM_UID> <USER_UID>
-mainsequence organization teams remove_from_view <TEAM_UID> <USER_UID>
-mainsequence organization teams remove_from_edit <TEAM_UID> <USER_UID>
+mainsequence organization teams members list <TEAM_UID>
+mainsequence organization teams members add <TEAM_UID> <USER_UID>
+mainsequence organization teams members remove <TEAM_UID> <USER_UID>
+mainsequence organization teams leave <TEAM_UID>
+mainsequence organization teams access list <TEAM_UID>
+mainsequence organization teams access grant <TEAM_UID> viewer --user <USER_UID>
+mainsequence organization teams access revoke <TEAM_UID> <BINDING_UID>
+mainsequence organization teams access explain <TEAM_UID> organization-teams.update
 mainsequence organization teams delete <TEAM_UID>
 
 # 1) List and create
@@ -397,6 +399,55 @@ it, what it does not include and its actions. Both commands read the access
 catalog, which every signed-in user can read, and accept `--json` and
 `--timeout`; neither changes who has access. See
 [Access Policy Catalog](../knowledge/infrastructure/access_catalog.md).
+
+## Teams
+
+```bash
+mainsequence organization teams create Research --description "Model validation"
+mainsequence organization teams members list <TEAM_UID>
+mainsequence organization teams members add <TEAM_UID> <USER_UID>
+mainsequence organization teams members remove <TEAM_UID> <USER_UID>
+mainsequence organization teams leave <TEAM_UID>
+mainsequence organization teams access list <TEAM_UID>
+mainsequence organization teams access grant <TEAM_UID> membership_manager --user <USER_UID>
+mainsequence organization teams access grant <TEAM_UID> viewer --team <OTHER_TEAM_UID>
+mainsequence organization teams access revoke <TEAM_UID> <BINDING_UID>
+mainsequence organization teams access explain <TEAM_UID> organization-teams.update
+mainsequence organization teams access explain <TEAM_UID> organization-teams.add_member --user <USER_UID>
+```
+
+A team's membership is who is in it; who controls it is the policies on it.
+Any person can create a team with `create`, and becomes its owner and its first
+member.
+
+- `members list` prints each member's UID, kind (`person` or `workload`),
+  email and name, people first. `members add` adds a person or a workload
+  identity; adding a member again changes nothing. `members remove` removes a
+  member. `leave` ends your own membership; a policy you hold on the team, such
+  as `owner`, stays.
+- `access list` prints the policies attached to the team, each with its
+  binding UID, policy id, principal and source, and the access the platform
+  computes: Organization admins hold every action and members hold
+  `organization-teams.member`. It needs the team's `read_access` action.
+- `access grant` gives a policy, by name such as `viewer` or by id such as
+  `organization-teams.viewer`, to a person or workload identity with `--user`
+  or to a team with `--team`; pass exactly one. It needs the team's
+  `manage_access` action and every action of the policy.
+  `mainsequence access policies --type organization-teams` lists the policies.
+- `access revoke` detaches a binding by the UID `access list` shows. Removing
+  your own binding is always allowed.
+- `access explain` says whether you, or the User given with `--user`, may
+  perform an action, every path that gives it, and the policies that contain
+  it.
+
+Every command accepts `--json` and `--timeout`. With `--json`, `members remove`,
+`leave` and `access revoke` print what they did, for example
+`{"team_uid": "...", "binding_uid": "...", "detached": true}`. A refused
+command prints the platform's message and the policies that would allow it.
+The view and edit sharing commands for teams (`can_view`, `can_edit`,
+`add_to_view`, `add_to_edit`, `remove_from_view` and `remove_from_edit`) are
+gone. See [Who Has Access to an Object](../knowledge/infrastructure/object_access.md)
+and [Users and Access](../knowledge/infrastructure/users_and_access.md#teams).
 
 ## Settings
 

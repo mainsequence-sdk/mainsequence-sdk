@@ -10,6 +10,8 @@ For notification delivery rules and client usage, see [Notifications](notificati
 
 To read the policies the platform defines for each kind of shareable object,
 with what each one allows, see [Access Policy Catalog](access_catalog.md).
+Teams are controlled by policies; see [Teams](#teams) and
+[Who Has Access to an Object](object_access.md).
 
 ## Start with the right mental model
 
@@ -275,6 +277,123 @@ carry `uid` and, when supplied, `member_kind` (`"person"` or `"workload"`). For
 workloads, `username`, `email`, `first_name` and `last_name` are `None` when
 omitted or null in the response. Use `uid` for identity, not personal fields.
 
+### Membership and control
+
+A team has two separate things:
+
+- **Membership** is who is in the team: who receives what is shared with it.
+- **Control** is the policies on the team, which decide who can see it, change
+  its members, edit it or delete it.
+
+Any person can create a team, and the creator becomes its owner and its first
+member. The policies on a team are:
+
+| Policy | What its holder can do |
+| --- | --- |
+| `viewer` | See the team and who is in it |
+| `membership_manager` | See the team and its members, add people and workload identities, and remove members |
+| `editor` | See the team and its members, rename it, change its description, activate or deactivate it, and see its policies |
+| `owner` | Everything on the team, including deleting it and deciding who manages it |
+| `member` | Held by every member and never attached: see the team and its members, and leave it |
+
+Controlling a team does not require being a member, and being a member gives no
+control beyond `member`. Organization admins hold every action on every team of
+their organization. Each policy's full description is in the
+[Access Policy Catalog](access_catalog.md):
+`mainsequence access policies --type organization-teams`.
+
+The built-in full-directory team is computed: its members are every active
+person of the organization. Nobody adds, removes or leaves its members, edits
+or deletes it, and only Organization admins give its `viewer` policy, which
+shows every active team of the organization and its members.
+
+### Manage members in Python
+
+```python
+from mainsequence.client import Team
+
+team = Team.create(name="Research", description="Model validation")
+team.allowed_actions                 # your actions on the team: every one, as its owner
+
+team.list_member_candidates(search="ana")
+team.add_member(user_uid)
+team.list_members()
+team.remove_member(user_uid)
+team.list_held_access()              # the policies the team holds on other objects
+team.leave()
+```
+
+| Method | Route | Returns |
+| --- | --- | --- |
+| `Team.create(name=..., description="", is_active=True)` | `POST /api/v1/teams/` | the new `Team`, with `members` and `allowed_actions` |
+| `list_members()` | `GET /api/v1/teams/{uid}/members/` | `list[UserSummary]`: people first, then workload identities |
+| `add_member(user_uid)` | `POST /api/v1/teams/{uid}/members/` | the member's `UserSummary`; adding a member again changes nothing |
+| `remove_member(user_uid)` | `DELETE /api/v1/teams/{uid}/members/{user_uid}/` | `None` |
+| `leave()` | `POST /api/v1/teams/{uid}/leave/` | `None` |
+| `list_member_candidates(identity_type=None, search=None)` | `GET /api/v1/teams/{uid}/member-candidates/` | `list[UserSummary]`: who you may add and is not a member yet, at most 200 |
+| `list_held_access()` | `GET /api/v1/teams/{uid}/held-access/` | `list[TeamHeldAccess]`: each policy the team holds on an object you can read |
+
+Every method also takes `timeout`, and a `user_uid` can be a UID or an object or
+a dict that carries it as `uid`, such as a `User`.
+
+- `Team.get_by_uid()` and `Team.create()` return a team's detail, which carries
+  `allowed_actions`, the ids of your actions on it such as
+  `organization-teams.update`. Listed teams carry `None`.
+- Adding needs the team's `add_member` action. An Organization admin can add any
+  person or workload identity of the organization; anyone else can add people
+  who share an active team with them, themselves, and the workload identities
+  they can view. Anyone else raises `BadRequestError` with `code`
+  `invalid_user_uids`.
+- Removing needs `remove_member`, or `leave` to remove yourself. Removing
+  someone who is not a member raises `NotFoundError`.
+- Leaving ends your membership only: a policy you hold on the team, such as
+  `owner`, stays. Leaving a team you are not a member of raises
+  `BadRequestError` with `code` `not_a_team_member`.
+- `list_member_candidates()` lists people by default; `identity_type="workload"`
+  lists workload identities, and `search` matches an email or a name.
+- A `TeamHeldAccess` row has the `binding_uid`, the object's `resource_type`,
+  `object_uid` and `object_name`, the `policy` id the team holds, its `source`,
+  `granted_by` (an `AccessPrincipal`) and `created_at`: what joining the team
+  gives a member.
+
+### Decide who controls a team
+
+The policies on a team are read and changed with the access methods every
+object with access routes has:
+
+```python
+team.get_access()                    # bindings, and the computed access of admins and members
+team.attach_policy("membership_manager", principal_type="user", principal_uid=user_uid)
+team.detach_policy(binding_uid)
+team.explain_access("organization-teams.update", principal_uid=user_uid)
+```
+
+See [Who Has Access to an Object](object_access.md) for every method, the
+models and the errors. A refused request raises `PermissionDeniedError`, whose
+`payload` names the `required_action` and the `granting_policies`.
+
+The view and edit sharing methods are not available on a team: `can_view()`,
+`can_edit()`, `add_to_view()`, `add_to_edit()`, `remove_from_view()`,
+`remove_from_edit()` and their team variants are gone, with
+`list_candidate_members()`, `manage_members()`, `add_members()` and
+`remove_members()`.
+
+### From the command line
+
+```bash
+mainsequence organization teams create Research --description "Model validation"
+mainsequence organization teams members list <TEAM_UID>
+mainsequence organization teams members add <TEAM_UID> <USER_UID>
+mainsequence organization teams members remove <TEAM_UID> <USER_UID>
+mainsequence organization teams leave <TEAM_UID>
+mainsequence organization teams access list <TEAM_UID>
+mainsequence organization teams access grant <TEAM_UID> membership_manager --user <USER_UID>
+mainsequence organization teams access revoke <TEAM_UID> <BINDING_UID>
+mainsequence organization teams access explain <TEAM_UID> organization-teams.update --user <USER_UID>
+```
+
+See [Teams](../../cli/index.md#teams) in the CLI reference.
+
 ## What team membership means
 
 If a user belongs to a team, they inherit access for resources that were shared to that team.
@@ -285,17 +404,18 @@ Membership means:
 
 - the user is part of that team for access purposes
 - the user receives inherited access to resources shared to that team
+- the user holds the team's `member` policy: they can see the team and its members, and leave it
 
 Membership does not automatically mean:
 
 - the user can manage the team
 - the user can change who else is in the team
-- the user can change the team's sharing rules
+- the user can change who controls the team
 - the user can administer every resource the team can see
 
 That distinction matters a lot.
 
-Being inside a team means the user benefits from the team's access. It does not automatically make them an administrator of the team itself.
+Being inside a team means the user benefits from the team's access. Managing the team itself comes from the policies on it.
 
 ## Resource sharing
 
@@ -373,7 +493,7 @@ In other words:
 - if a dataset is shared to `Research`, members of `Research` inherit access to that dataset
 - that does not automatically mean every member of `Research` can manage the `Research` team
 
-This is why "team membership" and "team administration" should be thought of as separate concerns.
+This is why "team membership" and "team administration" should be thought of as separate concerns: membership is who is in the team, and administration is the policies on it.
 
 ## Practical examples
 
@@ -397,8 +517,9 @@ If one workflow maintainer needs to manage a dataset directly:
 If Alice is a member of `Research`:
 
 - Alice inherits access for resources shared to `Research`
-- Alice does not automatically become responsible for changing `Research` membership
-- Alice does not automatically become responsible for changing `Research` sharing rules
+- Alice can see `Research` and its members, and leave it
+- changing who is in `Research` needs its `membership_manager` or `owner` policy
+- renaming or deactivating `Research` needs its `editor` or `owner` policy, and deciding who controls it needs `owner`
 
 ### Example 4: Team-based edit does not mean unlimited control
 
