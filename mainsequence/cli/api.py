@@ -3360,178 +3360,114 @@ def _mutate_labelable_object_labels(
         raise _as_cli_error(e) from e
 
 
-def list_constant_users_can_view(
-    constant_uid: int | str,
+def _run_constant_access_operation(constant_uid: str, operation):
+    """
+    Run `operation(constant)` on one Constant, addressed by its UID alone.
+
+    A Constant's access routes need no Organization Environment, while reading a
+    Constant needs the current branch's. The Constant is therefore not read
+    first: the instance `operation` receives carries only its UID, which is all
+    the access methods use. A Constant that cannot be reached is reported as not
+    found. A refused action is not a missing session: it keeps the platform's
+    message and names the policies that would allow it, as for teams. Every
+    other failure keeps its message; the command that called says what failed.
+    """
+
+    def _run(ClientConstant):
+        return operation(ClientConstant.model_construct(uid=str(constant_uid)))
+
+    try:
+        return _run_sdk_model_operation(
+            module_name="mainsequence.client.models_foundry",
+            class_name="Constant",
+            operation=_run,
+        )
+    except Exception as e:
+        refusal = _permission_refusal(e)
+        if refusal is not None:
+            denied, policies = refusal
+            raise ApiError(f"{denied}{policies}") from e
+        if type(e).__name__ == "NotFoundError":
+            raise ApiError(f"Constant not found: {constant_uid}") from e
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(str(e)) from e
+
+
+def get_constant_access(
+    constant_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
     """
-    Fetch the view-access state for a constant via `ShareableObjectMixin.can_view()`.
+    Read the policies attached to a constant via `Constant.get_access()`.
     """
-    return _get_shareable_object_access_state(
-        module_name="mainsequence.client.models_foundry",
-        class_name="Constant",
-        object_uid=constant_uid,
-        accessor_name="can_view",
-        timeout=timeout,
+    listing = _run_constant_access_operation(
+        constant_uid,
+        lambda constant: constant.get_access(timeout=timeout),
     )
+    return _sdk_object_to_dict(listing)
 
 
-def list_constant_users_can_edit(
-    constant_uid: int | str,
+def attach_constant_policy(
+    constant_uid: str,
     *,
+    policy: str,
+    principal_type: str,
+    principal_uid: str,
     timeout: int | None = None,
 ) -> dict[str, Any]:
     """
-    Fetch the edit-access state for a constant via `ShareableObjectMixin.can_edit()`.
+    Attach a policy on a constant to a user or a team via `Constant.attach_policy()`.
     """
-    return _get_shareable_object_access_state(
-        module_name="mainsequence.client.models_foundry",
-        class_name="Constant",
-        object_uid=constant_uid,
-        accessor_name="can_edit",
-        timeout=timeout,
+    binding = _run_constant_access_operation(
+        constant_uid,
+        lambda constant: constant.attach_policy(
+            policy,
+            principal_type=principal_type,
+            principal_uid=str(principal_uid),
+            timeout=timeout,
+        ),
+    )
+    return _sdk_object_to_dict(binding)
+
+
+def detach_constant_policy(
+    constant_uid: str,
+    binding_uid: str,
+    *,
+    timeout: int | None = None,
+) -> None:
+    """
+    Detach one policy binding from a constant via `Constant.detach_policy()`.
+    """
+    _run_constant_access_operation(
+        constant_uid,
+        lambda constant: constant.detach_policy(str(binding_uid), timeout=timeout),
     )
 
 
-def add_constant_user_to_view(
-    constant_uid: int | str,
-    user_uid: str,
+def explain_constant_access(
+    constant_uid: str,
     *,
+    action: str,
+    principal_uid: str | None = None,
     timeout: int | None = None,
 ) -> dict[str, Any]:
     """
-    Grant explicit view access to one user for a constant.
+    Explain why a user may or may not perform an action on a constant.
+
+    Uses `Constant.explain_access()`.
     """
-    return _mutate_shareable_object_access(
-        module_name="mainsequence.client.models_foundry",
-        class_name="Constant",
-        object_uid=constant_uid,
-        action_name="add_to_view",
-        user_uid=user_uid,
-        timeout=timeout,
+    explanation = _run_constant_access_operation(
+        constant_uid,
+        lambda constant: constant.explain_access(
+            action,
+            principal_uid=str(principal_uid) if principal_uid is not None else None,
+            timeout=timeout,
+        ),
     )
-
-
-def add_constant_user_to_edit(
-    constant_uid: int | str,
-    user_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    """
-    Grant explicit edit access to one user for a constant.
-    """
-    return _mutate_shareable_object_access(
-        module_name="mainsequence.client.models_foundry",
-        class_name="Constant",
-        object_uid=constant_uid,
-        action_name="add_to_edit",
-        user_uid=user_uid,
-        timeout=timeout,
-    )
-
-
-def remove_constant_user_from_view(
-    constant_uid: int | str,
-    user_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    """
-    Remove explicit view access from one user for a constant.
-    """
-    return _mutate_shareable_object_access(
-        module_name="mainsequence.client.models_foundry",
-        class_name="Constant",
-        object_uid=constant_uid,
-        action_name="remove_from_view",
-        user_uid=user_uid,
-        timeout=timeout,
-    )
-
-
-def remove_constant_user_from_edit(
-    constant_uid: int | str,
-    user_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    """
-    Remove explicit edit access from one user for a constant.
-    """
-    return _mutate_shareable_object_access(
-        module_name="mainsequence.client.models_foundry",
-        class_name="Constant",
-        object_uid=constant_uid,
-        action_name="remove_from_edit",
-        user_uid=user_uid,
-        timeout=timeout,
-    )
-
-
-def add_constant_team_to_view(
-    constant_uid: int | str,
-    team_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    return _mutate_shareable_object_team_access(
-        module_name="mainsequence.client.models_foundry",
-        class_name="Constant",
-        object_uid=constant_uid,
-        action_name="add_team_to_view",
-        team_uid=team_uid,
-        timeout=timeout,
-    )
-
-
-def add_constant_team_to_edit(
-    constant_uid: int | str,
-    team_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    return _mutate_shareable_object_team_access(
-        module_name="mainsequence.client.models_foundry",
-        class_name="Constant",
-        object_uid=constant_uid,
-        action_name="add_team_to_edit",
-        team_uid=team_uid,
-        timeout=timeout,
-    )
-
-
-def remove_constant_team_from_view(
-    constant_uid: int | str,
-    team_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    return _mutate_shareable_object_team_access(
-        module_name="mainsequence.client.models_foundry",
-        class_name="Constant",
-        object_uid=constant_uid,
-        action_name="remove_team_from_view",
-        team_uid=team_uid,
-        timeout=timeout,
-    )
-
-
-def remove_constant_team_from_edit(
-    constant_uid: int | str,
-    team_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    return _mutate_shareable_object_team_access(
-        module_name="mainsequence.client.models_foundry",
-        class_name="Constant",
-        object_uid=constant_uid,
-        action_name="remove_team_from_edit",
-        team_uid=team_uid,
-        timeout=timeout,
-    )
+    return _sdk_object_to_dict(explanation)
 
 
 def update_code_repository_job_scheduled_command_args(

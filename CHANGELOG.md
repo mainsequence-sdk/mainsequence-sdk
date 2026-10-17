@@ -6,6 +6,42 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+**Constants are decided by policies: `Constant` gains the access methods, and its
+sharing calls are removed.** The platform no longer serves view and edit sharing on
+constants. A constant's policies are `reader` (see it and its value), `editor` (also
+change its name and value, delete it and see who has access) and `owner` (also decide
+who has access); the person or workload that creates a constant holds `owner`.
+Existing view grants became `reader` and edit grants `editor`. Secrets and the other
+shareable objects keep view and edit sharing.
+
+- Removed from `Constant`: `can_view()`, `can_edit()`, `users_can_view()`,
+  `users_can_edit()`, `list_users_can_view()`, `list_users_can_edit()`,
+  `add_to_view()`, `add_to_edit()`, `remove_from_view()`, `remove_from_edit()`,
+  `add_team_to_view()`, `add_team_to_edit()`, `remove_team_from_view()` and
+  `remove_team_from_edit()`.
+- What replaces them: `Constant` uses `AccessManagedObjectMixin`, like `Team`:
+  `get_access()`, `get_my_access()`, `list_access_candidates()`, `attach_policy()`,
+  `detach_policy()`, `apply_access_changes()` and `explain_access()`, on
+  `/api/v1/constants/{uid}/access/...`. `attach_policy("reader", ...)` and
+  `attach_policy("editor", ...)` give what the `add_*` methods gave, to a user or a
+  team; `detach_policy()` replaces the `remove_*` methods, and `get_access()` replaces
+  `can_view()` and `can_edit()`. A refusal raises `PermissionDeniedError`, whose
+  `payload` names the `required_action` and the `granting_policies`.
+- The access methods address an object by its UID alone. On a `Constant` they neither
+  resolve nor send the current branch's Environment, so they work without one; reading,
+  creating, changing and deleting constants still use it.
+- CLI: `mainsequence constants access list|grant|revoke|explain` replace
+  `constants can_view`, `can_edit`, `add_to_view`, `add_to_edit`, `remove_from_view`,
+  `remove_from_edit`, `add_team_to_view`, `add_team_to_edit`, `remove_team_from_view`
+  and `remove_team_from_edit`, which are removed. The new commands need no registered
+  branch. A refused command prints the platform's message and the policies that would
+  allow it.
+- Docs: [Constants and Secrets](docs/knowledge/infrastructure/constants_and_secrets.md)
+  describes constant policies;
+  [Who Has Access to an Object](docs/knowledge/infrastructure/object_access.md),
+  [Users and Access](docs/knowledge/infrastructure/users_and_access.md), the CLI
+  reference and the access-control skill say constants are decided by policies.
+
 **Organization Environments are decided by policies: `OrganizationEnvironment`
 gains the access methods.** Working in an Environment is the `member` policy
 (work in it and create Projects, Buckets, Constants, Secrets, model providers and

@@ -116,9 +116,26 @@ def test_client_auth_provider_routes_match_backend_contract(monkeypatch):
 
 def test_removed_backend_actions_are_not_exposed_by_client_models():
     from mainsequence.client import models_user
-    from mainsequence.client.models_foundry import GitHubRepositoryBinding
+    from mainsequence.client.models_foundry import Constant, GitHubRepositoryBinding
     from mainsequence.client.models_helpers import Job
     from mainsequence.client.models_user import Team
+
+    view_and_edit_sharing = (
+        "can_view",
+        "can_edit",
+        "users_can_view",
+        "users_can_edit",
+        "list_users_can_view",
+        "list_users_can_edit",
+        "add_to_view",
+        "add_to_edit",
+        "remove_from_view",
+        "remove_from_edit",
+        "add_team_to_view",
+        "add_team_to_edit",
+        "remove_team_from_view",
+        "remove_team_from_edit",
+    )
 
     removed_actions = {
         GitHubRepositoryBinding: ("import_branch",),
@@ -130,21 +147,10 @@ def test_removed_backend_actions_are_not_exposed_by_client_models():
             "manage_members",
             "add_members",
             "remove_members",
-            "can_view",
-            "can_edit",
-            "users_can_view",
-            "users_can_edit",
-            "list_users_can_view",
-            "list_users_can_edit",
-            "add_to_view",
-            "add_to_edit",
-            "remove_from_view",
-            "remove_from_edit",
-            "add_team_to_view",
-            "add_team_to_edit",
-            "remove_team_from_view",
-            "remove_team_from_edit",
+            *view_and_edit_sharing,
         ),
+        # Constants serve policies: the view and edit sharing routes are gone.
+        Constant: view_and_edit_sharing,
     }
     violations = [
         f"{model.__name__}.{method_name}"
@@ -173,13 +179,23 @@ def test_cli_does_not_reintroduce_legacy_numeric_detail_routes_or_agent_runs():
     assert "/auth/rest-auth/user/" not in cli_sources
     assert not hasattr(api, "list_agent_runs")
     assert not hasattr(api, "get_agent_run")
-    for retired_team_sharing in (
+    for retired_sharing in (
         "list_team_users_can_view",
         "list_team_users_can_edit",
         "add_team_user_to_view",
         "add_team_user_to_edit",
         "remove_team_user_from_view",
         "remove_team_user_from_edit",
+        "list_constant_users_can_view",
+        "list_constant_users_can_edit",
+        "add_constant_user_to_view",
+        "add_constant_user_to_edit",
+        "remove_constant_user_from_view",
+        "remove_constant_user_from_edit",
+        "add_constant_team_to_view",
+        "add_constant_team_to_edit",
+        "remove_constant_team_from_view",
+        "remove_constant_team_from_edit",
     ):
-        assert not hasattr(api, retired_team_sharing)
+        assert not hasattr(api, retired_sharing)
     assert not hasattr(agent_runtime_models, "AgentRun")

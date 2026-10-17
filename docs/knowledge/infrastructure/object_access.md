@@ -6,8 +6,8 @@ its own access routes. A policy from the
 person, a workload identity or a Team, on one object. That attachment is a
 **binding**.
 
-Teams and Organization Environments are decided this way. Other shareable
-objects, such as constants, secrets, buckets, artifacts, CodeRepositories and
+Teams, Organization Environments and constants are decided this way. Other
+shareable objects, such as secrets, buckets, artifacts, CodeRepositories and
 releases, still use view and edit sharing, as
 [Users and Access](users_and_access.md#resource-sharing) describes.
 
@@ -29,6 +29,24 @@ Being admitted to an Environment never shows objects that are not shared with
 the person. Creating inside it without the create action, for example a
 Constant as an `observer`, raises `PermissionDeniedError` with
 `required_action` `organization-environments.create_constant`.
+
+A Constant has three policies: `reader` sees it and its value; `editor` also
+changes its name and value, deletes it and sees who has access; `owner` also
+decides who has access. The person or workload that creates a Constant holds
+`owner`. The policies go to people, workload identities and Teams, with the
+same methods on `Constant`, which no longer has view and edit sharing methods:
+
+```python
+from mainsequence.client import Constant
+
+constant = Constant.get(name="MODEL__DEFAULT_WINDOW")
+constant.attach_policy("reader", principal_type="team", principal_uid=team_uid)
+print(constant.get_my_access().allowed_actions)
+```
+
+The access methods address a Constant by its UID alone, so they need no
+Environment; reading the Constant, as `Constant.get()` does above, uses the
+current branch's.
 
 ## Read and change access in Python
 
@@ -188,5 +206,6 @@ Fields the release does not declare are dropped.
 ## From the command line
 
 `mainsequence organization teams access list|grant|revoke|explain` reads and
-changes a team's policies; see [Teams](../../cli/index.md#teams) in the CLI
-reference.
+changes a team's policies, and `mainsequence constants access
+list|grant|revoke|explain` a constant's; see [Teams](../../cli/index.md#teams)
+and [Constants](../../cli/index.md#constants) in the CLI reference.

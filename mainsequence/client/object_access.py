@@ -12,8 +12,11 @@ under its detail URL, for example `/api/v1/teams/{uid}/access/`:
 - `access/changes/`: several attachments and detachments at once;
 - `access/explain/`: why someone may or may not perform an action.
 
-`AccessManagedObjectMixin` gives a model one method per route. `Team` uses it.
-What each policy allows is in the access catalog, which `AccessCatalog` reads.
+`AccessManagedObjectMixin` gives a model one method per route. `Team`,
+`OrganizationEnvironment` and `Constant` use it. The routes address the object
+by its UID alone, so they need no Organization Environment, even for an object
+that lives in one. What each policy allows is in the access catalog, which
+`AccessCatalog` reads.
 """
 
 from __future__ import annotations
@@ -283,7 +286,29 @@ class AccessManagedObjectMixin(DetailActionObjectMixin):
     outside the people you can give access to. An object you cannot read
     raises `NotFoundError`. A malformed argument raises `ValueError` before
     anything is sent.
+
+    The routes address the object by its UID alone. A model that sends the
+    current branch's Organization Environment with its other requests, such as
+    `Constant`, does not send it here, and needs none to call these methods.
     """
+
+    def _request_access_route(
+        self,
+        *,
+        r_type: str,
+        route: str,
+        payload: dict[str, Any],
+        timeout: int | float | tuple[float, float] | None,
+        expected_statuses: tuple[int, ...],
+    ) -> Any:
+        return self._request_detail_action(
+            r_type=r_type,
+            action_name=route,
+            payload=payload,
+            timeout=timeout,
+            expected_statuses=expected_statuses,
+            sdk_owned_context=False,
+        )
 
     def _access_object(self, data: Any, *, route: str) -> dict[str, Any]:
         if not isinstance(data, dict):
@@ -306,9 +331,9 @@ class AccessManagedObjectMixin(DetailActionObjectMixin):
     ) -> AccessListing:
         """Return the policies attached to this object and the access the platform computes."""
 
-        data = self._request_detail_action(
+        data = self._request_access_route(
             r_type="GET",
-            action_name="access",
+            route="access",
             payload={},
             timeout=timeout,
             expected_statuses=(200,),
@@ -322,9 +347,9 @@ class AccessManagedObjectMixin(DetailActionObjectMixin):
     ) -> CallerAccess:
         """Return the actions the caller may perform on this object and the policies they hold."""
 
-        data = self._request_detail_action(
+        data = self._request_access_route(
             r_type="GET",
-            action_name="access/me",
+            route="access/me",
             payload={},
             timeout=timeout,
             expected_statuses=(200,),
@@ -362,9 +387,9 @@ class AccessManagedObjectMixin(DetailActionObjectMixin):
             )
         if search is not None and str(search).strip():
             params["search"] = str(search).strip()
-        data = self._request_detail_action(
+        data = self._request_access_route(
             r_type="GET",
-            action_name="access/candidates",
+            route="access/candidates",
             payload={"params": params},
             timeout=timeout,
             expected_statuses=(200,),
@@ -390,9 +415,9 @@ class AccessManagedObjectMixin(DetailActionObjectMixin):
         that carries it as `uid`.
         """
 
-        data = self._request_detail_action(
+        data = self._request_access_route(
             r_type="POST",
-            action_name="access/bindings",
+            route="access/bindings",
             payload={"json": _attach_body(policy, principal_type, principal_uid)},
             timeout=timeout,
             expected_statuses=(201,),
@@ -411,9 +436,9 @@ class AccessManagedObjectMixin(DetailActionObjectMixin):
         """
 
         uid = _canonical_uid(binding_uid, field_name="binding_uid")
-        self._request_detail_action(
+        self._request_access_route(
             r_type="DELETE",
-            action_name=f"access/bindings/{uid}",
+            route=f"access/bindings/{uid}",
             payload={},
             timeout=timeout,
             expected_statuses=(204,),
@@ -452,9 +477,9 @@ class AccessManagedObjectMixin(DetailActionObjectMixin):
         if not attach_bodies and not detach_uids:
             raise ValueError("Pass at least one policy to attach or binding to detach.")
 
-        data = self._request_detail_action(
+        data = self._request_access_route(
             r_type="POST",
-            action_name="access/changes",
+            route="access/changes",
             payload={"json": {"attach": attach_bodies, "detach": detach_uids}},
             timeout=timeout,
             expected_statuses=(200,),
@@ -486,9 +511,9 @@ class AccessManagedObjectMixin(DetailActionObjectMixin):
         }
         if principal_uid is not None:
             params["principal_uid"] = _canonical_uid(principal_uid, field_name="principal_uid")
-        data = self._request_detail_action(
+        data = self._request_access_route(
             r_type="GET",
-            action_name="access/explain",
+            route="access/explain",
             payload={"params": params},
             timeout=timeout,
             expected_statuses=(200,),

@@ -16,6 +16,7 @@ from mainsequence.client.exceptions import BadRequestError, ServerError
 FAILED_URL = "https://backend.test/api/v1/failing-route/"
 AGENT_UID = "e0e75693-4110-464c-93e0-82c7fd9c9a23"
 CONSTANT_UID = "498d499f-b74c-43f7-acf1-2e2955ad0e6b"
+SECRET_UID = "6c2b9e1d-3f4a-4b5c-8d7e-9f0a1b2c3d4e"
 CODE_REPOSITORY_UID = "1d0530c0-65d1-4db0-856b-dc29d8260a09"
 
 
@@ -51,7 +52,8 @@ def failing_sdk_client(cli_mod, monkeypatch):
         (["agent", "logs", AGENT_UID], "Agent logs fetch failed"),
         (["constants", "list"], "Constants fetch failed"),
         (["secrets", "list"], "Secrets fetch failed"),
-        (["constants", "can_view", CONSTANT_UID], "Constant view fetch failed"),
+        (["secrets", "can_view", SECRET_UID], "Secret view fetch failed"),
+        (["constants", "access", "list", CONSTANT_UID], "Constant access fetch failed"),
         (
             ["code-repository", "add-label", CODE_REPOSITORY_UID, "--label", "rates"],
             "CodeRepository add-label failed",
@@ -66,6 +68,7 @@ def failing_sdk_client(cli_mod, monkeypatch):
         "constants",
         "secrets",
         "sharing",
+        "constant-access",
         "labels",
         "code-repositories",
     ],

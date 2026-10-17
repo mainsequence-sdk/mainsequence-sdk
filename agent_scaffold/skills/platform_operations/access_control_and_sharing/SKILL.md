@@ -64,7 +64,8 @@ This skill only reasons about access to deployed resources such as `ResourceRele
 2. <https://mainsequence-sdk.github.io/mainsequence-sdk/knowledge/infrastructure/users_and_access/>
 3. <https://mainsequence-sdk.github.io/mainsequence-sdk/knowledge/infrastructure/constants_and_secrets/>
 4. <https://mainsequence-sdk.github.io/mainsequence-sdk/knowledge/infrastructure/object_access/>
-   for teams and Organization Environments, whose access is decided by policies
+   for teams, Organization Environments and constants, whose access is decided
+   by policies
 
 The pages above are the authoritative reference for access control and sharing.
 If the task is specifically about a resource type, also read that resource's own
@@ -81,6 +82,7 @@ Before changing access or advising on sharing, collect or infer:
 - whether the access should be:
   - `view`
   - `edit`
+  - for a `Constant`, which is decided by policies: `reader`, `editor` or `owner`
 - whether the goal is:
   - consumption
   - maintenance
@@ -96,7 +98,7 @@ For every non-trivial access task, decide:
 
 1. What is the real shareable object?
 2. Is this direct user access or team-based access?
-3. Does the user need `view` or `edit`?
+3. Does the user need `view` or `edit`, or, on a `Constant`, `reader`, `editor` or `owner`?
 4. Is this configuration non-sensitive or sensitive?
 5. Is the task really an access problem, or is it actually an orchestration or implementation problem?
 6. Is the task creating a `Constant` or `Secret` by name, and does that name already exist?
@@ -120,6 +122,19 @@ Use the simplest rule unless the task requires something more specific:
 - `edit` for people who need to maintain, update, or administer
 
 Do not grant `edit` when `view` is enough.
+
+A `Constant` is decided by its policies, not by view and edit sharing:
+
+- `reader` sees the constant and its value;
+- `editor` also changes its name and value, deletes it and sees who has access;
+- `owner` also decides who has access.
+
+The person or workload that creates a constant holds `owner`. Give `reader` to
+consumers and `editor` to maintainers, with the access methods on `Constant`
+(`get_access()`, `attach_policy()`, `detach_policy()`, `explain_access()`) or
+`mainsequence constants access list|grant|revoke|explain`. A constant has no
+`add_to_view()` or `add_to_edit()`, and its access methods need no Environment.
+`Secret` and the other resources keep view and edit sharing.
 
 ### 3. Team sharing is for repeated access patterns
 
@@ -361,6 +376,7 @@ Do not claim success until you have checked:
 - the access level is intentional:
   - `view`
   - `edit`
+  - `reader`, `editor` or `owner` on a `Constant`
 - the task is using `Constant` vs `Secret` correctly
 - any `Constant` or `Secret` creation path first resolved existence by name when idempotency matters
 - the access claim was verified against the actual resource path

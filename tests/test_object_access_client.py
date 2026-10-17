@@ -13,6 +13,7 @@ import pytest
 
 import mainsequence.client as client_pkg
 import mainsequence.client.base as base_mod
+import mainsequence.code_repository_context as code_repository_context
 from mainsequence.client.base import BaseObjectOrm
 from mainsequence.client.exceptions import (
     ApiError,
@@ -20,6 +21,7 @@ from mainsequence.client.exceptions import (
     NotFoundError,
     PermissionDeniedError,
 )
+from mainsequence.client.models_foundry import Constant
 from mainsequence.client.models_user import OrganizationEnvironment, Team
 from mainsequence.client.object_access import (
     AccessBinding,
@@ -113,8 +115,9 @@ def _binding(**overrides):
     return binding
 
 
-def test_team_serves_the_access_methods():
-    assert issubclass(Team, AccessManagedObjectMixin)
+@pytest.mark.parametrize("model", [Team, OrganizationEnvironment, Constant])
+def test_policy_decided_models_serve_the_access_methods(model):
+    assert issubclass(model, AccessManagedObjectMixin)
     for name in (
         "get_access",
         "get_my_access",
@@ -124,7 +127,7 @@ def test_team_serves_the_access_methods():
         "apply_access_changes",
         "explain_access",
     ):
-        assert callable(getattr(Team, name))
+        assert callable(getattr(model, name))
 
 
 def test_access_names_are_exported_from_the_client_package():
@@ -663,3 +666,118 @@ def test_an_environment_serves_the_access_routes_under_its_detail_url(monkeypatc
     assert binding.policy.id == "organization-environments.member"
     assert refused.value.payload["required_action"] == "organization-environments.manage_access"
 
+
+CONSTANT_UID = "22222222-2222-4222-8222-222222222222"
+
+
+@pytest.fixture()
+def no_environment(monkeypatch):
+    """The current branch has no Environment: an operation that needs one raises."""
+
+    def _resolve(operation):
+        raise code_repository_context.CodeRepositoryEnvironmentContextRequiredError(
+            f"{operation} requires an Organization Environment."
+        )
+
+    monkeypatch.setattr(code_repository_context, "resolve_organization_environment_uid", _resolve)
+
+
+def _constant() -> Constant:
+    return Constant(
+        uid=CONSTANT_UID,
+        name="APP__MODE",
+        value="production",
+        organization_environment_uid=ENVIRONMENT_UID,
+        organization_environment_name="Development",
+    )
+
+
+def test_a_constant_serves_the_access_routes_by_its_uid_alone(monkeypatch, no_environment):
+    sent = _install(
+        monkeypatch,
+        FakeResponse(
+            200,
+            {
+                "object": {"resource_type": "constants", "uid": CONSTANT_UID},
+                "bindings": [
+                    _binding(
+                        policy={"id": "constants.owner", "label": "Constant owner"},
+                        source="creator",
+                    )
+                ],
+                "computed": [
+                    {
+                        "source": "role",
+                        "detail": "Organization administrators hold every action.",
+                        "policy": None,
+                    }
+                ],
+            },
+        ),
+        FakeResponse(201, _binding(policy={"id": "constants.reader", "label": "Constant reader"})),
+        FakeResponse(
+            200,
+            {
+                "allowed_actions": ["constants.read", "constants.update"],
+                "policies": ["constants.editor"],
+            },
+        ),
+        FakeResponse(204),
+    )
+
+    constant = _constant()
+    listing = constant.get_access()
+    binding = constant.attach_policy("reader", principal_type="team", principal_uid=OTHER_TEAM_UID)
+    mine = constant.get_my_access()
+    constant.detach_policy(binding)
+
+    # No organization_environment_uid is resolved or sent: the branch has none.
+    base = f"{Constant.get_object_url()}/{CONSTANT_UID}/access/"
+    assert [(item["r_type"], item["url"], item["payload"]) for item in sent] == [
+        ("GET", base, {}),
+        (
+            "POST",
+            f"{base}bindings/",
+            {
+                "json": {
+                    "policy": "reader",
+                    "principal_type": "team",
+                    "principal_uid": OTHER_TEAM_UID,
+                }
+            },
+        ),
+        ("GET", f"{base}me/", {}),
+        ("DELETE", f"{base}bindings/{BINDING_UID}/", {}),
+    ]
+    assert listing.object.resource_type == "constants"
+    assert listing.bindings[0].policy.id == "constants.owner"
+    assert listing.bindings[0].source == "creator"
+    assert binding.policy.id == "constants.reader"
+    assert mine.policies == ["constants.editor"]
+
+
+def test_a_refused_change_on_a_constant_names_the_policies_that_give_it(
+    monkeypatch, no_environment
+):
+    refusal = {
+        "detail": "This needs the constants.manage_access action.",
+        "code": "missing_action",
+        "required_action": "constants.manage_access",
+        "granting_policies": ["constants.owner"],
+        "resource_type": "constants",
+        "resource_uid": CONSTANT_UID,
+    }
+    _install(monkeypatch, FakeResponse(403, refusal))
+
+    with pytest.raises(PermissionDeniedError) as raised:
+        _constant().attach_policy("editor", principal_type="user", principal_uid=USER_UID)
+
+    assert raised.value.payload["required_action"] == "constants.manage_access"
+    assert raised.value.payload["granting_policies"] == ["constants.owner"]
+
+
+def test_reading_a_constant_still_uses_the_current_branchs_environment(monkeypatch, no_environment):
+    _refuse_requests(monkeypatch)
+
+    with pytest.raises(code_repository_context.CodeRepositoryEnvironmentContextRequiredError):
+        Constant.get_by_uid(CONSTANT_UID)

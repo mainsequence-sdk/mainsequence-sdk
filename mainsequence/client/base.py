@@ -879,9 +879,17 @@ class DetailActionObjectMixin:
         timeout: int | float | tuple[float, float] | None = None,
         expected_statuses: tuple[int, ...] = (200,),
         empty_response: Any = None,
+        sdk_owned_context: bool = True,
     ) -> Any:
+        # `sdk_owned_context=False` is for a route that addresses the object by
+        # its UID alone: the model's SDK-owned query context, such as the
+        # current branch's Environment, is then neither resolved nor sent.
         payload = dict(payload or {})
-        query_context = type(self)._sdk_owned_query_context(f"{type(self).__name__}.{action_name}")
+        query_context = (
+            type(self)._sdk_owned_query_context(f"{type(self).__name__}.{action_name}")
+            if sdk_owned_context
+            else {}
+        )
         if query_context:
             params = dict(payload.get("params") or {})
             type(self)._reject_sdk_context_overrides(

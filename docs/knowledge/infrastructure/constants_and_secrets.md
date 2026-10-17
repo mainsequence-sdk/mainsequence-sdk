@@ -90,14 +90,12 @@ Main Sequence applies resource-level access control, so the real operational que
 - which team or CodeRepository boundary it belongs to
 - whether it is safe to expose through a deployed release
 
-In practice, the current SDK exposes sharing behavior across several resource types:
+Constants and secrets are shared differently:
 
-- `CodeRepository`
-- `Constant`
-- `Secret`
-- `Bucket`
-- `Artifact`
-- `ResourceRelease`
+- a `Constant` is decided by its policies, `reader`, `editor` and `owner`; see
+  [Who can use a constant](#who-can-use-a-constant)
+- a `Secret` uses view and edit sharing, like `CodeRepository`, `Bucket`,
+  `Artifact` and `ResourceRelease`
 
 Why these matter:
 
@@ -110,8 +108,10 @@ Why these matter:
 
 !!! warning "IMPORTANT"
     `Constant` and `Secret` are not the only shareable resources in the SDK.
-    `CodeRepository`, `Bucket`, `Artifact`, and `ResourceRelease` also participate in the same shareable-object model.
-    This guide focuses on constants and secrets because they are the simplest place to learn the pattern.
+    `CodeRepository`, `Bucket`, `Artifact`, and `ResourceRelease` use view and edit sharing, as `Secret` does.
+    Teams and Organization Environments are decided by policies, as `Constant` is; see
+    [Who Has Access to an Object](object_access.md).
+    This guide focuses on constants and secrets because they are the simplest place to learn both patterns.
 
 That is the practical reason this topic matters early:
 
@@ -245,6 +245,46 @@ existing = {c.name for c in Constant.filter(name__in=["MODEL__DEFAULT_WINDOW"])}
 if "MODEL__DEFAULT_WINDOW" not in existing:
     Constant.create(name="MODEL__DEFAULT_WINDOW", value=252)
 ```
+
+### Who can use a constant
+
+A constant's access is decided by its policies:
+
+- `reader`: see the constant and its value;
+- `editor`: also change its name and value, delete it, and see who has access;
+- `owner`: also decide who has access.
+
+The person or workload that creates a constant holds `owner`, and Organization
+admins hold every action. The policies go to people, workload identities and
+Teams. Read and change them with the access methods on `Constant`:
+
+```python
+from mainsequence.client import Constant
+
+constant = Constant.get(name="MODEL__DEFAULT_WINDOW")
+
+for binding in constant.get_access().bindings:
+    print(binding.uid, binding.policy.id, binding.principal.type, binding.principal.uid)
+
+binding = constant.attach_policy("reader", principal_type="team", principal_uid=team_uid)
+constant.detach_policy(binding.uid)
+
+answer = constant.explain_access("constants.update", principal_uid=user_uid)
+print(answer.allowed, answer.granting_policies)
+```
+
+The access methods address the constant by its UID alone, so they need no
+Environment. A refused change raises `PermissionDeniedError`, whose `payload`
+names the `required_action` and the `granting_policies`.
+`mainsequence access policies --type constants` lists the policies with their
+actions, and [Who Has Access to an Object](object_access.md) describes every
+method and model.
+
+`Constant` no longer has view and edit sharing methods: `can_view()`,
+`can_edit()`, `add_to_view()`, `add_to_edit()`, `remove_from_view()`,
+`remove_from_edit()`, their team variants and the `users_can_*` and
+`list_users_can_*` aliases are gone. Existing view grants became `reader` and
+edit grants `editor`; attach those policies where you used to share.
 
 ### When to prefer a constant over code
 
@@ -438,23 +478,30 @@ Important behavior:
 - secrets are shown by metadata only in CLI tables and delete previews
 - delete commands require typed verification
 
-### CLI sharing examples for constants
+### CLI access commands for constants
 
-These commands show the resource-level sharing model directly:
+These commands read and change a constant's policies:
 
 ```bash
-mainsequence constants can_view <CONSTANT_UID>
-mainsequence constants can_edit <CONSTANT_UID>
-mainsequence constants add_to_view <CONSTANT_UID> <USER_UID>
-mainsequence constants add_to_edit <CONSTANT_UID> <USER_UID>
-mainsequence constants remove_from_view <CONSTANT_UID> <USER_UID>
-mainsequence constants remove_from_edit <CONSTANT_UID> <USER_UID>
+mainsequence constants access list <CONSTANT_UID>
+mainsequence constants access grant <CONSTANT_UID> reader --user <USER_UID>
+mainsequence constants access grant <CONSTANT_UID> editor --team <TEAM_UID>
+mainsequence constants access revoke <CONSTANT_UID> <BINDING_UID>
+mainsequence constants access explain <CONSTANT_UID> constants.update
 ```
 
 Interpretation:
 
 - `<CONSTANT_UID>` is the constant public UID
-- `<USER_UID>` is the public UUID of the user receiving or losing access
+- `<USER_UID>` is the public UUID of the person or workload identity receiving
+  the policy, and `<TEAM_UID>` the team's
+- `<BINDING_UID>` is the UID of a binding, which `access list` shows
+
+Unlike the other constants commands, these need no registered branch: the
+constant is addressed by its UID alone. The sharing commands `can_view`,
+`can_edit`, `add_to_view`, `add_to_edit`, `remove_from_view`,
+`remove_from_edit` and their team variants are gone. See
+[Constants](../../cli/index.md#constants) in the CLI reference.
 
 This is the most concrete CLI example of Main Sequence RBAC at the resource level.
 

@@ -234,16 +234,10 @@ mainsequence constants list
 mainsequence constants list --show-filters
 mainsequence constants create APP__MODE production
 mainsequence constants create ASSETS__MASTER '{"dataset":"bloomberg"}'
-mainsequence constants can_view <CONSTANT_UID>
-mainsequence constants can_edit <CONSTANT_UID>
-mainsequence constants add_to_view <CONSTANT_UID> <USER_UID>
-mainsequence constants add_to_edit <CONSTANT_UID> <USER_UID>
-mainsequence constants add_team_to_view <CONSTANT_UID> <TEAM_UID>
-mainsequence constants add_team_to_edit <CONSTANT_UID> <TEAM_UID>
-mainsequence constants remove_from_view <CONSTANT_UID> <USER_UID>
-mainsequence constants remove_from_edit <CONSTANT_UID> <USER_UID>
-mainsequence constants remove_team_from_view <CONSTANT_UID> <TEAM_UID>
-mainsequence constants remove_team_from_edit <CONSTANT_UID> <TEAM_UID>
+mainsequence constants access list <CONSTANT_UID>
+mainsequence constants access grant <CONSTANT_UID> reader --user <USER_UID>
+mainsequence constants access revoke <CONSTANT_UID> <BINDING_UID>
+mainsequence constants access explain <CONSTANT_UID> constants.update
 mainsequence constants delete <CONSTANT_UID>
 mainsequence secrets list
 mainsequence secrets list --show-filters
@@ -448,6 +442,51 @@ The view and edit sharing commands for teams (`can_view`, `can_edit`,
 `add_to_view`, `add_to_edit`, `remove_from_view` and `remove_from_edit`) are
 gone. See [Who Has Access to an Object](../knowledge/infrastructure/object_access.md)
 and [Users and Access](../knowledge/infrastructure/users_and_access.md#teams).
+
+## Constants
+
+```bash
+mainsequence constants access list <CONSTANT_UID>
+mainsequence constants access grant <CONSTANT_UID> reader --user <USER_UID>
+mainsequence constants access grant <CONSTANT_UID> editor --team <TEAM_UID>
+mainsequence constants access revoke <CONSTANT_UID> <BINDING_UID>
+mainsequence constants access explain <CONSTANT_UID> constants.update
+mainsequence constants access explain <CONSTANT_UID> constants.read --user <USER_UID>
+```
+
+Who can use a constant is decided by its policies: `reader` sees it and its
+value; `editor` also changes its name and value, deletes it and sees who has
+access; `owner` also decides who has access. The person or workload that
+creates a constant holds `owner`.
+
+- `access list` prints the policies attached to the constant, each with its
+  binding UID, policy id, principal and source, and the access the platform
+  computes: Organization admins hold every action, and when a workload created
+  the constant, its managers hold the creator's rights. It needs the constant's
+  `read_access` action, which `editor` and `owner` hold.
+- `access grant` gives a policy, by name such as `reader` or by id such as
+  `constants.reader`, to a person or workload identity with `--user` or to a
+  team with `--team`; pass exactly one. It needs the constant's
+  `manage_access` action, which `owner` holds, and every action of the policy.
+  `mainsequence access policies --type constants` lists the policies.
+- `access revoke` detaches a binding by the UID `access list` shows. Removing
+  your own binding is always allowed.
+- `access explain` says whether you, or the User given with `--user`, may
+  perform an action, every path that gives it, and the policies that contain
+  it.
+
+These commands address the constant by its UID alone: unlike `constants list`,
+`create` and `delete`, they need no registered branch or Environment. Every
+command accepts `--json` and `--timeout`; with `--json`, `access revoke` prints
+`{"constant_uid": "...", "binding_uid": "...", "detached": true}`. A constant
+you cannot see is reported as not found, and a refused command prints the
+platform's message and the policies that would allow it. The view and edit
+sharing commands for constants (`can_view`, `can_edit`, `add_to_view`,
+`add_to_edit`, `remove_from_view`, `remove_from_edit`, `add_team_to_view`,
+`add_team_to_edit`, `remove_team_from_view` and `remove_team_from_edit`) are
+gone. See
+[Constants and Secrets](../knowledge/infrastructure/constants_and_secrets.md#who-can-use-a-constant)
+and [Who Has Access to an Object](../knowledge/infrastructure/object_access.md).
 
 ## Settings
 

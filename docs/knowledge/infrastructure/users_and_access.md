@@ -429,7 +429,6 @@ That is the practical layer that answers:
 This model appears across resources such as:
 
 - `CodeRepository`
-- `Constant`
 - `Secret`
 - `Bucket`
 - `Artifact`
@@ -440,6 +439,12 @@ The same pattern shows up again and again:
 - some users can view
 - some users can edit
 - access may come directly or through a team
+
+Constants, like teams and Organization Environments, are decided by policies
+instead: a constant's `reader`, `editor` and `owner` policies go to people,
+workload identities and teams. See
+[Who Has Access to an Object](object_access.md) and
+[Constants and Secrets](constants_and_secrets.md#who-can-use-a-constant).
 
 ## Direct access vs team access
 
@@ -475,7 +480,7 @@ Most of the time, the practical distinction is simple:
 For example:
 
 - on a supported application release, `view` means opening or calling it
-- on a constant, `edit` means changing the runtime value
+- on a secret, `edit` means changing the stored value
 
 This is the cleanest engineering split:
 

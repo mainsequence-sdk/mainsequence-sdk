@@ -18,6 +18,7 @@ from .base import (
     ShareableObjectMixin,
 )
 from .exceptions import raise_for_response
+from .object_access import AccessManagedObjectMixin
 from .utils import (
     make_request,
 )
@@ -949,12 +950,22 @@ class Secret(
 
 class Constant(
     CurrentCodeRepositoryEnvironmentResourceMixin,
-    ShareableObjectMixin,
+    AccessManagedObjectMixin,
     BasePydanticModel,
     BaseObjectOrm,
 ):
-    """
-    Simple organization-level constant.
+    """A small, non-sensitive configuration value owned by one Organization Environment.
+
+    Who may use a Constant is decided by its policies: `reader` sees it and its
+    value; `editor` also changes its name and value, deletes it and sees who has
+    access; `owner` also decides who has access. The person or workload that
+    creates a Constant holds `owner`, and Organization admins hold every action.
+    The policies go to people, workload identities and Teams.
+
+    The access methods (`get_access()`, `attach_policy()`, `detach_policy()` and
+    the others) read and change the policies. They address the Constant by its
+    UID alone and need no Environment; reading, creating, changing and deleting
+    Constants use the current branch's Environment.
     """
 
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
