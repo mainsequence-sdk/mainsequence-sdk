@@ -52,8 +52,9 @@ def failing_sdk_client(cli_mod, monkeypatch):
         (["agent", "logs", AGENT_UID], "Agent logs fetch failed"),
         (["constants", "list"], "Constants fetch failed"),
         (["secrets", "list"], "Secrets fetch failed"),
-        (["secrets", "can_view", SECRET_UID], "Secret view fetch failed"),
+        (["agent", "can_view", AGENT_UID], "Agent view fetch failed"),
         (["constants", "access", "list", CONSTANT_UID], "Constant access fetch failed"),
+        (["secrets", "access", "list", SECRET_UID], "Secret access fetch failed"),
         (
             ["code-repository", "add-label", CODE_REPOSITORY_UID, "--label", "rates"],
             "CodeRepository add-label failed",
@@ -69,6 +70,7 @@ def failing_sdk_client(cli_mod, monkeypatch):
         "secrets",
         "sharing",
         "constant-access",
+        "secret-access",
         "labels",
         "code-repositories",
     ],

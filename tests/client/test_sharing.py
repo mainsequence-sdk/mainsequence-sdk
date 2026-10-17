@@ -242,7 +242,7 @@ def test_shareable_access_state_drops_removed_internal_identity():
 @pytest.mark.parametrize(
     ("resource_cls", "accessor_name", "access_level"),
     [
-        (models_foundry_mod.Secret, "can_edit", "edit"),
+        (models_foundry_mod.Bucket, "can_edit", "edit"),
     ],
 )
 def test_shareable_resources_parse_canonical_public_identity(
@@ -294,7 +294,6 @@ def test_shareable_models_keep_shareable_object_mixin():
         "Artifact": models_foundry_bases,
         "Bucket": models_foundry_bases,
         "CodeRepository": models_foundry_bases,
-        "Secret": models_foundry_bases,
         "ResourceRelease": models_helpers_bases,
     }
 
@@ -324,16 +323,19 @@ def test_team_uses_the_access_policy_mixin_instead_of_view_and_edit_sharing():
     assert not issubclass(models_user_mod.Team, PermissionManagedObjectMixin)
 
 
-def test_constant_uses_the_access_policy_mixin_instead_of_view_and_edit_sharing():
+@pytest.mark.parametrize("class_name", ["Constant", "Secret"])
+def test_constants_and_secrets_use_the_access_policy_mixin_instead_of_view_and_edit_sharing(
+    class_name,
+):
     models_foundry_bases = _class_base_names_from_source(
         REPOSITORY_ROOT / "mainsequence" / "client" / "models_foundry.py"
     )
 
-    assert "Constant" in models_foundry_bases, "Constant class not found"
+    assert class_name in models_foundry_bases, f"{class_name} class not found"
     assert (
-        "AccessManagedObjectMixin" in models_foundry_bases["Constant"]
-    ), "Constant must inherit AccessManagedObjectMixin"
+        "AccessManagedObjectMixin" in models_foundry_bases[class_name]
+    ), f"{class_name} must inherit AccessManagedObjectMixin"
     assert (
-        "ShareableObjectMixin" not in models_foundry_bases["Constant"]
-    ), "Constant access is decided by policies, not view and edit sharing"
-    assert not issubclass(models_foundry_mod.Constant, PermissionManagedObjectMixin)
+        "ShareableObjectMixin" not in models_foundry_bases[class_name]
+    ), f"{class_name} access is decided by policies, not view and edit sharing"
+    assert not issubclass(getattr(models_foundry_mod, class_name), PermissionManagedObjectMixin)

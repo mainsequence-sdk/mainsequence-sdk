@@ -73,12 +73,9 @@ from .api import (
     add_code_repository_user_to_view,
     add_deploy_key,
     add_organization_team_member,
-    add_secret_team_to_edit,
-    add_secret_team_to_view,
-    add_secret_user_to_edit,
-    add_secret_user_to_view,
     attach_constant_policy,
     attach_organization_team_policy,
+    attach_secret_policy,
     bulk_delete_code_repositories,
     create_code_repository,
     create_constant,
@@ -93,8 +90,10 @@ from .api import (
     delete_secret,
     detach_constant_policy,
     detach_organization_team_policy,
+    detach_secret_policy,
     explain_constant_access,
     explain_organization_team_access,
+    explain_secret_access,
     fetch_platform_code_repository_skill_catalog,
     get_access_policy,
     get_agent,
@@ -120,6 +119,7 @@ from .api import (
     get_resource_release_logs,
     get_resource_release_resource_usage,
     get_secret,
+    get_secret_access,
     leave_organization_team,
     list_access_policies,
     list_agent_sessions,
@@ -137,8 +137,6 @@ from .api import (
     list_github_organizations,
     list_organization_team_members,
     list_organization_teams,
-    list_secret_users_can_edit,
-    list_secret_users_can_view,
     list_secrets,
     logout_cli_session,
     refresh_access,
@@ -152,10 +150,6 @@ from .api import (
     remove_code_repository_user_from_edit,
     remove_code_repository_user_from_view,
     remove_organization_team_member,
-    remove_secret_team_from_edit,
-    remove_secret_team_from_view,
-    remove_secret_user_from_edit,
-    remove_secret_user_from_view,
     repo_name_from_git_url,
     resolve_code_repository,
     run_code_repository_job,
@@ -302,6 +296,9 @@ constants_access_group = typer.Typer(
     help="Who has access to a constant: its policies", no_args_is_help=True
 )
 secrets = typer.Typer(help="Secret commands")
+secrets_access_group = typer.Typer(
+    help="Who has access to a secret: its policies", no_args_is_help=True
+)
 organization = typer.Typer(help="Organization commands")
 organization_teams_group = typer.Typer(help="Organization team commands")
 organization_team_members_group = typer.Typer(help="Team member commands", no_args_is_help=True)
@@ -330,6 +327,7 @@ agent_session_group.add_typer(agent_session_a2a_group, name="a2a")
 app.add_typer(constants, name="constants")
 constants.add_typer(constants_access_group, name="access")
 app.add_typer(secrets, name="secrets")
+secrets.add_typer(secrets_access_group, name="access")
 app.add_typer(organization, name="organization")
 organization_teams_group.add_typer(organization_team_members_group, name="members")
 organization_teams_group.add_typer(organization_team_access_group, name="access")
@@ -5385,6 +5383,9 @@ def secrets_delete_cmd(
     Delete one secret.
 
     The command always requires typed verification before the delete call is executed.
+    It reads the secret first, for the preview. Reading needs the secret's
+    read_value action and deleting its delete action, which editor and owner
+    hold; a secret the platform manages cannot be deleted.
 
     Examples
     --------
@@ -5395,216 +5396,131 @@ def secrets_delete_cmd(
     _secrets_delete_impl(secret_uid=secret_uid, timeout=timeout)
 
 
-@secrets.command("can_view")
-def secrets_can_view_cmd(
+@secrets_access_group.command("list")
+def secrets_access_list_cmd(
     secret_uid: str = typer.Argument(..., help="Secret UID."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
-    List users and teams who can view one secret.
+    List the policies attached to one secret, and the access the platform computes.
 
-    Uses the SDK `ShareableObjectMixin.can_view()` path through the `Secret` model.
+    It needs the secret's read_access action, which editor and owner hold.
 
     Examples
     --------
     ```bash
-    mainsequence secrets can_view 498d499f-b74c-43f7-acf1-2e2955ad0e6b
+    mainsequence secrets access list <SECRET_UID>
+    mainsequence secrets access list <SECRET_UID> --json
     ```
     """
-    _shareable_user_list_impl(
-        fetch_fn=list_secret_users_can_view,
+    _object_access_list_impl(
+        fetch_fn=get_secret_access,
         object_label="Secret",
-        access_label="view",
         object_uid=secret_uid,
         timeout=timeout,
     )
 
 
-@secrets.command("can_edit")
-def secrets_can_edit_cmd(
+@secrets_access_group.command("grant")
+def secrets_access_grant_cmd(
     secret_uid: str = typer.Argument(..., help="Secret UID."),
+    policy: str = typer.Argument(
+        ...,
+        help="Policy name of the secret type, for example reader, or its id, secrets.reader.",
+    ),
+    user_uid: uuid.UUID | None = typer.Option(
+        None, "--user", help="UID of the person or workload identity to give the policy to."
+    ),
+    principal_team_uid: uuid.UUID | None = typer.Option(
+        None, "--team", help="UID of the team to give the policy to."
+    ),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
-    List users and teams who can edit one secret.
+    Give a policy on one secret to a person, a workload identity or a team.
 
-    Uses the SDK `ShareableObjectMixin.can_edit()` path through the `Secret` model.
+    The policies are reader (sees the secret, never its value), value_reader
+    (also reads its current value), editor and owner. Pass exactly one of
+    --user or --team. It needs the secret's manage_access action, which owner
+    holds, and every action of the policy. `mainsequence access policies --type
+    secrets` lists the policies.
 
     Examples
     --------
     ```bash
-    mainsequence secrets can_edit 498d499f-b74c-43f7-acf1-2e2955ad0e6b
+    mainsequence secrets access grant <SECRET_UID> value_reader --user <USER_UID>
+    mainsequence secrets access grant <SECRET_UID> editor --team <TEAM_UID>
     ```
     """
-    _shareable_user_list_impl(
-        fetch_fn=list_secret_users_can_edit,
+    _object_access_grant_impl(
+        attach_fn=attach_secret_policy,
         object_label="Secret",
-        access_label="edit",
         object_uid=secret_uid,
-        timeout=timeout,
-    )
-
-
-@secrets.command("add_to_view")
-def secrets_add_to_view_cmd(
-    secret_uid: str = typer.Argument(..., help="Secret UID."),
-    user_uid: uuid.UUID = typer.Argument(..., help="User UID to grant view access."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    """
-    Grant explicit view access to one user for one secret.
-
-    Examples
-    --------
-    ```bash
-    mainsequence secrets add_to_view 498d499f-b74c-43f7-acf1-2e2955ad0e6b <USER_UID>
-    ```
-    """
-    _shareable_user_access_update_impl(
-        action_fn=add_secret_user_to_view,
-        object_label="Secret",
-        action_label="add_to_view",
-        object_uid=secret_uid,
+        policy=policy,
         user_uid=user_uid,
+        principal_team_uid=principal_team_uid,
         timeout=timeout,
     )
 
 
-@secrets.command("add_to_edit")
-def secrets_add_to_edit_cmd(
+@secrets_access_group.command("revoke")
+def secrets_access_revoke_cmd(
     secret_uid: str = typer.Argument(..., help="Secret UID."),
-    user_uid: uuid.UUID = typer.Argument(..., help="User UID to grant edit access."),
+    binding_uid: uuid.UUID = typer.Argument(
+        ..., help="UID of the binding to detach, from `access list`."
+    ),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
-    Grant explicit edit access to one user for one secret.
+    Detach one policy binding from one secret.
+
+    It needs the secret's manage_access action; removing your own binding is
+    always allowed.
 
     Examples
     --------
     ```bash
-    mainsequence secrets add_to_edit 498d499f-b74c-43f7-acf1-2e2955ad0e6b <USER_UID>
+    mainsequence secrets access revoke <SECRET_UID> <BINDING_UID>
     ```
     """
-    _shareable_user_access_update_impl(
-        action_fn=add_secret_user_to_edit,
+    _object_access_revoke_impl(
+        detach_fn=detach_secret_policy,
         object_label="Secret",
-        action_label="add_to_edit",
         object_uid=secret_uid,
-        user_uid=user_uid,
+        binding_uid=binding_uid,
         timeout=timeout,
     )
 
 
-@secrets.command("remove_from_view")
-def secrets_remove_from_view_cmd(
+@secrets_access_group.command("explain")
+def secrets_access_explain_cmd(
     secret_uid: str = typer.Argument(..., help="Secret UID."),
-    user_uid: uuid.UUID = typer.Argument(..., help="User UID to remove explicit view access from."),
+    action: str = typer.Argument(
+        ..., help="Action id of the secret type, for example secrets.read_value."
+    ),
+    user_uid: uuid.UUID | None = typer.Option(
+        None, "--user", help="UID of the User to explain for. Without it, you."
+    ),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
-    Remove explicit view access from one user for one secret.
+    Explain why you, or another User, may or may not perform an action on one secret.
+
+    Asking about someone else needs the secret's read_access action.
 
     Examples
     --------
     ```bash
-    mainsequence secrets remove_from_view 498d499f-b74c-43f7-acf1-2e2955ad0e6b <USER_UID>
+    mainsequence secrets access explain <SECRET_UID> secrets.read_value
+    mainsequence secrets access explain <SECRET_UID> secrets.update_value --user <USER_UID>
     ```
     """
-    _shareable_user_access_update_impl(
-        action_fn=remove_secret_user_from_view,
+    _object_access_explain_impl(
+        explain_fn=explain_secret_access,
         object_label="Secret",
-        action_label="remove_from_view",
         object_uid=secret_uid,
+        action=action,
         user_uid=user_uid,
-        timeout=timeout,
-    )
-
-
-@secrets.command("remove_from_edit")
-def secrets_remove_from_edit_cmd(
-    secret_uid: str = typer.Argument(..., help="Secret UID."),
-    user_uid: uuid.UUID = typer.Argument(..., help="User UID to remove explicit edit access from."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    """
-    Remove explicit edit access from one user for one secret.
-
-    Examples
-    --------
-    ```bash
-    mainsequence secrets remove_from_edit 498d499f-b74c-43f7-acf1-2e2955ad0e6b <USER_UID>
-    ```
-    """
-    _shareable_user_access_update_impl(
-        action_fn=remove_secret_user_from_edit,
-        object_label="Secret",
-        action_label="remove_from_edit",
-        object_uid=secret_uid,
-        user_uid=user_uid,
-        timeout=timeout,
-    )
-
-
-@secrets.command("add_team_to_view")
-def secrets_add_team_to_view_cmd(
-    secret_uid: str = typer.Argument(..., help="Secret UID."),
-    team_uid: uuid.UUID = typer.Argument(..., help="Team UID to grant view access."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    _shareable_team_access_update_impl(
-        action_fn=add_secret_team_to_view,
-        object_label="Secret",
-        action_label="add_team_to_view",
-        object_uid=secret_uid,
-        team_uid=team_uid,
-        timeout=timeout,
-    )
-
-
-@secrets.command("add_team_to_edit")
-def secrets_add_team_to_edit_cmd(
-    secret_uid: str = typer.Argument(..., help="Secret UID."),
-    team_uid: uuid.UUID = typer.Argument(..., help="Team UID to grant edit access."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    _shareable_team_access_update_impl(
-        action_fn=add_secret_team_to_edit,
-        object_label="Secret",
-        action_label="add_team_to_edit",
-        object_uid=secret_uid,
-        team_uid=team_uid,
-        timeout=timeout,
-    )
-
-
-@secrets.command("remove_team_from_view")
-def secrets_remove_team_from_view_cmd(
-    secret_uid: str = typer.Argument(..., help="Secret UID."),
-    team_uid: uuid.UUID = typer.Argument(..., help="Team UID to remove explicit view access from."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    _shareable_team_access_update_impl(
-        action_fn=remove_secret_team_from_view,
-        object_label="Secret",
-        action_label="remove_team_from_view",
-        object_uid=secret_uid,
-        team_uid=team_uid,
-        timeout=timeout,
-    )
-
-
-@secrets.command("remove_team_from_edit")
-def secrets_remove_team_from_edit_cmd(
-    secret_uid: str = typer.Argument(..., help="Secret UID."),
-    team_uid: uuid.UUID = typer.Argument(..., help="Team UID to remove explicit edit access from."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    _shareable_team_access_update_impl(
-        action_fn=remove_secret_team_from_edit,
-        object_label="Secret",
-        action_label="remove_team_from_edit",
-        object_uid=secret_uid,
-        team_uid=team_uid,
         timeout=timeout,
     )
 

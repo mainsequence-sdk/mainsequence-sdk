@@ -2865,6 +2865,10 @@ def get_secret(
 
     Single source of truth:
       - delegates detail fetching and payload parsing to `Secret.get()`
+
+    Reading a secret reads its current value, which needs the secret's
+    `read_value` action. A refusal is not a missing session: it keeps the
+    platform's message and names the policies that would allow it.
     """
     try:
         secret = _run_sdk_model_operation(
@@ -2877,6 +2881,10 @@ def get_secret(
         )
         return _sdk_object_to_dict(secret)
     except Exception as e:
+        refusal = _permission_refusal(e)
+        if refusal is not None:
+            denied, policies = refusal
+            raise ApiError(f"{denied}{policies}") from e
         err_name = type(e).__name__
         if err_name == "NotFoundError":
             raise ApiError(f"Secret not found: {secret_uid}") from e
@@ -2924,6 +2932,10 @@ def delete_secret(
 
     Single source of truth:
       - delegates deletion to `Secret.delete()`
+
+    The secret is read first, which needs its `read_value` action; deleting it
+    needs its `delete` action. A refusal keeps the platform's message and names
+    the policies that would allow it. A secret the platform manages answers 409.
     """
     try:
 
@@ -2939,186 +2951,16 @@ def delete_secret(
             operation=_delete,
         )
     except Exception as e:
+        refusal = _permission_refusal(e)
+        if refusal is not None:
+            denied, policies = refusal
+            raise ApiError(f"{denied}{policies}") from e
         err_name = type(e).__name__
         if err_name == "NotFoundError":
             raise ApiError(f"Secret not found: {secret_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
         raise _as_cli_error(e) from e
-
-
-def list_secret_users_can_view(
-    secret_uid: int | str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    """
-    Fetch the view-access state for a secret via `ShareableObjectMixin.can_view()`.
-    """
-    return _get_shareable_object_access_state(
-        module_name="mainsequence.client.models_foundry",
-        class_name="Secret",
-        object_uid=secret_uid,
-        accessor_name="can_view",
-        timeout=timeout,
-    )
-
-
-def list_secret_users_can_edit(
-    secret_uid: int | str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    """
-    Fetch the edit-access state for a secret via `ShareableObjectMixin.can_edit()`.
-    """
-    return _get_shareable_object_access_state(
-        module_name="mainsequence.client.models_foundry",
-        class_name="Secret",
-        object_uid=secret_uid,
-        accessor_name="can_edit",
-        timeout=timeout,
-    )
-
-
-def add_secret_user_to_view(
-    secret_uid: int | str,
-    user_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    """
-    Grant explicit view access to one user for a secret.
-    """
-    return _mutate_shareable_object_access(
-        module_name="mainsequence.client.models_foundry",
-        class_name="Secret",
-        object_uid=secret_uid,
-        action_name="add_to_view",
-        user_uid=user_uid,
-        timeout=timeout,
-    )
-
-
-def add_secret_user_to_edit(
-    secret_uid: int | str,
-    user_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    """
-    Grant explicit edit access to one user for a secret.
-    """
-    return _mutate_shareable_object_access(
-        module_name="mainsequence.client.models_foundry",
-        class_name="Secret",
-        object_uid=secret_uid,
-        action_name="add_to_edit",
-        user_uid=user_uid,
-        timeout=timeout,
-    )
-
-
-def remove_secret_user_from_view(
-    secret_uid: int | str,
-    user_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    """
-    Remove explicit view access from one user for a secret.
-    """
-    return _mutate_shareable_object_access(
-        module_name="mainsequence.client.models_foundry",
-        class_name="Secret",
-        object_uid=secret_uid,
-        action_name="remove_from_view",
-        user_uid=user_uid,
-        timeout=timeout,
-    )
-
-
-def remove_secret_user_from_edit(
-    secret_uid: int | str,
-    user_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    """
-    Remove explicit edit access from one user for a secret.
-    """
-    return _mutate_shareable_object_access(
-        module_name="mainsequence.client.models_foundry",
-        class_name="Secret",
-        object_uid=secret_uid,
-        action_name="remove_from_edit",
-        user_uid=user_uid,
-        timeout=timeout,
-    )
-
-
-def add_secret_team_to_view(
-    secret_uid: int | str,
-    team_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    return _mutate_shareable_object_team_access(
-        module_name="mainsequence.client.models_foundry",
-        class_name="Secret",
-        object_uid=secret_uid,
-        action_name="add_team_to_view",
-        team_uid=team_uid,
-        timeout=timeout,
-    )
-
-
-def add_secret_team_to_edit(
-    secret_uid: int | str,
-    team_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    return _mutate_shareable_object_team_access(
-        module_name="mainsequence.client.models_foundry",
-        class_name="Secret",
-        object_uid=secret_uid,
-        action_name="add_team_to_edit",
-        team_uid=team_uid,
-        timeout=timeout,
-    )
-
-
-def remove_secret_team_from_view(
-    secret_uid: int | str,
-    team_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    return _mutate_shareable_object_team_access(
-        module_name="mainsequence.client.models_foundry",
-        class_name="Secret",
-        object_uid=secret_uid,
-        action_name="remove_team_from_view",
-        team_uid=team_uid,
-        timeout=timeout,
-    )
-
-
-def remove_secret_team_from_edit(
-    secret_uid: int | str,
-    team_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    return _mutate_shareable_object_team_access(
-        module_name="mainsequence.client.models_foundry",
-        class_name="Secret",
-        object_uid=secret_uid,
-        action_name="remove_team_from_edit",
-        team_uid=team_uid,
-        timeout=timeout,
-    )
 
 
 def get_constant(
@@ -3360,26 +3202,27 @@ def _mutate_labelable_object_labels(
         raise _as_cli_error(e) from e
 
 
-def _run_constant_access_operation(constant_uid: str, operation):
+def _run_object_access_operation(class_name: str, object_uid: str, operation):
     """
-    Run `operation(constant)` on one Constant, addressed by its UID alone.
+    Run `operation(obj)` on one Constant or Secret, addressed by its UID alone.
 
-    A Constant's access routes need no Organization Environment, while reading a
-    Constant needs the current branch's. The Constant is therefore not read
-    first: the instance `operation` receives carries only its UID, which is all
-    the access methods use. A Constant that cannot be reached is reported as not
-    found. A refused action is not a missing session: it keeps the platform's
-    message and names the policies that would allow it, as for teams. Every
-    other failure keeps its message; the command that called says what failed.
+    `class_name` is `Constant` or `Secret`. Their access routes need no
+    Organization Environment, while reading one needs the current branch's. The
+    object is therefore not read first: the instance `operation` receives
+    carries only its UID, which is all the access methods use. An object that
+    cannot be reached is reported as not found. A refused action is not a
+    missing session: it keeps the platform's message and names the policies
+    that would allow it, as for teams. Every other failure keeps its message;
+    the command that called says what failed.
     """
 
-    def _run(ClientConstant):
-        return operation(ClientConstant.model_construct(uid=str(constant_uid)))
+    def _run(ClientModel):
+        return operation(ClientModel.model_construct(uid=str(object_uid)))
 
     try:
         return _run_sdk_model_operation(
             module_name="mainsequence.client.models_foundry",
-            class_name="Constant",
+            class_name=class_name,
             operation=_run,
         )
     except Exception as e:
@@ -3388,7 +3231,7 @@ def _run_constant_access_operation(constant_uid: str, operation):
             denied, policies = refusal
             raise ApiError(f"{denied}{policies}") from e
         if type(e).__name__ == "NotFoundError":
-            raise ApiError(f"Constant not found: {constant_uid}") from e
+            raise ApiError(f"{class_name} not found: {object_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
         raise ApiError(str(e)) from e
@@ -3402,7 +3245,8 @@ def get_constant_access(
     """
     Read the policies attached to a constant via `Constant.get_access()`.
     """
-    listing = _run_constant_access_operation(
+    listing = _run_object_access_operation(
+        "Constant",
         constant_uid,
         lambda constant: constant.get_access(timeout=timeout),
     )
@@ -3420,7 +3264,8 @@ def attach_constant_policy(
     """
     Attach a policy on a constant to a user or a team via `Constant.attach_policy()`.
     """
-    binding = _run_constant_access_operation(
+    binding = _run_object_access_operation(
+        "Constant",
         constant_uid,
         lambda constant: constant.attach_policy(
             policy,
@@ -3441,7 +3286,8 @@ def detach_constant_policy(
     """
     Detach one policy binding from a constant via `Constant.detach_policy()`.
     """
-    _run_constant_access_operation(
+    _run_object_access_operation(
+        "Constant",
         constant_uid,
         lambda constant: constant.detach_policy(str(binding_uid), timeout=timeout),
     )
@@ -3459,9 +3305,90 @@ def explain_constant_access(
 
     Uses `Constant.explain_access()`.
     """
-    explanation = _run_constant_access_operation(
+    explanation = _run_object_access_operation(
+        "Constant",
         constant_uid,
         lambda constant: constant.explain_access(
+            action,
+            principal_uid=str(principal_uid) if principal_uid is not None else None,
+            timeout=timeout,
+        ),
+    )
+    return _sdk_object_to_dict(explanation)
+
+
+def get_secret_access(
+    secret_uid: str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Read the policies attached to a secret via `Secret.get_access()`.
+    """
+    listing = _run_object_access_operation(
+        "Secret",
+        secret_uid,
+        lambda secret: secret.get_access(timeout=timeout),
+    )
+    return _sdk_object_to_dict(listing)
+
+
+def attach_secret_policy(
+    secret_uid: str,
+    *,
+    policy: str,
+    principal_type: str,
+    principal_uid: str,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Attach a policy on a secret to a user or a team via `Secret.attach_policy()`.
+    """
+    binding = _run_object_access_operation(
+        "Secret",
+        secret_uid,
+        lambda secret: secret.attach_policy(
+            policy,
+            principal_type=principal_type,
+            principal_uid=str(principal_uid),
+            timeout=timeout,
+        ),
+    )
+    return _sdk_object_to_dict(binding)
+
+
+def detach_secret_policy(
+    secret_uid: str,
+    binding_uid: str,
+    *,
+    timeout: int | None = None,
+) -> None:
+    """
+    Detach one policy binding from a secret via `Secret.detach_policy()`.
+    """
+    _run_object_access_operation(
+        "Secret",
+        secret_uid,
+        lambda secret: secret.detach_policy(str(binding_uid), timeout=timeout),
+    )
+
+
+def explain_secret_access(
+    secret_uid: str,
+    *,
+    action: str,
+    principal_uid: str | None = None,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Explain why a user may or may not perform an action on a secret.
+
+    Uses `Secret.explain_access()`.
+    """
+    explanation = _run_object_access_operation(
+        "Secret",
+        secret_uid,
+        lambda secret: secret.explain_access(
             action,
             principal_uid=str(principal_uid) if principal_uid is not None else None,
             timeout=timeout,

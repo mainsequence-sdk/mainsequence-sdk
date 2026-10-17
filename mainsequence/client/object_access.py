@@ -13,10 +13,10 @@ under its detail URL, for example `/api/v1/teams/{uid}/access/`:
 - `access/explain/`: why someone may or may not perform an action.
 
 `AccessManagedObjectMixin` gives a model one method per route. `Team`,
-`OrganizationEnvironment` and `Constant` use it. The routes address the object
-by its UID alone, so they need no Organization Environment, even for an object
-that lives in one. What each policy allows is in the access catalog, which
-`AccessCatalog` reads.
+`OrganizationEnvironment`, `Constant` and `Secret` use it. The routes address
+the object by its UID alone, so they need no Organization Environment, even for
+an object that lives in one. What each policy allows is in the access catalog,
+which `AccessCatalog` reads.
 """
 
 from __future__ import annotations
@@ -289,7 +289,8 @@ class AccessManagedObjectMixin(DetailActionObjectMixin):
 
     The routes address the object by its UID alone. A model that sends the
     current branch's Organization Environment with its other requests, such as
-    `Constant`, does not send it here, and needs none to call these methods.
+    `Constant` or `Secret`, does not send it here, and needs none to call these
+    methods.
     """
 
     def _request_access_route(
@@ -451,12 +452,14 @@ class AccessManagedObjectMixin(DetailActionObjectMixin):
         detach: Iterable[Any] = (),
         timeout: int | float | tuple[float, float] | None = None,
     ) -> list[AccessBinding]:
-        """Attach and detach several policies at once, and return the object's bindings after.
+        """Attach and detach several policies at once, and return the bindings listed after.
 
         Each `attach` entry is a mapping with `policy`, `principal_type` and
         `principal_uid`, as `attach_policy()` takes them; each `detach` entry is a
         binding UID or an `AccessBinding`. The platform applies every change or
-        none of them.
+        none of them. It lists every binding on the object to a caller who holds
+        the object's `read_access` action; anyone else gets only their own
+        bindings and those of the workload identities they manage.
         """
 
         attach_bodies = []

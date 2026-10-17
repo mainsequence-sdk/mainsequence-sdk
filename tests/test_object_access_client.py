@@ -21,7 +21,7 @@ from mainsequence.client.exceptions import (
     NotFoundError,
     PermissionDeniedError,
 )
-from mainsequence.client.models_foundry import Constant
+from mainsequence.client.models_foundry import Constant, Secret
 from mainsequence.client.models_user import OrganizationEnvironment, Team
 from mainsequence.client.object_access import (
     AccessBinding,
@@ -115,7 +115,7 @@ def _binding(**overrides):
     return binding
 
 
-@pytest.mark.parametrize("model", [Team, OrganizationEnvironment, Constant])
+@pytest.mark.parametrize("model", [Team, OrganizationEnvironment, Constant, Secret])
 def test_policy_decided_models_serve_the_access_methods(model):
     assert issubclass(model, AccessManagedObjectMixin)
     for name in (
@@ -781,3 +781,180 @@ def test_reading_a_constant_still_uses_the_current_branchs_environment(monkeypat
 
     with pytest.raises(code_repository_context.CodeRepositoryEnvironmentContextRequiredError):
         Constant.get_by_uid(CONSTANT_UID)
+
+
+SECRET_UID = "33333333-3333-4333-8333-333333333333"
+
+
+@pytest.fixture()
+def environment(monkeypatch):
+    """The current branch has an Environment, which reading a Secret sends."""
+
+    monkeypatch.setattr(
+        code_repository_context,
+        "resolve_organization_environment_uid",
+        lambda operation: ENVIRONMENT_UID,
+    )
+
+
+def _secret() -> Secret:
+    return Secret(
+        uid=SECRET_UID,
+        name="API_KEY",
+        organization_environment_uid=ENVIRONMENT_UID,
+        organization_environment_name="Development",
+    )
+
+
+def test_a_secret_serves_the_access_routes_by_its_uid_alone(monkeypatch, no_environment):
+    sent = _install(
+        monkeypatch,
+        FakeResponse(
+            200,
+            {
+                "object": {"resource_type": "secrets", "uid": SECRET_UID},
+                "bindings": [
+                    _binding(
+                        policy={"id": "secrets.owner", "label": "Secret owner"},
+                        source="creator",
+                    )
+                ],
+                "computed": [
+                    {
+                        "source": "role",
+                        "detail": "Organization administrators hold every action.",
+                        "policy": None,
+                    }
+                ],
+            },
+        ),
+        FakeResponse(
+            201, _binding(policy={"id": "secrets.value_reader", "label": "Secret value reader"})
+        ),
+        FakeResponse(
+            200,
+            {
+                "allowed_actions": ["secrets.read", "secrets.read_value"],
+                "policies": ["secrets.value_reader"],
+            },
+        ),
+        FakeResponse(
+            200,
+            {
+                "action": "secrets.read_value_history",
+                "allowed": False,
+                "in_scope": True,
+                "paths": [],
+                "blocked_by_rule": False,
+                "granting_policies": ["secrets.editor", "secrets.owner"],
+            },
+        ),
+        FakeResponse(204),
+    )
+
+    secret = _secret()
+    listing = secret.get_access()
+    binding = secret.attach_policy(
+        "value_reader", principal_type="user", principal_uid=WORKLOAD_UID
+    )
+    mine = secret.get_my_access()
+    history = secret.explain_access("secrets.read_value_history")
+    secret.detach_policy(binding)
+
+    # No organization_environment_uid is resolved or sent: the branch has none.
+    base = f"{Secret.get_object_url()}/{SECRET_UID}/access/"
+    assert [(item["r_type"], item["url"], item["payload"]) for item in sent] == [
+        ("GET", base, {}),
+        (
+            "POST",
+            f"{base}bindings/",
+            {
+                "json": {
+                    "policy": "value_reader",
+                    "principal_type": "user",
+                    "principal_uid": WORKLOAD_UID,
+                }
+            },
+        ),
+        ("GET", f"{base}me/", {}),
+        ("GET", f"{base}explain/", {"params": {"action": "secrets.read_value_history"}}),
+        ("DELETE", f"{base}bindings/{BINDING_UID}/", {}),
+    ]
+    assert listing.object.resource_type == "secrets"
+    assert listing.bindings[0].policy.id == "secrets.owner"
+    assert listing.bindings[0].source == "creator"
+    assert binding.policy.id == "secrets.value_reader"
+    assert mine.allowed_actions == ["secrets.read", "secrets.read_value"]
+    assert history.allowed is False
+    assert history.granting_policies == ["secrets.editor", "secrets.owner"]
+
+
+def test_a_refused_change_on_a_secret_names_the_policies_that_give_it(monkeypatch, no_environment):
+    refusal = {
+        "detail": "This needs the secrets.manage_access action.",
+        "code": "missing_action",
+        "required_action": "secrets.manage_access",
+        "granting_policies": ["secrets.owner"],
+        "resource_type": "secrets",
+        "resource_uid": SECRET_UID,
+    }
+    _install(monkeypatch, FakeResponse(403, refusal))
+
+    with pytest.raises(PermissionDeniedError) as raised:
+        _secret().attach_policy("editor", principal_type="team", principal_uid=OTHER_TEAM_UID)
+
+    assert raised.value.payload["required_action"] == "secrets.manage_access"
+    assert raised.value.payload["granting_policies"] == ["secrets.owner"]
+
+
+@pytest.mark.parametrize(
+    "read",
+    [
+        lambda: Secret.get_by_uid(SECRET_UID),
+        lambda: Secret.get(name="API_KEY"),
+    ],
+    ids=["by-uid", "by-name"],
+)
+def test_reading_a_secrets_value_without_value_reader_is_refused_with_its_policies(
+    monkeypatch, environment, read
+):
+    # A reader sees the Secret in a listing; its value needs secrets.read_value.
+    refusal = {
+        "detail": "This needs the secrets.read_value action.",
+        "code": "missing_action",
+        "required_action": "secrets.read_value",
+        "granting_policies": ["secrets.editor", "secrets.owner", "secrets.value_reader"],
+    }
+    listed = {
+        "uid": SECRET_UID,
+        "name": "API_KEY",
+        "organization_environment_uid": ENVIRONMENT_UID,
+        "organization_environment_name": "Development",
+    }
+    sent: list = []
+
+    def fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
+        sent.append((r_type, url, payload))
+        if url.rstrip("/").endswith("/secrets"):
+            return FakeResponse(200, [listed])
+        return FakeResponse(403, refusal)
+
+    monkeypatch.setattr(base_mod, "make_request", fake_make_request)
+
+    with pytest.raises(PermissionDeniedError) as raised:
+        read()
+
+    assert raised.value.payload == refusal
+    assert "This needs the secrets.read_value action." in str(raised.value)
+    assert sent[-1] == (
+        "GET",
+        f"{Secret.get_object_url()}/{SECRET_UID}/",
+        {"params": {"organization_environment_uid": ENVIRONMENT_UID}},
+    )
+
+
+def test_reading_a_secret_still_uses_the_current_branchs_environment(monkeypatch, no_environment):
+    _refuse_requests(monkeypatch)
+
+    with pytest.raises(code_repository_context.CodeRepositoryEnvironmentContextRequiredError):
+        Secret.get_by_uid(SECRET_UID)

@@ -116,7 +116,7 @@ def test_client_auth_provider_routes_match_backend_contract(monkeypatch):
 
 def test_removed_backend_actions_are_not_exposed_by_client_models():
     from mainsequence.client import models_user
-    from mainsequence.client.models_foundry import Constant, GitHubRepositoryBinding
+    from mainsequence.client.models_foundry import Constant, GitHubRepositoryBinding, Secret
     from mainsequence.client.models_helpers import Job
     from mainsequence.client.models_user import Team
 
@@ -149,8 +149,9 @@ def test_removed_backend_actions_are_not_exposed_by_client_models():
             "remove_members",
             *view_and_edit_sharing,
         ),
-        # Constants serve policies: the view and edit sharing routes are gone.
+        # Constants and Secrets serve policies: the view and edit sharing routes are gone.
         Constant: view_and_edit_sharing,
+        Secret: view_and_edit_sharing,
     }
     violations = [
         f"{model.__name__}.{method_name}"
@@ -196,6 +197,16 @@ def test_cli_does_not_reintroduce_legacy_numeric_detail_routes_or_agent_runs():
         "add_constant_team_to_edit",
         "remove_constant_team_from_view",
         "remove_constant_team_from_edit",
+        "list_secret_users_can_view",
+        "list_secret_users_can_edit",
+        "add_secret_user_to_view",
+        "add_secret_user_to_edit",
+        "remove_secret_user_from_view",
+        "remove_secret_user_from_edit",
+        "add_secret_team_to_view",
+        "add_secret_team_to_edit",
+        "remove_secret_team_from_view",
+        "remove_secret_team_from_edit",
     ):
         assert not hasattr(api, retired_sharing)
     assert not hasattr(agent_runtime_models, "AgentRun")

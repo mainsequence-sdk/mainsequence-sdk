@@ -242,16 +242,10 @@ mainsequence constants delete <CONSTANT_UID>
 mainsequence secrets list
 mainsequence secrets list --show-filters
 mainsequence secrets create API_KEY super-secret-value
-mainsequence secrets can_view <SECRET_UID>
-mainsequence secrets can_edit <SECRET_UID>
-mainsequence secrets add_to_view <SECRET_UID> <USER_UID>
-mainsequence secrets add_to_edit <SECRET_UID> <USER_UID>
-mainsequence secrets add_team_to_view <SECRET_UID> <TEAM_UID>
-mainsequence secrets add_team_to_edit <SECRET_UID> <TEAM_UID>
-mainsequence secrets remove_from_view <SECRET_UID> <USER_UID>
-mainsequence secrets remove_from_edit <SECRET_UID> <USER_UID>
-mainsequence secrets remove_team_from_view <SECRET_UID> <TEAM_UID>
-mainsequence secrets remove_team_from_edit <SECRET_UID> <TEAM_UID>
+mainsequence secrets access list <SECRET_UID>
+mainsequence secrets access grant <SECRET_UID> value_reader --user <USER_UID>
+mainsequence secrets access revoke <SECRET_UID> <BINDING_UID>
+mainsequence secrets access explain <SECRET_UID> secrets.read_value
 mainsequence secrets delete <SECRET_UID>
 mainsequence code-repository search tutorial
 mainsequence organization github-organizations
@@ -486,6 +480,56 @@ sharing commands for constants (`can_view`, `can_edit`, `add_to_view`,
 `add_team_to_edit`, `remove_team_from_view` and `remove_team_from_edit`) are
 gone. See
 [Constants and Secrets](../knowledge/infrastructure/constants_and_secrets.md#who-can-use-a-constant)
+and [Who Has Access to an Object](../knowledge/infrastructure/object_access.md).
+
+## Secrets
+
+```bash
+mainsequence secrets access list <SECRET_UID>
+mainsequence secrets access grant <SECRET_UID> value_reader --user <USER_UID>
+mainsequence secrets access grant <SECRET_UID> editor --team <TEAM_UID>
+mainsequence secrets access revoke <SECRET_UID> <BINDING_UID>
+mainsequence secrets access explain <SECRET_UID> secrets.read_value
+mainsequence secrets access explain <SECRET_UID> secrets.update_value --user <USER_UID>
+```
+
+Who can use a secret is decided by its policies: `reader` sees it, never its
+value; `value_reader` also reads its current value; `editor` also reads earlier
+values, sets a new value, deletes it and sees who has access; `owner` also
+decides who has access. The person or workload that creates a secret holds
+`owner`. A secret the platform manages, such as a hosted database password,
+cannot get a new value or be deleted.
+
+- `access list` prints the policies attached to the secret, each with its
+  binding UID, policy id, principal and source, and the access the platform
+  computes: Organization admins hold every action, and when a workload created
+  the secret, its managers hold the creator's rights. It needs the secret's
+  `read_access` action, which `editor` and `owner` hold.
+- `access grant` gives a policy, by name such as `value_reader` or by id such
+  as `secrets.value_reader`, to a person or workload identity with `--user` or
+  to a team with `--team`; pass exactly one. A workload that uses the secret
+  needs `value_reader`. It needs the secret's `manage_access` action, which
+  `owner` holds, and every action of the policy.
+  `mainsequence access policies --type secrets` lists the policies.
+- `access revoke` detaches a binding by the UID `access list` shows. Removing
+  your own binding is always allowed.
+- `access explain` says whether you, or the User given with `--user`, may
+  perform an action, every path that gives it, and the policies that contain
+  it.
+
+These commands address the secret by its UID alone: unlike `secrets list`,
+`create` and `delete`, they need no registered branch or Environment. Every
+command accepts `--json` and `--timeout`; with `--json`, `access revoke` prints
+`{"secret_uid": "...", "binding_uid": "...", "detached": true}`. A secret you
+cannot see is reported as not found, and a refused command prints the
+platform's message and the policies that would allow it. `secrets delete` reads
+the secret, value included, for its preview and then deletes it, so it needs
+`editor` or `owner`; its refusals name the policies the same way. The view and
+edit sharing commands for secrets (`can_view`, `can_edit`, `add_to_view`,
+`add_to_edit`, `remove_from_view`, `remove_from_edit`, `add_team_to_view`,
+`add_team_to_edit`, `remove_team_from_view` and `remove_team_from_edit`) are
+gone. See
+[Constants and Secrets](../knowledge/infrastructure/constants_and_secrets.md#who-can-use-a-secret)
 and [Who Has Access to an Object](../knowledge/infrastructure/object_access.md).
 
 ## Settings

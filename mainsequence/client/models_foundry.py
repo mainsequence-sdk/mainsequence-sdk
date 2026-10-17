@@ -888,10 +888,32 @@ def _norm_kwargs(kwargs: dict[str, Any]) -> tuple[tuple[str, Any], ...]:
 
 class Secret(
     CurrentCodeRepositoryEnvironmentResourceMixin,
-    ShareableObjectMixin,
+    AccessManagedObjectMixin,
     BasePydanticModel,
     BaseObjectOrm,
 ):
+    """A sensitive value, such as a password or an API key, owned by one Organization Environment.
+
+    Who may use a Secret is decided by its policies: `reader` sees it, its name
+    and its versions' dates, never its value; `value_reader` also reads its
+    current value; `editor` also reads earlier values, sets a new value,
+    deletes it and sees who has access; `owner` also decides who has access.
+    The person or workload that creates a Secret holds `owner`, and
+    Organization admins hold every action. The policies go to people, workload
+    identities and Teams. A Secret the platform manages, such as a hosted
+    database password, cannot get a new value or be deleted, by anyone.
+
+    `get()` and `get_by_uid()` read the current value. Without the Secret's
+    `read_value` action they raise `PermissionDeniedError`, whose `payload`
+    names the `required_action` and the `granting_policies`; `filter()` lists
+    Secrets without their values.
+
+    The access methods (`get_access()`, `attach_policy()`, `detach_policy()` and
+    the others) read and change the policies. They address the Secret by its
+    UID alone and need no Environment; reading, creating, changing and deleting
+    Secrets use the current branch's Environment.
+    """
+
     # `value` is a SecretStr once read, but a validation error would echo the
     # plaintext it was given.
     model_config = ConfigDict(hide_input_in_errors=True)

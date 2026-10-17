@@ -6,8 +6,8 @@ its own access routes. A policy from the
 person, a workload identity or a Team, on one object. That attachment is a
 **binding**.
 
-Teams, Organization Environments and constants are decided this way. Other
-shareable objects, such as secrets, buckets, artifacts, CodeRepositories and
+Teams, Organization Environments, constants and secrets are decided this way.
+Other shareable objects, such as buckets, artifacts, CodeRepositories and
 releases, still use view and edit sharing, as
 [Users and Access](users_and_access.md#resource-sharing) describes.
 
@@ -48,6 +48,26 @@ The access methods address a Constant by its UID alone, so they need no
 Environment; reading the Constant, as `Constant.get()` does above, uses the
 current branch's.
 
+A Secret has four policies: `reader` sees it, never its value; `value_reader`
+also reads its current value; `editor` also reads earlier values, sets a new
+value, deletes it and sees who has access; `owner` also decides who has access.
+The person or workload that creates a Secret holds `owner`. The policies go to
+people, workload identities and Teams with the same methods on `Secret`, which
+no longer has view and edit sharing methods either, and which need no
+Environment:
+
+```python
+from mainsequence.client import Secret
+
+secret = Secret.filter(name="POLYGON_API_KEY")[0]
+secret.attach_policy("value_reader", principal_type="user", principal_uid=workload_user_uid)
+```
+
+Reading a Secret's value without `value_reader`, with `Secret.get()` or
+`Secret.get_by_uid()`, raises `PermissionDeniedError` with `required_action`
+`secrets.read_value`. See
+[Constants and Secrets](constants_and_secrets.md#who-can-use-a-secret).
+
 ## Read and change access in Python
 
 Every model whose object serves these routes has the same methods, from
@@ -85,7 +105,7 @@ print(answer.allowed, [path.source for path in answer.paths], answer.granting_po
 | `list_access_candidates(policy, principal_type="user", identity_type=None, search=None)` | `GET {object}/access/candidates/` | `list[AccessPrincipal]`, at most 200 |
 | `attach_policy(policy, principal_type=..., principal_uid=...)` | `POST {object}/access/bindings/` | the new `AccessBinding` |
 | `detach_policy(binding_uid)` | `DELETE {object}/access/bindings/{binding_uid}/` | `None` |
-| `apply_access_changes(attach=[...], detach=[...])` | `POST {object}/access/changes/` | the object's bindings after the changes |
+| `apply_access_changes(attach=[...], detach=[...])` | `POST {object}/access/changes/` | the bindings after the changes that the platform lists to you |
 | `explain_access(action, principal_uid=None)` | `GET {object}/access/explain/` | `AccessExplanation` |
 
 `{object}` is the object's detail route, for example `/api/v1/teams/{uid}`.
@@ -104,6 +124,9 @@ Every method also takes `timeout`.
 - `apply_access_changes()` takes `attach` entries as mappings with `policy`,
   `principal_type` and `principal_uid`, and `detach` entries as binding UIDs or
   `AccessBinding` objects. The platform applies every change or none of them.
+  It answers with every binding on the object when you hold the object's
+  `read_access` action, and otherwise with only your own bindings and those of
+  the workload identities you manage.
 - `explain_access()` takes an action id of the object's type, such as
   `organization-teams.update`. Without `principal_uid` it explains your own
   access.
@@ -206,6 +229,8 @@ Fields the release does not declare are dropped.
 ## From the command line
 
 `mainsequence organization teams access list|grant|revoke|explain` reads and
-changes a team's policies, and `mainsequence constants access
-list|grant|revoke|explain` a constant's; see [Teams](../../cli/index.md#teams)
-and [Constants](../../cli/index.md#constants) in the CLI reference.
+changes a team's policies, `mainsequence constants access
+list|grant|revoke|explain` a constant's, and `mainsequence secrets access
+list|grant|revoke|explain` a secret's; see [Teams](../../cli/index.md#teams),
+[Constants](../../cli/index.md#constants) and
+[Secrets](../../cli/index.md#secrets) in the CLI reference.

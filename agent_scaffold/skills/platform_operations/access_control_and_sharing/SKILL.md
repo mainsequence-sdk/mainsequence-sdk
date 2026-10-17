@@ -64,8 +64,8 @@ This skill only reasons about access to deployed resources such as `ResourceRele
 2. <https://mainsequence-sdk.github.io/mainsequence-sdk/knowledge/infrastructure/users_and_access/>
 3. <https://mainsequence-sdk.github.io/mainsequence-sdk/knowledge/infrastructure/constants_and_secrets/>
 4. <https://mainsequence-sdk.github.io/mainsequence-sdk/knowledge/infrastructure/object_access/>
-   for teams, Organization Environments and constants, whose access is decided
-   by policies
+   for teams, Organization Environments, constants and secrets, whose access is
+   decided by policies
 
 The pages above are the authoritative reference for access control and sharing.
 If the task is specifically about a resource type, also read that resource's own
@@ -83,6 +83,8 @@ Before changing access or advising on sharing, collect or infer:
   - `view`
   - `edit`
   - for a `Constant`, which is decided by policies: `reader`, `editor` or `owner`
+  - for a `Secret`, which is decided by policies: `reader`, `value_reader`,
+    `editor` or `owner`
 - whether the goal is:
   - consumption
   - maintenance
@@ -98,7 +100,8 @@ For every non-trivial access task, decide:
 
 1. What is the real shareable object?
 2. Is this direct user access or team-based access?
-3. Does the user need `view` or `edit`, or, on a `Constant`, `reader`, `editor` or `owner`?
+3. Does the user need `view` or `edit`, or, on a `Constant`, `reader`, `editor` or `owner`, or,
+   on a `Secret`, `reader`, `value_reader`, `editor` or `owner`?
 4. Is this configuration non-sensitive or sensitive?
 5. Is the task really an access problem, or is it actually an orchestration or implementation problem?
 6. Is the task creating a `Constant` or `Secret` by name, and does that name already exist?
@@ -134,7 +137,27 @@ consumers and `editor` to maintainers, with the access methods on `Constant`
 (`get_access()`, `attach_policy()`, `detach_policy()`, `explain_access()`) or
 `mainsequence constants access list|grant|revoke|explain`. A constant has no
 `add_to_view()` or `add_to_edit()`, and its access methods need no Environment.
-`Secret` and the other resources keep view and edit sharing.
+
+A `Secret` is decided by its policies too:
+
+- `reader` sees the secret and its name, never its value;
+- `value_reader` also reads its current value;
+- `editor` also reads earlier values, sets a new value, deletes it and sees who
+  has access;
+- `owner` also decides who has access.
+
+The person or workload that creates a secret holds `owner`. Give
+`value_reader` to the workloads and the few people that need the value, and
+`editor` to maintainers; `reader` is for people who configure workloads that
+use the secret but must never know it. A workload holding only `reader` cannot
+read the value: `Secret.get()` raises `PermissionDeniedError` with
+`required_action` `secrets.read_value`. Use the access methods on `Secret` or
+`mainsequence secrets access list|grant|revoke|explain`; a secret has no
+`add_to_view()` or `add_to_edit()`. A repository workflow file's `access` entry
+for a secret gives `value_reader` for `level: view` and `editor` for
+`level: edit`. A secret the platform manages, such as a hosted database
+password, cannot get a new value or be deleted. The other resources keep view
+and edit sharing.
 
 ### 3. Team sharing is for repeated access patterns
 
@@ -250,8 +273,9 @@ release or an Agent, reaches platform data.
 An application runs as its own workload User (`workload_user_uid` on the
 `ResourceRelease`, `Job` or `Agent`). Its own access comes from grants to that
 User: share what it needs with that User as with any person, with `view`
-unless it must maintain the object. These grants cover every call the
-application makes for itself.
+unless it must maintain the object. A `Constant` it reads needs `reader`, and
+a `Secret` whose value it reads needs `value_reader`. These grants cover every
+call the application makes for itself.
 
 ### Acting for its requester: `acts_for_requester`
 
@@ -377,6 +401,7 @@ Do not claim success until you have checked:
   - `view`
   - `edit`
   - `reader`, `editor` or `owner` on a `Constant`
+  - `reader`, `value_reader`, `editor` or `owner` on a `Secret`
 - the task is using `Constant` vs `Secret` correctly
 - any `Constant` or `Secret` creation path first resolved existence by name when idempotency matters
 - the access claim was verified against the actual resource path

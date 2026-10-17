@@ -6,13 +6,58 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+**Secrets are decided by policies: `Secret` gains the access methods, and its
+sharing calls are removed.** The platform no longer serves view and edit sharing on
+secrets. A secret's policies are `reader` (see it, its name and its versions' dates,
+never its value), `value_reader` (also read its current value), `editor` (also read
+earlier values, set a new value, delete it and see who has access) and `owner` (also
+decide who has access); the person or workload that creates a secret holds `owner`.
+Existing view grants became `value_reader`, which reads the current value but not
+earlier ones, and edit grants `editor`. A secret the platform manages, such as a
+hosted database password, cannot get a new value or be deleted. Buckets, artifacts,
+CodeRepositories, agents and releases keep view and edit sharing.
+
+- Removed from `Secret`: `can_view()`, `can_edit()`, `users_can_view()`,
+  `users_can_edit()`, `list_users_can_view()`, `list_users_can_edit()`,
+  `add_to_view()`, `add_to_edit()`, `remove_from_view()`, `remove_from_edit()`,
+  `add_team_to_view()`, `add_team_to_edit()`, `remove_team_from_view()` and
+  `remove_team_from_edit()`.
+- What replaces them: `Secret` uses `AccessManagedObjectMixin`, like `Constant`:
+  `get_access()`, `get_my_access()`, `list_access_candidates()`, `attach_policy()`,
+  `detach_policy()`, `apply_access_changes()` and `explain_access()`, on
+  `/api/v1/secrets/{uid}/access/...`. `attach_policy("value_reader", ...)` gives what
+  `add_to_view()` gave and `attach_policy("editor", ...)` what `add_to_edit()` gave, to
+  a user or a team; `detach_policy()` replaces the `remove_*` methods, and
+  `get_access()` replaces `can_view()` and `can_edit()`. They address the secret by its
+  UID alone and need no Environment.
+- Reading a value: `Secret.get()` and `Secret.get_by_uid()` read the current value,
+  which needs `value_reader` or more. Without it they raise `PermissionDeniedError`,
+  whose `payload` names the `required_action` (`secrets.read_value`) and the
+  `granting_policies`. `Secret.filter()` still lists secrets without their values.
+- `apply_access_changes()` returns the bindings the platform lists: every binding on
+  the object to a caller who holds its `read_access` action, and otherwise only the
+  caller's own bindings and those of the workload identities they manage.
+- CLI: `mainsequence secrets access list|grant|revoke|explain` replace
+  `secrets can_view`, `can_edit`, `add_to_view`, `add_to_edit`, `remove_from_view`,
+  `remove_from_edit`, `add_team_to_view`, `add_team_to_edit`, `remove_team_from_view`
+  and `remove_team_from_edit`, which are removed. The new commands need no registered
+  branch. A refused command prints the platform's message and the policies that would
+  allow it, and so does `secrets delete` when reading or deleting the secret is
+  refused, instead of reporting the refusal as a missing session.
+- Docs: [Constants and Secrets](docs/knowledge/infrastructure/constants_and_secrets.md)
+  describes secret policies and lists the fields the `Constant` and `Secret` models
+  actually have (`uid` and the two Environment fields, not `id`);
+  [Who Has Access to an Object](docs/knowledge/infrastructure/object_access.md),
+  [Users and Access](docs/knowledge/infrastructure/users_and_access.md), the CLI
+  reference and the access-control skill say secrets are decided by policies.
+
 **Constants are decided by policies: `Constant` gains the access methods, and its
 sharing calls are removed.** The platform no longer serves view and edit sharing on
 constants. A constant's policies are `reader` (see it and its value), `editor` (also
 change its name and value, delete it and see who has access) and `owner` (also decide
 who has access); the person or workload that creates a constant holds `owner`.
-Existing view grants became `reader` and edit grants `editor`. Secrets and the other
-shareable objects keep view and edit sharing.
+Existing view grants became `reader` and edit grants `editor`. The other shareable
+objects keep view and edit sharing, except secrets, whose entry is above.
 
 - Removed from `Constant`: `can_view()`, `can_edit()`, `users_can_view()`,
   `users_can_edit()`, `list_users_can_view()`, `list_users_can_edit()`,

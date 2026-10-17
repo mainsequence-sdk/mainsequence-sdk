@@ -18,8 +18,8 @@ The catalog describes what each policy allows. It does not say who holds a
 policy on which object, and reading it changes nothing. Who holds a policy on
 an object is read and changed on the object itself, as
 [Who Has Access to an Object](object_access.md) describes; teams, Organization
-Environments and constants work this way. Sharing other objects with view or
-edit access works as
+Environments, constants and secrets work this way. Sharing other objects with
+view or edit access works as
 [Users and Access](users_and_access.md) describes.
 
 ## Read the catalog in Python
