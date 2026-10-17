@@ -23,9 +23,9 @@ from .base import (
     BaseObjectOrm,
     BasePydanticModel,
     DetailActionObjectMixin,
-    PermissionManagedObjectMixin,
 )
 from .exceptions import ApiError, raise_for_response
+from .object_access import AccessManagedObjectMixin, AccessPrincipal, _canonical_uid
 from .utils import (
     make_request,
 )
@@ -327,49 +327,58 @@ class UserTeamSummary(BasePydanticModel):
     )
 
 
-class TeamMembershipUpdateResult(BasePydanticModel):
-    team_id: int | None = Field(
-        None,
-        exclude=True,
-        title="Team ID",
-        description="Internal backend row id for the team whose membership was updated.",
-        examples=[11],
-    )
-    team_uid: str | None = Field(
-        None,
-        title="Team UID",
-        description="Stable public unique identifier of the team whose membership was updated.",
-        examples=["3f1cc452-43ec-49cb-b2ba-87dbac164d29"],
-    )
-    member_count: int = Field(
+class TeamHeldAccess(BasePydanticModel):
+    """One policy a Team holds on an object: what joining the Team gives a member."""
+
+    binding_uid: str = Field(
         ...,
-        title="Member Count",
-        description="Total number of users in the team after the membership operation completes.",
-        examples=[4],
+        title="Binding UID",
+        description="Public UID of the binding that attaches the policy to the Team.",
+        examples=["7d3c6a51-0b8e-4c2f-9a14-5e6f7a8b9c0d"],
     )
-    selected: int = Field(
+    resource_type: str = Field(
         ...,
-        title="Selected Users",
-        description="Number of user UIDs submitted in the membership update request.",
-        examples=[2],
+        title="Resource Type",
+        description="Resource type key of the object, for example `secrets`.",
+        examples=["secrets"],
     )
-    added: int = Field(
-        0,
-        title="Added Users",
-        description="Number of users added to the team by the operation.",
-        examples=[2],
+    object_uid: str = Field(
+        ...,
+        title="Object UID",
+        description="Public UID of the object the policy is held on.",
+        examples=["24001fc7-098c-40fa-b398-1d2352b7c224"],
     )
-    removed: int = Field(
-        0,
-        title="Removed Users",
-        description="Number of users removed from the team by the operation.",
-        examples=[0],
+    object_name: str | None = Field(
+        None,
+        title="Object Name",
+        description="The object's name, when it has one.",
+        examples=["POLYGON_API_KEY"],
     )
-    skipped: int = Field(
-        0,
-        title="Skipped Users",
-        description="Number of submitted users skipped because the requested membership state already existed.",
-        examples=[0],
+    policy: str = Field(
+        ...,
+        title="Policy",
+        description="Id of the policy the Team holds, `<resource type>.<policy>`.",
+        examples=["secrets.reader"],
+    )
+    source: OpenValueSet[Literal["explicit", "creator", "workflow", "migrated"]] = Field(
+        ...,
+        title="Source",
+        description=(
+            "Why the binding exists: `explicit`, `creator`, `workflow` or `migrated`. "
+            "The source grants nothing by itself."
+        ),
+        examples=["explicit"],
+    )
+    granted_by: AccessPrincipal | None = Field(
+        None,
+        title="Granted By",
+        description="The User who attached the policy, when known.",
+    )
+    created_at: datetime.datetime | None = Field(
+        None,
+        title="Created At",
+        description="When the binding was created.",
+        examples=["2026-10-17T09:00:00Z"],
     )
 
 
@@ -383,8 +392,25 @@ class _CallerDirectoryReadMixin:
 
 
 class Team(
-    _CallerDirectoryReadMixin, PermissionManagedObjectMixin, BasePydanticModel, UserApiBaseObjectOrm
+    _CallerDirectoryReadMixin, AccessManagedObjectMixin, BasePydanticModel, UserApiBaseObjectOrm
 ):
+    """A group of people and workload identities in one Organization.
+
+    Membership is who is in the Team: who receives what is shared with it.
+    Control is the policies on the Team: `viewer` sees it and its members,
+    `membership_manager` adds and removes members, `editor` renames,
+    describes, activates or deactivates it and sees its policies, and `owner`
+    may do everything, including deleting it and deciding who manages it.
+    Every member holds `member`: they see the Team and its members and can
+    leave. Controlling a Team does not require being a member, and
+    Organization admins hold every action on every Team of their Organization.
+
+    Any person can create a Team; the creator becomes its owner and first
+    member. The access methods (`get_access()`, `attach_policy()`,
+    `detach_policy()` and the others) read and change the policies on the
+    Team.
+    """
+
     ENDPOINT: ClassVar[str] = "teams"
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]] | None] = {
         "uid": ["exact", "in"],
@@ -464,6 +490,16 @@ class Team(
         description="Timestamp when the team was last updated.",
         examples=["2026-03-15T10:30:00Z"],
     )
+    allowed_actions: list[str] | None = Field(
+        None,
+        title="Allowed Actions",
+        description=(
+            "Ids of the actions the caller may perform on this team, for example "
+            "`organization-teams.update`. Team detail responses carry it, such as "
+            "`Team.get_by_uid()` and `Team.create()`; it is None on listed teams."
+        ),
+        examples=[["organization-teams.read", "organization-teams.list_members"]],
+    )
 
     @classmethod
     def create(
@@ -475,6 +511,11 @@ class Team(
         organization_uid: Any | None = None,
         timeout: int | None = None,
     ) -> Team:
+        """Create a Team and return its detail, with `members` and `allowed_actions`.
+
+        Any person can create a Team. The creator becomes its owner and its
+        first member.
+        """
         payload: dict[str, Any] = {
             "name": name,
             "description": description,
@@ -506,6 +547,7 @@ class Team(
         *,
         timeout: int | float | tuple[float, float] | None = None,
     ) -> list[UserSummary]:
+        """Return the team's members, people first and then workload identities."""
         payload = self._request_detail_action(
             r_type="GET",
             action_name="members",
@@ -515,62 +557,126 @@ class Team(
         )
         return self._validate_team_user_list_payload(payload, action_name="members")
 
-    def list_candidate_members(
+    def add_member(
+        self,
+        user_uid: Any,
+        *,
+        timeout: int | float | tuple[float, float] | None = None,
+    ) -> UserSummary:
+        """Add a person or a workload identity to the team, and return their member row.
+
+        `user_uid` is the User's UID, or an object or dict that carries it as
+        `uid`. Adding someone who already is a member changes nothing and
+        returns their row. It needs the team's `add_member` action. An
+        Organization admin can add any person or workload identity of the
+        Organization; anyone else can add people who share an active team with
+        them, themselves, and the workload identities they can view. Anyone
+        else raises `BadRequestError` with `code` `invalid_user_uids`.
+        """
+        member_uid = _canonical_uid(user_uid, field_name="user_uid")
+        payload = self._request_detail_action(
+            r_type="POST",
+            action_name="members",
+            payload={"json": {"user_uid": member_uid}},
+            timeout=timeout,
+            expected_statuses=(200, 201),
+        )
+        if not isinstance(payload, dict):
+            raise ApiError(f"Unexpected Team response for action 'members': {type(payload)!r}")
+        return UserSummary.model_validate(payload)
+
+    def remove_member(
+        self,
+        user_uid: Any,
+        *,
+        timeout: int | float | tuple[float, float] | None = None,
+    ) -> None:
+        """Remove a member from the team.
+
+        `user_uid` is the member's UID, or an object or dict that carries it as
+        `uid`. It needs the team's `remove_member` action, or `leave` to remove
+        yourself. Someone who is not a member raises `NotFoundError`.
+        """
+        member_uid = _canonical_uid(user_uid, field_name="user_uid")
+        self._request_detail_action(
+            r_type="DELETE",
+            action_name=f"members/{member_uid}",
+            payload={},
+            timeout=timeout,
+            expected_statuses=(204,),
+        )
+
+    def leave(
         self,
         *,
         timeout: int | float | tuple[float, float] | None = None,
+    ) -> None:
+        """Leave the team: the caller stops being a member.
+
+        Policies on the team are not membership: leaving keeps any policy the
+        caller holds on the team itself, such as `owner`. A caller who is not a
+        member raises `BadRequestError` with `code` `not_a_team_member`.
+        """
+        self._request_detail_action(
+            r_type="POST",
+            action_name="leave",
+            payload={},
+            timeout=timeout,
+            expected_statuses=(204,),
+        )
+
+    def list_member_candidates(
+        self,
+        *,
+        identity_type: Literal["human", "workload"] | None = None,
+        search: str | None = None,
+        timeout: int | float | tuple[float, float] | None = None,
     ) -> list[UserSummary]:
+        """Return who the caller may add to the team and is not a member yet, at most 200 Users.
+
+        `identity_type` is `human` (the platform's default) for people or
+        `workload` for workload identities. `search` narrows people by email or
+        name. It needs the team's `add_member` action; the built-in
+        full-directory team returns an empty list.
+        """
+        params: dict[str, str] = {}
+        if identity_type is not None:
+            if identity_type not in ("human", "workload"):
+                raise ValueError(
+                    f"identity_type must be 'human' or 'workload'. Got: {identity_type!r}"
+                )
+            params["identity_type"] = identity_type
+        if search is not None and str(search).strip():
+            params["search"] = str(search).strip()
         payload = self._request_detail_action(
             r_type="GET",
-            action_name="candidate-members",
+            action_name="member-candidates",
+            payload={"params": params} if params else {},
+            timeout=timeout,
+            expected_statuses=(200,),
+        )
+        return self._validate_team_user_list_payload(payload, action_name="member-candidates")
+
+    def list_held_access(
+        self,
+        *,
+        timeout: int | float | tuple[float, float] | None = None,
+    ) -> list[TeamHeldAccess]:
+        """Return the policies the team holds on other objects: what joining it gives.
+
+        Only objects the caller can read are listed.
+        """
+        payload = self._request_detail_action(
+            r_type="GET",
+            action_name="held-access",
             payload={},
             timeout=timeout,
             expected_statuses=(200,),
         )
-        return self._validate_team_user_list_payload(payload, action_name="candidate-members")
-
-    def manage_members(
-        self,
-        *,
-        action: Literal["add", "remove"],
-        user_uids: list[Any],
-        timeout: int | float | tuple[float, float] | None = None,
-    ) -> TeamMembershipUpdateResult:
-        normalized_user_uids = [
-            type(self)._coerce_filter_uid(user_uid, field_name="user_uids")
-            for user_uid in list(user_uids or [])
-        ]
-        if not normalized_user_uids:
-            raise ValueError("user_uids must contain at least one user uid.")
-
-        payload = self._request_detail_action(
-            r_type="POST",
-            action_name="manage-members",
-            payload={"json": {"action": action, "user_uids": normalized_user_uids}},
-            timeout=timeout,
-            expected_statuses=(200,),
-        )
-        if not isinstance(payload, dict):
-            raise ApiError(
-                f"Unexpected Team response for action 'manage-members': {type(payload)!r}"
-            )
-        return TeamMembershipUpdateResult.model_validate(payload)
-
-    def add_members(
-        self,
-        user_uids: list[Any],
-        *,
-        timeout: int | float | tuple[float, float] | None = None,
-    ) -> TeamMembershipUpdateResult:
-        return self.manage_members(action="add", user_uids=user_uids, timeout=timeout)
-
-    def remove_members(
-        self,
-        user_uids: list[Any],
-        *,
-        timeout: int | float | tuple[float, float] | None = None,
-    ) -> TeamMembershipUpdateResult:
-        return self.manage_members(action="remove", user_uids=user_uids, timeout=timeout)
+        bindings = payload.get("bindings") if isinstance(payload, dict) else None
+        if not isinstance(bindings, list):
+            raise ApiError(f"Unexpected Team response for action 'held-access': {type(payload)!r}")
+        return [TeamHeldAccess.model_validate(item) for item in bindings]
 
 
 class OrganizationTeam(Team):

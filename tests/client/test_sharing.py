@@ -3,6 +3,7 @@ import pytest
 import mainsequence.client.base as base_mod
 import mainsequence.client.models_foundry as models_foundry_mod
 import mainsequence.client.models_user as models_user_mod
+from mainsequence.client.base import PermissionManagedObjectMixin
 from tests._support import REPOSITORY_ROOT
 from tests.client.support import (
     DemoIdOnlyResource,
@@ -305,7 +306,7 @@ def test_shareable_models_keep_shareable_object_mixin():
         ), f"{class_name} must inherit ShareableObjectMixin"
 
 
-def test_team_uses_permission_managed_object_mixin():
+def test_team_uses_the_access_policy_mixin_instead_of_view_and_edit_sharing():
     repo_root = REPOSITORY_ROOT
     models_user_bases = _class_base_names_from_source(
         repo_root / "mainsequence" / "client" / "models_user.py"
@@ -313,8 +314,12 @@ def test_team_uses_permission_managed_object_mixin():
 
     assert "Team" in models_user_bases, "Team class not found"
     assert (
-        "PermissionManagedObjectMixin" in models_user_bases["Team"]
-    ), "Team must inherit PermissionManagedObjectMixin"
+        "AccessManagedObjectMixin" in models_user_bases["Team"]
+    ), "Team must inherit AccessManagedObjectMixin"
+    assert (
+        "PermissionManagedObjectMixin" not in models_user_bases["Team"]
+    ), "Team access is decided by policies, not view and edit sharing"
     assert (
         "ShareableObjectMixin" not in models_user_bases["Team"]
     ), "Team should not inherit ShareableObjectMixin directly"
+    assert not issubclass(models_user_mod.Team, PermissionManagedObjectMixin)

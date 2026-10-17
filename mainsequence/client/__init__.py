@@ -17,6 +17,7 @@ from .inference import (
 from .models_foundry import *  # noqa: F403
 from .models_helpers import *  # noqa: F403
 from .models_user import *  # noqa: F403
+from .object_access import *  # noqa: F403
 from .observability import *  # noqa: F403
 from .utils import (
     AuthLoaders as AuthLoaders,

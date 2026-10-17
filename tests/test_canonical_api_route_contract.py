@@ -115,12 +115,36 @@ def test_client_auth_provider_routes_match_backend_contract(monkeypatch):
 
 
 def test_removed_backend_actions_are_not_exposed_by_client_models():
+    from mainsequence.client import models_user
     from mainsequence.client.models_foundry import GitHubRepositoryBinding
     from mainsequence.client.models_helpers import Job
+    from mainsequence.client.models_user import Team
 
     removed_actions = {
         GitHubRepositoryBinding: ("import_branch",),
         Job: ("bulk_get_or_create", "create_from_configuration", "sync_jobs"),
+        # Teams serve policies: candidate-members, manage-members and the view and
+        # edit sharing routes are gone.
+        Team: (
+            "list_candidate_members",
+            "manage_members",
+            "add_members",
+            "remove_members",
+            "can_view",
+            "can_edit",
+            "users_can_view",
+            "users_can_edit",
+            "list_users_can_view",
+            "list_users_can_edit",
+            "add_to_view",
+            "add_to_edit",
+            "remove_from_view",
+            "remove_from_edit",
+            "add_team_to_view",
+            "add_team_to_edit",
+            "remove_team_from_view",
+            "remove_team_from_edit",
+        ),
     }
     violations = [
         f"{model.__name__}.{method_name}"
@@ -130,6 +154,7 @@ def test_removed_backend_actions_are_not_exposed_by_client_models():
     ]
 
     assert violations == []
+    assert not hasattr(models_user, "TeamMembershipUpdateResult")
 
 
 def test_cli_does_not_reintroduce_legacy_numeric_detail_routes_or_agent_runs():
