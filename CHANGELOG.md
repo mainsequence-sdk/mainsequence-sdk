@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+**`AccessCatalog` reads the platform's access catalog, and `mainsequence access policies`
+lists its policies.** The catalog, which every signed-in user can read, lists each
+resource type's actions, the policies that bundle them, the inheritance rules and
+the guards. It says what each policy allows; it does not say who holds one, and
+reading it changes nothing.
+
+- `AccessCatalog().list_resource_types()` returns an `AccessResourceTypeListing`:
+  `catalog_hash` and every `AccessResourceType`. `get_resource_type(key)`,
+  `list_policies(resource_type=None)`, `get_policy(uid)` and
+  `list_actions(resource_type=None)` return `AccessResourceType`, `AccessPolicy`
+  and `AccessAction`. A resource type carries its `AccessInheritanceRule` and
+  `AccessGuard` rows.
+- `mainsequence access policies [--type KEY]` lists policies, and
+  `mainsequence access policies show <id or UID>` prints one policy's summary,
+  impact, what it does not include and its actions. Both accept `--json`.
+- The [Access Policy Catalog](docs/knowledge/infrastructure/access_catalog.md) page
+  describes the client, its models and the command.
+
 **`team_uids` is removed; the verifier refuses assertions that list teams (#225).**
 The platform no longer signs a team list in the caller assertion. Checking membership
 with `in_teams()` is unchanged.

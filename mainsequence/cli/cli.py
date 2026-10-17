@@ -95,6 +95,7 @@ from .api import (
     delete_resource_release,
     delete_secret,
     fetch_platform_code_repository_skill_catalog,
+    get_access_policy,
     get_agent,
     get_agent_logs,
     get_agent_resource_usage,
@@ -116,6 +117,7 @@ from .api import (
     get_resource_release_logs,
     get_resource_release_resource_usage,
     get_secret,
+    list_access_policies,
     list_agent_sessions,
     list_agent_users_can_edit,
     list_agent_users_can_view,
@@ -313,8 +315,12 @@ settings = typer.Typer(help="Settings (base folder, backend, etc.)")
 sdk = typer.Typer(help="SDK utilities (latest version, status)")
 skills = typer.Typer(help="Installed scaffold skill commands")
 auth = typer.Typer(help="Saved session commands for other local tools", no_args_is_help=True)
+access = typer.Typer(help="Access catalog commands", no_args_is_help=True)
+access_policies_group = typer.Typer(help="Access policies the platform defines")
 
 app.add_typer(auth, name="auth")
+app.add_typer(access, name="access")
+access.add_typer(access_policies_group, name="policies")
 app.add_typer(agent, name="agent")
 agent.add_typer(agent_session_group, name="session")
 agent_session_group.add_typer(agent_session_a2a_group, name="a2a")
@@ -2579,6 +2585,144 @@ def organization_teams_remove_from_edit_cmd(
         user_uid=user_uid,
         timeout=timeout,
     )
+
+
+# ---------- access group ----------
+
+
+def _format_access_policy_principals(policy: dict[str, object]) -> str:
+    if policy.get("attachable") is False:
+        return "computed, never attached"
+    kinds = policy.get("principal_kinds")
+    if isinstance(kinds, list) and kinds:
+        return ", ".join(str(kind) for kind in kinds)
+    return "-"
+
+
+def _format_access_policy_details(policy: dict[str, object]) -> list[tuple[str, str]]:
+    actions = policy.get("actions")
+    return [
+        ("Policy", str(policy.get("id") or "-")),
+        ("UID", str(policy.get("uid") or "-")),
+        ("Label", str(policy.get("label") or "-")),
+        ("Resource type", str(policy.get("resource_type") or "-")),
+        ("Given to", _format_access_policy_principals(policy)),
+        ("Summary", str(policy.get("summary") or "-")),
+        ("Impact", str(policy.get("impact") or "-")),
+        ("Not included", str(policy.get("not_included") or "-")),
+        (
+            "Actions",
+            (
+                ", ".join(str(action) for action in actions)
+                if isinstance(actions, list) and actions
+                else "-"
+            ),
+        ),
+    ]
+
+
+def _access_policies_list_impl(
+    *,
+    resource_type: str | None,
+    timeout: int | None,
+) -> None:
+    _require_login()
+
+    try:
+        policies = list_access_policies(resource_type=resource_type, timeout=timeout)
+    except ApiError as e:
+        error(f"Access policies fetch failed: {e}")
+        raise typer.Exit(1) from e
+
+    if _emit_json(policies):
+        return
+
+    rows = [
+        [
+            str(policy.get("id") or "-"),
+            str(policy.get("label") or "-"),
+            _format_access_policy_principals(policy),
+            str(policy.get("summary") or "-"),
+        ]
+        for policy in policies
+    ]
+    if rows:
+        print_table("Access Policies", ["Policy", "Label", "Given to", "Summary"], rows)
+    elif resource_type:
+        info(f"No access policies for resource type {resource_type}.")
+    else:
+        info("No access policies.")
+    info(f"Total access policies: {len(policies)}")
+
+
+def _access_policies_show_impl(
+    *,
+    policy_ref: str,
+    timeout: int | None,
+) -> None:
+    _require_login()
+
+    try:
+        policy = get_access_policy(policy_ref, timeout=timeout)
+    except ApiError as e:
+        error(f"Access policy fetch failed: {e}")
+        raise typer.Exit(1) from e
+
+    if _emit_json(policy):
+        return
+
+    print_kv("Access Policy", _format_access_policy_details(policy))
+
+
+@access_policies_group.callback(invoke_without_command=True)
+def access_policies_cb(
+    ctx: typer.Context,
+    resource_type: str | None = typer.Option(
+        None,
+        "--type",
+        help="Resource type key, for example secrets. Without it, every type's policies are listed.",
+    ),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    List the access policies the platform defines.
+
+    Without a subcommand, lists the policies of every resource type, or of the
+    one given with `--type`. `show` prints one policy in full. The catalog says
+    what each policy allows; it does not change who has access.
+
+    Examples
+    --------
+    ```bash
+    mainsequence access policies
+    mainsequence access policies --type secrets
+    mainsequence access policies --type secrets --json
+    mainsequence access policies show secrets.reader
+    ```
+    """
+    if ctx.invoked_subcommand is None:
+        _access_policies_list_impl(resource_type=resource_type, timeout=timeout)
+
+
+@access_policies_group.command("show")
+def access_policies_show_cmd(
+    policy: str = typer.Argument(
+        ...,
+        help="Policy id, for example secrets.reader, or the policy's UID.",
+    ),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Show one access policy: what it allows, its impact, what it does not include and its actions.
+
+    Examples
+    --------
+    ```bash
+    mainsequence access policies show secrets.reader
+    mainsequence access policies show <POLICY_UID> --json
+    ```
+    """
+    _access_policies_show_impl(policy_ref=policy, timeout=timeout)
 
 
 @app.command("copy-llm-instructions")

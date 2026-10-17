@@ -8,6 +8,9 @@ This guide explains the access model in plain language, without implementation d
 
 For notification delivery rules and client usage, see [Notifications](notifications.md).
 
+To read the policies the platform defines for each kind of shareable object,
+with what each one allows, see [Access Policy Catalog](access_catalog.md).
+
 ## Start with the right mental model
 
 There are five concepts to keep separate:

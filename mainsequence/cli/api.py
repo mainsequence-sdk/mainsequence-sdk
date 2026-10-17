@@ -21,6 +21,7 @@ import os
 import re
 import shlex
 import time
+import uuid
 from typing import Any
 from urllib.parse import urlencode
 
@@ -1190,6 +1191,80 @@ def delete_organization_team(
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
         raise ApiError(f"Organization team deletion failed: {e}") from e
+
+
+def list_access_policies(
+    *,
+    resource_type: str | None = None,
+    timeout: int | None = None,
+) -> list[dict[str, Any]]:
+    """
+    List the platform's access policies via the SDK access catalog client.
+
+    Single source of truth:
+      - delegates the request and payload parsing to `AccessCatalog.list_policies()`
+    """
+    try:
+        policies = _run_sdk_model_operation(
+            module_name="mainsequence.client.access_catalog",
+            class_name="AccessCatalog",
+            operation=lambda ClientAccessCatalog: ClientAccessCatalog().list_policies(
+                resource_type=resource_type,
+                timeout=timeout,
+            ),
+        )
+        return [_sdk_object_to_dict(policy) for policy in list(policies or [])]
+    except Exception as e:
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"Access policies fetch failed: {e}") from e
+
+
+def get_access_policy(
+    policy_ref: str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Retrieve one access policy by its UID or by its id, such as `secrets.reader`.
+
+    A UID is read with `AccessCatalog.get_policy()`. An id is looked up among the
+    policies of the resource type it starts with, from `AccessCatalog.list_policies()`.
+    """
+    reference = str(policy_ref or "").strip()
+    try:
+        policy_uid: str | None = str(uuid.UUID(reference))
+    except ValueError:
+        policy_uid = None
+    resource_type, _, policy_name = reference.partition(".")
+    if policy_uid is None and not (resource_type and policy_name):
+        raise ApiError(f"Not a policy id such as secrets.reader, nor a policy UID: {policy_ref!r}")
+
+    def _get(ClientAccessCatalog):
+        catalog = ClientAccessCatalog()
+        if policy_uid is not None:
+            return catalog.get_policy(policy_uid, timeout=timeout)
+        for policy in catalog.list_policies(resource_type=resource_type, timeout=timeout):
+            if policy.id == reference:
+                return policy
+        return None
+
+    try:
+        policy = _run_sdk_model_operation(
+            module_name="mainsequence.client.access_catalog",
+            class_name="AccessCatalog",
+            operation=_get,
+        )
+    except Exception as e:
+        err_name = type(e).__name__
+        if err_name == "NotFoundError":
+            raise ApiError(f"Access policy not found: {reference}") from e
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"Access policy fetch failed: {e}") from e
+    if policy is None:
+        raise ApiError(f"Access policy not found: {reference}")
+    return _sdk_object_to_dict(policy)
 
 
 def list_agents(

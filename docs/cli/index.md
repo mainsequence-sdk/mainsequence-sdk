@@ -167,6 +167,7 @@ When the underlying SDK result is a Pydantic model, the CLI serializes it throug
 ```bash
 mainsequence --help
 mainsequence doctor
+mainsequence access policies
 mainsequence constants --help
 mainsequence secrets --help
 mainsequence agent --help
@@ -377,6 +378,25 @@ Rules:
 - If a command's backing model does not expose filter metadata, `--show-filters` will tell you that no additional model filters are available.
 - `mainsequence constants list` exposes filters from `Constant.FILTERSET_FIELDS`, currently `name` and `name__in`.
 - `mainsequence secrets list` exposes filters from `Secret.FILTERSET_FIELDS`, currently `name` and `name__in`.
+
+## Access Policies
+
+```bash
+mainsequence access policies
+mainsequence access policies --type secrets
+mainsequence access policies show secrets.reader
+mainsequence access policies show <POLICY_UID>
+mainsequence access policies --type secrets --json
+```
+
+`mainsequence access policies` lists the policies the platform defines: each
+policy's id, label, who it can be given to and summary. `--type` limits the
+list to one resource type, for example `secrets`. `show` prints one policy,
+given by its id or its UID: what a holder can do, what can happen because of
+it, what it does not include and its actions. Both commands read the access
+catalog, which every signed-in user can read, and accept `--json` and
+`--timeout`; neither changes who has access. See
+[Access Policy Catalog](../knowledge/infrastructure/access_catalog.md).
 
 ## Settings
 

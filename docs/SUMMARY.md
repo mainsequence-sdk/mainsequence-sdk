@@ -11,6 +11,7 @@
         - [Git source and Environment context](knowledge/infrastructure/context.md)
         - [Resource releases](knowledge/infrastructure/resource_releases.md)
         - [Users and Access](knowledge/infrastructure/users_and_access.md)
+        - [Access Policy Catalog](knowledge/infrastructure/access_catalog.md)
         - [Notifications](knowledge/infrastructure/notifications.md)
         - [Labels](knowledge/infrastructure/labels.md)
         - [Scheduling Jobs](knowledge/infrastructure/scheduling_jobs.md)

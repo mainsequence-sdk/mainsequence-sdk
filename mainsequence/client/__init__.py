@@ -1,5 +1,6 @@
 from mainsequence.logconf import logger as logger
 
+from .access_catalog import *  # noqa: F403
 from .github_issues import *  # noqa: F403
 from .inference import (
     InferenceClient as InferenceClient,
