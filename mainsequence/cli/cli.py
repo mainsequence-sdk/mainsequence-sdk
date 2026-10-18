@@ -2526,7 +2526,7 @@ def _format_team_member(member: dict[str, object]) -> list[tuple[str, str]]:
         ("Kind", str(member.get("member_kind") or "-")),
         ("Username", str(member.get("username") or "-")),
         ("Email", str(member.get("email") or "-")),
-        ("Name", _render_shareable_user_name(member)),
+        ("Name", _render_user_name(member)),
     ]
 
 
@@ -2591,7 +2591,7 @@ def _organization_team_members_list_impl(*, team_uid: str, timeout: int | None) 
             str(member.get("uid") or "-"),
             str(member.get("member_kind") or "-"),
             str(member.get("email") or "-"),
-            _render_shareable_user_name(member),
+            _render_user_name(member),
         ]
         for member in members
     ]
@@ -3488,7 +3488,7 @@ def _format_team_preview(team: dict[str, object]) -> list[tuple[str, str]]:
     ]
 
 
-def _render_shareable_user_name(user: dict[str, object]) -> str:
+def _render_user_name(user: dict[str, object]) -> str:
     first_name = str(user.get("first_name") or "").strip()
     last_name = str(user.get("last_name") or "").strip()
     full_name = " ".join(part for part in (first_name, last_name) if part)

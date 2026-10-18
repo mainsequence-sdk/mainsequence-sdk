@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+**The view and edit sharing types are removed: `ShareableObjectMixin`,
+`PermissionManagedObjectMixin`, `ShareableAccessState` and `ShareableTeamSummary`.** No
+SDK model has used them since 9.0.29, and the platform serves none of the routes their
+methods called, so every call could only fail. Access to an object is read and changed
+with the access methods of `AccessManagedObjectMixin`; see
+[Who Has Access to an Object](docs/knowledge/infrastructure/object_access.md).
+
+- Removed from `mainsequence.client.base`: `PermissionManagedObjectMixin` and its alias
+  `ShareableObjectMixin`, with `can_view()`, `can_edit()`, `users_can_view()`,
+  `users_can_edit()`, `list_users_can_view()`, `list_users_can_edit()`, `add_to_view()`,
+  `add_to_edit()`, `remove_from_view()`, `remove_from_edit()`, `add_team_to_view()`,
+  `add_team_to_edit()`, `remove_team_from_view()` and `remove_team_from_edit()`.
+- Removed from `mainsequence.client.models_user`, and so from `mainsequence.client`:
+  `ShareableAccessState` and `ShareableTeamSummary`, the answer of the `can-view` and
+  `can-edit` routes. `UserSummary`, which team responses carry, stays.
+
 **Docs: logging out ends the release tokens obtained with that login.** The token that
 `ResourceRelease.resolve_runtime_access()` returns in `access` belongs to the login that
 asked for it. When that is your Main Sequence login (`mainsequence login` or a token pair),

@@ -190,6 +190,26 @@ def test_removed_backend_actions_are_not_exposed_by_client_models():
     assert not hasattr(models_user, "TeamMembershipUpdateResult")
 
 
+def test_the_view_and_edit_sharing_types_are_gone():
+    from mainsequence import client
+    from mainsequence.client import base, models_user
+
+    sharing_types = (
+        "PermissionManagedObjectMixin",
+        "ShareableObjectMixin",
+        "ShareableAccessState",
+        "ShareableTeamSummary",
+    )
+    exposed = [
+        f"{module.__name__}.{name}"
+        for module in (base, models_user, client)
+        for name in sharing_types
+        if hasattr(module, name)
+    ]
+
+    assert exposed == []
+
+
 def test_repositories_branches_and_projects_serve_the_access_routes_by_uid():
     from mainsequence.client.base import BaseObjectOrm
     from mainsequence.client.models_foundry import (

@@ -5,6 +5,7 @@ from tests.client.support import (
     DemoAliasedPatchModel,
     DemoDestroyModel,
     DemoFilterModel,
+    DemoIdOnlyResource,
     DemoPatchModel,
     DemoReadModel,
     _IdRef,
@@ -216,3 +217,35 @@ def test_patch_by_uid_updates_aliased_field_on_existing_instance(monkeypatch):
 
     assert patched is instance
     assert instance.schema_payload == {"name": "customers"}
+
+
+def test_id_only_resource_patch_does_not_route_by_integer_id(monkeypatch):
+    def _unexpected_request(**kwargs):
+        raise AssertionError("id-only resource should not make a PATCH request")
+
+    monkeypatch.setattr(base_mod, "make_request", _unexpected_request)
+
+    instance = DemoPatchModel(id=9)
+
+    with pytest.raises(ValueError, match="non-empty uid"):
+        instance.patch(label="patched")
+
+
+def test_id_only_resource_delete_does_not_route_by_integer_id(monkeypatch):
+    def _unexpected_request(**kwargs):
+        raise AssertionError("id-only resource should not make a DELETE request")
+
+    monkeypatch.setattr(base_mod, "make_request", _unexpected_request)
+
+    with pytest.raises(ValueError, match="non-empty uid"):
+        DemoIdOnlyResource(9).delete()
+
+
+def test_id_only_resource_detail_action_does_not_route_by_integer_id(monkeypatch):
+    def _unexpected_request(**kwargs):
+        raise AssertionError("id-only resource should not make a detail action request")
+
+    monkeypatch.setattr(base_mod, "make_request", _unexpected_request)
+
+    with pytest.raises(ValueError, match="non-empty uid"):
+        DemoIdOnlyResource(9).get_access()
