@@ -11,9 +11,9 @@ from tests.cli.support import _cli_platform_skill_catalog
 
 def test_skills_list(cli_mod, runner, monkeypatch, tmp_path):
     bundle_dir = tmp_path / "agent_scaffold"
-    (bundle_dir / "skills" / "code_repository_design").mkdir(parents=True)
-    (bundle_dir / "skills" / "code_repository_design" / "SKILL.md").write_text(
-        "CodeRepository design", encoding="utf-8"
+    (bundle_dir / "skills" / "sdk_code_repository_execution").mkdir(parents=True)
+    (bundle_dir / "skills" / "sdk_code_repository_execution" / "SKILL.md").write_text(
+        "SDK CodeRepository execution", encoding="utf-8"
     )
     (bundle_dir / "skills" / "data_publishing" / "meta_tables").mkdir(parents=True)
     (bundle_dir / "skills" / "data_publishing" / "meta_tables" / "SKILL.md").write_text(
@@ -24,7 +24,7 @@ def test_skills_list(cli_mod, runner, monkeypatch, tmp_path):
 
     result = runner.invoke(cli_mod.app, ["skills", "list"])
     assert result.exit_code == 0
-    assert "code_repository_design" in result.output
+    assert "sdk_code_repository_execution" in result.output
     assert "data_publishing/meta_tables" in result.output
 
 

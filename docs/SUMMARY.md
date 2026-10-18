@@ -11,6 +11,8 @@
         - [Git source and Environment context](knowledge/infrastructure/context.md)
         - [Resource releases](knowledge/infrastructure/resource_releases.md)
         - [Users and Access](knowledge/infrastructure/users_and_access.md)
+        - [Access Policy Catalog](knowledge/infrastructure/access_catalog.md)
+        - [Who Has Access to an Object](knowledge/infrastructure/object_access.md)
         - [Notifications](knowledge/infrastructure/notifications.md)
         - [Labels](knowledge/infrastructure/labels.md)
         - [Scheduling Jobs](knowledge/infrastructure/scheduling_jobs.md)
@@ -18,6 +20,8 @@
         - [Owner-Scoped Runtime Observability](knowledge/infrastructure/owner_observability.md)
         - [Artifacts](knowledge/infrastructure/artifacts.md)
         - [Constants and Secrets](knowledge/infrastructure/constants_and_secrets.md)
+        - [Code Repositories, Branches and Projects](knowledge/infrastructure/code_repositories.md)
+        - [Agents](knowledge/infrastructure/agents.md)
 - Migrations
     - [Independent Git and Environment context](migrations/independent-context.md)
     - [Streamlit dashboard support removal](migrations/streamlit-dashboard-removal.md)

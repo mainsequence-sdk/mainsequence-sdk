@@ -83,6 +83,7 @@ def test_cli_auth_and_resource_roots_match_backend_contract():
         "job-runs",
         "jobs",
         "notifications",
+        "organization-projects",
         "organizations",
         "code-repository-base-images",
         "code-repository-branches",
@@ -115,12 +116,68 @@ def test_client_auth_provider_routes_match_backend_contract(monkeypatch):
 
 
 def test_removed_backend_actions_are_not_exposed_by_client_models():
-    from mainsequence.client.models_foundry import GitHubRepositoryBinding
-    from mainsequence.client.models_helpers import Job
+    from mainsequence.client import models_user
+    from mainsequence.client.agent_runtime_models import Agent
+    from mainsequence.client.models_foundry import (
+        Artifact,
+        Bucket,
+        CodeRepository,
+        CodeRepositoryBranch,
+        Constant,
+        GitHubRepositoryBinding,
+        OrganizationProject,
+        Secret,
+    )
+    from mainsequence.client.models_helpers import Job, ResourceRelease
+    from mainsequence.client.models_user import Team
+
+    view_and_edit_sharing = (
+        "can_view",
+        "can_edit",
+        "users_can_view",
+        "users_can_edit",
+        "list_users_can_view",
+        "list_users_can_edit",
+        "add_to_view",
+        "add_to_edit",
+        "remove_from_view",
+        "remove_from_edit",
+        "add_team_to_view",
+        "add_team_to_edit",
+        "remove_team_from_view",
+        "remove_team_from_edit",
+    )
 
     removed_actions = {
         GitHubRepositoryBinding: ("import_branch",),
-        Job: ("bulk_get_or_create", "create_from_configuration", "sync_jobs"),
+        # Jobs serve policies too; they never had the view and edit sharing methods.
+        Job: (
+            "bulk_get_or_create",
+            "create_from_configuration",
+            "sync_jobs",
+            *view_and_edit_sharing,
+        ),
+        # Teams serve policies: candidate-members, manage-members and the view and
+        # edit sharing routes are gone.
+        Team: (
+            "list_candidate_members",
+            "manage_members",
+            "add_members",
+            "remove_members",
+            *view_and_edit_sharing,
+        ),
+        # Constants, Secrets and Buckets serve policies: the view and edit sharing routes are gone.
+        Constant: view_and_edit_sharing,
+        Secret: view_and_edit_sharing,
+        Bucket: view_and_edit_sharing,
+        # So do code repositories, their branches and Projects.
+        CodeRepository: view_and_edit_sharing,
+        CodeRepositoryBranch: view_and_edit_sharing,
+        OrganizationProject: view_and_edit_sharing,
+        # And Agents, resource releases and Artifacts.
+        Agent: view_and_edit_sharing,
+        ResourceRelease: view_and_edit_sharing,
+        Artifact: view_and_edit_sharing,
     }
     violations = [
         f"{model.__name__}.{method_name}"
@@ -130,6 +187,59 @@ def test_removed_backend_actions_are_not_exposed_by_client_models():
     ]
 
     assert violations == []
+    assert not hasattr(models_user, "TeamMembershipUpdateResult")
+
+
+def test_repositories_branches_and_projects_serve_the_access_routes_by_uid():
+    from mainsequence.client.base import BaseObjectOrm
+    from mainsequence.client.models_foundry import (
+        CodeRepository,
+        CodeRepositoryBranch,
+        OrganizationProject,
+    )
+    from mainsequence.client.object_access import AccessManagedObjectMixin
+
+    uid = "11111111-1111-4111-8111-111111111111"
+    root = BaseObjectOrm.ROOT_URL.rstrip("/")
+    routes = {
+        CodeRepository: "code-repositories",
+        CodeRepositoryBranch: "code-repository-branches",
+        OrganizationProject: "organization-projects",
+    }
+    for model, endpoint in routes.items():
+        assert issubclass(model, AccessManagedObjectMixin)
+        instance = model.model_construct(uid=uid)
+        assert instance.get_action_url("access") == f"{root}/{endpoint}/{uid}/access/"
+        assert instance.get_action_url("access/bindings") == (
+            f"{root}/{endpoint}/{uid}/access/bindings/"
+        )
+
+
+def test_agents_releases_jobs_and_artifacts_serve_the_access_routes_by_uid():
+    from mainsequence.client.agent_runtime_models import Agent
+    from mainsequence.client.base import BaseObjectOrm
+    from mainsequence.client.models_foundry import Artifact
+    from mainsequence.client.models_helpers import Job, ResourceRelease
+    from mainsequence.client.object_access import AccessManagedObjectMixin
+
+    uid = "11111111-1111-4111-8111-111111111111"
+    root = BaseObjectOrm.ROOT_URL.rstrip("/")
+    routes = {
+        Agent: "agents",
+        ResourceRelease: "resource-releases",
+        Job: "jobs",
+        Artifact: "artifacts",
+    }
+    for model, endpoint in routes.items():
+        assert issubclass(model, AccessManagedObjectMixin)
+        instance = model.model_construct(uid=uid)
+        assert instance.get_action_url("access") == f"{root}/{endpoint}/{uid}/access/"
+        assert instance.get_action_url("access/bindings") == (
+            f"{root}/{endpoint}/{uid}/access/bindings/"
+        )
+        assert instance.get_action_url("access/explain") == (
+            f"{root}/{endpoint}/{uid}/access/explain/"
+        )
 
 
 def test_cli_does_not_reintroduce_legacy_numeric_detail_routes_or_agent_runs():
@@ -148,4 +258,56 @@ def test_cli_does_not_reintroduce_legacy_numeric_detail_routes_or_agent_runs():
     assert "/auth/rest-auth/user/" not in cli_sources
     assert not hasattr(api, "list_agent_runs")
     assert not hasattr(api, "get_agent_run")
+    for retired_sharing in (
+        "list_team_users_can_view",
+        "list_team_users_can_edit",
+        "add_team_user_to_view",
+        "add_team_user_to_edit",
+        "remove_team_user_from_view",
+        "remove_team_user_from_edit",
+        "list_constant_users_can_view",
+        "list_constant_users_can_edit",
+        "add_constant_user_to_view",
+        "add_constant_user_to_edit",
+        "remove_constant_user_from_view",
+        "remove_constant_user_from_edit",
+        "add_constant_team_to_view",
+        "add_constant_team_to_edit",
+        "remove_constant_team_from_view",
+        "remove_constant_team_from_edit",
+        "list_secret_users_can_view",
+        "list_secret_users_can_edit",
+        "add_secret_user_to_view",
+        "add_secret_user_to_edit",
+        "remove_secret_user_from_view",
+        "remove_secret_user_from_edit",
+        "add_secret_team_to_view",
+        "add_secret_team_to_edit",
+        "remove_secret_team_from_view",
+        "remove_secret_team_from_edit",
+        "list_code_repository_users_can_view",
+        "list_code_repository_users_can_edit",
+        "add_code_repository_user_to_view",
+        "add_code_repository_user_to_edit",
+        "remove_code_repository_user_from_view",
+        "remove_code_repository_user_from_edit",
+        "add_code_repository_team_to_view",
+        "add_code_repository_team_to_edit",
+        "remove_code_repository_team_from_view",
+        "remove_code_repository_team_from_edit",
+        "list_agent_users_can_view",
+        "list_agent_users_can_edit",
+        "add_agent_user_to_view",
+        "add_agent_user_to_edit",
+        "remove_agent_user_from_view",
+        "remove_agent_user_from_edit",
+        "add_agent_team_to_view",
+        "add_agent_team_to_edit",
+        "remove_agent_team_from_view",
+        "remove_agent_team_from_edit",
+        "_get_shareable_object_access_state",
+        "_mutate_shareable_object_access",
+        "_mutate_shareable_object_team_access",
+    ):
+        assert not hasattr(api, retired_sharing)
     assert not hasattr(agent_runtime_models, "AgentRun")

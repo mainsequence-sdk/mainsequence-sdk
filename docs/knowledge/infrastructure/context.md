@@ -40,9 +40,12 @@ processes resolve their own context.
 
 Constants, Secrets, Buckets, and Artifacts use the current registered branch's
 Environment. If it has none, these operations raise
-`CodeRepositoryEnvironmentContextRequiredError`. Operations requiring a registered
-branch raise `CodeRepositoryBranchContextRequiredError` when it is unavailable.
-The Environment error retains its existing branch-error superclass; both can be
+`CodeRepositoryEnvironmentContextRequiredError`. The access methods of a
+Constant, a Secret or a Bucket, such as `get_access()` and `attach_policy()`,
+are not among them: they address the object by its UID alone and need no
+Environment. Operations requiring a registered branch raise
+`CodeRepositoryBranchContextRequiredError` when it is unavailable. The
+Environment error retains its existing branch-error superclass; both can be
 caught through `CodeRepositoryContextError`.
 
 For example, on an unregistered `test` branch, `get_git_source_context()` works and

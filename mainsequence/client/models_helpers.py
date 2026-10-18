@@ -12,9 +12,9 @@ from .base import (
     BaseObjectOrm,
     BasePydanticModel,
     CurrentCodeRepositoryBranchCollectionMixin,
-    ShareableObjectMixin,
 )
 from .exceptions import raise_for_response
+from .object_access import AccessManagedObjectMixin
 from .observability import (
     EnvironmentLogSearchMixin,
     EnvironmentLogSearchPage,
@@ -120,7 +120,37 @@ class AutomaticRedeploymentPolicy(BaseModel):
     )
 
 
-class Job(CurrentCodeRepositoryBranchCollectionMixin, BaseObjectOrm, BasePydanticModel):
+class Job(
+    CurrentCodeRepositoryBranchCollectionMixin,
+    AccessManagedObjectMixin,
+    BaseObjectOrm,
+    BasePydanticModel,
+):
+    """A runnable task from a code repository branch, with its schedule, runs and outputs.
+
+    Who may use a Job is decided by its policies: `viewer` sees the Job, its
+    schedule, runs, logs and outputs, including the Artifacts its runs
+    published; `runner` also runs it and stops its runs; `editor` also changes
+    it (name, description, resources, schedule, arguments, image), reports a
+    run's status and outputs by hand, deletes it, manages what its workload can
+    reach and sees who has access; `owner` also decides who has access. The
+    Job's creator holds `owner`, except the Organization's automation identity,
+    which creates the Jobs of repository workflows, and Organization admins hold
+    every action.
+
+    A Job also takes the policies held above it. A standalone Job takes its
+    branch's: `reader` on the branch gives `viewer`, and `editor` or `owner`
+    gives `editor`. A release's backing Job takes its release's instead:
+    `viewer` gives `viewer`, `editor` and `owner` give `editor`, and `user`
+    gives nothing. A backing Job is changed, run and deleted with its release,
+    so those requests are refused on it whatever you hold.
+
+    The access methods (`get_access()`, `attach_policy()`, `detach_policy()` and
+    the others) read and change the policies. They address the Job by its UID
+    alone and take no Environment; with a workload's runtime credentials they
+    reach only the Jobs of that workload's Environment.
+    """
+
     COLLECTION_CREATE_SUPPORTED: ClassVar[bool] = False
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
         "uid": ["in", "exact"],
@@ -178,8 +208,9 @@ class Job(CurrentCodeRepositoryBranchCollectionMixin, BaseObjectOrm, BasePydanti
         default=None,
         description=(
             "Read-only UID of the workload identity, the User this Job runs as. "
-            "Pass it to `User.get_by_uid` and to sharing calls. None when the Job "
-            "has no workload identity, for example a release's backing Job."
+            "Pass it to `User.get_by_uid` and as the `principal_uid` of "
+            "`attach_policy()`. None when the Job has no workload identity, for "
+            "example a release's backing Job."
         ),
         examples=["88888888-8888-4888-8888-888888888888"],
     )
@@ -855,7 +886,7 @@ class ResourceRelease(
     EnvironmentLogSearchMixin,
     OwnerLogMixin,
     OwnerResourceUsageMixin,
-    ShareableObjectMixin,
+    AccessManagedObjectMixin,
     BaseObjectOrm,
     BasePydanticModel,
 ):
@@ -870,6 +901,31 @@ class ResourceRelease(
     path with its owning branch UID. This explicit query scope does not expand
     server authorization. Retrieve the returned UID with ``get(pk=...)`` when
     full release details are needed.
+
+    Who may use a release is decided by its policies: `viewer` sees its
+    configuration, revisions and logs and calls it, its API, site or MCP
+    endpoint; `user` sees it and calls it, without its logs; `editor` also
+    changes its configuration (scaling, timeouts, CORS, public paths, MCP),
+    activates static deployments, deletes it, manages what its workload can
+    reach and sees who has access; `owner` also decides who has access. A call
+    reaches the application as the caller, and the application decides what
+    they may do in it. The release's creator holds `owner`, except the
+    Organization's automation identity, which creates the releases of
+    repository workflows. Organization admins hold every action, and only they
+    turn on acting for the requester.
+
+    A release also takes the policies of the branch that declares it: `reader`
+    on the branch gives `viewer`, and `editor` or `owner` gives `editor`. A
+    release that backs an Agent follows the Agent instead, and branch access
+    does not reach it: the Agent's `viewer` and `operator` give `viewer`, its
+    `editor` and `owner` give `editor`, and its `user` gives nothing. Such a
+    release takes no policy of its own: attaching one raises `BadRequestError`
+    with `code` `sharing_managed_by_owner`; give access on the Agent.
+
+    The access methods (`get_access()`, `attach_policy()`, `detach_policy()` and
+    the others) read and change the policies. They address the release by its
+    UID alone and take no Environment; with a workload's runtime credentials
+    they reach only the releases of that workload's Environment.
 
     See the SDK's Resource releases guide for supported filters and examples.
     """
@@ -1030,8 +1086,9 @@ class ResourceRelease(
         title="Workload User UID",
         description=(
             "Read-only UID of the workload identity, the User this release runs as. "
-            "Pass it to `User.get_by_uid` and to sharing calls. None when the release "
-            "has no workload identity, for example a static-site release."
+            "Pass it to `User.get_by_uid` and as the `principal_uid` of "
+            "`attach_policy()`. None when the release has no workload identity, for "
+            "example a static-site release."
         ),
         examples=["88888888-8888-4888-8888-888888888888"],
     )

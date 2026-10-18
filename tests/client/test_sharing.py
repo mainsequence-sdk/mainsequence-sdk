@@ -1,8 +1,11 @@
+import importlib
+
 import pytest
 
 import mainsequence.client.base as base_mod
 import mainsequence.client.models_foundry as models_foundry_mod
 import mainsequence.client.models_user as models_user_mod
+from mainsequence.client.base import PermissionManagedObjectMixin
 from tests._support import REPOSITORY_ROOT
 from tests.client.support import (
     DemoIdOnlyResource,
@@ -238,38 +241,6 @@ def test_shareable_access_state_drops_removed_internal_identity():
     assert not hasattr(state, removed_field)
 
 
-@pytest.mark.parametrize(
-    ("resource_cls", "accessor_name", "access_level"),
-    [
-        (models_foundry_mod.Constant, "can_edit", "edit"),
-    ],
-)
-def test_shareable_resources_parse_canonical_public_identity(
-    monkeypatch,
-    resource_cls,
-    accessor_name,
-    access_level,
-):
-    resource_uid = "44444444-4444-4444-8444-444444444444"
-    resource = resource_cls.model_construct(uid=resource_uid)
-    monkeypatch.setattr(
-        resource_cls,
-        "_request_detail_action",
-        lambda self, **kwargs: {
-            "object_uid": resource_uid,
-            "object_type": type(self).__name__,
-            "access_level": access_level,
-            "users": [],
-            "teams": [],
-        },
-    )
-
-    access_state = getattr(resource, accessor_name)()
-
-    assert access_state.object_uid == resource_uid
-    assert access_state.access_level == access_level
-
-
 def test_shareable_access_state_accepts_nullable_canonical_identity():
     access_state = models_user_mod.ShareableAccessState(
         object_uid=None,
@@ -280,32 +251,32 @@ def test_shareable_access_state_accepts_nullable_canonical_identity():
     assert access_state.object_uid is None
 
 
-def test_shareable_models_keep_shareable_object_mixin():
-    repo_root = REPOSITORY_ROOT
-    models_foundry_bases = _class_base_names_from_source(
-        repo_root / "mainsequence" / "client" / "models_foundry.py"
+@pytest.mark.parametrize(
+    ("module_file", "class_name"),
+    [
+        ("agent_runtime_models.py", "Agent"),
+        ("models_helpers.py", "ResourceRelease"),
+        ("models_helpers.py", "Job"),
+        ("models_foundry.py", "Artifact"),
+    ],
+)
+def test_agents_releases_jobs_and_artifacts_use_the_access_policy_mixin(module_file, class_name):
+    module_bases = _class_base_names_from_source(
+        REPOSITORY_ROOT / "mainsequence" / "client" / module_file
     )
-    models_helpers_bases = _class_base_names_from_source(
-        repo_root / "mainsequence" / "client" / "models_helpers.py"
-    )
+    module = importlib.import_module(f"mainsequence.client.{module_file.removesuffix('.py')}")
 
-    expected = {
-        "Artifact": models_foundry_bases,
-        "Bucket": models_foundry_bases,
-        "CodeRepository": models_foundry_bases,
-        "Constant": models_foundry_bases,
-        "Secret": models_foundry_bases,
-        "ResourceRelease": models_helpers_bases,
-    }
-
-    for class_name, source_bases in expected.items():
-        assert class_name in source_bases, f"{class_name} class not found"
-        assert (
-            "ShareableObjectMixin" in source_bases[class_name]
-        ), f"{class_name} must inherit ShareableObjectMixin"
+    assert class_name in module_bases, f"{class_name} class not found"
+    assert (
+        "AccessManagedObjectMixin" in module_bases[class_name]
+    ), f"{class_name} must inherit AccessManagedObjectMixin"
+    assert (
+        "ShareableObjectMixin" not in module_bases[class_name]
+    ), f"{class_name} access is decided by policies, not view and edit sharing"
+    assert not issubclass(getattr(module, class_name), PermissionManagedObjectMixin)
 
 
-def test_team_uses_permission_managed_object_mixin():
+def test_team_uses_the_access_policy_mixin_instead_of_view_and_edit_sharing():
     repo_root = REPOSITORY_ROOT
     models_user_bases = _class_base_names_from_source(
         repo_root / "mainsequence" / "client" / "models_user.py"
@@ -313,8 +284,46 @@ def test_team_uses_permission_managed_object_mixin():
 
     assert "Team" in models_user_bases, "Team class not found"
     assert (
-        "PermissionManagedObjectMixin" in models_user_bases["Team"]
-    ), "Team must inherit PermissionManagedObjectMixin"
+        "AccessManagedObjectMixin" in models_user_bases["Team"]
+    ), "Team must inherit AccessManagedObjectMixin"
+    assert (
+        "PermissionManagedObjectMixin" not in models_user_bases["Team"]
+    ), "Team access is decided by policies, not view and edit sharing"
     assert (
         "ShareableObjectMixin" not in models_user_bases["Team"]
     ), "Team should not inherit ShareableObjectMixin directly"
+    assert not issubclass(models_user_mod.Team, PermissionManagedObjectMixin)
+
+
+@pytest.mark.parametrize("class_name", ["Constant", "Secret", "Bucket"])
+def test_environment_resources_decided_by_policies_use_the_access_policy_mixin(class_name):
+    models_foundry_bases = _class_base_names_from_source(
+        REPOSITORY_ROOT / "mainsequence" / "client" / "models_foundry.py"
+    )
+
+    assert class_name in models_foundry_bases, f"{class_name} class not found"
+    assert (
+        "AccessManagedObjectMixin" in models_foundry_bases[class_name]
+    ), f"{class_name} must inherit AccessManagedObjectMixin"
+    assert (
+        "ShareableObjectMixin" not in models_foundry_bases[class_name]
+    ), f"{class_name} access is decided by policies, not view and edit sharing"
+    assert not issubclass(getattr(models_foundry_mod, class_name), PermissionManagedObjectMixin)
+
+
+@pytest.mark.parametrize(
+    "class_name", ["CodeRepository", "CodeRepositoryBranch", "OrganizationProject"]
+)
+def test_repositories_branches_and_projects_use_the_access_policy_mixin(class_name):
+    models_foundry_bases = _class_base_names_from_source(
+        REPOSITORY_ROOT / "mainsequence" / "client" / "models_foundry.py"
+    )
+
+    assert class_name in models_foundry_bases, f"{class_name} class not found"
+    assert (
+        "AccessManagedObjectMixin" in models_foundry_bases[class_name]
+    ), f"{class_name} must inherit AccessManagedObjectMixin"
+    assert (
+        "ShareableObjectMixin" not in models_foundry_bases[class_name]
+    ), f"{class_name} access is decided by policies, not view and edit sharing"
+    assert not issubclass(getattr(models_foundry_mod, class_name), PermissionManagedObjectMixin)

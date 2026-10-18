@@ -130,7 +130,9 @@ def test_environment_resource_create_delete_and_detail_actions_are_scoped(monkey
 
     secret = models_module.Secret.create(name="API_KEY", value="secret")
     secret.delete()
-    secret._request_detail_action(r_type="GET", action_name="can-view")
+    # An Artifact keeps its view and edit sharing routes, which send the Environment.
+    artifact = models_module.Artifact.model_construct(uid="44444444-4444-4444-8444-444444444444")
+    artifact._request_detail_action(r_type="GET", action_name="can-view")
 
     assert requests[0]["payload"]["json"] == {
         "name": "API_KEY",
@@ -140,6 +142,7 @@ def test_environment_resource_create_delete_and_detail_actions_are_scoped(monkey
     assert requests[1]["payload"]["params"] == {
         "organization_environment_uid": ENVIRONMENT_UID,
     }
+    assert requests[2]["url"].endswith("/artifacts/44444444-4444-4444-8444-444444444444/can-view/")
     assert requests[2]["payload"]["params"] == {
         "organization_environment_uid": ENVIRONMENT_UID,
     }

@@ -21,6 +21,7 @@ import os
 import re
 import shlex
 import time
+import uuid
 from typing import Any
 from urllib.parse import urlencode
 
@@ -750,6 +751,16 @@ def _run_sdk_model_operation(
                 os.environ[k] = v
 
 
+def _as_cli_error(exc: Exception) -> ApiError:
+    """
+    Turn an exception from the SDK client into the CLI's `ApiError`, keeping its message.
+
+    The command that called the helper names the operation that failed, so the
+    message gets no prefix here: a prefix in both places printed it twice.
+    """
+    return ApiError(str(exc) or type(exc).__name__)
+
+
 def get_current_user_profile() -> dict:
     """
     Return current user profile (username + organization name) via the canonical user-details endpoint.
@@ -1017,7 +1028,7 @@ def search_code_repositories(
     except Exception as e:
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"CodeRepository search failed: {e}") from e
+        raise _as_cli_error(e) from e
 
 
 def validate_code_repository_name(
@@ -1044,7 +1055,7 @@ def validate_code_repository_name(
     except Exception as e:
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"CodeRepository name validation failed: {e}") from e
+        raise _as_cli_error(e) from e
 
 
 def list_organization_teams(
@@ -1068,7 +1079,7 @@ def list_organization_teams(
     except Exception as e:
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Organization teams fetch failed: {e}") from e
+        raise _as_cli_error(e) from e
 
 
 def get_organization_team(
@@ -1092,7 +1103,7 @@ def get_organization_team(
             raise ApiError(f"Team not found: {team_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Organization team fetch failed: {e}") from e
+        raise _as_cli_error(e) from e
 
 
 def create_organization_team(
@@ -1118,7 +1129,7 @@ def create_organization_team(
     except Exception as e:
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Organization team creation failed: {e}") from e
+        raise _as_cli_error(e) from e
 
 
 def update_organization_team(
@@ -1159,7 +1170,7 @@ def update_organization_team(
             raise ApiError(f"Team not found: {team_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Organization team update failed: {e}") from e
+        raise _as_cli_error(e) from e
 
 
 def delete_organization_team(
@@ -1189,7 +1200,284 @@ def delete_organization_team(
             raise ApiError(f"Team not found: {team_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Organization team deletion failed: {e}") from e
+        raise _as_cli_error(e) from e
+
+
+def _permission_refusal(exc: BaseException) -> tuple[BaseException, str] | None:
+    """
+    Find the platform's 403 behind `exc`, and name the policies that would allow the action.
+
+    `_run_sdk_model_operation` reports a 403 as `NotLoggedIn`; the SDK's
+    `PermissionDeniedError` stays its cause. A refused action has `code`
+    `missing_action` and lists `granting_policies` in the body the SDK keeps as
+    the error's `payload`.
+    """
+    seen: BaseException | None = exc
+    while seen is not None:
+        if type(seen).__name__ == "PermissionDeniedError":
+            payload = getattr(seen, "payload", None)
+            policies = payload.get("granting_policies") if isinstance(payload, dict) else None
+            if isinstance(policies, list) and policies:
+                return seen, f" Policies that give it: {', '.join(str(item) for item in policies)}."
+            return seen, ""
+        seen = seen.__cause__
+    return None
+
+
+def _run_organization_team_operation(
+    team_uid: str,
+    operation,
+    *,
+    timeout: int | None,
+):
+    """
+    Read one Team through the SDK client model and run `operation(team)` on it.
+
+    A Team that cannot be read is reported as not found. A refused action is
+    not a missing session: it keeps the platform's message and names the
+    policies that would allow it. Every other failure keeps its message; the
+    command that called says what failed.
+    """
+
+    def _run(ClientTeam):
+        try:
+            team = ClientTeam.get_by_uid(str(team_uid), timeout=timeout)
+        except Exception as e:
+            if type(e).__name__ == "NotFoundError":
+                raise ApiError(f"Team not found: {team_uid}") from e
+            raise
+        return operation(team)
+
+    try:
+        return _run_sdk_model_operation(
+            module_name="mainsequence.client.models_user",
+            class_name="Team",
+            operation=_run,
+        )
+    except Exception as e:
+        refusal = _permission_refusal(e)
+        if refusal is not None:
+            denied, policies = refusal
+            raise ApiError(f"{denied}{policies}") from e
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise _as_cli_error(e) from e
+
+
+def list_organization_team_members(
+    team_uid: str,
+    *,
+    timeout: int | None = None,
+) -> list[dict[str, Any]]:
+    """
+    List one team's members via `Team.list_members()`.
+    """
+    members = _run_organization_team_operation(
+        team_uid,
+        lambda team: team.list_members(timeout=timeout),
+        timeout=timeout,
+    )
+    return [_sdk_object_to_dict(member) for member in list(members or [])]
+
+
+def add_organization_team_member(
+    team_uid: str,
+    user_uid: str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Add a person or a workload identity to a team via `Team.add_member()`.
+    """
+    member = _run_organization_team_operation(
+        team_uid,
+        lambda team: team.add_member(str(user_uid), timeout=timeout),
+        timeout=timeout,
+    )
+    return _sdk_object_to_dict(member)
+
+
+def remove_organization_team_member(
+    team_uid: str,
+    user_uid: str,
+    *,
+    timeout: int | None = None,
+) -> None:
+    """
+    Remove a member from a team via `Team.remove_member()`.
+    """
+    _run_organization_team_operation(
+        team_uid,
+        lambda team: team.remove_member(str(user_uid), timeout=timeout),
+        timeout=timeout,
+    )
+
+
+def leave_organization_team(
+    team_uid: str,
+    *,
+    timeout: int | None = None,
+) -> None:
+    """
+    Leave a team via `Team.leave()`.
+    """
+    _run_organization_team_operation(
+        team_uid,
+        lambda team: team.leave(timeout=timeout),
+        timeout=timeout,
+    )
+
+
+def get_organization_team_access(
+    team_uid: str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Read the policies attached to a team via `Team.get_access()`.
+    """
+    listing = _run_organization_team_operation(
+        team_uid,
+        lambda team: team.get_access(timeout=timeout),
+        timeout=timeout,
+    )
+    return _sdk_object_to_dict(listing)
+
+
+def attach_organization_team_policy(
+    team_uid: str,
+    *,
+    policy: str,
+    principal_type: str,
+    principal_uid: str,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Attach a policy on a team to a user or a team via `Team.attach_policy()`.
+    """
+    binding = _run_organization_team_operation(
+        team_uid,
+        lambda team: team.attach_policy(
+            policy,
+            principal_type=principal_type,
+            principal_uid=str(principal_uid),
+            timeout=timeout,
+        ),
+        timeout=timeout,
+    )
+    return _sdk_object_to_dict(binding)
+
+
+def detach_organization_team_policy(
+    team_uid: str,
+    binding_uid: str,
+    *,
+    timeout: int | None = None,
+) -> None:
+    """
+    Detach one policy binding from a team via `Team.detach_policy()`.
+    """
+    _run_organization_team_operation(
+        team_uid,
+        lambda team: team.detach_policy(str(binding_uid), timeout=timeout),
+        timeout=timeout,
+    )
+
+
+def explain_organization_team_access(
+    team_uid: str,
+    *,
+    action: str,
+    principal_uid: str | None = None,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Explain why a user may or may not perform an action on a team via `Team.explain_access()`.
+    """
+    explanation = _run_organization_team_operation(
+        team_uid,
+        lambda team: team.explain_access(
+            action,
+            principal_uid=str(principal_uid) if principal_uid is not None else None,
+            timeout=timeout,
+        ),
+        timeout=timeout,
+    )
+    return _sdk_object_to_dict(explanation)
+
+
+def list_access_policies(
+    *,
+    resource_type: str | None = None,
+    timeout: int | None = None,
+) -> list[dict[str, Any]]:
+    """
+    List the platform's access policies via the SDK access catalog client.
+
+    Single source of truth:
+      - delegates the request and payload parsing to `AccessCatalog.list_policies()`
+    """
+    try:
+        policies = _run_sdk_model_operation(
+            module_name="mainsequence.client.access_catalog",
+            class_name="AccessCatalog",
+            operation=lambda ClientAccessCatalog: ClientAccessCatalog().list_policies(
+                resource_type=resource_type,
+                timeout=timeout,
+            ),
+        )
+        return [_sdk_object_to_dict(policy) for policy in list(policies or [])]
+    except Exception as e:
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise _as_cli_error(e) from e
+
+
+def get_access_policy(
+    policy_ref: str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Retrieve one access policy by its UID or by its id, such as `secrets.reader`.
+
+    A UID is read with `AccessCatalog.get_policy()`. An id is looked up among the
+    policies of the resource type it starts with, from `AccessCatalog.list_policies()`.
+    """
+    reference = str(policy_ref or "").strip()
+    try:
+        policy_uid: str | None = str(uuid.UUID(reference))
+    except ValueError:
+        policy_uid = None
+    resource_type, _, policy_name = reference.partition(".")
+    if policy_uid is None and not (resource_type and policy_name):
+        raise ApiError(f"Not a policy id such as secrets.reader, nor a policy UID: {policy_ref!r}")
+
+    def _get(ClientAccessCatalog):
+        catalog = ClientAccessCatalog()
+        if policy_uid is not None:
+            return catalog.get_policy(policy_uid, timeout=timeout)
+        for policy in catalog.list_policies(resource_type=resource_type, timeout=timeout):
+            if policy.id == reference:
+                return policy
+        return None
+
+    try:
+        policy = _run_sdk_model_operation(
+            module_name="mainsequence.client.access_catalog",
+            class_name="AccessCatalog",
+            operation=_get,
+        )
+    except Exception as e:
+        err_name = type(e).__name__
+        if err_name == "NotFoundError":
+            raise ApiError(f"Access policy not found: {reference}") from e
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise _as_cli_error(e) from e
+    if policy is None:
+        raise ApiError(f"Access policy not found: {reference}")
+    return _sdk_object_to_dict(policy)
 
 
 def list_agents(
@@ -1211,7 +1499,7 @@ def list_agents(
     except Exception as e:
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Agents fetch failed: {e}") from e
+        raise _as_cli_error(e) from e
 
 
 def get_agent(
@@ -1235,7 +1523,7 @@ def get_agent(
             raise ApiError(f"Agent not found: {agent_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Agent fetch failed: {e}") from e
+        raise _as_cli_error(e) from e
 
 
 def _get_owner_observability(
@@ -1267,7 +1555,7 @@ def _get_owner_observability(
             raise ApiError(f"{class_name} not found: {owner_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"{class_name} {action_name} failed: {e}") from e
+        raise _as_cli_error(e) from e
 
 
 def get_agent_logs(
@@ -1344,7 +1632,7 @@ def semantic_search_agents(
     except Exception as e:
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Agent search failed: {e}") from e
+        raise _as_cli_error(e) from e
 
 
 def delete_agent(
@@ -1374,7 +1662,7 @@ def delete_agent(
             raise ApiError(f"Agent not found: {agent_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Agent deletion failed: {e}") from e
+        raise _as_cli_error(e) from e
 
 
 def get_or_create_agent_session(
@@ -1419,7 +1707,7 @@ def get_or_create_agent_session(
             raise ApiError(f"Agent not found: {agent_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Agent session get-or-create failed: {e}") from e
+        raise _as_cli_error(e) from e
 
 
 def list_agent_sessions(
@@ -1447,7 +1735,7 @@ def list_agent_sessions(
     except Exception as e:
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Agent sessions fetch failed: {e}") from e
+        raise _as_cli_error(e) from e
 
 
 def get_agent_session(
@@ -1473,7 +1761,7 @@ def get_agent_session(
             raise ApiError(f"Agent session not found: {agent_session_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Agent session fetch failed: {e}") from e
+        raise _as_cli_error(e) from e
 
 
 def get_agent_session_logs(
@@ -1588,178 +1876,6 @@ def _send_agent_session_a2a_message_with_cache(
     return payload
 
 
-def list_agent_users_can_view(
-    agent_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    """
-    Fetch the view-access state for an agent via `ShareableObjectMixin.can_view()`.
-    """
-    return _get_shareable_object_access_state(
-        module_name="mainsequence.client.agent_runtime_models",
-        class_name="Agent",
-        object_uid=agent_uid,
-        accessor_name="can_view",
-        object_lookup_field="uid",
-        timeout=timeout,
-    )
-
-
-def list_agent_users_can_edit(
-    agent_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    """
-    Fetch the edit-access state for an agent via `ShareableObjectMixin.can_edit()`.
-    """
-    return _get_shareable_object_access_state(
-        module_name="mainsequence.client.agent_runtime_models",
-        class_name="Agent",
-        object_uid=agent_uid,
-        accessor_name="can_edit",
-        object_lookup_field="uid",
-        timeout=timeout,
-    )
-
-
-def add_agent_user_to_view(
-    agent_uid: str,
-    user_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    return _mutate_shareable_object_access(
-        module_name="mainsequence.client.agent_runtime_models",
-        class_name="Agent",
-        object_uid=agent_uid,
-        action_name="add_to_view",
-        object_lookup_field="uid",
-        user_uid=user_uid,
-        timeout=timeout,
-    )
-
-
-def add_agent_user_to_edit(
-    agent_uid: str,
-    user_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    return _mutate_shareable_object_access(
-        module_name="mainsequence.client.agent_runtime_models",
-        class_name="Agent",
-        object_uid=agent_uid,
-        action_name="add_to_edit",
-        object_lookup_field="uid",
-        user_uid=user_uid,
-        timeout=timeout,
-    )
-
-
-def remove_agent_user_from_view(
-    agent_uid: str,
-    user_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    return _mutate_shareable_object_access(
-        module_name="mainsequence.client.agent_runtime_models",
-        class_name="Agent",
-        object_uid=agent_uid,
-        action_name="remove_from_view",
-        object_lookup_field="uid",
-        user_uid=user_uid,
-        timeout=timeout,
-    )
-
-
-def remove_agent_user_from_edit(
-    agent_uid: str,
-    user_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    return _mutate_shareable_object_access(
-        module_name="mainsequence.client.agent_runtime_models",
-        class_name="Agent",
-        object_uid=agent_uid,
-        action_name="remove_from_edit",
-        object_lookup_field="uid",
-        user_uid=user_uid,
-        timeout=timeout,
-    )
-
-
-def add_agent_team_to_view(
-    agent_uid: str,
-    team_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    return _mutate_shareable_object_team_access(
-        module_name="mainsequence.client.agent_runtime_models",
-        class_name="Agent",
-        object_uid=agent_uid,
-        action_name="add_team_to_view",
-        object_lookup_field="uid",
-        team_uid=team_uid,
-        timeout=timeout,
-    )
-
-
-def add_agent_team_to_edit(
-    agent_uid: str,
-    team_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    return _mutate_shareable_object_team_access(
-        module_name="mainsequence.client.agent_runtime_models",
-        class_name="Agent",
-        object_uid=agent_uid,
-        action_name="add_team_to_edit",
-        object_lookup_field="uid",
-        team_uid=team_uid,
-        timeout=timeout,
-    )
-
-
-def remove_agent_team_from_view(
-    agent_uid: str,
-    team_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    return _mutate_shareable_object_team_access(
-        module_name="mainsequence.client.agent_runtime_models",
-        class_name="Agent",
-        object_uid=agent_uid,
-        action_name="remove_team_from_view",
-        object_lookup_field="uid",
-        team_uid=team_uid,
-        timeout=timeout,
-    )
-
-
-def remove_agent_team_from_edit(
-    agent_uid: str,
-    team_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    return _mutate_shareable_object_team_access(
-        module_name="mainsequence.client.agent_runtime_models",
-        class_name="Agent",
-        object_uid=agent_uid,
-        action_name="remove_team_from_edit",
-        object_lookup_field="uid",
-        team_uid=team_uid,
-        timeout=timeout,
-    )
-
-
 def get_code_repository(code_repository_uid: str) -> dict:
     """
     Fetch a single CodeRepository by public UID.
@@ -1786,278 +1902,6 @@ def get_code_repository(code_repository_uid: str) -> dict:
     if not isinstance(data, dict):
         raise ApiError("CodeRepository fetch response had unexpected payload shape.")
     return data
-
-
-def list_code_repository_users_can_view(
-    code_repository_id: int | str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    """
-    Fetch the view-access state for a CodeRepository via `ShareableObjectMixin.can_view()`.
-    """
-    return _get_shareable_object_access_state(
-        module_name="mainsequence.client.models_foundry",
-        class_name="CodeRepository",
-        object_uid=code_repository_id,
-        accessor_name="can_view",
-        timeout=timeout,
-    )
-
-
-def list_code_repository_users_can_edit(
-    code_repository_id: int | str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    """
-    Fetch the edit-access state for a CodeRepository via `ShareableObjectMixin.can_edit()`.
-    """
-    return _get_shareable_object_access_state(
-        module_name="mainsequence.client.models_foundry",
-        class_name="CodeRepository",
-        object_uid=code_repository_id,
-        accessor_name="can_edit",
-        timeout=timeout,
-    )
-
-
-def add_code_repository_user_to_view(
-    code_repository_id: int | str,
-    user_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    """
-    Grant explicit view access to one user for a code repository.
-    """
-    return _mutate_shareable_object_access(
-        module_name="mainsequence.client.models_foundry",
-        class_name="CodeRepository",
-        object_uid=code_repository_id,
-        action_name="add_to_view",
-        user_uid=user_uid,
-        timeout=timeout,
-    )
-
-
-def add_code_repository_user_to_edit(
-    code_repository_id: int | str,
-    user_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    """
-    Grant explicit edit access to one user for a code repository.
-    """
-    return _mutate_shareable_object_access(
-        module_name="mainsequence.client.models_foundry",
-        class_name="CodeRepository",
-        object_uid=code_repository_id,
-        action_name="add_to_edit",
-        user_uid=user_uid,
-        timeout=timeout,
-    )
-
-
-def remove_code_repository_user_from_view(
-    code_repository_id: int | str,
-    user_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    """
-    Remove explicit view access from one user for a code repository.
-    """
-    return _mutate_shareable_object_access(
-        module_name="mainsequence.client.models_foundry",
-        class_name="CodeRepository",
-        object_uid=code_repository_id,
-        action_name="remove_from_view",
-        user_uid=user_uid,
-        timeout=timeout,
-    )
-
-
-def remove_code_repository_user_from_edit(
-    code_repository_id: int | str,
-    user_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    """
-    Remove explicit edit access from one user for a code repository.
-    """
-    return _mutate_shareable_object_access(
-        module_name="mainsequence.client.models_foundry",
-        class_name="CodeRepository",
-        object_uid=code_repository_id,
-        action_name="remove_from_edit",
-        user_uid=user_uid,
-        timeout=timeout,
-    )
-
-
-def list_team_users_can_view(
-    team_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    """
-    Fetch the view-access state for a team via `Team.can_view()`.
-    """
-    return _get_shareable_object_access_state(
-        module_name="mainsequence.client.models_user",
-        class_name="Team",
-        object_uid=team_uid,
-        accessor_name="can_view",
-        timeout=timeout,
-    )
-
-
-def list_team_users_can_edit(
-    team_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    """
-    Fetch the edit-access state for a team via `Team.can_edit()`.
-    """
-    return _get_shareable_object_access_state(
-        module_name="mainsequence.client.models_user",
-        class_name="Team",
-        object_uid=team_uid,
-        accessor_name="can_edit",
-        timeout=timeout,
-    )
-
-
-def add_team_user_to_view(
-    team_uid: str,
-    user_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    return _mutate_shareable_object_access(
-        module_name="mainsequence.client.models_user",
-        class_name="Team",
-        object_uid=team_uid,
-        action_name="add_to_view",
-        user_uid=user_uid,
-        timeout=timeout,
-    )
-
-
-def add_team_user_to_edit(
-    team_uid: str,
-    user_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    return _mutate_shareable_object_access(
-        module_name="mainsequence.client.models_user",
-        class_name="Team",
-        object_uid=team_uid,
-        action_name="add_to_edit",
-        user_uid=user_uid,
-        timeout=timeout,
-    )
-
-
-def remove_team_user_from_view(
-    team_uid: str,
-    user_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    return _mutate_shareable_object_access(
-        module_name="mainsequence.client.models_user",
-        class_name="Team",
-        object_uid=team_uid,
-        action_name="remove_from_view",
-        user_uid=user_uid,
-        timeout=timeout,
-    )
-
-
-def remove_team_user_from_edit(
-    team_uid: str,
-    user_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    return _mutate_shareable_object_access(
-        module_name="mainsequence.client.models_user",
-        class_name="Team",
-        object_uid=team_uid,
-        action_name="remove_from_edit",
-        user_uid=user_uid,
-        timeout=timeout,
-    )
-
-
-def add_code_repository_team_to_view(
-    code_repository_id: int | str,
-    team_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    return _mutate_shareable_object_team_access(
-        module_name="mainsequence.client.models_foundry",
-        class_name="CodeRepository",
-        object_uid=code_repository_id,
-        action_name="add_team_to_view",
-        team_uid=team_uid,
-        timeout=timeout,
-    )
-
-
-def add_code_repository_team_to_edit(
-    code_repository_id: int | str,
-    team_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    return _mutate_shareable_object_team_access(
-        module_name="mainsequence.client.models_foundry",
-        class_name="CodeRepository",
-        object_uid=code_repository_id,
-        action_name="add_team_to_edit",
-        team_uid=team_uid,
-        timeout=timeout,
-    )
-
-
-def remove_code_repository_team_from_view(
-    code_repository_id: int | str,
-    team_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    return _mutate_shareable_object_team_access(
-        module_name="mainsequence.client.models_foundry",
-        class_name="CodeRepository",
-        object_uid=code_repository_id,
-        action_name="remove_team_from_view",
-        team_uid=team_uid,
-        timeout=timeout,
-    )
-
-
-def remove_code_repository_team_from_edit(
-    code_repository_id: int | str,
-    team_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    return _mutate_shareable_object_team_access(
-        module_name="mainsequence.client.models_foundry",
-        class_name="CodeRepository",
-        object_uid=code_repository_id,
-        action_name="remove_team_from_edit",
-        team_uid=team_uid,
-        timeout=timeout,
-    )
 
 
 def add_code_repository_labels(
@@ -2179,7 +2023,7 @@ def list_code_repository_images(
             raise ApiError(
                 f"CodeRepositoryBranch not found: {related_code_repository_branch_uid}"
             ) from e
-        raise ApiError(f"CodeRepository images fetch failed: {e}") from e
+        raise _as_cli_error(e) from e
     finally:
         if client_utils is not None:
             try:
@@ -2231,7 +2075,7 @@ def get_code_repository_image(
             raise ApiError(f"CodeRepository image not found: {image_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"CodeRepository image fetch failed: {e}") from e
+        raise _as_cli_error(e) from e
 
 
 def delete_code_repository_image(
@@ -2258,7 +2102,7 @@ def delete_code_repository_image(
             raise ApiError(f"CodeRepository image not found: {image_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"CodeRepository image deletion failed: {e}") from e
+        raise _as_cli_error(e) from e
 
 
 def _normalize_release_kind_value(value: Any) -> str | None:
@@ -2295,7 +2139,7 @@ def get_resource_release(
             raise ApiError(f"Resource release not found: {release_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Resource release fetch failed: {e}") from e
+        raise _as_cli_error(e) from e
 
 
 def get_resource_release_logs(
@@ -2375,7 +2219,7 @@ def delete_resource_release(
             raise ApiError(f"Resource release not found: {release_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Resource release deletion failed: {e}") from e
+        raise _as_cli_error(e) from e
 
 
 def list_code_repository_jobs(
@@ -2458,7 +2302,7 @@ def list_code_repository_jobs(
             raise NotLoggedIn(str(e) or "Not logged in.") from e
         if err_name == "NotFoundError":
             raise ApiError(f"CodeRepositoryBranch not found: {code_repository_branch_uid}") from e
-        raise ApiError(f"CodeRepository jobs fetch failed: {e}") from e
+        raise _as_cli_error(e) from e
     finally:
         if client_utils is not None:
             try:
@@ -2578,7 +2422,7 @@ def list_code_repository_resources(
             raise NotLoggedIn(str(e) or "Not logged in.") from e
         if err_name == "NotFoundError":
             raise ApiError(f"CodeRepositoryBranch not found: {code_repository_branch_uid}") from e
-        raise ApiError(f"CodeRepository resources fetch failed: {e}") from e
+        raise _as_cli_error(e) from e
     finally:
         if client_utils is not None:
             try:
@@ -2635,7 +2479,7 @@ def list_constants(
     except Exception as e:
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Constants fetch failed: {e}") from e
+        raise _as_cli_error(e) from e
 
 
 def list_secrets(
@@ -2662,7 +2506,7 @@ def list_secrets(
     except Exception as e:
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Secrets fetch failed: {e}") from e
+        raise _as_cli_error(e) from e
 
 
 def get_secret(
@@ -2675,6 +2519,10 @@ def get_secret(
 
     Single source of truth:
       - delegates detail fetching and payload parsing to `Secret.get()`
+
+    Reading a secret reads its current value, which needs the secret's
+    `read_value` action. A refusal is not a missing session: it keeps the
+    platform's message and names the policies that would allow it.
     """
     try:
         secret = _run_sdk_model_operation(
@@ -2687,12 +2535,16 @@ def get_secret(
         )
         return _sdk_object_to_dict(secret)
     except Exception as e:
+        refusal = _permission_refusal(e)
+        if refusal is not None:
+            denied, policies = refusal
+            raise ApiError(f"{denied}{policies}") from e
         err_name = type(e).__name__
         if err_name == "NotFoundError":
             raise ApiError(f"Secret not found: {secret_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Secret fetch failed: {e}") from e
+        raise _as_cli_error(e) from e
 
 
 def create_secret(
@@ -2721,7 +2573,7 @@ def create_secret(
     except Exception as e:
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Secret creation failed: {e}") from e
+        raise _as_cli_error(e) from e
 
 
 def delete_secret(
@@ -2734,6 +2586,10 @@ def delete_secret(
 
     Single source of truth:
       - delegates deletion to `Secret.delete()`
+
+    The secret is read first, which needs its `read_value` action; deleting it
+    needs its `delete` action. A refusal keeps the platform's message and names
+    the policies that would allow it. A secret the platform manages answers 409.
     """
     try:
 
@@ -2749,186 +2605,16 @@ def delete_secret(
             operation=_delete,
         )
     except Exception as e:
+        refusal = _permission_refusal(e)
+        if refusal is not None:
+            denied, policies = refusal
+            raise ApiError(f"{denied}{policies}") from e
         err_name = type(e).__name__
         if err_name == "NotFoundError":
             raise ApiError(f"Secret not found: {secret_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Secret deletion failed: {e}") from e
-
-
-def list_secret_users_can_view(
-    secret_uid: int | str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    """
-    Fetch the view-access state for a secret via `ShareableObjectMixin.can_view()`.
-    """
-    return _get_shareable_object_access_state(
-        module_name="mainsequence.client.models_foundry",
-        class_name="Secret",
-        object_uid=secret_uid,
-        accessor_name="can_view",
-        timeout=timeout,
-    )
-
-
-def list_secret_users_can_edit(
-    secret_uid: int | str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    """
-    Fetch the edit-access state for a secret via `ShareableObjectMixin.can_edit()`.
-    """
-    return _get_shareable_object_access_state(
-        module_name="mainsequence.client.models_foundry",
-        class_name="Secret",
-        object_uid=secret_uid,
-        accessor_name="can_edit",
-        timeout=timeout,
-    )
-
-
-def add_secret_user_to_view(
-    secret_uid: int | str,
-    user_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    """
-    Grant explicit view access to one user for a secret.
-    """
-    return _mutate_shareable_object_access(
-        module_name="mainsequence.client.models_foundry",
-        class_name="Secret",
-        object_uid=secret_uid,
-        action_name="add_to_view",
-        user_uid=user_uid,
-        timeout=timeout,
-    )
-
-
-def add_secret_user_to_edit(
-    secret_uid: int | str,
-    user_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    """
-    Grant explicit edit access to one user for a secret.
-    """
-    return _mutate_shareable_object_access(
-        module_name="mainsequence.client.models_foundry",
-        class_name="Secret",
-        object_uid=secret_uid,
-        action_name="add_to_edit",
-        user_uid=user_uid,
-        timeout=timeout,
-    )
-
-
-def remove_secret_user_from_view(
-    secret_uid: int | str,
-    user_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    """
-    Remove explicit view access from one user for a secret.
-    """
-    return _mutate_shareable_object_access(
-        module_name="mainsequence.client.models_foundry",
-        class_name="Secret",
-        object_uid=secret_uid,
-        action_name="remove_from_view",
-        user_uid=user_uid,
-        timeout=timeout,
-    )
-
-
-def remove_secret_user_from_edit(
-    secret_uid: int | str,
-    user_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    """
-    Remove explicit edit access from one user for a secret.
-    """
-    return _mutate_shareable_object_access(
-        module_name="mainsequence.client.models_foundry",
-        class_name="Secret",
-        object_uid=secret_uid,
-        action_name="remove_from_edit",
-        user_uid=user_uid,
-        timeout=timeout,
-    )
-
-
-def add_secret_team_to_view(
-    secret_uid: int | str,
-    team_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    return _mutate_shareable_object_team_access(
-        module_name="mainsequence.client.models_foundry",
-        class_name="Secret",
-        object_uid=secret_uid,
-        action_name="add_team_to_view",
-        team_uid=team_uid,
-        timeout=timeout,
-    )
-
-
-def add_secret_team_to_edit(
-    secret_uid: int | str,
-    team_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    return _mutate_shareable_object_team_access(
-        module_name="mainsequence.client.models_foundry",
-        class_name="Secret",
-        object_uid=secret_uid,
-        action_name="add_team_to_edit",
-        team_uid=team_uid,
-        timeout=timeout,
-    )
-
-
-def remove_secret_team_from_view(
-    secret_uid: int | str,
-    team_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    return _mutate_shareable_object_team_access(
-        module_name="mainsequence.client.models_foundry",
-        class_name="Secret",
-        object_uid=secret_uid,
-        action_name="remove_team_from_view",
-        team_uid=team_uid,
-        timeout=timeout,
-    )
-
-
-def remove_secret_team_from_edit(
-    secret_uid: int | str,
-    team_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    return _mutate_shareable_object_team_access(
-        module_name="mainsequence.client.models_foundry",
-        class_name="Secret",
-        object_uid=secret_uid,
-        action_name="remove_team_from_edit",
-        team_uid=team_uid,
-        timeout=timeout,
-    )
+        raise _as_cli_error(e) from e
 
 
 def get_constant(
@@ -2958,7 +2644,7 @@ def get_constant(
             raise ApiError(f"Constant not found: {constant_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Constant fetch failed: {e}") from e
+        raise _as_cli_error(e) from e
 
 
 def create_constant(
@@ -2987,7 +2673,7 @@ def create_constant(
     except Exception as e:
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Constant creation failed: {e}") from e
+        raise _as_cli_error(e) from e
 
 
 def delete_constant(
@@ -3020,7 +2706,7 @@ def delete_constant(
             raise ApiError(f"Constant not found: {constant_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Constant deletion failed: {e}") from e
+        raise _as_cli_error(e) from e
 
 
 def _get_client_object_by_lookup(
@@ -3033,107 +2719,6 @@ def _get_client_object_by_lookup(
     if lookup_field != "uid":
         raise ApiError(f"Unsupported public lookup field: {lookup_field}")
     return ClientObject.get_by_uid(str(object_uid), timeout=timeout)
-
-
-def _get_shareable_object_access_state(
-    *,
-    module_name: str,
-    class_name: str,
-    object_uid: int | str,
-    accessor_name: str,
-    object_lookup_field: str = "uid",
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    try:
-        payload = _run_sdk_model_operation(
-            module_name=module_name,
-            class_name=class_name,
-            operation=lambda ClientObject: getattr(
-                _get_client_object_by_lookup(
-                    ClientObject,
-                    object_uid=object_uid,
-                    lookup_field=object_lookup_field,
-                    timeout=timeout,
-                ),
-                accessor_name,
-            )(timeout=timeout),
-        )
-        return _sdk_object_to_dict(payload)
-    except Exception as e:
-        err_name = type(e).__name__
-        if err_name == "NotFoundError":
-            raise ApiError(f"{class_name} not found: {object_uid}") from e
-        if isinstance(e, (ApiError, NotLoggedIn)):
-            raise
-        raise ApiError(f"{class_name} share access fetch failed: {e}") from e
-
-
-def _mutate_shareable_object_access(
-    *,
-    module_name: str,
-    class_name: str,
-    object_uid: int | str,
-    action_name: str,
-    user_uid: str,
-    object_lookup_field: str = "uid",
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    try:
-        payload = _run_sdk_model_operation(
-            module_name=module_name,
-            class_name=class_name,
-            operation=lambda ClientObject: getattr(
-                _get_client_object_by_lookup(
-                    ClientObject,
-                    object_uid=object_uid,
-                    lookup_field=object_lookup_field,
-                    timeout=timeout,
-                ),
-                action_name,
-            )(user_uid, timeout=timeout),
-        )
-        return _sdk_object_to_dict(payload)
-    except Exception as e:
-        err_name = type(e).__name__
-        if err_name == "NotFoundError":
-            raise ApiError(f"{class_name} not found: {object_uid}") from e
-        if isinstance(e, (ApiError, NotLoggedIn)):
-            raise
-        raise ApiError(f"{class_name} share access update failed: {e}") from e
-
-
-def _mutate_shareable_object_team_access(
-    *,
-    module_name: str,
-    class_name: str,
-    object_uid: int | str,
-    action_name: str,
-    team_uid: str,
-    object_lookup_field: str = "uid",
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    try:
-        payload = _run_sdk_model_operation(
-            module_name=module_name,
-            class_name=class_name,
-            operation=lambda ClientObject: getattr(
-                _get_client_object_by_lookup(
-                    ClientObject,
-                    object_uid=object_uid,
-                    lookup_field=object_lookup_field,
-                    timeout=timeout,
-                ),
-                action_name,
-            )(team_uid, timeout=timeout),
-        )
-        return _sdk_object_to_dict(payload)
-    except Exception as e:
-        err_name = type(e).__name__
-        if err_name == "NotFoundError":
-            raise ApiError(f"{class_name} not found: {object_uid}") from e
-        if isinstance(e, (ApiError, NotLoggedIn)):
-            raise
-        raise ApiError(f"{class_name} team share access update failed: {e}") from e
 
 
 def _mutate_labelable_object_labels(
@@ -3167,181 +2752,544 @@ def _mutate_labelable_object_labels(
             raise ApiError(f"{class_name} not found: {object_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"{class_name} label update failed: {e}") from e
+        raise _as_cli_error(e) from e
 
 
-def list_constant_users_can_view(
-    constant_uid: int | str,
+def _run_object_access_operation(
+    class_name: str,
+    object_uid: str,
+    operation,
+    *,
+    module_name: str = "mainsequence.client.models_foundry",
+):
+    """
+    Run `operation(obj)` on one object whose access is decided by policies, by its UID alone.
+
+    `class_name` is `Constant`, `Secret` or `CodeRepository`, from `module_name`'s
+    default, `Agent` from `mainsequence.client.agent_runtime_models`, or
+    `ResourceRelease` or `Job` from `mainsequence.client.models_helpers`. Their
+    access routes need no Organization Environment, while reading a Constant or
+    a Secret needs the current branch's. The object is therefore not read first:
+    the instance `operation` receives carries only its UID, which is all the
+    access methods use. An object that cannot be reached is reported as not
+    found. A refused action is not a missing session: it keeps the platform's
+    message and names the policies that would allow it, as for teams; a refusal
+    that names no policy, such as a missing product role, keeps the platform's
+    message alone. Every other failure keeps its message; the command that
+    called says what failed.
+    """
+
+    def _run(ClientModel):
+        return operation(ClientModel.model_construct(uid=str(object_uid)))
+
+    try:
+        return _run_sdk_model_operation(
+            module_name=module_name,
+            class_name=class_name,
+            operation=_run,
+        )
+    except Exception as e:
+        refusal = _permission_refusal(e)
+        if refusal is not None:
+            denied, policies = refusal
+            raise ApiError(f"{denied}{policies}") from e
+        if type(e).__name__ == "NotFoundError":
+            raise ApiError(f"{class_name} not found: {object_uid}") from e
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(str(e)) from e
+
+
+def get_constant_access(
+    constant_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
     """
-    Fetch the view-access state for a constant via `ShareableObjectMixin.can_view()`.
+    Read the policies attached to a constant via `Constant.get_access()`.
     """
-    return _get_shareable_object_access_state(
-        module_name="mainsequence.client.models_foundry",
-        class_name="Constant",
-        object_uid=constant_uid,
-        accessor_name="can_view",
-        timeout=timeout,
+    listing = _run_object_access_operation(
+        "Constant",
+        constant_uid,
+        lambda constant: constant.get_access(timeout=timeout),
+    )
+    return _sdk_object_to_dict(listing)
+
+
+def attach_constant_policy(
+    constant_uid: str,
+    *,
+    policy: str,
+    principal_type: str,
+    principal_uid: str,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Attach a policy on a constant to a user or a team via `Constant.attach_policy()`.
+    """
+    binding = _run_object_access_operation(
+        "Constant",
+        constant_uid,
+        lambda constant: constant.attach_policy(
+            policy,
+            principal_type=principal_type,
+            principal_uid=str(principal_uid),
+            timeout=timeout,
+        ),
+    )
+    return _sdk_object_to_dict(binding)
+
+
+def detach_constant_policy(
+    constant_uid: str,
+    binding_uid: str,
+    *,
+    timeout: int | None = None,
+) -> None:
+    """
+    Detach one policy binding from a constant via `Constant.detach_policy()`.
+    """
+    _run_object_access_operation(
+        "Constant",
+        constant_uid,
+        lambda constant: constant.detach_policy(str(binding_uid), timeout=timeout),
     )
 
 
-def list_constant_users_can_edit(
-    constant_uid: int | str,
+def explain_constant_access(
+    constant_uid: str,
+    *,
+    action: str,
+    principal_uid: str | None = None,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Explain why a user may or may not perform an action on a constant.
+
+    Uses `Constant.explain_access()`.
+    """
+    explanation = _run_object_access_operation(
+        "Constant",
+        constant_uid,
+        lambda constant: constant.explain_access(
+            action,
+            principal_uid=str(principal_uid) if principal_uid is not None else None,
+            timeout=timeout,
+        ),
+    )
+    return _sdk_object_to_dict(explanation)
+
+
+def get_secret_access(
+    secret_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
     """
-    Fetch the edit-access state for a constant via `ShareableObjectMixin.can_edit()`.
+    Read the policies attached to a secret via `Secret.get_access()`.
     """
-    return _get_shareable_object_access_state(
-        module_name="mainsequence.client.models_foundry",
-        class_name="Constant",
-        object_uid=constant_uid,
-        accessor_name="can_edit",
-        timeout=timeout,
+    listing = _run_object_access_operation(
+        "Secret",
+        secret_uid,
+        lambda secret: secret.get_access(timeout=timeout),
+    )
+    return _sdk_object_to_dict(listing)
+
+
+def attach_secret_policy(
+    secret_uid: str,
+    *,
+    policy: str,
+    principal_type: str,
+    principal_uid: str,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Attach a policy on a secret to a user or a team via `Secret.attach_policy()`.
+    """
+    binding = _run_object_access_operation(
+        "Secret",
+        secret_uid,
+        lambda secret: secret.attach_policy(
+            policy,
+            principal_type=principal_type,
+            principal_uid=str(principal_uid),
+            timeout=timeout,
+        ),
+    )
+    return _sdk_object_to_dict(binding)
+
+
+def detach_secret_policy(
+    secret_uid: str,
+    binding_uid: str,
+    *,
+    timeout: int | None = None,
+) -> None:
+    """
+    Detach one policy binding from a secret via `Secret.detach_policy()`.
+    """
+    _run_object_access_operation(
+        "Secret",
+        secret_uid,
+        lambda secret: secret.detach_policy(str(binding_uid), timeout=timeout),
     )
 
 
-def add_constant_user_to_view(
-    constant_uid: int | str,
-    user_uid: str,
+def explain_secret_access(
+    secret_uid: str,
+    *,
+    action: str,
+    principal_uid: str | None = None,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Explain why a user may or may not perform an action on a secret.
+
+    Uses `Secret.explain_access()`.
+    """
+    explanation = _run_object_access_operation(
+        "Secret",
+        secret_uid,
+        lambda secret: secret.explain_access(
+            action,
+            principal_uid=str(principal_uid) if principal_uid is not None else None,
+            timeout=timeout,
+        ),
+    )
+    return _sdk_object_to_dict(explanation)
+
+
+def get_code_repository_access(
+    code_repository_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
     """
-    Grant explicit view access to one user for a constant.
+    Read the policies attached to a code repository via `CodeRepository.get_access()`.
     """
-    return _mutate_shareable_object_access(
-        module_name="mainsequence.client.models_foundry",
-        class_name="Constant",
-        object_uid=constant_uid,
-        action_name="add_to_view",
-        user_uid=user_uid,
-        timeout=timeout,
+    listing = _run_object_access_operation(
+        "CodeRepository",
+        code_repository_uid,
+        lambda code_repository: code_repository.get_access(timeout=timeout),
+    )
+    return _sdk_object_to_dict(listing)
+
+
+def attach_code_repository_policy(
+    code_repository_uid: str,
+    *,
+    policy: str,
+    principal_type: str,
+    principal_uid: str,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Attach a policy on a code repository to a user or a team via `CodeRepository.attach_policy()`.
+    """
+    binding = _run_object_access_operation(
+        "CodeRepository",
+        code_repository_uid,
+        lambda code_repository: code_repository.attach_policy(
+            policy,
+            principal_type=principal_type,
+            principal_uid=str(principal_uid),
+            timeout=timeout,
+        ),
+    )
+    return _sdk_object_to_dict(binding)
+
+
+def detach_code_repository_policy(
+    code_repository_uid: str,
+    binding_uid: str,
+    *,
+    timeout: int | None = None,
+) -> None:
+    """
+    Detach one policy binding from a code repository via `CodeRepository.detach_policy()`.
+    """
+    _run_object_access_operation(
+        "CodeRepository",
+        code_repository_uid,
+        lambda code_repository: code_repository.detach_policy(str(binding_uid), timeout=timeout),
     )
 
 
-def add_constant_user_to_edit(
-    constant_uid: int | str,
-    user_uid: str,
+def explain_code_repository_access(
+    code_repository_uid: str,
+    *,
+    action: str,
+    principal_uid: str | None = None,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Explain why a user may or may not perform an action on a code repository.
+
+    Uses `CodeRepository.explain_access()`.
+    """
+    explanation = _run_object_access_operation(
+        "CodeRepository",
+        code_repository_uid,
+        lambda code_repository: code_repository.explain_access(
+            action,
+            principal_uid=str(principal_uid) if principal_uid is not None else None,
+            timeout=timeout,
+        ),
+    )
+    return _sdk_object_to_dict(explanation)
+
+
+def get_agent_access(
+    agent_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
     """
-    Grant explicit edit access to one user for a constant.
+    Read the policies attached to an Agent via `Agent.get_access()`.
     """
-    return _mutate_shareable_object_access(
-        module_name="mainsequence.client.models_foundry",
-        class_name="Constant",
-        object_uid=constant_uid,
-        action_name="add_to_edit",
-        user_uid=user_uid,
-        timeout=timeout,
+    listing = _run_object_access_operation(
+        "Agent",
+        agent_uid,
+        lambda agent: agent.get_access(timeout=timeout),
+        module_name="mainsequence.client.agent_runtime_models",
     )
+    return _sdk_object_to_dict(listing)
 
 
-def remove_constant_user_from_view(
-    constant_uid: int | str,
-    user_uid: str,
+def attach_agent_policy(
+    agent_uid: str,
     *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    """
-    Remove explicit view access from one user for a constant.
-    """
-    return _mutate_shareable_object_access(
-        module_name="mainsequence.client.models_foundry",
-        class_name="Constant",
-        object_uid=constant_uid,
-        action_name="remove_from_view",
-        user_uid=user_uid,
-        timeout=timeout,
-    )
-
-
-def remove_constant_user_from_edit(
-    constant_uid: int | str,
-    user_uid: str,
-    *,
+    policy: str,
+    principal_type: str,
+    principal_uid: str,
     timeout: int | None = None,
 ) -> dict[str, Any]:
     """
-    Remove explicit edit access from one user for a constant.
+    Attach a policy on an Agent to a user or a team via `Agent.attach_policy()`.
     """
-    return _mutate_shareable_object_access(
-        module_name="mainsequence.client.models_foundry",
-        class_name="Constant",
-        object_uid=constant_uid,
-        action_name="remove_from_edit",
-        user_uid=user_uid,
-        timeout=timeout,
+    binding = _run_object_access_operation(
+        "Agent",
+        agent_uid,
+        lambda agent: agent.attach_policy(
+            policy,
+            principal_type=principal_type,
+            principal_uid=str(principal_uid),
+            timeout=timeout,
+        ),
+        module_name="mainsequence.client.agent_runtime_models",
+    )
+    return _sdk_object_to_dict(binding)
+
+
+def detach_agent_policy(
+    agent_uid: str,
+    binding_uid: str,
+    *,
+    timeout: int | None = None,
+) -> None:
+    """
+    Detach one policy binding from an Agent via `Agent.detach_policy()`.
+    """
+    _run_object_access_operation(
+        "Agent",
+        agent_uid,
+        lambda agent: agent.detach_policy(str(binding_uid), timeout=timeout),
+        module_name="mainsequence.client.agent_runtime_models",
     )
 
 
-def add_constant_team_to_view(
-    constant_uid: int | str,
-    team_uid: str,
+def explain_agent_access(
+    agent_uid: str,
+    *,
+    action: str,
+    principal_uid: str | None = None,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Explain why a user may or may not perform an action on an Agent.
+
+    Uses `Agent.explain_access()`.
+    """
+    explanation = _run_object_access_operation(
+        "Agent",
+        agent_uid,
+        lambda agent: agent.explain_access(
+            action,
+            principal_uid=str(principal_uid) if principal_uid is not None else None,
+            timeout=timeout,
+        ),
+        module_name="mainsequence.client.agent_runtime_models",
+    )
+    return _sdk_object_to_dict(explanation)
+
+
+def get_resource_release_access(
+    release_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
-    return _mutate_shareable_object_team_access(
-        module_name="mainsequence.client.models_foundry",
-        class_name="Constant",
-        object_uid=constant_uid,
-        action_name="add_team_to_view",
-        team_uid=team_uid,
-        timeout=timeout,
+    """
+    Read the policies attached to a resource release via `ResourceRelease.get_access()`.
+    """
+    listing = _run_object_access_operation(
+        "ResourceRelease",
+        release_uid,
+        lambda release: release.get_access(timeout=timeout),
+        module_name="mainsequence.client.models_helpers",
+    )
+    return _sdk_object_to_dict(listing)
+
+
+def attach_resource_release_policy(
+    release_uid: str,
+    *,
+    policy: str,
+    principal_type: str,
+    principal_uid: str,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Attach a policy on a resource release to a user or a team via `ResourceRelease.attach_policy()`.
+    """
+    binding = _run_object_access_operation(
+        "ResourceRelease",
+        release_uid,
+        lambda release: release.attach_policy(
+            policy,
+            principal_type=principal_type,
+            principal_uid=str(principal_uid),
+            timeout=timeout,
+        ),
+        module_name="mainsequence.client.models_helpers",
+    )
+    return _sdk_object_to_dict(binding)
+
+
+def detach_resource_release_policy(
+    release_uid: str,
+    binding_uid: str,
+    *,
+    timeout: int | None = None,
+) -> None:
+    """
+    Detach one policy binding from a resource release via `ResourceRelease.detach_policy()`.
+    """
+    _run_object_access_operation(
+        "ResourceRelease",
+        release_uid,
+        lambda release: release.detach_policy(str(binding_uid), timeout=timeout),
+        module_name="mainsequence.client.models_helpers",
     )
 
 
-def add_constant_team_to_edit(
-    constant_uid: int | str,
-    team_uid: str,
+def explain_resource_release_access(
+    release_uid: str,
+    *,
+    action: str,
+    principal_uid: str | None = None,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Explain why a user may or may not perform an action on a resource release.
+
+    Uses `ResourceRelease.explain_access()`.
+    """
+    explanation = _run_object_access_operation(
+        "ResourceRelease",
+        release_uid,
+        lambda release: release.explain_access(
+            action,
+            principal_uid=str(principal_uid) if principal_uid is not None else None,
+            timeout=timeout,
+        ),
+        module_name="mainsequence.client.models_helpers",
+    )
+    return _sdk_object_to_dict(explanation)
+
+
+def get_code_repository_job_access(
+    job_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
-    return _mutate_shareable_object_team_access(
-        module_name="mainsequence.client.models_foundry",
-        class_name="Constant",
-        object_uid=constant_uid,
-        action_name="add_team_to_edit",
-        team_uid=team_uid,
-        timeout=timeout,
+    """
+    Read the policies attached to a Job via `Job.get_access()`.
+    """
+    listing = _run_object_access_operation(
+        "Job",
+        job_uid,
+        lambda job: job.get_access(timeout=timeout),
+        module_name="mainsequence.client.models_helpers",
     )
+    return _sdk_object_to_dict(listing)
 
 
-def remove_constant_team_from_view(
-    constant_uid: int | str,
-    team_uid: str,
+def attach_code_repository_job_policy(
+    job_uid: str,
     *,
+    policy: str,
+    principal_type: str,
+    principal_uid: str,
     timeout: int | None = None,
 ) -> dict[str, Any]:
-    return _mutate_shareable_object_team_access(
-        module_name="mainsequence.client.models_foundry",
-        class_name="Constant",
-        object_uid=constant_uid,
-        action_name="remove_team_from_view",
-        team_uid=team_uid,
-        timeout=timeout,
+    """
+    Attach a policy on a Job to a user or a team via `Job.attach_policy()`.
+    """
+    binding = _run_object_access_operation(
+        "Job",
+        job_uid,
+        lambda job: job.attach_policy(
+            policy,
+            principal_type=principal_type,
+            principal_uid=str(principal_uid),
+            timeout=timeout,
+        ),
+        module_name="mainsequence.client.models_helpers",
     )
+    return _sdk_object_to_dict(binding)
 
 
-def remove_constant_team_from_edit(
-    constant_uid: int | str,
-    team_uid: str,
+def detach_code_repository_job_policy(
+    job_uid: str,
+    binding_uid: str,
     *,
     timeout: int | None = None,
-) -> dict[str, Any]:
-    return _mutate_shareable_object_team_access(
-        module_name="mainsequence.client.models_foundry",
-        class_name="Constant",
-        object_uid=constant_uid,
-        action_name="remove_team_from_edit",
-        team_uid=team_uid,
-        timeout=timeout,
+) -> None:
+    """
+    Detach one policy binding from a Job via `Job.detach_policy()`.
+    """
+    _run_object_access_operation(
+        "Job",
+        job_uid,
+        lambda job: job.detach_policy(str(binding_uid), timeout=timeout),
+        module_name="mainsequence.client.models_helpers",
     )
+
+
+def explain_code_repository_job_access(
+    job_uid: str,
+    *,
+    action: str,
+    principal_uid: str | None = None,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Explain why a user may or may not perform an action on a Job.
+
+    Uses `Job.explain_access()`.
+    """
+    explanation = _run_object_access_operation(
+        "Job",
+        job_uid,
+        lambda job: job.explain_access(
+            action,
+            principal_uid=str(principal_uid) if principal_uid is not None else None,
+            timeout=timeout,
+        ),
+        module_name="mainsequence.client.models_helpers",
+    )
+    return _sdk_object_to_dict(explanation)
 
 
 def update_code_repository_job_scheduled_command_args(
@@ -3366,7 +3314,7 @@ def update_code_repository_job_scheduled_command_args(
             raise ApiError(f"Job not found: {job_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"CodeRepository job update failed: {e}") from e
+        raise _as_cli_error(e) from e
 
 
 def get_code_repository_job(
@@ -3390,7 +3338,7 @@ def get_code_repository_job(
             raise ApiError(f"Job not found: {job_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"CodeRepository job fetch failed: {e}") from e
+        raise _as_cli_error(e) from e
 
 
 def run_code_repository_job(
@@ -3485,7 +3433,7 @@ def run_code_repository_job(
             raise NotLoggedIn(str(e) or "Not logged in.") from e
         if err_name == "NotFoundError":
             raise ApiError(f"Job not found: {job_uid}") from e
-        raise ApiError(f"CodeRepository job run failed: {e}") from e
+        raise _as_cli_error(e) from e
     finally:
         if client_utils is not None:
             try:
@@ -3590,7 +3538,7 @@ def list_code_repository_job_runs(
             raise NotLoggedIn(str(e) or "Not logged in.") from e
         if err_name == "NotFoundError":
             raise ApiError(f"Job not found: {job_uid}") from e
-        raise ApiError(f"CodeRepository job runs fetch failed: {e}") from e
+        raise _as_cli_error(e) from e
     finally:
         if client_utils is not None:
             try:
@@ -3706,7 +3654,7 @@ def get_code_repository_job_run_logs(
             raise NotLoggedIn(str(e) or "Not logged in.") from e
         if err_name == "NotFoundError":
             raise ApiError(f"Job run not found: {job_run_uid}") from e
-        raise ApiError(f"CodeRepository job run logs fetch failed: {e}") from e
+        raise _as_cli_error(e) from e
     finally:
         if client_utils is not None:
             try:

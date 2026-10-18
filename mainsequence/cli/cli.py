@@ -62,26 +62,16 @@ from . import config as cfg
 from .api import (
     ApiError,
     NotLoggedIn,
-    add_agent_team_to_edit,
-    add_agent_team_to_view,
-    add_agent_user_to_edit,
-    add_agent_user_to_view,
     add_code_repository_labels,
-    add_code_repository_team_to_edit,
-    add_code_repository_team_to_view,
-    add_code_repository_user_to_edit,
-    add_code_repository_user_to_view,
-    add_constant_team_to_edit,
-    add_constant_team_to_view,
-    add_constant_user_to_edit,
-    add_constant_user_to_view,
     add_deploy_key,
-    add_secret_team_to_edit,
-    add_secret_team_to_view,
-    add_secret_user_to_edit,
-    add_secret_user_to_view,
-    add_team_user_to_edit,
-    add_team_user_to_view,
+    add_organization_team_member,
+    attach_agent_policy,
+    attach_code_repository_job_policy,
+    attach_code_repository_policy,
+    attach_constant_policy,
+    attach_organization_team_policy,
+    attach_resource_release_policy,
+    attach_secret_policy,
     bulk_delete_code_repositories,
     create_code_repository,
     create_constant,
@@ -94,70 +84,68 @@ from .api import (
     delete_organization_team,
     delete_resource_release,
     delete_secret,
+    detach_agent_policy,
+    detach_code_repository_job_policy,
+    detach_code_repository_policy,
+    detach_constant_policy,
+    detach_organization_team_policy,
+    detach_resource_release_policy,
+    detach_secret_policy,
+    explain_agent_access,
+    explain_code_repository_access,
+    explain_code_repository_job_access,
+    explain_constant_access,
+    explain_organization_team_access,
+    explain_resource_release_access,
+    explain_secret_access,
     fetch_platform_code_repository_skill_catalog,
+    get_access_policy,
     get_agent,
+    get_agent_access,
     get_agent_logs,
     get_agent_resource_usage,
     get_agent_session,
     get_agent_session_logs,
     get_code_repositories,
+    get_code_repository_access,
     get_code_repository_branch,
     get_code_repository_image,
     get_code_repository_job,
+    get_code_repository_job_access,
     get_code_repository_job_run_logs,
     get_code_repository_job_run_resource_usage,
     get_code_repository_repository,
     get_constant,
+    get_constant_access,
     get_current_user_profile,
     get_logged_user_details,
     get_or_create_agent_session,
     get_organization_team,
+    get_organization_team_access,
     get_resource_release,
+    get_resource_release_access,
     get_resource_release_logs,
     get_resource_release_resource_usage,
     get_secret,
+    get_secret_access,
+    leave_organization_team,
+    list_access_policies,
     list_agent_sessions,
-    list_agent_users_can_edit,
-    list_agent_users_can_view,
     list_agents,
     list_code_repository_base_images,
     list_code_repository_images,
     list_code_repository_job_runs,
     list_code_repository_jobs,
     list_code_repository_resources,
-    list_code_repository_users_can_edit,
-    list_code_repository_users_can_view,
-    list_constant_users_can_edit,
-    list_constant_users_can_view,
     list_constants,
     list_github_organizations,
+    list_organization_team_members,
     list_organization_teams,
-    list_secret_users_can_edit,
-    list_secret_users_can_view,
     list_secrets,
-    list_team_users_can_edit,
-    list_team_users_can_view,
     logout_cli_session,
     refresh_access,
-    remove_agent_team_from_edit,
-    remove_agent_team_from_view,
-    remove_agent_user_from_edit,
-    remove_agent_user_from_view,
     remove_code_repository_labels,
-    remove_code_repository_team_from_edit,
-    remove_code_repository_team_from_view,
-    remove_code_repository_user_from_edit,
-    remove_code_repository_user_from_view,
-    remove_constant_team_from_edit,
-    remove_constant_team_from_view,
-    remove_constant_user_from_edit,
-    remove_constant_user_from_view,
-    remove_secret_team_from_edit,
-    remove_secret_team_from_view,
-    remove_secret_user_from_edit,
-    remove_secret_user_from_view,
-    remove_team_user_from_edit,
-    remove_team_user_from_view,
+    remove_organization_team_member,
     repo_name_from_git_url,
     resolve_code_repository,
     run_code_repository_job,
@@ -297,36 +285,70 @@ app = typer.Typer(
 )
 
 agent = typer.Typer(help="Agent commands")
+agent_access_group = typer.Typer(
+    help="Who has access to an Agent: its policies", no_args_is_help=True
+)
 agent_session_group = typer.Typer(help="Agent session commands")
 agent_session_a2a_group = typer.Typer(help="Agent session A2A commands")
 constants = typer.Typer(help="Constant commands")
+constants_access_group = typer.Typer(
+    help="Who has access to a constant: its policies", no_args_is_help=True
+)
 secrets = typer.Typer(help="Secret commands")
+secrets_access_group = typer.Typer(
+    help="Who has access to a secret: its policies", no_args_is_help=True
+)
 organization = typer.Typer(help="Organization commands")
 organization_teams_group = typer.Typer(help="Organization team commands")
+organization_team_members_group = typer.Typer(help="Team member commands", no_args_is_help=True)
+organization_team_access_group = typer.Typer(
+    help="Who has access to a team: its policies", no_args_is_help=True
+)
 code_repository = typer.Typer(help="CodeRepository commands (remote + local operations)")
+code_repository_access_group = typer.Typer(
+    help="Who has access to a code repository: its policies", no_args_is_help=True
+)
 code_repository_list_group = typer.Typer(help="List-related CodeRepository commands")
 code_repository_resources_group = typer.Typer(help="CodeRepository resource commands")
+code_repository_resources_access_group = typer.Typer(
+    help="Who has access to a resource release: its policies", no_args_is_help=True
+)
 code_repository_images_group = typer.Typer(help="CodeRepository image commands")
 code_repository_jobs_group = typer.Typer(help="CodeRepository job commands")
+code_repository_jobs_access_group = typer.Typer(
+    help="Who has access to a Job: its policies", no_args_is_help=True
+)
 code_repository_job_runs_group = typer.Typer(help="CodeRepository job run commands")
 settings = typer.Typer(help="Settings (base folder, backend, etc.)")
 sdk = typer.Typer(help="SDK utilities (latest version, status)")
 skills = typer.Typer(help="Installed scaffold skill commands")
 auth = typer.Typer(help="Saved session commands for other local tools", no_args_is_help=True)
+access = typer.Typer(help="Access catalog commands", no_args_is_help=True)
+access_policies_group = typer.Typer(help="Access policies the platform defines")
 
 app.add_typer(auth, name="auth")
+app.add_typer(access, name="access")
+access.add_typer(access_policies_group, name="policies")
 app.add_typer(agent, name="agent")
+agent.add_typer(agent_access_group, name="access")
 agent.add_typer(agent_session_group, name="session")
 agent_session_group.add_typer(agent_session_a2a_group, name="a2a")
 app.add_typer(constants, name="constants")
+constants.add_typer(constants_access_group, name="access")
 app.add_typer(secrets, name="secrets")
+secrets.add_typer(secrets_access_group, name="access")
 app.add_typer(organization, name="organization")
+organization_teams_group.add_typer(organization_team_members_group, name="members")
+organization_teams_group.add_typer(organization_team_access_group, name="access")
 app.add_typer(skills, name="skills")
 app.add_typer(code_repository, name="code-repository")
 code_repository.add_typer(code_repository_list_group, name="list")
+code_repository.add_typer(code_repository_access_group, name="access")
 code_repository.add_typer(code_repository_resources_group, name="resources")
+code_repository_resources_group.add_typer(code_repository_resources_access_group, name="access")
 code_repository.add_typer(code_repository_images_group, name="images")
 code_repository.add_typer(code_repository_jobs_group, name="jobs")
+code_repository_jobs_group.add_typer(code_repository_jobs_access_group, name="access")
 code_repository_jobs_group.add_typer(code_repository_job_runs_group, name="runs")
 app.add_typer(settings, name="settings")
 app.add_typer(sdk, name="sdk")
@@ -2336,6 +2358,7 @@ def _organization_teams_create_impl(
         return
 
     success(f"Organization team created: {team_name}")
+    info("You are its owner and its first member.")
     print_kv("Created Team", _format_team_preview(created))
 
 
@@ -2454,6 +2477,14 @@ def organization_teams_create_cmd(
 ):
     """
     Create one organization team.
+
+    Any person can create a team. You become its owner and its first member.
+
+    Examples
+    --------
+    ```bash
+    mainsequence organization teams create Research --description "Model validation"
+    ```
     """
     _organization_teams_create_impl(name=name, description=description, timeout=timeout)
 
@@ -2489,96 +2520,677 @@ def organization_teams_delete_cmd(
     _organization_teams_delete_impl(team_uid=team_uid, timeout=timeout)
 
 
-@organization_teams_group.command("can_view")
-def organization_teams_can_view_cmd(
+def _format_team_member(member: dict[str, object]) -> list[tuple[str, str]]:
+    return [
+        ("UID", str(member.get("uid") or "-")),
+        ("Kind", str(member.get("member_kind") or "-")),
+        ("Username", str(member.get("username") or "-")),
+        ("Email", str(member.get("email") or "-")),
+        ("Name", _render_shareable_user_name(member)),
+    ]
+
+
+def _format_access_principal(principal: object) -> str:
+    if not isinstance(principal, dict):
+        return "-"
+    uid = str(principal.get("uid") or "-")
+    if principal.get("type") == "team":
+        return f"Team {principal.get('name') or uid}"
+    if principal.get("identity_type") == "workload":
+        return f"Workload {principal.get('name') or uid}"
+    return str(principal.get("email") or principal.get("name") or uid)
+
+
+def _format_access_binding(binding: dict[str, object]) -> list[tuple[str, str]]:
+    policy = binding.get("policy") if isinstance(binding.get("policy"), dict) else {}
+    principal = binding.get("principal") if isinstance(binding.get("principal"), dict) else {}
+    granted_by = binding.get("granted_by") if isinstance(binding.get("granted_by"), dict) else {}
+    return [
+        ("Binding UID", str(binding.get("uid") or "-")),
+        ("Policy", str(policy.get("id") or "-")),
+        ("Label", str(policy.get("label") or "-")),
+        ("Principal", _format_access_principal(principal)),
+        ("Principal UID", str(principal.get("uid") or "-")),
+        ("Source", str(binding.get("source") or "-")),
+        ("Granted by", str(granted_by.get("email") or granted_by.get("uid") or "-")),
+    ]
+
+
+def _format_computed_access_holder(row: dict[str, object]) -> str:
+    """Who a computed access row is about: an inherited row also names its holder."""
+    detail = str(row.get("detail") or "-")
+    if not isinstance(row.get("principal"), dict):
+        return detail
+    return f"{_format_access_principal(row.get('principal'))} ({detail})"
+
+
+def _format_access_explanation_path(path: dict[str, object]) -> str:
+    if path.get("team_uid"):
+        return f"team {path.get('team_uid')}, binding {path.get('binding_uid') or '-'}"
+    if path.get("binding_uid"):
+        return f"binding {path.get('binding_uid')}"
+    if path.get("relation"):
+        return f"{path.get('parent_policy') or '-'} on its {path.get('relation')}"
+    return str(path.get("detail") or "-")
+
+
+def _organization_team_members_list_impl(*, team_uid: str, timeout: int | None) -> None:
+    _require_login()
+
+    try:
+        members = list_organization_team_members(team_uid, timeout=timeout)
+    except ApiError as e:
+        error(f"Team members fetch failed: {e}")
+        raise typer.Exit(1) from e
+
+    if _emit_json(members):
+        return
+
+    rows = [
+        [
+            str(member.get("uid") or "-"),
+            str(member.get("member_kind") or "-"),
+            str(member.get("email") or "-"),
+            _render_shareable_user_name(member),
+        ]
+        for member in members
+    ]
+    if rows:
+        print_table("Team Members", ["UID", "Kind", "Email", "Name"], rows)
+    else:
+        info("No team members.")
+    info(f"Total team members: {len(members)}")
+
+
+def _organization_team_members_add_impl(
+    *,
+    team_uid: str,
+    user_uid: str | uuid.UUID,
+    timeout: int | None,
+) -> None:
+    _require_login()
+
+    try:
+        member = add_organization_team_member(team_uid, str(user_uid), timeout=timeout)
+    except ApiError as e:
+        error(f"Team member addition failed: {e}")
+        raise typer.Exit(1) from e
+
+    if _emit_json(member):
+        return
+
+    who = str(member.get("email") or member.get("uid") or user_uid)
+    success(f"{who} is a member of team {team_uid}.")
+    print_kv("Team Member", _format_team_member(member))
+
+
+def _organization_team_members_remove_impl(
+    *,
+    team_uid: str,
+    user_uid: str | uuid.UUID,
+    timeout: int | None,
+) -> None:
+    _require_login()
+
+    try:
+        remove_organization_team_member(team_uid, str(user_uid), timeout=timeout)
+    except ApiError as e:
+        error(f"Team member removal failed: {e}")
+        raise typer.Exit(1) from e
+
+    if _emit_json({"team_uid": str(team_uid), "user_uid": str(user_uid), "removed": True}):
+        return
+
+    success(f"Removed {user_uid} from team {team_uid}.")
+
+
+def _organization_teams_leave_impl(*, team_uid: str, timeout: int | None) -> None:
+    _require_login()
+
+    try:
+        leave_organization_team(team_uid, timeout=timeout)
+    except ApiError as e:
+        error(f"Leaving the team failed: {e}")
+        raise typer.Exit(1) from e
+
+    if _emit_json({"team_uid": str(team_uid), "left": True}):
+        return
+
+    success(f"You left team {team_uid}.")
+
+
+def _object_access_noun(object_label: str) -> str:
+    """Name the object in a sentence: `Team` is "team", `CodeRepository` "code repository"."""
+    return re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", object_label).lower()
+
+
+def _object_access_list_impl(
+    *,
+    fetch_fn,
+    object_label: str,
+    object_uid: str,
+    timeout: int | None,
+) -> None:
+    _require_login()
+
+    try:
+        listing = fetch_fn(object_uid, timeout=timeout)
+    except ApiError as e:
+        error(f"{object_label} access fetch failed: {e}")
+        raise typer.Exit(1) from e
+
+    if _emit_json(listing):
+        return
+
+    bindings = listing.get("bindings") if isinstance(listing.get("bindings"), list) else []
+    computed = listing.get("computed") if isinstance(listing.get("computed"), list) else []
+
+    rows = []
+    for binding in bindings:
+        policy = binding.get("policy") if isinstance(binding.get("policy"), dict) else {}
+        rows.append(
+            [
+                str(binding.get("uid") or "-"),
+                str(policy.get("id") or "-"),
+                _format_access_principal(binding.get("principal")),
+                str(binding.get("source") or "-"),
+            ]
+        )
+    if rows:
+        print_table(
+            f"{object_label} Policies", ["Binding UID", "Policy", "Principal", "Source"], rows
+        )
+    else:
+        info(f"No policies are attached to this {_object_access_noun(object_label)}.")
+
+    # Only the Organization admin row stands for every action when it names no
+    # policy; a row such as the managers of a creating workload says it in words.
+    computed_rows = [
+        [
+            str(row.get("source") or "-"),
+            str(row.get("policy") or ("every action" if row.get("source") == "role" else "-")),
+            _format_computed_access_holder(row),
+        ]
+        for row in computed
+    ]
+    if computed_rows:
+        print_table("Computed Access", ["Source", "Policy", "Who"], computed_rows)
+    info(f"Total policy bindings: {len(bindings)}")
+
+
+def _object_access_grant_impl(
+    *,
+    attach_fn,
+    object_label: str,
+    object_uid: str,
+    policy: str,
+    user_uid: uuid.UUID | None,
+    principal_team_uid: uuid.UUID | None,
+    timeout: int | None,
+) -> None:
+    if (user_uid is None) == (principal_team_uid is None):
+        error("Pass exactly one of --user or --team.")
+        raise typer.Exit(1)
+    _require_login()
+
+    principal_type = "user" if user_uid is not None else "team"
+    principal_uid = str(user_uid if user_uid is not None else principal_team_uid)
+    try:
+        binding = attach_fn(
+            object_uid,
+            policy=policy,
+            principal_type=principal_type,
+            principal_uid=principal_uid,
+            timeout=timeout,
+        )
+    except ApiError as e:
+        error(f"{object_label} access grant failed: {e}")
+        raise typer.Exit(1) from e
+
+    if _emit_json(binding):
+        return
+
+    details = _format_access_binding(binding)
+    labels = dict(details)
+    success(
+        f"Attached {labels['Policy']} to {labels['Principal']} "
+        f"on {_object_access_noun(object_label)} {object_uid}."
+    )
+    print_kv("Access Binding", details)
+
+
+def _object_access_revoke_impl(
+    *,
+    detach_fn,
+    object_label: str,
+    object_uid: str,
+    binding_uid: str | uuid.UUID,
+    timeout: int | None,
+) -> None:
+    _require_login()
+
+    try:
+        detach_fn(object_uid, str(binding_uid), timeout=timeout)
+    except ApiError as e:
+        error(f"{object_label} access revoke failed: {e}")
+        raise typer.Exit(1) from e
+
+    detached = {
+        f"{_object_access_noun(object_label).replace(' ', '_')}_uid": str(object_uid),
+        "binding_uid": str(binding_uid),
+        "detached": True,
+    }
+    if _emit_json(detached):
+        return
+
+    success(
+        f"Detached binding {binding_uid} from {_object_access_noun(object_label)} {object_uid}."
+    )
+
+
+def _object_access_explain_impl(
+    *,
+    explain_fn,
+    object_label: str,
+    object_uid: str,
+    action: str,
+    user_uid: uuid.UUID | None,
+    timeout: int | None,
+) -> None:
+    _require_login()
+
+    try:
+        explanation = explain_fn(
+            object_uid,
+            action=action,
+            principal_uid=str(user_uid) if user_uid is not None else None,
+            timeout=timeout,
+        )
+    except ApiError as e:
+        error(f"{object_label} access explanation failed: {e}")
+        raise typer.Exit(1) from e
+
+    if _emit_json(explanation):
+        return
+
+    granting = explanation.get("granting_policies")
+    print_kv(
+        "Access Explanation",
+        [
+            ("Action", str(explanation.get("action") or action)),
+            ("Allowed", "yes" if explanation.get("allowed") else "no"),
+            ("In scope", "yes" if explanation.get("in_scope") else "no"),
+            ("Blocked by a platform rule", "yes" if explanation.get("blocked_by_rule") else "no"),
+            (
+                "Policies that give it",
+                (
+                    ", ".join(str(item) for item in granting)
+                    if isinstance(granting, list) and granting
+                    else "-"
+                ),
+            ),
+        ],
+    )
+    paths = explanation.get("paths") if isinstance(explanation.get("paths"), list) else []
+    rows = [
+        [
+            str(path.get("source") or "-"),
+            str(path.get("policy") or "-"),
+            _format_access_explanation_path(path),
+        ]
+        for path in paths
+        if isinstance(path, dict)
+    ]
+    if rows:
+        print_table("What Gives It", ["Source", "Policy", "Through"], rows)
+    elif not explanation.get("allowed"):
+        info("Nothing gives this action.")
+
+
+@organization_teams_group.command("leave")
+def organization_teams_leave_cmd(
     team_uid: str = pydantic_argument(TEAM_MODEL_REF, "uid", ..., help="Team UID."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
-    _shareable_user_list_impl(
-        fetch_fn=list_team_users_can_view,
+    """
+    Leave one team: you stop being a member.
+
+    Policies you hold on the team itself, such as owner, are not membership and stay.
+
+    Examples
+    --------
+    ```bash
+    mainsequence organization teams leave <TEAM_UID>
+    ```
+    """
+    _organization_teams_leave_impl(team_uid=team_uid, timeout=timeout)
+
+
+@organization_team_members_group.command("list")
+def organization_team_members_list_cmd(
+    team_uid: str = pydantic_argument(TEAM_MODEL_REF, "uid", ..., help="Team UID."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    List one team's members, people first and then workload identities.
+
+    Examples
+    --------
+    ```bash
+    mainsequence organization teams members list <TEAM_UID>
+    mainsequence organization teams members list <TEAM_UID> --json
+    ```
+    """
+    _organization_team_members_list_impl(team_uid=team_uid, timeout=timeout)
+
+
+@organization_team_members_group.command("add")
+def organization_team_members_add_cmd(
+    team_uid: str = pydantic_argument(TEAM_MODEL_REF, "uid", ..., help="Team UID."),
+    user_uid: uuid.UUID = typer.Argument(
+        ..., help="UID of the person or workload identity to add."
+    ),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Add a person or a workload identity to one team.
+
+    Adding someone who already is a member changes nothing. It needs the team's
+    add_member action.
+
+    Examples
+    --------
+    ```bash
+    mainsequence organization teams members add <TEAM_UID> <USER_UID>
+    ```
+    """
+    _organization_team_members_add_impl(team_uid=team_uid, user_uid=user_uid, timeout=timeout)
+
+
+@organization_team_members_group.command("remove")
+def organization_team_members_remove_cmd(
+    team_uid: str = pydantic_argument(TEAM_MODEL_REF, "uid", ..., help="Team UID."),
+    user_uid: uuid.UUID = typer.Argument(..., help="UID of the member to remove."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Remove a member from one team.
+
+    It needs the team's remove_member action. To remove yourself, use
+    `mainsequence organization teams leave`.
+
+    Examples
+    --------
+    ```bash
+    mainsequence organization teams members remove <TEAM_UID> <USER_UID>
+    ```
+    """
+    _organization_team_members_remove_impl(team_uid=team_uid, user_uid=user_uid, timeout=timeout)
+
+
+@organization_team_access_group.command("list")
+def organization_team_access_list_cmd(
+    team_uid: str = pydantic_argument(TEAM_MODEL_REF, "uid", ..., help="Team UID."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    List the policies attached to one team, and the access the platform computes.
+
+    It needs the team's read_access action.
+
+    Examples
+    --------
+    ```bash
+    mainsequence organization teams access list <TEAM_UID>
+    mainsequence organization teams access list <TEAM_UID> --json
+    ```
+    """
+    _object_access_list_impl(
+        fetch_fn=get_organization_team_access,
         object_label="Team",
-        access_label="view",
         object_uid=team_uid,
         timeout=timeout,
     )
 
 
-@organization_teams_group.command("can_edit")
-def organization_teams_can_edit_cmd(
+@organization_team_access_group.command("grant")
+def organization_team_access_grant_cmd(
     team_uid: str = pydantic_argument(TEAM_MODEL_REF, "uid", ..., help="Team UID."),
+    policy: str = typer.Argument(
+        ...,
+        help="Policy name of the team type, for example viewer, or its id, organization-teams.viewer.",
+    ),
+    user_uid: uuid.UUID | None = typer.Option(
+        None, "--user", help="UID of the person or workload identity to give the policy to."
+    ),
+    principal_team_uid: uuid.UUID | None = typer.Option(
+        None, "--team", help="UID of the team to give the policy to."
+    ),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
-    _shareable_user_list_impl(
-        fetch_fn=list_team_users_can_edit,
+    """
+    Give a policy on one team to a person, a workload identity or a team.
+
+    Pass exactly one of --user or --team. It needs the team's manage_access
+    action and every action of the policy. `mainsequence access policies --type
+    organization-teams` lists the policies.
+
+    Examples
+    --------
+    ```bash
+    mainsequence organization teams access grant <TEAM_UID> viewer --user <USER_UID>
+    mainsequence organization teams access grant <TEAM_UID> membership_manager --team <OTHER_TEAM_UID>
+    ```
+    """
+    _object_access_grant_impl(
+        attach_fn=attach_organization_team_policy,
         object_label="Team",
-        access_label="edit",
         object_uid=team_uid,
+        policy=policy,
+        user_uid=user_uid,
+        principal_team_uid=principal_team_uid,
         timeout=timeout,
     )
 
 
-@organization_teams_group.command("add_to_view")
-def organization_teams_add_to_view_cmd(
+@organization_team_access_group.command("revoke")
+def organization_team_access_revoke_cmd(
     team_uid: str = pydantic_argument(TEAM_MODEL_REF, "uid", ..., help="Team UID."),
-    user_uid: uuid.UUID = typer.Argument(..., help="User UID to grant view access."),
+    binding_uid: uuid.UUID = typer.Argument(
+        ..., help="UID of the binding to detach, from `access list`."
+    ),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
-    _shareable_user_access_update_impl(
-        action_fn=add_team_user_to_view,
+    """
+    Detach one policy binding from one team.
+
+    It needs the team's manage_access action; removing your own binding is
+    always allowed.
+
+    Examples
+    --------
+    ```bash
+    mainsequence organization teams access revoke <TEAM_UID> <BINDING_UID>
+    ```
+    """
+    _object_access_revoke_impl(
+        detach_fn=detach_organization_team_policy,
         object_label="Team",
-        action_label="add_to_view",
         object_uid=team_uid,
+        binding_uid=binding_uid,
+        timeout=timeout,
+    )
+
+
+@organization_team_access_group.command("explain")
+def organization_team_access_explain_cmd(
+    team_uid: str = pydantic_argument(TEAM_MODEL_REF, "uid", ..., help="Team UID."),
+    action: str = typer.Argument(
+        ..., help="Action id of the team type, for example organization-teams.update."
+    ),
+    user_uid: uuid.UUID | None = typer.Option(
+        None, "--user", help="UID of the User to explain for. Without it, you."
+    ),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Explain why you, or another User, may or may not perform an action on one team.
+
+    Asking about someone else needs the team's read_access action.
+
+    Examples
+    --------
+    ```bash
+    mainsequence organization teams access explain <TEAM_UID> organization-teams.update
+    mainsequence organization teams access explain <TEAM_UID> organization-teams.add_member --user <USER_UID>
+    ```
+    """
+    _object_access_explain_impl(
+        explain_fn=explain_organization_team_access,
+        object_label="Team",
+        object_uid=team_uid,
+        action=action,
         user_uid=user_uid,
         timeout=timeout,
     )
 
 
-@organization_teams_group.command("add_to_edit")
-def organization_teams_add_to_edit_cmd(
-    team_uid: str = pydantic_argument(TEAM_MODEL_REF, "uid", ..., help="Team UID."),
-    user_uid: uuid.UUID = typer.Argument(..., help="User UID to grant edit access."),
+# ---------- access group ----------
+
+
+def _format_access_policy_principals(policy: dict[str, object]) -> str:
+    if policy.get("attachable") is False:
+        return "computed, never attached"
+    kinds = policy.get("principal_kinds")
+    if isinstance(kinds, list) and kinds:
+        return ", ".join(str(kind) for kind in kinds)
+    return "-"
+
+
+def _format_access_policy_details(policy: dict[str, object]) -> list[tuple[str, str]]:
+    actions = policy.get("actions")
+    return [
+        ("Policy", str(policy.get("id") or "-")),
+        ("UID", str(policy.get("uid") or "-")),
+        ("Label", str(policy.get("label") or "-")),
+        ("Resource type", str(policy.get("resource_type") or "-")),
+        ("Given to", _format_access_policy_principals(policy)),
+        ("Summary", str(policy.get("summary") or "-")),
+        ("Impact", str(policy.get("impact") or "-")),
+        ("Not included", str(policy.get("not_included") or "-")),
+        (
+            "Actions",
+            (
+                ", ".join(str(action) for action in actions)
+                if isinstance(actions, list) and actions
+                else "-"
+            ),
+        ),
+    ]
+
+
+def _access_policies_list_impl(
+    *,
+    resource_type: str | None,
+    timeout: int | None,
+) -> None:
+    _require_login()
+
+    try:
+        policies = list_access_policies(resource_type=resource_type, timeout=timeout)
+    except ApiError as e:
+        error(f"Access policies fetch failed: {e}")
+        raise typer.Exit(1) from e
+
+    if _emit_json(policies):
+        return
+
+    rows = [
+        [
+            str(policy.get("id") or "-"),
+            str(policy.get("label") or "-"),
+            _format_access_policy_principals(policy),
+            str(policy.get("summary") or "-"),
+        ]
+        for policy in policies
+    ]
+    if rows:
+        print_table("Access Policies", ["Policy", "Label", "Given to", "Summary"], rows)
+    elif resource_type:
+        info(f"No access policies for resource type {resource_type}.")
+    else:
+        info("No access policies.")
+    info(f"Total access policies: {len(policies)}")
+
+
+def _access_policies_show_impl(
+    *,
+    policy_ref: str,
+    timeout: int | None,
+) -> None:
+    _require_login()
+
+    try:
+        policy = get_access_policy(policy_ref, timeout=timeout)
+    except ApiError as e:
+        error(f"Access policy fetch failed: {e}")
+        raise typer.Exit(1) from e
+
+    if _emit_json(policy):
+        return
+
+    print_kv("Access Policy", _format_access_policy_details(policy))
+
+
+@access_policies_group.callback(invoke_without_command=True)
+def access_policies_cb(
+    ctx: typer.Context,
+    resource_type: str | None = typer.Option(
+        None,
+        "--type",
+        help="Resource type key, for example secrets. Without it, every type's policies are listed.",
+    ),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
-    _shareable_user_access_update_impl(
-        action_fn=add_team_user_to_edit,
-        object_label="Team",
-        action_label="add_to_edit",
-        object_uid=team_uid,
-        user_uid=user_uid,
-        timeout=timeout,
-    )
+    """
+    List the access policies the platform defines.
+
+    Without a subcommand, lists the policies of every resource type, or of the
+    one given with `--type`. `show` prints one policy in full. The catalog says
+    what each policy allows; it does not change who has access.
+
+    Examples
+    --------
+    ```bash
+    mainsequence access policies
+    mainsequence access policies --type secrets
+    mainsequence access policies --type secrets --json
+    mainsequence access policies show secrets.reader
+    ```
+    """
+    if ctx.invoked_subcommand is None:
+        _access_policies_list_impl(resource_type=resource_type, timeout=timeout)
 
 
-@organization_teams_group.command("remove_from_view")
-def organization_teams_remove_from_view_cmd(
-    team_uid: str = pydantic_argument(TEAM_MODEL_REF, "uid", ..., help="Team UID."),
-    user_uid: uuid.UUID = typer.Argument(..., help="User UID to remove explicit view access from."),
+@access_policies_group.command("show")
+def access_policies_show_cmd(
+    policy: str = typer.Argument(
+        ...,
+        help="Policy id, for example secrets.reader, or the policy's UID.",
+    ),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
-    _shareable_user_access_update_impl(
-        action_fn=remove_team_user_from_view,
-        object_label="Team",
-        action_label="remove_from_view",
-        object_uid=team_uid,
-        user_uid=user_uid,
-        timeout=timeout,
-    )
+    """
+    Show one access policy: what it allows, its impact, what it does not include and its actions.
 
-
-@organization_teams_group.command("remove_from_edit")
-def organization_teams_remove_from_edit_cmd(
-    team_uid: str = pydantic_argument(TEAM_MODEL_REF, "uid", ..., help="Team UID."),
-    user_uid: uuid.UUID = typer.Argument(..., help="User UID to remove explicit edit access from."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    _shareable_user_access_update_impl(
-        action_fn=remove_team_user_from_edit,
-        object_label="Team",
-        action_label="remove_from_edit",
-        object_uid=team_uid,
-        user_uid=user_uid,
-        timeout=timeout,
-    )
+    Examples
+    --------
+    ```bash
+    mainsequence access policies show secrets.reader
+    mainsequence access policies show <POLICY_UID> --json
+    ```
+    """
+    _access_policies_show_impl(policy_ref=policy, timeout=timeout)
 
 
 @app.command("copy-llm-instructions")
@@ -2881,66 +3493,6 @@ def _render_shareable_user_name(user: dict[str, object]) -> str:
     last_name = str(user.get("last_name") or "").strip()
     full_name = " ".join(part for part in (first_name, last_name) if part)
     return full_name or "-"
-
-
-def _render_shareable_team_name(team: dict[str, object]) -> str:
-    return str(team.get("name") or "-")
-
-
-def _format_shareable_permission_change(payload: dict[str, object]) -> list[tuple[str, str]]:
-    user = payload.get("user") if isinstance(payload.get("user"), dict) else {}
-    team = payload.get("team") if isinstance(payload.get("team"), dict) else {}
-    explicit_view_uids = payload.get("explicit_can_view_user_uids")
-    explicit_edit_uids = payload.get("explicit_can_edit_user_uids")
-    explicit_view_team_uids = payload.get("explicit_can_view_team_uids")
-    explicit_edit_team_uids = payload.get("explicit_can_edit_team_uids")
-    return [
-        ("Action", str(payload.get("action") or "-")),
-        ("Detail", str(payload.get("detail") or "-")),
-        ("Object Reference", str(payload.get("object_uid") or "-")),
-        ("Object Type", str(payload.get("object_type") or "-")),
-        ("User UID", str(user.get("uid") or "-")),
-        ("Username", str(user.get("username") or "-")),
-        ("Email", str(user.get("email") or "-")),
-        ("Name", _render_shareable_user_name(user)),
-        ("Team UID", str(team.get("uid") or "-")),
-        ("Team Name", _render_shareable_team_name(team)),
-        ("Team Description", str(team.get("description") or "-")),
-        ("Explicit Can View", str(payload.get("explicit_can_view"))),
-        ("Explicit Can Edit", str(payload.get("explicit_can_edit"))),
-        (
-            "Explicit View User UIDs",
-            (
-                ", ".join(str(item) for item in explicit_view_uids)
-                if isinstance(explicit_view_uids, list)
-                else "-"
-            ),
-        ),
-        (
-            "Explicit Edit User UIDs",
-            (
-                ", ".join(str(item) for item in explicit_edit_uids)
-                if isinstance(explicit_edit_uids, list)
-                else "-"
-            ),
-        ),
-        (
-            "Explicit View Team UIDs",
-            (
-                ", ".join(str(item) for item in explicit_view_team_uids)
-                if isinstance(explicit_view_team_uids, list)
-                else "-"
-            ),
-        ),
-        (
-            "Explicit Edit Team UIDs",
-            (
-                ", ".join(str(item) for item in explicit_edit_team_uids)
-                if isinstance(explicit_edit_team_uids, list)
-                else "-"
-            ),
-        ),
-    ]
 
 
 def _parse_constant_value(raw_value: str) -> object:
@@ -3684,124 +4236,6 @@ def _constants_delete_impl(
     print_kv("Deleted Constant", _format_constant_delete_preview(deleted))
 
 
-def _shareable_user_list_impl(
-    *,
-    fetch_fn,
-    object_label: str,
-    access_label: str,
-    object_uid: int | str,
-    timeout: int | None,
-) -> None:
-    _require_login()
-
-    try:
-        access_state = fetch_fn(object_uid, timeout=timeout)
-    except ApiError as e:
-        error(f"{object_label} {access_label} fetch failed: {e}")
-        raise typer.Exit(1) from e
-
-    if _emit_json(access_state):
-        return
-
-    if isinstance(access_state, dict):
-        effective_access_label = str(access_state.get("access_level") or access_label)
-        users_payload = list(access_state.get("users") or [])
-        teams_payload = list(access_state.get("teams") or [])
-    else:
-        effective_access_label = access_label
-        users_payload = list(access_state or [])
-        teams_payload = []
-
-    user_rows: list[list[str]] = []
-    for user in users_payload:
-        user_rows.append(
-            [
-                str(user.get("uid") or "-"),
-                str(user.get("username") or "-"),
-                str(user.get("email") or "-"),
-                _render_shareable_user_name(user),
-            ]
-        )
-
-    title = f"{object_label} Users Who Can {effective_access_label.title()}"
-    if user_rows:
-        print_table(title, ["UID", "Username", "Email", "Name"], user_rows)
-    else:
-        info(f"No users can {effective_access_label} this {object_label.lower()}.")
-
-    team_rows: list[list[str]] = []
-    for team in teams_payload:
-        member_count = team.get("member_count")
-        if member_count is None:
-            members = team.get("members")
-            member_count = len(members) if isinstance(members, list) else "-"
-        team_rows.append(
-            [
-                str(team.get("uid") or "-"),
-                _render_shareable_team_name(team),
-                str(team.get("description") or "-"),
-                str(member_count),
-            ]
-        )
-
-    teams_title = f"{object_label} Teams Who Can {effective_access_label.title()}"
-    if team_rows:
-        print_table(teams_title, ["UID", "Name", "Description", "Members"], team_rows)
-    else:
-        info(f"No teams can {effective_access_label} this {object_label.lower()}.")
-
-    info(f"Total users who can {effective_access_label}: {len(users_payload)}")
-    info(f"Total teams who can {effective_access_label}: {len(teams_payload)}")
-
-
-def _shareable_user_access_update_impl(
-    *,
-    action_fn,
-    object_label: str,
-    action_label: str,
-    object_uid: int | str,
-    user_uid: str | uuid.UUID,
-    timeout: int | None,
-) -> None:
-    _require_login()
-
-    try:
-        payload = action_fn(object_uid, str(user_uid), timeout=timeout)
-    except ApiError as e:
-        error(f"{object_label} {action_label} failed: {e}")
-        raise typer.Exit(1) from e
-
-    if _emit_json(payload):
-        return
-
-    success(f"{object_label} {action_label} completed.")
-    print_kv(f"{object_label} Sharing Update", _format_shareable_permission_change(payload))
-
-
-def _shareable_team_access_update_impl(
-    *,
-    action_fn,
-    object_label: str,
-    action_label: str,
-    object_uid: int | str,
-    team_uid: str | uuid.UUID,
-    timeout: int | None,
-) -> None:
-    _require_login()
-
-    try:
-        payload = action_fn(object_uid, str(team_uid), timeout=timeout)
-    except ApiError as e:
-        error(f"{object_label} {action_label} failed: {e}")
-        raise typer.Exit(1) from e
-
-    if _emit_json(payload):
-        return
-
-    success(f"{object_label} {action_label} completed.")
-    print_kv(f"{object_label} Sharing Update", _format_shareable_permission_change(payload))
-
-
 def _format_labelable_label_change(payload: dict[str, object]) -> list[tuple[str, str]]:
     labels_payload = payload.get("labels") if isinstance(payload, dict) else []
     if not isinstance(labels_payload, list):
@@ -4382,158 +4816,134 @@ def agent_session_logs_cmd(
     _render_owner_logs(payload, title="Agent Session Logs")
 
 
-@agent.command("can_view")
-def agent_can_view_cmd(
-    agent_uid: str = pydantic_argument(AGENT_MODEL_REF, "uid", ..., help="Agent UID."),
+@agent_access_group.command("list")
+def agent_access_list_cmd(
+    agent_uid: str = typer.Argument(..., help="Agent UID."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
-    _shareable_user_list_impl(
-        fetch_fn=list_agent_users_can_view,
+    """
+    List the policies attached to one Agent, and the access the platform computes.
+
+    It needs the Agent's read_access action, which editor and owner hold.
+
+    Examples
+    --------
+    ```bash
+    mainsequence agent access list <AGENT_UID>
+    mainsequence agent access list <AGENT_UID> --json
+    ```
+    """
+    _object_access_list_impl(
+        fetch_fn=get_agent_access,
         object_label="Agent",
-        access_label="view",
         object_uid=agent_uid,
         timeout=timeout,
     )
 
 
-@agent.command("can_edit")
-def agent_can_edit_cmd(
-    agent_uid: str = pydantic_argument(AGENT_MODEL_REF, "uid", ..., help="Agent UID."),
+@agent_access_group.command("grant")
+def agent_access_grant_cmd(
+    agent_uid: str = typer.Argument(..., help="Agent UID."),
+    policy: str = typer.Argument(
+        ...,
+        help="Policy name of the Agent type, for example user, or its id, agents.user.",
+    ),
+    user_uid: uuid.UUID | None = typer.Option(
+        None, "--user", help="UID of the person or workload identity to give the policy to."
+    ),
+    principal_team_uid: uuid.UUID | None = typer.Option(
+        None, "--team", help="UID of the team to give the policy to."
+    ),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
-    _shareable_user_list_impl(
-        fetch_fn=list_agent_users_can_edit,
-        object_label="Agent",
-        access_label="edit",
-        object_uid=agent_uid,
-        timeout=timeout,
-    )
+    """
+    Give a policy on one Agent to a person, a workload identity or a team.
 
+    The policies are viewer (talks to the Agent, gives it Tasks and sees all its
+    Tasks), user (talks to it and gives it Tasks, seeing only the Tasks they
+    asked for), operator (also stops any Task or session run), editor (also
+    configures the Agent and its runtime, deletes it and manages what its
+    workload can reach) and owner. They also decide the Agent's runtime release.
+    Pass exactly one of --user or --team. It needs the Agent's manage_access
+    action, which owner holds, and every action of the policy. `mainsequence
+    access policies --type agents` lists the policies.
 
-@agent.command("add_to_view")
-def agent_add_to_view_cmd(
-    agent_uid: str = pydantic_argument(AGENT_MODEL_REF, "uid", ..., help="Agent UID."),
-    user_uid: uuid.UUID = typer.Argument(..., help="User UID to grant view access."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    _shareable_user_access_update_impl(
-        action_fn=add_agent_user_to_view,
+    Examples
+    --------
+    ```bash
+    mainsequence agent access grant <AGENT_UID> user --user <USER_UID>
+    mainsequence agent access grant <AGENT_UID> viewer --team <TEAM_UID>
+    ```
+    """
+    _object_access_grant_impl(
+        attach_fn=attach_agent_policy,
         object_label="Agent",
-        action_label="add_to_view",
         object_uid=agent_uid,
+        policy=policy,
         user_uid=user_uid,
+        principal_team_uid=principal_team_uid,
         timeout=timeout,
     )
 
 
-@agent.command("add_to_edit")
-def agent_add_to_edit_cmd(
-    agent_uid: str = pydantic_argument(AGENT_MODEL_REF, "uid", ..., help="Agent UID."),
-    user_uid: uuid.UUID = typer.Argument(..., help="User UID to grant edit access."),
+@agent_access_group.command("revoke")
+def agent_access_revoke_cmd(
+    agent_uid: str = typer.Argument(..., help="Agent UID."),
+    binding_uid: uuid.UUID = typer.Argument(
+        ..., help="UID of the binding to detach, from `access list`."
+    ),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
-    _shareable_user_access_update_impl(
-        action_fn=add_agent_user_to_edit,
+    """
+    Detach one policy binding from one Agent.
+
+    It needs the Agent's manage_access action; removing your own binding is
+    always allowed.
+
+    Examples
+    --------
+    ```bash
+    mainsequence agent access revoke <AGENT_UID> <BINDING_UID>
+    ```
+    """
+    _object_access_revoke_impl(
+        detach_fn=detach_agent_policy,
         object_label="Agent",
-        action_label="add_to_edit",
         object_uid=agent_uid,
+        binding_uid=binding_uid,
+        timeout=timeout,
+    )
+
+
+@agent_access_group.command("explain")
+def agent_access_explain_cmd(
+    agent_uid: str = typer.Argument(..., help="Agent UID."),
+    action: str = typer.Argument(..., help="Action id of the Agent type, for example agents.use."),
+    user_uid: uuid.UUID | None = typer.Option(
+        None, "--user", help="UID of the User to explain for. Without it, you."
+    ),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Explain why you, or another User, may or may not perform an action on one Agent.
+
+    Asking about someone else needs the Agent's read_access action.
+    agents.set_acts_for_requester is in no policy: only Organization admins turn
+    on acting for the requester.
+
+    Examples
+    --------
+    ```bash
+    mainsequence agent access explain <AGENT_UID> agents.use
+    mainsequence agent access explain <AGENT_UID> agents.read_tasks --user <USER_UID>
+    ```
+    """
+    _object_access_explain_impl(
+        explain_fn=explain_agent_access,
+        object_label="Agent",
+        object_uid=agent_uid,
+        action=action,
         user_uid=user_uid,
-        timeout=timeout,
-    )
-
-
-@agent.command("remove_from_view")
-def agent_remove_from_view_cmd(
-    agent_uid: str = pydantic_argument(AGENT_MODEL_REF, "uid", ..., help="Agent UID."),
-    user_uid: uuid.UUID = typer.Argument(..., help="User UID to remove explicit view access from."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    _shareable_user_access_update_impl(
-        action_fn=remove_agent_user_from_view,
-        object_label="Agent",
-        action_label="remove_from_view",
-        object_uid=agent_uid,
-        user_uid=user_uid,
-        timeout=timeout,
-    )
-
-
-@agent.command("remove_from_edit")
-def agent_remove_from_edit_cmd(
-    agent_uid: str = pydantic_argument(AGENT_MODEL_REF, "uid", ..., help="Agent UID."),
-    user_uid: uuid.UUID = typer.Argument(..., help="User UID to remove explicit edit access from."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    _shareable_user_access_update_impl(
-        action_fn=remove_agent_user_from_edit,
-        object_label="Agent",
-        action_label="remove_from_edit",
-        object_uid=agent_uid,
-        user_uid=user_uid,
-        timeout=timeout,
-    )
-
-
-@agent.command("add_team_to_view")
-def agent_add_team_to_view_cmd(
-    agent_uid: str = pydantic_argument(AGENT_MODEL_REF, "uid", ..., help="Agent UID."),
-    team_uid: uuid.UUID = typer.Argument(..., help="Team UID to grant view access."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    _shareable_team_access_update_impl(
-        action_fn=add_agent_team_to_view,
-        object_label="Agent",
-        action_label="add_team_to_view",
-        object_uid=agent_uid,
-        team_uid=team_uid,
-        timeout=timeout,
-    )
-
-
-@agent.command("add_team_to_edit")
-def agent_add_team_to_edit_cmd(
-    agent_uid: str = pydantic_argument(AGENT_MODEL_REF, "uid", ..., help="Agent UID."),
-    team_uid: uuid.UUID = typer.Argument(..., help="Team UID to grant edit access."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    _shareable_team_access_update_impl(
-        action_fn=add_agent_team_to_edit,
-        object_label="Agent",
-        action_label="add_team_to_edit",
-        object_uid=agent_uid,
-        team_uid=team_uid,
-        timeout=timeout,
-    )
-
-
-@agent.command("remove_team_from_view")
-def agent_remove_team_from_view_cmd(
-    agent_uid: str = pydantic_argument(AGENT_MODEL_REF, "uid", ..., help="Agent UID."),
-    team_uid: uuid.UUID = typer.Argument(..., help="Team UID to remove explicit view access from."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    _shareable_team_access_update_impl(
-        action_fn=remove_agent_team_from_view,
-        object_label="Agent",
-        action_label="remove_team_from_view",
-        object_uid=agent_uid,
-        team_uid=team_uid,
-        timeout=timeout,
-    )
-
-
-@agent.command("remove_team_from_edit")
-def agent_remove_team_from_edit_cmd(
-    agent_uid: str = pydantic_argument(AGENT_MODEL_REF, "uid", ..., help="Agent UID."),
-    team_uid: uuid.UUID = typer.Argument(..., help="Team UID to remove explicit edit access from."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    _shareable_team_access_update_impl(
-        action_fn=remove_agent_team_from_edit,
-        object_label="Agent",
-        action_label="remove_team_from_edit",
-        object_uid=agent_uid,
-        team_uid=team_uid,
         timeout=timeout,
     )
 
@@ -4613,216 +5023,130 @@ def constants_delete_cmd(
     _constants_delete_impl(constant_uid=constant_uid, timeout=timeout)
 
 
-@constants.command("can_view")
-def constants_can_view_cmd(
+@constants_access_group.command("list")
+def constants_access_list_cmd(
     constant_uid: str = typer.Argument(..., help="Constant UID."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
-    List users and teams who can view one constant.
+    List the policies attached to one constant, and the access the platform computes.
 
-    Uses the SDK `ShareableObjectMixin.can_view()` path through the `Constant` model.
+    It needs the constant's read_access action, which editor and owner hold.
 
     Examples
     --------
     ```bash
-    mainsequence constants can_view 498d499f-b74c-43f7-acf1-2e2955ad0e6b
+    mainsequence constants access list <CONSTANT_UID>
+    mainsequence constants access list <CONSTANT_UID> --json
     ```
     """
-    _shareable_user_list_impl(
-        fetch_fn=list_constant_users_can_view,
+    _object_access_list_impl(
+        fetch_fn=get_constant_access,
         object_label="Constant",
-        access_label="view",
         object_uid=constant_uid,
         timeout=timeout,
     )
 
 
-@constants.command("can_edit")
-def constants_can_edit_cmd(
+@constants_access_group.command("grant")
+def constants_access_grant_cmd(
     constant_uid: str = typer.Argument(..., help="Constant UID."),
+    policy: str = typer.Argument(
+        ...,
+        help="Policy name of the constant type, for example reader, or its id, constants.reader.",
+    ),
+    user_uid: uuid.UUID | None = typer.Option(
+        None, "--user", help="UID of the person or workload identity to give the policy to."
+    ),
+    principal_team_uid: uuid.UUID | None = typer.Option(
+        None, "--team", help="UID of the team to give the policy to."
+    ),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
-    List users and teams who can edit one constant.
+    Give a policy on one constant to a person, a workload identity or a team.
 
-    Uses the SDK `ShareableObjectMixin.can_edit()` path through the `Constant` model.
+    The policies are reader, editor and owner. Pass exactly one of --user or
+    --team. It needs the constant's manage_access action, which owner holds, and
+    every action of the policy. `mainsequence access policies --type constants`
+    lists the policies.
 
     Examples
     --------
     ```bash
-    mainsequence constants can_edit 498d499f-b74c-43f7-acf1-2e2955ad0e6b
+    mainsequence constants access grant <CONSTANT_UID> reader --user <USER_UID>
+    mainsequence constants access grant <CONSTANT_UID> editor --team <TEAM_UID>
     ```
     """
-    _shareable_user_list_impl(
-        fetch_fn=list_constant_users_can_edit,
+    _object_access_grant_impl(
+        attach_fn=attach_constant_policy,
         object_label="Constant",
-        access_label="edit",
         object_uid=constant_uid,
-        timeout=timeout,
-    )
-
-
-@constants.command("add_to_view")
-def constants_add_to_view_cmd(
-    constant_uid: str = typer.Argument(..., help="Constant UID."),
-    user_uid: uuid.UUID = typer.Argument(..., help="User UID to grant view access."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    """
-    Grant explicit view access to one user for one constant.
-
-    Examples
-    --------
-    ```bash
-    mainsequence constants add_to_view 498d499f-b74c-43f7-acf1-2e2955ad0e6b <USER_UID>
-    ```
-    """
-    _shareable_user_access_update_impl(
-        action_fn=add_constant_user_to_view,
-        object_label="Constant",
-        action_label="add_to_view",
-        object_uid=constant_uid,
+        policy=policy,
         user_uid=user_uid,
+        principal_team_uid=principal_team_uid,
         timeout=timeout,
     )
 
 
-@constants.command("add_to_edit")
-def constants_add_to_edit_cmd(
+@constants_access_group.command("revoke")
+def constants_access_revoke_cmd(
     constant_uid: str = typer.Argument(..., help="Constant UID."),
-    user_uid: uuid.UUID = typer.Argument(..., help="User UID to grant edit access."),
+    binding_uid: uuid.UUID = typer.Argument(
+        ..., help="UID of the binding to detach, from `access list`."
+    ),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
-    Grant explicit edit access to one user for one constant.
+    Detach one policy binding from one constant.
+
+    It needs the constant's manage_access action; removing your own binding is
+    always allowed.
 
     Examples
     --------
     ```bash
-    mainsequence constants add_to_edit 498d499f-b74c-43f7-acf1-2e2955ad0e6b <USER_UID>
+    mainsequence constants access revoke <CONSTANT_UID> <BINDING_UID>
     ```
     """
-    _shareable_user_access_update_impl(
-        action_fn=add_constant_user_to_edit,
+    _object_access_revoke_impl(
+        detach_fn=detach_constant_policy,
         object_label="Constant",
-        action_label="add_to_edit",
         object_uid=constant_uid,
-        user_uid=user_uid,
+        binding_uid=binding_uid,
         timeout=timeout,
     )
 
 
-@constants.command("remove_from_view")
-def constants_remove_from_view_cmd(
+@constants_access_group.command("explain")
+def constants_access_explain_cmd(
     constant_uid: str = typer.Argument(..., help="Constant UID."),
-    user_uid: uuid.UUID = typer.Argument(..., help="User UID to remove explicit view access from."),
+    action: str = typer.Argument(
+        ..., help="Action id of the constant type, for example constants.update."
+    ),
+    user_uid: uuid.UUID | None = typer.Option(
+        None, "--user", help="UID of the User to explain for. Without it, you."
+    ),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
-    Remove explicit view access from one user for one constant.
+    Explain why you, or another User, may or may not perform an action on one constant.
+
+    Asking about someone else needs the constant's read_access action.
 
     Examples
     --------
     ```bash
-    mainsequence constants remove_from_view 498d499f-b74c-43f7-acf1-2e2955ad0e6b <USER_UID>
+    mainsequence constants access explain <CONSTANT_UID> constants.update
+    mainsequence constants access explain <CONSTANT_UID> constants.read --user <USER_UID>
     ```
     """
-    _shareable_user_access_update_impl(
-        action_fn=remove_constant_user_from_view,
+    _object_access_explain_impl(
+        explain_fn=explain_constant_access,
         object_label="Constant",
-        action_label="remove_from_view",
         object_uid=constant_uid,
+        action=action,
         user_uid=user_uid,
-        timeout=timeout,
-    )
-
-
-@constants.command("remove_from_edit")
-def constants_remove_from_edit_cmd(
-    constant_uid: str = typer.Argument(..., help="Constant UID."),
-    user_uid: uuid.UUID = typer.Argument(..., help="User UID to remove explicit edit access from."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    """
-    Remove explicit edit access from one user for one constant.
-
-    Examples
-    --------
-    ```bash
-    mainsequence constants remove_from_edit 498d499f-b74c-43f7-acf1-2e2955ad0e6b <USER_UID>
-    ```
-    """
-    _shareable_user_access_update_impl(
-        action_fn=remove_constant_user_from_edit,
-        object_label="Constant",
-        action_label="remove_from_edit",
-        object_uid=constant_uid,
-        user_uid=user_uid,
-        timeout=timeout,
-    )
-
-
-@constants.command("add_team_to_view")
-def constants_add_team_to_view_cmd(
-    constant_uid: str = typer.Argument(..., help="Constant UID."),
-    team_uid: uuid.UUID = typer.Argument(..., help="Team UID to grant view access."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    _shareable_team_access_update_impl(
-        action_fn=add_constant_team_to_view,
-        object_label="Constant",
-        action_label="add_team_to_view",
-        object_uid=constant_uid,
-        team_uid=team_uid,
-        timeout=timeout,
-    )
-
-
-@constants.command("add_team_to_edit")
-def constants_add_team_to_edit_cmd(
-    constant_uid: str = typer.Argument(..., help="Constant UID."),
-    team_uid: uuid.UUID = typer.Argument(..., help="Team UID to grant edit access."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    _shareable_team_access_update_impl(
-        action_fn=add_constant_team_to_edit,
-        object_label="Constant",
-        action_label="add_team_to_edit",
-        object_uid=constant_uid,
-        team_uid=team_uid,
-        timeout=timeout,
-    )
-
-
-@constants.command("remove_team_from_view")
-def constants_remove_team_from_view_cmd(
-    constant_uid: str = typer.Argument(..., help="Constant UID."),
-    team_uid: uuid.UUID = typer.Argument(..., help="Team UID to remove explicit view access from."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    _shareable_team_access_update_impl(
-        action_fn=remove_constant_team_from_view,
-        object_label="Constant",
-        action_label="remove_team_from_view",
-        object_uid=constant_uid,
-        team_uid=team_uid,
-        timeout=timeout,
-    )
-
-
-@constants.command("remove_team_from_edit")
-def constants_remove_team_from_edit_cmd(
-    constant_uid: str = typer.Argument(..., help="Constant UID."),
-    team_uid: uuid.UUID = typer.Argument(..., help="Team UID to remove explicit edit access from."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    _shareable_team_access_update_impl(
-        action_fn=remove_constant_team_from_edit,
-        object_label="Constant",
-        action_label="remove_team_from_edit",
-        object_uid=constant_uid,
-        team_uid=team_uid,
         timeout=timeout,
     )
 
@@ -4884,6 +5208,9 @@ def secrets_delete_cmd(
     Delete one secret.
 
     The command always requires typed verification before the delete call is executed.
+    It reads the secret first, for the preview. Reading needs the secret's
+    read_value action and deleting its delete action, which editor and owner
+    hold; a secret the platform manages cannot be deleted.
 
     Examples
     --------
@@ -4894,216 +5221,131 @@ def secrets_delete_cmd(
     _secrets_delete_impl(secret_uid=secret_uid, timeout=timeout)
 
 
-@secrets.command("can_view")
-def secrets_can_view_cmd(
+@secrets_access_group.command("list")
+def secrets_access_list_cmd(
     secret_uid: str = typer.Argument(..., help="Secret UID."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
-    List users and teams who can view one secret.
+    List the policies attached to one secret, and the access the platform computes.
 
-    Uses the SDK `ShareableObjectMixin.can_view()` path through the `Secret` model.
+    It needs the secret's read_access action, which editor and owner hold.
 
     Examples
     --------
     ```bash
-    mainsequence secrets can_view 498d499f-b74c-43f7-acf1-2e2955ad0e6b
+    mainsequence secrets access list <SECRET_UID>
+    mainsequence secrets access list <SECRET_UID> --json
     ```
     """
-    _shareable_user_list_impl(
-        fetch_fn=list_secret_users_can_view,
+    _object_access_list_impl(
+        fetch_fn=get_secret_access,
         object_label="Secret",
-        access_label="view",
         object_uid=secret_uid,
         timeout=timeout,
     )
 
 
-@secrets.command("can_edit")
-def secrets_can_edit_cmd(
+@secrets_access_group.command("grant")
+def secrets_access_grant_cmd(
     secret_uid: str = typer.Argument(..., help="Secret UID."),
+    policy: str = typer.Argument(
+        ...,
+        help="Policy name of the secret type, for example reader, or its id, secrets.reader.",
+    ),
+    user_uid: uuid.UUID | None = typer.Option(
+        None, "--user", help="UID of the person or workload identity to give the policy to."
+    ),
+    principal_team_uid: uuid.UUID | None = typer.Option(
+        None, "--team", help="UID of the team to give the policy to."
+    ),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
-    List users and teams who can edit one secret.
+    Give a policy on one secret to a person, a workload identity or a team.
 
-    Uses the SDK `ShareableObjectMixin.can_edit()` path through the `Secret` model.
+    The policies are reader (sees the secret, never its value), value_reader
+    (also reads its current value), editor and owner. Pass exactly one of
+    --user or --team. It needs the secret's manage_access action, which owner
+    holds, and every action of the policy. `mainsequence access policies --type
+    secrets` lists the policies.
 
     Examples
     --------
     ```bash
-    mainsequence secrets can_edit 498d499f-b74c-43f7-acf1-2e2955ad0e6b
+    mainsequence secrets access grant <SECRET_UID> value_reader --user <USER_UID>
+    mainsequence secrets access grant <SECRET_UID> editor --team <TEAM_UID>
     ```
     """
-    _shareable_user_list_impl(
-        fetch_fn=list_secret_users_can_edit,
+    _object_access_grant_impl(
+        attach_fn=attach_secret_policy,
         object_label="Secret",
-        access_label="edit",
         object_uid=secret_uid,
-        timeout=timeout,
-    )
-
-
-@secrets.command("add_to_view")
-def secrets_add_to_view_cmd(
-    secret_uid: str = typer.Argument(..., help="Secret UID."),
-    user_uid: uuid.UUID = typer.Argument(..., help="User UID to grant view access."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    """
-    Grant explicit view access to one user for one secret.
-
-    Examples
-    --------
-    ```bash
-    mainsequence secrets add_to_view 498d499f-b74c-43f7-acf1-2e2955ad0e6b <USER_UID>
-    ```
-    """
-    _shareable_user_access_update_impl(
-        action_fn=add_secret_user_to_view,
-        object_label="Secret",
-        action_label="add_to_view",
-        object_uid=secret_uid,
+        policy=policy,
         user_uid=user_uid,
+        principal_team_uid=principal_team_uid,
         timeout=timeout,
     )
 
 
-@secrets.command("add_to_edit")
-def secrets_add_to_edit_cmd(
+@secrets_access_group.command("revoke")
+def secrets_access_revoke_cmd(
     secret_uid: str = typer.Argument(..., help="Secret UID."),
-    user_uid: uuid.UUID = typer.Argument(..., help="User UID to grant edit access."),
+    binding_uid: uuid.UUID = typer.Argument(
+        ..., help="UID of the binding to detach, from `access list`."
+    ),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
-    Grant explicit edit access to one user for one secret.
+    Detach one policy binding from one secret.
+
+    It needs the secret's manage_access action; removing your own binding is
+    always allowed.
 
     Examples
     --------
     ```bash
-    mainsequence secrets add_to_edit 498d499f-b74c-43f7-acf1-2e2955ad0e6b <USER_UID>
+    mainsequence secrets access revoke <SECRET_UID> <BINDING_UID>
     ```
     """
-    _shareable_user_access_update_impl(
-        action_fn=add_secret_user_to_edit,
+    _object_access_revoke_impl(
+        detach_fn=detach_secret_policy,
         object_label="Secret",
-        action_label="add_to_edit",
         object_uid=secret_uid,
-        user_uid=user_uid,
+        binding_uid=binding_uid,
         timeout=timeout,
     )
 
 
-@secrets.command("remove_from_view")
-def secrets_remove_from_view_cmd(
+@secrets_access_group.command("explain")
+def secrets_access_explain_cmd(
     secret_uid: str = typer.Argument(..., help="Secret UID."),
-    user_uid: uuid.UUID = typer.Argument(..., help="User UID to remove explicit view access from."),
+    action: str = typer.Argument(
+        ..., help="Action id of the secret type, for example secrets.read_value."
+    ),
+    user_uid: uuid.UUID | None = typer.Option(
+        None, "--user", help="UID of the User to explain for. Without it, you."
+    ),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
-    Remove explicit view access from one user for one secret.
+    Explain why you, or another User, may or may not perform an action on one secret.
+
+    Asking about someone else needs the secret's read_access action.
 
     Examples
     --------
     ```bash
-    mainsequence secrets remove_from_view 498d499f-b74c-43f7-acf1-2e2955ad0e6b <USER_UID>
+    mainsequence secrets access explain <SECRET_UID> secrets.read_value
+    mainsequence secrets access explain <SECRET_UID> secrets.update_value --user <USER_UID>
     ```
     """
-    _shareable_user_access_update_impl(
-        action_fn=remove_secret_user_from_view,
+    _object_access_explain_impl(
+        explain_fn=explain_secret_access,
         object_label="Secret",
-        action_label="remove_from_view",
         object_uid=secret_uid,
+        action=action,
         user_uid=user_uid,
-        timeout=timeout,
-    )
-
-
-@secrets.command("remove_from_edit")
-def secrets_remove_from_edit_cmd(
-    secret_uid: str = typer.Argument(..., help="Secret UID."),
-    user_uid: uuid.UUID = typer.Argument(..., help="User UID to remove explicit edit access from."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    """
-    Remove explicit edit access from one user for one secret.
-
-    Examples
-    --------
-    ```bash
-    mainsequence secrets remove_from_edit 498d499f-b74c-43f7-acf1-2e2955ad0e6b <USER_UID>
-    ```
-    """
-    _shareable_user_access_update_impl(
-        action_fn=remove_secret_user_from_edit,
-        object_label="Secret",
-        action_label="remove_from_edit",
-        object_uid=secret_uid,
-        user_uid=user_uid,
-        timeout=timeout,
-    )
-
-
-@secrets.command("add_team_to_view")
-def secrets_add_team_to_view_cmd(
-    secret_uid: str = typer.Argument(..., help="Secret UID."),
-    team_uid: uuid.UUID = typer.Argument(..., help="Team UID to grant view access."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    _shareable_team_access_update_impl(
-        action_fn=add_secret_team_to_view,
-        object_label="Secret",
-        action_label="add_team_to_view",
-        object_uid=secret_uid,
-        team_uid=team_uid,
-        timeout=timeout,
-    )
-
-
-@secrets.command("add_team_to_edit")
-def secrets_add_team_to_edit_cmd(
-    secret_uid: str = typer.Argument(..., help="Secret UID."),
-    team_uid: uuid.UUID = typer.Argument(..., help="Team UID to grant edit access."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    _shareable_team_access_update_impl(
-        action_fn=add_secret_team_to_edit,
-        object_label="Secret",
-        action_label="add_team_to_edit",
-        object_uid=secret_uid,
-        team_uid=team_uid,
-        timeout=timeout,
-    )
-
-
-@secrets.command("remove_team_from_view")
-def secrets_remove_team_from_view_cmd(
-    secret_uid: str = typer.Argument(..., help="Secret UID."),
-    team_uid: uuid.UUID = typer.Argument(..., help="Team UID to remove explicit view access from."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    _shareable_team_access_update_impl(
-        action_fn=remove_secret_team_from_view,
-        object_label="Secret",
-        action_label="remove_team_from_view",
-        object_uid=secret_uid,
-        team_uid=team_uid,
-        timeout=timeout,
-    )
-
-
-@secrets.command("remove_team_from_edit")
-def secrets_remove_team_from_edit_cmd(
-    secret_uid: str = typer.Argument(..., help="Secret UID."),
-    team_uid: uuid.UUID = typer.Argument(..., help="Team UID to remove explicit edit access from."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    _shareable_team_access_update_impl(
-        action_fn=remove_secret_team_from_edit,
-        object_label="Secret",
-        action_label="remove_team_from_edit",
-        object_uid=secret_uid,
-        team_uid=team_uid,
         timeout=timeout,
     )
 
@@ -5516,56 +5758,6 @@ def code_repository_delete_remote_cmd(
             info(str(detail))
 
 
-@code_repository.command("can_view")
-def code_repository_can_view_cmd(
-    code_repository_id: str = typer.Argument(..., help="CodeRepository UID."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    """
-    List users who can view one CodeRepository.
-
-    Uses the SDK `ShareableObjectMixin.users_can_view()` path through the `CodeRepository` model.
-
-    Examples
-    --------
-    ```bash
-    mainsequence code-repository can_view 42
-    ```
-    """
-    _shareable_user_list_impl(
-        fetch_fn=list_code_repository_users_can_view,
-        object_label="CodeRepository",
-        access_label="view",
-        object_uid=code_repository_id,
-        timeout=timeout,
-    )
-
-
-@code_repository.command("can_edit")
-def code_repository_can_edit_cmd(
-    code_repository_id: str = typer.Argument(..., help="CodeRepository UID."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    """
-    List users who can edit one CodeRepository.
-
-    Uses the SDK `ShareableObjectMixin.users_can_edit()` path through the `CodeRepository` model.
-
-    Examples
-    --------
-    ```bash
-    mainsequence code-repository can_edit 42
-    ```
-    """
-    _shareable_user_list_impl(
-        fetch_fn=list_code_repository_users_can_edit,
-        object_label="CodeRepository",
-        access_label="edit",
-        object_uid=code_repository_id,
-        timeout=timeout,
-    )
-
-
 @code_repository.command("add-label")
 def code_repository_add_label_cmd(
     code_repository_id: str = typer.Argument(..., help="CodeRepository UID."),
@@ -5616,166 +5808,138 @@ def code_repository_remove_label_cmd(
     )
 
 
-@code_repository.command("add_to_view")
-def code_repository_add_to_view_cmd(
-    code_repository_id: str = typer.Argument(..., help="CodeRepository UID."),
-    user_uid: uuid.UUID = typer.Argument(..., help="User UID to grant view access."),
+@code_repository_access_group.command("list")
+def code_repository_access_list_cmd(
+    code_repository_uid: str = typer.Argument(..., help="CodeRepository UID."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
-    Grant explicit view access to one user for one code repository.
+    List the policies attached to one code repository, and the access the platform computes.
+
+    It needs the repository's read_access action, which editor and owner hold.
 
     Examples
     --------
     ```bash
-    mainsequence code-repository add_to_view <CODE_REPOSITORY_UID> <USER_UID>
+    mainsequence code-repository access list <CODE_REPOSITORY_UID>
+    mainsequence code-repository access list <CODE_REPOSITORY_UID> --json
     ```
     """
-    _shareable_user_access_update_impl(
-        action_fn=add_code_repository_user_to_view,
+    _object_access_list_impl(
+        fetch_fn=get_code_repository_access,
         object_label="CodeRepository",
-        action_label="add_to_view",
-        object_uid=code_repository_id,
-        user_uid=user_uid,
+        object_uid=code_repository_uid,
         timeout=timeout,
     )
 
 
-@code_repository.command("add_to_edit")
-def code_repository_add_to_edit_cmd(
-    code_repository_id: str = typer.Argument(..., help="CodeRepository UID."),
-    user_uid: uuid.UUID = typer.Argument(..., help="User UID to grant edit access."),
+@code_repository_access_group.command("grant")
+def code_repository_access_grant_cmd(
+    code_repository_uid: str = typer.Argument(..., help="CodeRepository UID."),
+    policy: str = typer.Argument(
+        ...,
+        help=(
+            "Policy name of the code repository type, for example reader, or its id, "
+            "code-repositories.reader."
+        ),
+    ),
+    user_uid: uuid.UUID | None = typer.Option(
+        None, "--user", help="UID of the person or workload identity to give the policy to."
+    ),
+    principal_team_uid: uuid.UUID | None = typer.Option(
+        None, "--team", help="UID of the team to give the policy to."
+    ),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
-    Grant explicit edit access to one user for one code repository.
+    Give a policy on one code repository to a person, a workload identity or a team.
+
+    The policies are reader (sees the repository and every branch in it), editor
+    (also renames or archives it, adds deploy keys, creates branches and edits
+    every branch) and owner; they pass down to every branch. A person needs the
+    platform's user product role to hold one. Pass exactly one of --user or
+    --team. It needs the repository's manage_access action, which owner holds,
+    and every action of the policy. `mainsequence access policies --type
+    code-repositories` lists the policies.
 
     Examples
     --------
     ```bash
-    mainsequence code-repository add_to_edit <CODE_REPOSITORY_UID> <USER_UID>
+    mainsequence code-repository access grant <CODE_REPOSITORY_UID> reader --user <USER_UID>
+    mainsequence code-repository access grant <CODE_REPOSITORY_UID> editor --team <TEAM_UID>
     ```
     """
-    _shareable_user_access_update_impl(
-        action_fn=add_code_repository_user_to_edit,
+    _object_access_grant_impl(
+        attach_fn=attach_code_repository_policy,
         object_label="CodeRepository",
-        action_label="add_to_edit",
-        object_uid=code_repository_id,
+        object_uid=code_repository_uid,
+        policy=policy,
         user_uid=user_uid,
+        principal_team_uid=principal_team_uid,
         timeout=timeout,
     )
 
 
-@code_repository.command("remove_from_view")
-def code_repository_remove_from_view_cmd(
-    code_repository_id: str = typer.Argument(..., help="CodeRepository UID."),
-    user_uid: uuid.UUID = typer.Argument(..., help="User UID to remove explicit view access from."),
+@code_repository_access_group.command("revoke")
+def code_repository_access_revoke_cmd(
+    code_repository_uid: str = typer.Argument(..., help="CodeRepository UID."),
+    binding_uid: uuid.UUID = typer.Argument(
+        ..., help="UID of the binding to detach, from `access list`."
+    ),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
-    Remove explicit view access from one user for one code repository.
+    Detach one policy binding from one code repository.
+
+    It needs the repository's manage_access action; removing your own binding is
+    always allowed.
 
     Examples
     --------
     ```bash
-    mainsequence code-repository remove_from_view <CODE_REPOSITORY_UID> <USER_UID>
+    mainsequence code-repository access revoke <CODE_REPOSITORY_UID> <BINDING_UID>
     ```
     """
-    _shareable_user_access_update_impl(
-        action_fn=remove_code_repository_user_from_view,
+    _object_access_revoke_impl(
+        detach_fn=detach_code_repository_policy,
         object_label="CodeRepository",
-        action_label="remove_from_view",
-        object_uid=code_repository_id,
-        user_uid=user_uid,
+        object_uid=code_repository_uid,
+        binding_uid=binding_uid,
         timeout=timeout,
     )
 
 
-@code_repository.command("remove_from_edit")
-def code_repository_remove_from_edit_cmd(
-    code_repository_id: str = typer.Argument(..., help="CodeRepository UID."),
-    user_uid: uuid.UUID = typer.Argument(..., help="User UID to remove explicit edit access from."),
+@code_repository_access_group.command("explain")
+def code_repository_access_explain_cmd(
+    code_repository_uid: str = typer.Argument(..., help="CodeRepository UID."),
+    action: str = typer.Argument(
+        ..., help="Action id of the code repository type, for example code-repositories.update."
+    ),
+    user_uid: uuid.UUID | None = typer.Option(
+        None, "--user", help="UID of the User to explain for. Without it, you."
+    ),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
-    Remove explicit edit access from one user for one code repository.
+    Explain why you, or another User, may or may not perform an action on one code repository.
+
+    Asking about someone else needs the repository's read_access action.
+    code-repositories.delete is in no policy: only Organization admins delete a
+    repository.
 
     Examples
     --------
     ```bash
-    mainsequence code-repository remove_from_edit <CODE_REPOSITORY_UID> <USER_UID>
+    mainsequence code-repository access explain <CODE_REPOSITORY_UID> code-repositories.update
+    mainsequence code-repository access explain <CODE_REPOSITORY_UID> code-repositories.read --user <USER_UID>
     ```
     """
-    _shareable_user_access_update_impl(
-        action_fn=remove_code_repository_user_from_edit,
+    _object_access_explain_impl(
+        explain_fn=explain_code_repository_access,
         object_label="CodeRepository",
-        action_label="remove_from_edit",
-        object_uid=code_repository_id,
+        object_uid=code_repository_uid,
+        action=action,
         user_uid=user_uid,
-        timeout=timeout,
-    )
-
-
-@code_repository.command("add_team_to_view")
-def code_repository_add_team_to_view_cmd(
-    code_repository_id: str = typer.Argument(..., help="CodeRepository UID."),
-    team_uid: uuid.UUID = typer.Argument(..., help="Team UID to grant view access."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    _shareable_team_access_update_impl(
-        action_fn=add_code_repository_team_to_view,
-        object_label="CodeRepository",
-        action_label="add_team_to_view",
-        object_uid=code_repository_id,
-        team_uid=team_uid,
-        timeout=timeout,
-    )
-
-
-@code_repository.command("add_team_to_edit")
-def code_repository_add_team_to_edit_cmd(
-    code_repository_id: str = typer.Argument(..., help="CodeRepository UID."),
-    team_uid: uuid.UUID = typer.Argument(..., help="Team UID to grant edit access."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    _shareable_team_access_update_impl(
-        action_fn=add_code_repository_team_to_edit,
-        object_label="CodeRepository",
-        action_label="add_team_to_edit",
-        object_uid=code_repository_id,
-        team_uid=team_uid,
-        timeout=timeout,
-    )
-
-
-@code_repository.command("remove_team_from_view")
-def code_repository_remove_team_from_view_cmd(
-    code_repository_id: str = typer.Argument(..., help="CodeRepository UID."),
-    team_uid: uuid.UUID = typer.Argument(..., help="Team UID to remove explicit view access from."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    _shareable_team_access_update_impl(
-        action_fn=remove_code_repository_team_from_view,
-        object_label="CodeRepository",
-        action_label="remove_team_from_view",
-        object_uid=code_repository_id,
-        team_uid=team_uid,
-        timeout=timeout,
-    )
-
-
-@code_repository.command("remove_team_from_edit")
-def code_repository_remove_team_from_edit_cmd(
-    code_repository_id: str = typer.Argument(..., help="CodeRepository UID."),
-    team_uid: uuid.UUID = typer.Argument(..., help="Team UID to remove explicit edit access from."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    _shareable_team_access_update_impl(
-        action_fn=remove_code_repository_team_from_edit,
-        object_label="CodeRepository",
-        action_label="remove_team_from_edit",
-        object_uid=code_repository_id,
-        team_uid=team_uid,
         timeout=timeout,
     )
 
@@ -6035,6 +6199,146 @@ def code_repository_resource_usage_cmd(
         error(f"Resource release usage fetch failed: {e}")
         raise typer.Exit(1) from e
     _render_owner_resource_usage(payload, title="Resource Release Resource Usage")
+
+
+@code_repository_resources_access_group.command("list")
+def code_repository_resources_access_list_cmd(
+    release_uid: str = typer.Argument(..., help="ResourceRelease UID."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    List the policies attached to one resource release, and the access the platform computes.
+
+    It needs the release's read_access action, which editor and owner hold. The
+    policies a release takes from its branch, or from the Agent it backs, are
+    computed rows.
+
+    Examples
+    --------
+    ```bash
+    mainsequence code-repository resources access list <RELEASE_UID>
+    mainsequence code-repository resources access list <RELEASE_UID> --json
+    ```
+    """
+    _object_access_list_impl(
+        fetch_fn=get_resource_release_access,
+        object_label="ResourceRelease",
+        object_uid=release_uid,
+        timeout=timeout,
+    )
+
+
+@code_repository_resources_access_group.command("grant")
+def code_repository_resources_access_grant_cmd(
+    release_uid: str = typer.Argument(..., help="ResourceRelease UID."),
+    policy: str = typer.Argument(
+        ...,
+        help=(
+            "Policy name of the resource release type, for example user, or its id, "
+            "resource-releases.user."
+        ),
+    ),
+    user_uid: uuid.UUID | None = typer.Option(
+        None, "--user", help="UID of the person or workload identity to give the policy to."
+    ),
+    principal_team_uid: uuid.UUID | None = typer.Option(
+        None, "--team", help="UID of the team to give the policy to."
+    ),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Give a policy on one resource release to a person, a workload identity or a team.
+
+    The policies are viewer (sees the release, its revisions and logs, and calls
+    it), user (calls it without seeing its logs), editor (also changes its
+    configuration, activates static deployments, deletes it and manages what its
+    workload can reach) and owner. A release that backs an Agent takes no policy
+    of its own: give access on the Agent. Pass exactly one of --user or --team.
+    It needs the release's manage_access action, which owner holds, and every
+    action of the policy. `mainsequence access policies --type resource-releases`
+    lists the policies.
+
+    Examples
+    --------
+    ```bash
+    mainsequence code-repository resources access grant <RELEASE_UID> user --user <USER_UID>
+    mainsequence code-repository resources access grant <RELEASE_UID> viewer --team <TEAM_UID>
+    ```
+    """
+    _object_access_grant_impl(
+        attach_fn=attach_resource_release_policy,
+        object_label="ResourceRelease",
+        object_uid=release_uid,
+        policy=policy,
+        user_uid=user_uid,
+        principal_team_uid=principal_team_uid,
+        timeout=timeout,
+    )
+
+
+@code_repository_resources_access_group.command("revoke")
+def code_repository_resources_access_revoke_cmd(
+    release_uid: str = typer.Argument(..., help="ResourceRelease UID."),
+    binding_uid: uuid.UUID = typer.Argument(
+        ..., help="UID of the binding to detach, from `access list`."
+    ),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Detach one policy binding from one resource release.
+
+    It needs the release's manage_access action; removing your own binding is
+    always allowed.
+
+    Examples
+    --------
+    ```bash
+    mainsequence code-repository resources access revoke <RELEASE_UID> <BINDING_UID>
+    ```
+    """
+    _object_access_revoke_impl(
+        detach_fn=detach_resource_release_policy,
+        object_label="ResourceRelease",
+        object_uid=release_uid,
+        binding_uid=binding_uid,
+        timeout=timeout,
+    )
+
+
+@code_repository_resources_access_group.command("explain")
+def code_repository_resources_access_explain_cmd(
+    release_uid: str = typer.Argument(..., help="ResourceRelease UID."),
+    action: str = typer.Argument(
+        ...,
+        help="Action id of the resource release type, for example resource-releases.invoke.",
+    ),
+    user_uid: uuid.UUID | None = typer.Option(
+        None, "--user", help="UID of the User to explain for. Without it, you."
+    ),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Explain why you, or another User, may or may not perform an action on one resource release.
+
+    Asking about someone else needs the release's read_access action.
+    resource-releases.set_acts_for_requester is in no policy: only Organization
+    admins turn on acting for the requester.
+
+    Examples
+    --------
+    ```bash
+    mainsequence code-repository resources access explain <RELEASE_UID> resource-releases.invoke
+    mainsequence code-repository resources access explain <RELEASE_UID> resource-releases.read_logs --user <USER_UID>
+    ```
+    """
+    _object_access_explain_impl(
+        explain_fn=explain_resource_release_access,
+        object_label="ResourceRelease",
+        object_uid=release_uid,
+        action=action,
+        user_uid=user_uid,
+        timeout=timeout,
+    )
 
 
 def _code_repository_images_list_impl(
@@ -6571,6 +6875,138 @@ def code_repository_jobs_update_cmd(
                 shlex.join(updated.get("scheduled_command_args") or replacement) or "None",
             ),
         ],
+    )
+
+
+@code_repository_jobs_access_group.command("list")
+def code_repository_jobs_access_list_cmd(
+    job_uid: str = typer.Argument(..., help="Job UID."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    List the policies attached to one Job, and the access the platform computes.
+
+    It needs the Job's read_access action, which editor and owner hold. The
+    policies a Job takes from its branch, or a backing Job from its release, are
+    computed rows.
+
+    Examples
+    --------
+    ```bash
+    mainsequence code-repository jobs access list <JOB_UID>
+    mainsequence code-repository jobs access list <JOB_UID> --json
+    ```
+    """
+    _object_access_list_impl(
+        fetch_fn=get_code_repository_job_access,
+        object_label="Job",
+        object_uid=job_uid,
+        timeout=timeout,
+    )
+
+
+@code_repository_jobs_access_group.command("grant")
+def code_repository_jobs_access_grant_cmd(
+    job_uid: str = typer.Argument(..., help="Job UID."),
+    policy: str = typer.Argument(
+        ...,
+        help="Policy name of the Job type, for example runner, or its id, jobs.runner.",
+    ),
+    user_uid: uuid.UUID | None = typer.Option(
+        None, "--user", help="UID of the person or workload identity to give the policy to."
+    ),
+    principal_team_uid: uuid.UUID | None = typer.Option(
+        None, "--team", help="UID of the team to give the policy to."
+    ),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Give a policy on one Job to a person, a workload identity or a team.
+
+    The policies are viewer (sees the Job, its schedule, runs, logs and
+    outputs), runner (also runs it and stops its runs), editor (also changes
+    and deletes it and manages what its workload can reach) and owner. Pass
+    exactly one of --user or --team. It needs the Job's manage_access action,
+    which owner holds, and every action of the policy. `mainsequence access
+    policies --type jobs` lists the policies.
+
+    Examples
+    --------
+    ```bash
+    mainsequence code-repository jobs access grant <JOB_UID> runner --user <USER_UID>
+    mainsequence code-repository jobs access grant <JOB_UID> viewer --team <TEAM_UID>
+    ```
+    """
+    _object_access_grant_impl(
+        attach_fn=attach_code_repository_job_policy,
+        object_label="Job",
+        object_uid=job_uid,
+        policy=policy,
+        user_uid=user_uid,
+        principal_team_uid=principal_team_uid,
+        timeout=timeout,
+    )
+
+
+@code_repository_jobs_access_group.command("revoke")
+def code_repository_jobs_access_revoke_cmd(
+    job_uid: str = typer.Argument(..., help="Job UID."),
+    binding_uid: uuid.UUID = typer.Argument(
+        ..., help="UID of the binding to detach, from `access list`."
+    ),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Detach one policy binding from one Job.
+
+    It needs the Job's manage_access action; removing your own binding is
+    always allowed.
+
+    Examples
+    --------
+    ```bash
+    mainsequence code-repository jobs access revoke <JOB_UID> <BINDING_UID>
+    ```
+    """
+    _object_access_revoke_impl(
+        detach_fn=detach_code_repository_job_policy,
+        object_label="Job",
+        object_uid=job_uid,
+        binding_uid=binding_uid,
+        timeout=timeout,
+    )
+
+
+@code_repository_jobs_access_group.command("explain")
+def code_repository_jobs_access_explain_cmd(
+    job_uid: str = typer.Argument(..., help="Job UID."),
+    action: str = typer.Argument(..., help="Action id of the Job type, for example jobs.run."),
+    user_uid: uuid.UUID | None = typer.Option(
+        None, "--user", help="UID of the User to explain for. Without it, you."
+    ),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Explain why you, or another User, may or may not perform an action on one Job.
+
+    Asking about someone else needs the Job's read_access action. A release's
+    backing Job is changed, run and deleted with its release: on it, a platform
+    rule blocks jobs.update, jobs.run and jobs.delete.
+
+    Examples
+    --------
+    ```bash
+    mainsequence code-repository jobs access explain <JOB_UID> jobs.run
+    mainsequence code-repository jobs access explain <JOB_UID> jobs.read_runs --user <USER_UID>
+    ```
+    """
+    _object_access_explain_impl(
+        explain_fn=explain_code_repository_job_access,
+        object_label="Job",
+        object_uid=job_uid,
+        action=action,
+        user_uid=user_uid,
+        timeout=timeout,
     )
 
 

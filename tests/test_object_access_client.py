@@ -1,0 +1,1933 @@
+"""The per-object access routes: AccessManagedObjectMixin and its models.
+
+The HTTP layer is mocked at `make_request`; every test checks the route, the
+method and the payload the SDK sends, and how it reads the answer.
+"""
+
+from __future__ import annotations
+
+import datetime
+import json
+
+import pytest
+
+import mainsequence.client as client_pkg
+import mainsequence.client.base as base_mod
+import mainsequence.code_repository_context as code_repository_context
+from mainsequence.client import value_sets
+from mainsequence.client.agent_runtime_models import Agent
+from mainsequence.client.base import BaseObjectOrm
+from mainsequence.client.exceptions import (
+    ApiError,
+    BadRequestError,
+    NotFoundError,
+    PermissionDeniedError,
+)
+from mainsequence.client.models_foundry import (
+    Artifact,
+    Bucket,
+    CodeRepository,
+    CodeRepositoryBranch,
+    Constant,
+    OrganizationProject,
+    Secret,
+)
+from mainsequence.client.models_helpers import Job, ResourceRelease
+from mainsequence.client.models_user import OrganizationEnvironment, Team
+from mainsequence.client.object_access import (
+    AccessBinding,
+    AccessComputedRow,
+    AccessListing,
+    AccessManagedObjectMixin,
+    AccessObjectReference,
+    AccessPrincipal,
+    CallerAccess,
+)
+
+TEAM_UID = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
+USER_UID = "8f5d6b54-2f5e-4a8b-bb10-0b17f3f4c123"
+OTHER_TEAM_UID = "9a1e2d3c-4b5a-4c6d-8e7f-0a1b2c3d4e5f"
+WORKLOAD_UID = "66666666-6666-4666-8666-666666666666"
+BINDING_UID = "7d3c6a51-0b8e-4c2f-9a14-5e6f7a8b9c0d"
+OTHER_BINDING_UID = "1b2c3d4e-5f60-4718-8293-a4b5c6d7e8f9"
+
+
+class FakeResponse:
+    def __init__(self, status_code: int = 200, body=None):
+        self.status_code = status_code
+        self._body = body
+        self.content = b"" if body is None else json.dumps(body).encode()
+        self.text = self.content.decode()
+        self.headers = {}
+
+    def json(self):
+        if self._body is None:
+            raise ValueError("No JSON body")
+        return self._body
+
+
+class _UidRef:
+    def __init__(self, uid: str):
+        self.uid = uid
+
+
+def _install(monkeypatch, *responses: FakeResponse) -> list[dict]:
+    """Answer each request with the next response and record what was sent."""
+
+    queue = list(responses)
+    sent: list[dict] = []
+
+    def fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
+        sent.append({"r_type": r_type, "url": url, "payload": payload, "timeout": time_out})
+        if not queue:
+            raise AssertionError(f"Unexpected request: {r_type} {url}")
+        return queue.pop(0)
+
+    monkeypatch.setattr(base_mod, "make_request", fake_make_request)
+    return sent
+
+
+def _refuse_requests(monkeypatch) -> None:
+    def no_request(**kwargs):
+        raise AssertionError("A malformed argument must not send a request")
+
+    monkeypatch.setattr(base_mod, "make_request", no_request)
+
+
+def _team() -> Team:
+    return Team(uid=TEAM_UID, name="Research")
+
+
+def _team_url(path: str = "") -> str:
+    return f"{Team.get_object_url()}/{TEAM_UID}/{path}"
+
+
+def _person(**overrides):
+    principal = {
+        "type": "user",
+        "uid": USER_UID,
+        "name": "Ana Smith",
+        "email": "ana@example.com",
+        "identity_type": "human",
+    }
+    principal.update(overrides)
+    return principal
+
+
+def _binding(**overrides):
+    binding = {
+        "uid": BINDING_UID,
+        "policy": {"id": "organization-teams.viewer", "label": "Viewer"},
+        "principal": _person(),
+        "source": "explicit",
+        "granted_by": {"uid": OTHER_TEAM_UID, "email": "owner@example.com"},
+        "workflow_declaration": None,
+        "created_at": "2026-10-17T09:00:00Z",
+    }
+    binding.update(overrides)
+    return binding
+
+
+@pytest.mark.parametrize(
+    "model",
+    [
+        Team,
+        OrganizationEnvironment,
+        Constant,
+        Secret,
+        Bucket,
+        CodeRepository,
+        CodeRepositoryBranch,
+        OrganizationProject,
+        Agent,
+        ResourceRelease,
+        Job,
+        Artifact,
+    ],
+)
+def test_policy_decided_models_serve_the_access_methods(model):
+    assert issubclass(model, AccessManagedObjectMixin)
+    for name in (
+        "get_access",
+        "get_my_access",
+        "list_access_candidates",
+        "attach_policy",
+        "detach_policy",
+        "apply_access_changes",
+        "explain_access",
+    ):
+        assert callable(getattr(model, name))
+
+
+def test_access_names_are_exported_from_the_client_package():
+    for name in (
+        "AccessBinding",
+        "AccessComputedRow",
+        "AccessExplanation",
+        "AccessExplanationPath",
+        "AccessGrantor",
+        "AccessListing",
+        "AccessManagedObjectMixin",
+        "AccessObjectReference",
+        "AccessPolicyReference",
+        "AccessPrincipal",
+        "AccessWorkflowDeclaration",
+        "CallerAccess",
+        "TeamHeldAccess",
+    ):
+        assert hasattr(client_pkg, name), name
+
+
+def test_get_access_reads_the_bindings_and_the_computed_rows(monkeypatch):
+    team_principal = {
+        "type": "team",
+        "uid": OTHER_TEAM_UID,
+        "name": "Platform",
+        "email": None,
+        "identity_type": None,
+    }
+    workload_principal = _person(uid=WORKLOAD_UID, name="", email=None, identity_type="workload")
+    sent = _install(
+        monkeypatch,
+        FakeResponse(
+            200,
+            {
+                "object": {"resource_type": "organization-teams", "uid": TEAM_UID},
+                "bindings": [
+                    _binding(),
+                    _binding(
+                        uid=OTHER_BINDING_UID,
+                        policy={"id": "organization-teams.owner", "label": "Owner"},
+                        principal=team_principal,
+                        source="workflow",
+                        granted_by=None,
+                        workflow_declaration={
+                            "path": ".mainsequence/workflows/access.yaml",
+                            "key": "research",
+                        },
+                    ),
+                    _binding(uid=BINDING_UID, principal=workload_principal, source="creator"),
+                ],
+                "computed": [
+                    {
+                        "source": "role",
+                        "detail": "Organization administrators hold every action.",
+                        "policy": None,
+                    },
+                    {
+                        "source": "membership",
+                        "detail": "Members hold the member policy.",
+                        "policy": "organization-teams.member",
+                    },
+                ],
+            },
+        ),
+    )
+
+    listing = _team().get_access(timeout=7)
+
+    assert sent == [{"r_type": "GET", "url": _team_url("access/"), "payload": {}, "timeout": 7}]
+    assert isinstance(listing, AccessListing)
+    assert listing.object.resource_type == "organization-teams"
+    assert listing.object.uid == TEAM_UID
+    viewer, owner, workload = listing.bindings
+    assert viewer.uid == BINDING_UID
+    assert viewer.policy.id == "organization-teams.viewer"
+    assert viewer.policy.label == "Viewer"
+    assert viewer.principal.type == "user"
+    assert viewer.principal.email == "ana@example.com"
+    assert viewer.source == "explicit"
+    assert viewer.granted_by.email == "owner@example.com"
+    assert viewer.workflow_declaration is None
+    assert viewer.created_at == datetime.datetime(2026, 10, 17, 9, 0, tzinfo=datetime.UTC)
+    assert owner.principal.type == "team"
+    assert owner.principal.name == "Platform"
+    assert owner.principal.identity_type is None
+    assert owner.granted_by is None
+    assert owner.workflow_declaration.path == ".mainsequence/workflows/access.yaml"
+    assert owner.workflow_declaration.key == "research"
+    assert workload.principal.identity_type == "workload"
+    assert workload.principal.email is None
+    assert workload.principal.name == ""
+    assert [(row.source, row.policy) for row in listing.computed] == [
+        ("role", None),
+        ("membership", "organization-teams.member"),
+    ]
+
+
+@pytest.fixture()
+def reported_lines(monkeypatch):
+    """What value_sets logs for an undeclared value; structlog does not reach caplog."""
+
+    lines: list[str] = []
+
+    class Recorder:
+        @staticmethod
+        def warning(message, *args, **kwargs):
+            lines.append(message)
+
+    value_sets._reset_reported_unknown_values()
+    monkeypatch.setattr(value_sets, "logger", Recorder)
+    yield lines
+    value_sets._reset_reported_unknown_values()
+
+
+def test_get_access_reads_inherited_and_manager_rows_with_their_fields(monkeypatch, reported_lines):
+    _install(
+        monkeypatch,
+        FakeResponse(
+            200,
+            {
+                "object": {"resource_type": "organization-teams", "uid": TEAM_UID},
+                "bindings": [],
+                "computed": [
+                    {
+                        "source": "role",
+                        "detail": "Organization administrators hold every action.",
+                        "policy": None,
+                    },
+                    {
+                        "source": "membership",
+                        "detail": "Members hold the member policy.",
+                        "policy": "organization-teams.member",
+                    },
+                    {
+                        "source": "inherited",
+                        "detail": (
+                            "Team Everyone: organization-teams.viewer gives "
+                            "organization-teams.viewer here."
+                        ),
+                        "policy": "organization-teams.viewer",
+                        "principal": _person(),
+                        "relation": "full-directory-team",
+                        "parent": {"resource_type": "organization-teams", "uid": OTHER_TEAM_UID},
+                        "parent_policy": "organization-teams.viewer",
+                    },
+                    {
+                        "source": "manager",
+                        "detail": (
+                            "The managers of the workload that created this object hold its "
+                            "creator rights."
+                        ),
+                        "policy": None,
+                    },
+                ],
+            },
+        ),
+    )
+
+    listing = _team().get_access()
+
+    role, membership, inherited, manager = listing.computed
+    assert [row.source for row in listing.computed] == [
+        "role",
+        "membership",
+        "inherited",
+        "manager",
+    ]
+    # Every source the platform sends is declared: nothing is reported as unknown.
+    assert reported_lines == []
+    assert isinstance(inherited.principal, AccessPrincipal)
+    assert inherited.principal.uid == USER_UID
+    assert inherited.principal.email == "ana@example.com"
+    assert inherited.relation == "full-directory-team"
+    assert isinstance(inherited.parent, AccessObjectReference)
+    assert inherited.parent.resource_type == "organization-teams"
+    assert inherited.parent.uid == OTHER_TEAM_UID
+    assert inherited.parent_policy == "organization-teams.viewer"
+    assert inherited.policy == "organization-teams.viewer"
+    # A manager row names no policy, and it does not mean every action.
+    assert manager.policy is None
+    for row in (role, membership, manager):
+        assert (row.principal, row.relation, row.parent, row.parent_policy) == (
+            None,
+            None,
+            None,
+            None,
+        )
+
+
+def test_the_computed_row_declares_every_source_and_says_what_a_missing_policy_means():
+    assert value_sets.declared_values(AccessComputedRow.model_fields["source"]) == (
+        "role",
+        "membership",
+        "inherited",
+        "manager",
+    )
+    policy = AccessComputedRow.model_fields["policy"].description
+    assert "`role`" in policy and "`manager`" in policy
+    assert "None when it is every action" not in policy
+
+
+def test_get_my_access_reads_the_callers_actions_and_policies(monkeypatch):
+    sent = _install(
+        monkeypatch,
+        FakeResponse(
+            200,
+            {
+                "allowed_actions": ["organization-teams.leave", "organization-teams.read"],
+                "policies": ["organization-teams.member"],
+            },
+        ),
+    )
+
+    mine = _team().get_my_access()
+
+    assert sent == [
+        {"r_type": "GET", "url": _team_url("access/me/"), "payload": {}, "timeout": None}
+    ]
+    assert isinstance(mine, CallerAccess)
+    assert mine.allowed_actions == ["organization-teams.leave", "organization-teams.read"]
+    assert mine.policies == ["organization-teams.member"]
+
+
+def test_list_access_candidates_sends_the_policy_and_the_filters(monkeypatch):
+    sent = _install(
+        monkeypatch,
+        FakeResponse(
+            200, [_person(uid=WORKLOAD_UID, name="", email=None, identity_type="workload")]
+        ),
+        FakeResponse(200, [{"type": "team", "uid": OTHER_TEAM_UID, "name": "Platform"}]),
+    )
+
+    workloads = _team().list_access_candidates(
+        "viewer", identity_type="workload", search="  nightly ", timeout=3
+    )
+    teams = _team().list_access_candidates("organization-teams.viewer", principal_type="team")
+
+    assert sent == [
+        {
+            "r_type": "GET",
+            "url": _team_url("access/candidates/"),
+            "payload": {
+                "params": {
+                    "policy": "viewer",
+                    "principal_type": "user",
+                    "identity_type": "workload",
+                    "search": "nightly",
+                }
+            },
+            "timeout": 3,
+        },
+        {
+            "r_type": "GET",
+            "url": _team_url("access/candidates/"),
+            "payload": {
+                "params": {"policy": "organization-teams.viewer", "principal_type": "team"}
+            },
+            "timeout": None,
+        },
+    ]
+    assert [type(item) for item in workloads + teams] == [AccessPrincipal, AccessPrincipal]
+    assert workloads[0].identity_type == "workload"
+    assert teams[0].type == "team"
+    assert teams[0].email is None
+
+
+def test_list_access_candidates_returns_an_empty_list(monkeypatch):
+    _install(monkeypatch, FakeResponse(200, []))
+
+    assert _team().list_access_candidates("owner", principal_type="team") == []
+
+
+def test_attach_policy_posts_the_binding_request_and_returns_the_binding(monkeypatch):
+    sent = _install(monkeypatch, FakeResponse(201, _binding()))
+
+    binding = _team().attach_policy(
+        " viewer ", principal_type="user", principal_uid=USER_UID.upper(), timeout=9
+    )
+
+    assert sent == [
+        {
+            "r_type": "POST",
+            "url": _team_url("access/bindings/"),
+            "payload": {
+                "json": {"policy": "viewer", "principal_type": "user", "principal_uid": USER_UID}
+            },
+            "timeout": 9,
+        }
+    ]
+    assert isinstance(binding, AccessBinding)
+    assert binding.uid == BINDING_UID
+
+
+@pytest.mark.parametrize(
+    "principal",
+    [_UidRef(OTHER_TEAM_UID), {"uid": OTHER_TEAM_UID}, Team(uid=OTHER_TEAM_UID, name="Platform")],
+    ids=["object", "dict", "team"],
+)
+def test_attach_policy_takes_a_principal_that_carries_its_uid(monkeypatch, principal):
+    sent = _install(monkeypatch, FakeResponse(201, _binding()))
+
+    _team().attach_policy("viewer", principal_type="team", principal_uid=principal)
+
+    assert sent[0]["payload"]["json"]["principal_uid"] == OTHER_TEAM_UID
+
+
+def test_detach_policy_deletes_the_binding(monkeypatch):
+    sent = _install(monkeypatch, FakeResponse(204), FakeResponse(204))
+
+    assert _team().detach_policy(BINDING_UID, timeout=4) is None
+    assert _team().detach_policy(AccessBinding.model_validate(_binding())) is None
+
+    assert sent == [
+        {
+            "r_type": "DELETE",
+            "url": _team_url(f"access/bindings/{BINDING_UID}/"),
+            "payload": {},
+            "timeout": 4,
+        },
+        {
+            "r_type": "DELETE",
+            "url": _team_url(f"access/bindings/{BINDING_UID}/"),
+            "payload": {},
+            "timeout": None,
+        },
+    ]
+
+
+def test_apply_access_changes_posts_every_change_and_returns_the_bindings(monkeypatch):
+    sent = _install(
+        monkeypatch,
+        FakeResponse(200, {"bindings": [_binding(uid=OTHER_BINDING_UID)]}),
+    )
+
+    bindings = _team().apply_access_changes(
+        attach=[
+            {"policy": "editor", "principal_type": "team", "principal_uid": OTHER_TEAM_UID},
+        ],
+        detach=[BINDING_UID, _UidRef(OTHER_BINDING_UID)],
+        timeout=11,
+    )
+
+    assert sent == [
+        {
+            "r_type": "POST",
+            "url": _team_url("access/changes/"),
+            "payload": {
+                "json": {
+                    "attach": [
+                        {
+                            "policy": "editor",
+                            "principal_type": "team",
+                            "principal_uid": OTHER_TEAM_UID,
+                        }
+                    ],
+                    "detach": [BINDING_UID, OTHER_BINDING_UID],
+                }
+            },
+            "timeout": 11,
+        }
+    ]
+    assert [binding.uid for binding in bindings] == [OTHER_BINDING_UID]
+
+
+def test_apply_access_changes_needs_at_least_one_change(monkeypatch):
+    _refuse_requests(monkeypatch)
+
+    with pytest.raises(ValueError, match="at least one"):
+        _team().apply_access_changes()
+
+
+def test_explain_access_sends_the_action_and_reads_every_path(monkeypatch):
+    sent = _install(
+        monkeypatch,
+        FakeResponse(
+            200,
+            {
+                "action": "organization-teams.update",
+                "allowed": True,
+                "in_scope": True,
+                "paths": [
+                    {"source": "role", "detail": "Organization administrator"},
+                    {
+                        "source": "team",
+                        "binding_uid": BINDING_UID,
+                        "policy": "organization-teams.editor",
+                        "team_uid": OTHER_TEAM_UID,
+                    },
+                ],
+                "blocked_by_rule": False,
+                "granting_policies": ["organization-teams.editor", "organization-teams.owner"],
+            },
+        ),
+        FakeResponse(
+            200,
+            {
+                "action": "organization-teams.delete",
+                "allowed": False,
+                "in_scope": True,
+                "paths": [],
+                "blocked_by_rule": False,
+                "granting_policies": ["organization-teams.owner"],
+            },
+        ),
+    )
+
+    mine = _team().explain_access("organization-teams.update")
+    theirs = _team().explain_access(
+        "organization-teams.delete", principal_uid=_UidRef(USER_UID), timeout=5
+    )
+
+    assert sent == [
+        {
+            "r_type": "GET",
+            "url": _team_url("access/explain/"),
+            "payload": {"params": {"action": "organization-teams.update"}},
+            "timeout": None,
+        },
+        {
+            "r_type": "GET",
+            "url": _team_url("access/explain/"),
+            "payload": {
+                "params": {"action": "organization-teams.delete", "principal_uid": USER_UID}
+            },
+            "timeout": 5,
+        },
+    ]
+    assert mine.allowed is True
+    assert [path.source for path in mine.paths] == ["role", "team"]
+    assert mine.paths[1].team_uid == OTHER_TEAM_UID
+    assert mine.paths[1].binding_uid == BINDING_UID
+    assert theirs.allowed is False
+    assert theirs.paths == []
+    assert theirs.granting_policies == ["organization-teams.owner"]
+
+
+def test_a_refused_action_raises_permission_denied_with_the_platforms_answer(monkeypatch):
+    refusal = {
+        "detail": "This needs the organization-teams.manage_access action.",
+        "code": "missing_action",
+        "required_action": "organization-teams.manage_access",
+        "granting_policies": ["organization-teams.owner"],
+        "resource_type": "organization-teams",
+        "resource_uid": TEAM_UID,
+    }
+    _install(monkeypatch, FakeResponse(403, refusal))
+
+    with pytest.raises(PermissionDeniedError) as raised:
+        _team().attach_policy("viewer", principal_type="user", principal_uid=USER_UID)
+
+    assert raised.value.status_code == 403
+    assert raised.value.payload == refusal
+    assert "This needs the organization-teams.manage_access action." in str(raised.value)
+
+
+def test_a_change_the_platform_refuses_raises_bad_request_with_its_code(monkeypatch):
+    answer = {
+        "detail": "This person or Team is outside the people you can give access to.",
+        "code": "invalid_principal_uids",
+        "invalid_principal_uids": [USER_UID],
+    }
+    _install(monkeypatch, FakeResponse(400, answer))
+
+    with pytest.raises(BadRequestError) as raised:
+        _team().attach_policy("viewer", principal_type="user", principal_uid=USER_UID)
+
+    assert raised.value.payload["code"] == "invalid_principal_uids"
+
+
+def test_an_unreadable_object_raises_not_found(monkeypatch):
+    _install(monkeypatch, FakeResponse(404, {"detail": "Not found."}))
+
+    with pytest.raises(NotFoundError):
+        _team().get_access()
+
+
+@pytest.mark.parametrize(
+    ("call", "message"),
+    [
+        (
+            lambda team: team.attach_policy("", principal_type="user", principal_uid=USER_UID),
+            "policy must be a non-empty string",
+        ),
+        (
+            lambda team: team.attach_policy(
+                "viewer", principal_type="group", principal_uid=USER_UID
+            ),
+            "principal_type must be 'user' or 'team'",
+        ),
+        (
+            lambda team: team.attach_policy("viewer", principal_type="user", principal_uid="ana"),
+            "principal_uid must be a UUID",
+        ),
+        (lambda team: team.detach_policy("../members"), "binding_uid must be a UUID"),
+        (lambda team: team.detach_policy(None), "binding_uid must be a UUID"),
+        (lambda team: team.explain_access("  "), "action must be a non-empty string"),
+        (
+            lambda team: team.explain_access("organization-teams.read", principal_uid="me"),
+            "principal_uid must be a UUID",
+        ),
+        (lambda team: team.list_access_candidates(None), "policy must be a non-empty string"),
+        (
+            lambda team: team.list_access_candidates("viewer", identity_type="robot"),
+            "identity_type must be 'human' or 'workload'",
+        ),
+        (
+            lambda team: team.apply_access_changes(attach=[("viewer", "user", USER_UID)]),
+            "Each attach entry must be a mapping",
+        ),
+        (
+            lambda team: team.apply_access_changes(
+                attach=[{"policy": "viewer", "principal_type": "user"}]
+            ),
+            "principal_uid must be a UUID",
+        ),
+        (lambda team: team.apply_access_changes(detach=["x"]), "detach must be a UUID"),
+    ],
+)
+def test_a_malformed_argument_raises_before_anything_is_sent(monkeypatch, call, message):
+    _refuse_requests(monkeypatch)
+
+    with pytest.raises(ValueError, match=message):
+        call(_team())
+
+
+def test_an_answer_of_the_wrong_shape_raises_api_error(monkeypatch):
+    _install(monkeypatch, FakeResponse(200, []), FakeResponse(200, {"bindings": {}}))
+
+    with pytest.raises(ApiError, match="access"):
+        _team().get_access()
+    with pytest.raises(ApiError, match="access/changes"):
+        _team().apply_access_changes(detach=[BINDING_UID])
+
+
+def test_values_and_fields_this_release_does_not_declare_are_read_tolerantly(monkeypatch):
+    _install(
+        monkeypatch,
+        FakeResponse(
+            200,
+            {
+                "object": {"resource_type": "organization-teams", "uid": TEAM_UID},
+                "bindings": [
+                    _binding(
+                        source="imported",
+                        principal=_person(type="service", future_field=1),
+                        future_field="dropped",
+                    )
+                ],
+                "computed": [{"source": "delegation", "detail": "Someone.", "policy": None}],
+                "future_section": [],
+            },
+        ),
+    )
+
+    listing = _team().get_access()
+
+    binding = listing.bindings[0]
+    assert binding.source == "imported"
+    assert binding.principal.type == "service"
+    assert listing.computed[0].source == "delegation"
+    assert "future_field" not in binding.__dict__
+    assert "future_field" not in binding.principal.__dict__
+    assert "future_section" not in listing.__dict__
+
+
+class DemoAccessModel(AccessManagedObjectMixin, BaseObjectOrm):
+    """Any object that serves the access routes takes the mixin the same way."""
+
+    def __init__(self, uid: str):
+        self.uid = uid
+
+    @classmethod
+    def get_object_url(cls, custom_endpoint_name=None):
+        return "https://backend.test/api/v1/demo-objects"
+
+    @classmethod
+    def build_session(cls):
+        return object()
+
+
+def test_the_mixin_addresses_the_routes_under_its_models_detail_url(monkeypatch):
+    sent = _install(
+        monkeypatch,
+        FakeResponse(200, {"allowed_actions": [], "policies": []}),
+        FakeResponse(204),
+    )
+
+    DemoAccessModel(USER_UID).get_my_access()
+    DemoAccessModel(USER_UID).detach_policy(BINDING_UID)
+
+    assert [(item["r_type"], item["url"]) for item in sent] == [
+        ("GET", f"https://backend.test/api/v1/demo-objects/{USER_UID}/access/me/"),
+        (
+            "DELETE",
+            f"https://backend.test/api/v1/demo-objects/{USER_UID}/access/bindings/{BINDING_UID}/",
+        ),
+    ]
+
+
+ENVIRONMENT_UID = "2c4e6a8b-1d3f-4a5b-9c7d-8e9f0a1b2c3d"
+
+
+def test_an_environment_serves_the_access_routes_under_its_detail_url(monkeypatch):
+    environment = OrganizationEnvironment(
+        uid=ENVIRONMENT_UID,
+        name="research",
+        organization_owner_uid=TEAM_UID,
+        required_repository_branch="research",
+        is_production=False,
+    )
+    sent = _install(
+        monkeypatch,
+        FakeResponse(
+            201,
+            _binding(policy={"id": "organization-environments.member", "label": "Environment member"}),
+        ),
+        FakeResponse(
+            403,
+            {
+                "detail": "This needs the organization-environments.manage_access action.",
+                "code": "missing_action",
+                "required_action": "organization-environments.manage_access",
+                "granting_policies": [],
+            },
+        ),
+    )
+
+    binding = environment.attach_policy("member", principal_type="user", principal_uid=USER_UID)
+    with pytest.raises(PermissionDeniedError) as refused:
+        environment.attach_policy("observer", principal_type="user", principal_uid=USER_UID)
+
+    base = f"{OrganizationEnvironment.get_object_url()}/{ENVIRONMENT_UID}/access/bindings/"
+    assert [(item["r_type"], item["url"]) for item in sent] == [("POST", base), ("POST", base)]
+    assert sent[0]["payload"]["json"] == {
+        "policy": "member",
+        "principal_type": "user",
+        "principal_uid": USER_UID,
+    }
+    assert binding.policy.id == "organization-environments.member"
+    assert refused.value.payload["required_action"] == "organization-environments.manage_access"
+
+
+CONSTANT_UID = "22222222-2222-4222-8222-222222222222"
+
+
+@pytest.fixture()
+def no_environment(monkeypatch):
+    """The current branch has no Environment: an operation that needs one raises."""
+
+    def _resolve(operation):
+        raise code_repository_context.CodeRepositoryEnvironmentContextRequiredError(
+            f"{operation} requires an Organization Environment."
+        )
+
+    monkeypatch.setattr(code_repository_context, "resolve_organization_environment_uid", _resolve)
+
+
+def _constant() -> Constant:
+    return Constant(
+        uid=CONSTANT_UID,
+        name="APP__MODE",
+        value="production",
+        organization_environment_uid=ENVIRONMENT_UID,
+        organization_environment_name="Development",
+    )
+
+
+def test_a_constant_serves_the_access_routes_by_its_uid_alone(monkeypatch, no_environment):
+    sent = _install(
+        monkeypatch,
+        FakeResponse(
+            200,
+            {
+                "object": {"resource_type": "constants", "uid": CONSTANT_UID},
+                "bindings": [
+                    _binding(
+                        policy={"id": "constants.owner", "label": "Constant owner"},
+                        source="creator",
+                    )
+                ],
+                "computed": [
+                    {
+                        "source": "role",
+                        "detail": "Organization administrators hold every action.",
+                        "policy": None,
+                    }
+                ],
+            },
+        ),
+        FakeResponse(201, _binding(policy={"id": "constants.reader", "label": "Constant reader"})),
+        FakeResponse(
+            200,
+            {
+                "allowed_actions": ["constants.read", "constants.update"],
+                "policies": ["constants.editor"],
+            },
+        ),
+        FakeResponse(204),
+    )
+
+    constant = _constant()
+    listing = constant.get_access()
+    binding = constant.attach_policy("reader", principal_type="team", principal_uid=OTHER_TEAM_UID)
+    mine = constant.get_my_access()
+    constant.detach_policy(binding)
+
+    # No organization_environment_uid is resolved or sent: the branch has none.
+    base = f"{Constant.get_object_url()}/{CONSTANT_UID}/access/"
+    assert [(item["r_type"], item["url"], item["payload"]) for item in sent] == [
+        ("GET", base, {}),
+        (
+            "POST",
+            f"{base}bindings/",
+            {
+                "json": {
+                    "policy": "reader",
+                    "principal_type": "team",
+                    "principal_uid": OTHER_TEAM_UID,
+                }
+            },
+        ),
+        ("GET", f"{base}me/", {}),
+        ("DELETE", f"{base}bindings/{BINDING_UID}/", {}),
+    ]
+    assert listing.object.resource_type == "constants"
+    assert listing.bindings[0].policy.id == "constants.owner"
+    assert listing.bindings[0].source == "creator"
+    assert binding.policy.id == "constants.reader"
+    assert mine.policies == ["constants.editor"]
+
+
+def test_a_refused_change_on_a_constant_names_the_policies_that_give_it(
+    monkeypatch, no_environment
+):
+    refusal = {
+        "detail": "This needs the constants.manage_access action.",
+        "code": "missing_action",
+        "required_action": "constants.manage_access",
+        "granting_policies": ["constants.owner"],
+        "resource_type": "constants",
+        "resource_uid": CONSTANT_UID,
+    }
+    _install(monkeypatch, FakeResponse(403, refusal))
+
+    with pytest.raises(PermissionDeniedError) as raised:
+        _constant().attach_policy("editor", principal_type="user", principal_uid=USER_UID)
+
+    assert raised.value.payload["required_action"] == "constants.manage_access"
+    assert raised.value.payload["granting_policies"] == ["constants.owner"]
+
+
+def test_reading_a_constant_still_uses_the_current_branchs_environment(monkeypatch, no_environment):
+    _refuse_requests(monkeypatch)
+
+    with pytest.raises(code_repository_context.CodeRepositoryEnvironmentContextRequiredError):
+        Constant.get_by_uid(CONSTANT_UID)
+
+
+SECRET_UID = "33333333-3333-4333-8333-333333333333"
+
+
+@pytest.fixture()
+def environment(monkeypatch):
+    """The current branch has an Environment, which reading a Secret sends."""
+
+    monkeypatch.setattr(
+        code_repository_context,
+        "resolve_organization_environment_uid",
+        lambda operation: ENVIRONMENT_UID,
+    )
+
+
+def _secret() -> Secret:
+    return Secret(
+        uid=SECRET_UID,
+        name="API_KEY",
+        organization_environment_uid=ENVIRONMENT_UID,
+        organization_environment_name="Development",
+    )
+
+
+def test_a_secret_serves_the_access_routes_by_its_uid_alone(monkeypatch, no_environment):
+    sent = _install(
+        monkeypatch,
+        FakeResponse(
+            200,
+            {
+                "object": {"resource_type": "secrets", "uid": SECRET_UID},
+                "bindings": [
+                    _binding(
+                        policy={"id": "secrets.owner", "label": "Secret owner"},
+                        source="creator",
+                    )
+                ],
+                "computed": [
+                    {
+                        "source": "role",
+                        "detail": "Organization administrators hold every action.",
+                        "policy": None,
+                    }
+                ],
+            },
+        ),
+        FakeResponse(
+            201, _binding(policy={"id": "secrets.value_reader", "label": "Secret value reader"})
+        ),
+        FakeResponse(
+            200,
+            {
+                "allowed_actions": ["secrets.read", "secrets.read_value"],
+                "policies": ["secrets.value_reader"],
+            },
+        ),
+        FakeResponse(
+            200,
+            {
+                "action": "secrets.read_value_history",
+                "allowed": False,
+                "in_scope": True,
+                "paths": [],
+                "blocked_by_rule": False,
+                "granting_policies": ["secrets.editor", "secrets.owner"],
+            },
+        ),
+        FakeResponse(204),
+    )
+
+    secret = _secret()
+    listing = secret.get_access()
+    binding = secret.attach_policy(
+        "value_reader", principal_type="user", principal_uid=WORKLOAD_UID
+    )
+    mine = secret.get_my_access()
+    history = secret.explain_access("secrets.read_value_history")
+    secret.detach_policy(binding)
+
+    # No organization_environment_uid is resolved or sent: the branch has none.
+    base = f"{Secret.get_object_url()}/{SECRET_UID}/access/"
+    assert [(item["r_type"], item["url"], item["payload"]) for item in sent] == [
+        ("GET", base, {}),
+        (
+            "POST",
+            f"{base}bindings/",
+            {
+                "json": {
+                    "policy": "value_reader",
+                    "principal_type": "user",
+                    "principal_uid": WORKLOAD_UID,
+                }
+            },
+        ),
+        ("GET", f"{base}me/", {}),
+        ("GET", f"{base}explain/", {"params": {"action": "secrets.read_value_history"}}),
+        ("DELETE", f"{base}bindings/{BINDING_UID}/", {}),
+    ]
+    assert listing.object.resource_type == "secrets"
+    assert listing.bindings[0].policy.id == "secrets.owner"
+    assert listing.bindings[0].source == "creator"
+    assert binding.policy.id == "secrets.value_reader"
+    assert mine.allowed_actions == ["secrets.read", "secrets.read_value"]
+    assert history.allowed is False
+    assert history.granting_policies == ["secrets.editor", "secrets.owner"]
+
+
+def test_a_refused_change_on_a_secret_names_the_policies_that_give_it(monkeypatch, no_environment):
+    refusal = {
+        "detail": "This needs the secrets.manage_access action.",
+        "code": "missing_action",
+        "required_action": "secrets.manage_access",
+        "granting_policies": ["secrets.owner"],
+        "resource_type": "secrets",
+        "resource_uid": SECRET_UID,
+    }
+    _install(monkeypatch, FakeResponse(403, refusal))
+
+    with pytest.raises(PermissionDeniedError) as raised:
+        _secret().attach_policy("editor", principal_type="team", principal_uid=OTHER_TEAM_UID)
+
+    assert raised.value.payload["required_action"] == "secrets.manage_access"
+    assert raised.value.payload["granting_policies"] == ["secrets.owner"]
+
+
+@pytest.mark.parametrize(
+    "read",
+    [
+        lambda: Secret.get_by_uid(SECRET_UID),
+        lambda: Secret.get(name="API_KEY"),
+    ],
+    ids=["by-uid", "by-name"],
+)
+def test_reading_a_secrets_value_without_value_reader_is_refused_with_its_policies(
+    monkeypatch, environment, read
+):
+    # A reader sees the Secret in a listing; its value needs secrets.read_value.
+    refusal = {
+        "detail": "This needs the secrets.read_value action.",
+        "code": "missing_action",
+        "required_action": "secrets.read_value",
+        "granting_policies": ["secrets.editor", "secrets.owner", "secrets.value_reader"],
+    }
+    listed = {
+        "uid": SECRET_UID,
+        "name": "API_KEY",
+        "organization_environment_uid": ENVIRONMENT_UID,
+        "organization_environment_name": "Development",
+    }
+    sent: list = []
+
+    def fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
+        sent.append((r_type, url, payload))
+        if url.rstrip("/").endswith("/secrets"):
+            return FakeResponse(200, [listed])
+        return FakeResponse(403, refusal)
+
+    monkeypatch.setattr(base_mod, "make_request", fake_make_request)
+
+    with pytest.raises(PermissionDeniedError) as raised:
+        read()
+
+    assert raised.value.payload == refusal
+    assert "This needs the secrets.read_value action." in str(raised.value)
+    assert sent[-1] == (
+        "GET",
+        f"{Secret.get_object_url()}/{SECRET_UID}/",
+        {"params": {"organization_environment_uid": ENVIRONMENT_UID}},
+    )
+
+
+def test_reading_a_secret_still_uses_the_current_branchs_environment(monkeypatch, no_environment):
+    _refuse_requests(monkeypatch)
+
+    with pytest.raises(code_repository_context.CodeRepositoryEnvironmentContextRequiredError):
+        Secret.get_by_uid(SECRET_UID)
+
+
+BUCKET_UID = "44444444-4444-4444-8444-444444444444"
+
+
+def _bucket() -> Bucket:
+    return Bucket(
+        uid=BUCKET_UID,
+        name="vendor_prices",
+        organization_environment_uid=ENVIRONMENT_UID,
+        organization_environment_name="Development",
+    )
+
+
+def test_a_bucket_serves_the_access_routes_by_its_uid_alone(monkeypatch, no_environment):
+    sent = _install(
+        monkeypatch,
+        FakeResponse(
+            200,
+            {
+                "object": {"resource_type": "buckets", "uid": BUCKET_UID},
+                "bindings": [
+                    _binding(
+                        policy={"id": "buckets.owner", "label": "Bucket owner"},
+                        source="creator",
+                    )
+                ],
+                "computed": [
+                    {
+                        "source": "role",
+                        "detail": "Organization administrators hold every action.",
+                        "policy": None,
+                    }
+                ],
+            },
+        ),
+        FakeResponse(
+            201, _binding(policy={"id": "buckets.contributor", "label": "Bucket contributor"})
+        ),
+        FakeResponse(
+            200,
+            {
+                "allowed_actions": ["buckets.add_artifact", "buckets.read"],
+                "policies": ["buckets.contributor"],
+            },
+        ),
+        FakeResponse(
+            200,
+            {"bindings": [_binding(policy={"id": "buckets.reader", "label": "Bucket reader"})]},
+        ),
+    )
+
+    bucket = _bucket()
+    listing = bucket.get_access()
+    binding = bucket.attach_policy("contributor", principal_type="user", principal_uid=WORKLOAD_UID)
+    mine = bucket.get_my_access()
+    after = bucket.apply_access_changes(
+        attach=[{"policy": "reader", "principal_type": "team", "principal_uid": OTHER_TEAM_UID}],
+        detach=[binding],
+    )
+
+    # No organization_environment_uid is resolved or sent: the branch has none.
+    base = f"{Bucket.get_object_url()}/{BUCKET_UID}/access/"
+    assert [(item["r_type"], item["url"], item["payload"]) for item in sent] == [
+        ("GET", base, {}),
+        (
+            "POST",
+            f"{base}bindings/",
+            {
+                "json": {
+                    "policy": "contributor",
+                    "principal_type": "user",
+                    "principal_uid": WORKLOAD_UID,
+                }
+            },
+        ),
+        ("GET", f"{base}me/", {}),
+        (
+            "POST",
+            f"{base}changes/",
+            {
+                "json": {
+                    "attach": [
+                        {
+                            "policy": "reader",
+                            "principal_type": "team",
+                            "principal_uid": OTHER_TEAM_UID,
+                        }
+                    ],
+                    "detach": [BINDING_UID],
+                }
+            },
+        ),
+    ]
+    assert listing.object.resource_type == "buckets"
+    assert listing.bindings[0].policy.id == "buckets.owner"
+    assert listing.bindings[0].source == "creator"
+    assert binding.policy.id == "buckets.contributor"
+    assert mine.allowed_actions == ["buckets.add_artifact", "buckets.read"]
+    assert [item.policy.id for item in after] == ["buckets.reader"]
+
+
+def test_a_refused_change_on_a_bucket_names_the_policies_that_give_it(monkeypatch, no_environment):
+    refusal = {
+        "detail": "This needs the buckets.manage_access action.",
+        "code": "missing_action",
+        "required_action": "buckets.manage_access",
+        "granting_policies": ["buckets.owner"],
+        "resource_type": "buckets",
+        "resource_uid": BUCKET_UID,
+    }
+    _install(monkeypatch, FakeResponse(403, refusal))
+
+    with pytest.raises(PermissionDeniedError) as raised:
+        _bucket().attach_policy("editor", principal_type="team", principal_uid=OTHER_TEAM_UID)
+
+    assert raised.value.payload["required_action"] == "buckets.manage_access"
+    assert raised.value.payload["granting_policies"] == ["buckets.owner"]
+
+
+def test_reading_a_bucket_still_uses_the_current_branchs_environment(monkeypatch, no_environment):
+    _refuse_requests(monkeypatch)
+
+    with pytest.raises(code_repository_context.CodeRepositoryEnvironmentContextRequiredError):
+        Bucket.get_by_uid(BUCKET_UID)
+
+
+CODE_REPOSITORY_UID = "55555555-5555-4555-8555-555555555555"
+BRANCH_UID = "77777777-7777-4777-8777-777777777777"
+PROJECT_UID = "88888888-8888-4888-8888-888888888888"
+
+
+def _code_repository() -> CodeRepository:
+    return CodeRepository(
+        uid=CODE_REPOSITORY_UID,
+        code_repository_name="Analytics",
+        code_repository_type="python",
+        primary_language="python",
+        framework="mainsequence",
+    )
+
+
+def _branch() -> CodeRepositoryBranch:
+    return CodeRepositoryBranch.model_construct(
+        uid=BRANCH_UID,
+        code_repository_uid=CODE_REPOSITORY_UID,
+        repository_branch="research",
+        organization_environment_uid=ENVIRONMENT_UID,
+    )
+
+
+def _missing_product_role() -> dict:
+    return {
+        "detail": "User is missing required product role.",
+        "code": "missing_product_role",
+        "operation_id": "code_repositories.code_repository.retrieve",
+        "required_product_roles": ["user"],
+        "missing_product_roles": ["user"],
+    }
+
+
+def test_a_code_repository_serves_the_access_routes_by_its_uid_alone(monkeypatch, environment):
+    sent = _install(
+        monkeypatch,
+        FakeResponse(
+            200,
+            {
+                "object": {"resource_type": "code-repositories", "uid": CODE_REPOSITORY_UID},
+                "bindings": [
+                    _binding(
+                        policy={"id": "code-repositories.owner", "label": "Repository owner"},
+                        source="creator",
+                    ),
+                    _binding(
+                        uid=OTHER_BINDING_UID,
+                        policy={"id": "code-repositories.editor", "label": "Repository editor"},
+                        source="migrated",
+                    ),
+                ],
+                "computed": [
+                    {
+                        "source": "role",
+                        "detail": "Organization administrators hold every action.",
+                        "policy": None,
+                    }
+                ],
+            },
+        ),
+        FakeResponse(200, [_person()]),
+        FakeResponse(
+            201,
+            _binding(policy={"id": "code-repositories.reader", "label": "Repository reader"}),
+        ),
+        FakeResponse(
+            200,
+            {
+                "action": "code-repositories.delete",
+                "allowed": False,
+                "in_scope": True,
+                "paths": [],
+                "blocked_by_rule": False,
+                "granting_policies": [],
+            },
+        ),
+        FakeResponse(204),
+    )
+
+    repository = _code_repository()
+    listing = repository.get_access()
+    candidates = repository.list_access_candidates("reader", search="ana")
+    binding = repository.attach_policy("reader", principal_type="user", principal_uid=candidates[0])
+    deletion = repository.explain_access("code-repositories.delete")
+    repository.detach_policy(binding)
+
+    # The branch has an Environment, and none is sent: the routes take the UID alone.
+    base = f"{CodeRepository.get_object_url()}/{CODE_REPOSITORY_UID}/access/"
+    assert base.endswith(f"/code-repositories/{CODE_REPOSITORY_UID}/access/")
+    assert [(item["r_type"], item["url"], item["payload"]) for item in sent] == [
+        ("GET", base, {}),
+        (
+            "GET",
+            f"{base}candidates/",
+            {"params": {"policy": "reader", "principal_type": "user", "search": "ana"}},
+        ),
+        (
+            "POST",
+            f"{base}bindings/",
+            {
+                "json": {
+                    "policy": "reader",
+                    "principal_type": "user",
+                    "principal_uid": USER_UID,
+                }
+            },
+        ),
+        ("GET", f"{base}explain/", {"params": {"action": "code-repositories.delete"}}),
+        ("DELETE", f"{base}bindings/{BINDING_UID}/", {}),
+    ]
+    assert listing.object.resource_type == "code-repositories"
+    assert [(item.policy.id, item.source) for item in listing.bindings] == [
+        ("code-repositories.owner", "creator"),
+        ("code-repositories.editor", "migrated"),
+    ]
+    assert binding.policy.id == "code-repositories.reader"
+    # Deleting a repository is in no policy: only Organization admins delete one.
+    assert deletion.allowed is False
+    assert deletion.granting_policies == []
+
+
+def test_a_branch_serves_the_access_routes_by_its_uid_alone(monkeypatch, environment):
+    sent = _install(
+        monkeypatch,
+        FakeResponse(
+            200,
+            {
+                "object": {"resource_type": "code-repository-branches", "uid": BRANCH_UID},
+                "bindings": [],
+                "computed": [
+                    {
+                        "source": "inherited",
+                        "detail": "Code repository: code-repositories.reader gives "
+                        "code-repository-branches.reader here.",
+                        "policy": "code-repository-branches.reader",
+                        "principal": _person(),
+                        "relation": "repository-branch",
+                        "parent": {
+                            "resource_type": "code-repositories",
+                            "uid": CODE_REPOSITORY_UID,
+                        },
+                        "parent_policy": "code-repositories.reader",
+                    }
+                ],
+            },
+        ),
+        FakeResponse(
+            201,
+            _binding(
+                policy={"id": "code-repository-branches.editor", "label": "Branch editor"},
+                principal=_person(uid=WORKLOAD_UID, name="", email=None, identity_type="workload"),
+            ),
+        ),
+        FakeResponse(
+            200,
+            {
+                "allowed_actions": ["code-repository-branches.read"],
+                "policies": ["code-repository-branches.reader"],
+            },
+        ),
+    )
+
+    branch = _branch()
+    listing = branch.get_access()
+    binding = branch.attach_policy("editor", principal_type="user", principal_uid=WORKLOAD_UID)
+    mine = branch.get_my_access()
+
+    base = f"{CodeRepositoryBranch.get_object_url()}/{BRANCH_UID}/access/"
+    assert base.endswith(f"/code-repository-branches/{BRANCH_UID}/access/")
+    assert [(item["r_type"], item["url"], item["payload"]) for item in sent] == [
+        ("GET", base, {}),
+        (
+            "POST",
+            f"{base}bindings/",
+            {
+                "json": {
+                    "policy": "editor",
+                    "principal_type": "user",
+                    "principal_uid": WORKLOAD_UID,
+                }
+            },
+        ),
+        ("GET", f"{base}me/", {}),
+    ]
+    inherited = listing.computed[0]
+    assert inherited.source == "inherited"
+    assert inherited.policy == "code-repository-branches.reader"
+    assert inherited.parent.resource_type == "code-repositories"
+    assert inherited.parent_policy == "code-repositories.reader"
+    assert binding.principal.identity_type == "workload"
+    assert mine.policies == ["code-repository-branches.reader"]
+
+
+def test_a_project_is_addressed_by_its_uid_for_the_access_routes(monkeypatch, environment):
+    sent = _install(
+        monkeypatch,
+        FakeResponse(
+            201,
+            _binding(
+                policy={"id": "organization-projects.reader", "label": "Project reader"},
+                principal=_person(type="team", uid=OTHER_TEAM_UID, email=None, identity_type=None),
+            ),
+        ),
+        FakeResponse(
+            200,
+            {
+                "bindings": [
+                    _binding(
+                        uid=OTHER_BINDING_UID,
+                        policy={"id": "organization-projects.owner", "label": "Project owner"},
+                        source="creator",
+                    )
+                ]
+            },
+        ),
+    )
+
+    project = OrganizationProject(uid=PROJECT_UID)
+    binding = project.attach_policy("reader", principal_type="team", principal_uid=OTHER_TEAM_UID)
+    after = project.apply_access_changes(detach=[binding])
+
+    base = f"{OrganizationProject.get_object_url()}/{PROJECT_UID}/access/"
+    assert base.endswith(f"/organization-projects/{PROJECT_UID}/access/")
+    assert [(item["r_type"], item["url"], item["payload"]) for item in sent] == [
+        (
+            "POST",
+            f"{base}bindings/",
+            {
+                "json": {
+                    "policy": "reader",
+                    "principal_type": "team",
+                    "principal_uid": OTHER_TEAM_UID,
+                }
+            },
+        ),
+        ("POST", f"{base}changes/", {"json": {"attach": [], "detach": [BINDING_UID]}}),
+    ]
+    assert binding.principal.type == "team"
+    assert [item.policy.id for item in after] == ["organization-projects.owner"]
+
+
+@pytest.mark.parametrize("make_object", [_code_repository, _branch], ids=["repository", "branch"])
+def test_a_person_without_the_user_product_role_is_refused_with_the_platforms_answer(
+    monkeypatch, make_object
+):
+    _install(monkeypatch, FakeResponse(403, _missing_product_role()))
+
+    with pytest.raises(PermissionDeniedError) as raised:
+        make_object().get_my_access()
+
+    assert raised.value.payload["code"] == "missing_product_role"
+    assert "granting_policies" not in raised.value.payload
+    assert "User is missing required product role." in str(raised.value)
+
+
+def test_a_refused_change_on_a_code_repository_names_the_policies_that_give_it(monkeypatch):
+    refusal = {
+        "detail": "This needs the code-repositories.manage_access action.",
+        "code": "missing_action",
+        "required_action": "code-repositories.manage_access",
+        "granting_policies": ["code-repositories.owner"],
+        "resource_type": "code-repositories",
+        "resource_uid": CODE_REPOSITORY_UID,
+    }
+    _install(monkeypatch, FakeResponse(403, refusal))
+
+    with pytest.raises(PermissionDeniedError) as raised:
+        _code_repository().attach_policy(
+            "editor", principal_type="team", principal_uid=OTHER_TEAM_UID
+        )
+
+    assert raised.value.payload["required_action"] == "code-repositories.manage_access"
+    assert raised.value.payload["granting_policies"] == ["code-repositories.owner"]
+
+
+def test_a_project_needs_its_uid():
+    with pytest.raises(ValueError):
+        OrganizationProject()
+
+
+AGENT_UID = "99999999-9999-4999-8999-999999999999"
+RELEASE_UID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+JOB_UID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+ARTIFACT_UID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+AGENT_BACKED_RELEASE = (
+    "A release that backs an Agent takes no policies of its own; give access on the Agent."
+)
+
+
+def _agent() -> Agent:
+    return Agent.model_construct(
+        uid=AGENT_UID, name="Research Copilot", organization_environment_uid=ENVIRONMENT_UID
+    )
+
+
+def _release() -> ResourceRelease:
+    return ResourceRelease.model_construct(
+        uid=RELEASE_UID, code_repository_branch_uid=BRANCH_UID, release_kind="fastapi"
+    )
+
+
+def _job() -> Job:
+    return Job.model_construct(
+        uid=JOB_UID, name="Nightly prices", code_repository_branch_uid=BRANCH_UID
+    )
+
+
+def _artifact() -> Artifact:
+    return Artifact.model_construct(
+        uid=ARTIFACT_UID,
+        name="prices.csv",
+        bucket_name="vendor_prices",
+        organization_environment_uid=ENVIRONMENT_UID,
+    )
+
+
+def _inherited(*, policy, relation, parent_type, parent_uid, parent_policy, label):
+    return {
+        "source": "inherited",
+        "detail": f"{label}: {parent_policy} gives {policy} here.",
+        "policy": policy,
+        "principal": _person(),
+        "relation": relation,
+        "parent": {"resource_type": parent_type, "uid": parent_uid},
+        "parent_policy": parent_policy,
+    }
+
+
+def test_an_agent_serves_the_access_routes_by_its_uid_alone(monkeypatch, environment):
+    sent = _install(
+        monkeypatch,
+        FakeResponse(
+            200,
+            {
+                "object": {"resource_type": "agents", "uid": AGENT_UID},
+                "bindings": [
+                    _binding(
+                        policy={"id": "agents.viewer", "label": "Agent viewer"},
+                        source="migrated",
+                    )
+                ],
+                "computed": [
+                    {
+                        "source": "role",
+                        "detail": "Organization administrators hold every action.",
+                        "policy": None,
+                    }
+                ],
+            },
+        ),
+        FakeResponse(
+            200,
+            [
+                _person(
+                    type="team", uid=OTHER_TEAM_UID, name="Research", email=None, identity_type=None
+                )
+            ],
+        ),
+        FakeResponse(
+            201,
+            _binding(
+                uid=OTHER_BINDING_UID,
+                policy={"id": "agents.user", "label": "Agent user"},
+                principal=_person(
+                    type="team", uid=OTHER_TEAM_UID, name="Research", email=None, identity_type=None
+                ),
+            ),
+        ),
+        FakeResponse(
+            200,
+            {
+                "action": "agents.set_acts_for_requester",
+                "allowed": False,
+                "in_scope": True,
+                "paths": [],
+                "blocked_by_rule": False,
+                "granting_policies": [],
+            },
+        ),
+        FakeResponse(204),
+    )
+
+    agent = _agent()
+    listing = agent.get_access()
+    candidates = agent.list_access_candidates("user", principal_type="team", search="research")
+    binding = agent.attach_policy("user", principal_type="team", principal_uid=candidates[0])
+    acting_for_the_requester = agent.explain_access("agents.set_acts_for_requester")
+    agent.detach_policy(binding)
+
+    # The branch has an Environment, and none is sent: the routes take the UID alone.
+    base = f"{Agent.get_object_url()}/{AGENT_UID}/access/"
+    assert base.endswith(f"/agents/{AGENT_UID}/access/")
+    assert [(item["r_type"], item["url"], item["payload"]) for item in sent] == [
+        ("GET", base, {}),
+        (
+            "GET",
+            f"{base}candidates/",
+            {"params": {"policy": "user", "principal_type": "team", "search": "research"}},
+        ),
+        (
+            "POST",
+            f"{base}bindings/",
+            {"json": {"policy": "user", "principal_type": "team", "principal_uid": OTHER_TEAM_UID}},
+        ),
+        ("GET", f"{base}explain/", {"params": {"action": "agents.set_acts_for_requester"}}),
+        ("DELETE", f"{base}bindings/{OTHER_BINDING_UID}/", {}),
+    ]
+    assert listing.object.resource_type == "agents"
+    assert [(item.policy.id, item.source) for item in listing.bindings] == [
+        ("agents.viewer", "migrated")
+    ]
+    assert binding.policy.id == "agents.user"
+    # Acting for the requester is in no policy: only Organization admins turn it on.
+    assert acting_for_the_requester.allowed is False
+    assert acting_for_the_requester.granting_policies == []
+
+
+def test_a_release_serves_the_access_routes_by_its_uid_alone(monkeypatch, environment):
+    sent = _install(
+        monkeypatch,
+        FakeResponse(
+            200,
+            {
+                "object": {"resource_type": "resource-releases", "uid": RELEASE_UID},
+                "bindings": [],
+                "computed": [
+                    _inherited(
+                        policy="resource-releases.viewer",
+                        relation="branch-release",
+                        parent_type="code-repository-branches",
+                        parent_uid=BRANCH_UID,
+                        parent_policy="code-repository-branches.reader",
+                        label="Code repository branch",
+                    )
+                ],
+            },
+        ),
+        FakeResponse(
+            201,
+            _binding(
+                policy={"id": "resource-releases.user", "label": "Release user"},
+                principal=_person(uid=WORKLOAD_UID, name="", email=None, identity_type="workload"),
+            ),
+        ),
+        FakeResponse(
+            200,
+            {
+                "allowed_actions": ["resource-releases.invoke", "resource-releases.read"],
+                "policies": ["resource-releases.user"],
+            },
+        ),
+    )
+
+    release = _release()
+    listing = release.get_access()
+    binding = release.attach_policy("user", principal_type="user", principal_uid=WORKLOAD_UID)
+    mine = release.get_my_access()
+
+    base = f"{ResourceRelease.get_object_url()}/{RELEASE_UID}/access/"
+    assert base.endswith(f"/resource-releases/{RELEASE_UID}/access/")
+    assert [(item["r_type"], item["url"], item["payload"]) for item in sent] == [
+        ("GET", base, {}),
+        (
+            "POST",
+            f"{base}bindings/",
+            {"json": {"policy": "user", "principal_type": "user", "principal_uid": WORKLOAD_UID}},
+        ),
+        ("GET", f"{base}me/", {}),
+    ]
+    inherited = listing.computed[0]
+    assert inherited.source == "inherited"
+    assert inherited.relation == "branch-release"
+    assert inherited.parent.resource_type == "code-repository-branches"
+    assert inherited.parent_policy == "code-repository-branches.reader"
+    assert binding.principal.identity_type == "workload"
+    assert mine.policies == ["resource-releases.user"]
+
+
+def test_a_release_that_backs_an_agent_follows_the_agent_and_takes_no_policy(
+    monkeypatch, environment
+):
+    sent = _install(
+        monkeypatch,
+        FakeResponse(
+            200,
+            {
+                "object": {"resource_type": "resource-releases", "uid": RELEASE_UID},
+                "bindings": [],
+                "computed": [
+                    _inherited(
+                        policy="resource-releases.editor",
+                        relation="agent-backing-release",
+                        parent_type="agents",
+                        parent_uid=AGENT_UID,
+                        parent_policy="agents.editor",
+                        label="Agent Research Copilot",
+                    )
+                ],
+            },
+        ),
+        FakeResponse(400, {"detail": AGENT_BACKED_RELEASE, "code": "sharing_managed_by_owner"}),
+    )
+
+    release = _release()
+    listing = release.get_access()
+    with pytest.raises(BadRequestError) as refused:
+        release.attach_policy("viewer", principal_type="user", principal_uid=USER_UID)
+
+    base = f"{ResourceRelease.get_object_url()}/{RELEASE_UID}/access/"
+    assert [(item["r_type"], item["url"]) for item in sent] == [
+        ("GET", base),
+        ("POST", f"{base}bindings/"),
+    ]
+    assert listing.computed[0].parent.resource_type == "agents"
+    assert listing.computed[0].parent_policy == "agents.editor"
+    assert refused.value.payload["code"] == "sharing_managed_by_owner"
+    assert AGENT_BACKED_RELEASE in str(refused.value)
+
+
+def test_a_job_serves_the_access_routes_by_its_uid_alone(monkeypatch, environment):
+    sent = _install(
+        monkeypatch,
+        FakeResponse(
+            200,
+            {
+                "object": {"resource_type": "jobs", "uid": JOB_UID},
+                "bindings": [
+                    _binding(
+                        uid=OTHER_BINDING_UID,
+                        policy={"id": "jobs.viewer", "label": "Job viewer"},
+                    )
+                ],
+                "computed": [
+                    _inherited(
+                        policy="jobs.editor",
+                        relation="release-backing-job",
+                        parent_type="resource-releases",
+                        parent_uid=RELEASE_UID,
+                        parent_policy="resource-releases.editor",
+                        label="Release",
+                    )
+                ],
+            },
+        ),
+        FakeResponse(
+            200,
+            {"bindings": [_binding(policy={"id": "jobs.runner", "label": "Job runner"})]},
+        ),
+        FakeResponse(
+            200,
+            {
+                "action": "jobs.run",
+                "allowed": False,
+                "in_scope": True,
+                "paths": [
+                    {
+                        "source": "inherited",
+                        "relation": "release-backing-job",
+                        "parent_policy": "resource-releases.editor",
+                        "policy": "jobs.editor",
+                    }
+                ],
+                "blocked_by_rule": True,
+                "granting_policies": ["jobs.editor", "jobs.owner", "jobs.runner"],
+            },
+        ),
+    )
+
+    job = _job()
+    listing = job.get_access()
+    after = job.apply_access_changes(
+        attach=[{"policy": "runner", "principal_type": "user", "principal_uid": USER_UID}],
+        detach=[listing.bindings[0]],
+    )
+    run = job.explain_access("jobs.run")
+
+    base = f"{Job.get_object_url()}/{JOB_UID}/access/"
+    assert base.endswith(f"/jobs/{JOB_UID}/access/")
+    assert [(item["r_type"], item["url"], item["payload"]) for item in sent] == [
+        ("GET", base, {}),
+        (
+            "POST",
+            f"{base}changes/",
+            {
+                "json": {
+                    "attach": [
+                        {"policy": "runner", "principal_type": "user", "principal_uid": USER_UID}
+                    ],
+                    "detach": [OTHER_BINDING_UID],
+                }
+            },
+        ),
+        ("GET", f"{base}explain/", {"params": {"action": "jobs.run"}}),
+    ]
+    assert listing.computed[0].relation == "release-backing-job"
+    assert listing.computed[0].parent.resource_type == "resource-releases"
+    assert [item.policy.id for item in after] == ["jobs.runner"]
+    # A release's backing Job is run with its release: a platform rule blocks jobs.run.
+    assert run.allowed is False
+    assert run.blocked_by_rule is True
+    assert run.paths[0].relation == "release-backing-job"
+
+
+def test_an_artifact_serves_the_access_routes_by_its_uid_alone(monkeypatch, environment):
+    sent = _install(
+        monkeypatch,
+        FakeResponse(
+            200,
+            {
+                "object": {"resource_type": "artifacts", "uid": ARTIFACT_UID},
+                "bindings": [
+                    _binding(
+                        policy={"id": "artifacts.owner", "label": "Artifact owner"},
+                        source="creator",
+                    )
+                ],
+                "computed": [
+                    _inherited(
+                        policy="artifacts.viewer",
+                        relation="job-run-published-artifact",
+                        parent_type="jobs",
+                        parent_uid=JOB_UID,
+                        parent_policy="jobs.runner",
+                        label="Job Nightly prices",
+                    )
+                ],
+            },
+        ),
+        FakeResponse(
+            201,
+            _binding(
+                uid=OTHER_BINDING_UID,
+                policy={"id": "artifacts.viewer", "label": "Artifact viewer"},
+                principal=_person(uid=WORKLOAD_UID, name="", email=None, identity_type="workload"),
+            ),
+        ),
+        FakeResponse(
+            200,
+            {
+                "allowed_actions": ["artifacts.download", "artifacts.read"],
+                "policies": ["artifacts.viewer"],
+            },
+        ),
+        FakeResponse(204),
+    )
+
+    artifact = _artifact()
+    listing = artifact.get_access()
+    binding = artifact.attach_policy("viewer", principal_type="user", principal_uid=WORKLOAD_UID)
+    mine = artifact.get_my_access()
+    artifact.detach_policy(binding.uid)
+
+    # Reading an Artifact sends the branch's Environment; its access routes do not.
+    base = f"{Artifact.get_object_url()}/{ARTIFACT_UID}/access/"
+    assert base.endswith(f"/artifacts/{ARTIFACT_UID}/access/")
+    assert [(item["r_type"], item["url"], item["payload"]) for item in sent] == [
+        ("GET", base, {}),
+        (
+            "POST",
+            f"{base}bindings/",
+            {"json": {"policy": "viewer", "principal_type": "user", "principal_uid": WORKLOAD_UID}},
+        ),
+        ("GET", f"{base}me/", {}),
+        ("DELETE", f"{base}bindings/{OTHER_BINDING_UID}/", {}),
+    ]
+    assert [(item.policy.id, item.source) for item in listing.bindings] == [
+        ("artifacts.owner", "creator")
+    ]
+    published = listing.computed[0]
+    assert published.relation == "job-run-published-artifact"
+    assert published.parent.resource_type == "jobs"
+    assert published.policy == "artifacts.viewer"
+    assert mine.allowed_actions == ["artifacts.download", "artifacts.read"]
+
+
+def test_reading_an_artifact_still_uses_the_current_branchs_environment(
+    monkeypatch, no_environment
+):
+    _refuse_requests(monkeypatch)
+
+    with pytest.raises(code_repository_context.CodeRepositoryEnvironmentContextRequiredError):
+        Artifact.get_by_uid(ARTIFACT_UID)
+
+
+@pytest.mark.parametrize(
+    ("make_object", "resource_type", "uid"),
+    [
+        (_agent, "agents", AGENT_UID),
+        (_release, "resource-releases", RELEASE_UID),
+        (_job, "jobs", JOB_UID),
+        (_artifact, "artifacts", ARTIFACT_UID),
+    ],
+    ids=["agent", "release", "job", "artifact"],
+)
+def test_a_refused_change_names_the_policies_that_give_it(
+    monkeypatch, make_object, resource_type, uid
+):
+    refusal = {
+        "detail": f"This needs the {resource_type}.manage_access action.",
+        "code": "missing_action",
+        "required_action": f"{resource_type}.manage_access",
+        "granting_policies": [f"{resource_type}.owner"],
+        "resource_type": resource_type,
+        "resource_uid": uid,
+    }
+    _install(monkeypatch, FakeResponse(403, refusal))
+
+    with pytest.raises(PermissionDeniedError) as raised:
+        make_object().attach_policy("editor", principal_type="team", principal_uid=OTHER_TEAM_UID)
+
+    assert raised.value.payload["required_action"] == f"{resource_type}.manage_access"
+    assert raised.value.payload["granting_policies"] == [f"{resource_type}.owner"]

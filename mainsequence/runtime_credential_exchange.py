@@ -122,6 +122,13 @@ def exchange_runtime_credential(
     """
     Send one runtime credential exchange and return the last response.
 
+    A ``429`` or ``503`` answer is retried up to ``EXCHANGE_RETRIES`` times. The
+    wait is the exponential backoff or the answer's ``Retry-After``, whichever is
+    longer; a wait that would not end before ``deadline`` ends the retries. Any
+    other answer, ``401`` included, is returned at once. ``RuntimeIdentityTokenError``
+    is raised instead of sending an attempt when ``identity_token_file`` is not set
+    or the file cannot be used.
+
     Parameters
     ----------
     send:
@@ -135,13 +142,6 @@ def exchange_runtime_credential(
         ``time.monotonic()`` value after which no retry starts.
     on_retry:
         Called with the status and the delay before each retry.
-
-    A ``429`` or ``503`` answer is retried up to ``EXCHANGE_RETRIES`` times. The
-    wait is the exponential backoff or the answer's ``Retry-After``, whichever is
-    longer; a wait that would not end before ``deadline`` ends the retries. Any
-    other answer, ``401`` included, is returned at once. ``RuntimeIdentityTokenError``
-    is raised instead of sending an attempt when ``identity_token_file`` is not set
-    or the file cannot be used.
     """
     for attempt in range(EXCHANGE_RETRIES + 1):
         response = send(_request_body(credential_id, identity_token_file))

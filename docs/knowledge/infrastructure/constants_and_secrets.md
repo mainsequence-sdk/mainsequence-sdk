@@ -90,14 +90,21 @@ Main Sequence applies resource-level access control, so the real operational que
 - which team or CodeRepository boundary it belongs to
 - whether it is safe to expose through a deployed release
 
-In practice, the current SDK exposes sharing behavior across several resource types:
+Constants and secrets are decided by their policies:
 
-- `CodeRepository`
-- `Constant`
-- `Secret`
-- `Bucket`
-- `Artifact`
-- `ResourceRelease`
+- a `Constant`'s policies are `reader`, `editor` and `owner`; see
+  [Who can use a constant](#who-can-use-a-constant)
+- a `Secret`'s policies are `reader`, `value_reader`, `editor` and `owner`, and
+  seeing a secret does not show its value; see
+  [Who can use a secret](#who-can-use-a-secret)
+
+Every other shareable resource is decided by its policies too: a `Bucket` and
+an `Artifact`, see [Artifacts](artifacts.md#who-can-use-an-artifact); a
+`CodeRepository`, its branches and Projects, see
+[Code Repositories, Branches and Projects](code_repositories.md); an `Agent`,
+see [Agents](agents.md); and a `ResourceRelease` and a `Job`, see
+[Who can use a release](resource_releases.md#who-can-use-a-release) and
+[Who can use a Job](scheduling_jobs.md#who-can-use-a-job).
 
 Why these matter:
 
@@ -110,8 +117,11 @@ Why these matter:
 
 !!! warning "IMPORTANT"
     `Constant` and `Secret` are not the only shareable resources in the SDK.
-    `CodeRepository`, `Bucket`, `Artifact`, and `ResourceRelease` also participate in the same shareable-object model.
-    This guide focuses on constants and secrets because they are the simplest place to learn the pattern.
+    Teams, Organization Environments, Buckets, Artifacts, code repositories, their branches, Projects,
+    Agents, resource releases and Jobs are decided by policies, as `Constant` and `Secret` are, and so
+    are model-provider credentials and custom model providers, which have no SDK model; see
+    [Who Has Access to an Object](object_access.md).
+    This guide focuses on constants and secrets because they are the simplest place to learn the policy pattern.
 
 That is the practical reason this topic matters early:
 
@@ -130,10 +140,12 @@ A constant is a small, readable, organization-level configuration value.
 
 The current SDK model exposes:
 
-- `id`
+- `uid`
 - `name`
 - `value`
-- `category`
+- `category`, the prefix of the name before `__`
+- `organization_environment_uid` and `organization_environment_name`, the
+  Environment that owns it
 
 ### What constants are good for
 
@@ -246,6 +258,46 @@ if "MODEL__DEFAULT_WINDOW" not in existing:
     Constant.create(name="MODEL__DEFAULT_WINDOW", value=252)
 ```
 
+### Who can use a constant
+
+A constant's access is decided by its policies:
+
+- `reader`: see the constant and its value;
+- `editor`: also change its name and value, delete it, and see who has access;
+- `owner`: also decide who has access.
+
+The person or workload that creates a constant holds `owner`, and Organization
+admins hold every action. The policies go to people, workload identities and
+Teams. Read and change them with the access methods on `Constant`:
+
+```python
+from mainsequence.client import Constant
+
+constant = Constant.get(name="MODEL__DEFAULT_WINDOW")
+
+for binding in constant.get_access().bindings:
+    print(binding.uid, binding.policy.id, binding.principal.type, binding.principal.uid)
+
+binding = constant.attach_policy("reader", principal_type="team", principal_uid=team_uid)
+constant.detach_policy(binding.uid)
+
+answer = constant.explain_access("constants.update", principal_uid=user_uid)
+print(answer.allowed, answer.granting_policies)
+```
+
+The access methods address the constant by its UID alone, so they need no
+Environment. A refused change raises `PermissionDeniedError`, whose `payload`
+names the `required_action` and the `granting_policies`.
+`mainsequence access policies --type constants` lists the policies with their
+actions, and [Who Has Access to an Object](object_access.md) describes every
+method and model.
+
+`Constant` no longer has view and edit sharing methods: `can_view()`,
+`can_edit()`, `add_to_view()`, `add_to_edit()`, `remove_from_view()`,
+`remove_from_edit()`, their team variants and the `users_can_*` and
+`list_users_can_*` aliases are gone. Existing view grants became `reader` and
+edit grants `editor`; attach those policies where you used to share.
+
 ### When to prefer a constant over code
 
 Use a constant instead of hardcoding when:
@@ -274,11 +326,14 @@ A secret is protected configuration. The platform should treat it differently fr
 
 The current SDK model exposes:
 
-- `id`
+- `uid`
 - `name`
 - `value`
+- `organization_environment_uid` and `organization_environment_name`, the
+  Environment that owns it
 
-In practice, some backend responses may only return the secret name rather than echoing the value back.
+`value` is filled only when the secret is read with `get()` or `get_by_uid()`;
+listings and the answers to creating or changing a secret never carry it.
 
 ### What secrets are good for
 
@@ -318,7 +373,8 @@ then retrieves its value through the UID detail endpoint. `Secret.filter(...)`
 always remains metadata-only and never returns secret values. `Secret.value` is a
 Pydantic `SecretStr`; unwrap it only where plaintext is required and never log it.
 A validation error raised while reading a `Secret` does not include its input, so
-it does not show the value either.
+it does not show the value either. Reading the value needs the secret's
+`value_reader` policy or more; see [Who can use a secret](#who-can-use-a-secret).
 
 Filter secrets by name:
 
@@ -338,6 +394,64 @@ existing = {s.name for s in Secret.filter(name__in=["POLYGON_API_KEY"])}
 if "POLYGON_API_KEY" not in existing:
     Secret.create(name="POLYGON_API_KEY", value="***")
 ```
+
+### Who can use a secret
+
+A secret's access is decided by its policies:
+
+- `reader`: see the secret, its name and its versions' dates, never its value;
+- `value_reader`: also read its current value;
+- `editor`: also read earlier values, set a new value, delete it, and see who
+  has access;
+- `owner`: also decide who has access.
+
+The value needs `value_reader` or more, and earlier values `editor` or more.
+`Secret.get()` and `Secret.get_by_uid()` read the current value; without
+`value_reader` they raise `PermissionDeniedError`, whose `payload` names the
+`required_action`, `secrets.read_value`, and the `granting_policies`.
+`Secret.filter()` lists the secrets you can see without their values, so a
+`reader` finds a secret by name there. Give a workload that uses a secret
+`value_reader`; `reader` is for people who configure workloads that use the
+secret but must never know it.
+
+The person or workload that creates a secret holds `owner`, and Organization
+admins hold every action. The policies go to people, workload identities and
+Teams. A secret the platform manages, such as a hosted database password, cannot
+get a new value or be deleted, by anyone: those requests answer `409`. A
+repository workflow file's `access` entry for a secret gives its workload the
+policy it names, such as `policy: value_reader` for the current value.
+
+Read and change the policies with the access methods on `Secret`:
+
+```python
+from mainsequence.client import Secret
+
+secret = Secret.filter(name="POLYGON_API_KEY")[0]
+
+for binding in secret.get_access().bindings:
+    print(binding.uid, binding.policy.id, binding.principal.type, binding.principal.uid)
+
+binding = secret.attach_policy(
+    "value_reader", principal_type="user", principal_uid=workload_user_uid
+)
+secret.detach_policy(binding.uid)
+
+answer = secret.explain_access("secrets.read_value", principal_uid=user_uid)
+print(answer.allowed, answer.granting_policies)
+```
+
+The access methods address the secret by its UID alone, so they need no
+Environment. A refused change raises `PermissionDeniedError` too.
+`mainsequence access policies --type secrets` lists the policies with their
+actions, and [Who Has Access to an Object](object_access.md) describes every
+method and model.
+
+`Secret` no longer has view and edit sharing methods: `can_view()`,
+`can_edit()`, `add_to_view()`, `add_to_edit()`, `remove_from_view()`,
+`remove_from_edit()`, their team variants and the `users_can_*` and
+`list_users_can_*` aliases are gone. Existing view grants became
+`value_reader`, which reads the current value but not earlier ones, and edit
+grants `editor`; attach those policies where you used to share.
 
 ### Operational rules for secrets
 
@@ -438,23 +552,51 @@ Important behavior:
 - secrets are shown by metadata only in CLI tables and delete previews
 - delete commands require typed verification
 
-### CLI sharing examples for constants
+### CLI access commands for constants
 
-These commands show the resource-level sharing model directly:
+These commands read and change a constant's policies:
 
 ```bash
-mainsequence constants can_view <CONSTANT_UID>
-mainsequence constants can_edit <CONSTANT_UID>
-mainsequence constants add_to_view <CONSTANT_UID> <USER_UID>
-mainsequence constants add_to_edit <CONSTANT_UID> <USER_UID>
-mainsequence constants remove_from_view <CONSTANT_UID> <USER_UID>
-mainsequence constants remove_from_edit <CONSTANT_UID> <USER_UID>
+mainsequence constants access list <CONSTANT_UID>
+mainsequence constants access grant <CONSTANT_UID> reader --user <USER_UID>
+mainsequence constants access grant <CONSTANT_UID> editor --team <TEAM_UID>
+mainsequence constants access revoke <CONSTANT_UID> <BINDING_UID>
+mainsequence constants access explain <CONSTANT_UID> constants.update
 ```
 
 Interpretation:
 
 - `<CONSTANT_UID>` is the constant public UID
-- `<USER_UID>` is the public UUID of the user receiving or losing access
+- `<USER_UID>` is the public UUID of the person or workload identity receiving
+  the policy, and `<TEAM_UID>` the team's
+- `<BINDING_UID>` is the UID of a binding, which `access list` shows
+
+Unlike the other constants commands, these need no registered branch: the
+constant is addressed by its UID alone. The sharing commands `can_view`,
+`can_edit`, `add_to_view`, `add_to_edit`, `remove_from_view`,
+`remove_from_edit` and their team variants are gone. See
+[Constants](../../cli/index.md#constants) in the CLI reference.
+
+### CLI access commands for secrets
+
+These commands read and change a secret's policies:
+
+```bash
+mainsequence secrets access list <SECRET_UID>
+mainsequence secrets access grant <SECRET_UID> value_reader --user <USER_UID>
+mainsequence secrets access grant <SECRET_UID> editor --team <TEAM_UID>
+mainsequence secrets access revoke <SECRET_UID> <BINDING_UID>
+mainsequence secrets access explain <SECRET_UID> secrets.read_value
+```
+
+`<SECRET_UID>` is the secret public UID; `<USER_UID>`, `<TEAM_UID>` and
+`<BINDING_UID>` are as for constants. Like the constant access commands, these
+need no registered branch. `secrets delete` reads the secret, value included,
+before it asks for confirmation, and then deletes it, so it needs `editor` or
+`owner`. A refused command prints the platform's message and the policies that
+would allow it. The sharing commands `can_view`, `can_edit`, `add_to_view`,
+`add_to_edit`, `remove_from_view`, `remove_from_edit` and their team variants
+are gone. See [Secrets](../../cli/index.md#secrets) in the CLI reference.
 
 This is the most concrete CLI example of Main Sequence RBAC at the resource level.
 

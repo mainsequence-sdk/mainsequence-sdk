@@ -25,7 +25,6 @@ _DEFAULT_TEST_SKILLS = ("alpha_skill", "beta_skill", "gamma_skill")
 _CURRENT_BACKEND_SKILL_PATHS = {
     "a2a_communication": "skills/agents/a2a_communication/SKILL.md",
     "command_center": "skills/command_center/command_center/SKILL.md",
-    "code_repository_design": "skills/platform/code_repository_design/SKILL.md",
     "code_repository_local_setup": "skills/pod_manager/code_repository_local_setup/SKILL.md",
     "code_repository_to_agent": "skills/agents/code_repository_to_agent/SKILL.md",
     "static_site": "skills/pod_manager/static_site/SKILL.md",
@@ -200,7 +199,7 @@ def test_parse_platform_catalog_accepts_additive_skills_and_ignores_order():
 def test_parse_platform_catalog_accepts_current_backend_skill_membership():
     catalog = _current_backend_catalog()
 
-    assert len(catalog.resources) == 7
+    assert len(catalog.resources) == 6
     assert [skill.name for skill in catalog.skills] == sorted(_CURRENT_BACKEND_SKILL_PATHS)
     assert {skill.name: skill.relative_path.as_posix() for skill in catalog.skills} == {
         name: path.removeprefix("skills/") for name, path in _CURRENT_BACKEND_SKILL_PATHS.items()
@@ -566,7 +565,6 @@ def test_sdk_source_tree_does_not_vendor_platform_owned_content():
     forbidden_paths = [
         sdk_root / "agent_scaffold" / "platform_capabilities",
         sdk_root / "agent_scaffold" / "SDK_CAPABILITY_ASSEMBLY.json",
-        sdk_root / "agent_scaffold" / "skills" / "code_repository_design",
         sdk_root / "agent_scaffold" / "skills" / "a2a_communication",
         sdk_root / "agent_scaffold" / "skills" / "code_repository_local_setup",
         sdk_root / "agent_scaffold" / "skills" / "code_repository_to_agent",

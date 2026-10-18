@@ -11,6 +11,9 @@ authentication, scaffold, and Git behavior. Select and sequence commands here;
 do not reproduce their Python implementation or replace them with ad hoc shell
 workflows.
 
+Use this skill directly for the current checkout and the requested maintenance
+task. No prior routing skill or platform catalog is required.
+
 ## Preserve The Boundary
 
 Own:
@@ -22,16 +25,13 @@ Own:
 
 Do not own:
 
-- platform ontology or CodeRepository Blueprint design;
 - domain implementation for data packages, APIs, jobs, or releases;
 - backend repository reconciliation;
 - MCP authorization policy, OAuth token storage, or access-token extraction;
 - repository-owned skills outside `.agents/skills/mainsequence/`.
 
-Route architecture changes to `code_repository_design`, implementation routing to
-`sdk_code_repository_execution`, and failure classification to
-`maintenance/bug_auditor` when diagnosis extends beyond the maintenance
-workflow itself.
+For an unexplained failure, consult `maintenance/bug_auditor` when deeper
+diagnosis is needed. This is an optional handoff, not a maintenance prerequisite.
 
 The local identity contract is Git-native. The containing repository remote,
 attached branch, and exact HEAD commit select the platform CodeRepository and
@@ -45,19 +45,21 @@ fall back to credential claims or injected CodeRepositoryBranch values.
 
 ## Inspect Before Changing State
 
-1. Follow repository instructions, including `AGENTS.md` when present, and read
-   the relevant skills. The SDK never scaffolds or edits repository `AGENTS.md`.
+1. Follow repository instructions, including `AGENTS.md` when present. Consult
+   domain-specific instructions only when relevant to the requested operation.
+   The SDK never scaffolds or edits repository `AGENTS.md`.
 2. Confirm the repository root and the user's requested maintenance outcome.
-3. Inspect code repository and Git state:
+3. Inspect SDK and Git state:
 
    ```bash
-   mainsequence code-repository current --debug --json
    mainsequence code-repository sdk-status --path . --json
    git status --short
    ```
 
-   Before branch-owned platform operations, require the current Git branch,
-   `code_repository_branch_uid`, and `code_repository_branch_status=resolved`.
+   Before branch-owned platform operations, also inspect
+   `mainsequence code-repository current --debug --json` and require the current
+   Git branch, `code_repository_branch_uid`, and
+   `code_repository_branch_status=resolved`.
    Local environment and skill updates do not require a registered platform
    branch or a signed-in session.
 
@@ -316,7 +318,7 @@ second:
 
 ```yaml
 # .mainsequence/workflows/api-production.yaml
-api_version: "2.3.0"
+api_version: "3.0.0"
 name: api-production
 scope:
   environments: [production]
@@ -333,7 +335,7 @@ resources:
 
 ```yaml
 # .mainsequence/workflows/api-development.yaml
-api_version: "2.3.0"
+api_version: "3.0.0"
 name: api-development
 scope:
   environments: [development]  # the development Environment's exact name

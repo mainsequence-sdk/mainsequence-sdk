@@ -6,6 +6,410 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+**Agents, resource releases, Jobs and Artifacts are decided by policies: `Agent`,
+`ResourceRelease`, `Job` and `Artifact` gain the access methods, and the Agent, release
+and Artifact sharing calls are removed.** The platform no longer serves view and edit
+sharing on any object. An Agent has `viewer`, `user`, `operator`, `editor` and `owner`:
+`viewer` talks to it, gives it Tasks, sees all its Tasks and reads your own log lines;
+`user` talks to it and gives it Tasks without seeing other people's; `operator` also
+stops any Task or session run; `editor` also configures the Agent and its runtime,
+deletes it and manages what its workload can reach; `owner` also decides who has access.
+A release has `viewer`, `user`, `editor` and `owner`: `viewer` sees its configuration,
+revisions and logs and calls it; `user` calls it without its logs; `editor` also changes
+its configuration, activates static deployments, deletes it and manages what its
+workload can reach. A Job has `viewer`, `runner`, `editor` and `owner`: `viewer` sees it,
+its runs, logs and outputs; `runner` also runs it and stops its runs; `editor` also
+changes and deletes it and manages what its workload can reach. An Artifact has
+`viewer`, `editor` and `owner`: `viewer` sees it and downloads its file; `editor` also
+replaces its file and deletes it. The creator of each holds `owner`, except the
+Organization's automation identity, which creates the Agents, releases and Jobs of
+repository workflows. A release and a standalone Job take the policies of their branch:
+`reader` gives `viewer`, and `editor` and `owner` give `editor`. A release that backs an
+Agent follows the Agent instead and takes no policy of its own, a release's backing Job
+follows the release, and the Jobs whose runs published an Artifact give `viewer` on it.
+Existing view grants became `viewer` and edit grants `editor`, and the grants on a
+release that backs an Agent became the Agent's.
+
+- Removed from `Agent`, `ResourceRelease` and `Artifact`: `can_view()`, `can_edit()`,
+  `users_can_view()`, `users_can_edit()`, `list_users_can_view()`,
+  `list_users_can_edit()`, `add_to_view()`, `add_to_edit()`, `remove_from_view()`,
+  `remove_from_edit()`, `add_team_to_view()`, `add_team_to_edit()`,
+  `remove_team_from_view()` and `remove_team_from_edit()`. No SDK model uses
+  `ShareableObjectMixin` any more, so `mainsequence.client` no longer exports it; it is
+  still in `mainsequence.client.base`.
+- What replaces them: the four models use `AccessManagedObjectMixin`, like `Constant`:
+  `get_access()`, `get_my_access()`, `list_access_candidates()`, `attach_policy()`,
+  `detach_policy()`, `apply_access_changes()` and `explain_access()`, on
+  `/api/v1/agents/{uid}/access/...`, `/api/v1/resource-releases/{uid}/access/...`,
+  `/api/v1/jobs/{uid}/access/...` and `/api/v1/artifacts/{uid}/access/...`.
+  `attach_policy("viewer", ...)` gives what `add_to_view()` gave and
+  `attach_policy("editor", ...)` what `add_to_edit()` gave, to a user or a team;
+  `detach_policy()` replaces the `remove_*` methods, and `get_access()` replaces
+  `can_view()` and `can_edit()`. `Job` had no sharing methods and gains the access
+  methods.
+- The access methods of the four address the object by its UID alone and send no
+  Environment; with a workload's runtime credentials they reach only the objects of that
+  workload's Environment. A refusal raises `PermissionDeniedError`, whose `payload` names
+  the `required_action` and the `granting_policies`. Attaching a policy to a release
+  that backs an Agent raises `BadRequestError` with `code` `sharing_managed_by_owner`:
+  give access on the Agent.
+- `Artifact.upload_file()` and `Artifact.get_or_create()` replace the file of an Artifact
+  of that name that you can see, which now needs its `editor` or `owner` policy: with
+  `viewer` alone they raise `PermissionDeniedError` with `required_action`
+  `artifacts.overwrite`. Their docstrings now say they replace the file.
+- CLI: `mainsequence agent access list|grant|revoke|explain` replace `agent can_view`,
+  `can_edit`, `add_to_view`, `add_to_edit`, `remove_from_view`, `remove_from_edit`,
+  `add_team_to_view`, `add_team_to_edit`, `remove_team_from_view` and
+  `remove_team_from_edit`, which are removed. New:
+  `mainsequence code-repository resources access list|grant|revoke|explain <RELEASE_UID>`
+  and `mainsequence code-repository jobs access list|grant|revoke|explain <JOB_UID>`. The
+  commands need no registered branch, and a refused command prints the platform's
+  message and the policies that would allow it. The CLI has no Artifact commands.
+- The `workload_user_uid` descriptions of `Agent`, `ResourceRelease` and `Job` say to
+  pass it as the `principal_uid` of `attach_policy()`.
+- Docs: a new page, [Agents](docs/knowledge/infrastructure/agents.md), and "Who can use"
+  sections on [Resource releases](docs/knowledge/infrastructure/resource_releases.md),
+  [Scheduling Jobs](docs/knowledge/infrastructure/scheduling_jobs.md) and
+  [Artifacts](docs/knowledge/infrastructure/artifacts.md) say who can use each;
+  [Who Has Access to an Object](docs/knowledge/infrastructure/object_access.md),
+  [Users and Access](docs/knowledge/infrastructure/users_and_access.md), the Access
+  Policy Catalog, Constants and Secrets, Code Repositories, Branches and Projects, the CLI
+  reference and the access-control and orchestration skills say these types are decided
+  by policies.
+
+**Docs: workflow API `3.0.0` names the policy in `access` entries.** The platform's
+workflow API `3.0.0` replaces `2.3.0`: each `access` entry of a `.mainsequence/workflows`
+file names the policy its workload gets (`policy:`, and `branch:` takes a policy's name)
+instead of `level: view` or `level: edit`, and a file of any other version is refused before
+anything of it is applied, so a repository switches its workflow files to `3.0.0` before its
+next push. The pages and skills that said what a level gives on a secret, a bucket, a code
+repository branch or a model provider now say that the entry names the policy, and the
+code-repository maintenance examples use `api_version: "3.0.0"`.
+[Who Has Access to an Object](docs/knowledge/infrastructure/object_access.md),
+[Code Repositories](docs/knowledge/infrastructure/code_repositories.md),
+[Constants and Secrets](docs/knowledge/infrastructure/constants_and_secrets.md),
+[Artifacts](docs/knowledge/infrastructure/artifacts.md) and the access-control skill say so.
+No SDK code changes.
+
+**Docs: a custom model provider's `user` policy also receives its authentication
+(#233).** The pages and skills that describe the model-provider policies said that a
+custom model provider's `user` policy sends requests through it, and warned about
+copies only for a model-provider credential. The platform also delivers a custom
+provider's stored authentication to the runtimes of everyone who may use the provider,
+including local Tau, where it can be copied, and detaching the policy does not take
+back a copy.
+[Recorded model conversations](docs/knowledge/infrastructure/inference.md),
+[Who Has Access to an Object](docs/knowledge/infrastructure/object_access.md), the
+inference skill and the access-control skill now say so.
+
+**Code repositories, their branches and Projects are decided by policies:
+`CodeRepository` and `CodeRepositoryBranch` gain the access methods, a minimal
+`OrganizationProject` model serves them for Projects, and the repository sharing calls
+are removed.** The platform no longer serves view and edit sharing on these three types.
+Each has `reader`, `editor` and `owner` policies. On a repository, `reader` sees it, its
+GitHub link and issues, and every branch in it; `editor` also renames or archives it,
+adds deploy keys, creates branches, edits every branch and sees who has access; `owner`
+also decides who has access. Deleting a repository is in no policy: only Organization
+admins delete one. On a branch, `reader` sees its files, issues, Jobs, runs, logs and
+releases, and calls its releases; `editor` also changes and deletes it, creates issues
+and static sites, edits its Jobs and releases and manages what its workloads can reach.
+On a Project, `reader` sees it and its branches; `editor` also renames it, adds and
+removes branches and deletes it. The creator of a repository or a Project holds `owner`;
+a branch's creator holds nothing for being its creator. A repository's policies pass
+down to every branch of it and a Project's to its branches: `reader` gives branch
+`reader`, and `editor` and `owner` give branch `editor`. Existing view grants became
+`reader` and edit grants `editor`. Using a repository or a branch needs the platform's
+`user` product role. Artifacts, agents and releases keep view and edit sharing.
+
+- Removed from `CodeRepository`: `can_view()`, `can_edit()`, `users_can_view()`,
+  `users_can_edit()`, `list_users_can_view()`, `list_users_can_edit()`,
+  `add_to_view()`, `add_to_edit()`, `remove_from_view()`, `remove_from_edit()`,
+  `add_team_to_view()`, `add_team_to_edit()`, `remove_team_from_view()` and
+  `remove_team_from_edit()`.
+- What replaces them: `CodeRepository` uses `AccessManagedObjectMixin`, like `Constant`:
+  `get_access()`, `get_my_access()`, `list_access_candidates()`, `attach_policy()`,
+  `detach_policy()`, `apply_access_changes()` and `explain_access()`, on
+  `/api/v1/code-repositories/{uid}/access/...`. `attach_policy("reader", ...)` gives what
+  `add_to_view()` gave and `attach_policy("editor", ...)` what `add_to_edit()` gave, to a
+  user or a team; `detach_policy()` replaces the `remove_*` methods, and `get_access()`
+  replaces `can_view()` and `can_edit()`. Its labels, deploy keys, `create()`,
+  `quick_search()`, `validate_name()` and `bulk_delete()` are unchanged.
+- `CodeRepositoryBranch` gains the same methods, on
+  `/api/v1/code-repository-branches/{uid}/access/...`. Its `get_access()` shows the
+  policies a branch takes from its repository and its Projects as `inherited` rows.
+- New: `OrganizationProject`, which carries only a Project's `uid` and serves the same
+  methods on `/api/v1/organization-projects/{uid}/access/...`, for example
+  `OrganizationProject(uid=project_uid).attach_policy("reader", ...)`.
+- The access methods of the three address the object by its UID alone and send no
+  Environment, and the platform refuses them to runtime credentials. A refusal raises
+  `PermissionDeniedError`, whose `payload` names the `required_action` and the
+  `granting_policies`. On a repository or a branch, a person without the `user` product
+  role gets `code` `missing_product_role` from every route, the access routes included,
+  and that refusal names no policy.
+- CLI: `mainsequence code-repository access list|grant|revoke|explain` replace
+  `code-repository can_view`, `can_edit`, `add_to_view`, `add_to_edit`,
+  `remove_from_view`, `remove_from_edit`, `add_team_to_view`, `add_team_to_edit`,
+  `remove_team_from_view` and `remove_team_from_edit`, which are removed. The new
+  commands need no registered branch. A refused command prints the platform's message
+  and the policies that would allow it; a missing product role prints the platform's
+  message. The CLI has no command group for branches or Projects, so it has no access
+  commands for them.
+- Docs: a new page,
+  [Code Repositories, Branches and Projects](docs/knowledge/infrastructure/code_repositories.md),
+  says who can use each; [Who Has Access to an Object](docs/knowledge/infrastructure/object_access.md),
+  [Users and Access](docs/knowledge/infrastructure/users_and_access.md), the Access
+  Policy Catalog, Constants and Secrets, the CLI reference and the access-control skill
+  say these types are decided by policies.
+
+## [9.0.29] - 2026-10-18
+
+**Maintenance and bug-auditor skills work independently.** Both remain bundled
+with the SDK, but no longer hand off to CodeRepository design or require a
+platform catalog or routing skill. They focus on the requested work in the
+current checkout, with optional domain-specific guidance. Local maintenance
+does not require platform branch resolution; branch-owned operations still do.
+The existing MCP login and credential-handoff instructions are unchanged.
+
+**Docs: model-provider credentials and custom model providers are decided by
+policies.** The platform decides both by policies now, as two types. A credential's
+policies are `user` (select it and receive it in sessions and workloads, including
+local Tau), `editor` (also refresh it, sign in again, revoke it and see who has access)
+and `owner` (also decide who has access; the credential's person holds it). A custom
+model provider's are `user` (send requests through it and its models), `editor` (also
+change its endpoint, authentication and models, delete it and see who has access) and
+`owner` (its creator). Existing view grants became `user` and edit grants `editor`; a
+repository workflow file's `access.model_providers` entry gives `user` for
+`level: view` and `editor` for `level: edit`. The SDK has no model or CLI command for
+these records, so no code changes: `InferenceClient` and
+`Agent.get_or_create_session()` select credentials as before.
+[Who Has Access to an Object](docs/knowledge/infrastructure/object_access.md),
+[Users and Access](docs/knowledge/infrastructure/users_and_access.md), the Access
+Policy Catalog, Constants and Secrets, Recorded model conversations, and the
+access-control and inference skills say so.
+
+**Buckets are decided by policies: `Bucket` gains the access methods, and its
+sharing calls are removed.** The platform no longer serves view and edit sharing on
+buckets. A bucket's policies are `reader` (browse its folders and the Artifacts in it
+shared with the person), `contributor` (also upload Artifacts and create folders),
+`editor` (also rename the bucket, rename and delete folders, delete the bucket with
+every Artifact in it and see who has access) and `owner` (also decide who has access);
+the person or workload that creates a bucket holds `owner`, also when an Artifact upload
+creates it by name. Existing view grants became `contributor`, which no longer renames
+or deletes folders, and edit grants `editor`. Artifacts, CodeRepositories, agents and
+releases keep view and edit sharing.
+
+- Removed from `Bucket`: `can_view()`, `can_edit()`, `users_can_view()`,
+  `users_can_edit()`, `list_users_can_view()`, `list_users_can_edit()`,
+  `add_to_view()`, `add_to_edit()`, `remove_from_view()`, `remove_from_edit()`,
+  `add_team_to_view()`, `add_team_to_edit()`, `remove_team_from_view()` and
+  `remove_team_from_edit()`.
+- What replaces them: `Bucket` uses `AccessManagedObjectMixin`, like `Constant` and
+  `Secret`: `get_access()`, `get_my_access()`, `list_access_candidates()`,
+  `attach_policy()`, `detach_policy()`, `apply_access_changes()` and
+  `explain_access()`, on `/api/v1/buckets/{uid}/access/...`.
+  `attach_policy("contributor", ...)` gives what `add_to_view()` gave and
+  `attach_policy("editor", ...)` what `add_to_edit()` gave, to a user or a team;
+  `detach_policy()` replaces the `remove_*` methods, and `get_access()` replaces
+  `can_view()` and `can_edit()`. They address the bucket by its UID alone and need no
+  Environment.
+- Uploading: `Artifact.upload_file()` and `Artifact.get_or_create()` into an existing
+  bucket need its `add_artifact` action, which `contributor`, `editor` and `owner`
+  hold. A refused upload raises `PermissionDeniedError` with `required_action`
+  `buckets.add_artifact`, also when the caller cannot see the bucket.
+- The CLI has no bucket commands, so none change.
+- Docs: [Artifacts](docs/knowledge/infrastructure/artifacts.md) describes bucket
+  policies; [Who Has Access to an Object](docs/knowledge/infrastructure/object_access.md),
+  [Users and Access](docs/knowledge/infrastructure/users_and_access.md), the
+  access-control and orchestration skills say buckets are decided by policies.
+
+**Artifact uploads raise the SDK's typed errors (#232).** `Artifact.upload_file()` and
+`Artifact.get_or_create()` raised a bare `Exception("Failed to get artifact: <status> -
+<response text>")` for every failed answer. They now raise what every other client call
+raises: a refused upload raises `PermissionDeniedError`, whose `payload` names the
+`required_action` and the `granting_policies`, and another failure the matching
+`ApiError` subclass, such as `BadRequestError`, `NotFoundError` or `ServerError`, with
+the platform's message. Each is still an `Exception`. A successful upload is unchanged.
+
+**`AccessComputedRow` reads the `inherited` and `manager` rows (#231).** The
+`computed` rows of `get_access()` declared only `role` and `membership`. The platform
+also sends `inherited` rows, one per holder of a policy on a parent object that passes
+down, and `manager` rows, the managers of the workload identity that created the
+object. Both were kept with a warning that asked for an SDK upgrade, and an inherited
+row lost its `principal`, `relation`, `parent` and `parent_policy`.
+
+- `AccessComputedRow.source` declares `inherited` and `manager`, and the model gains
+  `principal` (`AccessPrincipal`), `relation`, `parent` (`AccessObjectReference`) and
+  `parent_policy`, set on `inherited` rows and `None` on the others.
+- `policy` is `None` on a `role` row, because admins hold every action, and on a
+  `manager` row, because the managers hold the creator's rights; the description no
+  longer says that a missing policy means every action.
+- CLI: `access list` names the holder of an inherited row in the Computed Access table,
+  and `--json` prints the new fields.
+- Docs: [Who Has Access to an Object](docs/knowledge/infrastructure/object_access.md)
+  describes every computed row and its fields.
+
+**Secrets are decided by policies: `Secret` gains the access methods, and its
+sharing calls are removed.** The platform no longer serves view and edit sharing on
+secrets. A secret's policies are `reader` (see it, its name and its versions' dates,
+never its value), `value_reader` (also read its current value), `editor` (also read
+earlier values, set a new value, delete it and see who has access) and `owner` (also
+decide who has access); the person or workload that creates a secret holds `owner`.
+Existing view grants became `value_reader`, which reads the current value but not
+earlier ones, and edit grants `editor`. A secret the platform manages, such as a
+hosted database password, cannot get a new value or be deleted. Artifacts,
+CodeRepositories, agents and releases keep view and edit sharing; buckets moved to
+policies as well, see their entry above.
+
+- Removed from `Secret`: `can_view()`, `can_edit()`, `users_can_view()`,
+  `users_can_edit()`, `list_users_can_view()`, `list_users_can_edit()`,
+  `add_to_view()`, `add_to_edit()`, `remove_from_view()`, `remove_from_edit()`,
+  `add_team_to_view()`, `add_team_to_edit()`, `remove_team_from_view()` and
+  `remove_team_from_edit()`.
+- What replaces them: `Secret` uses `AccessManagedObjectMixin`, like `Constant`:
+  `get_access()`, `get_my_access()`, `list_access_candidates()`, `attach_policy()`,
+  `detach_policy()`, `apply_access_changes()` and `explain_access()`, on
+  `/api/v1/secrets/{uid}/access/...`. `attach_policy("value_reader", ...)` gives what
+  `add_to_view()` gave and `attach_policy("editor", ...)` what `add_to_edit()` gave, to
+  a user or a team; `detach_policy()` replaces the `remove_*` methods, and
+  `get_access()` replaces `can_view()` and `can_edit()`. They address the secret by its
+  UID alone and need no Environment.
+- Reading a value: `Secret.get()` and `Secret.get_by_uid()` read the current value,
+  which needs `value_reader` or more. Without it they raise `PermissionDeniedError`,
+  whose `payload` names the `required_action` (`secrets.read_value`) and the
+  `granting_policies`. `Secret.filter()` still lists secrets without their values.
+- `apply_access_changes()` returns the bindings the platform lists: every binding on
+  the object to a caller who holds its `read_access` action, and otherwise only the
+  caller's own bindings and those of the workload identities they manage.
+- CLI: `mainsequence secrets access list|grant|revoke|explain` replace
+  `secrets can_view`, `can_edit`, `add_to_view`, `add_to_edit`, `remove_from_view`,
+  `remove_from_edit`, `add_team_to_view`, `add_team_to_edit`, `remove_team_from_view`
+  and `remove_team_from_edit`, which are removed. The new commands need no registered
+  branch. A refused command prints the platform's message and the policies that would
+  allow it, and so does `secrets delete` when reading or deleting the secret is
+  refused, instead of reporting the refusal as a missing session.
+- Docs: [Constants and Secrets](docs/knowledge/infrastructure/constants_and_secrets.md)
+  describes secret policies and lists the fields the `Constant` and `Secret` models
+  actually have (`uid` and the two Environment fields, not `id`);
+  [Who Has Access to an Object](docs/knowledge/infrastructure/object_access.md),
+  [Users and Access](docs/knowledge/infrastructure/users_and_access.md), the CLI
+  reference and the access-control skill say secrets are decided by policies.
+
+**Constants are decided by policies: `Constant` gains the access methods, and its
+sharing calls are removed.** The platform no longer serves view and edit sharing on
+constants. A constant's policies are `reader` (see it and its value), `editor` (also
+change its name and value, delete it and see who has access) and `owner` (also decide
+who has access); the person or workload that creates a constant holds `owner`.
+Existing view grants became `reader` and edit grants `editor`. The other shareable
+objects keep view and edit sharing, except secrets and buckets, whose entries are above.
+
+- Removed from `Constant`: `can_view()`, `can_edit()`, `users_can_view()`,
+  `users_can_edit()`, `list_users_can_view()`, `list_users_can_edit()`,
+  `add_to_view()`, `add_to_edit()`, `remove_from_view()`, `remove_from_edit()`,
+  `add_team_to_view()`, `add_team_to_edit()`, `remove_team_from_view()` and
+  `remove_team_from_edit()`.
+- What replaces them: `Constant` uses `AccessManagedObjectMixin`, like `Team`:
+  `get_access()`, `get_my_access()`, `list_access_candidates()`, `attach_policy()`,
+  `detach_policy()`, `apply_access_changes()` and `explain_access()`, on
+  `/api/v1/constants/{uid}/access/...`. `attach_policy("reader", ...)` and
+  `attach_policy("editor", ...)` give what the `add_*` methods gave, to a user or a
+  team; `detach_policy()` replaces the `remove_*` methods, and `get_access()` replaces
+  `can_view()` and `can_edit()`. A refusal raises `PermissionDeniedError`, whose
+  `payload` names the `required_action` and the `granting_policies`.
+- The access methods address an object by its UID alone. On a `Constant` they neither
+  resolve nor send the current branch's Environment, so they work without one; reading,
+  creating, changing and deleting constants still use it.
+- CLI: `mainsequence constants access list|grant|revoke|explain` replace
+  `constants can_view`, `can_edit`, `add_to_view`, `add_to_edit`, `remove_from_view`,
+  `remove_from_edit`, `add_team_to_view`, `add_team_to_edit`, `remove_team_from_view`
+  and `remove_team_from_edit`, which are removed. The new commands need no registered
+  branch. A refused command prints the platform's message and the policies that would
+  allow it.
+- Docs: [Constants and Secrets](docs/knowledge/infrastructure/constants_and_secrets.md)
+  describes constant policies;
+  [Who Has Access to an Object](docs/knowledge/infrastructure/object_access.md),
+  [Users and Access](docs/knowledge/infrastructure/users_and_access.md), the CLI
+  reference and the access-control skill say constants are decided by policies.
+
+**Organization Environments are decided by policies: `OrganizationEnvironment`
+gains the access methods.** Working in an Environment is the `member` policy
+(work in it and create Projects, Buckets, Constants, Secrets, model providers and
+repositories there) or the `observer` policy (work in it without creating
+anything), given to people and Teams by Organization admins. `get_access()`,
+`get_my_access()`, `list_access_candidates()`, `attach_policy()`,
+`detach_policy()`, `apply_access_changes()` and `explain_access()` address
+`/api/v1/organization-environments/{uid}/access/...`. Creating inside an
+Environment without its create action raises `PermissionDeniedError` with
+`required_action`, for example `organization-environments.create_constant`. The
+SDK never called the Environment sharing routes the platform removed.
+
+**CLI commands describe a failed request once (#230).** When an SDK client call
+failed, many commands printed their failure prefix twice, for example
+`Organization teams fetch failed: Organization teams fetch failed: 500 GET ...`, or
+two descriptions of the same failure, such as
+`Constant view fetch failed: Constant share access fetch failed: ...`. The CLI's
+helpers now keep the SDK error's message, and the command alone names the
+operation: `Organization teams fetch failed: 500 GET ...`.
+
+**Teams are controlled by policies: `Team` gains membership and access methods, and
+the Team sharing calls are removed.** The platform no longer serves view and edit
+sharing, `candidate-members` or `manage-members` on teams. A team's membership is who
+is in it; who controls it is the policies on it: `viewer`, `membership_manager`,
+`editor`, `owner`, and `member`, which every member holds. Any person can create a
+team and becomes its owner and first member. Other shareable objects keep view and
+edit sharing.
+
+- Removed from `Team`: `can_view()`, `can_edit()`, `users_can_view()`,
+  `users_can_edit()`, `list_users_can_view()`, `list_users_can_edit()`,
+  `add_to_view()`, `add_to_edit()`, `remove_from_view()`, `remove_from_edit()`,
+  `add_team_to_view()`, `add_team_to_edit()`, `remove_team_from_view()`,
+  `remove_team_from_edit()`, `list_candidate_members()`, `manage_members()`,
+  `add_members()` and `remove_members()`, and the `TeamMembershipUpdateResult` model.
+- What replaces them: `add_member(user_uid)` and `remove_member(user_uid)`, one User
+  per call, replace `add_members()`, `remove_members()` and `manage_members()`;
+  adding a member again changes nothing. `list_member_candidates(identity_type=None,
+  search=None)` replaces `list_candidate_members()`. `leave()` ends your own
+  membership, and `list_held_access()` returns the policies the team holds on other
+  objects as `TeamHeldAccess` rows. A team's detail carries `allowed_actions`, your
+  actions on it. `Team.create()` is unchanged and returns the detail.
+- Who controls a team, which view and edit sharing used to decide, is read and changed
+  with `AccessManagedObjectMixin`, which `Team` now uses: `get_access()`,
+  `get_my_access()`, `list_access_candidates()`, `attach_policy()`, `detach_policy()`,
+  `apply_access_changes()` and `explain_access()`, on the team's `access/` routes. The
+  models are `AccessListing`, `AccessObjectReference`, `AccessBinding`,
+  `AccessPolicyReference`, `AccessGrantor`, `AccessWorkflowDeclaration`,
+  `AccessPrincipal`, `AccessComputedRow`, `CallerAccess`, `AccessExplanation` and
+  `AccessExplanationPath`. A refusal raises `PermissionDeniedError`, whose `payload`
+  names the `required_action` and the `granting_policies`.
+- CLI: `mainsequence organization teams members list|add|remove`,
+  `mainsequence organization teams leave` and
+  `mainsequence organization teams access list|grant|revoke|explain` replace
+  `organization teams can_view`, `can_edit`, `add_to_view`, `add_to_edit`,
+  `remove_from_view` and `remove_from_edit`, which are removed. A refused command
+  prints the platform's message and the policies that would allow it.
+  `organization teams create` says the creator owns the team.
+- Docs: a new page, [Who Has Access to an Object](docs/knowledge/infrastructure/object_access.md);
+  [Users and Access](docs/knowledge/infrastructure/users_and_access.md) describes team
+  membership and control; the CLI reference has a Teams section; the access-control
+  skill explains team policies.
+
+**`AccessCatalog` reads the platform's access catalog, and `mainsequence access policies`
+lists its policies.** The catalog, which every signed-in user can read, lists each
+resource type's actions, the policies that bundle them, the inheritance rules and
+the guards. It says what each policy allows; it does not say who holds one, and
+reading it changes nothing.
+
+- `AccessCatalog().list_resource_types()` returns an `AccessResourceTypeListing`:
+  `catalog_hash` and every `AccessResourceType`. `get_resource_type(key)`,
+  `list_policies(resource_type=None)`, `get_policy(uid)` and
+  `list_actions(resource_type=None)` return `AccessResourceType`, `AccessPolicy`
+  and `AccessAction`. A resource type carries its `AccessInheritanceRule` and
+  `AccessGuard` rows.
+- `mainsequence access policies [--type KEY]` lists policies, and
+  `mainsequence access policies show <id or UID>` prints one policy's summary,
+  impact, what it does not include and its actions. Both accept `--json`.
+- The [Access Policy Catalog](docs/knowledge/infrastructure/access_catalog.md) page
+  describes the client, its models and the command.
+
 **`team_uids` is removed; the verifier refuses assertions that list teams (#225).**
 The platform no longer signs a team list in the caller assertion. Checking membership
 with `in_teams()` is unchanged.

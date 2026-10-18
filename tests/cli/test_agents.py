@@ -2,9 +2,6 @@ from __future__ import annotations
 
 import importlib
 import json
-import types
-
-from tests.cli.support import TEAM_UID
 
 
 def test_list_agents_uses_client_model(cli_mod, monkeypatch):
@@ -434,50 +431,6 @@ def test_send_agent_session_a2a_message_uses_client_model(cli_mod, monkeypatch):
     assert "omit_reasoning" not in captured["kwargs"]
     assert captured["saved_cache"]["agent_session_uid"] == session_uid
     assert out["message"]["parts"] == [{"text": "Done."}]
-
-
-def test_list_agent_users_can_view_uses_client_model(cli_mod, monkeypatch):
-    api_mod = importlib.import_module("mainsequence.cli.api")
-    captured = {}
-
-    def _run_sdk_model_operation(
-        *, module_name, class_name, operation, code_repository_id_env=None
-    ):
-        captured["module_name"] = module_name
-        captured["class_name"] = class_name
-
-        class _ClientAgent:
-            @classmethod
-            def get_by_uid(cls, uid, timeout=None):
-                captured["uid"] = uid
-                captured["timeout"] = timeout
-
-                class _Agent:
-                    def can_view(self, timeout=None):
-                        captured["can_view_timeout"] = timeout
-                        return types.SimpleNamespace(
-                            model_dump=lambda mode="json": {
-                                "access_level": "view",
-                                "users": [{"id": 7, "username": "viewer"}],
-                                "teams": [],
-                            }
-                        )
-
-                return _Agent()
-
-        return operation(_ClientAgent)
-
-    monkeypatch.setattr(api_mod, "_run_sdk_model_operation", _run_sdk_model_operation)
-
-    out = api_mod.list_agent_users_can_view("e0e75693-4110-464c-93e0-82c7fd9c9a23", timeout=16)
-    assert captured == {
-        "module_name": "mainsequence.client.agent_runtime_models",
-        "class_name": "Agent",
-        "uid": "e0e75693-4110-464c-93e0-82c7fd9c9a23",
-        "timeout": 16,
-        "can_view_timeout": 16,
-    }
-    assert out["users"][0]["username"] == "viewer"
 
 
 def test_agent_list(cli_mod, runner, monkeypatch):
@@ -1081,70 +1034,3 @@ def test_agent_delete_requires_typed_verification(cli_mod, runner, monkeypatch):
     assert "Type agent name 'Research Copilot' to confirm deletion" in result.output
     assert captured["agent_uid"] == agent_uid
     assert f"Agent deleted: agent_uid={agent_uid}" in result.output
-
-
-def test_agent_can_edit(cli_mod, runner, monkeypatch):
-    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
-    agent_uid = "e0e75693-4110-464c-93e0-82c7fd9c9a23"
-    monkeypatch.setattr(
-        cli_mod,
-        "list_agent_users_can_edit",
-        lambda agent_uid, timeout=None: {
-            "access_level": "edit",
-            "users": [
-                {
-                    "id": 9,
-                    "username": "editor",
-                    "email": "editor@example.com",
-                    "first_name": "Edit",
-                    "last_name": "User",
-                }
-            ],
-            "teams": [{"id": 3, "name": "Research", "description": "Core team", "member_count": 6}],
-        },
-    )
-
-    result = runner.invoke(cli_mod.app, ["agent", "can_edit", agent_uid])
-    assert result.exit_code == 0
-    assert "Agent Users Who Can Edit" in result.output
-    assert "Agent Teams Who Can Edit" in result.output
-    assert "editor@example.com" in result.output
-    assert "Total users who can edit: 1" in result.output
-    assert "Total teams who can edit: 1" in result.output
-
-
-def test_agent_add_team_to_edit(cli_mod, runner, monkeypatch):
-    captured = {}
-    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
-    agent_uid = "e0e75693-4110-464c-93e0-82c7fd9c9a23"
-
-    def _add(agent_uid_arg, team_uid, timeout=None):
-        captured["agent_uid"] = agent_uid_arg
-        captured["team_uid"] = team_uid
-        captured["timeout"] = timeout
-        return {
-            "ok": True,
-            "action": "add_team_to_edit",
-            "detail": "Team now has explicit edit access.",
-            "object_uid": agent_uid_arg,
-            "object_type": "agent.agent",
-            "team": {
-                "uid": team_uid,
-                "name": "Research",
-                "description": "Core team",
-            },
-            "explicit_can_view": True,
-            "explicit_can_edit": True,
-            "explicit_can_view_team_uids": [team_uid],
-            "explicit_can_edit_team_uids": [team_uid],
-        }
-
-    monkeypatch.setattr(cli_mod, "add_agent_team_to_edit", _add)
-
-    result = runner.invoke(
-        cli_mod.app,
-        ["agent", "add_team_to_edit", agent_uid, TEAM_UID],
-    )
-    assert result.exit_code == 0
-    assert captured == {"agent_uid": agent_uid, "team_uid": TEAM_UID, "timeout": None}
-    assert "Agent add_team_to_edit completed." in result.output

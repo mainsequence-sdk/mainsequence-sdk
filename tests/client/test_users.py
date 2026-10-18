@@ -1,4 +1,5 @@
 import datetime
+import json
 from contextlib import contextmanager
 from contextvars import copy_context
 
@@ -11,9 +12,10 @@ from mainsequence._request_identity import (
     RequestIdentityError,
     _request_scope,
 )
-from mainsequence.client.exceptions import ApiError
+from mainsequence.client.exceptions import ApiError, BadRequestError, NotFoundError
+from mainsequence.client.models_foundry import Artifact
 from mainsequence.server.fastapi import reads_as_caller
-from tests.client.support import DemoShareableModel, _UidRef
+from tests.client.support import _UidRef
 
 
 def test_team_uses_user_api_team_endpoint():
@@ -110,50 +112,270 @@ def test_team_list_members_uses_team_members_endpoint(monkeypatch):
     }
 
 
-def test_team_manage_members_posts_bulk_membership_payload(monkeypatch):
-    captured = {}
-    team_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
-    user_uid_1 = "fdf409f7-d16f-4f71-986b-9057db6c7eca"
-    user_uid_2 = "ac9e221d-1cd6-464c-a253-e302754872c1"
+class _TeamResponse:
+    def __init__(self, status_code=200, body=None):
+        self.status_code = status_code
+        self._body = body
+        self.content = b"" if body is None else json.dumps(body).encode()
+        self.text = self.content.decode()
+        self.headers = {}
 
-    class FakeResponse:
-        status_code = 200
-        content = b'{"ok": true}'
+    def json(self):
+        if self._body is None:
+            raise ValueError("No JSON body")
+        return self._body
 
-        @staticmethod
-        def json():
-            return {
-                "team_id": 11,
-                "team_uid": team_uid,
-                "member_count": 4,
-                "selected": 2,
-                "added": 2,
-                "removed": 0,
-                "skipped": 0,
-            }
+
+def _team_requests(monkeypatch, *responses):
+    """Answer each Team request with the next response and record what was sent."""
+    sent = []
+    queue = list(responses)
 
     def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
-        captured["r_type"] = r_type
-        captured["url"] = url
-        captured["payload"] = payload
-        captured["timeout"] = time_out
-        return FakeResponse()
+        sent.append({"r_type": r_type, "url": url, "payload": payload, "timeout": time_out})
+        return queue.pop(0)
 
     monkeypatch.setattr(base_mod, "make_request", _fake_make_request)
+    return sent
 
-    team = models_user_mod.Team(id=11, uid=team_uid, name="Platform")
-    result = team.add_members([_UidRef(user_uid_1), {"uid": user_uid_2}], timeout=18)
 
-    assert result.team_id == 11
-    assert result.team_uid == team_uid
-    assert result.member_count == 4
-    assert result.added == 2
-    assert captured == {
-        "r_type": "POST",
-        "url": f"{models_user_mod.Team.get_object_url()}/{team_uid}/manage-members/",
-        "payload": {"json": {"action": "add", "user_uids": [user_uid_1, user_uid_2]}},
-        "timeout": 18,
+MEMBER_TEAM_UID = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
+MEMBER_UID = "fdf409f7-d16f-4f71-986b-9057db6c7eca"
+
+
+def _member_team():
+    return models_user_mod.Team(uid=MEMBER_TEAM_UID, name="Platform")
+
+
+def _member_team_url(path):
+    return f"{models_user_mod.Team.get_object_url()}/{MEMBER_TEAM_UID}/{path}"
+
+
+def _member_row():
+    return {
+        "uid": MEMBER_UID,
+        "username": "ana",
+        "email": "ana@example.com",
+        "first_name": "Ana",
+        "last_name": "Smith",
+        "member_kind": "person",
     }
+
+
+@pytest.mark.parametrize("status_code", [201, 200], ids=["added", "already-a-member"])
+def test_team_add_member_posts_one_user_uid_and_returns_the_member(monkeypatch, status_code):
+    sent = _team_requests(monkeypatch, _TeamResponse(status_code, _member_row()))
+
+    member = _member_team().add_member(_UidRef(MEMBER_UID.upper()), timeout=18)
+
+    assert sent == [
+        {
+            "r_type": "POST",
+            "url": _member_team_url("members/"),
+            "payload": {"json": {"user_uid": MEMBER_UID}},
+            "timeout": 18,
+        }
+    ]
+    assert isinstance(member, models_user_mod.UserSummary)
+    assert member.uid == MEMBER_UID
+    assert member.member_kind == "person"
+
+
+def test_team_add_member_outside_the_callers_scope_raises_bad_request(monkeypatch):
+    answer = {
+        "detail": "This user is outside the people you can add to the Team.",
+        "code": "invalid_user_uids",
+        "invalid_user_uids": [MEMBER_UID],
+    }
+    _team_requests(monkeypatch, _TeamResponse(400, answer))
+
+    with pytest.raises(BadRequestError) as raised:
+        _member_team().add_member(MEMBER_UID)
+
+    assert raised.value.payload == answer
+
+
+def test_team_remove_member_deletes_the_membership(monkeypatch):
+    sent = _team_requests(monkeypatch, _TeamResponse(204))
+
+    assert _member_team().remove_member({"uid": MEMBER_UID}, timeout=6) is None
+
+    assert sent == [
+        {
+            "r_type": "DELETE",
+            "url": _member_team_url(f"members/{MEMBER_UID}/"),
+            "payload": {},
+            "timeout": 6,
+        }
+    ]
+
+
+def test_team_remove_member_of_someone_not_in_the_team_raises_not_found(monkeypatch):
+    _team_requests(monkeypatch, _TeamResponse(404, {"detail": "No such member."}))
+
+    with pytest.raises(NotFoundError, match="No such member."):
+        _member_team().remove_member(MEMBER_UID)
+
+
+def test_team_leave_posts_to_the_leave_route(monkeypatch):
+    sent = _team_requests(monkeypatch, _TeamResponse(204))
+
+    assert _member_team().leave() is None
+
+    assert sent == [
+        {"r_type": "POST", "url": _member_team_url("leave/"), "payload": {}, "timeout": None}
+    ]
+
+
+def test_team_list_member_candidates_sends_the_filters(monkeypatch):
+    sent = _team_requests(
+        monkeypatch,
+        _TeamResponse(200, [_member_row()]),
+        _TeamResponse(200, [{"uid": WORKLOAD_USER_UID, "member_kind": "workload"}]),
+    )
+
+    people = _member_team().list_member_candidates()
+    workloads = _member_team().list_member_candidates(
+        identity_type="workload", search=" nightly ", timeout=2
+    )
+
+    assert sent == [
+        {
+            "r_type": "GET",
+            "url": _member_team_url("member-candidates/"),
+            "payload": {},
+            "timeout": None,
+        },
+        {
+            "r_type": "GET",
+            "url": _member_team_url("member-candidates/"),
+            "payload": {"params": {"identity_type": "workload", "search": "nightly"}},
+            "timeout": 2,
+        },
+    ]
+    assert people[0].email == "ana@example.com"
+    assert workloads[0].uid == WORKLOAD_USER_UID
+    assert workloads[0].member_kind == "workload"
+
+
+def test_team_list_member_candidates_refuses_an_unknown_identity_type(monkeypatch):
+    def _no_request(**kwargs):
+        raise AssertionError("no request for a malformed identity type")
+
+    monkeypatch.setattr(base_mod, "make_request", _no_request)
+
+    with pytest.raises(ValueError, match="identity_type must be 'human' or 'workload'"):
+        _member_team().list_member_candidates(identity_type="robot")
+
+
+def test_team_list_held_access_reads_the_bindings_the_team_holds(monkeypatch):
+    sent = _team_requests(
+        monkeypatch,
+        _TeamResponse(
+            200,
+            {
+                "bindings": [
+                    {
+                        "binding_uid": "7d3c6a51-0b8e-4c2f-9a14-5e6f7a8b9c0d",
+                        "resource_type": "secrets",
+                        "object_uid": SHAREABLE_UID,
+                        "object_name": "POLYGON_API_KEY",
+                        "policy": "secrets.reader",
+                        "source": "migrated",
+                        "granted_by": {
+                            "type": "user",
+                            "uid": MEMBER_UID,
+                            "name": "Ana Smith",
+                            "email": "ana@example.com",
+                            "identity_type": "human",
+                        },
+                        "created_at": "2026-10-17T09:00:00+00:00",
+                    },
+                    {
+                        "binding_uid": "1b2c3d4e-5f60-4718-8293-a4b5c6d7e8f9",
+                        "resource_type": "organization-teams",
+                        "object_uid": TEAM_UID,
+                        "object_name": None,
+                        "policy": "organization-teams.viewer",
+                        "source": "explicit",
+                        "granted_by": None,
+                        "created_at": "2026-10-17T10:00:00+00:00",
+                    },
+                ]
+            },
+        ),
+    )
+
+    held = _member_team().list_held_access(timeout=8)
+
+    assert sent == [
+        {
+            "r_type": "GET",
+            "url": _member_team_url("held-access/"),
+            "payload": {},
+            "timeout": 8,
+        }
+    ]
+    assert [type(row) for row in held] == [models_user_mod.TeamHeldAccess] * 2
+    assert held[0].policy == "secrets.reader"
+    assert held[0].object_name == "POLYGON_API_KEY"
+    assert held[0].source == "migrated"
+    assert held[0].granted_by.email == "ana@example.com"
+    assert held[0].created_at == datetime.datetime(2026, 10, 17, 9, 0, tzinfo=datetime.UTC)
+    assert held[1].granted_by is None
+
+
+def test_team_list_held_access_refuses_an_answer_without_bindings(monkeypatch):
+    _team_requests(monkeypatch, _TeamResponse(200, [{"binding_uid": "x"}]))
+
+    with pytest.raises(ApiError, match="held-access"):
+        _member_team().list_held_access()
+
+
+def test_team_create_returns_the_detail_with_members_and_allowed_actions(monkeypatch):
+    sent = _team_requests(
+        monkeypatch,
+        _TeamResponse(
+            201,
+            {
+                "id": 11,
+                "uid": MEMBER_TEAM_UID,
+                "name": "Research",
+                "description": "Model validation",
+                "is_active": True,
+                "created_by": _member_row(),
+                "member_count": 1,
+                "members": [_member_row()],
+                "is_full_directory": False,
+                "allowed_actions": ["organization-teams.delete", "organization-teams.update"],
+            },
+        ),
+    )
+
+    team = models_user_mod.Team.create(name="Research", description="Model validation", timeout=5)
+
+    assert sent == [
+        {
+            "r_type": "POST",
+            "url": f"{models_user_mod.Team.get_object_url()}/",
+            "payload": {
+                "json": {"name": "Research", "description": "Model validation", "is_active": True}
+            },
+            "timeout": 5,
+        }
+    ]
+    assert team.uid == MEMBER_TEAM_UID
+    assert team.members[0].uid == MEMBER_UID
+    assert team.created_by.uid == MEMBER_UID
+    assert team.allowed_actions == ["organization-teams.delete", "organization-teams.update"]
+
+
+def test_a_listed_team_carries_no_allowed_actions():
+    team = models_user_mod.Team.model_validate(
+        {"uid": MEMBER_TEAM_UID, "name": "Research", "member_count": 3}
+    )
+
+    assert team.allowed_actions is None
 
 
 def test_user_org_team_models_deserialize_current_backend_uid_payloads():
@@ -371,8 +593,10 @@ class _JsonResponse:
     status_code = 200
     content = b'{"ok": true}'
 
-    def __init__(self, body):
+    def __init__(self, body, status_code=None):
         self._body = body
+        if status_code is not None:
+            self.status_code = status_code
 
     def json(self):
         return self._body
@@ -385,7 +609,8 @@ def _serve(monkeypatch, *bodies):
 
     def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
         sent.append({"r_type": r_type, "url": url, "payload": payload, "timeout": time_out})
-        return _JsonResponse(next(answers))
+        answer = next(answers)
+        return answer if isinstance(answer, _JsonResponse) else _JsonResponse(answer)
 
     monkeypatch.setattr(base_mod, "make_request", _fake_make_request)
     return sent
@@ -558,14 +783,23 @@ def test_workload_user_repr_str_hash_and_dump_need_no_username():
     assert dumped["email"] is None
 
 
-def test_application_resolves_a_workload_caller_and_grants_it_access(monkeypatch):
-    """Check the principal of a received request, then grant that workload access."""
+def _binding_payload(principal_uid, *, policy="artifacts.viewer"):
+    return {
+        "uid": "7d3c6a51-0b8e-4c2f-9a14-5e6f7a8b9c0d",
+        "policy": {"id": policy, "label": "Artifact viewer"},
+        "principal": {"type": "user", "uid": principal_uid, "identity_type": "workload"},
+        "source": "explicit",
+    }
+
+
+def test_application_resolves_a_workload_caller_and_gives_it_a_policy(monkeypatch):
+    """Check the principal of a received request, then give that workload a policy."""
+    artifact_uid = "24001fc7-098c-40fa-b398-1d2352b7c224"
     sent = _serve(
         monkeypatch,
         _workload_user_payload(job_uid=WORKLOAD_JOB_UID),
-        {"detail": "ok"},
+        _JsonResponse(_binding_payload(WORKLOAD_USER_UID), status_code=201),
     )
-    shareable_uid = "24001fc7-098c-40fa-b398-1d2352b7c224"
 
     with _request_scope() as context:
         context.user = models_user_mod.RequestUserIdentity(uid=WORKLOAD_USER_UID)
@@ -574,13 +808,20 @@ def test_application_resolves_a_workload_caller_and_grants_it_access(monkeypatch
         assert caller.username is None
         assert user.identity_type == "workload"
         assert user.job_uid == WORKLOAD_JOB_UID
-        response = DemoShareableModel(shareable_uid).add_to_view(user)
+        artifact = Artifact.model_construct(uid=artifact_uid)
+        binding = artifact.attach_policy("viewer", principal_type="user", principal_uid=user)
 
-    assert response == {"detail": "ok"}
+    assert binding.principal.uid == WORKLOAD_USER_UID
     assert sent[1] == {
         "r_type": "POST",
-        "url": f"https://backend.test/demo-shareable/{shareable_uid}/add-to-view/",
-        "payload": {"json": {"user_uid": WORKLOAD_USER_UID}},
+        "url": f"{Artifact.get_object_url()}/{artifact_uid}/access/bindings/",
+        "payload": {
+            "json": {
+                "policy": "viewer",
+                "principal_type": "user",
+                "principal_uid": WORKLOAD_USER_UID,
+            }
+        },
         "timeout": None,
     }
 
@@ -607,7 +848,8 @@ def _record(monkeypatch, *bodies):
 
     def _fake_make_request(*, s, loaders, r_type, url, payload=None, time_out=None):
         sent.append({"r_type": r_type, "url": url, "headers": (payload or {}).get("headers")})
-        return _JsonResponse(next(answers))
+        answer = next(answers)
+        return answer if isinstance(answer, _JsonResponse) else _JsonResponse(answer)
 
     monkeypatch.setattr(base_mod, "make_request", _fake_make_request)
     monkeypatch.setattr(models_user_mod, "make_request", _fake_make_request)
@@ -661,7 +903,7 @@ def test_reads_as_caller_sends_the_assertion_only_on_directory_reads(monkeypatch
         {"results": [team_row], "next": None},
         {**team_row, "members": [workload_member]},
         _person_payload(),
-        {"detail": "ok"},
+        _JsonResponse(_binding_payload(WORKLOAD_USER_UID), status_code=201),
         [_person_payload()],
     )
 
@@ -671,9 +913,11 @@ def test_reads_as_caller_sends_the_assertion_only_on_directory_reads(monkeypatch
             models_user_mod.User.get_by_uid(WORKLOAD_USER_UID)
             teams = models_user_mod.Team.filter()
             team = models_user_mod.Team.get_by_uid(TEAM_UID)
-            # Neither the session's own user nor a sharing call presents it.
+            # Neither the session's own user nor an access call presents it.
             models_user_mod.User.get_authenticated_user_details()
-            DemoShareableModel(SHAREABLE_UID).add_to_view(workloads[0])
+            Artifact.model_construct(uid=SHAREABLE_UID).attach_policy(
+                "viewer", principal_type="user", principal_uid=workloads[0]
+            )
         # Outside the helper the application reads as itself.
         models_user_mod.User.filter()
 

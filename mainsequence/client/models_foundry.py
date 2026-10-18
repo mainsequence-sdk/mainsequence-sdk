@@ -15,9 +15,9 @@ from .base import (
     CurrentCodeRepositoryBranchCollectionMixin,
     CurrentCodeRepositoryEnvironmentResourceMixin,
     LabelableObjectMixin,
-    ShareableObjectMixin,
 )
 from .exceptions import raise_for_response
+from .object_access import AccessManagedObjectMixin
 from .utils import (
     make_request,
 )
@@ -142,7 +142,31 @@ class CodeRepositoryBulkDeleteResponse(BasePydanticModel):
     deleted_count: int
 
 
-class CodeRepository(LabelableObjectMixin, ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
+class CodeRepository(
+    LabelableObjectMixin, AccessManagedObjectMixin, BasePydanticModel, BaseObjectOrm
+):
+    """A code repository linked to GitHub, with all its branches.
+
+    Who may use a repository is decided by its policies: `reader` sees it, its
+    GitHub link and issues, and every branch in it; `editor` also renames or
+    archives it, adds deploy keys, creates branches, edits every branch and sees
+    who has access; `owner` also decides who has access. The repository's
+    creator holds `owner`. Deleting a repository is in no policy: only
+    Organization admins, who hold every action, delete one.
+
+    The policies pass down to every branch of the repository: `reader` gives
+    `reader` on each branch, and `editor` and `owner` give `editor`. They go
+    only to people with the platform's `user` product role, to workload
+    identities and to Teams. A person without that role gets
+    `PermissionDeniedError` with `code` `missing_product_role` from every
+    repository route, the access routes included, also when a Team they belong
+    to holds a policy.
+
+    The access methods (`get_access()`, `attach_policy()`, `detach_policy()` and
+    the others) read and change the policies. They address the repository by
+    its UID alone, and the platform refuses them to runtime credentials.
+    """
+
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
         "code_repository_name": ["in", "exact", "contains"],
         "code_repository_type": ["exact"],
@@ -451,7 +475,34 @@ class CodeRepository(LabelableObjectMixin, ShareableObjectMixin, BasePydanticMod
         )
 
 
-class CodeRepositoryBranch(BasePydanticModel, BaseObjectOrm):
+class CodeRepositoryBranch(AccessManagedObjectMixin, BasePydanticModel, BaseObjectOrm):
+    """One branch of a code repository in one Organization Environment, with what runs from it.
+
+    Who may use a branch is decided by its policies: `reader` sees the branch,
+    its files and issues, and its Jobs, runs, logs and releases, and calls its
+    releases; `editor` also changes and deletes the branch, creates issues and
+    static sites, edits its Jobs and releases, manages what its workloads can
+    reach and sees who has access; `owner` also decides who has access.
+    Creating a branch gives its creator nothing on it, and Organization admins
+    hold every action.
+
+    A branch also takes the policies held above it: `reader` on its repository,
+    or on a Project the branch belongs to, gives `reader` on the branch, and
+    `editor` or `owner` there gives `editor`. Deleting a repository's last
+    branch deletes the repository, so it also needs the repository's `delete`
+    action, which only Organization admins hold.
+
+    The policies go to people, workload identities and Teams. A person without
+    the platform's `user` product role gets `PermissionDeniedError` with `code`
+    `missing_product_role` from every branch route, the access routes included,
+    also when a Team they belong to holds a policy.
+
+    The access methods (`get_access()`, `attach_policy()`, `detach_policy()` and
+    the others) read and change the policies. They address the branch by its
+    UID alone and take no Environment, and the platform refuses them to runtime
+    credentials.
+    """
+
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
         "uid": ["in", "exact"],
         "code_repository_uid": ["exact"],
@@ -594,6 +645,33 @@ class CodeRepositoryBranch(BasePydanticModel, BaseObjectOrm):
         return yaml.safe_dump(self.model_dump(), sort_keys=False, default_flow_style=False)
 
 
+class OrganizationProject(AccessManagedObjectMixin, BasePydanticModel, BaseObjectOrm):
+    """A Project: a named group of code repository branches in one Organization Environment.
+
+    A Project groups branches; it is not a repository. The model carries only
+    the Project's UID, which is all its access methods use: build it as
+    `OrganizationProject(uid=project_uid)`.
+
+    Who may use a Project is decided by its policies: `reader` sees the Project
+    and every branch in it; `editor` also renames it, adds and removes
+    branches, deletes it and sees who has access; `owner` also decides who has
+    access. The Project's creator holds `owner`, and Organization admins hold
+    every action. Adding a branch also needs `editor` or `owner` on that
+    branch, and deleting a Project keeps its branches.
+
+    The policies pass down to the Project's branches: `reader` gives `reader` on
+    each of them, and `editor` and `owner` give `editor`. They go to people,
+    workload identities and Teams.
+
+    The access methods (`get_access()`, `attach_policy()`, `detach_policy()` and
+    the others) read and change the policies. They address the Project by its
+    UID alone and take no Environment, and the platform refuses them to runtime
+    credentials.
+    """
+
+    uid: str = Field(..., description="Public UID of the Project.")
+
+
 class CodeRepositoryBranchGitContextResolution(BasePydanticModel):
     canonical_repository_identity: str
     repository_branch: str
@@ -716,10 +794,33 @@ class DynamicResource(BasePydanticModel, BaseObjectOrm):
 
 class Bucket(
     CurrentCodeRepositoryEnvironmentResourceMixin,
-    ShareableObjectMixin,
+    AccessManagedObjectMixin,
     BasePydanticModel,
     BaseObjectOrm,
 ):
+    """A named container of Artifacts, owned by one Organization Environment.
+
+    Who may use a Bucket is decided by its policies: `reader` browses its
+    folders and the Artifacts in it that are shared with the person;
+    `contributor` also uploads Artifacts and creates folders; `editor` also
+    renames the Bucket, renames and deletes folders, deletes the Bucket with
+    every Artifact in it, and sees who has access; `owner` also decides who has
+    access. The person or workload that creates a Bucket holds `owner`, also
+    when an Artifact upload creates it by name, and Organization admins hold
+    every action. The policies go to people, workload identities and Teams.
+
+    Uploading an Artifact into an existing Bucket, with `Artifact.upload_file()`
+    or `Artifact.get_or_create()`, needs the Bucket's `add_artifact` action,
+    which `contributor`, `editor` and `owner` hold. A refused upload raises
+    `PermissionDeniedError`, whose `payload` names the `required_action` and the
+    `granting_policies`, even when the caller cannot see the Bucket.
+
+    The access methods (`get_access()`, `attach_policy()`, `detach_policy()` and
+    the others) read and change the policies. They address the Bucket by its
+    UID alone and need no Environment; reading, creating, changing and deleting
+    Buckets use the current branch's Environment.
+    """
+
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
         "uid": ["in", "exact"],
         "name": ["in", "exact"],
@@ -768,10 +869,34 @@ class Bucket(
 
 class Artifact(
     CurrentCodeRepositoryEnvironmentResourceMixin,
-    ShareableObjectMixin,
+    AccessManagedObjectMixin,
     BasePydanticModel,
     BaseObjectOrm,
 ):
+    """A file stored in a Bucket, owned by one Organization Environment.
+
+    Who may use an Artifact is decided by its policies: `viewer` sees it and
+    downloads its file; `editor` also replaces its file, deletes it and sees who
+    has access; `owner` also decides who has access. Every policy that sees an
+    Artifact also downloads it, so its signed `content` URL comes with each of
+    them. The person or workload that creates an Artifact holds `owner`, except
+    the Organization's automation identity, and Organization admins hold every
+    action. The Jobs whose runs published an Artifact give `viewer` on it to
+    everyone who holds a policy on the Job.
+
+    Uploading into an existing Bucket needs the Bucket's `add_artifact` action.
+    Uploading a file under the name of an Artifact you can see replaces that
+    Artifact's file, which needs its `overwrite` action: `editor` and `owner`
+    hold it, and with `viewer` alone the upload raises `PermissionDeniedError`
+    whose `payload` names `required_action` `artifacts.overwrite`.
+
+    The access methods (`get_access()`, `attach_policy()`, `detach_policy()` and
+    the others) read and change the policies. They address the Artifact by its
+    UID alone and need no Environment; with a workload's runtime credentials
+    they reach only the Artifacts of that workload's Environment. Reading,
+    uploading and deleting Artifacts use the current branch's Environment.
+    """
+
     uid: str | None = Field(
         None,
         title="Artifact UID",
@@ -826,6 +951,11 @@ class Artifact(
 
     @classmethod
     def upload_file(cls, filepath, name, bucket_name=None):
+        """Upload a file as an Artifact of `bucket_name`, or replace the file of one already there.
+
+        It calls `get_or_create()`, with `default_bucket` when no bucket is
+        named, and raises what it raises.
+        """
         bucket_name = bucket_name if bucket_name else "default_bucket"
         return cls.get_or_create(
             filepath=filepath,
@@ -835,6 +965,19 @@ class Artifact(
 
     @classmethod
     def get_or_create(cls, filepath, name, bucket_name):
+        """Upload a file as the Artifact `name` of `bucket_name`, or replace that Artifact's file.
+
+        Creating the Artifact in an existing Bucket needs the Bucket's
+        `add_artifact` action. When an Artifact of that name that you can see
+        is already there, its file is replaced, which needs that Artifact's
+        `overwrite` action, held by `editor` and `owner`.
+
+        A failed answer raises the SDK's typed error, with the platform's
+        message and its answer as `payload`: a refused upload raises
+        `PermissionDeniedError`, whose `payload` names the `required_action`
+        and the `granting_policies`; another failure raises the matching
+        `ApiError` subclass, such as `BadRequestError` or `NotFoundError`.
+        """
         url = cls.get_object_url() + "/get-or-create/"
         s = cls.build_session()
         with open(filepath, "rb") as f:
@@ -849,8 +992,8 @@ class Artifact(
             payload = {"json": data, "files": files}
             r = make_request(s=s, loaders=cls.LOADERS, r_type="POST", url=url, payload=payload)
 
-            if r.status_code not in [200, 201]:
-                raise Exception(f"Failed to get artifact: {r.status_code} - {r.text}")
+            # The request payload holds the open file, so it is not attached to the error.
+            raise_for_response(r)
 
             return cls(**r.json())
 
@@ -887,10 +1030,32 @@ def _norm_kwargs(kwargs: dict[str, Any]) -> tuple[tuple[str, Any], ...]:
 
 class Secret(
     CurrentCodeRepositoryEnvironmentResourceMixin,
-    ShareableObjectMixin,
+    AccessManagedObjectMixin,
     BasePydanticModel,
     BaseObjectOrm,
 ):
+    """A sensitive value, such as a password or an API key, owned by one Organization Environment.
+
+    Who may use a Secret is decided by its policies: `reader` sees it, its name
+    and its versions' dates, never its value; `value_reader` also reads its
+    current value; `editor` also reads earlier values, sets a new value,
+    deletes it and sees who has access; `owner` also decides who has access.
+    The person or workload that creates a Secret holds `owner`, and
+    Organization admins hold every action. The policies go to people, workload
+    identities and Teams. A Secret the platform manages, such as a hosted
+    database password, cannot get a new value or be deleted, by anyone.
+
+    `get()` and `get_by_uid()` read the current value. Without the Secret's
+    `read_value` action they raise `PermissionDeniedError`, whose `payload`
+    names the `required_action` and the `granting_policies`; `filter()` lists
+    Secrets without their values.
+
+    The access methods (`get_access()`, `attach_policy()`, `detach_policy()` and
+    the others) read and change the policies. They address the Secret by its
+    UID alone and need no Environment; reading, creating, changing and deleting
+    Secrets use the current branch's Environment.
+    """
+
     # `value` is a SecretStr once read, but a validation error would echo the
     # plaintext it was given.
     model_config = ConfigDict(hide_input_in_errors=True)
@@ -949,12 +1114,22 @@ class Secret(
 
 class Constant(
     CurrentCodeRepositoryEnvironmentResourceMixin,
-    ShareableObjectMixin,
+    AccessManagedObjectMixin,
     BasePydanticModel,
     BaseObjectOrm,
 ):
-    """
-    Simple organization-level constant.
+    """A small, non-sensitive configuration value owned by one Organization Environment.
+
+    Who may use a Constant is decided by its policies: `reader` sees it and its
+    value; `editor` also changes its name and value, deletes it and sees who has
+    access; `owner` also decides who has access. The person or workload that
+    creates a Constant holds `owner`, and Organization admins hold every action.
+    The policies go to people, workload identities and Teams.
+
+    The access methods (`get_access()`, `attach_policy()`, `detach_policy()` and
+    the others) read and change the policies. They address the Constant by its
+    UID alone and need no Environment; reading, creating, changing and deleting
+    Constants use the current branch's Environment.
     """
 
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
