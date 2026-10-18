@@ -22,7 +22,14 @@ from mainsequence.client.exceptions import (
     NotFoundError,
     PermissionDeniedError,
 )
-from mainsequence.client.models_foundry import Bucket, Constant, Secret
+from mainsequence.client.models_foundry import (
+    Bucket,
+    CodeRepository,
+    CodeRepositoryBranch,
+    Constant,
+    OrganizationProject,
+    Secret,
+)
 from mainsequence.client.models_user import OrganizationEnvironment, Team
 from mainsequence.client.object_access import (
     AccessBinding,
@@ -118,7 +125,19 @@ def _binding(**overrides):
     return binding
 
 
-@pytest.mark.parametrize("model", [Team, OrganizationEnvironment, Constant, Secret, Bucket])
+@pytest.mark.parametrize(
+    "model",
+    [
+        Team,
+        OrganizationEnvironment,
+        Constant,
+        Secret,
+        Bucket,
+        CodeRepository,
+        CodeRepositoryBranch,
+        OrganizationProject,
+    ],
+)
 def test_policy_decided_models_serve_the_access_methods(model):
     assert issubclass(model, AccessManagedObjectMixin)
     for name in (
@@ -1190,3 +1209,284 @@ def test_reading_a_bucket_still_uses_the_current_branchs_environment(monkeypatch
 
     with pytest.raises(code_repository_context.CodeRepositoryEnvironmentContextRequiredError):
         Bucket.get_by_uid(BUCKET_UID)
+
+
+CODE_REPOSITORY_UID = "55555555-5555-4555-8555-555555555555"
+BRANCH_UID = "77777777-7777-4777-8777-777777777777"
+PROJECT_UID = "88888888-8888-4888-8888-888888888888"
+
+
+def _code_repository() -> CodeRepository:
+    return CodeRepository(
+        uid=CODE_REPOSITORY_UID,
+        code_repository_name="Analytics",
+        code_repository_type="python",
+        primary_language="python",
+        framework="mainsequence",
+    )
+
+
+def _branch() -> CodeRepositoryBranch:
+    return CodeRepositoryBranch.model_construct(
+        uid=BRANCH_UID,
+        code_repository_uid=CODE_REPOSITORY_UID,
+        repository_branch="research",
+        organization_environment_uid=ENVIRONMENT_UID,
+    )
+
+
+def _missing_product_role() -> dict:
+    return {
+        "detail": "User is missing required product role.",
+        "code": "missing_product_role",
+        "operation_id": "code_repositories.code_repository.retrieve",
+        "required_product_roles": ["user"],
+        "missing_product_roles": ["user"],
+    }
+
+
+def test_a_code_repository_serves_the_access_routes_by_its_uid_alone(monkeypatch, environment):
+    sent = _install(
+        monkeypatch,
+        FakeResponse(
+            200,
+            {
+                "object": {"resource_type": "code-repositories", "uid": CODE_REPOSITORY_UID},
+                "bindings": [
+                    _binding(
+                        policy={"id": "code-repositories.owner", "label": "Repository owner"},
+                        source="creator",
+                    ),
+                    _binding(
+                        uid=OTHER_BINDING_UID,
+                        policy={"id": "code-repositories.editor", "label": "Repository editor"},
+                        source="migrated",
+                    ),
+                ],
+                "computed": [
+                    {
+                        "source": "role",
+                        "detail": "Organization administrators hold every action.",
+                        "policy": None,
+                    }
+                ],
+            },
+        ),
+        FakeResponse(200, [_person()]),
+        FakeResponse(
+            201,
+            _binding(policy={"id": "code-repositories.reader", "label": "Repository reader"}),
+        ),
+        FakeResponse(
+            200,
+            {
+                "action": "code-repositories.delete",
+                "allowed": False,
+                "in_scope": True,
+                "paths": [],
+                "blocked_by_rule": False,
+                "granting_policies": [],
+            },
+        ),
+        FakeResponse(204),
+    )
+
+    repository = _code_repository()
+    listing = repository.get_access()
+    candidates = repository.list_access_candidates("reader", search="ana")
+    binding = repository.attach_policy("reader", principal_type="user", principal_uid=candidates[0])
+    deletion = repository.explain_access("code-repositories.delete")
+    repository.detach_policy(binding)
+
+    # The branch has an Environment, and none is sent: the routes take the UID alone.
+    base = f"{CodeRepository.get_object_url()}/{CODE_REPOSITORY_UID}/access/"
+    assert base.endswith(f"/code-repositories/{CODE_REPOSITORY_UID}/access/")
+    assert [(item["r_type"], item["url"], item["payload"]) for item in sent] == [
+        ("GET", base, {}),
+        (
+            "GET",
+            f"{base}candidates/",
+            {"params": {"policy": "reader", "principal_type": "user", "search": "ana"}},
+        ),
+        (
+            "POST",
+            f"{base}bindings/",
+            {
+                "json": {
+                    "policy": "reader",
+                    "principal_type": "user",
+                    "principal_uid": USER_UID,
+                }
+            },
+        ),
+        ("GET", f"{base}explain/", {"params": {"action": "code-repositories.delete"}}),
+        ("DELETE", f"{base}bindings/{BINDING_UID}/", {}),
+    ]
+    assert listing.object.resource_type == "code-repositories"
+    assert [(item.policy.id, item.source) for item in listing.bindings] == [
+        ("code-repositories.owner", "creator"),
+        ("code-repositories.editor", "migrated"),
+    ]
+    assert binding.policy.id == "code-repositories.reader"
+    # Deleting a repository is in no policy: only Organization admins delete one.
+    assert deletion.allowed is False
+    assert deletion.granting_policies == []
+
+
+def test_a_branch_serves_the_access_routes_by_its_uid_alone(monkeypatch, environment):
+    sent = _install(
+        monkeypatch,
+        FakeResponse(
+            200,
+            {
+                "object": {"resource_type": "code-repository-branches", "uid": BRANCH_UID},
+                "bindings": [],
+                "computed": [
+                    {
+                        "source": "inherited",
+                        "detail": "Code repository: code-repositories.reader gives "
+                        "code-repository-branches.reader here.",
+                        "policy": "code-repository-branches.reader",
+                        "principal": _person(),
+                        "relation": "repository-branch",
+                        "parent": {
+                            "resource_type": "code-repositories",
+                            "uid": CODE_REPOSITORY_UID,
+                        },
+                        "parent_policy": "code-repositories.reader",
+                    }
+                ],
+            },
+        ),
+        FakeResponse(
+            201,
+            _binding(
+                policy={"id": "code-repository-branches.editor", "label": "Branch editor"},
+                principal=_person(uid=WORKLOAD_UID, name="", email=None, identity_type="workload"),
+            ),
+        ),
+        FakeResponse(
+            200,
+            {
+                "allowed_actions": ["code-repository-branches.read"],
+                "policies": ["code-repository-branches.reader"],
+            },
+        ),
+    )
+
+    branch = _branch()
+    listing = branch.get_access()
+    binding = branch.attach_policy("editor", principal_type="user", principal_uid=WORKLOAD_UID)
+    mine = branch.get_my_access()
+
+    base = f"{CodeRepositoryBranch.get_object_url()}/{BRANCH_UID}/access/"
+    assert base.endswith(f"/code-repository-branches/{BRANCH_UID}/access/")
+    assert [(item["r_type"], item["url"], item["payload"]) for item in sent] == [
+        ("GET", base, {}),
+        (
+            "POST",
+            f"{base}bindings/",
+            {
+                "json": {
+                    "policy": "editor",
+                    "principal_type": "user",
+                    "principal_uid": WORKLOAD_UID,
+                }
+            },
+        ),
+        ("GET", f"{base}me/", {}),
+    ]
+    inherited = listing.computed[0]
+    assert inherited.source == "inherited"
+    assert inherited.policy == "code-repository-branches.reader"
+    assert inherited.parent.resource_type == "code-repositories"
+    assert inherited.parent_policy == "code-repositories.reader"
+    assert binding.principal.identity_type == "workload"
+    assert mine.policies == ["code-repository-branches.reader"]
+
+
+def test_a_project_is_addressed_by_its_uid_for_the_access_routes(monkeypatch, environment):
+    sent = _install(
+        monkeypatch,
+        FakeResponse(
+            201,
+            _binding(
+                policy={"id": "organization-projects.reader", "label": "Project reader"},
+                principal=_person(type="team", uid=OTHER_TEAM_UID, email=None, identity_type=None),
+            ),
+        ),
+        FakeResponse(
+            200,
+            {
+                "bindings": [
+                    _binding(
+                        uid=OTHER_BINDING_UID,
+                        policy={"id": "organization-projects.owner", "label": "Project owner"},
+                        source="creator",
+                    )
+                ]
+            },
+        ),
+    )
+
+    project = OrganizationProject(uid=PROJECT_UID)
+    binding = project.attach_policy("reader", principal_type="team", principal_uid=OTHER_TEAM_UID)
+    after = project.apply_access_changes(detach=[binding])
+
+    base = f"{OrganizationProject.get_object_url()}/{PROJECT_UID}/access/"
+    assert base.endswith(f"/organization-projects/{PROJECT_UID}/access/")
+    assert [(item["r_type"], item["url"], item["payload"]) for item in sent] == [
+        (
+            "POST",
+            f"{base}bindings/",
+            {
+                "json": {
+                    "policy": "reader",
+                    "principal_type": "team",
+                    "principal_uid": OTHER_TEAM_UID,
+                }
+            },
+        ),
+        ("POST", f"{base}changes/", {"json": {"attach": [], "detach": [BINDING_UID]}}),
+    ]
+    assert binding.principal.type == "team"
+    assert [item.policy.id for item in after] == ["organization-projects.owner"]
+
+
+@pytest.mark.parametrize("make_object", [_code_repository, _branch], ids=["repository", "branch"])
+def test_a_person_without_the_user_product_role_is_refused_with_the_platforms_answer(
+    monkeypatch, make_object
+):
+    _install(monkeypatch, FakeResponse(403, _missing_product_role()))
+
+    with pytest.raises(PermissionDeniedError) as raised:
+        make_object().get_my_access()
+
+    assert raised.value.payload["code"] == "missing_product_role"
+    assert "granting_policies" not in raised.value.payload
+    assert "User is missing required product role." in str(raised.value)
+
+
+def test_a_refused_change_on_a_code_repository_names_the_policies_that_give_it(monkeypatch):
+    refusal = {
+        "detail": "This needs the code-repositories.manage_access action.",
+        "code": "missing_action",
+        "required_action": "code-repositories.manage_access",
+        "granting_policies": ["code-repositories.owner"],
+        "resource_type": "code-repositories",
+        "resource_uid": CODE_REPOSITORY_UID,
+    }
+    _install(monkeypatch, FakeResponse(403, refusal))
+
+    with pytest.raises(PermissionDeniedError) as raised:
+        _code_repository().attach_policy(
+            "editor", principal_type="team", principal_uid=OTHER_TEAM_UID
+        )
+
+    assert raised.value.payload["required_action"] == "code-repositories.manage_access"
+    assert raised.value.payload["granting_policies"] == ["code-repositories.owner"]
+
+
+def test_a_project_needs_its_uid():
+    with pytest.raises(ValueError):
+        OrganizationProject()

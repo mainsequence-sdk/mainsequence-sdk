@@ -60,6 +60,10 @@ def failing_sdk_client(cli_mod, monkeypatch):
             "CodeRepository add-label failed",
         ),
         (["code-repository", "search", "tutorial"], "CodeRepository search failed"),
+        (
+            ["code-repository", "access", "list", CODE_REPOSITORY_UID],
+            "CodeRepository access fetch failed",
+        ),
     ],
     ids=[
         "teams",
@@ -73,6 +77,7 @@ def failing_sdk_client(cli_mod, monkeypatch):
         "secret-access",
         "labels",
         "code-repositories",
+        "code-repository-access",
     ],
 )
 def test_a_failed_sdk_call_is_described_once(

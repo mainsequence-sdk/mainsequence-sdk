@@ -20,6 +20,7 @@
         - [Owner-Scoped Runtime Observability](knowledge/infrastructure/owner_observability.md)
         - [Artifacts](knowledge/infrastructure/artifacts.md)
         - [Constants and Secrets](knowledge/infrastructure/constants_and_secrets.md)
+        - [Code Repositories, Branches and Projects](knowledge/infrastructure/code_repositories.md)
 - Migrations
     - [Independent Git and Environment context](migrations/independent-context.md)
     - [Streamlit dashboard support removal](migrations/streamlit-dashboard-removal.md)

@@ -140,6 +140,7 @@ class BaseObjectOrm:
         "User": "users",
         "CodeRepository": "code-repositories",
         "CodeRepositoryBranch": "code-repository-branches",
+        "OrganizationProject": "organization-projects",
         "GitHubRepositoryBinding": "github-repository-bindings",
         "Artifact": "artifacts",
         "Job": "jobs",

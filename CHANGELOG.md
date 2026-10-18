@@ -6,6 +6,65 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+**Code repositories, their branches and Projects are decided by policies:
+`CodeRepository` and `CodeRepositoryBranch` gain the access methods, a minimal
+`OrganizationProject` model serves them for Projects, and the repository sharing calls
+are removed.** The platform no longer serves view and edit sharing on these three types.
+Each has `reader`, `editor` and `owner` policies. On a repository, `reader` sees it, its
+GitHub link and issues, and every branch in it; `editor` also renames or archives it,
+adds deploy keys, creates branches, edits every branch and sees who has access; `owner`
+also decides who has access. Deleting a repository is in no policy: only Organization
+admins delete one. On a branch, `reader` sees its files, issues, Jobs, runs, logs and
+releases, and calls its releases; `editor` also changes and deletes it, creates issues
+and static sites, edits its Jobs and releases and manages what its workloads can reach.
+On a Project, `reader` sees it and its branches; `editor` also renames it, adds and
+removes branches and deletes it. The creator of a repository or a Project holds `owner`;
+a branch's creator holds nothing for being its creator. A repository's policies pass
+down to every branch of it and a Project's to its branches: `reader` gives branch
+`reader`, and `editor` and `owner` give branch `editor`. Existing view grants became
+`reader` and edit grants `editor`. Using a repository or a branch needs the platform's
+`user` product role. Artifacts, agents and releases keep view and edit sharing.
+
+- Removed from `CodeRepository`: `can_view()`, `can_edit()`, `users_can_view()`,
+  `users_can_edit()`, `list_users_can_view()`, `list_users_can_edit()`,
+  `add_to_view()`, `add_to_edit()`, `remove_from_view()`, `remove_from_edit()`,
+  `add_team_to_view()`, `add_team_to_edit()`, `remove_team_from_view()` and
+  `remove_team_from_edit()`.
+- What replaces them: `CodeRepository` uses `AccessManagedObjectMixin`, like `Constant`:
+  `get_access()`, `get_my_access()`, `list_access_candidates()`, `attach_policy()`,
+  `detach_policy()`, `apply_access_changes()` and `explain_access()`, on
+  `/api/v1/code-repositories/{uid}/access/...`. `attach_policy("reader", ...)` gives what
+  `add_to_view()` gave and `attach_policy("editor", ...)` what `add_to_edit()` gave, to a
+  user or a team; `detach_policy()` replaces the `remove_*` methods, and `get_access()`
+  replaces `can_view()` and `can_edit()`. Its labels, deploy keys, `create()`,
+  `quick_search()`, `validate_name()` and `bulk_delete()` are unchanged.
+- `CodeRepositoryBranch` gains the same methods, on
+  `/api/v1/code-repository-branches/{uid}/access/...`. Its `get_access()` shows the
+  policies a branch takes from its repository and its Projects as `inherited` rows.
+- New: `OrganizationProject`, which carries only a Project's `uid` and serves the same
+  methods on `/api/v1/organization-projects/{uid}/access/...`, for example
+  `OrganizationProject(uid=project_uid).attach_policy("reader", ...)`.
+- The access methods of the three address the object by its UID alone and send no
+  Environment, and the platform refuses them to runtime credentials. A refusal raises
+  `PermissionDeniedError`, whose `payload` names the `required_action` and the
+  `granting_policies`. On a repository or a branch, a person without the `user` product
+  role gets `code` `missing_product_role` from every route, the access routes included,
+  and that refusal names no policy.
+- CLI: `mainsequence code-repository access list|grant|revoke|explain` replace
+  `code-repository can_view`, `can_edit`, `add_to_view`, `add_to_edit`,
+  `remove_from_view`, `remove_from_edit`, `add_team_to_view`, `add_team_to_edit`,
+  `remove_team_from_view` and `remove_team_from_edit`, which are removed. The new
+  commands need no registered branch. A refused command prints the platform's message
+  and the policies that would allow it; a missing product role prints the platform's
+  message. The CLI has no command group for branches or Projects, so it has no access
+  commands for them.
+- Docs: a new page,
+  [Code Repositories, Branches and Projects](docs/knowledge/infrastructure/code_repositories.md),
+  says who can use each; [Who Has Access to an Object](docs/knowledge/infrastructure/object_access.md),
+  [Users and Access](docs/knowledge/infrastructure/users_and_access.md), the Access
+  Policy Catalog, Constants and Secrets, the CLI reference and the access-control skill
+  say these types are decided by policies.
+
 ## [9.0.29] - 2026-10-18
 
 **Maintenance and bug-auditor skills work independently.** Both remain bundled

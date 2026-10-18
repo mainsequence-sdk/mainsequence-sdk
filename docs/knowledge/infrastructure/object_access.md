@@ -6,11 +6,11 @@ its own access routes. A policy from the
 person, a workload identity or a Team, on one object. That attachment is a
 **binding**.
 
-Teams, Organization Environments, constants, secrets, buckets, model-provider
-credentials and custom model providers are decided this way. Other shareable
-objects, such as artifacts, CodeRepositories and releases, still use view and
-edit sharing, as [Users and Access](users_and_access.md#resource-sharing)
-describes.
+Teams, Organization Environments, constants, secrets, buckets, code
+repositories, their branches, Projects, model-provider credentials and custom
+model providers are decided this way. Other shareable objects, such as
+artifacts, agents and releases, still use view and edit sharing, as
+[Users and Access](users_and_access.md#resource-sharing) describes.
 
 Working in an Environment is a policy. `member` works in it, opens what is
 shared with the person there, and creates Projects, Buckets, Constants,
@@ -90,6 +90,39 @@ Uploading into an existing Bucket without `contributor`, with
 `Artifact.upload_file()`, raises `PermissionDeniedError` with
 `required_action` `buckets.add_artifact`. See
 [Artifacts](artifacts.md#who-can-use-a-bucket).
+
+A code repository has three policies: `reader` sees it, its GitHub link and
+issues, and every branch in it; `editor` also renames or archives it, adds
+deploy keys, creates branches, edits every branch and sees who has access;
+`owner` also decides who has access. Its creator holds `owner`, and deleting a
+repository is in no policy: only Organization admins delete one. A branch has
+`reader`, `editor` and `owner` too, and a branch's creator holds nothing for
+being its creator. A Project, a named group of branches in one Environment, has
+`reader`, `editor` and `owner`, and its creator holds `owner`. A repository's
+policies pass down to every branch of it, and a Project's to its branches:
+`reader` gives branch `reader`, and `editor` and `owner` give branch `editor`.
+`get_access()` on a branch shows those as `inherited` rows. The same methods are
+on `CodeRepository`, `CodeRepositoryBranch` and `OrganizationProject`, which
+carries only the Project's UID:
+
+```python
+from mainsequence.client import CodeRepository, OrganizationProject
+
+repository = CodeRepository.get_by_uid(code_repository_uid)
+repository.attach_policy("editor", principal_type="team", principal_uid=team_uid)
+
+project = OrganizationProject(uid=project_uid)
+project.attach_policy("reader", principal_type="user", principal_uid=user_uid)
+```
+
+Using a repository or a branch needs the platform's `user` product role: a
+person without it gets `PermissionDeniedError` with `code`
+`missing_product_role` from every route of either, the access methods
+included, also when a Team they belong to holds a policy. A repository's
+policies go only to people with that role, to workload identities and to
+Teams. The access methods of all three take no Environment, and the platform
+refuses them to runtime credentials. See
+[Code Repositories, Branches and Projects](code_repositories.md).
 
 Model-provider credentials and custom model providers are decided by policies
 too, as two types, each with three policies:
@@ -279,6 +312,10 @@ Fields the release does not declare are dropped.
   `principal_kind_not_allowed` a policy that cannot be given to that kind of
   principal, and `policy_not_attachable` a computed policy such as
   `organization-teams.member`.
+- A code repository or a branch refuses a person without the platform's
+  `user` product role with `PermissionDeniedError` too, whose `payload` has
+  `code` `missing_product_role` and no `granting_policies`: no policy gives
+  that role.
 - An object you cannot read raises `NotFoundError`.
 - An empty policy or action, a `principal_type` other than `user` or `team`, an
   `identity_type` other than `human` or `workload`, a UID that is not a UUID,
@@ -289,7 +326,10 @@ Fields the release does not declare are dropped.
 
 `mainsequence organization teams access list|grant|revoke|explain` reads and
 changes a team's policies, `mainsequence constants access
-list|grant|revoke|explain` a constant's, and `mainsequence secrets access
-list|grant|revoke|explain` a secret's; see [Teams](../../cli/index.md#teams),
-[Constants](../../cli/index.md#constants) and
-[Secrets](../../cli/index.md#secrets) in the CLI reference.
+list|grant|revoke|explain` a constant's, `mainsequence secrets access
+list|grant|revoke|explain` a secret's, and `mainsequence code-repository access
+list|grant|revoke|explain` a code repository's; see
+[Teams](../../cli/index.md#teams), [Constants](../../cli/index.md#constants),
+[Secrets](../../cli/index.md#secrets) and
+[Code repositories](../../cli/index.md#code-repositories) in the CLI reference.
+The CLI has no access commands for branches and Projects.

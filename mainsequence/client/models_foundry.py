@@ -143,7 +143,31 @@ class CodeRepositoryBulkDeleteResponse(BasePydanticModel):
     deleted_count: int
 
 
-class CodeRepository(LabelableObjectMixin, ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
+class CodeRepository(
+    LabelableObjectMixin, AccessManagedObjectMixin, BasePydanticModel, BaseObjectOrm
+):
+    """A code repository linked to GitHub, with all its branches.
+
+    Who may use a repository is decided by its policies: `reader` sees it, its
+    GitHub link and issues, and every branch in it; `editor` also renames or
+    archives it, adds deploy keys, creates branches, edits every branch and sees
+    who has access; `owner` also decides who has access. The repository's
+    creator holds `owner`. Deleting a repository is in no policy: only
+    Organization admins, who hold every action, delete one.
+
+    The policies pass down to every branch of the repository: `reader` gives
+    `reader` on each branch, and `editor` and `owner` give `editor`. They go
+    only to people with the platform's `user` product role, to workload
+    identities and to Teams. A person without that role gets
+    `PermissionDeniedError` with `code` `missing_product_role` from every
+    repository route, the access routes included, also when a Team they belong
+    to holds a policy.
+
+    The access methods (`get_access()`, `attach_policy()`, `detach_policy()` and
+    the others) read and change the policies. They address the repository by
+    its UID alone, and the platform refuses them to runtime credentials.
+    """
+
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
         "code_repository_name": ["in", "exact", "contains"],
         "code_repository_type": ["exact"],
@@ -452,7 +476,34 @@ class CodeRepository(LabelableObjectMixin, ShareableObjectMixin, BasePydanticMod
         )
 
 
-class CodeRepositoryBranch(BasePydanticModel, BaseObjectOrm):
+class CodeRepositoryBranch(AccessManagedObjectMixin, BasePydanticModel, BaseObjectOrm):
+    """One branch of a code repository in one Organization Environment, with what runs from it.
+
+    Who may use a branch is decided by its policies: `reader` sees the branch,
+    its files and issues, and its Jobs, runs, logs and releases, and calls its
+    releases; `editor` also changes and deletes the branch, creates issues and
+    static sites, edits its Jobs and releases, manages what its workloads can
+    reach and sees who has access; `owner` also decides who has access.
+    Creating a branch gives its creator nothing on it, and Organization admins
+    hold every action.
+
+    A branch also takes the policies held above it: `reader` on its repository,
+    or on a Project the branch belongs to, gives `reader` on the branch, and
+    `editor` or `owner` there gives `editor`. Deleting a repository's last
+    branch deletes the repository, so it also needs the repository's `delete`
+    action, which only Organization admins hold.
+
+    The policies go to people, workload identities and Teams. A person without
+    the platform's `user` product role gets `PermissionDeniedError` with `code`
+    `missing_product_role` from every branch route, the access routes included,
+    also when a Team they belong to holds a policy.
+
+    The access methods (`get_access()`, `attach_policy()`, `detach_policy()` and
+    the others) read and change the policies. They address the branch by its
+    UID alone and take no Environment, and the platform refuses them to runtime
+    credentials.
+    """
+
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
         "uid": ["in", "exact"],
         "code_repository_uid": ["exact"],
@@ -593,6 +644,33 @@ class CodeRepositoryBranch(BasePydanticModel, BaseObjectOrm):
 
     def __str__(self):
         return yaml.safe_dump(self.model_dump(), sort_keys=False, default_flow_style=False)
+
+
+class OrganizationProject(AccessManagedObjectMixin, BasePydanticModel, BaseObjectOrm):
+    """A Project: a named group of code repository branches in one Organization Environment.
+
+    A Project groups branches; it is not a repository. The model carries only
+    the Project's UID, which is all its access methods use: build it as
+    `OrganizationProject(uid=project_uid)`.
+
+    Who may use a Project is decided by its policies: `reader` sees the Project
+    and every branch in it; `editor` also renames it, adds and removes
+    branches, deletes it and sees who has access; `owner` also decides who has
+    access. The Project's creator holds `owner`, and Organization admins hold
+    every action. Adding a branch also needs `editor` or `owner` on that
+    branch, and deleting a Project keeps its branches.
+
+    The policies pass down to the Project's branches: `reader` gives `reader` on
+    each of them, and `editor` and `owner` give `editor`. They go to people,
+    workload identities and Teams.
+
+    The access methods (`get_access()`, `attach_policy()`, `detach_policy()` and
+    the others) read and change the policies. They address the Project by its
+    UID alone and take no Environment, and the platform refuses them to runtime
+    credentials.
+    """
+
+    uid: str = Field(..., description="Public UID of the Project.")
 
 
 class CodeRepositoryBranchGitContextResolution(BasePydanticModel):

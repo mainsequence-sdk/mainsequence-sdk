@@ -26,6 +26,8 @@ This skill is for:
 - decide whether a user needs `view` or `edit`
 - identify the correct shareable object boundary:
   - `CodeRepository`
+  - `CodeRepositoryBranch`
+  - `OrganizationProject`
   - `Constant`
   - `Secret`
   - `Bucket`
@@ -64,9 +66,11 @@ This skill only reasons about access to deployed resources such as `ResourceRele
 2. <https://mainsequence-sdk.github.io/mainsequence-sdk/knowledge/infrastructure/users_and_access/>
 3. <https://mainsequence-sdk.github.io/mainsequence-sdk/knowledge/infrastructure/constants_and_secrets/>
 4. <https://mainsequence-sdk.github.io/mainsequence-sdk/knowledge/infrastructure/object_access/>
-   for teams, Organization Environments, constants, secrets, buckets,
-   model-provider credentials and custom model providers, whose access is
-   decided by policies
+   for teams, Organization Environments, constants, secrets, buckets, code
+   repositories, their branches, Projects, model-provider credentials and
+   custom model providers, whose access is decided by policies
+5. <https://mainsequence-sdk.github.io/mainsequence-sdk/knowledge/infrastructure/code_repositories/>
+   for code repositories, their branches and Projects
 
 The pages above are the authoritative reference for access control and sharing.
 If the task is specifically about a resource type, also read that resource's own
@@ -88,6 +92,9 @@ Before changing access or advising on sharing, collect or infer:
     `editor` or `owner`
   - for a `Bucket`, which is decided by policies: `reader`, `contributor`,
     `editor` or `owner`
+  - for a `CodeRepository`, a `CodeRepositoryBranch` or an
+    `OrganizationProject`, which are decided by policies: `reader`, `editor`
+    or `owner`
   - for a model-provider credential or a custom model provider, which are
     decided by policies: `user`, `editor` or `owner`
 - whether the goal is:
@@ -107,8 +114,9 @@ For every non-trivial access task, decide:
 2. Is this direct user access or team-based access?
 3. Does the user need `view` or `edit`, or, on a `Constant`, `reader`, `editor` or `owner`, or,
    on a `Secret`, `reader`, `value_reader`, `editor` or `owner`, or, on a `Bucket`, `reader`,
-   `contributor`, `editor` or `owner`, or, on a model-provider credential or a custom model
-   provider, `user`, `editor` or `owner`?
+   `contributor`, `editor` or `owner`, or, on a `CodeRepository`, a `CodeRepositoryBranch` or
+   an `OrganizationProject`, `reader`, `editor` or `owner`, or, on a model-provider credential
+   or a custom model provider, `user`, `editor` or `owner`?
 4. Is this configuration non-sensitive or sensitive?
 5. Is the task really an access problem, or is it actually an orchestration or implementation problem?
 6. Is the task creating a `Constant` or `Secret` by name, and does that name already exist?
@@ -181,6 +189,36 @@ with `required_action` `buckets.add_artifact`. Use the access methods on
 `Bucket`; a bucket has no `add_to_view()` or `add_to_edit()`, and the CLI has
 no bucket commands. A repository workflow file's `access` entry for a bucket
 gives `contributor` for `level: view` and `editor` for `level: edit`.
+
+A `CodeRepository`, its `CodeRepositoryBranch` objects and an
+`OrganizationProject` are decided by their policies too, each with `reader`,
+`editor` and `owner`:
+
+- on a repository, `reader` sees it, its GitHub link and issues, and every
+  branch in it; `editor` also renames or archives it, adds deploy keys,
+  creates branches, edits every branch and sees who has access; `owner` also
+  decides who has access. Only Organization admins delete a repository;
+- on a branch, `reader` sees the branch, its files, Jobs, runs, logs and
+  releases, and calls its releases; `editor` also changes and deletes it,
+  edits its Jobs and releases and manages what its workloads can reach;
+  `owner` also decides who has access;
+- on a Project, a named group of branches in one Environment, `reader` sees
+  it and its branches; `editor` also renames it, adds and removes branches and
+  deletes it; `owner` also decides who has access.
+
+A repository's creator and a Project's creator hold `owner`; a branch's
+creator holds nothing for being its creator. Repository and Project policies
+pass down to the branches: `reader` gives branch `reader`, and `editor` and
+`owner` give branch `editor`, so share the repository or the Project when
+every branch should follow. Using a repository or a branch needs the
+platform's `user` product role: without it every route, the access methods
+included, raises `PermissionDeniedError` with `code` `missing_product_role`,
+also through a Team, and no policy gives it. Use the access methods on
+`CodeRepository`, `CodeRepositoryBranch` and `OrganizationProject(uid=...)`,
+or `mainsequence code-repository access list|grant|revoke|explain` for a
+repository; the CLI has no branch or Project access commands. A repository
+workflow file's `access.branch` and `access.branches` entries give the
+workload `reader` for `level: view` and `editor` for `level: edit`.
 
 Model-provider credentials and custom model providers are decided by policies
 too, as two types:
@@ -448,6 +486,8 @@ Do not claim success until you have checked:
   - `reader`, `editor` or `owner` on a `Constant`
   - `reader`, `value_reader`, `editor` or `owner` on a `Secret`
   - `reader`, `contributor`, `editor` or `owner` on a `Bucket`
+  - `reader`, `editor` or `owner` on a `CodeRepository`, a
+    `CodeRepositoryBranch` or an `OrganizationProject`
   - `user`, `editor` or `owner` on a model-provider credential or a custom
     model provider
 - the task is using `Constant` vs `Secret` correctly

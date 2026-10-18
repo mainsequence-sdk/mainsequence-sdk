@@ -83,6 +83,7 @@ def test_cli_auth_and_resource_roots_match_backend_contract():
         "job-runs",
         "jobs",
         "notifications",
+        "organization-projects",
         "organizations",
         "code-repository-base-images",
         "code-repository-branches",
@@ -118,8 +119,11 @@ def test_removed_backend_actions_are_not_exposed_by_client_models():
     from mainsequence.client import models_user
     from mainsequence.client.models_foundry import (
         Bucket,
+        CodeRepository,
+        CodeRepositoryBranch,
         Constant,
         GitHubRepositoryBinding,
+        OrganizationProject,
         Secret,
     )
     from mainsequence.client.models_helpers import Job
@@ -158,6 +162,10 @@ def test_removed_backend_actions_are_not_exposed_by_client_models():
         Constant: view_and_edit_sharing,
         Secret: view_and_edit_sharing,
         Bucket: view_and_edit_sharing,
+        # So do code repositories, their branches and Projects.
+        CodeRepository: view_and_edit_sharing,
+        CodeRepositoryBranch: view_and_edit_sharing,
+        OrganizationProject: view_and_edit_sharing,
     }
     violations = [
         f"{model.__name__}.{method_name}"
@@ -168,6 +176,31 @@ def test_removed_backend_actions_are_not_exposed_by_client_models():
 
     assert violations == []
     assert not hasattr(models_user, "TeamMembershipUpdateResult")
+
+
+def test_repositories_branches_and_projects_serve_the_access_routes_by_uid():
+    from mainsequence.client.base import BaseObjectOrm
+    from mainsequence.client.models_foundry import (
+        CodeRepository,
+        CodeRepositoryBranch,
+        OrganizationProject,
+    )
+    from mainsequence.client.object_access import AccessManagedObjectMixin
+
+    uid = "11111111-1111-4111-8111-111111111111"
+    root = BaseObjectOrm.ROOT_URL.rstrip("/")
+    routes = {
+        CodeRepository: "code-repositories",
+        CodeRepositoryBranch: "code-repository-branches",
+        OrganizationProject: "organization-projects",
+    }
+    for model, endpoint in routes.items():
+        assert issubclass(model, AccessManagedObjectMixin)
+        instance = model.model_construct(uid=uid)
+        assert instance.get_action_url("access") == f"{root}/{endpoint}/{uid}/access/"
+        assert instance.get_action_url("access/bindings") == (
+            f"{root}/{endpoint}/{uid}/access/bindings/"
+        )
 
 
 def test_cli_does_not_reintroduce_legacy_numeric_detail_routes_or_agent_runs():
@@ -213,6 +246,16 @@ def test_cli_does_not_reintroduce_legacy_numeric_detail_routes_or_agent_runs():
         "add_secret_team_to_edit",
         "remove_secret_team_from_view",
         "remove_secret_team_from_edit",
+        "list_code_repository_users_can_view",
+        "list_code_repository_users_can_edit",
+        "add_code_repository_user_to_view",
+        "add_code_repository_user_to_edit",
+        "remove_code_repository_user_from_view",
+        "remove_code_repository_user_from_edit",
+        "add_code_repository_team_to_view",
+        "add_code_repository_team_to_edit",
+        "remove_code_repository_team_from_view",
+        "remove_code_repository_team_from_edit",
     ):
         assert not hasattr(api, retired_sharing)
     assert not hasattr(agent_runtime_models, "AgentRun")

@@ -267,16 +267,10 @@ mainsequence organization teams delete <TEAM_UID>
 mainsequence code-repository list
 mainsequence code-repository add-label <CODE_REPOSITORY_UID> --label rates --label research
 mainsequence code-repository remove-label <CODE_REPOSITORY_UID> --label legacy
-mainsequence code-repository can_view <CODE_REPOSITORY_UID>
-mainsequence code-repository can_edit <CODE_REPOSITORY_UID>
-mainsequence code-repository add_to_view <CODE_REPOSITORY_UID> <USER_UID>
-mainsequence code-repository add_to_edit <CODE_REPOSITORY_UID> <USER_UID>
-mainsequence code-repository add_team_to_view <CODE_REPOSITORY_UID> <TEAM_UID>
-mainsequence code-repository add_team_to_edit <CODE_REPOSITORY_UID> <TEAM_UID>
-mainsequence code-repository remove_from_view <CODE_REPOSITORY_UID> <USER_UID>
-mainsequence code-repository remove_from_edit <CODE_REPOSITORY_UID> <USER_UID>
-mainsequence code-repository remove_team_from_view <CODE_REPOSITORY_UID> <TEAM_UID>
-mainsequence code-repository remove_team_from_edit <CODE_REPOSITORY_UID> <TEAM_UID>
+mainsequence code-repository access list <CODE_REPOSITORY_UID>
+mainsequence code-repository access grant <CODE_REPOSITORY_UID> reader --user <USER_UID>
+mainsequence code-repository access revoke <CODE_REPOSITORY_UID> <BINDING_UID>
+mainsequence code-repository access explain <CODE_REPOSITORY_UID> code-repositories.update
 mainsequence code-repository images list
 mainsequence code-repository images list <CODE_REPOSITORY_UID>
 mainsequence code-repository images list --show-filters
@@ -532,6 +526,53 @@ edit sharing commands for secrets (`can_view`, `can_edit`, `add_to_view`,
 `add_team_to_edit`, `remove_team_from_view` and `remove_team_from_edit`) are
 gone. See
 [Constants and Secrets](../knowledge/infrastructure/constants_and_secrets.md#who-can-use-a-secret)
+and [Who Has Access to an Object](../knowledge/infrastructure/object_access.md).
+
+## Code repositories
+
+```bash
+mainsequence code-repository access list <CODE_REPOSITORY_UID>
+mainsequence code-repository access grant <CODE_REPOSITORY_UID> reader --user <USER_UID>
+mainsequence code-repository access grant <CODE_REPOSITORY_UID> editor --team <TEAM_UID>
+mainsequence code-repository access revoke <CODE_REPOSITORY_UID> <BINDING_UID>
+mainsequence code-repository access explain <CODE_REPOSITORY_UID> code-repositories.update
+mainsequence code-repository access explain <CODE_REPOSITORY_UID> code-repositories.read --user <USER_UID>
+```
+
+Who can use a code repository is decided by its policies: `reader` sees it,
+its GitHub link and issues, and every branch in it; `editor` also renames or
+archives it, adds deploy keys, creates branches, edits every branch and sees
+who has access; `owner` also decides who has access. The repository's creator
+holds `owner`. Deleting a repository is in no policy: only Organization admins
+delete one. A repository's policies pass down to every branch of it.
+
+- `access list` prints the policies attached to the repository, each with its
+  binding UID, policy id, principal and source, and the access the platform
+  computes, such as the Organization admins' every action. It needs the
+  repository's `read_access` action, which `editor` and `owner` hold.
+- `access grant` gives a policy, by name such as `reader` or by id such as
+  `code-repositories.reader`, to a person or workload identity with `--user`
+  or to a team with `--team`; pass exactly one. A person needs the platform's
+  `user` product role to hold one. It needs the repository's `manage_access`
+  action, which `owner` holds, and every action of the policy.
+  `mainsequence access policies --type code-repositories` lists the policies.
+- `access revoke` detaches a binding by the UID `access list` shows. Removing
+  your own binding is always allowed.
+- `access explain` says whether you, or the User given with `--user`, may
+  perform an action, every path that gives it, and the policies that contain
+  it. For `code-repositories.delete` it names none.
+
+These commands address the repository by its UID alone: they need no
+registered branch or Environment. Every command accepts `--json` and
+`--timeout`; with `--json`, `access revoke` prints
+`{"code_repository_uid": "...", "binding_uid": "...", "detached": true}`. A
+repository you cannot see is reported as not found, and a refused command
+prints the platform's message and the policies that would allow it. The
+platform refuses every code repository route, these included, to a person
+without its `user` product role, and the command prints that refusal's
+message. The CLI has no access commands for branches and Projects; use their
+access methods. See
+[Code Repositories, Branches and Projects](../knowledge/infrastructure/code_repositories.md)
 and [Who Has Access to an Object](../knowledge/infrastructure/object_access.md).
 
 ## Settings

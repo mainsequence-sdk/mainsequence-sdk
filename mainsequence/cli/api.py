@@ -2076,180 +2076,6 @@ def get_code_repository(code_repository_uid: str) -> dict:
     return data
 
 
-def list_code_repository_users_can_view(
-    code_repository_id: int | str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    """
-    Fetch the view-access state for a CodeRepository via `ShareableObjectMixin.can_view()`.
-    """
-    return _get_shareable_object_access_state(
-        module_name="mainsequence.client.models_foundry",
-        class_name="CodeRepository",
-        object_uid=code_repository_id,
-        accessor_name="can_view",
-        timeout=timeout,
-    )
-
-
-def list_code_repository_users_can_edit(
-    code_repository_id: int | str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    """
-    Fetch the edit-access state for a CodeRepository via `ShareableObjectMixin.can_edit()`.
-    """
-    return _get_shareable_object_access_state(
-        module_name="mainsequence.client.models_foundry",
-        class_name="CodeRepository",
-        object_uid=code_repository_id,
-        accessor_name="can_edit",
-        timeout=timeout,
-    )
-
-
-def add_code_repository_user_to_view(
-    code_repository_id: int | str,
-    user_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    """
-    Grant explicit view access to one user for a code repository.
-    """
-    return _mutate_shareable_object_access(
-        module_name="mainsequence.client.models_foundry",
-        class_name="CodeRepository",
-        object_uid=code_repository_id,
-        action_name="add_to_view",
-        user_uid=user_uid,
-        timeout=timeout,
-    )
-
-
-def add_code_repository_user_to_edit(
-    code_repository_id: int | str,
-    user_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    """
-    Grant explicit edit access to one user for a code repository.
-    """
-    return _mutate_shareable_object_access(
-        module_name="mainsequence.client.models_foundry",
-        class_name="CodeRepository",
-        object_uid=code_repository_id,
-        action_name="add_to_edit",
-        user_uid=user_uid,
-        timeout=timeout,
-    )
-
-
-def remove_code_repository_user_from_view(
-    code_repository_id: int | str,
-    user_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    """
-    Remove explicit view access from one user for a code repository.
-    """
-    return _mutate_shareable_object_access(
-        module_name="mainsequence.client.models_foundry",
-        class_name="CodeRepository",
-        object_uid=code_repository_id,
-        action_name="remove_from_view",
-        user_uid=user_uid,
-        timeout=timeout,
-    )
-
-
-def remove_code_repository_user_from_edit(
-    code_repository_id: int | str,
-    user_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    """
-    Remove explicit edit access from one user for a code repository.
-    """
-    return _mutate_shareable_object_access(
-        module_name="mainsequence.client.models_foundry",
-        class_name="CodeRepository",
-        object_uid=code_repository_id,
-        action_name="remove_from_edit",
-        user_uid=user_uid,
-        timeout=timeout,
-    )
-
-
-def add_code_repository_team_to_view(
-    code_repository_id: int | str,
-    team_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    return _mutate_shareable_object_team_access(
-        module_name="mainsequence.client.models_foundry",
-        class_name="CodeRepository",
-        object_uid=code_repository_id,
-        action_name="add_team_to_view",
-        team_uid=team_uid,
-        timeout=timeout,
-    )
-
-
-def add_code_repository_team_to_edit(
-    code_repository_id: int | str,
-    team_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    return _mutate_shareable_object_team_access(
-        module_name="mainsequence.client.models_foundry",
-        class_name="CodeRepository",
-        object_uid=code_repository_id,
-        action_name="add_team_to_edit",
-        team_uid=team_uid,
-        timeout=timeout,
-    )
-
-
-def remove_code_repository_team_from_view(
-    code_repository_id: int | str,
-    team_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    return _mutate_shareable_object_team_access(
-        module_name="mainsequence.client.models_foundry",
-        class_name="CodeRepository",
-        object_uid=code_repository_id,
-        action_name="remove_team_from_view",
-        team_uid=team_uid,
-        timeout=timeout,
-    )
-
-
-def remove_code_repository_team_from_edit(
-    code_repository_id: int | str,
-    team_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    return _mutate_shareable_object_team_access(
-        module_name="mainsequence.client.models_foundry",
-        class_name="CodeRepository",
-        object_uid=code_repository_id,
-        action_name="remove_team_from_edit",
-        team_uid=team_uid,
-        timeout=timeout,
-    )
-
-
 def add_code_repository_labels(
     code_repository_id: int | str,
     labels: list[str],
@@ -3204,16 +3030,18 @@ def _mutate_labelable_object_labels(
 
 def _run_object_access_operation(class_name: str, object_uid: str, operation):
     """
-    Run `operation(obj)` on one Constant or Secret, addressed by its UID alone.
+    Run `operation(obj)` on one Constant, Secret or CodeRepository, addressed by its UID alone.
 
-    `class_name` is `Constant` or `Secret`. Their access routes need no
-    Organization Environment, while reading one needs the current branch's. The
-    object is therefore not read first: the instance `operation` receives
-    carries only its UID, which is all the access methods use. An object that
-    cannot be reached is reported as not found. A refused action is not a
-    missing session: it keeps the platform's message and names the policies
-    that would allow it, as for teams. Every other failure keeps its message;
-    the command that called says what failed.
+    `class_name` is `Constant`, `Secret` or `CodeRepository`. Their access routes
+    need no Organization Environment, while reading a Constant or a Secret needs
+    the current branch's. The object is therefore not read first: the instance
+    `operation` receives carries only its UID, which is all the access methods
+    use. An object that cannot be reached is reported as not found. A refused
+    action is not a missing session: it keeps the platform's message and names
+    the policies that would allow it, as for teams; a refusal that names no
+    policy, such as a missing product role, keeps the platform's message alone.
+    Every other failure keeps its message; the command that called says what
+    failed.
     """
 
     def _run(ClientModel):
@@ -3389,6 +3217,86 @@ def explain_secret_access(
         "Secret",
         secret_uid,
         lambda secret: secret.explain_access(
+            action,
+            principal_uid=str(principal_uid) if principal_uid is not None else None,
+            timeout=timeout,
+        ),
+    )
+    return _sdk_object_to_dict(explanation)
+
+
+def get_code_repository_access(
+    code_repository_uid: str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Read the policies attached to a code repository via `CodeRepository.get_access()`.
+    """
+    listing = _run_object_access_operation(
+        "CodeRepository",
+        code_repository_uid,
+        lambda code_repository: code_repository.get_access(timeout=timeout),
+    )
+    return _sdk_object_to_dict(listing)
+
+
+def attach_code_repository_policy(
+    code_repository_uid: str,
+    *,
+    policy: str,
+    principal_type: str,
+    principal_uid: str,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Attach a policy on a code repository to a user or a team via `CodeRepository.attach_policy()`.
+    """
+    binding = _run_object_access_operation(
+        "CodeRepository",
+        code_repository_uid,
+        lambda code_repository: code_repository.attach_policy(
+            policy,
+            principal_type=principal_type,
+            principal_uid=str(principal_uid),
+            timeout=timeout,
+        ),
+    )
+    return _sdk_object_to_dict(binding)
+
+
+def detach_code_repository_policy(
+    code_repository_uid: str,
+    binding_uid: str,
+    *,
+    timeout: int | None = None,
+) -> None:
+    """
+    Detach one policy binding from a code repository via `CodeRepository.detach_policy()`.
+    """
+    _run_object_access_operation(
+        "CodeRepository",
+        code_repository_uid,
+        lambda code_repository: code_repository.detach_policy(str(binding_uid), timeout=timeout),
+    )
+
+
+def explain_code_repository_access(
+    code_repository_uid: str,
+    *,
+    action: str,
+    principal_uid: str | None = None,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Explain why a user may or may not perform an action on a code repository.
+
+    Uses `CodeRepository.explain_access()`.
+    """
+    explanation = _run_object_access_operation(
+        "CodeRepository",
+        code_repository_uid,
+        lambda code_repository: code_repository.explain_access(
             action,
             principal_uid=str(principal_uid) if principal_uid is not None else None,
             timeout=timeout,

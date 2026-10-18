@@ -18,9 +18,9 @@ The catalog describes what each policy allows. It does not say who holds a
 policy on which object, and reading it changes nothing. Who holds a policy on
 an object is read and changed on the object itself, as
 [Who Has Access to an Object](object_access.md) describes; teams, Organization
-Environments, constants, secrets, buckets, model-provider credentials and
-custom model providers work this way. Sharing other objects with view or edit
-access works as
+Environments, constants, secrets, buckets, code repositories, their branches,
+Projects, model-provider credentials and custom model providers work this way.
+Sharing other objects with view or edit access works as
 [Users and Access](users_and_access.md) describes.
 
 ## Read the catalog in Python

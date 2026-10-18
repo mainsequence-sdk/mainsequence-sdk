@@ -428,8 +428,8 @@ That is the practical layer that answers:
 
 This model appears across resources such as:
 
-- `CodeRepository`
 - `Artifact`
+- `Agent`
 - `ResourceRelease`
 
 The same pattern shows up again and again:
@@ -450,6 +450,12 @@ people, workload identities and teams. See
 model-provider credentials and custom model providers, whose `user`, `editor`
 and `owner` policies decide who sends requests through them and who maintains
 them; see [Who Has Access to an Object](object_access.md).
+
+Code repositories, their branches and Projects are decided by policies too.
+Each has `reader`, `editor` and `owner` policies, and a repository's or a
+Project's policies pass down to its branches. Using a repository or a branch
+also needs the platform's `user` product role. See
+[Code Repositories, Branches and Projects](code_repositories.md).
 
 ## Direct access vs team access
 
@@ -544,6 +550,8 @@ Keep your thinking resource by resource.
 
 The same resource-scoped pattern applies across the platform:
 
+- `CodeRepository`, its branches and Projects control access to code and to
+  what runs from it
 - `Constant` and `Secret` control access to runtime configuration
 - `Bucket` and `Artifact` control access to stored files
 - `ResourceRelease` controls access to supported deployed experiences such as APIs

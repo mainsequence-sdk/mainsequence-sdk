@@ -98,9 +98,11 @@ Constants and secrets are decided by their policies:
   seeing a secret does not show its value; see
   [Who can use a secret](#who-can-use-a-secret)
 
-`CodeRepository`, `Artifact` and `ResourceRelease` use view and edit sharing
-instead; a `Bucket` is decided by its policies too, see
-[Who can use a bucket](artifacts.md#who-can-use-a-bucket).
+`Artifact` and `ResourceRelease` use view and edit sharing instead. A `Bucket`
+is decided by its policies too, see
+[Who can use a bucket](artifacts.md#who-can-use-a-bucket), and so are a
+`CodeRepository`, its branches and Projects, see
+[Code Repositories, Branches and Projects](code_repositories.md).
 
 Why these matter:
 
@@ -113,8 +115,9 @@ Why these matter:
 
 !!! warning "IMPORTANT"
     `Constant` and `Secret` are not the only shareable resources in the SDK.
-    `CodeRepository`, `Artifact`, and `ResourceRelease` use view and edit sharing.
-    Teams, Organization Environments and Buckets are decided by policies, as `Constant` and `Secret` are, and so are
+    `Artifact` and `ResourceRelease` use view and edit sharing.
+    Teams, Organization Environments, Buckets, code repositories, their branches and Projects are decided by
+    policies, as `Constant` and `Secret` are, and so are
     model-provider credentials and custom model providers, which have no SDK model; see
     [Who Has Access to an Object](object_access.md).
     This guide focuses on constants and secrets because they are the simplest place to learn the policy pattern.

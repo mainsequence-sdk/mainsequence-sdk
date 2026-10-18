@@ -67,12 +67,9 @@ from .api import (
     add_agent_user_to_edit,
     add_agent_user_to_view,
     add_code_repository_labels,
-    add_code_repository_team_to_edit,
-    add_code_repository_team_to_view,
-    add_code_repository_user_to_edit,
-    add_code_repository_user_to_view,
     add_deploy_key,
     add_organization_team_member,
+    attach_code_repository_policy,
     attach_constant_policy,
     attach_organization_team_policy,
     attach_secret_policy,
@@ -88,9 +85,11 @@ from .api import (
     delete_organization_team,
     delete_resource_release,
     delete_secret,
+    detach_code_repository_policy,
     detach_constant_policy,
     detach_organization_team_policy,
     detach_secret_policy,
+    explain_code_repository_access,
     explain_constant_access,
     explain_organization_team_access,
     explain_secret_access,
@@ -102,6 +101,7 @@ from .api import (
     get_agent_session,
     get_agent_session_logs,
     get_code_repositories,
+    get_code_repository_access,
     get_code_repository_branch,
     get_code_repository_image,
     get_code_repository_job,
@@ -131,8 +131,6 @@ from .api import (
     list_code_repository_job_runs,
     list_code_repository_jobs,
     list_code_repository_resources,
-    list_code_repository_users_can_edit,
-    list_code_repository_users_can_view,
     list_constants,
     list_github_organizations,
     list_organization_team_members,
@@ -145,10 +143,6 @@ from .api import (
     remove_agent_user_from_edit,
     remove_agent_user_from_view,
     remove_code_repository_labels,
-    remove_code_repository_team_from_edit,
-    remove_code_repository_team_from_view,
-    remove_code_repository_user_from_edit,
-    remove_code_repository_user_from_view,
     remove_organization_team_member,
     repo_name_from_git_url,
     resolve_code_repository,
@@ -306,6 +300,9 @@ organization_team_access_group = typer.Typer(
     help="Who has access to a team: its policies", no_args_is_help=True
 )
 code_repository = typer.Typer(help="CodeRepository commands (remote + local operations)")
+code_repository_access_group = typer.Typer(
+    help="Who has access to a code repository: its policies", no_args_is_help=True
+)
 code_repository_list_group = typer.Typer(help="List-related CodeRepository commands")
 code_repository_resources_group = typer.Typer(help="CodeRepository resource commands")
 code_repository_images_group = typer.Typer(help="CodeRepository image commands")
@@ -334,6 +331,7 @@ organization_teams_group.add_typer(organization_team_access_group, name="access"
 app.add_typer(skills, name="skills")
 app.add_typer(code_repository, name="code-repository")
 code_repository.add_typer(code_repository_list_group, name="list")
+code_repository.add_typer(code_repository_access_group, name="access")
 code_repository.add_typer(code_repository_resources_group, name="resources")
 code_repository.add_typer(code_repository_images_group, name="images")
 code_repository.add_typer(code_repository_jobs_group, name="jobs")
@@ -2647,6 +2645,11 @@ def _organization_teams_leave_impl(*, team_uid: str, timeout: int | None) -> Non
     success(f"You left team {team_uid}.")
 
 
+def _object_access_noun(object_label: str) -> str:
+    """Name the object in a sentence: `Team` is "team", `CodeRepository` "code repository"."""
+    return re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", object_label).lower()
+
+
 def _object_access_list_impl(
     *,
     fetch_fn,
@@ -2684,7 +2687,7 @@ def _object_access_list_impl(
             f"{object_label} Policies", ["Binding UID", "Policy", "Principal", "Source"], rows
         )
     else:
-        info(f"No policies are attached to this {object_label.lower()}.")
+        info(f"No policies are attached to this {_object_access_noun(object_label)}.")
 
     # Only the Organization admin row stands for every action when it names no
     # policy; a row such as the managers of a creating workload says it in words.
@@ -2737,7 +2740,7 @@ def _object_access_grant_impl(
     labels = dict(details)
     success(
         f"Attached {labels['Policy']} to {labels['Principal']} "
-        f"on {object_label.lower()} {object_uid}."
+        f"on {_object_access_noun(object_label)} {object_uid}."
     )
     print_kv("Access Binding", details)
 
@@ -2759,14 +2762,16 @@ def _object_access_revoke_impl(
         raise typer.Exit(1) from e
 
     detached = {
-        f"{object_label.lower()}_uid": str(object_uid),
+        f"{_object_access_noun(object_label).replace(' ', '_')}_uid": str(object_uid),
         "binding_uid": str(binding_uid),
         "detached": True,
     }
     if _emit_json(detached):
         return
 
-    success(f"Detached binding {binding_uid} from {object_label.lower()} {object_uid}.")
+    success(
+        f"Detached binding {binding_uid} from {_object_access_noun(object_label)} {object_uid}."
+    )
 
 
 def _object_access_explain_impl(
@@ -5941,56 +5946,6 @@ def code_repository_delete_remote_cmd(
             info(str(detail))
 
 
-@code_repository.command("can_view")
-def code_repository_can_view_cmd(
-    code_repository_id: str = typer.Argument(..., help="CodeRepository UID."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    """
-    List users who can view one CodeRepository.
-
-    Uses the SDK `ShareableObjectMixin.users_can_view()` path through the `CodeRepository` model.
-
-    Examples
-    --------
-    ```bash
-    mainsequence code-repository can_view 42
-    ```
-    """
-    _shareable_user_list_impl(
-        fetch_fn=list_code_repository_users_can_view,
-        object_label="CodeRepository",
-        access_label="view",
-        object_uid=code_repository_id,
-        timeout=timeout,
-    )
-
-
-@code_repository.command("can_edit")
-def code_repository_can_edit_cmd(
-    code_repository_id: str = typer.Argument(..., help="CodeRepository UID."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    """
-    List users who can edit one CodeRepository.
-
-    Uses the SDK `ShareableObjectMixin.users_can_edit()` path through the `CodeRepository` model.
-
-    Examples
-    --------
-    ```bash
-    mainsequence code-repository can_edit 42
-    ```
-    """
-    _shareable_user_list_impl(
-        fetch_fn=list_code_repository_users_can_edit,
-        object_label="CodeRepository",
-        access_label="edit",
-        object_uid=code_repository_id,
-        timeout=timeout,
-    )
-
-
 @code_repository.command("add-label")
 def code_repository_add_label_cmd(
     code_repository_id: str = typer.Argument(..., help="CodeRepository UID."),
@@ -6041,166 +5996,138 @@ def code_repository_remove_label_cmd(
     )
 
 
-@code_repository.command("add_to_view")
-def code_repository_add_to_view_cmd(
-    code_repository_id: str = typer.Argument(..., help="CodeRepository UID."),
-    user_uid: uuid.UUID = typer.Argument(..., help="User UID to grant view access."),
+@code_repository_access_group.command("list")
+def code_repository_access_list_cmd(
+    code_repository_uid: str = typer.Argument(..., help="CodeRepository UID."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
-    Grant explicit view access to one user for one code repository.
+    List the policies attached to one code repository, and the access the platform computes.
+
+    It needs the repository's read_access action, which editor and owner hold.
 
     Examples
     --------
     ```bash
-    mainsequence code-repository add_to_view <CODE_REPOSITORY_UID> <USER_UID>
+    mainsequence code-repository access list <CODE_REPOSITORY_UID>
+    mainsequence code-repository access list <CODE_REPOSITORY_UID> --json
     ```
     """
-    _shareable_user_access_update_impl(
-        action_fn=add_code_repository_user_to_view,
+    _object_access_list_impl(
+        fetch_fn=get_code_repository_access,
         object_label="CodeRepository",
-        action_label="add_to_view",
-        object_uid=code_repository_id,
-        user_uid=user_uid,
+        object_uid=code_repository_uid,
         timeout=timeout,
     )
 
 
-@code_repository.command("add_to_edit")
-def code_repository_add_to_edit_cmd(
-    code_repository_id: str = typer.Argument(..., help="CodeRepository UID."),
-    user_uid: uuid.UUID = typer.Argument(..., help="User UID to grant edit access."),
+@code_repository_access_group.command("grant")
+def code_repository_access_grant_cmd(
+    code_repository_uid: str = typer.Argument(..., help="CodeRepository UID."),
+    policy: str = typer.Argument(
+        ...,
+        help=(
+            "Policy name of the code repository type, for example reader, or its id, "
+            "code-repositories.reader."
+        ),
+    ),
+    user_uid: uuid.UUID | None = typer.Option(
+        None, "--user", help="UID of the person or workload identity to give the policy to."
+    ),
+    principal_team_uid: uuid.UUID | None = typer.Option(
+        None, "--team", help="UID of the team to give the policy to."
+    ),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
-    Grant explicit edit access to one user for one code repository.
+    Give a policy on one code repository to a person, a workload identity or a team.
+
+    The policies are reader (sees the repository and every branch in it), editor
+    (also renames or archives it, adds deploy keys, creates branches and edits
+    every branch) and owner; they pass down to every branch. A person needs the
+    platform's user product role to hold one. Pass exactly one of --user or
+    --team. It needs the repository's manage_access action, which owner holds,
+    and every action of the policy. `mainsequence access policies --type
+    code-repositories` lists the policies.
 
     Examples
     --------
     ```bash
-    mainsequence code-repository add_to_edit <CODE_REPOSITORY_UID> <USER_UID>
+    mainsequence code-repository access grant <CODE_REPOSITORY_UID> reader --user <USER_UID>
+    mainsequence code-repository access grant <CODE_REPOSITORY_UID> editor --team <TEAM_UID>
     ```
     """
-    _shareable_user_access_update_impl(
-        action_fn=add_code_repository_user_to_edit,
+    _object_access_grant_impl(
+        attach_fn=attach_code_repository_policy,
         object_label="CodeRepository",
-        action_label="add_to_edit",
-        object_uid=code_repository_id,
+        object_uid=code_repository_uid,
+        policy=policy,
         user_uid=user_uid,
+        principal_team_uid=principal_team_uid,
         timeout=timeout,
     )
 
 
-@code_repository.command("remove_from_view")
-def code_repository_remove_from_view_cmd(
-    code_repository_id: str = typer.Argument(..., help="CodeRepository UID."),
-    user_uid: uuid.UUID = typer.Argument(..., help="User UID to remove explicit view access from."),
+@code_repository_access_group.command("revoke")
+def code_repository_access_revoke_cmd(
+    code_repository_uid: str = typer.Argument(..., help="CodeRepository UID."),
+    binding_uid: uuid.UUID = typer.Argument(
+        ..., help="UID of the binding to detach, from `access list`."
+    ),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
-    Remove explicit view access from one user for one code repository.
+    Detach one policy binding from one code repository.
+
+    It needs the repository's manage_access action; removing your own binding is
+    always allowed.
 
     Examples
     --------
     ```bash
-    mainsequence code-repository remove_from_view <CODE_REPOSITORY_UID> <USER_UID>
+    mainsequence code-repository access revoke <CODE_REPOSITORY_UID> <BINDING_UID>
     ```
     """
-    _shareable_user_access_update_impl(
-        action_fn=remove_code_repository_user_from_view,
+    _object_access_revoke_impl(
+        detach_fn=detach_code_repository_policy,
         object_label="CodeRepository",
-        action_label="remove_from_view",
-        object_uid=code_repository_id,
-        user_uid=user_uid,
+        object_uid=code_repository_uid,
+        binding_uid=binding_uid,
         timeout=timeout,
     )
 
 
-@code_repository.command("remove_from_edit")
-def code_repository_remove_from_edit_cmd(
-    code_repository_id: str = typer.Argument(..., help="CodeRepository UID."),
-    user_uid: uuid.UUID = typer.Argument(..., help="User UID to remove explicit edit access from."),
+@code_repository_access_group.command("explain")
+def code_repository_access_explain_cmd(
+    code_repository_uid: str = typer.Argument(..., help="CodeRepository UID."),
+    action: str = typer.Argument(
+        ..., help="Action id of the code repository type, for example code-repositories.update."
+    ),
+    user_uid: uuid.UUID | None = typer.Option(
+        None, "--user", help="UID of the User to explain for. Without it, you."
+    ),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
-    Remove explicit edit access from one user for one code repository.
+    Explain why you, or another User, may or may not perform an action on one code repository.
+
+    Asking about someone else needs the repository's read_access action.
+    code-repositories.delete is in no policy: only Organization admins delete a
+    repository.
 
     Examples
     --------
     ```bash
-    mainsequence code-repository remove_from_edit <CODE_REPOSITORY_UID> <USER_UID>
+    mainsequence code-repository access explain <CODE_REPOSITORY_UID> code-repositories.update
+    mainsequence code-repository access explain <CODE_REPOSITORY_UID> code-repositories.read --user <USER_UID>
     ```
     """
-    _shareable_user_access_update_impl(
-        action_fn=remove_code_repository_user_from_edit,
+    _object_access_explain_impl(
+        explain_fn=explain_code_repository_access,
         object_label="CodeRepository",
-        action_label="remove_from_edit",
-        object_uid=code_repository_id,
+        object_uid=code_repository_uid,
+        action=action,
         user_uid=user_uid,
-        timeout=timeout,
-    )
-
-
-@code_repository.command("add_team_to_view")
-def code_repository_add_team_to_view_cmd(
-    code_repository_id: str = typer.Argument(..., help="CodeRepository UID."),
-    team_uid: uuid.UUID = typer.Argument(..., help="Team UID to grant view access."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    _shareable_team_access_update_impl(
-        action_fn=add_code_repository_team_to_view,
-        object_label="CodeRepository",
-        action_label="add_team_to_view",
-        object_uid=code_repository_id,
-        team_uid=team_uid,
-        timeout=timeout,
-    )
-
-
-@code_repository.command("add_team_to_edit")
-def code_repository_add_team_to_edit_cmd(
-    code_repository_id: str = typer.Argument(..., help="CodeRepository UID."),
-    team_uid: uuid.UUID = typer.Argument(..., help="Team UID to grant edit access."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    _shareable_team_access_update_impl(
-        action_fn=add_code_repository_team_to_edit,
-        object_label="CodeRepository",
-        action_label="add_team_to_edit",
-        object_uid=code_repository_id,
-        team_uid=team_uid,
-        timeout=timeout,
-    )
-
-
-@code_repository.command("remove_team_from_view")
-def code_repository_remove_team_from_view_cmd(
-    code_repository_id: str = typer.Argument(..., help="CodeRepository UID."),
-    team_uid: uuid.UUID = typer.Argument(..., help="Team UID to remove explicit view access from."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    _shareable_team_access_update_impl(
-        action_fn=remove_code_repository_team_from_view,
-        object_label="CodeRepository",
-        action_label="remove_team_from_view",
-        object_uid=code_repository_id,
-        team_uid=team_uid,
-        timeout=timeout,
-    )
-
-
-@code_repository.command("remove_team_from_edit")
-def code_repository_remove_team_from_edit_cmd(
-    code_repository_id: str = typer.Argument(..., help="CodeRepository UID."),
-    team_uid: uuid.UUID = typer.Argument(..., help="Team UID to remove explicit edit access from."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    _shareable_team_access_update_impl(
-        action_fn=remove_code_repository_team_from_edit,
-        object_label="CodeRepository",
-        action_label="remove_team_from_edit",
-        object_uid=code_repository_id,
-        team_uid=team_uid,
         timeout=timeout,
     )
 

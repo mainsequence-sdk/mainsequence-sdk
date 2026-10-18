@@ -4,7 +4,7 @@ import importlib
 import json
 import types
 
-from tests.cli.support import TEAM_UID
+from tests.cli.support import TEAM_UID, USER_UID
 
 
 def test_list_agents_uses_client_model(cli_mod, monkeypatch):
@@ -1148,3 +1148,86 @@ def test_agent_add_team_to_edit(cli_mod, runner, monkeypatch):
     assert result.exit_code == 0
     assert captured == {"agent_uid": agent_uid, "team_uid": TEAM_UID, "timeout": None}
     assert "Agent add_team_to_edit completed." in result.output
+
+
+def test_agent_add_to_edit(cli_mod, runner, monkeypatch):
+    captured = {}
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    agent_uid = "e0e75693-4110-464c-93e0-82c7fd9c9a23"
+
+    def _add(agent_uid_arg, user_uid, timeout=None):
+        captured["agent_uid"] = agent_uid_arg
+        captured["user_uid"] = user_uid
+        captured["timeout"] = timeout
+        return {
+            "ok": True,
+            "action": "add_to_edit",
+            "detail": "User now has explicit edit access.",
+            "object_uid": agent_uid_arg,
+            "object_type": "agent.agent",
+            "user": {
+                "uid": user_uid,
+                "username": "editor",
+                "email": "editor@example.com",
+                "first_name": "Edit",
+                "last_name": "User",
+            },
+            "explicit_can_view": True,
+            "explicit_can_edit": True,
+            "explicit_can_view_user_uids": [user_uid],
+            "explicit_can_edit_user_uids": [user_uid],
+        }
+
+    monkeypatch.setattr(cli_mod, "add_agent_user_to_edit", _add)
+
+    result = runner.invoke(cli_mod.app, ["agent", "add_to_edit", agent_uid, USER_UID])
+    assert result.exit_code == 0
+    assert captured == {"agent_uid": agent_uid, "user_uid": USER_UID, "timeout": None}
+    assert "Agent add_to_edit completed." in result.output
+    assert "Agent Sharing Update" in result.output
+    assert "editor@example.com" in result.output
+
+
+def test_agent_add_to_edit_rejects_numeric_user_identifier(cli_mod, runner):
+    result = runner.invoke(
+        cli_mod.app,
+        ["agent", "add_to_edit", "e0e75693-4110-464c-93e0-82c7fd9c9a23", "12"],
+    )
+
+    assert result.exit_code == 2
+    assert "invalid value" in result.output.lower()
+
+
+def test_add_agent_user_to_edit_uses_client_model(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {}
+
+    def _run_sdk_model_operation(*, module_name, class_name, operation):
+        captured["module_name"] = module_name
+        captured["class_name"] = class_name
+
+        class _ClientAgent:
+            @classmethod
+            def get_by_uid(cls, uid, timeout=None):
+                captured["get_by_uid"] = {"uid": uid, "timeout": timeout}
+
+                class _Agent:
+                    def add_to_edit(self, user_uid, timeout=None):
+                        captured["add_to_edit"] = {"user_uid": user_uid, "timeout": timeout}
+                        return {"ok": True, "action": "add_to_edit", "object_uid": uid}
+
+                return _Agent()
+
+        return operation(_ClientAgent)
+
+    monkeypatch.setattr(api_mod, "_run_sdk_model_operation", _run_sdk_model_operation)
+
+    agent_uid = "e0e75693-4110-464c-93e0-82c7fd9c9a23"
+    out = api_mod.add_agent_user_to_edit(agent_uid, USER_UID, timeout=10)
+    assert captured == {
+        "module_name": "mainsequence.client.agent_runtime_models",
+        "class_name": "Agent",
+        "get_by_uid": {"uid": agent_uid, "timeout": 10},
+        "add_to_edit": {"user_uid": USER_UID, "timeout": 10},
+    }
+    assert out == {"ok": True, "action": "add_to_edit", "object_uid": agent_uid}

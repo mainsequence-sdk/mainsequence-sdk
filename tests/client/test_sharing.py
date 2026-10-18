@@ -292,7 +292,6 @@ def test_shareable_models_keep_shareable_object_mixin():
 
     expected = {
         "Artifact": models_foundry_bases,
-        "CodeRepository": models_foundry_bases,
         "ResourceRelease": models_helpers_bases,
     }
 
@@ -324,6 +323,24 @@ def test_team_uses_the_access_policy_mixin_instead_of_view_and_edit_sharing():
 
 @pytest.mark.parametrize("class_name", ["Constant", "Secret", "Bucket"])
 def test_environment_resources_decided_by_policies_use_the_access_policy_mixin(class_name):
+    models_foundry_bases = _class_base_names_from_source(
+        REPOSITORY_ROOT / "mainsequence" / "client" / "models_foundry.py"
+    )
+
+    assert class_name in models_foundry_bases, f"{class_name} class not found"
+    assert (
+        "AccessManagedObjectMixin" in models_foundry_bases[class_name]
+    ), f"{class_name} must inherit AccessManagedObjectMixin"
+    assert (
+        "ShareableObjectMixin" not in models_foundry_bases[class_name]
+    ), f"{class_name} access is decided by policies, not view and edit sharing"
+    assert not issubclass(getattr(models_foundry_mod, class_name), PermissionManagedObjectMixin)
+
+
+@pytest.mark.parametrize(
+    "class_name", ["CodeRepository", "CodeRepositoryBranch", "OrganizationProject"]
+)
+def test_repositories_branches_and_projects_use_the_access_policy_mixin(class_name):
     models_foundry_bases = _class_base_names_from_source(
         REPOSITORY_ROOT / "mainsequence" / "client" / "models_foundry.py"
     )
