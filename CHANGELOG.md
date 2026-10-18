@@ -9,9 +9,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 **Docs: logging out ends the release tokens obtained with that login.** The token that
 `ResourceRelease.resolve_runtime_access()` returns in `access` belongs to the login that
 asked for it. When that is your Main Sequence login (`mainsequence login` or a token pair),
-the platform now ends the token once you log out or that login session is revoked, even
-before it expires; a token asked for inside a hosted application with its own credential
-still lasts until it expires.
+the platform now ends the token within at most 60 seconds after you log out or that login
+session is revoked, even before it expires; a token asked for inside a hosted application
+with its own credential still lasts until it expires.
 [Resource releases](docs/knowledge/infrastructure/resource_releases.md) and
 [the CLI reference](docs/cli/index.md) say so. No SDK code changes.
 

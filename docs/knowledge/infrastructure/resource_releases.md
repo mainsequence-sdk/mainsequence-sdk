@@ -134,10 +134,11 @@ they do it.
 
 The token that `resolve_runtime_access()` returns in `access` belongs to the
 login that asked for it. Asked with your Main Sequence login
-(`mainsequence login` or a token pair), it stops working once you log out or
-that login session is revoked, even before it expires. Asked inside a hosted
-application with its own credential, it lasts until it expires. Either way the
-platform checks on every call that the caller may still call the release.
+(`mainsequence login` or a token pair), it stops working within at most 60
+seconds after you log out or that login session is revoked, even before it
+expires. Asked inside a hosted application with its own credential, it lasts
+until it expires. Either way the platform checks again, at least every 60
+seconds, that the caller may still call the release.
 
 A release also takes the policies of the branch that declares it: `reader` on
 the branch gives `viewer`, and `editor` or `owner` gives `editor`, whether the
