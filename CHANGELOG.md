@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [9.0.29] - 2026-10-18
+
+**Maintenance and bug-auditor skills work independently.** Both remain bundled
+with the SDK, but no longer hand off to CodeRepository design or require a
+platform catalog or routing skill. They focus on the requested work in the
+current checkout, with optional domain-specific guidance. Local maintenance
+does not require platform branch resolution; branch-owned operations still do.
+The existing MCP login and credential-handoff instructions are unchanged.
+
 **Docs: model-provider credentials and custom model providers are decided by
 policies.** The platform decides both by policies now, as two types. A credential's
 policies are `user` (select it and receive it in sessions and workloads, including

@@ -1,6 +1,6 @@
 ---
 name: doc-bug-auditor
-description: Reviews a Main Sequence CodeRepository for status, blockers, failures, and completion.
+description: Diagnose failures and assess requested work in the current repository using code, logs, tests, and the installed Main Sequence SDK. Use for failure classification, SDK contract mismatches, and evidence-based completion checks.
 ---
 
 # Main Sequence Bug Auditor
@@ -16,6 +16,11 @@ Use this skill to inspect a checked-out Main Sequence CodeRepository and determi
 - whether a failure looks like target-repository misuse, environment or setup drift, or a likely `mainsequence-sdk` execution bug
 
 This skill is for diagnosis and assessment. Default behavior is read-only unless the task explicitly asks for edits.
+
+Limit the assessment to the requested work in the current repository. Use this
+skill directly; no prior routing skill or platform catalog is required. Local
+diagnosis needs no signed-in session. Authenticate only when the requested
+investigation requires live platform verification.
 
 ## This Skill Can Do
 
@@ -45,13 +50,12 @@ This skill must not claim ownership of:
 
 This skill audits. It does not implement by default.
 
-## Route Adjacent Work
+## Related Skills When Needed
 
-- Product architecture, platform ontology, and CodeRepository Blueprint work:
-  use the matching platform-owned design skill declared by the installed
-  platform catalog; do not assume its filesystem path
-- bootstrap, routing, and repository structure:
-  `.agents/skills/mainsequence/sdk_code_repository_execution/SKILL.md`
+Consult these only when the failing operation needs their contract or the user
+requests follow-up work. They are not prerequisites for starting or completing
+an audit:
+
 - MetaTable and table-update implementation issues: use the installed
   `metatables` package skill that owns the affected contract
 - Command Center FastAPI contract or release issues:
