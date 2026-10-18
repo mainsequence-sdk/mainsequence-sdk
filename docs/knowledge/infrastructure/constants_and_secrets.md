@@ -98,11 +98,13 @@ Constants and secrets are decided by their policies:
   seeing a secret does not show its value; see
   [Who can use a secret](#who-can-use-a-secret)
 
-`Artifact` and `ResourceRelease` use view and edit sharing instead. A `Bucket`
-is decided by its policies too, see
-[Who can use a bucket](artifacts.md#who-can-use-a-bucket), and so are a
+Every other shareable resource is decided by its policies too: a `Bucket` and
+an `Artifact`, see [Artifacts](artifacts.md#who-can-use-an-artifact); a
 `CodeRepository`, its branches and Projects, see
-[Code Repositories, Branches and Projects](code_repositories.md).
+[Code Repositories, Branches and Projects](code_repositories.md); an `Agent`,
+see [Agents](agents.md); and a `ResourceRelease` and a `Job`, see
+[Who can use a release](resource_releases.md#who-can-use-a-release) and
+[Who can use a Job](scheduling_jobs.md#who-can-use-a-job).
 
 Why these matter:
 
@@ -115,10 +117,9 @@ Why these matter:
 
 !!! warning "IMPORTANT"
     `Constant` and `Secret` are not the only shareable resources in the SDK.
-    `Artifact` and `ResourceRelease` use view and edit sharing.
-    Teams, Organization Environments, Buckets, code repositories, their branches and Projects are decided by
-    policies, as `Constant` and `Secret` are, and so are
-    model-provider credentials and custom model providers, which have no SDK model; see
+    Teams, Organization Environments, Buckets, Artifacts, code repositories, their branches, Projects,
+    Agents, resource releases and Jobs are decided by policies, as `Constant` and `Secret` are, and so
+    are model-provider credentials and custom model providers, which have no SDK model; see
     [Who Has Access to an Object](object_access.md).
     This guide focuses on constants and secrets because they are the simplest place to learn the policy pattern.
 

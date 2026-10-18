@@ -158,6 +158,70 @@ usage = job_runs[0].get_resource_usage()
 aggregate CPU, memory, and disk samples. Application code does not supply an
 Organization Environment UID to read the run's application logs.
 
+## Who can use a Job
+
+A Job's access is decided by its policies:
+
+- `viewer`: see the Job, its schedule, runs, logs and outputs, including the
+  Artifacts its runs published;
+- `runner`: also run the Job and stop its runs;
+- `editor`: also change it (name, description, resources, schedule, arguments,
+  image), post a run's status and outputs by hand, delete it, manage what its
+  workload can reach, and see who has access;
+- `owner`: also decide who has access.
+
+Each run uses compute and credits and acts with the Job's own workload access,
+which can be broader than yours, and run logs and outputs can contain the data
+the Job processed. `job.run_job()` and `jobs run` need `runner` or more, and
+`jobs update` needs `editor` or `owner`. The Job's creator holds `owner`;
+repository workflows create Jobs as the Organization's automation identity,
+which holds no policy on them. Organization admins hold every action.
+
+A standalone Job also takes the policies of its branch: `reader` on the branch
+gives `viewer`, and `editor` or `owner` gives `editor`, whether the branch
+policy is held on the branch or passed down from its repository or a Project.
+A release's backing Job takes its release's policies instead: `viewer` gives
+`viewer`, `editor` and `owner` give `editor`, and `user` gives nothing.
+`get_access()` shows each of those as a `computed` row with `source`
+`inherited`. A backing Job is changed, run and deleted with its release, so on
+it an update raises `BadRequestError` and a run or a delete `ConflictError`,
+whatever you hold. Every policy on a Job gives `viewer` on the Artifacts its
+runs published; see [Who can use an Artifact](artifacts.md#who-can-use-an-artifact).
+
+Read and change the policies with the access methods on `Job`:
+
+```python
+from mainsequence.client import Job
+
+job = Job.filter(name__contains="nightly-prices")[0]
+job.attach_policy("runner", principal_type="team", principal_uid=team_uid)
+
+answer = job.explain_access("jobs.run")
+print(answer.allowed, answer.blocked_by_rule, answer.granting_policies)
+```
+
+The access methods address the Job by its UID alone and take no Environment;
+with a workload's runtime credentials they reach only the Jobs of that
+workload's Environment. A refused change raises `PermissionDeniedError`, whose
+`payload` names the `required_action` and the `granting_policies`. Existing view
+grants became `viewer` and edit grants `editor`. A repository workflow file's
+`access` entry for a Job gives its workload the policy it names, such as
+`policy: runner`. `mainsequence access policies --type jobs` lists the policies
+with their actions, and
+[Who Has Access to an Object](object_access.md) describes every method and
+model.
+
+From the command line:
+
+```bash
+mainsequence code-repository jobs access list <JOB_UID>
+mainsequence code-repository jobs access grant <JOB_UID> runner --user <USER_UID>
+mainsequence code-repository jobs access revoke <JOB_UID> <BINDING_UID>
+mainsequence code-repository jobs access explain <JOB_UID> jobs.run
+```
+
+See [Jobs](../../cli/index.md#jobs) in the CLI reference.
+
 ## Operational checks
 
 Use repository-relative, forward-slash execution paths such as

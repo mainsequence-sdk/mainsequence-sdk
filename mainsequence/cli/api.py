@@ -1876,178 +1876,6 @@ def _send_agent_session_a2a_message_with_cache(
     return payload
 
 
-def list_agent_users_can_view(
-    agent_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    """
-    Fetch the view-access state for an agent via `ShareableObjectMixin.can_view()`.
-    """
-    return _get_shareable_object_access_state(
-        module_name="mainsequence.client.agent_runtime_models",
-        class_name="Agent",
-        object_uid=agent_uid,
-        accessor_name="can_view",
-        object_lookup_field="uid",
-        timeout=timeout,
-    )
-
-
-def list_agent_users_can_edit(
-    agent_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    """
-    Fetch the edit-access state for an agent via `ShareableObjectMixin.can_edit()`.
-    """
-    return _get_shareable_object_access_state(
-        module_name="mainsequence.client.agent_runtime_models",
-        class_name="Agent",
-        object_uid=agent_uid,
-        accessor_name="can_edit",
-        object_lookup_field="uid",
-        timeout=timeout,
-    )
-
-
-def add_agent_user_to_view(
-    agent_uid: str,
-    user_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    return _mutate_shareable_object_access(
-        module_name="mainsequence.client.agent_runtime_models",
-        class_name="Agent",
-        object_uid=agent_uid,
-        action_name="add_to_view",
-        object_lookup_field="uid",
-        user_uid=user_uid,
-        timeout=timeout,
-    )
-
-
-def add_agent_user_to_edit(
-    agent_uid: str,
-    user_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    return _mutate_shareable_object_access(
-        module_name="mainsequence.client.agent_runtime_models",
-        class_name="Agent",
-        object_uid=agent_uid,
-        action_name="add_to_edit",
-        object_lookup_field="uid",
-        user_uid=user_uid,
-        timeout=timeout,
-    )
-
-
-def remove_agent_user_from_view(
-    agent_uid: str,
-    user_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    return _mutate_shareable_object_access(
-        module_name="mainsequence.client.agent_runtime_models",
-        class_name="Agent",
-        object_uid=agent_uid,
-        action_name="remove_from_view",
-        object_lookup_field="uid",
-        user_uid=user_uid,
-        timeout=timeout,
-    )
-
-
-def remove_agent_user_from_edit(
-    agent_uid: str,
-    user_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    return _mutate_shareable_object_access(
-        module_name="mainsequence.client.agent_runtime_models",
-        class_name="Agent",
-        object_uid=agent_uid,
-        action_name="remove_from_edit",
-        object_lookup_field="uid",
-        user_uid=user_uid,
-        timeout=timeout,
-    )
-
-
-def add_agent_team_to_view(
-    agent_uid: str,
-    team_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    return _mutate_shareable_object_team_access(
-        module_name="mainsequence.client.agent_runtime_models",
-        class_name="Agent",
-        object_uid=agent_uid,
-        action_name="add_team_to_view",
-        object_lookup_field="uid",
-        team_uid=team_uid,
-        timeout=timeout,
-    )
-
-
-def add_agent_team_to_edit(
-    agent_uid: str,
-    team_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    return _mutate_shareable_object_team_access(
-        module_name="mainsequence.client.agent_runtime_models",
-        class_name="Agent",
-        object_uid=agent_uid,
-        action_name="add_team_to_edit",
-        object_lookup_field="uid",
-        team_uid=team_uid,
-        timeout=timeout,
-    )
-
-
-def remove_agent_team_from_view(
-    agent_uid: str,
-    team_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    return _mutate_shareable_object_team_access(
-        module_name="mainsequence.client.agent_runtime_models",
-        class_name="Agent",
-        object_uid=agent_uid,
-        action_name="remove_team_from_view",
-        object_lookup_field="uid",
-        team_uid=team_uid,
-        timeout=timeout,
-    )
-
-
-def remove_agent_team_from_edit(
-    agent_uid: str,
-    team_uid: str,
-    *,
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    return _mutate_shareable_object_team_access(
-        module_name="mainsequence.client.agent_runtime_models",
-        class_name="Agent",
-        object_uid=agent_uid,
-        action_name="remove_team_from_edit",
-        object_lookup_field="uid",
-        team_uid=team_uid,
-        timeout=timeout,
-    )
-
-
 def get_code_repository(code_repository_uid: str) -> dict:
     """
     Fetch a single CodeRepository by public UID.
@@ -2893,107 +2721,6 @@ def _get_client_object_by_lookup(
     return ClientObject.get_by_uid(str(object_uid), timeout=timeout)
 
 
-def _get_shareable_object_access_state(
-    *,
-    module_name: str,
-    class_name: str,
-    object_uid: int | str,
-    accessor_name: str,
-    object_lookup_field: str = "uid",
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    try:
-        payload = _run_sdk_model_operation(
-            module_name=module_name,
-            class_name=class_name,
-            operation=lambda ClientObject: getattr(
-                _get_client_object_by_lookup(
-                    ClientObject,
-                    object_uid=object_uid,
-                    lookup_field=object_lookup_field,
-                    timeout=timeout,
-                ),
-                accessor_name,
-            )(timeout=timeout),
-        )
-        return _sdk_object_to_dict(payload)
-    except Exception as e:
-        err_name = type(e).__name__
-        if err_name == "NotFoundError":
-            raise ApiError(f"{class_name} not found: {object_uid}") from e
-        if isinstance(e, (ApiError, NotLoggedIn)):
-            raise
-        raise _as_cli_error(e) from e
-
-
-def _mutate_shareable_object_access(
-    *,
-    module_name: str,
-    class_name: str,
-    object_uid: int | str,
-    action_name: str,
-    user_uid: str,
-    object_lookup_field: str = "uid",
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    try:
-        payload = _run_sdk_model_operation(
-            module_name=module_name,
-            class_name=class_name,
-            operation=lambda ClientObject: getattr(
-                _get_client_object_by_lookup(
-                    ClientObject,
-                    object_uid=object_uid,
-                    lookup_field=object_lookup_field,
-                    timeout=timeout,
-                ),
-                action_name,
-            )(user_uid, timeout=timeout),
-        )
-        return _sdk_object_to_dict(payload)
-    except Exception as e:
-        err_name = type(e).__name__
-        if err_name == "NotFoundError":
-            raise ApiError(f"{class_name} not found: {object_uid}") from e
-        if isinstance(e, (ApiError, NotLoggedIn)):
-            raise
-        raise _as_cli_error(e) from e
-
-
-def _mutate_shareable_object_team_access(
-    *,
-    module_name: str,
-    class_name: str,
-    object_uid: int | str,
-    action_name: str,
-    team_uid: str,
-    object_lookup_field: str = "uid",
-    timeout: int | None = None,
-) -> dict[str, Any]:
-    try:
-        payload = _run_sdk_model_operation(
-            module_name=module_name,
-            class_name=class_name,
-            operation=lambda ClientObject: getattr(
-                _get_client_object_by_lookup(
-                    ClientObject,
-                    object_uid=object_uid,
-                    lookup_field=object_lookup_field,
-                    timeout=timeout,
-                ),
-                action_name,
-            )(team_uid, timeout=timeout),
-        )
-        return _sdk_object_to_dict(payload)
-    except Exception as e:
-        err_name = type(e).__name__
-        if err_name == "NotFoundError":
-            raise ApiError(f"{class_name} not found: {object_uid}") from e
-        if isinstance(e, (ApiError, NotLoggedIn)):
-            raise
-        raise _as_cli_error(e) from e
-
-
 def _mutate_labelable_object_labels(
     *,
     module_name: str,
@@ -3028,20 +2755,28 @@ def _mutate_labelable_object_labels(
         raise _as_cli_error(e) from e
 
 
-def _run_object_access_operation(class_name: str, object_uid: str, operation):
+def _run_object_access_operation(
+    class_name: str,
+    object_uid: str,
+    operation,
+    *,
+    module_name: str = "mainsequence.client.models_foundry",
+):
     """
-    Run `operation(obj)` on one Constant, Secret or CodeRepository, addressed by its UID alone.
+    Run `operation(obj)` on one object whose access is decided by policies, by its UID alone.
 
-    `class_name` is `Constant`, `Secret` or `CodeRepository`. Their access routes
-    need no Organization Environment, while reading a Constant or a Secret needs
-    the current branch's. The object is therefore not read first: the instance
-    `operation` receives carries only its UID, which is all the access methods
-    use. An object that cannot be reached is reported as not found. A refused
-    action is not a missing session: it keeps the platform's message and names
-    the policies that would allow it, as for teams; a refusal that names no
-    policy, such as a missing product role, keeps the platform's message alone.
-    Every other failure keeps its message; the command that called says what
-    failed.
+    `class_name` is `Constant`, `Secret` or `CodeRepository`, from `module_name`'s
+    default, `Agent` from `mainsequence.client.agent_runtime_models`, or
+    `ResourceRelease` or `Job` from `mainsequence.client.models_helpers`. Their
+    access routes need no Organization Environment, while reading a Constant or
+    a Secret needs the current branch's. The object is therefore not read first:
+    the instance `operation` receives carries only its UID, which is all the
+    access methods use. An object that cannot be reached is reported as not
+    found. A refused action is not a missing session: it keeps the platform's
+    message and names the policies that would allow it, as for teams; a refusal
+    that names no policy, such as a missing product role, keeps the platform's
+    message alone. Every other failure keeps its message; the command that
+    called says what failed.
     """
 
     def _run(ClientModel):
@@ -3049,7 +2784,7 @@ def _run_object_access_operation(class_name: str, object_uid: str, operation):
 
     try:
         return _run_sdk_model_operation(
-            module_name="mainsequence.client.models_foundry",
+            module_name=module_name,
             class_name=class_name,
             operation=_run,
         )
@@ -3301,6 +3036,258 @@ def explain_code_repository_access(
             principal_uid=str(principal_uid) if principal_uid is not None else None,
             timeout=timeout,
         ),
+    )
+    return _sdk_object_to_dict(explanation)
+
+
+def get_agent_access(
+    agent_uid: str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Read the policies attached to an Agent via `Agent.get_access()`.
+    """
+    listing = _run_object_access_operation(
+        "Agent",
+        agent_uid,
+        lambda agent: agent.get_access(timeout=timeout),
+        module_name="mainsequence.client.agent_runtime_models",
+    )
+    return _sdk_object_to_dict(listing)
+
+
+def attach_agent_policy(
+    agent_uid: str,
+    *,
+    policy: str,
+    principal_type: str,
+    principal_uid: str,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Attach a policy on an Agent to a user or a team via `Agent.attach_policy()`.
+    """
+    binding = _run_object_access_operation(
+        "Agent",
+        agent_uid,
+        lambda agent: agent.attach_policy(
+            policy,
+            principal_type=principal_type,
+            principal_uid=str(principal_uid),
+            timeout=timeout,
+        ),
+        module_name="mainsequence.client.agent_runtime_models",
+    )
+    return _sdk_object_to_dict(binding)
+
+
+def detach_agent_policy(
+    agent_uid: str,
+    binding_uid: str,
+    *,
+    timeout: int | None = None,
+) -> None:
+    """
+    Detach one policy binding from an Agent via `Agent.detach_policy()`.
+    """
+    _run_object_access_operation(
+        "Agent",
+        agent_uid,
+        lambda agent: agent.detach_policy(str(binding_uid), timeout=timeout),
+        module_name="mainsequence.client.agent_runtime_models",
+    )
+
+
+def explain_agent_access(
+    agent_uid: str,
+    *,
+    action: str,
+    principal_uid: str | None = None,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Explain why a user may or may not perform an action on an Agent.
+
+    Uses `Agent.explain_access()`.
+    """
+    explanation = _run_object_access_operation(
+        "Agent",
+        agent_uid,
+        lambda agent: agent.explain_access(
+            action,
+            principal_uid=str(principal_uid) if principal_uid is not None else None,
+            timeout=timeout,
+        ),
+        module_name="mainsequence.client.agent_runtime_models",
+    )
+    return _sdk_object_to_dict(explanation)
+
+
+def get_resource_release_access(
+    release_uid: str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Read the policies attached to a resource release via `ResourceRelease.get_access()`.
+    """
+    listing = _run_object_access_operation(
+        "ResourceRelease",
+        release_uid,
+        lambda release: release.get_access(timeout=timeout),
+        module_name="mainsequence.client.models_helpers",
+    )
+    return _sdk_object_to_dict(listing)
+
+
+def attach_resource_release_policy(
+    release_uid: str,
+    *,
+    policy: str,
+    principal_type: str,
+    principal_uid: str,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Attach a policy on a resource release to a user or a team via `ResourceRelease.attach_policy()`.
+    """
+    binding = _run_object_access_operation(
+        "ResourceRelease",
+        release_uid,
+        lambda release: release.attach_policy(
+            policy,
+            principal_type=principal_type,
+            principal_uid=str(principal_uid),
+            timeout=timeout,
+        ),
+        module_name="mainsequence.client.models_helpers",
+    )
+    return _sdk_object_to_dict(binding)
+
+
+def detach_resource_release_policy(
+    release_uid: str,
+    binding_uid: str,
+    *,
+    timeout: int | None = None,
+) -> None:
+    """
+    Detach one policy binding from a resource release via `ResourceRelease.detach_policy()`.
+    """
+    _run_object_access_operation(
+        "ResourceRelease",
+        release_uid,
+        lambda release: release.detach_policy(str(binding_uid), timeout=timeout),
+        module_name="mainsequence.client.models_helpers",
+    )
+
+
+def explain_resource_release_access(
+    release_uid: str,
+    *,
+    action: str,
+    principal_uid: str | None = None,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Explain why a user may or may not perform an action on a resource release.
+
+    Uses `ResourceRelease.explain_access()`.
+    """
+    explanation = _run_object_access_operation(
+        "ResourceRelease",
+        release_uid,
+        lambda release: release.explain_access(
+            action,
+            principal_uid=str(principal_uid) if principal_uid is not None else None,
+            timeout=timeout,
+        ),
+        module_name="mainsequence.client.models_helpers",
+    )
+    return _sdk_object_to_dict(explanation)
+
+
+def get_code_repository_job_access(
+    job_uid: str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Read the policies attached to a Job via `Job.get_access()`.
+    """
+    listing = _run_object_access_operation(
+        "Job",
+        job_uid,
+        lambda job: job.get_access(timeout=timeout),
+        module_name="mainsequence.client.models_helpers",
+    )
+    return _sdk_object_to_dict(listing)
+
+
+def attach_code_repository_job_policy(
+    job_uid: str,
+    *,
+    policy: str,
+    principal_type: str,
+    principal_uid: str,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Attach a policy on a Job to a user or a team via `Job.attach_policy()`.
+    """
+    binding = _run_object_access_operation(
+        "Job",
+        job_uid,
+        lambda job: job.attach_policy(
+            policy,
+            principal_type=principal_type,
+            principal_uid=str(principal_uid),
+            timeout=timeout,
+        ),
+        module_name="mainsequence.client.models_helpers",
+    )
+    return _sdk_object_to_dict(binding)
+
+
+def detach_code_repository_job_policy(
+    job_uid: str,
+    binding_uid: str,
+    *,
+    timeout: int | None = None,
+) -> None:
+    """
+    Detach one policy binding from a Job via `Job.detach_policy()`.
+    """
+    _run_object_access_operation(
+        "Job",
+        job_uid,
+        lambda job: job.detach_policy(str(binding_uid), timeout=timeout),
+        module_name="mainsequence.client.models_helpers",
+    )
+
+
+def explain_code_repository_job_access(
+    job_uid: str,
+    *,
+    action: str,
+    principal_uid: str | None = None,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Explain why a user may or may not perform an action on a Job.
+
+    Uses `Job.explain_access()`.
+    """
+    explanation = _run_object_access_operation(
+        "Job",
+        job_uid,
+        lambda job: job.explain_access(
+            action,
+            principal_uid=str(principal_uid) if principal_uid is not None else None,
+            timeout=timeout,
+        ),
+        module_name="mainsequence.client.models_helpers",
     )
     return _sdk_object_to_dict(explanation)
 

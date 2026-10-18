@@ -17,9 +17,9 @@ from .base import (
     BaseObjectOrm,
     BasePydanticModel,
     CurrentCodeRepositoryEnvironmentResourceMixin,
-    ShareableObjectMixin,
 )
 from .exceptions import ApiError, ServerError, raise_for_response
+from .object_access import AccessManagedObjectMixin
 from .observability import (
     EnvironmentLogSearchMixin,
     EnvironmentLogSearchPage,
@@ -586,10 +586,35 @@ class Agent(
     EnvironmentLogSearchMixin,
     OwnerLogMixin,
     OwnerResourceUsageMixin,
-    ShareableObjectMixin,
+    AccessManagedObjectMixin,
     BaseObjectOrm,
     BasePydanticModel,
 ):
+    """A Harness Agent that people talk to and give Tasks to, running as its own workload.
+
+    Who may use an Agent is decided by its policies: `viewer` talks to it,
+    gives it Tasks, sees all its Tasks and outputs and reads your own log
+    lines; `user` talks to it and gives it Tasks without seeing other people's
+    Tasks; `operator` also stops any Task or session run; `editor` also
+    configures the Agent and moves it to a new runtime, deletes it, manages
+    what its workload can reach and sees who has access; `owner` also decides
+    who has access. The Agent's creator holds `owner`, except the
+    Organization's automation identity, which creates the Agents of repository
+    workflows, and a policy on the Agent's branch gives nothing on it.
+    Organization admins hold every action, and only they turn on acting for the
+    requester. A session stays its owner's whatever the Agent's policies.
+
+    The Agent's policies also decide its runtime release and that release's
+    backing Job: `viewer` and `operator` give `viewer` on the release, `editor`
+    and `owner` give `editor`, and `user` gives nothing there. The release takes
+    no policy of its own, so give access on the Agent.
+
+    The access methods (`get_access()`, `attach_policy()`, `detach_policy()` and
+    the others) read and change the policies. They address the Agent by its UID
+    alone and take no Environment; with a workload's runtime credentials they
+    reach only the Agents of that workload's Environment.
+    """
+
     ENDPOINT: ClassVar[str] = "agents"
 
     @classmethod
@@ -696,7 +721,8 @@ class Agent(
         description=(
             "Read-only UID of the workload identity, the User this Agent runs as; the "
             "same value its runtime release reports. Pass it to `User.get_by_uid` and "
-            "to sharing calls. None when the Agent has no runtime release."
+            "as the `principal_uid` of `attach_policy()`. None when the Agent has no "
+            "runtime release."
         ),
     )
     code_repository_branch_uid: str | None = Field(

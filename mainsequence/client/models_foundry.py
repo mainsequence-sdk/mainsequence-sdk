@@ -15,7 +15,6 @@ from .base import (
     CurrentCodeRepositoryBranchCollectionMixin,
     CurrentCodeRepositoryEnvironmentResourceMixin,
     LabelableObjectMixin,
-    ShareableObjectMixin,
 )
 from .exceptions import raise_for_response
 from .object_access import AccessManagedObjectMixin
@@ -870,10 +869,34 @@ class Bucket(
 
 class Artifact(
     CurrentCodeRepositoryEnvironmentResourceMixin,
-    ShareableObjectMixin,
+    AccessManagedObjectMixin,
     BasePydanticModel,
     BaseObjectOrm,
 ):
+    """A file stored in a Bucket, owned by one Organization Environment.
+
+    Who may use an Artifact is decided by its policies: `viewer` sees it and
+    downloads its file; `editor` also replaces its file, deletes it and sees who
+    has access; `owner` also decides who has access. Every policy that sees an
+    Artifact also downloads it, so its signed `content` URL comes with each of
+    them. The person or workload that creates an Artifact holds `owner`, except
+    the Organization's automation identity, and Organization admins hold every
+    action. The Jobs whose runs published an Artifact give `viewer` on it to
+    everyone who holds a policy on the Job.
+
+    Uploading into an existing Bucket needs the Bucket's `add_artifact` action.
+    Uploading a file under the name of an Artifact you can see replaces that
+    Artifact's file, which needs its `overwrite` action: `editor` and `owner`
+    hold it, and with `viewer` alone the upload raises `PermissionDeniedError`
+    whose `payload` names `required_action` `artifacts.overwrite`.
+
+    The access methods (`get_access()`, `attach_policy()`, `detach_policy()` and
+    the others) read and change the policies. They address the Artifact by its
+    UID alone and need no Environment; with a workload's runtime credentials
+    they reach only the Artifacts of that workload's Environment. Reading,
+    uploading and deleting Artifacts use the current branch's Environment.
+    """
+
     uid: str | None = Field(
         None,
         title="Artifact UID",
@@ -928,7 +951,7 @@ class Artifact(
 
     @classmethod
     def upload_file(cls, filepath, name, bucket_name=None):
-        """Upload a file as an Artifact of `bucket_name`, or return the one already there.
+        """Upload a file as an Artifact of `bucket_name`, or replace the file of one already there.
 
         It calls `get_or_create()`, with `default_bucket` when no bucket is
         named, and raises what it raises.
@@ -942,7 +965,12 @@ class Artifact(
 
     @classmethod
     def get_or_create(cls, filepath, name, bucket_name):
-        """Upload a file as the Artifact `name` of `bucket_name`, or return the one already there.
+        """Upload a file as the Artifact `name` of `bucket_name`, or replace that Artifact's file.
+
+        Creating the Artifact in an existing Bucket needs the Bucket's
+        `add_artifact` action. When an Artifact of that name that you can see
+        is already there, its file is replaced, which needs that Artifact's
+        `overwrite` action, held by `editor` and `owner`.
 
         A failed answer raises the SDK's typed error, with the platform's
         message and its answer as `payload`: a refused upload raises

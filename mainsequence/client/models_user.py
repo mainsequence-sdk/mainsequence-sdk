@@ -1139,7 +1139,8 @@ class User(_CallerDirectoryReadMixin, UserApiBaseObjectOrm, BasePydanticModel):
 
     The reverse direction is ``workload_user_uid`` on ``Job``,
     ``ResourceRelease`` and ``Agent``: the UID of the User that workload runs
-    as, to pass to ``User.get_by_uid`` and to sharing calls.
+    as, to pass to ``User.get_by_uid`` and as the ``principal_uid`` of
+    ``attach_policy()``.
 
     Inside ``mainsequence.server.fastapi.reads_as_caller()``, ``User.filter``
     and ``User.get_by_uid`` answer with what the request's caller may see, and

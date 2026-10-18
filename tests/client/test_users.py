@@ -13,8 +13,9 @@ from mainsequence._request_identity import (
     _request_scope,
 )
 from mainsequence.client.exceptions import ApiError, BadRequestError, NotFoundError
+from mainsequence.client.models_foundry import Artifact
 from mainsequence.server.fastapi import reads_as_caller
-from tests.client.support import DemoShareableModel, _UidRef
+from tests.client.support import _UidRef
 
 
 def test_team_uses_user_api_team_endpoint():
@@ -592,8 +593,10 @@ class _JsonResponse:
     status_code = 200
     content = b'{"ok": true}'
 
-    def __init__(self, body):
+    def __init__(self, body, status_code=None):
         self._body = body
+        if status_code is not None:
+            self.status_code = status_code
 
     def json(self):
         return self._body
@@ -606,7 +609,8 @@ def _serve(monkeypatch, *bodies):
 
     def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
         sent.append({"r_type": r_type, "url": url, "payload": payload, "timeout": time_out})
-        return _JsonResponse(next(answers))
+        answer = next(answers)
+        return answer if isinstance(answer, _JsonResponse) else _JsonResponse(answer)
 
     monkeypatch.setattr(base_mod, "make_request", _fake_make_request)
     return sent
@@ -779,14 +783,23 @@ def test_workload_user_repr_str_hash_and_dump_need_no_username():
     assert dumped["email"] is None
 
 
-def test_application_resolves_a_workload_caller_and_grants_it_access(monkeypatch):
-    """Check the principal of a received request, then grant that workload access."""
+def _binding_payload(principal_uid, *, policy="artifacts.viewer"):
+    return {
+        "uid": "7d3c6a51-0b8e-4c2f-9a14-5e6f7a8b9c0d",
+        "policy": {"id": policy, "label": "Artifact viewer"},
+        "principal": {"type": "user", "uid": principal_uid, "identity_type": "workload"},
+        "source": "explicit",
+    }
+
+
+def test_application_resolves_a_workload_caller_and_gives_it_a_policy(monkeypatch):
+    """Check the principal of a received request, then give that workload a policy."""
+    artifact_uid = "24001fc7-098c-40fa-b398-1d2352b7c224"
     sent = _serve(
         monkeypatch,
         _workload_user_payload(job_uid=WORKLOAD_JOB_UID),
-        {"detail": "ok"},
+        _JsonResponse(_binding_payload(WORKLOAD_USER_UID), status_code=201),
     )
-    shareable_uid = "24001fc7-098c-40fa-b398-1d2352b7c224"
 
     with _request_scope() as context:
         context.user = models_user_mod.RequestUserIdentity(uid=WORKLOAD_USER_UID)
@@ -795,13 +808,20 @@ def test_application_resolves_a_workload_caller_and_grants_it_access(monkeypatch
         assert caller.username is None
         assert user.identity_type == "workload"
         assert user.job_uid == WORKLOAD_JOB_UID
-        response = DemoShareableModel(shareable_uid).add_to_view(user)
+        artifact = Artifact.model_construct(uid=artifact_uid)
+        binding = artifact.attach_policy("viewer", principal_type="user", principal_uid=user)
 
-    assert response == {"detail": "ok"}
+    assert binding.principal.uid == WORKLOAD_USER_UID
     assert sent[1] == {
         "r_type": "POST",
-        "url": f"https://backend.test/demo-shareable/{shareable_uid}/add-to-view/",
-        "payload": {"json": {"user_uid": WORKLOAD_USER_UID}},
+        "url": f"{Artifact.get_object_url()}/{artifact_uid}/access/bindings/",
+        "payload": {
+            "json": {
+                "policy": "viewer",
+                "principal_type": "user",
+                "principal_uid": WORKLOAD_USER_UID,
+            }
+        },
         "timeout": None,
     }
 
@@ -828,7 +848,8 @@ def _record(monkeypatch, *bodies):
 
     def _fake_make_request(*, s, loaders, r_type, url, payload=None, time_out=None):
         sent.append({"r_type": r_type, "url": url, "headers": (payload or {}).get("headers")})
-        return _JsonResponse(next(answers))
+        answer = next(answers)
+        return answer if isinstance(answer, _JsonResponse) else _JsonResponse(answer)
 
     monkeypatch.setattr(base_mod, "make_request", _fake_make_request)
     monkeypatch.setattr(models_user_mod, "make_request", _fake_make_request)
@@ -882,7 +903,7 @@ def test_reads_as_caller_sends_the_assertion_only_on_directory_reads(monkeypatch
         {"results": [team_row], "next": None},
         {**team_row, "members": [workload_member]},
         _person_payload(),
-        {"detail": "ok"},
+        _JsonResponse(_binding_payload(WORKLOAD_USER_UID), status_code=201),
         [_person_payload()],
     )
 
@@ -892,9 +913,11 @@ def test_reads_as_caller_sends_the_assertion_only_on_directory_reads(monkeypatch
             models_user_mod.User.get_by_uid(WORKLOAD_USER_UID)
             teams = models_user_mod.Team.filter()
             team = models_user_mod.Team.get_by_uid(TEAM_UID)
-            # Neither the session's own user nor a sharing call presents it.
+            # Neither the session's own user nor an access call presents it.
             models_user_mod.User.get_authenticated_user_details()
-            DemoShareableModel(SHAREABLE_UID).add_to_view(workloads[0])
+            Artifact.model_construct(uid=SHAREABLE_UID).attach_policy(
+                "viewer", principal_type="user", principal_uid=workloads[0]
+            )
         # Outside the helper the application reads as itself.
         models_user_mod.User.filter()
 

@@ -6,6 +6,77 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+**Agents, resource releases, Jobs and Artifacts are decided by policies: `Agent`,
+`ResourceRelease`, `Job` and `Artifact` gain the access methods, and the Agent, release
+and Artifact sharing calls are removed.** The platform no longer serves view and edit
+sharing on any object. An Agent has `viewer`, `user`, `operator`, `editor` and `owner`:
+`viewer` talks to it, gives it Tasks, sees all its Tasks and reads your own log lines;
+`user` talks to it and gives it Tasks without seeing other people's; `operator` also
+stops any Task or session run; `editor` also configures the Agent and its runtime,
+deletes it and manages what its workload can reach; `owner` also decides who has access.
+A release has `viewer`, `user`, `editor` and `owner`: `viewer` sees its configuration,
+revisions and logs and calls it; `user` calls it without its logs; `editor` also changes
+its configuration, activates static deployments, deletes it and manages what its
+workload can reach. A Job has `viewer`, `runner`, `editor` and `owner`: `viewer` sees it,
+its runs, logs and outputs; `runner` also runs it and stops its runs; `editor` also
+changes and deletes it and manages what its workload can reach. An Artifact has
+`viewer`, `editor` and `owner`: `viewer` sees it and downloads its file; `editor` also
+replaces its file and deletes it. The creator of each holds `owner`, except the
+Organization's automation identity, which creates the Agents, releases and Jobs of
+repository workflows. A release and a standalone Job take the policies of their branch:
+`reader` gives `viewer`, and `editor` and `owner` give `editor`. A release that backs an
+Agent follows the Agent instead and takes no policy of its own, a release's backing Job
+follows the release, and the Jobs whose runs published an Artifact give `viewer` on it.
+Existing view grants became `viewer` and edit grants `editor`, and the grants on a
+release that backs an Agent became the Agent's.
+
+- Removed from `Agent`, `ResourceRelease` and `Artifact`: `can_view()`, `can_edit()`,
+  `users_can_view()`, `users_can_edit()`, `list_users_can_view()`,
+  `list_users_can_edit()`, `add_to_view()`, `add_to_edit()`, `remove_from_view()`,
+  `remove_from_edit()`, `add_team_to_view()`, `add_team_to_edit()`,
+  `remove_team_from_view()` and `remove_team_from_edit()`. No SDK model uses
+  `ShareableObjectMixin` any more, so `mainsequence.client` no longer exports it; it is
+  still in `mainsequence.client.base`.
+- What replaces them: the four models use `AccessManagedObjectMixin`, like `Constant`:
+  `get_access()`, `get_my_access()`, `list_access_candidates()`, `attach_policy()`,
+  `detach_policy()`, `apply_access_changes()` and `explain_access()`, on
+  `/api/v1/agents/{uid}/access/...`, `/api/v1/resource-releases/{uid}/access/...`,
+  `/api/v1/jobs/{uid}/access/...` and `/api/v1/artifacts/{uid}/access/...`.
+  `attach_policy("viewer", ...)` gives what `add_to_view()` gave and
+  `attach_policy("editor", ...)` what `add_to_edit()` gave, to a user or a team;
+  `detach_policy()` replaces the `remove_*` methods, and `get_access()` replaces
+  `can_view()` and `can_edit()`. `Job` had no sharing methods and gains the access
+  methods.
+- The access methods of the four address the object by its UID alone and send no
+  Environment; with a workload's runtime credentials they reach only the objects of that
+  workload's Environment. A refusal raises `PermissionDeniedError`, whose `payload` names
+  the `required_action` and the `granting_policies`. Attaching a policy to a release
+  that backs an Agent raises `BadRequestError` with `code` `sharing_managed_by_owner`:
+  give access on the Agent.
+- `Artifact.upload_file()` and `Artifact.get_or_create()` replace the file of an Artifact
+  of that name that you can see, which now needs its `editor` or `owner` policy: with
+  `viewer` alone they raise `PermissionDeniedError` with `required_action`
+  `artifacts.overwrite`. Their docstrings now say they replace the file.
+- CLI: `mainsequence agent access list|grant|revoke|explain` replace `agent can_view`,
+  `can_edit`, `add_to_view`, `add_to_edit`, `remove_from_view`, `remove_from_edit`,
+  `add_team_to_view`, `add_team_to_edit`, `remove_team_from_view` and
+  `remove_team_from_edit`, which are removed. New:
+  `mainsequence code-repository resources access list|grant|revoke|explain <RELEASE_UID>`
+  and `mainsequence code-repository jobs access list|grant|revoke|explain <JOB_UID>`. The
+  commands need no registered branch, and a refused command prints the platform's
+  message and the policies that would allow it. The CLI has no Artifact commands.
+- The `workload_user_uid` descriptions of `Agent`, `ResourceRelease` and `Job` say to
+  pass it as the `principal_uid` of `attach_policy()`.
+- Docs: a new page, [Agents](docs/knowledge/infrastructure/agents.md), and "Who can use"
+  sections on [Resource releases](docs/knowledge/infrastructure/resource_releases.md),
+  [Scheduling Jobs](docs/knowledge/infrastructure/scheduling_jobs.md) and
+  [Artifacts](docs/knowledge/infrastructure/artifacts.md) say who can use each;
+  [Who Has Access to an Object](docs/knowledge/infrastructure/object_access.md),
+  [Users and Access](docs/knowledge/infrastructure/users_and_access.md), the Access
+  Policy Catalog, Constants and Secrets, Code Repositories, Branches and Projects, the CLI
+  reference and the access-control and orchestration skills say these types are decided
+  by policies.
+
 **Docs: workflow API `3.0.0` names the policy in `access` entries.** The platform's
 workflow API `3.0.0` replaces `2.3.0`: each `access` entry of a `.mainsequence/workflows`
 file names the policy its workload gets (`policy:`, and `branch:` takes a policy's name)

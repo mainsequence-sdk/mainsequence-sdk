@@ -6,11 +6,11 @@ its own access routes. A policy from the
 person, a workload identity or a Team, on one object. That attachment is a
 **binding**.
 
-Teams, Organization Environments, constants, secrets, buckets, code
-repositories, their branches, Projects, model-provider credentials and custom
-model providers are decided this way. Other shareable objects, such as
-artifacts, agents and releases, still use view and edit sharing, as
-[Users and Access](users_and_access.md#resource-sharing) describes.
+Every shareable object is decided this way: teams, Organization
+Environments, constants, secrets, buckets, Artifacts, code repositories, their
+branches, Projects, Agents, resource releases, Jobs, model-provider credentials
+and custom model providers. No object uses view and edit sharing any more; see
+[Users and Access](users_and_access.md#resource-access).
 
 Working in an Environment is a policy. `member` works in it, opens what is
 shared with the person there, and creates Projects, Buckets, Constants,
@@ -123,6 +123,55 @@ policies go only to people with that role, to workload identities and to
 Teams. The access methods of all three take no Environment, and the platform
 refuses them to runtime credentials. See
 [Code Repositories, Branches and Projects](code_repositories.md).
+
+An Artifact has three policies: `viewer` sees it and downloads its file;
+`editor` also replaces its file, deletes it and sees who has access; `owner`
+also decides who has access. The person or workload that creates an Artifact
+holds `owner`, and the Jobs whose runs published an Artifact give `viewer` on
+it to everyone who holds a policy on the Job. Uploading a file under the name of
+an Artifact you can see replaces its file and needs `editor` or `owner`. See
+[Who can use an Artifact](artifacts.md#who-can-use-an-artifact).
+
+An Agent has five policies: `viewer` talks to it, gives it Tasks, sees all its
+Tasks and reads your own log lines; `user` talks to it and gives it Tasks,
+seeing only your own Tasks; `operator` also stops any Task or session run; `editor`
+also configures the Agent and its runtime, deletes it, manages what its
+workload can reach and sees who has access; `owner` also decides who has
+access. A release has four: `viewer` sees its configuration and logs and calls
+it; `user` calls it without its logs; `editor` also changes and deletes it and
+manages what its workload can reach; `owner` also decides who has access. A Job
+has four: `viewer` sees it, its runs, logs and outputs; `runner` also runs it and
+stops its runs; `editor` also changes and deletes it and manages what its
+workload can reach; `owner` also decides who has access. Their creators hold
+`owner`, except the Organization's automation identity, which creates the
+Agents, releases and Jobs of repository workflows and holds no policy on them.
+
+Access passes down to them: a branch's `reader` gives `viewer` on its releases
+and standalone Jobs, and its `editor` and `owner` give `editor`; a release's
+`viewer` gives `viewer` on its backing Job, and its `editor` and `owner` give
+`editor`. A release that backs an Agent follows the Agent instead: the Agent's
+`viewer` and `operator` give `viewer` on it, its `editor` and `owner` give
+`editor`, and branch access does not reach it. Such a release takes no policy of
+its own, so attaching one raises `BadRequestError` with `code`
+`sharing_managed_by_owner`. The same methods are on `Agent`, `ResourceRelease`,
+`Job` and `Artifact`:
+
+```python
+from mainsequence.client import Job
+from mainsequence.client.agent_runtime_models import Agent
+
+agent = Agent.get_by_uid(agent_uid)
+agent.attach_policy("user", principal_type="team", principal_uid=team_uid)
+
+job = Job.filter(name__contains="nightly-prices")[0]
+print(job.explain_access("jobs.run").blocked_by_rule)
+```
+
+The access methods of all four take no Environment; with a workload's runtime
+credentials they reach only the objects of that workload's Environment. See
+[Agents](agents.md),
+[Who can use a release](resource_releases.md#who-can-use-a-release) and
+[Who can use a Job](scheduling_jobs.md#who-can-use-a-job).
 
 Model-provider credentials and custom model providers are decided by policies
 too, as two types, each with three policies:
@@ -312,8 +361,9 @@ Fields the release does not declare are dropped.
   `payload` names the reason in `code`. For example, `invalid_principal_uids`
   is someone outside the people you can give access to,
   `principal_kind_not_allowed` a policy that cannot be given to that kind of
-  principal, and `policy_not_attachable` a computed policy such as
-  `organization-teams.member`.
+  principal, `policy_not_attachable` a computed policy such as
+  `organization-teams.member`, and `sharing_managed_by_owner` a policy on a
+  release that backs an Agent, which follows the Agent's policies.
 - A code repository or a branch refuses a person without the platform's
   `user` product role with `PermissionDeniedError` too, whose `payload` has
   `code` `missing_product_role` and no `granting_policies`: no policy gives
@@ -329,9 +379,15 @@ Fields the release does not declare are dropped.
 `mainsequence organization teams access list|grant|revoke|explain` reads and
 changes a team's policies, `mainsequence constants access
 list|grant|revoke|explain` a constant's, `mainsequence secrets access
-list|grant|revoke|explain` a secret's, and `mainsequence code-repository access
-list|grant|revoke|explain` a code repository's; see
+list|grant|revoke|explain` a secret's, `mainsequence code-repository access
+list|grant|revoke|explain` a code repository's, `mainsequence agent access
+list|grant|revoke|explain` an Agent's, `mainsequence code-repository resources
+access list|grant|revoke|explain` a release's, and `mainsequence
+code-repository jobs access list|grant|revoke|explain` a Job's; see
 [Teams](../../cli/index.md#teams), [Constants](../../cli/index.md#constants),
-[Secrets](../../cli/index.md#secrets) and
-[Code repositories](../../cli/index.md#code-repositories) in the CLI reference.
-The CLI has no access commands for branches and Projects.
+[Secrets](../../cli/index.md#secrets),
+[Code repositories](../../cli/index.md#code-repositories),
+[Agents](../../cli/index.md#agents),
+[Resource releases](../../cli/index.md#resource-releases) and
+[Jobs](../../cli/index.md#jobs) in the CLI reference. The CLI has no access
+commands for branches, Projects, buckets and Artifacts.

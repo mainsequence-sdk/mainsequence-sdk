@@ -18,6 +18,8 @@ AGENT_UID = "e0e75693-4110-464c-93e0-82c7fd9c9a23"
 CONSTANT_UID = "498d499f-b74c-43f7-acf1-2e2955ad0e6b"
 SECRET_UID = "6c2b9e1d-3f4a-4b5c-8d7e-9f0a1b2c3d4e"
 CODE_REPOSITORY_UID = "1d0530c0-65d1-4db0-856b-dc29d8260a09"
+JOB_UID = "7d0ab07c-d1c0-4b7f-9c69-3c1a41c0a4da"
+RELEASE_UID = "0ce33c15-e3b1-4677-a66e-70460b89198f"
 
 
 def _server_error() -> ServerError:
@@ -52,7 +54,7 @@ def failing_sdk_client(cli_mod, monkeypatch):
         (["agent", "logs", AGENT_UID], "Agent logs fetch failed"),
         (["constants", "list"], "Constants fetch failed"),
         (["secrets", "list"], "Secrets fetch failed"),
-        (["agent", "can_view", AGENT_UID], "Agent view fetch failed"),
+        (["agent", "access", "list", AGENT_UID], "Agent access fetch failed"),
         (["constants", "access", "list", CONSTANT_UID], "Constant access fetch failed"),
         (["secrets", "access", "list", SECRET_UID], "Secret access fetch failed"),
         (
@@ -64,6 +66,11 @@ def failing_sdk_client(cli_mod, monkeypatch):
             ["code-repository", "access", "list", CODE_REPOSITORY_UID],
             "CodeRepository access fetch failed",
         ),
+        (["code-repository", "jobs", "access", "list", JOB_UID], "Job access fetch failed"),
+        (
+            ["code-repository", "resources", "access", "list", RELEASE_UID],
+            "ResourceRelease access fetch failed",
+        ),
     ],
     ids=[
         "teams",
@@ -72,12 +79,14 @@ def failing_sdk_client(cli_mod, monkeypatch):
         "agent-observability",
         "constants",
         "secrets",
-        "sharing",
+        "agent-access",
         "constant-access",
         "secret-access",
         "labels",
         "code-repositories",
         "code-repository-access",
+        "job-access",
+        "resource-release-access",
     ],
 )
 def test_a_failed_sdk_call_is_described_once(

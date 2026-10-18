@@ -1,3 +1,5 @@
+import importlib
+
 import pytest
 
 import mainsequence.client.base as base_mod
@@ -239,38 +241,6 @@ def test_shareable_access_state_drops_removed_internal_identity():
     assert not hasattr(state, removed_field)
 
 
-@pytest.mark.parametrize(
-    ("resource_cls", "accessor_name", "access_level"),
-    [
-        (models_foundry_mod.Artifact, "can_edit", "edit"),
-    ],
-)
-def test_shareable_resources_parse_canonical_public_identity(
-    monkeypatch,
-    resource_cls,
-    accessor_name,
-    access_level,
-):
-    resource_uid = "44444444-4444-4444-8444-444444444444"
-    resource = resource_cls.model_construct(uid=resource_uid)
-    monkeypatch.setattr(
-        resource_cls,
-        "_request_detail_action",
-        lambda self, **kwargs: {
-            "object_uid": resource_uid,
-            "object_type": type(self).__name__,
-            "access_level": access_level,
-            "users": [],
-            "teams": [],
-        },
-    )
-
-    access_state = getattr(resource, accessor_name)()
-
-    assert access_state.object_uid == resource_uid
-    assert access_state.access_level == access_level
-
-
 def test_shareable_access_state_accepts_nullable_canonical_identity():
     access_state = models_user_mod.ShareableAccessState(
         object_uid=None,
@@ -281,25 +251,29 @@ def test_shareable_access_state_accepts_nullable_canonical_identity():
     assert access_state.object_uid is None
 
 
-def test_shareable_models_keep_shareable_object_mixin():
-    repo_root = REPOSITORY_ROOT
-    models_foundry_bases = _class_base_names_from_source(
-        repo_root / "mainsequence" / "client" / "models_foundry.py"
+@pytest.mark.parametrize(
+    ("module_file", "class_name"),
+    [
+        ("agent_runtime_models.py", "Agent"),
+        ("models_helpers.py", "ResourceRelease"),
+        ("models_helpers.py", "Job"),
+        ("models_foundry.py", "Artifact"),
+    ],
+)
+def test_agents_releases_jobs_and_artifacts_use_the_access_policy_mixin(module_file, class_name):
+    module_bases = _class_base_names_from_source(
+        REPOSITORY_ROOT / "mainsequence" / "client" / module_file
     )
-    models_helpers_bases = _class_base_names_from_source(
-        repo_root / "mainsequence" / "client" / "models_helpers.py"
-    )
+    module = importlib.import_module(f"mainsequence.client.{module_file.removesuffix('.py')}")
 
-    expected = {
-        "Artifact": models_foundry_bases,
-        "ResourceRelease": models_helpers_bases,
-    }
-
-    for class_name, source_bases in expected.items():
-        assert class_name in source_bases, f"{class_name} class not found"
-        assert (
-            "ShareableObjectMixin" in source_bases[class_name]
-        ), f"{class_name} must inherit ShareableObjectMixin"
+    assert class_name in module_bases, f"{class_name} class not found"
+    assert (
+        "AccessManagedObjectMixin" in module_bases[class_name]
+    ), f"{class_name} must inherit AccessManagedObjectMixin"
+    assert (
+        "ShareableObjectMixin" not in module_bases[class_name]
+    ), f"{class_name} access is decided by policies, not view and edit sharing"
+    assert not issubclass(getattr(module, class_name), PermissionManagedObjectMixin)
 
 
 def test_team_uses_the_access_policy_mixin_instead_of_view_and_edit_sharing():

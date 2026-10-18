@@ -13,11 +13,12 @@ under its detail URL, for example `/api/v1/teams/{uid}/access/`:
 - `access/explain/`: why someone may or may not perform an action.
 
 `AccessManagedObjectMixin` gives a model one method per route. `Team`,
-`OrganizationEnvironment`, `Constant`, `Secret`, `Bucket`, `CodeRepository`,
-`CodeRepositoryBranch` and `OrganizationProject` use it. The routes address the
-object by its UID alone, so they need no Organization Environment, even for an
-object that lives in one. What each policy allows is in the access catalog,
-which `AccessCatalog` reads.
+`OrganizationEnvironment`, `Constant`, `Secret`, `Bucket`, `Artifact`,
+`CodeRepository`, `CodeRepositoryBranch`, `OrganizationProject`, `Agent`,
+`ResourceRelease` and `Job` use it. The routes address the object by its UID
+alone, so they need no Organization Environment, even for an object that lives
+in one. What each policy allows is in the access catalog, which `AccessCatalog`
+reads.
 """
 
 from __future__ import annotations
@@ -322,14 +323,15 @@ class AccessManagedObjectMixin(DetailActionObjectMixin):
     product role, with `code` `missing_product_role` and no policies. A change
     the platform does not accept raises `BadRequestError`, whose `payload`
     names the reason in `code`, for example `invalid_principal_uids` for
-    someone outside the people you can give access to. An object you cannot
-    read raises `NotFoundError`. A malformed argument raises `ValueError`
-    before anything is sent.
+    someone outside the people you can give access to, or
+    `sharing_managed_by_owner` for a policy attached to a release that backs an
+    Agent. An object you cannot read raises `NotFoundError`. A malformed
+    argument raises `ValueError` before anything is sent.
 
     The routes address the object by its UID alone. A model that sends the
     current branch's Organization Environment with its other requests, such as
-    `Constant`, `Secret` or `Bucket`, does not send it here, and needs none to
-    call these methods.
+    `Constant`, `Secret`, `Bucket` or `Artifact`, does not send it here, and
+    needs none to call these methods.
     """
 
     def _request_access_route(

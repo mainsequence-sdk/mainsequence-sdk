@@ -219,16 +219,10 @@ mainsequence agent session get_or_create e0e75693-4110-464c-93e0-82c7fd9c9a23 --
 mainsequence agent session get_or_create e0e75693-4110-464c-93e0-82c7fd9c9a23 --session-uid 3f1cc452-43ec-49cb-b2ba-87dbac164d29
 mainsequence agent session a2a send 3f1cc452-43ec-49cb-b2ba-87dbac164d29 --message "Return a JSON object with summary and next_action." --strict-dictionary
 mainsequence agent session detail 3f1cc452-43ec-49cb-b2ba-87dbac164d29
-mainsequence agent can_view e0e75693-4110-464c-93e0-82c7fd9c9a23
-mainsequence agent can_edit e0e75693-4110-464c-93e0-82c7fd9c9a23
-mainsequence agent add_to_view e0e75693-4110-464c-93e0-82c7fd9c9a23 <USER_UID>
-mainsequence agent add_to_edit e0e75693-4110-464c-93e0-82c7fd9c9a23 <USER_UID>
-mainsequence agent add_team_to_view e0e75693-4110-464c-93e0-82c7fd9c9a23 <TEAM_UID>
-mainsequence agent add_team_to_edit e0e75693-4110-464c-93e0-82c7fd9c9a23 <TEAM_UID>
-mainsequence agent remove_from_view e0e75693-4110-464c-93e0-82c7fd9c9a23 <USER_UID>
-mainsequence agent remove_from_edit e0e75693-4110-464c-93e0-82c7fd9c9a23 <USER_UID>
-mainsequence agent remove_team_from_view e0e75693-4110-464c-93e0-82c7fd9c9a23 <TEAM_UID>
-mainsequence agent remove_team_from_edit e0e75693-4110-464c-93e0-82c7fd9c9a23 <TEAM_UID>
+mainsequence agent access list e0e75693-4110-464c-93e0-82c7fd9c9a23
+mainsequence agent access grant e0e75693-4110-464c-93e0-82c7fd9c9a23 user --user <USER_UID>
+mainsequence agent access revoke e0e75693-4110-464c-93e0-82c7fd9c9a23 <BINDING_UID>
+mainsequence agent access explain e0e75693-4110-464c-93e0-82c7fd9c9a23 agents.use
 mainsequence agent delete e0e75693-4110-464c-93e0-82c7fd9c9a23
 mainsequence constants list
 mainsequence constants list --show-filters
@@ -284,11 +278,19 @@ mainsequence code-repository jobs runs logs <JOB_RUN_UID> --max-wait-seconds 900
 mainsequence code-repository jobs run <JOB_UID>
 mainsequence code-repository jobs run <JOB_UID> --arg demo-from-cli
 mainsequence code-repository jobs run <JOB_UID> -- --name demo-from-cli
+mainsequence code-repository jobs access list <JOB_UID>
+mainsequence code-repository jobs access grant <JOB_UID> runner --user <USER_UID>
+mainsequence code-repository jobs access revoke <JOB_UID> <BINDING_UID>
+mainsequence code-repository jobs access explain <JOB_UID> jobs.run
 mainsequence code-repository resources list
 mainsequence code-repository resources list --show-filters
 mainsequence code-repository resources list --filter resource_type=fastapi
 mainsequence code-repository resources delete_fastapi <RELEASE_UID>
 mainsequence code-repository resources delete_fastapi <RELEASE_UID> --yes
+mainsequence code-repository resources access list <RELEASE_UID>
+mainsequence code-repository resources access grant <RELEASE_UID> user --user <USER_UID>
+mainsequence code-repository resources access revoke <RELEASE_UID> <BINDING_UID>
+mainsequence code-repository resources access explain <RELEASE_UID> resource-releases.invoke
 mainsequence code-repository validate-name "Rates Platform"
 
 # 2) Set up locally
@@ -573,6 +575,142 @@ without its `user` product role, and the command prints that refusal's
 message. The CLI has no access commands for branches and Projects; use their
 access methods. See
 [Code Repositories, Branches and Projects](../knowledge/infrastructure/code_repositories.md)
+and [Who Has Access to an Object](../knowledge/infrastructure/object_access.md).
+
+## Agents
+
+```bash
+mainsequence agent access list <AGENT_UID>
+mainsequence agent access grant <AGENT_UID> user --user <USER_UID>
+mainsequence agent access grant <AGENT_UID> viewer --team <TEAM_UID>
+mainsequence agent access revoke <AGENT_UID> <BINDING_UID>
+mainsequence agent access explain <AGENT_UID> agents.use
+mainsequence agent access explain <AGENT_UID> agents.read_tasks --user <USER_UID>
+```
+
+Who can use an Agent is decided by its policies: `viewer` talks to it, gives
+it Tasks, sees all its Tasks and reads your own log lines; `user` talks to it
+and gives it Tasks, seeing only the Tasks you asked for; `operator` also stops
+any Task or session run; `editor` also configures the Agent and its runtime,
+deletes it, manages what its workload can reach and sees who has access;
+`owner` also decides who has access. The Agent's policies also decide its
+runtime release. Turning on acting for the requester is in no policy: only
+Organization admins do it.
+
+- `access list` prints the policies attached to the Agent, each with its
+  binding UID, policy id, principal and source, and the access the platform
+  computes, such as the Organization admins' every action. It needs the
+  Agent's `read_access` action, which `editor` and `owner` hold.
+- `access grant` gives a policy, by name such as `user` or by id such as
+  `agents.user`, to a person or workload identity with `--user` or to a team
+  with `--team`; pass exactly one. It needs the Agent's `manage_access` action,
+  which `owner` holds, and every action of the policy.
+  `mainsequence access policies --type agents` lists the policies.
+- `access revoke` detaches a binding by the UID `access list` shows. Removing
+  your own binding is always allowed.
+- `access explain` says whether you, or the User given with `--user`, may
+  perform an action, every path that gives it, and the policies that contain
+  it. For `agents.set_acts_for_requester` it names none.
+
+These commands address the Agent by its UID alone: they need no registered
+branch or Environment. Every command accepts `--json` and `--timeout`; with
+`--json`, `access revoke` prints
+`{"agent_uid": "...", "binding_uid": "...", "detached": true}`. An Agent you
+cannot see is reported as not found, and a refused command prints the
+platform's message and the policies that would allow it. The view and edit
+sharing commands for Agents (`can_view`, `can_edit`, `add_to_view`,
+`add_to_edit`, `remove_from_view`, `remove_from_edit`, `add_team_to_view`,
+`add_team_to_edit`, `remove_team_from_view` and `remove_team_from_edit`) are
+gone. See [Agents](../knowledge/infrastructure/agents.md) and
+[Who Has Access to an Object](../knowledge/infrastructure/object_access.md).
+
+## Resource releases
+
+```bash
+mainsequence code-repository resources access list <RELEASE_UID>
+mainsequence code-repository resources access grant <RELEASE_UID> user --user <USER_UID>
+mainsequence code-repository resources access grant <RELEASE_UID> viewer --team <TEAM_UID>
+mainsequence code-repository resources access revoke <RELEASE_UID> <BINDING_UID>
+mainsequence code-repository resources access explain <RELEASE_UID> resource-releases.invoke
+mainsequence code-repository resources access explain <RELEASE_UID> resource-releases.read_logs --user <USER_UID>
+```
+
+Who can use a release is decided by its policies: `viewer` sees its
+configuration, revisions and logs and calls it, its API, site or MCP endpoint;
+`user` sees it and calls it, without its logs; `editor` also changes its
+configuration, activates static deployments, deletes it, manages what its
+workload can reach and sees who has access; `owner` also decides who has
+access. A release also takes the policies of the branch that declares it. A
+release that backs an Agent follows the Agent and takes no policy of its own.
+
+- `access list` prints the policies attached to the release and the access the
+  platform computes, including what the release takes from its branch or its
+  Agent. It needs the release's `read_access` action, which `editor` and
+  `owner` hold.
+- `access grant` gives a policy, by name such as `user` or by id such as
+  `resource-releases.user`, to a person or workload identity with `--user` or
+  to a team with `--team`; pass exactly one. It needs the release's
+  `manage_access` action, which `owner` holds, and every action of the policy.
+  On a release that backs an Agent it prints the platform's refusal: give
+  access on the Agent with `mainsequence agent access grant`.
+  `mainsequence access policies --type resource-releases` lists the policies.
+- `access revoke` detaches a binding by the UID `access list` shows. Removing
+  your own binding is always allowed.
+- `access explain` says whether you, or the User given with `--user`, may
+  perform an action, every path that gives it, and the policies that contain
+  it. For `resource-releases.set_acts_for_requester` it names none.
+
+These commands address the release by its UID alone: they need no registered
+branch or Environment. Every command accepts `--json` and `--timeout`; with
+`--json`, `access revoke` prints
+`{"resource_release_uid": "...", "binding_uid": "...", "detached": true}`. A
+release you cannot see is reported as not found, and a refused command prints
+the platform's message and the policies that would allow it. See
+[Who can use a release](../knowledge/infrastructure/resource_releases.md#who-can-use-a-release)
+and [Who Has Access to an Object](../knowledge/infrastructure/object_access.md).
+
+## Jobs
+
+```bash
+mainsequence code-repository jobs access list <JOB_UID>
+mainsequence code-repository jobs access grant <JOB_UID> runner --user <USER_UID>
+mainsequence code-repository jobs access grant <JOB_UID> viewer --team <TEAM_UID>
+mainsequence code-repository jobs access revoke <JOB_UID> <BINDING_UID>
+mainsequence code-repository jobs access explain <JOB_UID> jobs.run
+mainsequence code-repository jobs access explain <JOB_UID> jobs.read_runs --user <USER_UID>
+```
+
+Who can use a Job is decided by its policies: `viewer` sees the Job, its
+schedule, runs, logs and outputs; `runner` also runs it and stops its runs;
+`editor` also changes and deletes it, manages what its workload can reach and
+sees who has access; `owner` also decides who has access. `jobs run` needs
+`runner` or more and `jobs update` `editor` or `owner`. A standalone Job also
+takes the policies of its branch, and a release's backing Job those of its
+release; a backing Job is changed, run and deleted with its release.
+
+- `access list` prints the policies attached to the Job and the access the
+  platform computes, including what the Job takes from its branch or its
+  release. It needs the Job's `read_access` action, which `editor` and `owner`
+  hold.
+- `access grant` gives a policy, by name such as `runner` or by id such as
+  `jobs.runner`, to a person or workload identity with `--user` or to a team
+  with `--team`; pass exactly one. It needs the Job's `manage_access` action,
+  which `owner` holds, and every action of the policy.
+  `mainsequence access policies --type jobs` lists the policies.
+- `access revoke` detaches a binding by the UID `access list` shows. Removing
+  your own binding is always allowed.
+- `access explain` says whether you, or the User given with `--user`, may
+  perform an action, every path that gives it, and the policies that contain
+  it. On a backing Job it shows `jobs.update`, `jobs.run` and `jobs.delete` as
+  blocked by a platform rule.
+
+These commands address the Job by its UID alone: they need no registered
+branch or Environment. Every command accepts `--json` and `--timeout`; with
+`--json`, `access revoke` prints
+`{"job_uid": "...", "binding_uid": "...", "detached": true}`. A Job you cannot
+see is reported as not found, and a refused command prints the platform's
+message and the policies that would allow it. See
+[Who can use a Job](../knowledge/infrastructure/scheduling_jobs.md#who-can-use-a-job)
 and [Who Has Access to an Object](../knowledge/infrastructure/object_access.md).
 
 ## Settings

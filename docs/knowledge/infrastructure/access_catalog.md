@@ -17,11 +17,12 @@ signed-in user can read. For each resource type, such as `secrets` or
 The catalog describes what each policy allows. It does not say who holds a
 policy on which object, and reading it changes nothing. Who holds a policy on
 an object is read and changed on the object itself, as
-[Who Has Access to an Object](object_access.md) describes; teams, Organization
-Environments, constants, secrets, buckets, code repositories, their branches,
-Projects, model-provider credentials and custom model providers work this way.
-Sharing other objects with view or edit access works as
-[Users and Access](users_and_access.md) describes.
+[Who Has Access to an Object](object_access.md) describes. Every shareable
+object works this way: teams, Organization Environments, constants, secrets,
+buckets, Artifacts, code repositories, their branches, Projects, Agents,
+resource releases, Jobs, model-provider credentials and custom model providers.
+No object uses view and edit sharing any more; see
+[Users and Access](users_and_access.md#resource-access).
 
 ## Read the catalog in Python
 

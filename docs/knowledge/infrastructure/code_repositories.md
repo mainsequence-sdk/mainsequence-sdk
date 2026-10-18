@@ -78,7 +78,12 @@ Creating a branch gives its creator nothing on it. A branch also takes the
 policies held above it: `reader` on its repository, or on a Project it belongs
 to, gives `reader` on the branch, and `editor` or `owner` there gives `editor`.
 `get_access()` shows each of those as a `computed` row with `source`
-`inherited`, which names the holder, the parent and the parent's policy.
+`inherited`, which names the holder, the parent and the parent's policy. The
+branch's policies pass down in turn to its releases and its standalone Jobs:
+`reader` gives `viewer` there, and `editor` and `owner` give `editor`. A release
+that backs the branch's Agent follows the Agent instead; see
+[Who can use a release](resource_releases.md#who-can-use-a-release) and
+[Who can use a Job](scheduling_jobs.md#who-can-use-a-job).
 Deleting a branch deletes its releases, its Agent, its Jobs and its build
 contexts. Deleting a repository's last branch deletes the repository, so it
 also needs the repository's `delete` action, which only Organization admins

@@ -13,6 +13,7 @@ In this guide, you will:
 - understand what an `Artifact` is and when to use it
 - upload files into platform buckets from the Python client
 - retrieve those files later from jobs and other platform consumers
+- decide who can see, download and replace an Artifact
 - decide who can browse a bucket and upload into it
 - avoid common mistakes around duplicate uploads and fragile local paths
 
@@ -195,6 +196,62 @@ Use a stable producer label so you can see what created the file:
 - `nightly-prices-job`
 - `stress-report-job`
 
+## Who can use an Artifact
+
+An Artifact's access is decided by its policies:
+
+- `viewer`: see the Artifact and download its file;
+- `editor`: also replace its file, delete it, and see who has access;
+- `owner`: also decide who has access.
+
+Every policy that sees an Artifact also downloads it: its signed `content` URL
+comes with each of them, and a copy someone downloaded stays with them after
+the policy is removed. A replaced file reaches the people, Jobs and Agents that
+read the Artifact, and a deletion cannot be undone. The person or workload that
+creates an Artifact, for example with `Artifact.upload_file()`, holds `owner`;
+the Organization's automation identity holds no policy on what it creates.
+Organization admins hold every action.
+
+`Artifact.upload_file()` with the name of an Artifact you can see replaces that
+Artifact's file, which needs `editor` or `owner`: with `viewer` alone it raises
+`PermissionDeniedError` with `required_action` `artifacts.overwrite`, and the
+Artifact is unchanged. A name taken by an Artifact of the bucket that you cannot
+see raises `ConflictError`. Deleting an Artifact needs `editor` or `owner` too;
+a refused delete keeps the Artifact and its file.
+
+The Jobs whose runs published an Artifact give `viewer` on it to everyone who
+holds a policy on the Job: a run published an Artifact when the run created it
+while it ran and one of the run's outputs links it. `get_access()` shows that as
+a `computed` row with `source` `inherited` whose `parent` is the Job.
+
+Read and change the policies with the access methods on `Artifact`:
+
+```python
+from mainsequence.client import Artifact
+
+artifact = Artifact.get(bucket__name="vendor_prices", name="prices_2026_03_15.csv")
+
+for binding in artifact.get_access().bindings:
+    print(binding.uid, binding.policy.id, binding.principal.type, binding.principal.uid)
+
+binding = artifact.attach_policy("viewer", principal_type="team", principal_uid=team_uid)
+artifact.detach_policy(binding.uid)
+```
+
+The access methods address the Artifact by its UID alone, so they need no
+Environment; with a workload's runtime credentials they reach only the
+Artifacts of that workload's Environment. A refused change raises
+`PermissionDeniedError` too. Existing view grants became `viewer` and edit
+grants `editor`. A repository workflow file's `access` entry for an Artifact
+gives its workload the policy it names, such as `policy: viewer`.
+`mainsequence access policies --type artifacts` lists the policies with their
+actions; the CLI has no Artifact commands.
+
+`Artifact` no longer has view and edit sharing methods: `can_view()`,
+`can_edit()`, `add_to_view()`, `add_to_edit()`, `remove_from_view()`,
+`remove_from_edit()`, their team variants and the `users_can_*` and
+`list_users_can_*` aliases are gone.
+
 ## Who can use a bucket
 
 A bucket's access is decided by its policies:
@@ -209,8 +266,9 @@ A bucket's access is decided by its policies:
 The person or workload that creates a bucket holds `owner`, also when
 `Artifact.upload_file()` creates it by naming a bucket that does not exist yet,
 and Organization admins hold every action. The policies go to people, workload
-identities and Teams. A `reader` sees an Artifact in the bucket only when the
-Artifact itself is shared with them.
+identities and Teams. A `reader` sees an Artifact in the bucket only when they
+can see the Artifact itself; see
+[Who can use an Artifact](#who-can-use-an-artifact).
 
 Uploading into an existing bucket needs `contributor` or more, so give a Job or
 an application that writes files into a bucket `contributor` on it, through its
@@ -250,8 +308,7 @@ method and model.
 `contributor`, which browses, uploads and creates folders as view did but no
 longer renames or deletes folders, and edit grants `editor`. A repository
 workflow file's `access` entry for a bucket gives its workload the policy it
-names, such as `policy: contributor`. Artifacts keep view and edit
-sharing.
+names, such as `policy: contributor`.
 
 ## Common mistakes
 
