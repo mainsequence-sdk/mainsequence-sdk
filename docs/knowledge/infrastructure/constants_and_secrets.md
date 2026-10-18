@@ -114,7 +114,8 @@ Why these matter:
 !!! warning "IMPORTANT"
     `Constant` and `Secret` are not the only shareable resources in the SDK.
     `CodeRepository`, `Artifact`, and `ResourceRelease` use view and edit sharing.
-    Teams, Organization Environments and Buckets are decided by policies, as `Constant` and `Secret` are; see
+    Teams, Organization Environments and Buckets are decided by policies, as `Constant` and `Secret` are, and so are
+    model-provider credentials and custom model providers, which have no SDK model; see
     [Who Has Access to an Object](object_access.md).
     This guide focuses on constants and secrets because they are the simplest place to learn the policy pattern.
 

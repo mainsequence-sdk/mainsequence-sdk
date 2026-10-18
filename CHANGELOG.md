@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+**Docs: model-provider credentials and custom model providers are decided by
+policies.** The platform decides both by policies now, as two types. A credential's
+policies are `user` (select it and receive it in sessions and workloads, including
+local Tau), `editor` (also refresh it, sign in again, revoke it and see who has access)
+and `owner` (also decide who has access; the credential's person holds it). A custom
+model provider's are `user` (send requests through it and its models), `editor` (also
+change its endpoint, authentication and models, delete it and see who has access) and
+`owner` (its creator). Existing view grants became `user` and edit grants `editor`; a
+repository workflow file's `access.model_providers` entry gives `user` for
+`level: view` and `editor` for `level: edit`. The SDK has no model or CLI command for
+these records, so no code changes: `InferenceClient` and
+`Agent.get_or_create_session()` select credentials as before.
+[Who Has Access to an Object](docs/knowledge/infrastructure/object_access.md),
+[Users and Access](docs/knowledge/infrastructure/users_and_access.md), the Access
+Policy Catalog, Constants and Secrets, Recorded model conversations, and the
+access-control and inference skills say so.
+
 **Buckets are decided by policies: `Bucket` gains the access methods, and its
 sharing calls are removed.** The platform no longer serves view and edit sharing on
 buckets. A bucket's policies are `reader` (browse its folders and the Artifacts in it

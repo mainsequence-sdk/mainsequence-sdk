@@ -6,10 +6,11 @@ its own access routes. A policy from the
 person, a workload identity or a Team, on one object. That attachment is a
 **binding**.
 
-Teams, Organization Environments, constants, secrets and buckets are decided
-this way. Other shareable objects, such as artifacts, CodeRepositories and
-releases, still use view and edit sharing, as
-[Users and Access](users_and_access.md#resource-sharing) describes.
+Teams, Organization Environments, constants, secrets, buckets, model-provider
+credentials and custom model providers are decided this way. Other shareable
+objects, such as artifacts, CodeRepositories and releases, still use view and
+edit sharing, as [Users and Access](users_and_access.md#resource-sharing)
+describes.
 
 Working in an Environment is a policy. `member` works in it, opens what is
 shared with the person there, and creates Projects, Buckets, Constants,
@@ -89,6 +90,28 @@ Uploading into an existing Bucket without `contributor`, with
 `Artifact.upload_file()`, raises `PermissionDeniedError` with
 `required_action` `buckets.add_artifact`. See
 [Artifacts](artifacts.md#who-can-use-a-bucket).
+
+Model-provider credentials and custom model providers are decided by policies
+too, as two types, each with three policies:
+
+- a model-provider credential, one person's sign-in to a built-in model
+  provider in one Environment: `user` selects it and receives it in sessions
+  and workloads, including local Tau, where it can be copied; `editor` also
+  refreshes it, signs in to the provider again, revokes it and sees who has
+  access; `owner`, which the credential's person holds, also decides who has
+  access;
+- a custom model provider, an inference endpoint with its own authentication
+  and models: `user` sends requests through it and its models; `editor` also
+  changes its endpoint, authentication and models, deletes it and sees who has
+  access; `owner`, which its creator holds, also decides who has access.
+
+The policies go to people, workload identities and Teams. The SDK has no model
+for these records, so it has no access methods for them; selecting a
+credential or a custom provider for a session or an inference request needs its
+`use` action, which all three policies include. Existing view grants became
+`user` and edit grants `editor`, and a repository workflow file's `access`
+entry for model providers gives `user` for `level: view` and `editor` for
+`level: edit`.
 
 ## Read and change access in Python
 

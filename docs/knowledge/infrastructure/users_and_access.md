@@ -446,7 +446,10 @@ people, workload identities and teams. See
 [Who Has Access to an Object](object_access.md),
 [Who can use a constant](constants_and_secrets.md#who-can-use-a-constant),
 [Who can use a secret](constants_and_secrets.md#who-can-use-a-secret) and
-[Who can use a bucket](artifacts.md#who-can-use-a-bucket).
+[Who can use a bucket](artifacts.md#who-can-use-a-bucket). So are
+model-provider credentials and custom model providers, whose `user`, `editor`
+and `owner` policies decide who sends requests through them and who maintains
+them; see [Who Has Access to an Object](object_access.md).
 
 ## Direct access vs team access
 

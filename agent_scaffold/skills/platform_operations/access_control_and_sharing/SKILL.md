@@ -64,8 +64,9 @@ This skill only reasons about access to deployed resources such as `ResourceRele
 2. <https://mainsequence-sdk.github.io/mainsequence-sdk/knowledge/infrastructure/users_and_access/>
 3. <https://mainsequence-sdk.github.io/mainsequence-sdk/knowledge/infrastructure/constants_and_secrets/>
 4. <https://mainsequence-sdk.github.io/mainsequence-sdk/knowledge/infrastructure/object_access/>
-   for teams, Organization Environments, constants, secrets and buckets, whose
-   access is decided by policies
+   for teams, Organization Environments, constants, secrets, buckets,
+   model-provider credentials and custom model providers, whose access is
+   decided by policies
 
 The pages above are the authoritative reference for access control and sharing.
 If the task is specifically about a resource type, also read that resource's own
@@ -87,6 +88,8 @@ Before changing access or advising on sharing, collect or infer:
     `editor` or `owner`
   - for a `Bucket`, which is decided by policies: `reader`, `contributor`,
     `editor` or `owner`
+  - for a model-provider credential or a custom model provider, which are
+    decided by policies: `user`, `editor` or `owner`
 - whether the goal is:
   - consumption
   - maintenance
@@ -104,7 +107,8 @@ For every non-trivial access task, decide:
 2. Is this direct user access or team-based access?
 3. Does the user need `view` or `edit`, or, on a `Constant`, `reader`, `editor` or `owner`, or,
    on a `Secret`, `reader`, `value_reader`, `editor` or `owner`, or, on a `Bucket`, `reader`,
-   `contributor`, `editor` or `owner`?
+   `contributor`, `editor` or `owner`, or, on a model-provider credential or a custom model
+   provider, `user`, `editor` or `owner`?
 4. Is this configuration non-sensitive or sensitive?
 5. Is the task really an access problem, or is it actually an orchestration or implementation problem?
 6. Is the task creating a `Constant` or `Secret` by name, and does that name already exist?
@@ -176,8 +180,27 @@ into an existing bucket without `contributor` raises `PermissionDeniedError`
 with `required_action` `buckets.add_artifact`. Use the access methods on
 `Bucket`; a bucket has no `add_to_view()` or `add_to_edit()`, and the CLI has
 no bucket commands. A repository workflow file's `access` entry for a bucket
-gives `contributor` for `level: view` and `editor` for `level: edit`. Artifacts
-and the other resources keep view and edit sharing.
+gives `contributor` for `level: view` and `editor` for `level: edit`.
+
+Model-provider credentials and custom model providers are decided by policies
+too, as two types:
+
+- a model-provider credential, one person's sign-in to a built-in model
+  provider: `user` selects it and receives it in sessions and workloads,
+  including local Tau, where it can be copied; `editor` also refreshes it,
+  signs in again, revokes it and sees who has access; `owner`, which the
+  credential's person holds, also decides who has access;
+- a custom model provider, an inference endpoint with its own authentication
+  and models: `user` sends requests through it and its models; `editor` also
+  changes its endpoint, authentication and models, deletes it and sees who has
+  access; `owner`, which its creator holds, also decides who has access.
+
+Give `user` to the people and workloads that send requests through a
+credential or a custom provider, and only to those you trust with a credential
+they can copy; give `editor` to maintainers. The SDK has no model or command
+for these records. A repository workflow file's `access` entry for model
+providers gives `user` for `level: view` and `editor` for `level: edit`.
+Artifacts and the other resources keep view and edit sharing.
 
 ### 3. Team sharing is for repeated access patterns
 
@@ -294,9 +317,10 @@ An application runs as its own workload User (`workload_user_uid` on the
 `ResourceRelease`, `Job` or `Agent`). Its own access comes from grants to that
 User: share what it needs with that User as with any person, with `view`
 unless it must maintain the object. A `Constant` it reads needs `reader`, a
-`Secret` whose value it reads needs `value_reader`, and a `Bucket` it uploads
-Artifacts into needs `contributor`. These grants cover every call the
-application makes for itself.
+`Secret` whose value it reads needs `value_reader`, a `Bucket` it uploads
+Artifacts into needs `contributor`, and a model-provider credential or a
+custom model provider it sends requests through needs `user`. These grants
+cover every call the application makes for itself.
 
 ### Acting for its requester: `acts_for_requester`
 
@@ -424,6 +448,8 @@ Do not claim success until you have checked:
   - `reader`, `editor` or `owner` on a `Constant`
   - `reader`, `value_reader`, `editor` or `owner` on a `Secret`
   - `reader`, `contributor`, `editor` or `owner` on a `Bucket`
+  - `user`, `editor` or `owner` on a model-provider credential or a custom
+    model provider
 - the task is using `Constant` vs `Secret` correctly
 - any `Constant` or `Secret` creation path first resolved existence by name when idempotency matters
 - the access claim was verified against the actual resource path
