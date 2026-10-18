@@ -58,8 +58,5 @@ The result must contain a resolved `code_repository_uid` and
 
 ## Unrelated Vocabulary
 
-CodeRepository Blueprint (`code_repository_blueprint`), the backend-owned
-`code-repository-design` skill, Blueprint `code_repository`, and Blueprint
-`code_repository_to_agent` are the canonical architecture vocabulary.
 Python packaging `[project]`, `pyproject.toml`, and
 `UV_PROJECT_ENVIRONMENT` are external standards and are unchanged.

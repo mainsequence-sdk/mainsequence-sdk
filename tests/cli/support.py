@@ -145,7 +145,7 @@ def _cli_platform_skill_catalog():
     skills = []
     for name in (
         "a2a_communication",
-        "code_repository_design",
+        "organization_environments",
         "code_repository_to_agent",
     ):
         front_matter_name = name.replace("_", "-")
