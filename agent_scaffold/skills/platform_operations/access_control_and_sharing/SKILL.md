@@ -169,8 +169,8 @@ read the value: `Secret.get()` raises `PermissionDeniedError` with
 `required_action` `secrets.read_value`. Use the access methods on `Secret` or
 `mainsequence secrets access list|grant|revoke|explain`; a secret has no
 `add_to_view()` or `add_to_edit()`. A repository workflow file's `access` entry
-for a secret gives `value_reader` for `level: view` and `editor` for
-`level: edit`. A secret the platform manages, such as a hosted database
+for a secret names the policy it gives (`policy: reader`, `value_reader`,
+`editor` or `owner`). A secret the platform manages, such as a hosted database
 password, cannot get a new value or be deleted.
 
 A `Bucket` is decided by its policies too:
@@ -188,7 +188,8 @@ into an existing bucket without `contributor` raises `PermissionDeniedError`
 with `required_action` `buckets.add_artifact`. Use the access methods on
 `Bucket`; a bucket has no `add_to_view()` or `add_to_edit()`, and the CLI has
 no bucket commands. A repository workflow file's `access` entry for a bucket
-gives `contributor` for `level: view` and `editor` for `level: edit`.
+names the policy it gives (`policy: reader`, `contributor`, `editor` or
+`owner`).
 
 A `CodeRepository`, its `CodeRepositoryBranch` objects and an
 `OrganizationProject` are decided by their policies too, each with `reader`,
@@ -217,8 +218,9 @@ also through a Team, and no policy gives it. Use the access methods on
 `CodeRepository`, `CodeRepositoryBranch` and `OrganizationProject(uid=...)`,
 or `mainsequence code-repository access list|grant|revoke|explain` for a
 repository; the CLI has no branch or Project access commands. A repository
-workflow file's `access.branch` and `access.branches` entries give the
-workload `reader` for `level: view` and `editor` for `level: edit`.
+workflow file's `access.branch` and `access.branches` entries name the
+workload's policy (`branch: reader`, or `policy: reader` on a `branches`
+entry).
 
 Model-provider credentials and custom model providers are decided by policies
 too, as two types:
@@ -239,7 +241,7 @@ Give `user` to the people and workloads that send requests through a
 credential or a custom provider, and only to those you trust with a credential
 they can copy; give `editor` to maintainers. The SDK has no model or command
 for these records. A repository workflow file's `access` entry for model
-providers gives `user` for `level: view` and `editor` for `level: edit`.
+providers names the policy it gives (`policy: user`, `editor` or `owner`).
 Artifacts and the other resources keep view and edit sharing.
 
 ### 3. Team sharing is for repeated access patterns

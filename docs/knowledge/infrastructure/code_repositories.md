@@ -88,8 +88,9 @@ The policies go to people, workload identities and Teams. A person without the
 platform's `user` product role gets `PermissionDeniedError` with `code`
 `missing_product_role` from every branch route, the access routes included,
 also when a Team they belong to holds a policy. A repository workflow file's
-`access.branch` and `access.branches` entries give the declaring workload
-`reader` on the branch for `level: view` and `editor` for `level: edit`.
+`access.branch` and `access.branches` entries give the declaring workload the
+policy they name on the branch (`branch: reader`, or `policy: reader` on a
+`branches` entry).
 
 ```python
 from mainsequence.client import CodeRepositoryBranch

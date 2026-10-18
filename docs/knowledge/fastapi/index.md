@@ -189,7 +189,7 @@ Configure the HTTP app as above: stateless, JSON responses, and the MCP SDK's DN
 
 The `mcp` extra installs the official MCP Python SDK 2.x, which serves protocol `2026-07-28` and the earlier revisions from the same server. An application written for 1.x's `FastMCP` constructs `MCPServer` instead and passes the settings above to `streamable_http_app()`.
 
-The release advertises its endpoint once its workflow declares `spec.mcp_enabled: true` (workflow API `2.3.0`) and a deployment with it succeeds. Clients connect to that URL and sign in with the platform; the application receives the caller assertion, never the client's token. `ResourceRelease.mcp_connection` gives the URL, and `ResourceRelease.filter(mcp_available=True)` lists releases that advertise one. See [ADR 0038](../../adr/0038-project-mcp-on-fastapi-releases.md).
+The release advertises its endpoint once its workflow declares `spec.mcp_enabled: true` (workflow API `3.0.0`) and a deployment with it succeeds. Clients connect to that URL and sign in with the platform; the application receives the caller assertion, never the client's token. `ResourceRelease.mcp_connection` gives the URL, and `ResourceRelease.filter(mcp_available=True)` lists releases that advertise one. See [ADR 0038](../../adr/0038-project-mcp-on-fastapi-releases.md).
 
 ### Skills
 

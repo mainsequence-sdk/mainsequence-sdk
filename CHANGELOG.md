@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+**Docs: workflow API `3.0.0` names the policy in `access` entries.** The platform's
+workflow API `3.0.0` replaces `2.3.0`: each `access` entry of a `.mainsequence/workflows`
+file names the policy its workload gets (`policy:`, and `branch:` takes a policy's name)
+instead of `level: view` or `level: edit`, and a file of any other version is refused before
+anything of it is applied, so a repository switches its workflow files to `3.0.0` before its
+next push. The pages and skills that said what a level gives on a secret, a bucket, a code
+repository branch or a model provider now say that the entry names the policy, and the
+code-repository maintenance examples use `api_version: "3.0.0"`.
+[Who Has Access to an Object](docs/knowledge/infrastructure/object_access.md),
+[Code Repositories](docs/knowledge/infrastructure/code_repositories.md),
+[Constants and Secrets](docs/knowledge/infrastructure/constants_and_secrets.md),
+[Artifacts](docs/knowledge/infrastructure/artifacts.md) and the access-control skill say so.
+No SDK code changes.
+
 **Docs: a custom model provider's `user` policy also receives its authentication
 (#233).** The pages and skills that describe the model-provider policies said that a
 custom model provider's `user` policy sends requests through it, and warned about

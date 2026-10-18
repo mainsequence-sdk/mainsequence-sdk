@@ -145,8 +145,8 @@ for these records, so it has no access methods for them; selecting a
 credential or a custom provider for a session or an inference request needs its
 `use` action, which all three policies include. Existing view grants became
 `user` and edit grants `editor`, and a repository workflow file's `access`
-entry for model providers gives `user` for `level: view` and `editor` for
-`level: edit`.
+entry for model providers names the policy it gives (`policy: user`, `editor`
+or `owner`).
 
 ## Read and change access in Python
 

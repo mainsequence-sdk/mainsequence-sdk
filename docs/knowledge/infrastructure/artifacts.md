@@ -249,8 +249,8 @@ method and model.
 `list_users_can_*` aliases are gone. Existing view grants became
 `contributor`, which browses, uploads and creates folders as view did but no
 longer renames or deletes folders, and edit grants `editor`. A repository
-workflow file's `access` entry for a bucket gives its workload `contributor`
-for `level: view` and `editor` for `level: edit`. Artifacts keep view and edit
+workflow file's `access` entry for a bucket gives its workload the policy it
+names, such as `policy: contributor`. Artifacts keep view and edit
 sharing.
 
 ## Common mistakes

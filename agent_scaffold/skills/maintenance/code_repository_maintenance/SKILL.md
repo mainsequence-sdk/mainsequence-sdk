@@ -318,7 +318,7 @@ second:
 
 ```yaml
 # .mainsequence/workflows/api-production.yaml
-api_version: "2.3.0"
+api_version: "3.0.0"
 name: api-production
 scope:
   environments: [production]
@@ -335,7 +335,7 @@ resources:
 
 ```yaml
 # .mainsequence/workflows/api-development.yaml
-api_version: "2.3.0"
+api_version: "3.0.0"
 name: api-development
 scope:
   environments: [development]  # the development Environment's exact name

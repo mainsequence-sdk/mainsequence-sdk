@@ -417,8 +417,8 @@ The person or workload that creates a secret holds `owner`, and Organization
 admins hold every action. The policies go to people, workload identities and
 Teams. A secret the platform manages, such as a hosted database password, cannot
 get a new value or be deleted, by anyone: those requests answer `409`. A
-repository workflow file's `access` entry for a secret gives its workload
-`value_reader` for `level: view` and `editor` for `level: edit`.
+repository workflow file's `access` entry for a secret gives its workload the
+policy it names, such as `policy: value_reader` for the current value.
 
 Read and change the policies with the access methods on `Secret`:
 
