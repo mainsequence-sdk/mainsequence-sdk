@@ -429,7 +429,6 @@ That is the practical layer that answers:
 This model appears across resources such as:
 
 - `CodeRepository`
-- `Bucket`
 - `Artifact`
 - `ResourceRelease`
 
@@ -439,13 +438,15 @@ The same pattern shows up again and again:
 - some users can edit
 - access may come directly or through a team
 
-Constants and secrets, like teams and Organization Environments, are decided
-by policies instead: a constant's `reader`, `editor` and `owner` policies, and a
-secret's `reader`, `value_reader`, `editor` and `owner` policies, go to people,
-workload identities and teams. See
-[Who Has Access to an Object](object_access.md) and, in Constants and Secrets,
-[Who can use a constant](constants_and_secrets.md#who-can-use-a-constant) and
-[Who can use a secret](constants_and_secrets.md#who-can-use-a-secret).
+Constants, secrets and buckets, like teams and Organization Environments, are
+decided by policies instead: a constant's `reader`, `editor` and `owner`
+policies, a secret's `reader`, `value_reader`, `editor` and `owner` policies,
+and a bucket's `reader`, `contributor`, `editor` and `owner` policies go to
+people, workload identities and teams. See
+[Who Has Access to an Object](object_access.md),
+[Who can use a constant](constants_and_secrets.md#who-can-use-a-constant),
+[Who can use a secret](constants_and_secrets.md#who-can-use-a-secret) and
+[Who can use a bucket](artifacts.md#who-can-use-a-bucket).
 
 ## Direct access vs team access
 

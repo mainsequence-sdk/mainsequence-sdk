@@ -6,8 +6,8 @@ its own access routes. A policy from the
 person, a workload identity or a Team, on one object. That attachment is a
 **binding**.
 
-Teams, Organization Environments, constants and secrets are decided this way.
-Other shareable objects, such as buckets, artifacts, CodeRepositories and
+Teams, Organization Environments, constants, secrets and buckets are decided
+this way. Other shareable objects, such as artifacts, CodeRepositories and
 releases, still use view and edit sharing, as
 [Users and Access](users_and_access.md#resource-sharing) describes.
 
@@ -67,6 +67,28 @@ Reading a Secret's value without `value_reader`, with `Secret.get()` or
 `Secret.get_by_uid()`, raises `PermissionDeniedError` with `required_action`
 `secrets.read_value`. See
 [Constants and Secrets](constants_and_secrets.md#who-can-use-a-secret).
+
+A Bucket has four policies: `reader` browses its folders and the Artifacts in
+it that are shared with the person; `contributor` also uploads Artifacts and
+creates folders; `editor` also renames the Bucket, renames and deletes folders,
+deletes the Bucket with every Artifact in it, and sees who has access; `owner`
+also decides who has access. The person or workload that creates a Bucket
+holds `owner`, also when an upload creates it by name. The policies go to
+people, workload identities and Teams with the same methods on `Bucket`, which
+no longer has view and edit sharing methods either, and which need no
+Environment:
+
+```python
+from mainsequence.client import Bucket
+
+bucket = Bucket.get(name="vendor_prices")
+bucket.attach_policy("contributor", principal_type="user", principal_uid=workload_user_uid)
+```
+
+Uploading into an existing Bucket without `contributor`, with
+`Artifact.upload_file()`, raises `PermissionDeniedError` with
+`required_action` `buckets.add_artifact`. See
+[Artifacts](artifacts.md#who-can-use-a-bucket).
 
 ## Read and change access in Python
 

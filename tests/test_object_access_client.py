@@ -22,7 +22,7 @@ from mainsequence.client.exceptions import (
     NotFoundError,
     PermissionDeniedError,
 )
-from mainsequence.client.models_foundry import Constant, Secret
+from mainsequence.client.models_foundry import Bucket, Constant, Secret
 from mainsequence.client.models_user import OrganizationEnvironment, Team
 from mainsequence.client.object_access import (
     AccessBinding,
@@ -118,7 +118,7 @@ def _binding(**overrides):
     return binding
 
 
-@pytest.mark.parametrize("model", [Team, OrganizationEnvironment, Constant, Secret])
+@pytest.mark.parametrize("model", [Team, OrganizationEnvironment, Constant, Secret, Bucket])
 def test_policy_decided_models_serve_the_access_methods(model):
     assert issubclass(model, AccessManagedObjectMixin)
     for name in (
@@ -1065,3 +1065,128 @@ def test_reading_a_secret_still_uses_the_current_branchs_environment(monkeypatch
 
     with pytest.raises(code_repository_context.CodeRepositoryEnvironmentContextRequiredError):
         Secret.get_by_uid(SECRET_UID)
+
+
+BUCKET_UID = "44444444-4444-4444-8444-444444444444"
+
+
+def _bucket() -> Bucket:
+    return Bucket(
+        uid=BUCKET_UID,
+        name="vendor_prices",
+        organization_environment_uid=ENVIRONMENT_UID,
+        organization_environment_name="Development",
+    )
+
+
+def test_a_bucket_serves_the_access_routes_by_its_uid_alone(monkeypatch, no_environment):
+    sent = _install(
+        monkeypatch,
+        FakeResponse(
+            200,
+            {
+                "object": {"resource_type": "buckets", "uid": BUCKET_UID},
+                "bindings": [
+                    _binding(
+                        policy={"id": "buckets.owner", "label": "Bucket owner"},
+                        source="creator",
+                    )
+                ],
+                "computed": [
+                    {
+                        "source": "role",
+                        "detail": "Organization administrators hold every action.",
+                        "policy": None,
+                    }
+                ],
+            },
+        ),
+        FakeResponse(
+            201, _binding(policy={"id": "buckets.contributor", "label": "Bucket contributor"})
+        ),
+        FakeResponse(
+            200,
+            {
+                "allowed_actions": ["buckets.add_artifact", "buckets.read"],
+                "policies": ["buckets.contributor"],
+            },
+        ),
+        FakeResponse(
+            200,
+            {"bindings": [_binding(policy={"id": "buckets.reader", "label": "Bucket reader"})]},
+        ),
+    )
+
+    bucket = _bucket()
+    listing = bucket.get_access()
+    binding = bucket.attach_policy("contributor", principal_type="user", principal_uid=WORKLOAD_UID)
+    mine = bucket.get_my_access()
+    after = bucket.apply_access_changes(
+        attach=[{"policy": "reader", "principal_type": "team", "principal_uid": OTHER_TEAM_UID}],
+        detach=[binding],
+    )
+
+    # No organization_environment_uid is resolved or sent: the branch has none.
+    base = f"{Bucket.get_object_url()}/{BUCKET_UID}/access/"
+    assert [(item["r_type"], item["url"], item["payload"]) for item in sent] == [
+        ("GET", base, {}),
+        (
+            "POST",
+            f"{base}bindings/",
+            {
+                "json": {
+                    "policy": "contributor",
+                    "principal_type": "user",
+                    "principal_uid": WORKLOAD_UID,
+                }
+            },
+        ),
+        ("GET", f"{base}me/", {}),
+        (
+            "POST",
+            f"{base}changes/",
+            {
+                "json": {
+                    "attach": [
+                        {
+                            "policy": "reader",
+                            "principal_type": "team",
+                            "principal_uid": OTHER_TEAM_UID,
+                        }
+                    ],
+                    "detach": [BINDING_UID],
+                }
+            },
+        ),
+    ]
+    assert listing.object.resource_type == "buckets"
+    assert listing.bindings[0].policy.id == "buckets.owner"
+    assert listing.bindings[0].source == "creator"
+    assert binding.policy.id == "buckets.contributor"
+    assert mine.allowed_actions == ["buckets.add_artifact", "buckets.read"]
+    assert [item.policy.id for item in after] == ["buckets.reader"]
+
+
+def test_a_refused_change_on_a_bucket_names_the_policies_that_give_it(monkeypatch, no_environment):
+    refusal = {
+        "detail": "This needs the buckets.manage_access action.",
+        "code": "missing_action",
+        "required_action": "buckets.manage_access",
+        "granting_policies": ["buckets.owner"],
+        "resource_type": "buckets",
+        "resource_uid": BUCKET_UID,
+    }
+    _install(monkeypatch, FakeResponse(403, refusal))
+
+    with pytest.raises(PermissionDeniedError) as raised:
+        _bucket().attach_policy("editor", principal_type="team", principal_uid=OTHER_TEAM_UID)
+
+    assert raised.value.payload["required_action"] == "buckets.manage_access"
+    assert raised.value.payload["granting_policies"] == ["buckets.owner"]
+
+
+def test_reading_a_bucket_still_uses_the_current_branchs_environment(monkeypatch, no_environment):
+    _refuse_requests(monkeypatch)
+
+    with pytest.raises(code_repository_context.CodeRepositoryEnvironmentContextRequiredError):
+        Bucket.get_by_uid(BUCKET_UID)

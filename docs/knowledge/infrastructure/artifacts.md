@@ -13,6 +13,7 @@ In this guide, you will:
 - understand what an `Artifact` is and when to use it
 - upload files into platform buckets from the Python client
 - retrieve those files later from jobs and other platform consumers
+- decide who can browse a bucket and upload into it
 - avoid common mistakes around duplicate uploads and fragile local paths
 
 ## Mental model
@@ -193,6 +194,64 @@ Use a stable producer label so you can see what created the file:
 - `vector-upload-script`
 - `nightly-prices-job`
 - `stress-report-job`
+
+## Who can use a bucket
+
+A bucket's access is decided by its policies:
+
+- `reader`: browse its folders and the Artifacts in it that are shared with
+  you;
+- `contributor`: also upload Artifacts and create folders;
+- `editor`: also rename the bucket, rename and delete folders, delete the
+  bucket with every Artifact in it, and see who has access;
+- `owner`: also decide who has access.
+
+The person or workload that creates a bucket holds `owner`, also when
+`Artifact.upload_file()` creates it by naming a bucket that does not exist yet,
+and Organization admins hold every action. The policies go to people, workload
+identities and Teams. A `reader` sees an Artifact in the bucket only when the
+Artifact itself is shared with them.
+
+Uploading into an existing bucket needs `contributor` or more, so give a Job or
+an application that writes files into a bucket `contributor` on it, through its
+workload identity. Without it, `Artifact.upload_file()` raises
+`PermissionDeniedError` with `required_action` `buckets.add_artifact`, also when
+you cannot see the bucket, because its name is taken either way.
+
+Read and change the policies with the access methods on `Bucket`:
+
+```python
+from mainsequence.client import Bucket
+
+bucket = Bucket.get(name="vendor_prices")
+
+for binding in bucket.get_access().bindings:
+    print(binding.uid, binding.policy.id, binding.principal.type, binding.principal.uid)
+
+binding = bucket.attach_policy(
+    "contributor", principal_type="user", principal_uid=workload_user_uid
+)
+bucket.detach_policy(binding.uid)
+
+answer = bucket.explain_access("buckets.add_artifact", principal_uid=user_uid)
+print(answer.allowed, answer.granting_policies)
+```
+
+The access methods address the bucket by its UID alone, so they need no
+Environment. A refused change raises `PermissionDeniedError` too.
+`mainsequence access policies --type buckets` lists the policies with their
+actions, and [Who Has Access to an Object](object_access.md) describes every
+method and model.
+
+`Bucket` no longer has view and edit sharing methods: `can_view()`,
+`can_edit()`, `add_to_view()`, `add_to_edit()`, `remove_from_view()`,
+`remove_from_edit()`, their team variants and the `users_can_*` and
+`list_users_can_*` aliases are gone. Existing view grants became
+`contributor`, which browses, uploads and creates folders as view did but no
+longer renames or deletes folders, and edit grants `editor`. A repository
+workflow file's `access` entry for a bucket gives its workload `contributor`
+for `level: view` and `editor` for `level: edit`. Artifacts keep view and edit
+sharing.
 
 ## Common mistakes
 

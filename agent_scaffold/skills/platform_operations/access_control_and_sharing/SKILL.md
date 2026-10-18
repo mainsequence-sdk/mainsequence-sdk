@@ -64,8 +64,8 @@ This skill only reasons about access to deployed resources such as `ResourceRele
 2. <https://mainsequence-sdk.github.io/mainsequence-sdk/knowledge/infrastructure/users_and_access/>
 3. <https://mainsequence-sdk.github.io/mainsequence-sdk/knowledge/infrastructure/constants_and_secrets/>
 4. <https://mainsequence-sdk.github.io/mainsequence-sdk/knowledge/infrastructure/object_access/>
-   for teams, Organization Environments, constants and secrets, whose access is
-   decided by policies
+   for teams, Organization Environments, constants, secrets and buckets, whose
+   access is decided by policies
 
 The pages above are the authoritative reference for access control and sharing.
 If the task is specifically about a resource type, also read that resource's own
@@ -85,6 +85,8 @@ Before changing access or advising on sharing, collect or infer:
   - for a `Constant`, which is decided by policies: `reader`, `editor` or `owner`
   - for a `Secret`, which is decided by policies: `reader`, `value_reader`,
     `editor` or `owner`
+  - for a `Bucket`, which is decided by policies: `reader`, `contributor`,
+    `editor` or `owner`
 - whether the goal is:
   - consumption
   - maintenance
@@ -101,7 +103,8 @@ For every non-trivial access task, decide:
 1. What is the real shareable object?
 2. Is this direct user access or team-based access?
 3. Does the user need `view` or `edit`, or, on a `Constant`, `reader`, `editor` or `owner`, or,
-   on a `Secret`, `reader`, `value_reader`, `editor` or `owner`?
+   on a `Secret`, `reader`, `value_reader`, `editor` or `owner`, or, on a `Bucket`, `reader`,
+   `contributor`, `editor` or `owner`?
 4. Is this configuration non-sensitive or sensitive?
 5. Is the task really an access problem, or is it actually an orchestration or implementation problem?
 6. Is the task creating a `Constant` or `Secret` by name, and does that name already exist?
@@ -156,8 +159,25 @@ read the value: `Secret.get()` raises `PermissionDeniedError` with
 `add_to_view()` or `add_to_edit()`. A repository workflow file's `access` entry
 for a secret gives `value_reader` for `level: view` and `editor` for
 `level: edit`. A secret the platform manages, such as a hosted database
-password, cannot get a new value or be deleted. The other resources keep view
-and edit sharing.
+password, cannot get a new value or be deleted.
+
+A `Bucket` is decided by its policies too:
+
+- `reader` browses its folders and the Artifacts in it shared with the person;
+- `contributor` also uploads Artifacts and creates folders;
+- `editor` also renames the bucket, renames and deletes folders, deletes the
+  bucket with every Artifact in it and sees who has access;
+- `owner` also decides who has access.
+
+The person or workload that creates a bucket holds `owner`, also when an
+Artifact upload creates it by name. Give `contributor` to the people and the
+workloads that upload into a bucket, and `editor` to maintainers. Uploading
+into an existing bucket without `contributor` raises `PermissionDeniedError`
+with `required_action` `buckets.add_artifact`. Use the access methods on
+`Bucket`; a bucket has no `add_to_view()` or `add_to_edit()`, and the CLI has
+no bucket commands. A repository workflow file's `access` entry for a bucket
+gives `contributor` for `level: view` and `editor` for `level: edit`. Artifacts
+and the other resources keep view and edit sharing.
 
 ### 3. Team sharing is for repeated access patterns
 
@@ -273,9 +293,10 @@ release or an Agent, reaches platform data.
 An application runs as its own workload User (`workload_user_uid` on the
 `ResourceRelease`, `Job` or `Agent`). Its own access comes from grants to that
 User: share what it needs with that User as with any person, with `view`
-unless it must maintain the object. A `Constant` it reads needs `reader`, and
-a `Secret` whose value it reads needs `value_reader`. These grants cover every
-call the application makes for itself.
+unless it must maintain the object. A `Constant` it reads needs `reader`, a
+`Secret` whose value it reads needs `value_reader`, and a `Bucket` it uploads
+Artifacts into needs `contributor`. These grants cover every call the
+application makes for itself.
 
 ### Acting for its requester: `acts_for_requester`
 
@@ -402,6 +423,7 @@ Do not claim success until you have checked:
   - `edit`
   - `reader`, `editor` or `owner` on a `Constant`
   - `reader`, `value_reader`, `editor` or `owner` on a `Secret`
+  - `reader`, `contributor`, `editor` or `owner` on a `Bucket`
 - the task is using `Constant` vs `Secret` correctly
 - any `Constant` or `Secret` creation path first resolved existence by name when idempotency matters
 - the access claim was verified against the actual resource path

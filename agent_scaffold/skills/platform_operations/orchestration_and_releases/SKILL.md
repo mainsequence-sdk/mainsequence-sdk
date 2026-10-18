@@ -205,6 +205,13 @@ Artifact and Bucket operations derive their Organization Environment from the
 process-frozen current Git branch and registered `CodeRepositoryBranch`. Do not ask the
 user to select an Environment UID or branch UID.
 
+Uploading an Artifact into an existing Bucket needs the Bucket's `contributor`
+policy or more; give it to the workload that uploads, for example a Job's
+workload User. A refused upload raises `PermissionDeniedError` with
+`required_action` `buckets.add_artifact`. An upload that names a new Bucket
+creates it, and the uploader holds `owner`. See
+`.agents/skills/mainsequence/platform_operations/access_control_and_sharing/SKILL.md`.
+
 Examples:
 
 - vendor drops

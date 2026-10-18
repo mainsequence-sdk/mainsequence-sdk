@@ -6,6 +6,41 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+**Buckets are decided by policies: `Bucket` gains the access methods, and its
+sharing calls are removed.** The platform no longer serves view and edit sharing on
+buckets. A bucket's policies are `reader` (browse its folders and the Artifacts in it
+shared with the person), `contributor` (also upload Artifacts and create folders),
+`editor` (also rename the bucket, rename and delete folders, delete the bucket with
+every Artifact in it and see who has access) and `owner` (also decide who has access);
+the person or workload that creates a bucket holds `owner`, also when an Artifact upload
+creates it by name. Existing view grants became `contributor`, which no longer renames
+or deletes folders, and edit grants `editor`. Artifacts, CodeRepositories, agents and
+releases keep view and edit sharing.
+
+- Removed from `Bucket`: `can_view()`, `can_edit()`, `users_can_view()`,
+  `users_can_edit()`, `list_users_can_view()`, `list_users_can_edit()`,
+  `add_to_view()`, `add_to_edit()`, `remove_from_view()`, `remove_from_edit()`,
+  `add_team_to_view()`, `add_team_to_edit()`, `remove_team_from_view()` and
+  `remove_team_from_edit()`.
+- What replaces them: `Bucket` uses `AccessManagedObjectMixin`, like `Constant` and
+  `Secret`: `get_access()`, `get_my_access()`, `list_access_candidates()`,
+  `attach_policy()`, `detach_policy()`, `apply_access_changes()` and
+  `explain_access()`, on `/api/v1/buckets/{uid}/access/...`.
+  `attach_policy("contributor", ...)` gives what `add_to_view()` gave and
+  `attach_policy("editor", ...)` what `add_to_edit()` gave, to a user or a team;
+  `detach_policy()` replaces the `remove_*` methods, and `get_access()` replaces
+  `can_view()` and `can_edit()`. They address the bucket by its UID alone and need no
+  Environment.
+- Uploading: `Artifact.upload_file()` and `Artifact.get_or_create()` into an existing
+  bucket need its `add_artifact` action, which `contributor`, `editor` and `owner`
+  hold. A refused upload raises `PermissionDeniedError` with `required_action`
+  `buckets.add_artifact`, also when the caller cannot see the bucket.
+- The CLI has no bucket commands, so none change.
+- Docs: [Artifacts](docs/knowledge/infrastructure/artifacts.md) describes bucket
+  policies; [Who Has Access to an Object](docs/knowledge/infrastructure/object_access.md),
+  [Users and Access](docs/knowledge/infrastructure/users_and_access.md), the
+  access-control and orchestration skills say buckets are decided by policies.
+
 **Artifact uploads raise the SDK's typed errors (#232).** `Artifact.upload_file()` and
 `Artifact.get_or_create()` raised a bare `Exception("Failed to get artifact: <status> -
 <response text>")` for every failed answer. They now raise what every other client call
@@ -40,8 +75,9 @@ earlier values, set a new value, delete it and see who has access) and `owner` (
 decide who has access); the person or workload that creates a secret holds `owner`.
 Existing view grants became `value_reader`, which reads the current value but not
 earlier ones, and edit grants `editor`. A secret the platform manages, such as a
-hosted database password, cannot get a new value or be deleted. Buckets, artifacts,
-CodeRepositories, agents and releases keep view and edit sharing.
+hosted database password, cannot get a new value or be deleted. Artifacts,
+CodeRepositories, agents and releases keep view and edit sharing; buckets moved to
+policies as well, see their entry above.
 
 - Removed from `Secret`: `can_view()`, `can_edit()`, `users_can_view()`,
   `users_can_edit()`, `list_users_can_view()`, `list_users_can_edit()`,
@@ -83,7 +119,7 @@ constants. A constant's policies are `reader` (see it and its value), `editor` (
 change its name and value, delete it and see who has access) and `owner` (also decide
 who has access); the person or workload that creates a constant holds `owner`.
 Existing view grants became `reader` and edit grants `editor`. The other shareable
-objects keep view and edit sharing, except secrets, whose entry is above.
+objects keep view and edit sharing, except secrets and buckets, whose entries are above.
 
 - Removed from `Constant`: `can_view()`, `can_edit()`, `users_can_view()`,
   `users_can_edit()`, `list_users_can_view()`, `list_users_can_edit()`,

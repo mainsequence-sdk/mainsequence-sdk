@@ -13,10 +13,10 @@ under its detail URL, for example `/api/v1/teams/{uid}/access/`:
 - `access/explain/`: why someone may or may not perform an action.
 
 `AccessManagedObjectMixin` gives a model one method per route. `Team`,
-`OrganizationEnvironment`, `Constant` and `Secret` use it. The routes address
-the object by its UID alone, so they need no Organization Environment, even for
-an object that lives in one. What each policy allows is in the access catalog,
-which `AccessCatalog` reads.
+`OrganizationEnvironment`, `Constant`, `Secret` and `Bucket` use it. The routes
+address the object by its UID alone, so they need no Organization Environment,
+even for an object that lives in one. What each policy allows is in the access
+catalog, which `AccessCatalog` reads.
 """
 
 from __future__ import annotations
@@ -325,8 +325,8 @@ class AccessManagedObjectMixin(DetailActionObjectMixin):
 
     The routes address the object by its UID alone. A model that sends the
     current branch's Organization Environment with its other requests, such as
-    `Constant` or `Secret`, does not send it here, and needs none to call these
-    methods.
+    `Constant`, `Secret` or `Bucket`, does not send it here, and needs none to
+    call these methods.
     """
 
     def _request_access_route(

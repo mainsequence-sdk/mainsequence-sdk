@@ -116,7 +116,12 @@ def test_client_auth_provider_routes_match_backend_contract(monkeypatch):
 
 def test_removed_backend_actions_are_not_exposed_by_client_models():
     from mainsequence.client import models_user
-    from mainsequence.client.models_foundry import Constant, GitHubRepositoryBinding, Secret
+    from mainsequence.client.models_foundry import (
+        Bucket,
+        Constant,
+        GitHubRepositoryBinding,
+        Secret,
+    )
     from mainsequence.client.models_helpers import Job
     from mainsequence.client.models_user import Team
 
@@ -149,9 +154,10 @@ def test_removed_backend_actions_are_not_exposed_by_client_models():
             "remove_members",
             *view_and_edit_sharing,
         ),
-        # Constants and Secrets serve policies: the view and edit sharing routes are gone.
+        # Constants, Secrets and Buckets serve policies: the view and edit sharing routes are gone.
         Constant: view_and_edit_sharing,
         Secret: view_and_edit_sharing,
+        Bucket: view_and_edit_sharing,
     }
     violations = [
         f"{model.__name__}.{method_name}"

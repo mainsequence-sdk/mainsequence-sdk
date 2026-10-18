@@ -717,10 +717,33 @@ class DynamicResource(BasePydanticModel, BaseObjectOrm):
 
 class Bucket(
     CurrentCodeRepositoryEnvironmentResourceMixin,
-    ShareableObjectMixin,
+    AccessManagedObjectMixin,
     BasePydanticModel,
     BaseObjectOrm,
 ):
+    """A named container of Artifacts, owned by one Organization Environment.
+
+    Who may use a Bucket is decided by its policies: `reader` browses its
+    folders and the Artifacts in it that are shared with the person;
+    `contributor` also uploads Artifacts and creates folders; `editor` also
+    renames the Bucket, renames and deletes folders, deletes the Bucket with
+    every Artifact in it, and sees who has access; `owner` also decides who has
+    access. The person or workload that creates a Bucket holds `owner`, also
+    when an Artifact upload creates it by name, and Organization admins hold
+    every action. The policies go to people, workload identities and Teams.
+
+    Uploading an Artifact into an existing Bucket, with `Artifact.upload_file()`
+    or `Artifact.get_or_create()`, needs the Bucket's `add_artifact` action,
+    which `contributor`, `editor` and `owner` hold. A refused upload raises
+    `PermissionDeniedError`, whose `payload` names the `required_action` and the
+    `granting_policies`, even when the caller cannot see the Bucket.
+
+    The access methods (`get_access()`, `attach_policy()`, `detach_policy()` and
+    the others) read and change the policies. They address the Bucket by its
+    UID alone and need no Environment; reading, creating, changing and deleting
+    Buckets use the current branch's Environment.
+    """
+
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
         "uid": ["in", "exact"],
         "name": ["in", "exact"],
