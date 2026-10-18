@@ -58,15 +58,15 @@ The caller is a person or a workload identity, the User a deployed Job, FastAPI 
 
 ## Reading the directory as the caller
 
-The application calls the platform as its own workload identity, which usually has no teams and no grants. To show its caller the people, Teams and workloads that caller can see, for example to share one of the application's objects, read the directory as the caller:
+The application calls the platform as its own workload identity, which usually has no teams and no grants. To show its caller the people, Teams and workloads that caller can see, for example to give one of them access to one of the application's objects, read the directory as the caller:
 
 ```python
 from mainsequence.client import User
 from mainsequence.server.fastapi import reads_as_caller
 
 
-@app.get("/share-candidates")
-def share_candidates(q: str):
+@app.get("/access-candidates")
+def access_candidates(q: str):
     with reads_as_caller():
         people = User.filter(search=q)
         workloads = User.filter(identity_type="workload", search=q)
@@ -119,7 +119,7 @@ def can_publish(team_uid: str) -> bool:
 ```
 
 - Authorize against one identity: the person on a requester-bound call, the caller on any other. Never combine the caller's grants with the person's, and never fall back to what the acting application may do when the person may not.
-- For a write, check that identity's permission for the exact object and action before mutating anything. A read grant or team membership alone does not establish edit, run, share or delete permission. The SDK verifies identity; the application owns these checks.
+- For a write, check that identity's permission for the exact object and action before mutating anything. A read grant or team membership alone does not establish permission to edit, run, delete or give access. The SDK verifies identity; the application owns these checks.
 - Never parse the assertion, headers or MCP `_meta` yourself, and never trust a person's UID taken from a request body, header or query parameter. Only the signed assertion names the requester, and the SDK has verified that it is addressed to this release.
 - Inside a requester-bound request, `reads_as_caller()` raises `RequestIdentityError`: the receiving application cannot forward a requester-bearing assertion to the platform's directory endpoints. Platform-authorized Agent delegation is a separate platform-owned path; this helper cannot create a binding or forward write authority.
 

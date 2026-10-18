@@ -4,8 +4,8 @@ A **code repository** is a repository linked to GitHub, with all its branches;
 the SDK model is `CodeRepository`. A **branch**, `CodeRepositoryBranch`, is one
 Git branch of a repository in one Organization Environment, with the Jobs,
 releases and Agent that run from it. A **Project**, `OrganizationProject`, is a
-named group of branches in one Environment, shared together. A Project groups
-branches; it is not a repository.
+named group of branches in one Environment, whose policies pass down to them. A
+Project groups branches; it is not a repository.
 
 Who can use each of them is decided by its policies. This page says what each
 policy allows; [Who Has Access to an Object](object_access.md) describes the
@@ -59,9 +59,8 @@ The access methods address the repository by its UID alone and take no
 Environment. They need a person's session: the platform refuses them to a
 workload's runtime credentials. A refused change raises
 `PermissionDeniedError`, whose `payload` names the `required_action` and the
-`granting_policies`. Existing view grants became `reader` and edit grants
-`editor`; attach those policies where you used to share. `mainsequence access
-policies --type code-repositories` lists the policies with their actions.
+`granting_policies`. `mainsequence access policies --type code-repositories`
+lists the policies with their actions.
 
 ## Who can use a branch
 
@@ -110,8 +109,7 @@ print(branch.get_my_access().allowed_actions)
 ```
 
 The access methods address the branch by its UID alone and take no
-Environment, and the platform refuses them to runtime credentials. Existing
-view grants became `reader` and edit grants `editor`.
+Environment, and the platform refuses them to runtime credentials.
 `mainsequence access policies --type code-repository-branches` lists the
 policies with their actions.
 
@@ -142,9 +140,8 @@ print([item.policy.id for item in project.get_access().bindings])
 ```
 
 The access methods take no Environment, and the platform refuses them to
-runtime credentials. Existing view grants became `reader` and edit grants
-`editor`. `mainsequence access policies --type organization-projects` lists
-the policies with their actions.
+runtime credentials. `mainsequence access policies --type organization-projects`
+lists the policies with their actions.
 
 ## From the command line
 

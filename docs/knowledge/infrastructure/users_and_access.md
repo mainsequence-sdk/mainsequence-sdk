@@ -20,7 +20,7 @@ There are five concepts to keep separate:
 1. `Organization`: the tenant boundary
 2. `User`: a person who signs in to the platform, or the workload identity a deployed Job, FastAPI release or Agent runs as
 3. `Role`: a broad level of responsibility inside the organization
-4. `Team`: a reusable group you can share resources with
+4. `Team`: a reusable group that can hold policies on resources
 5. Resource access: the policies that decide who can do what on a specific resource
 
 Most access questions can be reduced to:
@@ -28,8 +28,8 @@ Most access questions can be reduced to:
 - which organization does this belong to
 - who is the user
 - does the user have a broad admin role
-- was the resource shared directly to the user
-- was the resource shared to a team the user belongs to
+- does the user hold a policy on the resource directly
+- does a team the user belongs to hold a policy on the resource
 
 ## How the pieces fit together
 
@@ -50,7 +50,7 @@ In practice, that means:
 
 - users belong to one organization
 - teams belong to one organization
-- shared resources are usually visible only inside that organization
+- resources are usually visible only inside that organization
 - access is designed around collaboration inside the same tenant, not across tenants
 
 This is why the first access question is usually not "what role does this person have?" but "are they even in the same organization?"
@@ -149,9 +149,9 @@ if user.identity_type == "workload":
 
 ## Applications that act for their requester
 
-An application's own access comes from grants to its workload User: share
-objects with that User as with any person. Those grants cover every call the
-application makes for itself.
+An application's own access comes from the policies its workload User holds:
+give that User policies on objects as you would a person. Those policies cover
+every call the application makes for itself.
 
 An application can instead be enabled to act for its **requester**, the person
 whose own request it is serving, with the platform setting
@@ -179,7 +179,7 @@ The platform applies one rule to every call an Agent makes for its work:
 | Valid delegation | The person's ordinary permissions, including administrative ones |
 | Invalid or expired delegation | None: the call is rejected, never switched to another identity |
 
-Requester-bound access covers the reads, creates, updates, runs, sharing
+Requester-bound access covers the reads, creates, updates, runs, access
 changes and deletes the person may make through supported operations. Every
 operation is checked against that person, never against the acting Agent's
 grants, and the two are never combined.
@@ -220,8 +220,9 @@ read-only or promise that it cannot change, share or delete anything.
 
 The plain risk: a model-driven Agent can be steered by prompt injection. Its
 reads and writes can reach as far as the person's ordinary permissions allow,
-administrative ones included, such as sharing or deleting accessible objects
-through supported operations, for at most 24 hours after the original request.
+administrative ones included, such as changing who has access to accessible
+objects or deleting them through supported operations, for at most 24 hours
+after the original request.
 A read grant does not authorize a write. This is why only Organization admins
 decide which Agents may act for people, and why every operation still needs its
 own authorization check.
@@ -242,7 +243,7 @@ Use roles to think about broad responsibility:
 - who is expected to build and maintain workflows
 - who mostly consumes outputs
 
-Do not use roles as your mental model for day-to-day sharing.
+Do not use roles as your mental model for day-to-day access.
 
 Why:
 
@@ -253,11 +254,11 @@ Why:
 So the safe rule is:
 
 - roles define broad responsibility
-- sharing defines actual resource access
+- the policies on each resource define actual resource access
 
 ## Teams
 
-Teams are reusable sharing groups inside one organization.
+Teams are reusable groups of people and workload identities inside one organization.
 
 Use a team when the same set of people should repeatedly receive access to the same class of resources.
 
@@ -269,9 +270,9 @@ Examples:
 - `Execution`
 - `Client Reporting`
 
-Teams are useful because they let you share once and reuse that decision many times.
+Teams are useful because they let you give access once and reuse that decision many times.
 
-Instead of sharing several application resources and datasets to five people one by one, you can share them to one team and manage membership there.
+Instead of giving five people policies on several application resources and datasets one by one, you can give those policies to one team and manage membership there.
 
 Team members and creators can be people or workload identities. Their summaries
 carry `uid` and, when supplied, `member_kind` (`"person"` or `"workload"`). For
@@ -282,7 +283,7 @@ omitted or null in the response. Use `uid` for identity, not personal fields.
 
 A team has two separate things:
 
-- **Membership** is who is in the team: who receives what is shared with it.
+- **Membership** is who is in the team: who receives the policies the team holds.
 - **Control** is the policies on the team, which decide who can see it, change
   its members, edit it or delete it.
 
@@ -373,12 +374,6 @@ See [Who Has Access to an Object](object_access.md) for every method, the
 models and the errors. A refused request raises `PermissionDeniedError`, whose
 `payload` names the `required_action` and the `granting_policies`.
 
-The view and edit sharing methods are not available on a team: `can_view()`,
-`can_edit()`, `add_to_view()`, `add_to_edit()`, `remove_from_view()`,
-`remove_from_edit()` and their team variants are gone, with
-`list_candidate_members()`, `manage_members()`, `add_members()` and
-`remove_members()`.
-
 ### From the command line
 
 ```bash
@@ -397,14 +392,14 @@ See [Teams](../../cli/index.md#teams) in the CLI reference.
 
 ## What team membership means
 
-If a user belongs to a team, they inherit access for resources that were shared to that team.
+If a user belongs to a team, they inherit the policies that team holds on resources.
 
 That is the core idea.
 
 Membership means:
 
 - the user is part of that team for access purposes
-- the user receives inherited access to resources shared to that team
+- the user receives inherited access through the policies the team holds
 - the user holds the team's `member` policy: they can see the team and its members, and leave it
 
 Membership does not automatically mean:
@@ -465,17 +460,13 @@ The same pattern shows up again and again:
 - few people decide who has access
 - access may come directly, through a team, or from a resource above it
 
-No resource uses view and edit sharing any more: existing view and edit grants
-became policies, and methods such as `can_view()`, `add_to_view()` and
-`add_to_edit()` are gone.
-
 ## Direct access vs team access
 
 There are two common ways a user gets access to a resource.
 
 ### Direct access
 
-The resource is shared straight to a user.
+A policy on the resource goes straight to a user.
 
 Use this when:
 
@@ -485,7 +476,7 @@ Use this when:
 
 ### Team access
 
-The resource is shared to a team, and all current team members inherit that access.
+A policy on the resource goes to a team, and all current team members inherit that access.
 
 Use this when:
 
@@ -517,18 +508,18 @@ This is the cleanest engineering split:
 
 This is the part people most often get wrong:
 
-> a team can be used as a principal for sharing, but being a member of the team does not automatically make you an administrator of the team itself
+> a team can hold policies on resources, but being a member of the team does not automatically make you an administrator of the team itself
 
 In other words:
 
-- if a dataset is shared to `Research`, members of `Research` inherit access to that dataset
+- if `Research` holds a policy on a dataset, members of `Research` inherit access to that dataset
 - that does not automatically mean every member of `Research` can manage the `Research` team
 
 This is why "team membership" and "team administration" should be thought of as separate concerns: membership is who is in the team, and administration is the policies on it.
 
 ## Practical examples
 
-### Example 1: Share a dataset to a team
+### Example 1: Give a team access to a dataset
 
 If `Research` holds `viewer` on an `Artifact`:
 
@@ -536,7 +527,7 @@ If `Research` holds `viewer` on an `Artifact`:
 - future members of `Research` will also inherit that read access
 - removing someone from `Research` removes that inherited path
 
-### Example 2: Give one person direct edit access
+### Example 2: Let one person maintain a dataset directly
 
 If one workflow maintainer needs to manage a dataset directly:
 
@@ -547,12 +538,12 @@ If one workflow maintainer needs to manage a dataset directly:
 
 If Alice is a member of `Research`:
 
-- Alice inherits access for resources shared to `Research`
+- Alice inherits the access `Research` holds on resources
 - Alice can see `Research` and its members, and leave it
 - changing who is in `Research` needs its `membership_manager` or `owner` policy
 - renaming or deactivating `Research` needs its `editor` or `owner` policy, and deciding who controls it needs `owner`
 
-### Example 4: Team-based edit does not mean unlimited control
+### Example 4: A team that maintains a resource does not have unlimited control
 
 If `Team A` holds `editor` on a release or a dataset:
 
@@ -578,9 +569,9 @@ That is why RBAC appears early in the Main Sequence workflow. The moment a resou
 ## Rules of thumb
 
 - start with the organization boundary first
-- use roles for broad responsibility, not detailed sharing
+- use roles for broad responsibility, not detailed resource access
 - use teams for repeatable access patterns
-- use direct sharing for exceptional or personal cases
+- give access directly for exceptional or personal cases
 - give the narrowest policy that does the job, and `owner` only to those who decide who has access
 - do not assume team membership means team administration
 - think in terms of resource boundaries: CodeRepository, dataset, secret, bucket, artifact, Agent, release, Job

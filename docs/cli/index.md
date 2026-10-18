@@ -434,9 +434,7 @@ Every command accepts `--json` and `--timeout`. With `--json`, `members remove`,
 `leave` and `access revoke` print what they did, for example
 `{"team_uid": "...", "binding_uid": "...", "detached": true}`. A refused
 command prints the platform's message and the policies that would allow it.
-The view and edit sharing commands for teams (`can_view`, `can_edit`,
-`add_to_view`, `add_to_edit`, `remove_from_view` and `remove_from_edit`) are
-gone. See [Who Has Access to an Object](../knowledge/infrastructure/object_access.md)
+See [Who Has Access to an Object](../knowledge/infrastructure/object_access.md)
 and [Users and Access](../knowledge/infrastructure/users_and_access.md#teams).
 
 ## Constants
@@ -476,11 +474,7 @@ These commands address the constant by its UID alone: unlike `constants list`,
 command accepts `--json` and `--timeout`; with `--json`, `access revoke` prints
 `{"constant_uid": "...", "binding_uid": "...", "detached": true}`. A constant
 you cannot see is reported as not found, and a refused command prints the
-platform's message and the policies that would allow it. The view and edit
-sharing commands for constants (`can_view`, `can_edit`, `add_to_view`,
-`add_to_edit`, `remove_from_view`, `remove_from_edit`, `add_team_to_view`,
-`add_team_to_edit`, `remove_team_from_view` and `remove_team_from_edit`) are
-gone. See
+platform's message and the policies that would allow it. See
 [Constants and Secrets](../knowledge/infrastructure/constants_and_secrets.md#who-can-use-a-constant)
 and [Who Has Access to an Object](../knowledge/infrastructure/object_access.md).
 
@@ -526,11 +520,7 @@ command accepts `--json` and `--timeout`; with `--json`, `access revoke` prints
 cannot see is reported as not found, and a refused command prints the
 platform's message and the policies that would allow it. `secrets delete` reads
 the secret, value included, for its preview and then deletes it, so it needs
-`editor` or `owner`; its refusals name the policies the same way. The view and
-edit sharing commands for secrets (`can_view`, `can_edit`, `add_to_view`,
-`add_to_edit`, `remove_from_view`, `remove_from_edit`, `add_team_to_view`,
-`add_team_to_edit`, `remove_team_from_view` and `remove_team_from_edit`) are
-gone. See
+`editor` or `owner`; its refusals name the policies the same way. See
 [Constants and Secrets](../knowledge/infrastructure/constants_and_secrets.md#who-can-use-a-secret)
 and [Who Has Access to an Object](../knowledge/infrastructure/object_access.md).
 
@@ -621,11 +611,8 @@ branch or Environment. Every command accepts `--json` and `--timeout`; with
 `--json`, `access revoke` prints
 `{"agent_uid": "...", "binding_uid": "...", "detached": true}`. An Agent you
 cannot see is reported as not found, and a refused command prints the
-platform's message and the policies that would allow it. The view and edit
-sharing commands for Agents (`can_view`, `can_edit`, `add_to_view`,
-`add_to_edit`, `remove_from_view`, `remove_from_edit`, `add_team_to_view`,
-`add_team_to_edit`, `remove_team_from_view` and `remove_team_from_edit`) are
-gone. See [Agents](../knowledge/infrastructure/agents.md) and
+platform's message and the policies that would allow it. See
+[Agents](../knowledge/infrastructure/agents.md) and
 [Who Has Access to an Object](../knowledge/infrastructure/object_access.md).
 
 ## Resource releases

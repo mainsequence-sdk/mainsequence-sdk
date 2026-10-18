@@ -1,28 +1,28 @@
 ---
 name: mainsequence-access-control-and-sharing
-description: Use this skill when the task is about RBAC, resource sharing, or access verification in a Main Sequence CodeRepository. This skill owns organization and team access concepts, the policies of each shareable resource, choosing the correct shareable resource boundary, access checks across CodeRepositories, constants, secrets, buckets, artifacts, Agents, releases and Jobs, and whether an application uses its own grants or acts for its requester (`acts_for_requester`). It does not own job scheduling, domain-package data behavior, or API route design.
+description: Use this skill when the task is about RBAC, giving people, workloads or teams access to a resource, or access verification in a Main Sequence CodeRepository. This skill owns organization and team access concepts, the policies of each shareable resource, choosing the correct resource boundary, access checks across CodeRepositories, constants, secrets, buckets, artifacts, Agents, releases and Jobs, and whether an application uses its own grants or acts for its requester (`acts_for_requester`). It does not own job scheduling, domain-package data behavior, or API route design.
 ---
 
 # Main Sequence Access Control And Sharing
 
 ## Overview
 
-Use this skill when the task is about who can view, edit, maintain, or administer a resource in a Main Sequence CodeRepository.
+Use this skill when the task is about who can see, use, change, maintain, or administer a resource in a Main Sequence CodeRepository.
 
 This skill is for:
 
 - RBAC reasoning
 - organization, user, role, and team access concepts
-- direct sharing vs team sharing
+- direct access vs team access
 - choosing the policy a person, a workload or a team needs
-- deciding which resource is the real sharing boundary
+- deciding which resource is the real access boundary
 - choosing between `Constant` and `Secret`
-- access verification for shared resources
+- verifying who has access to a resource
 
 ## This Skill Can Do
 
 - explain the Main Sequence access model in operational terms
-- decide whether a resource should be shared directly to a user or to a team
+- decide whether a policy should go directly to a user or to a team
 - decide which policy a user, a workload or a team needs
 - identify the correct shareable object boundary:
   - `CodeRepository`
@@ -36,10 +36,10 @@ This skill is for:
   - `ResourceRelease`
   - `Job`
 - choose whether configuration belongs in a `Constant` or a `Secret`
-- review CLI sharing flows for existing resources
+- review CLI access commands for existing resources
 - manage a team's members and decide who controls the team, through the
   team's policies
-- verify access assumptions before claiming a workflow is shareable
+- verify access assumptions before claiming other people can use a workflow
 - decide whether an application uses its own grants or acts for its
   requester, and explain what acting for the requester allows
 
@@ -78,15 +78,15 @@ This skill only reasons about access to deployed resources such as `ResourceRele
    and <https://mainsequence-sdk.github.io/mainsequence-sdk/knowledge/infrastructure/artifacts/>
    for releases, Jobs, buckets and Artifacts
 
-The pages above are the authoritative reference for access control and sharing.
+The pages above are the authoritative reference for access control.
 If the task is specifically about a resource type, also read that resource's own
 page from the documentation root at <https://mainsequence-sdk.github.io/mainsequence-sdk/>.
 
 ## Inputs This Skill Needs
 
-Before changing access or advising on sharing, collect or infer:
+Before changing access or advising on it, collect or infer:
 
-- the exact resource type being shared
+- the exact resource type that access is given on
 - whether the actor is:
   - a user
   - a team
@@ -116,7 +116,7 @@ Before changing access or advising on sharing, collect or infer:
 - whether the resource contains sensitive configuration
 - whether the task is about the resource itself or about the workflow that uses it
 
-If the resource boundary or intended access level is unclear, stop before changing permissions.
+If the resource boundary or the intended policy is unclear, stop before changing access.
 
 ## Required Decisions
 
@@ -138,15 +138,16 @@ For every non-trivial access task, decide:
 
 ## Build Rules
 
-### 1. Share the real resource boundary
+### 1. Give access on the real resource boundary
 
-Do not speak loosely about sharing "the code" when the operational boundary is a platform object.
+Do not speak loosely about giving access to "the code" when the operational boundary is a platform object.
 
 Examples:
 
-- sharing a deployed experience usually means a policy on the
+- giving access to a deployed experience usually means a policy on the
   `ResourceRelease`, or on the `Agent` when the release backs one
-- sharing runtime configuration means sharing the `Constant` or `Secret`
+- giving access to runtime configuration means a policy on the `Constant` or
+  `Secret`
 
 ### 2. Consumers get the narrowest policy, maintainers get `editor`
 
@@ -157,8 +158,7 @@ Use the simplest rule unless the task requires something more specific:
 - `editor` for people who need to maintain or update
 - `owner` only for the people who decide who has access
 
-Do not grant `editor` when a reading or using policy is enough. No resource
-uses view and edit sharing any more.
+Do not grant `editor` when a reading or using policy is enough.
 
 A `Constant` is decided by its policies:
 
@@ -169,8 +169,8 @@ A `Constant` is decided by its policies:
 The person or workload that creates a constant holds `owner`. Give `reader` to
 consumers and `editor` to maintainers, with the access methods on `Constant`
 (`get_access()`, `attach_policy()`, `detach_policy()`, `explain_access()`) or
-`mainsequence constants access list|grant|revoke|explain`. A constant has no
-`add_to_view()` or `add_to_edit()`, and its access methods need no Environment.
+`mainsequence constants access list|grant|revoke|explain`. Its access methods
+need no Environment.
 
 A `Secret` is decided by its policies too:
 
@@ -186,15 +186,14 @@ The person or workload that creates a secret holds `owner`. Give
 use the secret but must never know it. A workload holding only `reader` cannot
 read the value: `Secret.get()` raises `PermissionDeniedError` with
 `required_action` `secrets.read_value`. Use the access methods on `Secret` or
-`mainsequence secrets access list|grant|revoke|explain`; a secret has no
-`add_to_view()` or `add_to_edit()`. A repository workflow file's `access` entry
-for a secret names the policy it gives (`policy: reader`, `value_reader`,
-`editor` or `owner`). A secret the platform manages, such as a hosted database
-password, cannot get a new value or be deleted.
+`mainsequence secrets access list|grant|revoke|explain`. A repository workflow
+file's `access` entry for a secret names the policy it gives (`policy: reader`,
+`value_reader`, `editor` or `owner`). A secret the platform manages, such as a
+hosted database password, cannot get a new value or be deleted.
 
 A `Bucket` is decided by its policies too:
 
-- `reader` browses its folders and the Artifacts in it shared with the person;
+- `reader` browses its folders and the Artifacts in it that the person can see;
 - `contributor` also uploads Artifacts and creates folders;
 - `editor` also renames the bucket, renames and deletes folders, deletes the
   bucket with every Artifact in it and sees who has access;
@@ -205,10 +204,9 @@ Artifact upload creates it by name. Give `contributor` to the people and the
 workloads that upload into a bucket, and `editor` to maintainers. Uploading
 into an existing bucket without `contributor` raises `PermissionDeniedError`
 with `required_action` `buckets.add_artifact`. Use the access methods on
-`Bucket`; a bucket has no `add_to_view()` or `add_to_edit()`, and the CLI has
-no bucket commands. A repository workflow file's `access` entry for a bucket
-names the policy it gives (`policy: reader`, `contributor`, `editor` or
-`owner`).
+`Bucket`; the CLI has no bucket commands. A repository workflow file's `access`
+entry for a bucket names the policy it gives (`policy: reader`, `contributor`,
+`editor` or `owner`).
 
 A `CodeRepository`, its `CodeRepositoryBranch` objects and an
 `OrganizationProject` are decided by their policies too, each with `reader`,
@@ -229,8 +227,8 @@ A `CodeRepository`, its `CodeRepositoryBranch` objects and an
 A repository's creator and a Project's creator hold `owner`; a branch's
 creator holds nothing for being its creator. Repository and Project policies
 pass down to the branches: `reader` gives branch `reader`, and `editor` and
-`owner` give branch `editor`, so share the repository or the Project when
-every branch should follow. Using a repository or a branch needs the
+`owner` give branch `editor`, so give access on the repository or the Project
+when every branch should follow. Using a repository or a branch needs the
 platform's `user` product role: without it every route, the access methods
 included, raises `PermissionDeniedError` with `code` `missing_product_role`,
 also through a Team, and no policy gives it. Use the access methods on
@@ -326,11 +324,11 @@ repository workflows and holds no policy on them. The access methods of all
 four take no Environment; with a workload's runtime credentials they reach
 only the objects of that workload's Environment.
 
-### 3. Team sharing is for repeated access patterns
+### 3. Team access is for repeated access patterns
 
-Prefer team sharing when the same access needs to be reused across several people or resources.
+Prefer giving access to a team when the same access needs to be reused across several people or resources.
 
-Prefer direct sharing when:
+Prefer giving access directly when:
 
 - the access is one-off
 - the access is personal
@@ -342,11 +340,10 @@ Do not claim that a user can manage a team just because they inherit access thro
 
 Keep these separate:
 
-- inherited access to shared resources
+- access inherited through the team's policies
 - administration of the team itself
 
-Membership is who is in the team. Control is the policies on the team, not view
-and edit sharing:
+Membership is who is in the team. Control is the policies on the team:
 
 - `viewer` sees the team and its members;
 - `membership_manager` adds and removes members;
@@ -357,16 +354,16 @@ and edit sharing:
 Any person can create a team and becomes its owner and first member. Use
 `Team.add_member()`, `remove_member()`, `leave()` and the access methods
 (`get_access()`, `attach_policy()`, `detach_policy()`, `explain_access()`), or
-`mainsequence organization teams members ...`, `leave` and `access ...`. A
-team has no `add_to_view()` or `add_to_edit()`. Before saying who can change a
-team, read it with `team.get_access()` or `explain_access()`.
+`mainsequence organization teams members ...`, `leave` and `access ...`. Before
+saying who can change a team, read it with `team.get_access()` or
+`explain_access()`.
 
 Working in an Organization Environment is a policy too: `member` works in it
 and creates Projects, Buckets, Constants, Secrets, model providers and
 repositories there; `observer` works in it without creating anything. Only
 Organization admins attach them, to people and Teams, with the access methods
-on `OrganizationEnvironment`. Admission never shows objects that are not shared
-with the person.
+on `OrganizationEnvironment`. Admission never shows objects the person has no
+access to.
 
 An application that checks whether its caller or requester belongs to a team
 uses `in_teams()`; the identity carries no team list. See
@@ -427,7 +424,7 @@ output is interpreted through public UID fields.
 
 ### 8. Access assumptions must be verified
 
-If the task claims a resource is shareable, readable, or maintainable by another actor, verify that path explicitly with the relevant CLI or client workflow.
+If the task claims another actor can see, use, or maintain a resource, verify that path explicitly with the relevant CLI or client workflow.
 
 Do not claim access based only on naming, role titles, or intuition.
 
@@ -476,9 +473,9 @@ whose own request it is serving. The platform setting is `acts_for_requester`.
     who pushed it is an Organization admin. Otherwise that resource fails
     before it deploys.
 - An application that should act only for people, for example a data analyst
-  Agent, holds no grants of its own. Do not share data with its workload User
-  to make it work: everyone who can use the application could then reach that
-  data through it.
+  Agent, holds no grants of its own. Do not give its workload User policies on
+  data to make it work: everyone who can use the application could then reach
+  that data through it.
 
 ### What the requester's access covers
 
@@ -487,7 +484,7 @@ no delegation, the caller's own ordinary permissions; with a valid delegation,
 the person's ordinary permissions, including administrative ones; an invalid or
 expired delegation is rejected, never switched to another identity.
 
-- The reads, creates, updates, runs, sharing changes and deletes the person
+- The reads, creates, updates, runs, access changes and deletes the person
   may make through supported operations.
 - Check the person's permission for the exact object and operation on every
   call. A read grant or team membership alone does not authorize a write.
@@ -532,16 +529,17 @@ read-only or claim that it cannot change, share or delete anything.
 
 Explain the risk alongside the statement: a model-driven Agent can be steered
 by prompt injection. Its reads and writes can reach as far as the person's
-ordinary permissions allow, administrative ones included, such as sharing and
-deleting through supported operations, for at most 24 hours after the original
-request. Only Organization admins decide which Agents may receive this
-authority; the application's per-operation permission checks remain necessary.
+ordinary permissions allow, administrative ones included, such as changing who
+has access and deleting through supported operations, for at most 24 hours
+after the original request. Only Organization admins decide which Agents may
+receive this authority; the application's per-operation permission checks
+remain necessary.
 
 ## Review Rules
 
 When reviewing an access-control task, look for:
 
-- sharing the wrong resource boundary
+- giving access on the wrong resource boundary
 - granting `editor` or `owner` when a reading or using policy is sufficient
 - a policy on a release that backs an Agent instead of on the Agent
 - using direct user grants where a team should be used
@@ -585,7 +583,7 @@ Do not claim success until you have checked:
 - the task is using `Constant` vs `Secret` correctly
 - any `Constant` or `Secret` creation path first resolved existence by name when idempotency matters
 - the access claim was verified against the actual resource path
-- the task did not confuse sharing policy with orchestration or producer logic
+- the task did not confuse access policy with orchestration or producer logic
 - an application that acts for its requester takes the person only from the
   platform, and its own grants are intentional
 - requester-bound writes enforce the person's permission for the operation,
@@ -597,7 +595,7 @@ Do not claim success until you have checked:
 - the actor should probably be a team, but team structure is unknown
 - the task mixes access policy with job scheduling or release mechanics
 - the task asks for sensitive data to be stored in a `Constant`
-- the task assumes cross-organization sharing without explicit documentation
+- the task assumes cross-organization access without explicit documentation
 - the request requires a policy decision the user has not made
 - the task needs `acts_for_requester` and no Organization admin has decided to
   enable it

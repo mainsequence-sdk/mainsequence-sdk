@@ -145,8 +145,8 @@ class AccessBinding(BasePydanticModel):
         description=(
             "Why the binding exists: `explicit` (someone attached it), `creator` (given to "
             "the object's creator), `workflow` (declared in a repository workflow file) or "
-            "`migrated` (converted from an earlier view or edit grant). The source grants "
-            "nothing by itself."
+            "`migrated` (created by the platform when it moved existing access to policies). "
+            "The source grants nothing by itself."
         ),
     )
     granted_by: AccessGrantor | None = Field(

@@ -40,7 +40,7 @@ CodeRepository-to-Agent setup and other platform capabilities.
   `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
 - Jobs, schedules, images, resources, releases, and Artifacts:
   `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
-- RBAC, sharing, constants, secrets, and acting for a requester:
+- RBAC, access policies, constants, secrets, and acting for a requester:
   `.agents/skills/mainsequence/platform_operations/access_control_and_sharing/SKILL.md`
 - Recorded model calls, structured extraction, provider options, history, and replay:
   `.agents/skills/mainsequence/mainsequence-inference/SKILL.md`

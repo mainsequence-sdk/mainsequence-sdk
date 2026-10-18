@@ -801,7 +801,7 @@ class Bucket(
     """A named container of Artifacts, owned by one Organization Environment.
 
     Who may use a Bucket is decided by its policies: `reader` browses its
-    folders and the Artifacts in it that are shared with the person;
+    folders and the Artifacts in it that the person can see;
     `contributor` also uploads Artifacts and creates folders; `editor` also
     renames the Bucket, renames and deletes folders, deletes the Bucket with
     every Artifact in it, and sees who has access; `owner` also decides who has

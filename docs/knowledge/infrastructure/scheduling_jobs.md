@@ -203,11 +203,10 @@ print(answer.allowed, answer.blocked_by_rule, answer.granting_policies)
 The access methods address the Job by its UID alone and take no Environment;
 with a workload's runtime credentials they reach only the Jobs of that
 workload's Environment. A refused change raises `PermissionDeniedError`, whose
-`payload` names the `required_action` and the `granting_policies`. Existing view
-grants became `viewer` and edit grants `editor`. A repository workflow file's
-`access` entry for a Job gives its workload the policy it names, such as
-`policy: runner`. `mainsequence access policies --type jobs` lists the policies
-with their actions, and
+`payload` names the `required_action` and the `granting_policies`. A repository
+workflow file's `access` entry for a Job gives its workload the policy it
+names, such as `policy: runner`. `mainsequence access policies --type jobs`
+lists the policies with their actions, and
 [Who Has Access to an Object](object_access.md) describes every method and
 model.
 

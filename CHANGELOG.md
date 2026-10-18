@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+**Docs: the pages, docstrings and skills describe only the policy model.** Every
+object's access is decided by policies, so the documentation no longer explains it
+through view and edit sharing. The notes that listed the removed sharing methods and
+commands, and those that said how earlier view and edit grants were converted, are
+removed, and text that spoke of sharing a resource with someone now speaks of the
+policies a person, a workload identity or a team holds on it. The `migrated` source of
+an `AccessBinding` is described as a binding the platform created when it moved
+existing access to policies, and the `OrganizationEnvironment`, `Team` and `Bucket`
+docstrings speak of the objects a person has access to.
+[Users and Access](docs/knowledge/infrastructure/users_and_access.md),
+[Who Has Access to an Object](docs/knowledge/infrastructure/object_access.md), the
+Access Policy Catalog, Artifacts, Constants and Secrets, Code Repositories, Branches and
+Projects, Agents, Resource releases, Scheduling Jobs, Notifications, the FastAPI page,
+the CLI reference, the README and the access-control, API surfaces, orchestration and
+CodeRepository execution skills change. No behaviour changes.
+
 **The view and edit sharing types are removed: `ShareableObjectMixin`,
 `PermissionManagedObjectMixin`, `ShareableAccessState` and `ShareableTeamSummary`.** No
 SDK model has used them since 9.0.29, and the platform serves none of the routes their

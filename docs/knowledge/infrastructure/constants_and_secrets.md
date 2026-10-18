@@ -86,7 +86,7 @@ Constants and secrets sit inside a broader platform access model.
 Main Sequence applies resource-level access control, so the real operational question is not only "what is this value?" but also:
 
 - who can see it
-- who can edit it
+- who can change it
 - which team or CodeRepository boundary it belongs to
 - whether it is safe to expose through a deployed release
 
@@ -292,12 +292,6 @@ names the `required_action` and the `granting_policies`.
 actions, and [Who Has Access to an Object](object_access.md) describes every
 method and model.
 
-`Constant` no longer has view and edit sharing methods: `can_view()`,
-`can_edit()`, `add_to_view()`, `add_to_edit()`, `remove_from_view()`,
-`remove_from_edit()`, their team variants and the `users_can_*` and
-`list_users_can_*` aliases are gone. Existing view grants became `reader` and
-edit grants `editor`; attach those policies where you used to share.
-
 ### When to prefer a constant over code
 
 Use a constant instead of hardcoding when:
@@ -446,13 +440,6 @@ Environment. A refused change raises `PermissionDeniedError` too.
 actions, and [Who Has Access to an Object](object_access.md) describes every
 method and model.
 
-`Secret` no longer has view and edit sharing methods: `can_view()`,
-`can_edit()`, `add_to_view()`, `add_to_edit()`, `remove_from_view()`,
-`remove_from_edit()`, their team variants and the `users_can_*` and
-`list_users_can_*` aliases are gone. Existing view grants became
-`value_reader`, which reads the current value but not earlier ones, and edit
-grants `editor`; attach those policies where you used to share.
-
 ### Operational rules for secrets
 
 Secrets need a different operational standard than constants:
@@ -572,9 +559,7 @@ Interpretation:
 - `<BINDING_UID>` is the UID of a binding, which `access list` shows
 
 Unlike the other constants commands, these need no registered branch: the
-constant is addressed by its UID alone. The sharing commands `can_view`,
-`can_edit`, `add_to_view`, `add_to_edit`, `remove_from_view`,
-`remove_from_edit` and their team variants are gone. See
+constant is addressed by its UID alone. See
 [Constants](../../cli/index.md#constants) in the CLI reference.
 
 ### CLI access commands for secrets
@@ -594,9 +579,7 @@ mainsequence secrets access explain <SECRET_UID> secrets.read_value
 need no registered branch. `secrets delete` reads the secret, value included,
 before it asks for confirmation, and then deletes it, so it needs `editor` or
 `owner`. A refused command prints the platform's message and the policies that
-would allow it. The sharing commands `can_view`, `can_edit`, `add_to_view`,
-`add_to_edit`, `remove_from_view`, `remove_from_edit` and their team variants
-are gone. See [Secrets](../../cli/index.md#secrets) in the CLI reference.
+would allow it. See [Secrets](../../cli/index.md#secrets) in the CLI reference.
 
 This is the most concrete CLI example of Main Sequence RBAC at the resource level.
 
