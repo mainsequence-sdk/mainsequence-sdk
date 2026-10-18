@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [9.0.29] - 2026-10-18
+
 **Agents, resource releases, Jobs and Artifacts are decided by policies: `Agent`,
 `ResourceRelease`, `Job` and `Artifact` gain the access methods, and the Agent, release
 and Artifact sharing calls are removed.** The platform no longer serves view and edit
@@ -160,8 +162,6 @@ down to every branch of it and a Project's to its branches: `reader` gives branc
   [Users and Access](docs/knowledge/infrastructure/users_and_access.md), the Access
   Policy Catalog, Constants and Secrets, the CLI reference and the access-control skill
   say these types are decided by policies.
-
-## [9.0.29] - 2026-10-18
 
 **Maintenance and bug-auditor skills work independently.** Both remain bundled
 with the SDK, but no longer hand off to CodeRepository design or require a
