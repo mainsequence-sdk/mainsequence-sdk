@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+**Artifact uploads raise the SDK's typed errors (#232).** `Artifact.upload_file()` and
+`Artifact.get_or_create()` raised a bare `Exception("Failed to get artifact: <status> -
+<response text>")` for every failed answer. They now raise what every other client call
+raises: a refused upload raises `PermissionDeniedError`, whose `payload` names the
+`required_action` and the `granting_policies`, and another failure the matching
+`ApiError` subclass, such as `BadRequestError`, `NotFoundError` or `ServerError`, with
+the platform's message. Each is still an `Exception`. A successful upload is unchanged.
+
 **`AccessComputedRow` reads the `inherited` and `manager` rows (#231).** The
 `computed` rows of `get_access()` declared only `role` and `membership`. The platform
 also sends `inherited` rows, one per holder of a policy on a parent object that passes

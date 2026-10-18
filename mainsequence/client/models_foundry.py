@@ -827,6 +827,11 @@ class Artifact(
 
     @classmethod
     def upload_file(cls, filepath, name, bucket_name=None):
+        """Upload a file as an Artifact of `bucket_name`, or return the one already there.
+
+        It calls `get_or_create()`, with `default_bucket` when no bucket is
+        named, and raises what it raises.
+        """
         bucket_name = bucket_name if bucket_name else "default_bucket"
         return cls.get_or_create(
             filepath=filepath,
@@ -836,6 +841,14 @@ class Artifact(
 
     @classmethod
     def get_or_create(cls, filepath, name, bucket_name):
+        """Upload a file as the Artifact `name` of `bucket_name`, or return the one already there.
+
+        A failed answer raises the SDK's typed error, with the platform's
+        message and its answer as `payload`: a refused upload raises
+        `PermissionDeniedError`, whose `payload` names the `required_action`
+        and the `granting_policies`; another failure raises the matching
+        `ApiError` subclass, such as `BadRequestError` or `NotFoundError`.
+        """
         url = cls.get_object_url() + "/get-or-create/"
         s = cls.build_session()
         with open(filepath, "rb") as f:
@@ -850,8 +863,8 @@ class Artifact(
             payload = {"json": data, "files": files}
             r = make_request(s=s, loaders=cls.LOADERS, r_type="POST", url=url, payload=payload)
 
-            if r.status_code not in [200, 201]:
-                raise Exception(f"Failed to get artifact: {r.status_code} - {r.text}")
+            # The request payload holds the open file, so it is not attached to the error.
+            raise_for_response(r)
 
             return cls(**r.json())
 

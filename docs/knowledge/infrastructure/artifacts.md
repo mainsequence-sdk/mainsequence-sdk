@@ -100,6 +100,21 @@ for path in tqdm(vector_files):
 
 The SDK implementation of `upload_file()` already delegates to a `get_or_create` endpoint, so you usually do not need a separate existence check first.
 
+A failed upload raises the SDK's typed error with the platform's message. A
+refused upload raises `PermissionDeniedError`, whose `payload` names the
+`required_action` and the `granting_policies`, the policies that would allow
+it; another failure raises the matching `ApiError` subclass, such as
+`BadRequestError` or `NotFoundError`:
+
+```python
+from mainsequence.client.exceptions import PermissionDeniedError
+
+try:
+    Artifact.upload_file(filepath=str(path), name=path.name, bucket_name=BUCKET_NAME)
+except PermissionDeniedError as error:
+    print(error.payload["required_action"], error.payload["granting_policies"])
+```
+
 ## If you want an explicit "skip if present" flow
 
 Sometimes you still want the explicit check because you want custom logging or different behavior when the file already exists.
