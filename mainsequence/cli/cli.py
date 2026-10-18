@@ -2544,6 +2544,14 @@ def _format_access_binding(binding: dict[str, object]) -> list[tuple[str, str]]:
     ]
 
 
+def _format_computed_access_holder(row: dict[str, object]) -> str:
+    """Who a computed access row is about: an inherited row also names its holder."""
+    detail = str(row.get("detail") or "-")
+    if not isinstance(row.get("principal"), dict):
+        return detail
+    return f"{_format_access_principal(row.get('principal'))} ({detail})"
+
+
 def _format_access_explanation_path(path: dict[str, object]) -> str:
     if path.get("team_uid"):
         return f"team {path.get('team_uid')}, binding {path.get('binding_uid') or '-'}"
@@ -2684,7 +2692,7 @@ def _object_access_list_impl(
         [
             str(row.get("source") or "-"),
             str(row.get("policy") or ("every action" if row.get("source") == "role" else "-")),
-            str(row.get("detail") or "-"),
+            _format_computed_access_holder(row),
         ]
         for row in computed
     ]

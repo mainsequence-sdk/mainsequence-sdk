@@ -148,6 +148,8 @@ Every method also takes `timeout`.
   identity access.
 - Organization admins hold every action on their Organization's objects. That
   access is computed, not stored: `get_access()` shows it as a `computed` row.
+  So is a policy that passes down from a parent object, with who holds it, and
+  the creator's rights that the managers of a creating workload identity hold.
 
 ## What the models carry
 
@@ -157,7 +159,19 @@ Every method also takes `timeout`.
 | --- | --- |
 | `object` | `AccessObjectReference`: the object's `resource_type`, such as `organization-teams`, and `uid` |
 | `bindings` | The policies attached to the object, as `AccessBinding` |
-| `computed` | `AccessComputedRow` rows: access no binding stores. `source` is `role` for Organization admins, whose `policy` is `None` because they hold every action, or `membership` for Team members, who hold `organization-teams.member`. `detail` says it in words |
+| `computed` | `AccessComputedRow` rows: access no binding stores, below |
+
+`AccessComputedRow`:
+
+| Field | Meaning |
+| --- | --- |
+| `source` | `role` (Organization admins), `membership` (a Team's members, who hold `organization-teams.member`), `inherited` (one holder of a policy on a parent object that passes down) or `manager` (the managers of the workload identity that created the object) |
+| `detail` | Who receives the access, in words |
+| `policy` | The policy id the access amounts to. `None` on a `role` row, because admins hold every action, and on a `manager` row, because the managers hold the creator's rights |
+| `principal` | `AccessPrincipal`: who holds the parent policy, on an `inherited` row; `None` on the others |
+| `relation` | How the object relates to the parent, on an `inherited` row, for example `full-directory-team`: the full-directory team's `viewer` policy gives `viewer` on every team |
+| `parent` | `AccessObjectReference`: the parent object's `resource_type` and `uid`, on an `inherited` row |
+| `parent_policy` | The policy id held on the parent, on an `inherited` row |
 
 `AccessBinding`:
 

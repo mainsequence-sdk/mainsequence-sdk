@@ -158,31 +158,67 @@ class AccessBinding(BasePydanticModel):
     created_at: datetime.datetime | None = Field(None, description="When the binding was created.")
 
 
-class AccessComputedRow(BasePydanticModel):
-    """Access the platform computes for an object instead of storing a binding."""
-
-    source: OpenValueSet[Literal["role", "membership"]] = Field(
-        ...,
-        description=(
-            "`role` for the Organization admin role, `membership` for the access Team "
-            "members hold on their Team."
-        ),
-    )
-    detail: str = Field("", description="Who receives this access, in words.")
-    policy: str | None = Field(
-        None,
-        description="The policy id the computed access amounts to; None when it is every action.",
-    )
-
-
 class AccessObjectReference(BasePydanticModel):
-    """The object an access listing describes."""
+    """An object by type and UID: the object a listing describes, or an inherited row's parent."""
 
     resource_type: str = Field(
         ...,
         description="Resource type key of the object, for example `organization-teams`.",
     )
     uid: str = Field(..., description="Public UID of the object.")
+
+
+class AccessComputedRow(BasePydanticModel):
+    """Access the platform computes for an object instead of storing a binding.
+
+    `source` says where it comes from. A `role` row is the Organization admin
+    role: admins hold every action, and the row names no policy. A `membership`
+    row is the policy every member holds on their Team. An `inherited` row is
+    one holder of a policy on a parent object that passes down: `principal`
+    holds `parent_policy` on `parent`, which gives `policy` here through
+    `relation`. A `manager` row is the managers of the workload identity that
+    created the object, who hold its creator's rights; it names no policy
+    either. Only an `inherited` row carries `principal`, `relation`, `parent`
+    and `parent_policy`.
+    """
+
+    source: OpenValueSet[Literal["role", "membership", "inherited", "manager"]] = Field(
+        ...,
+        description=(
+            "`role` for the Organization admin role, `membership` for the access Team "
+            "members hold on their Team, `inherited` for a holder of a policy on a parent "
+            "object that passes down, and `manager` for the managers of the workload "
+            "identity that created the object."
+        ),
+    )
+    detail: str = Field("", description="Who receives this access, in words.")
+    policy: str | None = Field(
+        None,
+        description=(
+            "The policy id the computed access amounts to. None on a `role` row, because "
+            "Organization admins hold every action, and on a `manager` row, because the "
+            "managers hold the creator's rights."
+        ),
+    )
+    principal: AccessPrincipal | None = Field(
+        None,
+        description="Who holds the parent policy, on an `inherited` row; None on the others.",
+    )
+    relation: str | None = Field(
+        None,
+        description=(
+            "How the object relates to the parent, on an `inherited` row, for example "
+            "`full-directory-team`."
+        ),
+    )
+    parent: AccessObjectReference | None = Field(
+        None,
+        description="The parent object the policy is held on, on an `inherited` row.",
+    )
+    parent_policy: str | None = Field(
+        None,
+        description="The policy id held on the parent, on an `inherited` row.",
+    )
 
 
 class AccessListing(BasePydanticModel):

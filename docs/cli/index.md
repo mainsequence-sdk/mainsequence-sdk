@@ -415,8 +415,10 @@ member.
   as `owner`, stays.
 - `access list` prints the policies attached to the team, each with its
   binding UID, policy id, principal and source, and the access the platform
-  computes: Organization admins hold every action and members hold
-  `organization-teams.member`. It needs the team's `read_access` action.
+  computes: Organization admins hold every action, members hold
+  `organization-teams.member`, and each holder of the full-directory team's
+  `viewer` policy, named in the table, holds `viewer`. It needs the team's
+  `read_access` action.
 - `access grant` gives a policy, by name such as `viewer` or by id such as
   `organization-teams.viewer`, to a person or workload identity with `--user`
   or to a team with `--team`; pass exactly one. It needs the team's

@@ -86,6 +86,29 @@ def _listing():
     }
 
 
+INHERITED_DETAIL = "Team Everyone: organization-teams.viewer gives organization-teams.viewer here."
+MANAGER_DETAIL = "The managers of the workload that created this object hold its creator rights."
+
+
+def _inherited_row():
+    """A holder of the full-directory team's viewer policy, which passes down to every team."""
+    return {
+        "source": "inherited",
+        "detail": INHERITED_DETAIL,
+        "policy": "organization-teams.viewer",
+        "principal": {
+            "type": "user",
+            "uid": USER_UID,
+            "name": "Ana Smith",
+            "email": "ana@example.com",
+            "identity_type": "human",
+        },
+        "relation": "full-directory-team",
+        "parent": {"resource_type": "organization-teams", "uid": OTHER_TEAM_UID},
+        "parent_policy": "organization-teams.viewer",
+    }
+
+
 def _explanation(**overrides):
     explanation = {
         "action": "organization-teams.update",
@@ -382,6 +405,37 @@ def test_access_list_names_a_workload_principal(cli_mod, runner, monkeypatch, lo
     assert rendered["tables"][0][2] == [
         [BINDING_UID, "organization-teams.viewer", f"Workload {OTHER_TEAM_UID}", "explicit"]
     ]
+
+
+def test_access_list_names_the_holder_of_an_inherited_row(
+    cli_mod, runner, monkeypatch, logged_in, rendered
+):
+    monkeypatch.setattr(
+        cli_mod,
+        "get_organization_team_access",
+        lambda team_uid, *, timeout=None: {
+            **_listing(),
+            "computed": [
+                *_listing()["computed"],
+                _inherited_row(),
+                {"source": "manager", "detail": MANAGER_DETAIL, "policy": None},
+            ],
+        },
+    )
+
+    result = runner.invoke(cli_mod.app, ["organization", "teams", "access", "list", TEAM_UID])
+
+    assert result.exit_code == 0, result.output
+    assert rendered["tables"][1] == (
+        "Computed Access",
+        ["Source", "Policy", "Who"],
+        [
+            ["role", "every action", "Organization administrators hold every action."],
+            ["membership", "organization-teams.member", "Members hold the member policy."],
+            ["inherited", "organization-teams.viewer", f"ana@example.com ({INHERITED_DETAIL})"],
+            ["manager", "-", MANAGER_DETAIL],
+        ],
+    )
 
 
 def test_access_list_json_prints_the_listing(cli_mod, runner, monkeypatch, logged_in):
@@ -888,3 +942,30 @@ def test_a_refusal_from_the_platform_reaches_the_command_with_its_policies(
         in output
     )
     assert "Not logged in" not in output
+
+
+def test_access_list_json_keeps_the_inherited_and_manager_rows_through_the_sdk_client(
+    cli_mod, runner, monkeypatch
+):
+    manager = {"source": "manager", "detail": MANAGER_DETAIL, "policy": None}
+    _point_the_cli_at_a_mocked_backend(
+        cli_mod,
+        monkeypatch,
+        _Response(200, {"uid": TEAM_UID, "name": "Research", "members": [], "member_count": 0}),
+        _Response(200, {**_listing(), "computed": [_inherited_row(), manager]}),
+    )
+
+    result = runner.invoke(
+        cli_mod.app, ["organization", "teams", "access", "list", TEAM_UID, "--json"]
+    )
+
+    assert result.exit_code == 0, result.output
+    inherited, manager_row = json.loads(result.output)["computed"]
+    assert inherited == _inherited_row()
+    assert manager_row == {
+        **manager,
+        "principal": None,
+        "relation": None,
+        "parent": None,
+        "parent_policy": None,
+    }

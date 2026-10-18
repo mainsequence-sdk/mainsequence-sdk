@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+**`AccessComputedRow` reads the `inherited` and `manager` rows (#231).** The
+`computed` rows of `get_access()` declared only `role` and `membership`. The platform
+also sends `inherited` rows, one per holder of a policy on a parent object that passes
+down, and `manager` rows, the managers of the workload identity that created the
+object. Both were kept with a warning that asked for an SDK upgrade, and an inherited
+row lost its `principal`, `relation`, `parent` and `parent_policy`.
+
+- `AccessComputedRow.source` declares `inherited` and `manager`, and the model gains
+  `principal` (`AccessPrincipal`), `relation`, `parent` (`AccessObjectReference`) and
+  `parent_policy`, set on `inherited` rows and `None` on the others.
+- `policy` is `None` on a `role` row, because admins hold every action, and on a
+  `manager` row, because the managers hold the creator's rights; the description no
+  longer says that a missing policy means every action.
+- CLI: `access list` names the holder of an inherited row in the Computed Access table,
+  and `--json` prints the new fields.
+- Docs: [Who Has Access to an Object](docs/knowledge/infrastructure/object_access.md)
+  describes every computed row and its fields.
+
 **Secrets are decided by policies: `Secret` gains the access methods, and its
 sharing calls are removed.** The platform no longer serves view and edit sharing on
 secrets. A secret's policies are `reader` (see it, its name and its versions' dates,

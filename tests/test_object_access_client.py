@@ -14,6 +14,7 @@ import pytest
 import mainsequence.client as client_pkg
 import mainsequence.client.base as base_mod
 import mainsequence.code_repository_context as code_repository_context
+from mainsequence.client import value_sets
 from mainsequence.client.base import BaseObjectOrm
 from mainsequence.client.exceptions import (
     ApiError,
@@ -25,8 +26,10 @@ from mainsequence.client.models_foundry import Constant, Secret
 from mainsequence.client.models_user import OrganizationEnvironment, Team
 from mainsequence.client.object_access import (
     AccessBinding,
+    AccessComputedRow,
     AccessListing,
     AccessManagedObjectMixin,
+    AccessObjectReference,
     AccessPrincipal,
     CallerAccess,
 )
@@ -224,6 +227,110 @@ def test_get_access_reads_the_bindings_and_the_computed_rows(monkeypatch):
         ("role", None),
         ("membership", "organization-teams.member"),
     ]
+
+
+@pytest.fixture()
+def reported_lines(monkeypatch):
+    """What value_sets logs for an undeclared value; structlog does not reach caplog."""
+
+    lines: list[str] = []
+
+    class Recorder:
+        @staticmethod
+        def warning(message, *args, **kwargs):
+            lines.append(message)
+
+    value_sets._reset_reported_unknown_values()
+    monkeypatch.setattr(value_sets, "logger", Recorder)
+    yield lines
+    value_sets._reset_reported_unknown_values()
+
+
+def test_get_access_reads_inherited_and_manager_rows_with_their_fields(monkeypatch, reported_lines):
+    _install(
+        monkeypatch,
+        FakeResponse(
+            200,
+            {
+                "object": {"resource_type": "organization-teams", "uid": TEAM_UID},
+                "bindings": [],
+                "computed": [
+                    {
+                        "source": "role",
+                        "detail": "Organization administrators hold every action.",
+                        "policy": None,
+                    },
+                    {
+                        "source": "membership",
+                        "detail": "Members hold the member policy.",
+                        "policy": "organization-teams.member",
+                    },
+                    {
+                        "source": "inherited",
+                        "detail": (
+                            "Team Everyone: organization-teams.viewer gives "
+                            "organization-teams.viewer here."
+                        ),
+                        "policy": "organization-teams.viewer",
+                        "principal": _person(),
+                        "relation": "full-directory-team",
+                        "parent": {"resource_type": "organization-teams", "uid": OTHER_TEAM_UID},
+                        "parent_policy": "organization-teams.viewer",
+                    },
+                    {
+                        "source": "manager",
+                        "detail": (
+                            "The managers of the workload that created this object hold its "
+                            "creator rights."
+                        ),
+                        "policy": None,
+                    },
+                ],
+            },
+        ),
+    )
+
+    listing = _team().get_access()
+
+    role, membership, inherited, manager = listing.computed
+    assert [row.source for row in listing.computed] == [
+        "role",
+        "membership",
+        "inherited",
+        "manager",
+    ]
+    # Every source the platform sends is declared: nothing is reported as unknown.
+    assert reported_lines == []
+    assert isinstance(inherited.principal, AccessPrincipal)
+    assert inherited.principal.uid == USER_UID
+    assert inherited.principal.email == "ana@example.com"
+    assert inherited.relation == "full-directory-team"
+    assert isinstance(inherited.parent, AccessObjectReference)
+    assert inherited.parent.resource_type == "organization-teams"
+    assert inherited.parent.uid == OTHER_TEAM_UID
+    assert inherited.parent_policy == "organization-teams.viewer"
+    assert inherited.policy == "organization-teams.viewer"
+    # A manager row names no policy, and it does not mean every action.
+    assert manager.policy is None
+    for row in (role, membership, manager):
+        assert (row.principal, row.relation, row.parent, row.parent_policy) == (
+            None,
+            None,
+            None,
+            None,
+        )
+
+
+def test_the_computed_row_declares_every_source_and_says_what_a_missing_policy_means():
+    assert value_sets.declared_values(AccessComputedRow.model_fields["source"]) == (
+        "role",
+        "membership",
+        "inherited",
+        "manager",
+    )
+    policy = AccessComputedRow.model_fields["policy"].description
+    assert "`role`" in policy and "`manager`" in policy
+    assert "None when it is every action" not in policy
 
 
 def test_get_my_access_reads_the_callers_actions_and_policies(monkeypatch):
