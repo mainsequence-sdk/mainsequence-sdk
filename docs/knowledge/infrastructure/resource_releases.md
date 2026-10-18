@@ -132,6 +132,13 @@ automation identity, which holds no policy on them. Organization admins hold
 every action, and turning on acting for the requester is in no policy: only
 they do it.
 
+The token that `resolve_runtime_access()` returns in `access` belongs to the
+login that asked for it. Asked with your Main Sequence login
+(`mainsequence login` or a token pair), it stops working once you log out or
+that login session is revoked, even before it expires. Asked inside a hosted
+application with its own credential, it lasts until it expires. Either way the
+platform checks on every call that the caller may still call the release.
+
 A release also takes the policies of the branch that declares it: `reader` on
 the branch gives `viewer`, and `editor` or `owner` gives `editor`, whether the
 branch policy is held on the branch or passed down from its repository or a

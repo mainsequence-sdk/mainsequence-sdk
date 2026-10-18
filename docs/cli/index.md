@@ -135,6 +135,10 @@ tool result or terminal output.
 - on older backends without that endpoint, it falls back to JWT logout when possible
 - in runtime credential mode, or whenever no CLI refresh token exists, it only clears local CLI auth state
 
+A logout that revokes the login session also ends the
+[application tokens](../knowledge/infrastructure/resource_releases.md#who-can-use-a-release)
+obtained with that session.
+
 If you prefer shell-managed environment variables:
 
 ```bash
