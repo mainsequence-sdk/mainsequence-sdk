@@ -58,10 +58,11 @@ replay. Custom endpoints use their existing provider identifier and do not accep
 
 A credential's `user` policy authorizes its holders, including workload users,
 to use it and receive it in local Tau; a custom model provider's `user` policy lets
-them send requests through it. Holders may copy a delivered credential; detaching
-the policy cannot remove copies already delivered. Explain this before guiding
-someone through giving the `user` policy. This inference client executes on the
-server; provider management remains with the existing provider clients.
+them send requests through it and receive its stored authentication in local Tau.
+Holders may copy a delivered credential or authentication; detaching the policy
+cannot remove copies already delivered. Explain this before guiding someone
+through giving the `user` policy. This inference client executes on the server;
+provider management remains with the existing provider clients.
 
 ## Construct a completion envelope
 

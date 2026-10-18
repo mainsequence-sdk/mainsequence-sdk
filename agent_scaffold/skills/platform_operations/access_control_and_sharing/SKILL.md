@@ -229,9 +229,11 @@ too, as two types:
   signs in again, revokes it and sees who has access; `owner`, which the
   credential's person holds, also decides who has access;
 - a custom model provider, an inference endpoint with its own authentication
-  and models: `user` sends requests through it and its models; `editor` also
-  changes its endpoint, authentication and models, deletes it and sees who has
-  access; `owner`, which its creator holds, also decides who has access.
+  and models: `user` sends requests through it and its models and receives its
+  stored authentication in sessions and workloads, including local Tau, where
+  it can be copied; `editor` also changes its endpoint, authentication and
+  models, deletes it and sees who has access; `owner`, which its creator holds,
+  also decides who has access.
 
 Give `user` to the people and workloads that send requests through a
 credential or a custom provider, and only to those you trust with a credential

@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+**Docs: a custom model provider's `user` policy also receives its authentication
+(#233).** The pages and skills that describe the model-provider policies said that a
+custom model provider's `user` policy sends requests through it, and warned about
+copies only for a model-provider credential. The platform also delivers a custom
+provider's stored authentication to the runtimes of everyone who may use the provider,
+including local Tau, where it can be copied, and detaching the policy does not take
+back a copy.
+[Recorded model conversations](docs/knowledge/infrastructure/inference.md),
+[Who Has Access to an Object](docs/knowledge/infrastructure/object_access.md), the
+inference skill and the access-control skill now say so.
+
 **Code repositories, their branches and Projects are decided by policies:
 `CodeRepository` and `CodeRepositoryBranch` gain the access methods, a minimal
 `OrganizationProject` model serves them for Projects, and the repository sharing calls

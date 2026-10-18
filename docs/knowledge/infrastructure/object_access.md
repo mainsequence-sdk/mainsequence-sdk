@@ -134,9 +134,11 @@ too, as two types, each with three policies:
   access; `owner`, which the credential's person holds, also decides who has
   access;
 - a custom model provider, an inference endpoint with its own authentication
-  and models: `user` sends requests through it and its models; `editor` also
-  changes its endpoint, authentication and models, deletes it and sees who has
-  access; `owner`, which its creator holds, also decides who has access.
+  and models: `user` sends requests through it and its models and receives its
+  stored authentication in sessions and workloads, including local Tau, where
+  it can be copied; `editor` also changes its endpoint, authentication and
+  models, deletes it and sees who has access; `owner`, which its creator holds,
+  also decides who has access.
 
 The policies go to people, workload identities and Teams. The SDK has no model
 for these records, so it has no access methods for them; selecting a

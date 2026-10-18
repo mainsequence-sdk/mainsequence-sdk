@@ -60,11 +60,12 @@ only select credentials for their existing session/inference operations.
 Who may select a credential is decided by its policies: the `user` policy lets
 its holders receive and copy the credential in their own runtime, including
 local Tau, and a custom model provider's `user` policy lets them send requests
-through it. Give these policies only to people and workload operators you
-trust. Usage counts against the provider's quota or billing. Detaching the
-policy stops future retrieval; already delivered credentials may remain usable
-until expiry or revocation at the provider. Ordinary SDK results contain
-selection metadata, not provider credentials. See
+through it and receive and copy its stored authentication the same way. Give
+these policies only to people and workload operators you trust. Usage counts
+against the provider's quota or billing. Detaching the policy stops future
+retrieval; already delivered credentials may remain usable until expiry or
+revocation at the provider. Ordinary SDK results contain selection metadata,
+not provider credentials. See
 [Who Has Access to an Object](object_access.md) for every policy.
 
 Keep the same selection, request body and idempotency key when retrying an
