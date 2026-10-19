@@ -148,7 +148,7 @@ person, read `User.get_by_uid(uid)`: a workload identity has `identity_type`
 endpoint's application policy using the verified user UID.
 
 To list the people, Teams and workloads the caller can see, for example to
-offer sharing candidates, read inside `reads_as_caller()` from
+offer access candidates, read inside `reads_as_caller()` from
 `mainsequence.server.fastapi`: `User.filter`, `User.get_by_uid`, `Team.filter`
 and `Team.get_by_uid` then answer with the caller's visibility, and workload
 rows carry `managed_by_caller`. Outside a signed HTTP request it raises
@@ -250,8 +250,8 @@ def acting_identity() -> RequestUserIdentity:
   caller on any other. Never combine the caller's grants with the person's,
   and never fall back to the caller's rights when the person may not.
 - Before a write, check the exact object and action; the example's
-  team-membership check is not a general edit, run, share or delete grant. The
-  getter verifies identity, not operation permission.
+  team-membership check is not a general grant to edit, run, delete or give
+  access. The getter verifies identity, not operation permission.
 - Never parse the assertion, headers or MCP `_meta`, never read a person's UID
   from the request body, a header or a query parameter, and never let a caller
   name whom it acts for. Anyone can write a UID there. Only the signed

@@ -12,7 +12,8 @@
 The Main Sequence Python SDK is the client and development toolkit for the Main
 Sequence platform. It provides authentication, typed platform resources,
 CodeRepository development and release operations, Agent and A2A workflows,
-jobs, sharing, observability, logging, tracing, and reusable scaffold tooling.
+jobs, access policies, observability, logging, tracing, and reusable scaffold
+tooling.
 
 MetaTables is now an independent domain package, installed as
 `mainsequence-metatable` and imported as `metatables`. Table models, time-index
@@ -33,8 +34,8 @@ execution are no longer implemented by this distribution.
 Main package areas:
 
 - `mainsequence.client`: API client models for users, CodeRepositories, jobs,
-  Agents, artifacts, constants, secrets, sharing, releases, and other platform
-  resources
+  Agents, artifacts, constants, secrets, access policies, releases, and other
+  platform resources
 - `mainsequence.cli`: the complete `mainsequence` command-line interface for
   authentication, platform resources, and local CodeRepository operations
 - `mainsequence.instrumentation` and `mainsequence.logconf`: SDK tracing and
@@ -98,7 +99,8 @@ mainsequence code-repository build-local-venv --path .
 Use `mainsequence --help` and `mainsequence code-repository --help` for the
 installed command surface. The CLI includes Agent and AgentSession,
 CodeRepository, jobs and runs, images, resources and releases, constants,
-secrets, teams, sharing, scaffold, Docker, and local-development commands.
+secrets, teams, access policies, scaffold, Docker, and local-development
+commands.
 
 ## Python Client
 

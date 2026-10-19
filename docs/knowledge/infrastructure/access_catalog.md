@@ -21,8 +21,7 @@ an object is read and changed on the object itself, as
 object works this way: teams, Organization Environments, constants, secrets,
 buckets, Artifacts, code repositories, their branches, Projects, Agents,
 resource releases, Jobs, model-provider credentials and custom model providers.
-No object uses view and edit sharing any more; see
-[Users and Access](users_and_access.md#resource-access).
+[Users and Access](users_and_access.md#resource-access) names the policies of each.
 
 ## Read the catalog in Python
 

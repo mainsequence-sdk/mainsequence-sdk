@@ -29,9 +29,10 @@ Use the knowledge guides for platform concepts and end-to-end behavior:
 ### CLI
 
 Use the [CLI overview](cli/index.md) for authentication, Agents,
-CodeRepositories, jobs and runs, images, resources and releases, sharing,
-scaffold maintenance, Docker, and local-development commands. The installed
-`mainsequence --help` output is authoritative for the installed SDK version.
+CodeRepositories, jobs and runs, images, resources and releases, access
+policies, scaffold maintenance, Docker, and local-development commands. The
+installed `mainsequence --help` output is authoritative for the installed SDK
+version.
 
 ### Reference
 

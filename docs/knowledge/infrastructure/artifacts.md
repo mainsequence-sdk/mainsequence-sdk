@@ -241,23 +241,16 @@ artifact.detach_policy(binding.uid)
 The access methods address the Artifact by its UID alone, so they need no
 Environment; with a workload's runtime credentials they reach only the
 Artifacts of that workload's Environment. A refused change raises
-`PermissionDeniedError` too. Existing view grants became `viewer` and edit
-grants `editor`. A repository workflow file's `access` entry for an Artifact
-gives its workload the policy it names, such as `policy: viewer`.
+`PermissionDeniedError` too. A repository workflow file's `access` entry for
+an Artifact gives its workload the policy it names, such as `policy: viewer`.
 `mainsequence access policies --type artifacts` lists the policies with their
 actions; the CLI has no Artifact commands.
-
-`Artifact` no longer has view and edit sharing methods: `can_view()`,
-`can_edit()`, `add_to_view()`, `add_to_edit()`, `remove_from_view()`,
-`remove_from_edit()`, their team variants and the `users_can_*` and
-`list_users_can_*` aliases are gone.
 
 ## Who can use a bucket
 
 A bucket's access is decided by its policies:
 
-- `reader`: browse its folders and the Artifacts in it that are shared with
-  you;
+- `reader`: browse its folders and the Artifacts in it that you can see;
 - `contributor`: also upload Artifacts and create folders;
 - `editor`: also rename the bucket, rename and delete folders, delete the
   bucket with every Artifact in it, and see who has access;
@@ -299,16 +292,8 @@ The access methods address the bucket by its UID alone, so they need no
 Environment. A refused change raises `PermissionDeniedError` too.
 `mainsequence access policies --type buckets` lists the policies with their
 actions, and [Who Has Access to an Object](object_access.md) describes every
-method and model.
-
-`Bucket` no longer has view and edit sharing methods: `can_view()`,
-`can_edit()`, `add_to_view()`, `add_to_edit()`, `remove_from_view()`,
-`remove_from_edit()`, their team variants and the `users_can_*` and
-`list_users_can_*` aliases are gone. Existing view grants became
-`contributor`, which browses, uploads and creates folders as view did but no
-longer renames or deletes folders, and edit grants `editor`. A repository
-workflow file's `access` entry for a bucket gives its workload the policy it
-names, such as `policy: contributor`.
+method and model. A repository workflow file's `access` entry for a bucket
+gives its workload the policy it names, such as `policy: contributor`.
 
 ## Common mistakes
 

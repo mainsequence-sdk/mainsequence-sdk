@@ -34,7 +34,7 @@ This skill must not claim ownership of:
 
 - domain-package data production and schema semantics
 - Command Center FastAPI wire contracts
-- RBAC or sharing policy
+- RBAC or access policies
 - application UI implementation details
 
 ## Route Adjacent Work
@@ -43,7 +43,7 @@ This skill must not claim ownership of:
   package skills and documentation
 - Command Center FastAPI provider implementation and contract validation:
   `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
-- RBAC and sharing:
+- RBAC and access policies:
   `.agents/skills/mainsequence/platform_operations/access_control_and_sharing/SKILL.md`
 
 ## Read First

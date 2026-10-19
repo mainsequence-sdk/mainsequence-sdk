@@ -132,6 +132,14 @@ automation identity, which holds no policy on them. Organization admins hold
 every action, and turning on acting for the requester is in no policy: only
 they do it.
 
+The token that `resolve_runtime_access()` returns in `access` belongs to the
+login that asked for it. Asked with your Main Sequence login
+(`mainsequence login` or a token pair), it stops working within at most 60
+seconds after you log out or that login session is revoked, even before it
+expires. Asked inside a hosted application with its own credential, it lasts
+until it expires. Either way the platform checks again, at least every 60
+seconds, that the caller may still call the release.
+
 A release also takes the policies of the branch that declares it: `reader` on
 the branch gives `viewer`, and `editor` or `owner` gives `editor`, whether the
 branch policy is held on the branch or passed down from its repository or a
@@ -162,17 +170,11 @@ The access methods address the release by its UID alone and take no
 Environment; with a workload's runtime credentials they reach only the releases
 of that workload's Environment. A refused change raises
 `PermissionDeniedError`, whose `payload` names the `required_action` and the
-`granting_policies`. Existing view grants became `viewer` and edit grants
-`editor`. A repository workflow file's `access` entry for a release gives its
-workload the policy it names, such as `policy: user`. `mainsequence access
-policies --type resource-releases` lists the policies with their actions, and
-[Who Has Access to an Object](object_access.md) describes every method and
-model.
-
-`ResourceRelease` no longer has view and edit sharing methods: `can_view()`,
-`can_edit()`, `add_to_view()`, `add_to_edit()`, `remove_from_view()`,
-`remove_from_edit()`, their team variants and the `users_can_*` and
-`list_users_can_*` aliases are gone.
+`granting_policies`. A repository workflow file's `access` entry for a release
+gives its workload the policy it names, such as `policy: user`. `mainsequence
+access policies --type resource-releases` lists the policies with their
+actions, and [Who Has Access to an Object](object_access.md) describes every
+method and model.
 
 From the command line:
 

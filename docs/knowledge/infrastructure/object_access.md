@@ -9,11 +9,11 @@ person, a workload identity or a Team, on one object. That attachment is a
 Every shareable object is decided this way: teams, Organization
 Environments, constants, secrets, buckets, Artifacts, code repositories, their
 branches, Projects, Agents, resource releases, Jobs, model-provider credentials
-and custom model providers. No object uses view and edit sharing any more; see
+and custom model providers; see
 [Users and Access](users_and_access.md#resource-access).
 
-Working in an Environment is a policy. `member` works in it, opens what is
-shared with the person there, and creates Projects, Buckets, Constants,
+Working in an Environment is a policy. `member` works in it, opens the objects
+there that the person has access to, and creates Projects, Buckets, Constants,
 Secrets, model providers and repositories in it; `observer` works in it
 without creating anything. Both go to people and Teams, never to workload
 identities, and only Organization admins attach or detach them, with the same
@@ -26,8 +26,8 @@ environment = OrganizationEnvironment.get_by_uid(environment_uid)
 environment.attach_policy("observer", principal_type="team", principal_uid=team_uid)
 ```
 
-Being admitted to an Environment never shows objects that are not shared with
-the person. Creating inside it without the create action, for example a
+Being admitted to an Environment never shows objects the person has no access
+to. Creating inside it without the create action, for example a
 Constant as an `observer`, raises `PermissionDeniedError` with
 `required_action` `organization-environments.create_constant`.
 
@@ -35,7 +35,7 @@ A Constant has three policies: `reader` sees it and its value; `editor` also
 changes its name and value, deletes it and sees who has access; `owner` also
 decides who has access. The person or workload that creates a Constant holds
 `owner`. The policies go to people, workload identities and Teams, with the
-same methods on `Constant`, which no longer has view and edit sharing methods:
+same methods on `Constant`:
 
 ```python
 from mainsequence.client import Constant
@@ -54,8 +54,7 @@ also reads its current value; `editor` also reads earlier values, sets a new
 value, deletes it and sees who has access; `owner` also decides who has access.
 The person or workload that creates a Secret holds `owner`. The policies go to
 people, workload identities and Teams with the same methods on `Secret`, which
-no longer has view and edit sharing methods either, and which need no
-Environment:
+need no Environment:
 
 ```python
 from mainsequence.client import Secret
@@ -70,14 +69,13 @@ Reading a Secret's value without `value_reader`, with `Secret.get()` or
 [Constants and Secrets](constants_and_secrets.md#who-can-use-a-secret).
 
 A Bucket has four policies: `reader` browses its folders and the Artifacts in
-it that are shared with the person; `contributor` also uploads Artifacts and
+it that the person can see; `contributor` also uploads Artifacts and
 creates folders; `editor` also renames the Bucket, renames and deletes folders,
 deletes the Bucket with every Artifact in it, and sees who has access; `owner`
 also decides who has access. The person or workload that creates a Bucket
 holds `owner`, also when an upload creates it by name. The policies go to
 people, workload identities and Teams with the same methods on `Bucket`, which
-no longer has view and edit sharing methods either, and which need no
-Environment:
+need no Environment:
 
 ```python
 from mainsequence.client import Bucket
@@ -192,10 +190,9 @@ too, as two types, each with three policies:
 The policies go to people, workload identities and Teams. The SDK has no model
 for these records, so it has no access methods for them; selecting a
 credential or a custom provider for a session or an inference request needs its
-`use` action, which all three policies include. Existing view grants became
-`user` and edit grants `editor`, and a repository workflow file's `access`
-entry for model providers names the policy it gives (`policy: user`, `editor`
-or `owner`).
+`use` action, which all three policies include. A repository workflow file's
+`access` entry for model providers names the policy it gives (`policy: user`,
+`editor` or `owner`).
 
 ## Read and change access in Python
 
@@ -309,7 +306,7 @@ Every method also takes `timeout`.
 | `uid` | The binding's UID, which `detach_policy()` takes |
 | `policy` | `AccessPolicyReference`: the policy's `id` and `label` |
 | `principal` | `AccessPrincipal`: who holds it |
-| `source` | Why it exists: `explicit` (someone attached it), `creator` (given to the object's creator), `workflow` (declared in a repository workflow file) or `migrated` (converted from an earlier view or edit grant). The source grants nothing by itself |
+| `source` | Why it exists: `explicit` (someone attached it), `creator` (given to the object's creator), `workflow` (declared in a repository workflow file) or `migrated` (created by the platform when it moved existing access to policies). The source grants nothing by itself |
 | `granted_by` | `AccessGrantor`: the `uid` and `email` of the User who attached it, or `None` |
 | `workflow_declaration` | `AccessWorkflowDeclaration`: the workflow file's `path` and the declaration's `key`, for a `workflow` binding; otherwise `None` |
 | `created_at` | When it was created |

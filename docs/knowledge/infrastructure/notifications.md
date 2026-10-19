@@ -257,4 +257,4 @@ Notification.dismiss_all()
 - do not treat team targeting as cross-organization messaging
 - do not assume a user can message any other user in the organization without the role and team rules above
 
-For broader organization, team, and sharing semantics, see [Users and Access](users_and_access.md).
+For broader organization, team, and access semantics, see [Users and Access](users_and_access.md).

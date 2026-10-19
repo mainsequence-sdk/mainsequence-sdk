@@ -122,7 +122,7 @@ def test_environment_resource_create_delete_and_detail_actions_are_scoped(monkey
         requests.append(kwargs)
         if kwargs["r_type"] == "DELETE":
             return _Response(None, status_code=204, content=b"")
-        if kwargs["url"].endswith("/can-view/"):
+        if kwargs["url"].endswith("/example-action/"):
             return _Response({"ok": True})
         return _Response(_secret_payload(), status_code=201)
 
@@ -130,9 +130,10 @@ def test_environment_resource_create_delete_and_detail_actions_are_scoped(monkey
 
     secret = models_module.Secret.create(name="API_KEY", value="secret")
     secret.delete()
-    # An Artifact keeps its view and edit sharing routes, which send the Environment.
+    # A detail action sends the Environment too, unless its route addresses the
+    # object by its UID alone, as the access routes do.
     artifact = models_module.Artifact.model_construct(uid="44444444-4444-4444-8444-444444444444")
-    artifact._request_detail_action(r_type="GET", action_name="can-view")
+    artifact._request_detail_action(r_type="GET", action_name="example-action")
 
     assert requests[0]["payload"]["json"] == {
         "name": "API_KEY",
@@ -142,7 +143,9 @@ def test_environment_resource_create_delete_and_detail_actions_are_scoped(monkey
     assert requests[1]["payload"]["params"] == {
         "organization_environment_uid": ENVIRONMENT_UID,
     }
-    assert requests[2]["url"].endswith("/artifacts/44444444-4444-4444-8444-444444444444/can-view/")
+    assert requests[2]["url"].endswith(
+        "/artifacts/44444444-4444-4444-8444-444444444444/example-action/"
+    )
     assert requests[2]["payload"]["params"] == {
         "organization_environment_uid": ENVIRONMENT_UID,
     }

@@ -131,13 +131,14 @@ class UserApiBaseObjectOrm(BaseObjectOrm):
 class OrganizationEnvironment(AccessManagedObjectMixin, UserApiBaseObjectOrm, BasePydanticModel):
     """Public Environment metadata, scoped by authenticated platform visibility.
 
-    Working in an Environment is a policy. `member` works in it, opens what is
-    shared with the person there, and creates Projects, Buckets, Constants,
-    Secrets, model providers and repositories in it; `observer` works in it
-    without creating anything. Both go to people and Teams, never to workload
-    identities, and only Organization admins attach or detach them. The access
-    methods (`get_access()`, `attach_policy()`, ...) read and change them;
-    being admitted never shows objects that are not shared with the person.
+    Working in an Environment is a policy. `member` works in it, opens the
+    objects there that the person has access to, and creates Projects,
+    Buckets, Constants, Secrets, model providers and repositories in it;
+    `observer` works in it without creating anything. Both go to people and
+    Teams, never to workload identities, and only Organization admins attach
+    or detach them. The access methods (`get_access()`, `attach_policy()`, ...)
+    read and change them; being admitted never shows objects the person has no
+    access to.
     """
 
     ENDPOINT: ClassVar[str] = "organization-environments"
@@ -228,7 +229,7 @@ class Group(BasePydanticModel):
 
 
 class UserSummary(BasePydanticModel):
-    """A person or workload identity in a team or sharing response.
+    """A person or workload identity in a team response.
 
     Personal fields are ``None`` for workload identities or when not supplied.
     Team responses carry ``member_kind`` to distinguish people from workloads.
@@ -275,40 +276,6 @@ class UserSummary(BasePydanticModel):
         title="Phone Number",
         description="Optional phone number associated with the user.",
         examples=["+43123456789"],
-    )
-
-    @model_validator(mode="before")
-    @classmethod
-    def _drop_internal_id(cls, value: Any) -> Any:
-        if isinstance(value, dict):
-            value = {key: item for key, item in value.items() if key != "id"}
-        return value
-
-
-class ShareableTeamSummary(BasePydanticModel):
-    uid: str | None = Field(
-        None,
-        title="Team UID",
-        description="Stable public unique identifier of the team in shareable-access responses.",
-        examples=["3f1cc452-43ec-49cb-b2ba-87dbac164d29"],
-    )
-    name: str = Field(
-        ...,
-        title="Team Name",
-        description="Human-readable name of the team.",
-        examples=["Research"],
-    )
-    description: str = Field(
-        "",
-        title="Team Description",
-        description="Optional textual description of the team.",
-        examples=["Team responsible for model research and validation."],
-    )
-    member_count: int = Field(
-        0,
-        title="Member Count",
-        description="Number of members currently in the team.",
-        examples=[5],
     )
 
     @model_validator(mode="before")
@@ -405,7 +372,7 @@ class Team(
 ):
     """A group of people and workload identities in one Organization.
 
-    Membership is who is in the Team: who receives what is shared with it.
+    Membership is who is in the Team: who receives the policies the Team holds.
     Control is the policies on the Team: `viewer` sees it and its members,
     `membership_manager` adds and removes members, `editor` renames,
     describes, activates or deactivates it and sees its policies, and `owner`
@@ -1080,47 +1047,6 @@ class Notification(DetailActionObjectMixin, BasePydanticModel, UserApiBaseObject
         if response.status_code != 200:
             raise_for_response(response, payload=payload or None)
         return NotificationBulkActionResult.model_validate(response.json())
-
-
-class ShareableAccessState(BasePydanticModel):
-    object_uid: str | None = Field(
-        ...,
-        title="Object UID",
-        description="Public uid of the shareable object whose access is being described.",
-        examples=["24001fc7-098c-40fa-b398-1d2352b7c224"],
-    )
-    object_type: str = Field(
-        ...,
-        title="Object Type",
-        description="Backend object type identifier for the shareable object.",
-        examples=["tdag.constant"],
-    )
-    access_level: OpenValueSet[Literal["view", "edit"]] = Field(
-        ...,
-        title="Access Level",
-        description="Permission level represented by this access-state payload.",
-        examples=["view"],
-    )
-    users: list[UserSummary] = Field(
-        default_factory=list,
-        title="Users",
-        description="Users with this explicit access level on the object.",
-    )
-    teams: list[ShareableTeamSummary] = Field(
-        default_factory=list,
-        title="Teams",
-        description="Teams with this access level on the object.",
-        examples=[
-            [
-                {
-                    "uid": "3f1cc452-43ec-49cb-b2ba-87dbac164d29",
-                    "name": "Research",
-                    "description": "Research team",
-                    "member_count": 5,
-                }
-            ]
-        ],
-    )
 
 
 class User(_CallerDirectoryReadMixin, UserApiBaseObjectOrm, BasePydanticModel):

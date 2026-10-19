@@ -59,16 +59,10 @@ The access methods address the Agent by its UID alone and take no
 Environment; with a workload's runtime credentials they reach only the Agents
 of that workload's Environment. A refused change raises
 `PermissionDeniedError`, whose `payload` names the `required_action` and the
-`granting_policies`. Existing view grants became `viewer` and edit grants
-`editor`; attach those policies where you used to share. A repository workflow
-file's `access` entry for an Agent gives its workload the policy it names, such
-as `policy: user`. `mainsequence access policies --type agents` lists the
-policies with their actions.
-
-`Agent` no longer has view and edit sharing methods: `can_view()`,
-`can_edit()`, `add_to_view()`, `add_to_edit()`, `remove_from_view()`,
-`remove_from_edit()`, their team variants and the `users_can_*` and
-`list_users_can_*` aliases are gone.
+`granting_policies`. A repository workflow file's `access` entry for an Agent
+gives its workload the policy it names, such as `policy: user`.
+`mainsequence access policies --type agents` lists the policies with their
+actions.
 
 ## Its runtime release and backing Job
 
@@ -78,8 +72,7 @@ backing Job: `viewer` and `operator` on the Agent give `viewer` on the release,
 the branch does not reach that release, and the release takes no policy of its
 own: `ResourceRelease.attach_policy()` on it raises `BadRequestError` whose
 `payload` has `code` `sharing_managed_by_owner`. Give access on the Agent
-instead. Grants recorded on such a release before became the Agent's, at the
-higher of the two levels. See
+instead. See
 [Who can use a release](resource_releases.md#who-can-use-a-release).
 
 ## From the command line
@@ -98,7 +91,5 @@ mainsequence agent access explain <AGENT_UID> agents.use
 the policy, `<TEAM_UID>` the team's, and `<BINDING_UID>` the UID of a binding,
 which `access list` shows. The commands address the Agent by its UID alone and
 need no registered branch. A refused command prints the platform's message and
-the policies that would allow it. The sharing commands `agent can_view`,
-`can_edit`, `add_to_view`, `add_to_edit`, `remove_from_view`,
-`remove_from_edit` and their team variants are gone. See
-[Agents](../../cli/index.md#agents) in the CLI reference.
+the policies that would allow it. See [Agents](../../cli/index.md#agents) in
+the CLI reference.

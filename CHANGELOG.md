@@ -6,6 +6,51 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [9.0.30] - 2026-10-19
+
+**Docs: the pages, docstrings and skills describe only the policy model.** Every
+object's access is decided by policies, so the documentation no longer explains it
+through view and edit sharing. The notes that listed the removed sharing methods and
+commands, and those that said how earlier view and edit grants were converted, are
+removed, and text that spoke of sharing a resource with someone now speaks of the
+policies a person, a workload identity or a team holds on it. The `migrated` source of
+an `AccessBinding` is described as a binding the platform created when it moved
+existing access to policies, and the `OrganizationEnvironment`, `Team` and `Bucket`
+docstrings speak of the objects a person has access to.
+[Users and Access](docs/knowledge/infrastructure/users_and_access.md),
+[Who Has Access to an Object](docs/knowledge/infrastructure/object_access.md), the
+Access Policy Catalog, Artifacts, Constants and Secrets, Code Repositories, Branches and
+Projects, Agents, Resource releases, Scheduling Jobs, Notifications, the FastAPI page,
+the CLI reference, the README and the access-control, API surfaces, orchestration and
+CodeRepository execution skills change. No behaviour changes.
+
+**The view and edit sharing types are removed: `ShareableObjectMixin`,
+`PermissionManagedObjectMixin`, `ShareableAccessState` and `ShareableTeamSummary`.** No
+SDK model has used them since 9.0.29, and the platform serves none of the routes their
+methods called, so every call could only fail. Access to an object is read and changed
+with the access methods of `AccessManagedObjectMixin`; see
+[Who Has Access to an Object](docs/knowledge/infrastructure/object_access.md).
+
+- Removed from `mainsequence.client.base`: `PermissionManagedObjectMixin` and its alias
+  `ShareableObjectMixin`, with `can_view()`, `can_edit()`, `users_can_view()`,
+  `users_can_edit()`, `list_users_can_view()`, `list_users_can_edit()`, `add_to_view()`,
+  `add_to_edit()`, `remove_from_view()`, `remove_from_edit()`, `add_team_to_view()`,
+  `add_team_to_edit()`, `remove_team_from_view()` and `remove_team_from_edit()`.
+- Removed from `mainsequence.client.models_user`, and so from `mainsequence.client`:
+  `ShareableAccessState` and `ShareableTeamSummary`, the answer of the `can-view` and
+  `can-edit` routes. `UserSummary`, which team responses carry, stays.
+
+**Docs: logging out ends the release tokens obtained with that login.** The token that
+`ResourceRelease.resolve_runtime_access()` returns in `access` belongs to the login that
+asked for it. When that is your Main Sequence login (`mainsequence login` or a token pair),
+the platform now ends the token within at most 60 seconds after you log out or that login
+session is revoked, even before it expires; a token asked for inside a hosted application
+with its own credential still lasts until it expires.
+[Resource releases](docs/knowledge/infrastructure/resource_releases.md) and
+[the CLI reference](docs/cli/index.md) say so. No SDK code changes.
+
+## [9.0.29] - 2026-10-18
+
 **Agents, resource releases, Jobs and Artifacts are decided by policies: `Agent`,
 `ResourceRelease`, `Job` and `Artifact` gain the access methods, and the Agent, release
 and Artifact sharing calls are removed.** The platform no longer serves view and edit
@@ -160,8 +205,6 @@ down to every branch of it and a Project's to its branches: `reader` gives branc
   [Users and Access](docs/knowledge/infrastructure/users_and_access.md), the Access
   Policy Catalog, Constants and Secrets, the CLI reference and the access-control skill
   say these types are decided by policies.
-
-## [9.0.29] - 2026-10-18
 
 **Maintenance and bug-auditor skills work independently.** Both remain bundled
 with the SDK, but no longer hand off to CodeRepository design or require a

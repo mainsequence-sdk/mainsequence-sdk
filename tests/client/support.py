@@ -1,9 +1,7 @@
-import ast
-import pathlib
-
 from pydantic import ConfigDict, Field
 
-from mainsequence.client.base import BaseObjectOrm, BasePydanticModel, ShareableObjectMixin
+from mainsequence.client.base import BaseObjectOrm, BasePydanticModel
+from mainsequence.client.object_access import AccessManagedObjectMixin
 
 CODE_REPOSITORY_UID = "1d0530c0-65d1-4db0-856b-dc29d8260a09"
 
@@ -91,27 +89,13 @@ class DemoReadModel(BaseObjectOrm):
         return object()
 
 
-class DemoShareableModel(ShareableObjectMixin, BaseObjectOrm):
-    def __init__(self, uid: str, internal_id: int | None = None):
-        self.uid = uid
-        self.id = internal_id
-
-    @classmethod
-    def get_object_url(cls, custom_endpoint_name=None):
-        return "https://backend.test/demo-shareable"
-
-    @classmethod
-    def build_session(cls):
-        return object()
-
-
-class DemoIdOnlyResource(ShareableObjectMixin, BaseObjectOrm):
+class DemoIdOnlyResource(AccessManagedObjectMixin, BaseObjectOrm):
     def __init__(self, internal_id: int):
         self.id = internal_id
 
     @classmethod
     def get_object_url(cls, custom_endpoint_name=None):
-        return "https://backend.test/demo-shareable"
+        return "https://backend.test/demo-id-only"
 
     @classmethod
     def build_session(cls):
@@ -377,18 +361,3 @@ def _ready_runtime_contract():
             "wake": None,
         },
     }
-
-
-def _class_base_names_from_source(path: pathlib.Path) -> dict[str, list[str]]:
-    tree = ast.parse(path.read_text(encoding="utf-8"))
-    out: dict[str, list[str]] = {}
-    for node in tree.body:
-        if isinstance(node, ast.ClassDef):
-            base_names: list[str] = []
-            for base in node.bases:
-                if isinstance(base, ast.Name):
-                    base_names.append(base.id)
-                elif isinstance(base, ast.Attribute):
-                    base_names.append(base.attr)
-            out[node.name] = base_names
-    return out
