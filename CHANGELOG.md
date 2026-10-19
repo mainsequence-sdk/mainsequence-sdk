@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [9.0.30] - 2026-10-19
+
 **Docs: the pages, docstrings and skills describe only the policy model.** Every
 object's access is decided by policies, so the documentation no longer explains it
 through view and edit sharing. The notes that listed the removed sharing methods and
