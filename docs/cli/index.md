@@ -339,7 +339,9 @@ There is no per-checkout token command: the session belongs to the machine, and
 During `set-up-locally`, the CLI registers a new or inaccessible deploy key through
 `/api/v1/code-repositories/{code_repository_uid}/add-deploy-key/` and verifies repository access with the forced
 identity before cloning. Registration or access failure stops setup. Repository branch selection
-only chooses the branch to clone; it is not deploy-key ownership.
+only chooses the branch to clone; it is not deploy-key ownership. Adding the deploy key needs the
+repository's `add_deploy_key` action: repository `editor` or `owner`, or `editor` of one of its
+branches, held directly, through a team or through a Project.
 
 The key filename is `~/.ssh/mainsequence-<repository-slug>-<first-16-sha256>`, with SHA-256 applied
 to normalized `host[:non-default-port]/repository/path`. Equivalent SCP and `ssh://` origins share
@@ -541,6 +543,15 @@ archives it, adds deploy keys, creates branches, edits every branch and sees
 who has access; `owner` also decides who has access. The repository's creator
 holds `owner`. Deleting a repository is in no policy: only Organization admins
 delete one. A repository's policies pass down to every branch of it.
+
+A policy on one of the repository's branches, held directly, through a team or
+through a Project, also reaches the repository without reaching its other
+branches: a branch `reader` finds and sees the repository, and a branch
+`editor` or `owner` also adds deploy keys to develop locally. These two
+computed policies, `code-repositories.branch_reader` and
+`code-repositories.branch_editor`, appear in `access list` as computed access
+and cannot be granted, and they apply only while the person can work in the
+branch's environment.
 
 - `access list` prints the policies attached to the repository, each with its
   binding UID, policy id, principal and source, and the access the platform

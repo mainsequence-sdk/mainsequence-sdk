@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+**Docs: a branch or Project policy reaches the repository.** The platform now gives
+the holder of a policy on one of a repository's branches, held directly, through a
+team or through a Project, two computed repository policies:
+`code-repositories.branch_reader` (find and see the repository, with its issues) and,
+for a branch `editor` or `owner`, `code-repositories.branch_editor` (also add deploy
+keys, as `set-up-locally` does). Neither reaches the repository's other branches,
+neither can be granted, and both apply only while the person works in the branch's
+environment. [Code Repositories, Branches and Projects](docs/knowledge/infrastructure/code_repositories.md),
+the CLI reference and the CLI knowledge page say so. No client code changes.
+
 ## [9.0.30] - 2026-10-19
 
 **Docs: the pages, docstrings and skills describe only the policy model.** Every

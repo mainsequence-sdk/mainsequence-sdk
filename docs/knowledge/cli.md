@@ -93,7 +93,8 @@ the file.
 Local setup registers a new or inaccessible deploy key against the logical CodeRepository at
 `/api/v1/code-repositories/{code_repository_uid}/add-deploy-key/` and verifies repository access with that forced
 identity before cloning. The selected CodeRepositoryBranch is only the Git branch to clone and is not the
-owner of repository credentials.
+owner of repository credentials. Adding the key needs the repository's `add_deploy_key` action: repository
+`editor` or `owner`, or `editor` of one of its branches, held directly, through a team or through a Project.
 
 Repository keys use the cross-CLI filename
 `~/.ssh/mainsequence-<repository-slug>-<first-16-sha256>` derived from the normalized
