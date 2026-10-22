@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+**Docs: `requirements.txt` decides the deployed dependencies, and the repository's own
+package is not installed.** The platform now builds a repository's dependency image from
+the committed `requirements.txt` that `mainsequence code-repository sync` writes
+(otherwise from `pyproject.toml`), once for each content of that file, and reuses it for
+every commit on every branch in the same Environment until the file changes, so a commit
+that changes only code deploys without installing dependencies again. Every Job, FastAPI
+release and Agent runs the repository's files from `/workspace`, with `/workspace/src`
+and `/workspace` on `PYTHONPATH`, so code cannot use `importlib.metadata`, console
+scripts or compiled extensions of its own package. A dependency missing from
+`requirements.txt` fails at import, another local path or a `-r` or `-c` reference fails
+the dependency build, and unpinned requirements stay as first resolved until the file
+changes. [CLI usage](docs/knowledge/cli.md#dependencies-and-the-deployed-image), the CLI
+reference, Scheduling Jobs, the `code-repository sync` help and the maintenance and API
+surfaces skills say so. No SDK behaviour changes.
+
 **Docs: a branch or Project policy reaches the repository.** The platform now gives
 the holder of a policy on one of a repository's branches, held directly, through a
 team or through a Project, two computed repository policies:

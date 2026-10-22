@@ -169,6 +169,48 @@ repository's own CI. See
 [Deploy on every push or on release tags](infrastructure/scheduling_jobs.md#deploy-on-every-push-or-on-release-tags)
 for an example release workflow.
 
+## Dependencies and the deployed image
+
+The committed `requirements.txt` at the repository root, which
+`mainsequence code-repository sync` writes, decides the repository's dependency
+image. Without it the platform uses the root `pyproject.toml`; with neither,
+the repository runs on its base image alone. The platform builds the dependency
+image once for each content of that file and reuses it for every later commit,
+on every branch of the repository in the same Environment, until the file or
+the base image changes. A commit that changes only code therefore deploys
+without installing dependencies again; the first commit that needs a new
+dependency image waits for its build.
+
+The repository's own package is not installed in the image. Every Job, FastAPI
+release and Agent runs the deployed commit's files from the checkout at
+`/workspace`, which is also its working directory, with `/workspace/src` and
+`/workspace` on `PYTHONPATH`. Code cannot rely on what only an installed copy
+of its own package provides:
+
+- `importlib.metadata` for that package, such as its version or entry points;
+- the console scripts its `pyproject.toml` declares;
+- extensions compiled from its sources;
+- top-level packages that are not directly under `/workspace/src` or
+  `/workspace`.
+
+Code that needs one of these belongs in a separate package listed in
+`requirements.txt`.
+
+The dependency file follows three rules:
+
+- Every dependency is listed in `requirements.txt`. After changing the
+  dependencies in `pyproject.toml`, run `code-repository sync` and commit the
+  result: a package missing from `requirements.txt` is not installed, and
+  importing it fails when the workload runs.
+- The file may name the repository itself, as the `-e .` line that `sync`
+  writes does, but no other local path (`-e ./x`, `./x`, `file:`) and no other
+  file (`-r`, `-c`). The dependency build fails on such a line with a message
+  that points to `code-repository sync`.
+- A requirement without an exact version, such as `pandas>=2` or a Git URL that
+  names a branch, and a repository with only `pyproject.toml`, are resolved
+  once, when the dependency image is built, and stay as resolved until the
+  file changes. The file that `sync` writes pins every version.
+
 ---
 
 ## Notes on packaging

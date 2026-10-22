@@ -332,6 +332,12 @@ commit on the branch. Release tags come from the
 repository's own CI; see
 [Deploy on every push or on release tags](../knowledge/infrastructure/scheduling_jobs.md#deploy-on-every-push-or-on-release-tags).
 
+The committed `requirements.txt` decides the repository's dependency image. The
+platform builds it once for each content of the file and reuses it for every
+commit until the file changes, and deployed code runs from the repository's
+files at `/workspace`; the repository's own package is not installed. See
+[Dependencies and the deployed image](../knowledge/cli.md#dependencies-and-the-deployed-image).
+
 `set-up-locally` writes `.env` with the backend endpoint and no credential.
 There is no per-checkout token command: the session belongs to the machine, and
 `mainsequence refresh-token` renews it from any directory.

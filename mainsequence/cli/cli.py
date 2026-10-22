@@ -7644,6 +7644,10 @@ def code_repository_sync(
     Review the changed files, then commit and push them yourself. Release tags,
     when a repository uses them, are created by the repository's own CI.
 
+    The committed `requirements.txt` decides the dependencies of the deployed
+    image, and the platform reuses that image until the file changes. Deployed
+    code runs from the repository's files; the project itself is not installed.
+
     Parameters
     ----------
     path:
