@@ -3537,15 +3537,12 @@ def _parse_text_option_or_file(
 
 
 def _format_agent_preview(agent_payload: dict[str, object]) -> list[tuple[str, str]]:
-    runtime_update = agent_payload.get("runtime_update")
-    runtime_state = runtime_update.get("state") if isinstance(runtime_update, dict) else None
     return [
         ("UID", str(agent_payload.get("uid") or "-")),
         ("Name", str(agent_payload.get("name") or "-")),
         ("Description", str(agent_payload.get("description") or "-")),
         ("Repository Branch", str(agent_payload.get("repository_branch") or "-")),
         ("Runtime Release UID", str(agent_payload.get("runtime_release_uid") or "-")),
-        ("Runtime Update", str(runtime_state or "-")),
         ("LLM Provider", str(agent_payload.get("llm_provider") or "-")),
         ("LLM Model", str(agent_payload.get("llm_model") or "-")),
         ("LLM Thinking", str(agent_payload.get("llm_thinking") or "-")),
@@ -7643,6 +7640,10 @@ def code_repository_sync(
     creates no SSH or deploy key, changes no version, and runs no Git command.
     Review the changed files, then commit and push them yourself. Release tags,
     when a repository uses them, are created by the repository's own CI.
+
+    The committed `requirements.txt` decides the dependencies of the deployed
+    image, and the platform reuses that image until the file changes. Deployed
+    code runs from the repository's files; the project itself is not installed.
 
     Parameters
     ----------

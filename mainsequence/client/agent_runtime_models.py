@@ -141,25 +141,6 @@ class AgentHarnessProtocol(OpenStrEnum):
     TAU_SESSION_V1 = "tau-session-v1"
 
 
-class AgentRuntimeUpdateRemediation(BasePydanticModel):
-    tool: Literal["agent.update_runtime"]
-
-
-class AgentRuntimeUpdate(BasePydanticModel):
-    state: OpenValueSet[
-        Literal[
-            "current",
-            "update_required",
-            "updating",
-            "update_failed",
-            "not_deployed",
-            "unknown",
-        ]
-    ]
-    needs_redeploy: bool | None
-    remediation: AgentRuntimeUpdateRemediation | None
-
-
 class AgentSemanticSearchResult(BasePydanticModel):
     uid: str = Field(..., description="Public UID of the matched agent.")
     name: str = Field(..., description="Human-readable display name of the matched agent.")
@@ -183,10 +164,6 @@ class AgentSemanticSearchResult(BasePydanticModel):
     organization_environment_name: str = Field(
         ...,
         description="Name of the Organization Environment that scoped the search result.",
-    )
-    runtime_update: AgentRuntimeUpdate = Field(
-        ...,
-        description="Backend-owned runtime-currency state for the matched Agent.",
     )
     semantic_score: float = Field(
         ...,
@@ -753,10 +730,6 @@ class Agent(
             "Read-only name of the Organization Environment derived from the canonical "
             "CodeRepositoryBranch, or null when the Agent is not environment-scoped."
         ),
-    )
-    runtime_update: AgentRuntimeUpdate = Field(
-        ...,
-        description="Read-only backend-owned runtime-currency state for this Agent.",
     )
     observability: ObservabilityLinks | None = Field(
         default=None,
@@ -1998,8 +1971,6 @@ __all__ = [
     "AgentRuntimeImageDrift",
     "AgentRuntimeImageDriftCheck",
     "AgentRuntimeNotReadyError",
-    "AgentRuntimeUpdate",
-    "AgentRuntimeUpdateRemediation",
     "AgentHarnessKind",
     "AgentHarnessProtocol",
     "AgentSessionInsights",

@@ -3,7 +3,7 @@ from pydantic import ValidationError
 
 import mainsequence.client.agent_runtime_models as agent_models_mod
 import mainsequence.client.base as base_mod
-from tests.client.support import ENVIRONMENT_UID, _agent_runtime_update_contract
+from tests.client.support import ENVIRONMENT_UID
 
 
 def test_agent_session_filter_supports_archive_history_query(monkeypatch):
@@ -396,7 +396,6 @@ def test_agent_get_or_create_session_posts_new_contract(monkeypatch, subscriptio
         repository_branch=None,
         organization_environment_uid=None,
         organization_environment_name=None,
-        runtime_update=_agent_runtime_update_contract(),
     )
 
     class FakeResponse:
@@ -501,7 +500,6 @@ def test_agent_get_or_create_session_parses_reused_handle_capabilities(monkeypat
         repository_branch=None,
         organization_environment_uid=None,
         organization_environment_name=None,
-        runtime_update=_agent_runtime_update_contract(),
     )
     captured = {}
 
@@ -579,7 +577,6 @@ def test_agent_get_or_create_session_by_uid_sends_only_session_uid(monkeypatch):
         repository_branch=None,
         organization_environment_uid=None,
         organization_environment_name=None,
-        runtime_update=_agent_runtime_update_contract(),
     )
 
     class FakeResponse:

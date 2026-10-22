@@ -4,7 +4,45 @@ All notable changes to this project should be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows versioned releases.
 
-## [Unreleased]
+## [9.0.31] - 2026-10-22
+
+**The development lock uses corrected certifi and virtualenv releases
+([#238](https://github.com/mainsequence-sdk/mainsequence-sdk/issues/238)).** Refresh
+certifi to 2026.10.19 and virtualenv to 21.14.12, with its distlib 0.4.4 dependency,
+so the production and development dependency audits pass without exclusions.
+Published dependency ranges and SDK behavior are unchanged.
+
+**Agent discovery accepts responses without the retired `runtime_update` field
+([#236](https://github.com/mainsequence-sdk/mainsequence-sdk/issues/236)).** Agent
+list, detail and semantic-search models no longer require that field or export
+its obsolete remediation types. The CLI preview no longer displays a manual
+runtime update. Agent deployments use the repository workflow, and discovery
+reports the active deployed image.
+
+**Docs: `requirements.txt` decides the deployed dependencies, and the repository's own
+package is not installed.** The platform now builds a repository's dependency image from
+the committed `requirements.txt` that `mainsequence code-repository sync` writes
+(otherwise from `pyproject.toml`), once for each content of that file, and reuses it for
+every commit on every branch in the same Environment until the file changes, so a commit
+that changes only code deploys without installing dependencies again. Every Job, FastAPI
+release and Agent runs the repository's files from `/workspace`, with `/workspace/src`
+and `/workspace` on `PYTHONPATH`, so code cannot use `importlib.metadata`, console
+scripts or compiled extensions of its own package. A dependency missing from
+`requirements.txt` fails at import, another local path or a `-r` or `-c` reference fails
+the dependency build, and unpinned requirements stay as first resolved until the file
+changes. [CLI usage](docs/knowledge/cli.md#dependencies-and-the-deployed-image), the CLI
+reference, Scheduling Jobs, the `code-repository sync` help and the maintenance and API
+surfaces skills say so. No SDK behaviour changes.
+
+**Docs: a branch or Project policy reaches the repository.** The platform now gives
+the holder of a policy on one of a repository's branches, held directly, through a
+team or through a Project, two computed repository policies:
+`code-repositories.branch_reader` (find and see the repository, with its issues) and,
+for a branch `editor` or `owner`, `code-repositories.branch_editor` (also add deploy
+keys, as `set-up-locally` does). Neither reaches the repository's other branches,
+neither can be granted, and both apply only while the person works in the branch's
+environment. [Code Repositories, Branches and Projects](docs/knowledge/infrastructure/code_repositories.md),
+the CLI reference and the CLI knowledge page say so. No client code changes.
 
 ## [9.0.30] - 2026-10-19
 

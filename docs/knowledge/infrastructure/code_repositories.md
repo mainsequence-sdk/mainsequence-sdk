@@ -31,6 +31,16 @@ A repository's policies pass down to every branch: `reader` gives `reader` on
 each branch, and `editor` and `owner` give `editor`. A branch lives in an
 Environment, so a person reaches it only in an Environment they work in.
 
+A policy on one of the repository's branches, held directly, through a Team or
+through a Project, also reaches the repository without reaching its other
+branches. Branch `reader` gives the computed policy `branch_reader`: the
+repository appears in lists and search, with its GitHub link, branch names and
+issues. Branch `editor` and `owner` give `branch_editor`, which also adds deploy
+keys, so a person who edits a branch can develop locally. `get_access()` shows
+them as `computed` rows with `source` `inherited` that name the branch. Neither
+can be attached, and both apply only while the person works in the branch's
+Environment.
+
 The policies go only to people with the platform's `user` product role, to
 workload identities and to Teams; a Light User does not have that role. Using a
 repository needs the role too: a person without it gets
@@ -67,10 +77,11 @@ lists the policies with their actions.
 A branch's access is decided by its policies:
 
 - `reader`: see the branch, its files and issues, and its Jobs, runs, logs and
-  releases, and call its releases, whose logs can contain request data;
+  releases, and call its releases, whose logs can contain request data; it also
+  finds and shows the branch's repository;
 - `editor`: also change and delete the branch, create issues and static sites,
-  edit its Jobs and releases, manage what its workloads can reach, and see who
-  has access;
+  edit its Jobs and releases, manage what its workloads can reach, add deploy
+  keys to its repository, and see who has access;
 - `owner`: also decide who has access.
 
 Creating a branch gives its creator nothing on it. A branch also takes the
@@ -79,8 +90,11 @@ to, gives `reader` on the branch, and `editor` or `owner` there gives `editor`.
 `get_access()` shows each of those as a `computed` row with `source`
 `inherited`, which names the holder, the parent and the parent's policy. The
 branch's policies pass down in turn to its releases and its standalone Jobs:
-`reader` gives `viewer` there, and `editor` and `owner` give `editor`. A release
-that backs the branch's Agent follows the Agent instead; see
+`reader` gives `viewer` there, and `editor` and `owner` give `editor`. Up to
+the repository they give `branch_reader` or `branch_editor`
+([Who can use a code repository](#who-can-use-a-code-repository)), never its
+other branches. A release that backs the branch's Agent follows the Agent
+instead; see
 [Who can use a release](resource_releases.md#who-can-use-a-release) and
 [Who can use a Job](scheduling_jobs.md#who-can-use-a-job).
 Deleting a branch deletes its releases, its Agent, its Jobs and its build
@@ -117,14 +131,18 @@ policies with their actions.
 
 A Project's access is decided by its policies:
 
-- `reader`: see the Project and every branch in it;
-- `editor`: also rename it, add and remove branches, delete it, and see who has
-  access;
+- `reader`: see the Project, every branch in it, and those branches'
+  repositories;
+- `editor`: also rename it, add and remove branches, delete it, add deploy keys
+  to its branches' repositories, and see who has access;
 - `owner`: also decide who has access.
 
 The Project's creator holds `owner`. A Project's policies pass down to its
 branches: `reader` gives `reader` on each of them, and `editor` and `owner`
-give `editor`. Adding a branch to a Project also needs `editor` or `owner` on
+give `editor`. Through each branch they reach its repository as
+`branch_reader` or `branch_editor`, so a Project editor finds the repositories
+and adds deploy keys to develop locally, without reaching their other
+branches. Adding a branch to a Project also needs `editor` or `owner` on
 that branch, and deleting a Project keeps its branches. The policies go to
 people, workload identities and Teams.
 

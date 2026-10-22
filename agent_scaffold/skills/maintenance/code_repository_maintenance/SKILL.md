@@ -235,6 +235,31 @@ key, changes no version, and runs no `git add`, `commit`, `tag`, or `push`.
 Review the changed `uv.lock` and `requirements.txt` and publish them with the
 dependency change.
 
+The committed `requirements.txt` decides the repository's dependency image
+(`pyproject.toml` only when there is no `requirements.txt`). The platform
+builds that image once for each content of the file and reuses it for every
+commit of every branch in the same Environment until the file changes, so a
+code-only commit deploys without reinstalling dependencies. Therefore:
+
+- never commit a dependency change in `pyproject.toml` without the refreshed
+  `requirements.txt`: a package the file does not list is not installed, and
+  the import fails when the workload runs;
+- the `-e .` line that sync writes is fine, but no other local path
+  (`-e ./x`, `./x`, `file:`) and no `-r` or `-c` reference: the dependency
+  build fails on them;
+- a line without an exact version or a Git URL that names a branch, and a
+  repository with only `pyproject.toml`, are resolved once and stay as
+  resolved until the file changes.
+
+The repository's own package is not installed. Every deployed Job, FastAPI
+release and Agent runs the commit's files from `/workspace` with
+`/workspace/src` and `/workspace` on `PYTHONPATH`. Do not write code that needs
+`importlib.metadata` for the repository's own package, its console scripts,
+extensions compiled from its sources, or top-level packages that are not
+directly under those two paths; put such code in a separate package listed in
+`requirements.txt`. Details:
+<https://mainsequence-sdk.github.io/mainsequence-sdk/knowledge/cli/#dependencies-and-the-deployed-image>
+
 ## Publish With Git
 
 Publish only when the user intends to commit and push the reviewed changes.

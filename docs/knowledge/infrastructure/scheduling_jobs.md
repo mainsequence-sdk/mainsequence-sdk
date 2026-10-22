@@ -103,7 +103,10 @@ nothing.
 
 After a dependency change, run `mainsequence code-repository sync` to refresh
 `uv.lock`, the local environment and `requirements.txt`, then commit and push
-those files with the change. The command makes no Git commit, tag or push.
+those files with the change. The command makes no Git commit, tag or push. A
+Job runs the repository's files from `/workspace` with the dependencies that
+the committed `requirements.txt` lists; see
+[Dependencies and the deployed image](../cli.md#dependencies-and-the-deployed-image).
 
 ## Schedules and arguments
 

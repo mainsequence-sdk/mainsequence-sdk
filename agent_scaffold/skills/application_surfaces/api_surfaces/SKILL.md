@@ -479,7 +479,10 @@ mainsequence code-repository resources list --filter resource_type=fastapi
 
 When the dependencies changed, run `mainsequence code-repository sync --path .`
 before the commit and include the refreshed `uv.lock` and `requirements.txt`.
-The command runs no Git command and makes no platform request.
+The command runs no Git command and makes no platform request. The deployed API
+gets only the dependencies that `requirements.txt` lists and runs from the
+repository's files, not from an installed copy of the project, so do not read
+the project's own version or entry points through `importlib.metadata`.
 
 Verify that:
 

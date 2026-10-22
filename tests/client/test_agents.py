@@ -6,55 +6,7 @@ from pydantic import ValidationError
 import mainsequence.client.agent_runtime_models as agent_models_mod
 import mainsequence.client.base as base_mod
 import mainsequence.code_repository_context as code_repository_context
-from tests.client.support import ENVIRONMENT_UID, _agent_runtime_update_contract
-
-
-@pytest.mark.parametrize(
-    ("state", "needs_redeploy", "remediation_tool"),
-    [
-        ("current", False, None),
-        ("update_required", True, "agent.update_runtime"),
-        ("updating", True, None),
-        ("update_failed", True, "agent.update_runtime"),
-        ("not_deployed", False, None),
-        ("unknown", None, None),
-    ],
-)
-def test_agent_runtime_update_parses_every_backend_state(
-    state,
-    needs_redeploy,
-    remediation_tool,
-):
-    runtime_update = agent_models_mod.AgentRuntimeUpdate.model_validate(
-        _agent_runtime_update_contract(state)
-    )
-
-    assert runtime_update.state == state
-    assert runtime_update.needs_redeploy is needs_redeploy
-    assert (
-        runtime_update.remediation.tool if runtime_update.remediation is not None else None
-    ) == remediation_tool
-
-
-def test_agent_runtime_update_contract_is_complete_and_read_tolerantly():
-    payload = _agent_runtime_update_contract("unknown")
-    for field_name in ("state", "needs_redeploy", "remediation"):
-        incomplete = dict(payload)
-        incomplete.pop(field_name)
-        with pytest.raises(ValidationError, match=field_name):
-            agent_models_mod.AgentRuntimeUpdate.model_validate(incomplete)
-
-    # Tolerant reading (ADR 0032): a field this release does not declare is dropped.
-    tolerated = agent_models_mod.AgentRuntimeUpdate.model_validate(
-        payload | {"future_state": "value"}
-    )
-    assert tolerated.state == payload["state"]
-    assert not hasattr(tolerated, "future_state")
-
-    invalid_remediation = _agent_runtime_update_contract("update_required")
-    invalid_remediation["remediation"] = {"tool": "agent.update_session"}
-    with pytest.raises(ValidationError, match="agent.update_runtime"):
-        agent_models_mod.AgentRuntimeUpdate.model_validate(invalid_remediation)
+from tests.client.support import ENVIRONMENT_UID
 
 
 def test_agent_runtime_models_deserialize_backend_uid_payloads():
@@ -80,7 +32,6 @@ def test_agent_runtime_models_deserialize_backend_uid_payloads():
             "repository_branch": "main",
             "organization_environment_uid": environment_uid,
             "organization_environment_name": "production",
-            "runtime_update": _agent_runtime_update_contract(),
         }
     )
     assert agent.uid == agent_uid
@@ -88,8 +39,6 @@ def test_agent_runtime_models_deserialize_backend_uid_payloads():
     assert agent.repository_branch == "main"
     assert agent.organization_environment_uid == environment_uid
     assert agent.organization_environment_name == "production"
-    assert agent.runtime_update.state == "current"
-    assert agent.runtime_update.needs_redeploy is False
     assert agent.a2a_profile.supported_response_kinds == [agent_models_mod.A2AResponseKind.MESSAGE]
 
     search_result = agent_models_mod.AgentSemanticSearchResult.model_validate(
@@ -101,7 +50,6 @@ def test_agent_runtime_models_deserialize_backend_uid_payloads():
             "repository_branch": "main",
             "organization_environment_uid": environment_uid,
             "organization_environment_name": "production",
-            "runtime_update": _agent_runtime_update_contract("update_required"),
             "semantic_score": 0.91,
             "text_score": 0.74,
             "combined_score": 0.85,
@@ -112,8 +60,6 @@ def test_agent_runtime_models_deserialize_backend_uid_payloads():
     assert search_result.repository_branch == "main"
     assert search_result.organization_environment_uid == environment_uid
     assert search_result.organization_environment_name == "production"
-    assert search_result.runtime_update.state == "update_required"
-    assert search_result.runtime_update.remediation.tool == "agent.update_runtime"
     assert search_result.a2a_profile.default_response_kind == (
         agent_models_mod.A2AResponseKind.MESSAGE
     )
@@ -210,7 +156,6 @@ def test_agent_client_contract_matches_backend_agent_serializer():
         "repository_branch",
         "organization_environment_uid",
         "organization_environment_name",
-        "runtime_update",
         "observability",
     }
     assert agent_models_mod.Agent.FILTERSET_FIELDS == {
@@ -230,7 +175,6 @@ def test_agent_client_contract_matches_backend_agent_serializer():
         "repository_branch": "main",
         "organization_environment_uid": ENVIRONMENT_UID,
         "organization_environment_name": "Development",
-        "runtime_update": _agent_runtime_update_contract(),
     }
     assert agent_models_mod.Agent.model_validate(payload).agent_card == payload["agent_card"]
     for invalid_payload in (
@@ -269,7 +213,6 @@ def test_agent_scope_code_repositoryion_is_required_but_nullable():
         "repository_branch": None,
         "organization_environment_uid": None,
         "organization_environment_name": None,
-        "runtime_update": _agent_runtime_update_contract("not_deployed"),
     }
 
     agent = agent_models_mod.Agent.model_validate(payload)
@@ -318,7 +261,6 @@ def test_agent_filter_sends_environment_read_scope_and_parses_code_repositoryion
                         "repository_branch": "main",
                         "organization_environment_uid": str(environment_uid),
                         "organization_environment_name": "production",
-                        "runtime_update": _agent_runtime_update_contract("current"),
                     }
                 ],
                 "next": None,
@@ -358,7 +300,6 @@ def test_agent_filter_sends_environment_read_scope_and_parses_code_repositoryion
     assert len(agents) == 1
     assert agents[0].repository_branch == "main"
     assert agents[0].organization_environment_uid == str(environment_uid)
-    assert agents[0].runtime_update.state == "current"
 
     monkeypatch.setattr(
         code_repository_context,
@@ -406,7 +347,7 @@ def test_agent_runtime_discovery_uses_authenticated_backend_environment(monkeypa
     assert agent_models_mod.Agent._sdk_owned_query_context("Agent.get") == {}
 
 
-def test_agent_get_parses_runtime_update_projection(monkeypatch):
+def test_agent_get_accepts_workflow_owned_deployment_contract(monkeypatch):
     captured = {}
     agent_uid = "e0e75693-4110-464c-93e0-82c7fd9c9a23"
     runtime_release_uid = "ee79fff7-813b-481b-8726-8a7e7a778862"
@@ -431,7 +372,6 @@ def test_agent_get_parses_runtime_update_projection(monkeypatch):
                 "repository_branch": "main",
                 "organization_environment_uid": str(environment_uid),
                 "organization_environment_name": "production",
-                "runtime_update": _agent_runtime_update_contract("update_failed"),
             }
 
     def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
@@ -464,9 +404,6 @@ def test_agent_get_parses_runtime_update_projection(monkeypatch):
         "timeout": 12,
     }
     assert agent.runtime_release_uid == runtime_release_uid
-    assert agent.runtime_update.state == "update_failed"
-    assert agent.runtime_update.needs_redeploy is True
-    assert agent.runtime_update.remediation.tool == "agent.update_runtime"
     with pytest.raises(ValueError, match="cannot override SDK-resolved context"):
         agent_models_mod.Agent.get(
             pk=agent_uid,
@@ -516,7 +453,6 @@ def test_agent_semantic_search_sends_environment_scope_and_parses_code_repositor
                     "repository_branch": "main",
                     "organization_environment_uid": str(environment_uid),
                     "organization_environment_name": "production",
-                    "runtime_update": _agent_runtime_update_contract("unknown"),
                     "semantic_score": 0.91,
                     "text_score": 0.74,
                     "combined_score": 0.85,
@@ -562,8 +498,6 @@ def test_agent_semantic_search_sends_environment_scope_and_parses_code_repositor
     assert len(results) == 1
     assert results[0].code_repository_branch_uid == "9d81d63f-b8c9-404d-9f1a-5f2ad29dbf16"
     assert results[0].organization_environment_name == "production"
-    assert results[0].runtime_update.state == "unknown"
-    assert results[0].runtime_update.needs_redeploy is None
 
     monkeypatch.setattr(
         code_repository_context,
@@ -600,7 +534,6 @@ def test_agent_reads_workload_user_uid(extra, expected):
         "repository_branch": "main",
         "organization_environment_uid": ENVIRONMENT_UID,
         "organization_environment_name": "Development",
-        "runtime_update": _agent_runtime_update_contract(),
         **extra,
     }
 
