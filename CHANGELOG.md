@@ -4,6 +4,13 @@ All notable changes to this project should be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows versioned releases.
 
+## [9.0.32] - 2026-10-22
+
+- Require certifi 2026.10.19 or newer so downstream installs receive the corrected
+  CA bundle; refresh the matching lock/export pins.
+- Use Python 3.13.17 and patched pip/uv bootstrapping in CI. This release changes
+  dependency security requirements without changing application APIs.
+
 ## [9.0.31] - 2026-10-22
 
 **The development lock uses corrected certifi and virtualenv releases
