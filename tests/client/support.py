@@ -12,23 +12,6 @@ CODE_REPOSITORY_BRANCH_UID = "5a28020a-0f1b-47ee-aab8-334286234bea"
 ENVIRONMENT_UID = "58218213-5e4e-43de-a5bd-6757f4e1c8f6"
 
 
-def _agent_runtime_update_contract(state: str = "current") -> dict:
-    values = {
-        "current": (False, None),
-        "update_required": (True, {"tool": "agent.update_runtime"}),
-        "updating": (True, None),
-        "update_failed": (True, {"tool": "agent.update_runtime"}),
-        "not_deployed": (False, None),
-        "unknown": (None, None),
-    }
-    needs_redeploy, remediation = values[state]
-    return {
-        "state": state,
-        "needs_redeploy": needs_redeploy,
-        "remediation": remediation,
-    }
-
-
 class _IdRef:
     def __init__(self, value: int):
         self.id = value

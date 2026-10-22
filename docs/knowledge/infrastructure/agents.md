@@ -18,9 +18,8 @@ An Agent's access is decided by its policies:
   for;
 - `operator`: also stop any Task or session run of the Agent, other people's
   included;
-- `editor`: also change the Agent's model defaults and labels, move it to a new
-  runtime build, delete it, manage what its workload can reach, and see who has
-  access;
+- `editor`: also change the Agent's model defaults and labels, delete it,
+  manage what its workload can reach, and see who has access;
 - `owner`: also decide who has access.
 
 `user` is the right policy for most people. The Agent works with its own
@@ -28,8 +27,6 @@ access, which can be broader than yours, unless it acts for the person asking.
 On an Agent that acts for the person asking, a Task is visible only to the
 people who asked for it and to Organization admins, whatever the policies. A
 session stays its owner's: no policy reads other people's conversations.
-Moving an Agent to a new runtime build also needs its branch's `update`
-action, which branch `editor` and `owner` hold.
 
 The Agent's creator holds `owner`. Repository workflows create Agents as the
 Organization's automation identity, which holds no policy on them, and a policy
@@ -63,6 +60,15 @@ of that workload's Environment. A refused change raises
 gives its workload the policy it names, such as `policy: user`.
 `mainsequence access policies --type agents` lists the policies with their
 actions.
+
+## Workflow-owned deployments
+
+Agent image builds and deployments follow the normal repository workflow,
+including its promotion rules and prerequisite steps. Agent policies offer no
+manual runtime-update command. Discovery returns Agent identity, branch,
+Environment and A2A profile without a `runtime_update` remediation object.
+A newer branch commit awaiting a tag or prerequisite does not itself prevent
+communication with the already deployed image; follow session runtime admission.
 
 ## Its runtime release and backing Job
 

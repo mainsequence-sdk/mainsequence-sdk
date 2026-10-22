@@ -6,7 +6,6 @@ import mainsequence.client.models_helpers as helper_models
 
 ENVIRONMENT_UID_FIELD = "organization_environment_uid"
 ENVIRONMENT_NAME_FIELD = "organization_environment_name"
-RUNTIME_UPDATE_FIELD = "runtime_update"
 
 
 @pytest.mark.parametrize(
@@ -15,13 +14,13 @@ RUNTIME_UPDATE_FIELD = "runtime_update"
         pytest.param(
             ("AgentSerializer",),
             agent_models.Agent,
-            {ENVIRONMENT_UID_FIELD, ENVIRONMENT_NAME_FIELD, RUNTIME_UPDATE_FIELD},
+            {ENVIRONMENT_UID_FIELD, ENVIRONMENT_NAME_FIELD},
             id="agent",
         ),
         pytest.param(
             ("AgentSemanticSearchResultSerializer",),
             agent_models.AgentSemanticSearchResult,
-            {ENVIRONMENT_UID_FIELD, ENVIRONMENT_NAME_FIELD, RUNTIME_UPDATE_FIELD},
+            {ENVIRONMENT_UID_FIELD, ENVIRONMENT_NAME_FIELD},
             id="agent-semantic-search-result",
         ),
         pytest.param(

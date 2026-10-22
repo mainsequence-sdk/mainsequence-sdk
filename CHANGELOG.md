@@ -4,7 +4,14 @@ All notable changes to this project should be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows versioned releases.
 
-## [Unreleased]
+## [9.0.31] - 2026-10-22
+
+**Agent discovery accepts responses without the retired `runtime_update` field
+([#236](https://github.com/mainsequence-sdk/mainsequence-sdk/issues/236)).** Agent
+list, detail and semantic-search models no longer require that field or export
+its obsolete remediation types. The CLI preview no longer displays a manual
+runtime update. Agent deployments use the repository workflow, and discovery
+reports the active deployed image.
 
 **Docs: `requirements.txt` decides the deployed dependencies, and the repository's own
 package is not installed.** The platform now builds a repository's dependency image from
