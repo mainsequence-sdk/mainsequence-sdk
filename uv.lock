@@ -754,6 +754,7 @@ name = "mainsequence"
 version = "9.0.32"
 source = { editable = "." }
 dependencies = [
+    { name = "certifi" },
     { name = "cachetools" },
     { name = "click" },
     { name = "concurrent-log-handler" },
@@ -805,6 +806,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "certifi", specifier = ">=2026.10.19" },
     { name = "cachetools" },
     { name = "click", specifier = ">=8.3.3" },
     { name = "concurrent-log-handler" },

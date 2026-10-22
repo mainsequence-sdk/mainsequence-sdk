@@ -7,7 +7,7 @@ annotated-types==0.7.0
     # via pydantic
 cachetools==6.2.1
     # via mainsequence
-certifi==2025.10.5
+certifi==2026.10.19
     # via requests
 cffi==2.1.1 ; platform_python_implementation != 'PyPy'
     # via cryptography
