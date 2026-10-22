@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [9.0.31] - 2026-10-22
 
+**The development lock uses corrected certifi and virtualenv releases
+([#238](https://github.com/mainsequence-sdk/mainsequence-sdk/issues/238)).** Refresh
+certifi to 2026.10.19 and virtualenv to 21.14.12, with its distlib 0.4.4 dependency,
+so the production and development dependency audits pass without exclusions.
+Published dependency ranges and SDK behavior are unchanged.
+
 **Agent discovery accepts responses without the retired `runtime_update` field
 ([#236](https://github.com/mainsequence-sdk/mainsequence-sdk/issues/236)).** Agent
 list, detail and semantic-search models no longer require that field or export

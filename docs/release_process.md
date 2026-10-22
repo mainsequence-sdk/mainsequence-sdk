@@ -79,6 +79,12 @@ removals to the extraction already shipped in `8.1.26` and `8.1.27`; see the
 
 ### Guards
 
+Release pull requests also run the dependency audit against frozen production and
+development exports of `uv.lock`. Resolve an advisory by refreshing the affected
+lock entries with `uv lock --upgrade-package <package>` and verifying both audit
+scopes before merging. Keep the existing dependency constraints unless the fix
+requires a constraint change.
+
 * The publish job runs the test suite first and publishes nothing when it fails.
   It runs the very same reusable workflow (`.github/workflows/tests.yml`) that
   gates pull requests, so the guard cannot drift from the check.
