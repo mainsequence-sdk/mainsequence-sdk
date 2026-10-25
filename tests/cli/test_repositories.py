@@ -598,7 +598,7 @@ def test_code_repository_schedule_batch_jobs_is_removed(cli_mod, runner):
 
 
 def test_code_repository_current(cli_mod, runner, monkeypatch, tmp_path):
-    code_repository_path = tmp_path / "org" / "code-repositories" / "demo-code-repository-uid-123"
+    code_repository_path = tmp_path / "org" / "projects" / "demo-code-repository-uid-123"
     code_repository_path.mkdir(parents=True, exist_ok=True)
 
     code_repository_info = types.SimpleNamespace(
@@ -645,7 +645,7 @@ def test_code_repository_current(cli_mod, runner, monkeypatch, tmp_path):
 
 
 def test_code_repository_current_json(cli_mod, runner, monkeypatch, tmp_path):
-    code_repository_path = tmp_path / "org" / "code-repositories" / "demo-code-repository-uid-123"
+    code_repository_path = tmp_path / "org" / "projects" / "demo-code-repository-uid-123"
     code_repository_path.mkdir(parents=True, exist_ok=True)
 
     code_repository_info = types.SimpleNamespace(
@@ -708,7 +708,7 @@ def test_code_repository_current_debug_reports_authenticated_runtime_git_context
         GitCodeRepositorySourceContext,
     )
 
-    code_repository_path = tmp_path / "org" / "code-repositories" / "demo-code-repository-uid-123"
+    code_repository_path = tmp_path / "org" / "projects" / "demo-code-repository-uid-123"
     code_repository_path.mkdir(parents=True, exist_ok=True)
     code_repository_info = types.SimpleNamespace(
         path=str(code_repository_path),

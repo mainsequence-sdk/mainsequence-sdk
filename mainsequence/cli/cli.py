@@ -619,7 +619,7 @@ def copy_instructions_to_clipboard(
 
 def _code_repositories_root(base_dir: str, org_slug: str) -> pathlib.Path:
     p = pathlib.Path(base_dir).expanduser()
-    return p / org_slug / "code-repositories"
+    return p / org_slug / "projects"
 
 
 def _org_slug_from_profile() -> str:
