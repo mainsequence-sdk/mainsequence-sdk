@@ -4,6 +4,15 @@ All notable changes to this project should be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows versioned releases.
 
+## [9.0.33] - 2026-10-25
+
+**Local CodeRepository checkouts are created in `<base>/<organization>/projects/`
+again.** `mainsequence code-repository set-up-locally` clones into that folder and
+`delete-local` deletes only inside it, the same folder the MainSequence developer tools
+and the VS Code extension use, so every tool shares one set of checkouts. Checkouts
+already created in `<base>/<organization>/code-repositories/` are ordinary Git
+repositories; move them into `projects/` to manage them with the CLI.
+
 ## [9.0.32] - 2026-10-22
 
 - Require certifi 2026.10.19 or newer so downstream installs receive the corrected

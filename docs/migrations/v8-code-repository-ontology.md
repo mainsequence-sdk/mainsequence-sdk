@@ -17,7 +17,7 @@ structured-output key, runtime discriminator, import, or alias is accepted.
 7. Update structured-output consumers to read the canonical repository fields.
 
 New local setup uses
-`<base>/<organization>/code-repositories/<checkout>`. Existing checkouts are
+`<base>/<organization>/projects/<checkout>`. Existing checkouts are
 ordinary Git repositories and may be moved deliberately; the SDK does not
 search superseded managed-directory conventions.
 

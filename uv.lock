@@ -751,11 +751,11 @@ wheels = [
 
 [[package]]
 name = "mainsequence"
-version = "9.0.32"
+version = "9.0.33"
 source = { editable = "." }
 dependencies = [
-    { name = "certifi" },
     { name = "cachetools" },
+    { name = "certifi" },
     { name = "click" },
     { name = "concurrent-log-handler" },
     { name = "keyring" },
@@ -806,8 +806,8 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "certifi", specifier = ">=2026.10.19" },
     { name = "cachetools" },
+    { name = "certifi", specifier = ">=2026.10.19" },
     { name = "click", specifier = ">=8.3.3" },
     { name = "concurrent-log-handler" },
     { name = "keyring", specifier = ">=25.7.0,<26" },

@@ -272,7 +272,7 @@ def test_code_repository_set_up_locally(cli_mod, runner, monkeypatch, tmp_path):
     assert deploy_key_requests[0][0][2] == "ssh-ed25519 AAA test"
     assert deploy_key_requests[0][1] == {}
 
-    env_file = base / "org" / "code-repositories" / "demo-code-repository-uid-123" / ".env"
+    env_file = base / "org" / "projects" / "demo-code-repository-uid-123" / ".env"
     assert env_file.exists()
     # The checkout gets the endpoint and no credential, even though a session exists.
     assert env_file.read_text(encoding="utf-8") == "MAINSEQUENCE_ENDPOINT=https://backend.test\n"
@@ -376,7 +376,7 @@ def test_code_repository_set_up_locally_runtime_credential(cli_mod, runner, monk
 
     # A runtime receives its credential in its own environment. None of it, and
     # no exchanged token, is copied into the checkout.
-    env_file = base / "org" / "code-repositories" / "demo-code-repository-uid-123" / ".env"
+    env_file = base / "org" / "projects" / "demo-code-repository-uid-123" / ".env"
     assert env_file.read_text(encoding="utf-8") == "MAINSEQUENCE_ENDPOINT=https://backend.test\n"
 
 
@@ -464,7 +464,7 @@ def test_code_repository_open_rejects_non_checkout_without_creating_git_metadata
 
 def test_code_repository_delete_local(cli_mod, runner, monkeypatch, tmp_path, git_checkout):
     base = tmp_path / "base"
-    code_repository_path = git_checkout("base/org/code-repositories/demo-123")
+    code_repository_path = git_checkout("base/org/projects/demo-123")
     (code_repository_path / "x.txt").write_text("x", encoding="utf-8")
 
     monkeypatch.setattr(
