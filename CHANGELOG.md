@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+**The inference guide and the bundled `mainsequence-inference` skill cover Meta.**
+Recorded inference runs Meta's Model API on Chat Completions: the common thinking
+levels `minimal` to `xhigh` map to `reasoning_effort`, a `response_schema` must fit
+Meta's strict structured-output subset, and the common storage convenience is not
+available for Meta. Both also say that a catalog provider without a
+recorded-inference adapter is rejected with HTTP 400 before anything is recorded or
+sent to the provider. SDK behavior is unchanged; the native-options contract test
+now includes Meta.
+
 **The lock uses patched OpenTelemetry, black, filelock and setuptools releases.**
 OpenTelemetry moves to 1.45.1 (semantic conventions 0.66b1, with the two new exporter
 dependencies it requires) for CVE-2026-114603, black to 26.10.1 for CVE-2026-114134,

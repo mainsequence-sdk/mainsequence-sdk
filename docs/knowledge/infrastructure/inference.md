@@ -74,14 +74,23 @@ credential or calls the provider again.
 
 ## Provider controls
 
-All four families use the same envelope:
+Recorded inference supports these provider families, all with the same envelope:
 
 | Family | Execution and native options |
 | --- | --- |
 | OpenAI | Responses/Chat Completions as selected by the catalog; `reasoning.effort` or `reasoning_effort`, `store`, `text` and other native body options |
 | Anthropic | Messages; native `thinking`, `output_config`, `max_tokens`; common thinking levels require a supported model mapping |
+| Meta | Chat Completions on Meta's Model API; common thinking levels `minimal` to `xhigh` compile to `reasoning_effort` (Meta has no `off`); native options are Chat Completions body fields |
 | Ollama | An Organization custom provider using its OpenAI-compatible API and native fields supported by that API |
 | OpenRouter | Chat Completions; nested `provider_options.provider` controls upstream routing and is distinct from the top-level catalog selection |
+
+Any other provider in the catalog has no recorded-inference adapter: the call is
+rejected with HTTP 400 before anything is recorded or sent to the provider.
+
+For Meta, `response_schema` is sent as a strict JSON schema, so it must fit Meta's
+[strict subset](https://dev.meta.ai/docs/structured-output): an object at the
+root, `additionalProperties: false` on every object, and every property listed in
+`required`. Without `thinking_level`, Meta chooses the model's effort.
 
 `thinking_level` is optional. Omission preserves supplied native thinking fields
 or the provider default. `provider_options` accepts arbitrary JSON body fields,
@@ -93,7 +102,7 @@ Do not provide both common thinking selection and native thinking selection.
 Provider storage controls never disable Main Sequence history. For OpenAI,
 `provider_storage={"store_response": False}` compiles to `store: false`; use this
 or native `provider_options.store`, not both. Anthropic uses its stateless
-Messages contract without an invented `store` field. Ollama and OpenRouter do
+Messages contract without an invented `store` field. Meta, Ollama and OpenRouter do
 not have a universally verifiable per-request storage switch; use documented
 native/account controls. Strict `require_zero_data_retention=True` currently
 rejects before transmission when account eligibility cannot be verified.
@@ -140,7 +149,7 @@ during an active call is not recreated by the eventual provider response.
 
 The SDK bundles `agent_scaffold/skills/mainsequence-inference/SKILL.md`.
 It explains client/Environment setup, full-context messages, thinking levels,
-native options for OpenAI/Anthropic/Ollama/OpenRouter, provider storage versus
+native options for OpenAI/Anthropic/Meta/Ollama/OpenRouter, provider storage versus
 Main Sequence history, structured results, idempotent replay, inspection and
 explicit deletion. The scaffold's managed instructions route direct model work
 to this skill.

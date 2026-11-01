@@ -48,6 +48,7 @@ def transport(monkeypatch):
     [
         ("openai", {"store": False, "text": {"verbosity": "low"}}),
         ("anthropic", {"thinking": {"type": "adaptive"}, "output_config": {"effort": "high"}}),
+        ("meta", {"reasoning_effort": "high"}),
         ("ollama-local", {"reasoning_effort": "high"}),
         ("openrouter", {"provider": {"zdr": True}, "reasoning": {"effort": "high"}}),
     ],
