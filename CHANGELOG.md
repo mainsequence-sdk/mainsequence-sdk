@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+**The CLI reference says where `code-repository create` makes the GitHub
+repository.** The platform creates it only in a GitHub organization the
+Organization linked through the Main Sequence GitHub App. The reference and the
+README say so, that `--github-org-uid` can be left out when exactly one is
+linked, and what the HTTP 400 codes `github_organization_not_connected` and
+`github_organization_required` mean and how to recover. SDK behavior is
+unchanged.
+
 **The inference guide and the bundled `mainsequence-inference` skill cover Meta.**
 Recorded inference runs Meta's Model API on Chat Completions: the common thinking
 levels `minimal` to `xhigh` map to `reasoning_effort`, a `response_schema` must fit

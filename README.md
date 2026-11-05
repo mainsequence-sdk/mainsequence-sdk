@@ -96,6 +96,11 @@ cd my-first-repository
 mainsequence code-repository build-local-venv --path .
 ```
 
+`create` makes the GitHub repository in a GitHub organization your Organization
+linked through the Main Sequence GitHub App, so an Organization admin links one
+first. See [CodeRepository Commands](docs/cli/index.md#coderepository-commands)
+for choosing it and for the errors.
+
 Use `mainsequence --help` and `mainsequence code-repository --help` for the
 installed command surface. The CLI includes Agent and AgentSession,
 CodeRepository, jobs and runs, images, resources and releases, constants,
