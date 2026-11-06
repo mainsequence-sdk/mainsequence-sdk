@@ -143,8 +143,30 @@ def exchange_runtime_credential(
     on_retry:
         Called with the status and the delay before each retry.
     """
+    return send_with_exchange_retries(
+        lambda: send(_request_body(credential_id, identity_token_file)),
+        deadline=deadline,
+        on_retry=on_retry,
+    )
+
+
+def send_with_exchange_retries(
+    send_attempt: Callable[[], Any],
+    *,
+    deadline: float,
+    on_retry: Callable[[int, float], None] | None = None,
+) -> Any:
+    """
+    Send one token exchange attempt, retry it on ``429`` or ``503``, and return the last response.
+
+    This is the retry policy of every token exchange the SDK makes: at most
+    ``EXCHANGE_RETRIES`` retries, each after the longer of the exponential backoff
+    and the answer's ``Retry-After``, and none whose wait would not end before
+    ``deadline``. Any other answer, ``401`` included, is returned at once.
+    ``send_attempt`` is called once per attempt.
+    """
     for attempt in range(EXCHANGE_RETRIES + 1):
-        response = send(_request_body(credential_id, identity_token_file))
+        response = send_attempt()
         status = response.status_code
         if status not in RETRYABLE_EXCHANGE_STATUSES or attempt == EXCHANGE_RETRIES:
             return response

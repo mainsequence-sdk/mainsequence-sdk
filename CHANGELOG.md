@@ -4,6 +4,22 @@ All notable changes to this project should be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows versioned releases.
 
+## [Unreleased]
+
+**A program outside Main Sequence can sign in with its cloud identity.** The new
+`MAINSEQUENCE_AUTH_MODE=workload_identity` obtains a subject token from the source
+`MAINSEQUENCE_WORKLOAD_IDENTITY_SOURCE` selects (`environment`, `file`, or
+`azure_managed_identity` for the Azure managed identity of the host, for an audience
+set in `MAINSEQUENCE_WORKLOAD_IDENTITY_AUDIENCE`), or from a callable given to
+`loaders.use_workload_identity()`. It exchanges that token at
+`POST /api/v1/workload-identity/token/` as an RFC 8693 token exchange and uses the
+returned 900-second access token as the Bearer, exchanging again before it expires.
+A refused exchange (`401`) fails at once; `429` and `503` are retried with bounded
+backoff that honours `Retry-After`. Neither token is logged or written to the
+environment, and in this mode the SDK does not load a saved CLI session. JWT auth
+stays the default and runtime credential auth is unchanged. The authentication guide
+describes the configuration, with an Azure Container Apps example.
+
 ## [9.0.35] - 2026-11-06
 
 **`code-repository create` no longer says it creates a repository without a GitHub
