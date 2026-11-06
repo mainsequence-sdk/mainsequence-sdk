@@ -8,7 +8,9 @@ annotated-types==0.7.0
 cachetools==6.2.1
     # via mainsequence
 certifi==2026.10.19
-    # via requests
+    # via
+    #   mainsequence
+    #   requests
 cffi==2.1.1 ; platform_python_implementation != 'PyPy'
     # via cryptography
 charset-normalizer==3.4.3
@@ -29,7 +31,7 @@ googleapis-common-protos==1.75.3
     #   opentelemetry-exporter-otlp-proto-http
 grpcio==1.75.1
     # via opentelemetry-exporter-otlp-proto-grpc
-idna==3.15
+idna==3.20
     # via requests
 jaraco-classes==3.4.0
     # via keyring
@@ -51,34 +53,42 @@ more-itertools==11.1.0
     # via
     #   jaraco-classes
     #   jaraco-functools
-opentelemetry-api==1.44.0
+opentelemetry-api==1.45.1
     # via
     #   mainsequence
+    #   opentelemetry-exporter-http-transport
     #   opentelemetry-exporter-otlp-proto-grpc
     #   opentelemetry-exporter-otlp-proto-http
     #   opentelemetry-sdk
     #   opentelemetry-semantic-conventions
-opentelemetry-exporter-otlp==1.44.0
+opentelemetry-exporter-http-transport==0.66b1
+    # via opentelemetry-exporter-otlp-proto-http
+opentelemetry-exporter-otlp==1.45.1
     # via mainsequence
-opentelemetry-exporter-otlp-proto-common==1.44.0
+opentelemetry-exporter-otlp-common==0.66b1
     # via
     #   opentelemetry-exporter-otlp-proto-grpc
     #   opentelemetry-exporter-otlp-proto-http
-opentelemetry-exporter-otlp-proto-grpc==1.44.0
+opentelemetry-exporter-otlp-proto-common==1.45.1
+    # via
+    #   opentelemetry-exporter-otlp-proto-grpc
+    #   opentelemetry-exporter-otlp-proto-http
+opentelemetry-exporter-otlp-proto-grpc==1.45.1
     # via opentelemetry-exporter-otlp
-opentelemetry-exporter-otlp-proto-http==1.44.0
+opentelemetry-exporter-otlp-proto-http==1.45.1
     # via opentelemetry-exporter-otlp
-opentelemetry-proto==1.44.0
+opentelemetry-proto==1.45.1
     # via
     #   opentelemetry-exporter-otlp-proto-common
     #   opentelemetry-exporter-otlp-proto-grpc
     #   opentelemetry-exporter-otlp-proto-http
-opentelemetry-sdk==1.44.0
+opentelemetry-sdk==1.45.1
     # via
     #   mainsequence
+    #   opentelemetry-exporter-otlp-common
     #   opentelemetry-exporter-otlp-proto-grpc
     #   opentelemetry-exporter-otlp-proto-http
-opentelemetry-semantic-conventions==0.65b0
+opentelemetry-semantic-conventions==0.66b1
     # via opentelemetry-sdk
 packaging==26.3
     # via mainsequence
@@ -112,6 +122,7 @@ pyyaml==6.0.3
 requests==2.34.2
     # via
     #   mainsequence
+    #   opentelemetry-exporter-http-transport
     #   opentelemetry-exporter-otlp-proto-http
 rich==15.0.0
     # via typer

@@ -22,6 +22,10 @@ recorded inference with direct provider HTTP calls.
 Reuse existing Main Sequence authentication and the current provider catalog.
 Select an exact available provider/model with configured credentials; examples
 below illustrate request shapes, not a guarantee that an account can use a model.
+Recorded inference runs the OpenAI, Anthropic, Meta and OpenRouter catalog
+providers and Organization custom providers with an OpenAI-compatible API (such
+as Ollama); any other catalog provider is rejected with HTTP 400 before a
+provider call.
 There is no inference CLI command; use the Python client.
 
 For local CodeRepository code using human credentials, resolve the Environment
@@ -125,6 +129,7 @@ common convenience when choosing native configuration.
 | --- | --- | --- |
 | OpenAI Responses | `{"reasoning": {"effort": "high"}, "store": false, "text": {"verbosity": "low"}}` | Native reasoning and storage; Chat Completions uses `reasoning_effort` instead. The catalog chooses the API. |
 | Anthropic Messages | `{"thinking": {"type": "adaptive"}, "output_config": {"effort": "high"}, "max_tokens": 4096}` | For an adaptive model; older models can use their native thinking budget. Do not send an invented OpenAI `store` flag. |
+| Meta Chat Completions | `{"reasoning_effort": "high"}` | Meta's Model API. The common thinking levels are `minimal` to `xhigh`; Meta has no `off`. A `response_schema` must fit Meta's strict structured-output subset. |
 | Ollama compatible API | `{"reasoning_effort": "high"}` | Select the existing Organization custom-provider identifier and a compatible model/API. Native Ollama `/api/chat` fields are not automatically translated. |
 | OpenRouter Chat | `{"reasoning": {"effort": "high"}, "provider": {"require_parameters": true, "zdr": true}}` | The nested `provider` object is upstream routing, distinct from the top-level catalog selector. ZDR routing is not proof of account-wide zero retention. |
 
@@ -146,7 +151,7 @@ expiry setting, capture opt-in, `record_history=False`, or a new policy registry
   Choose this convenience or native `provider_options={"store": False}`.
 - Anthropic: `store_response=False` means the stateless Messages contract. It
   does not promise that operational logs or caches do not exist.
-- Ollama and OpenRouter: the common storage convenience is not supported as a
+- Meta, Ollama and OpenRouter: the common storage convenience is not supported as a
   universal per-request guarantee. Use supported native/account controls; do not
   add or drop flags silently. Ollama is configured through existing custom
   providers; `keep_alive` governs model residency, not conversation retention.

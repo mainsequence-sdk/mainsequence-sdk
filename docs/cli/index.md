@@ -320,6 +320,29 @@ mainsequence code-repository sdk-status --path .
 mainsequence code-repository update-sdk --path .
 ```
 
+`create` makes the GitHub repository in one of the GitHub organizations your
+Organization linked through the Main Sequence GitHub App; Main Sequence has no
+GitHub organization of its own for your code. `--github-org-uid` names the
+GitHub organization, and `mainsequence organization github-organizations`
+lists them with their UIDs. You can leave the option out when the Organization
+has exactly one: the command then lists the Organization's GitHub
+organizations and asks which one to use, offering the first, so pressing Enter
+picks it.
+
+When the GitHub organization cannot be used, the platform refuses the request
+with HTTP 400 and creates nothing. The command prints the response, whose
+`github_org_uid.code` says why:
+
+- `github_organization_not_connected`: the Organization has no linked GitHub
+  organization, or the one you chose has no GitHub App installation, for
+  example because the app was uninstalled from it. Ask an Organization admin
+  with billing access to link the GitHub organization, then run the command
+  again. With none to offer, the command warns that it sends the request
+  without a GitHub organization, and the platform answers with this code.
+- `github_organization_required`: the Organization linked several GitHub
+  organizations and the request named none. Pass `--github-org-uid` with one of
+  the UIDs `mainsequence organization github-organizations` prints.
+
 `sync` changes local files only. In the project root (`--path`, default the
 current directory) it runs `uv lock`, `uv sync`, and the locked runtime export
 to `requirements.txt` (development dependencies are excluded). It makes no

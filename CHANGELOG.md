@@ -4,6 +4,34 @@ All notable changes to this project should be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows versioned releases.
 
+## [Unreleased]
+
+**The CLI reference says where `code-repository create` makes the GitHub
+repository.** The platform creates it only in a GitHub organization the
+Organization linked through the Main Sequence GitHub App. The reference and the
+README say so, that `--github-org-uid` can be left out when exactly one is
+linked, and what the HTTP 400 codes `github_organization_not_connected` and
+`github_organization_required` mean and how to recover. SDK behavior is
+unchanged.
+
+**The inference guide and the bundled `mainsequence-inference` skill cover Meta.**
+Recorded inference runs Meta's Model API on Chat Completions: the common thinking
+levels `minimal` to `xhigh` map to `reasoning_effort`, a `response_schema` must fit
+Meta's strict structured-output subset, and the common storage convenience is not
+available for Meta. Both also say that a catalog provider without a
+recorded-inference adapter is rejected with HTTP 400 before anything is recorded or
+sent to the provider. SDK behavior is unchanged; the native-options contract test
+now includes Meta.
+
+**The lock uses patched OpenTelemetry, black, filelock and setuptools releases.**
+OpenTelemetry moves to 1.45.1 (semantic conventions 0.66b1, with the two new exporter
+dependencies it requires) for CVE-2026-114603, black to 26.10.1 for CVE-2026-114134,
+filelock to 4.2.4 for CVE-2026-112907, CVE-2026-112913 and CVE-2026-112940, and
+setuptools to 84.2.1 for GHSA-xmj3-9gf7-h52w, so the production and development
+dependency audits pass. `requirements.txt` is exported again from the lock, which also
+brings its `idna` pin to the locked 3.20. Published dependency ranges and SDK behavior
+are unchanged.
+
 ## [9.0.33] - 2026-10-25
 
 **Local CodeRepository checkouts are created in `<base>/<organization>/projects/`
