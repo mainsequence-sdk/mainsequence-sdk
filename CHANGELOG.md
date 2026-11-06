@@ -4,7 +4,7 @@ All notable changes to this project should be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows versioned releases.
 
-## [Unreleased]
+## [9.0.35] - 2026-11-06
 
 **`code-repository create` no longer says it creates a repository without a GitHub
 organization.** When the Organization has no linked GitHub organization and
@@ -14,6 +14,8 @@ request. It now warns that it sends the request without one and that the platfor
 refuses it with `github_organization_not_connected` until an Organization admin with
 billing access links a GitHub organization. The request it sends and the exit code
 are unchanged.
+
+## [9.0.34] - 2026-11-06
 
 **The CLI reference says where `code-repository create` makes the GitHub
 repository.** The platform creates it only in a GitHub organization the
