@@ -26,6 +26,14 @@ from mainsequence.runtime_credential_exchange import (
     RuntimeIdentityTokenError,
     exchange_runtime_credential,
     identity_token_file_from_environment,
+    send_with_exchange_retries,
+)
+from mainsequence.workload_identity import (
+    WORKLOAD_IDENTITY_AUTH_MODE,
+    SubjectTokenError,
+    SubjectTokenSource,
+    subject_token_source_from_environment,
+    token_exchange_body,
 )
 
 from .._transport import DEFAULT_ALLOWED_METHODS as DEFAULT_ALLOWED_METHODS
@@ -223,6 +231,9 @@ def _default_auth_provider_kind() -> str | None:
 
     if mode == "runtime_credential":
         return "runtime_credential"
+
+    if mode == WORKLOAD_IDENTITY_AUTH_MODE:
+        return WORKLOAD_IDENTITY_AUTH_MODE
 
     if mode == "session_jwt":
         if has_access or has_refresh:
@@ -468,6 +479,139 @@ class RuntimeCredentialAuthProvider(BaseAuthProvider):
 
 
 @dataclass
+class WorkloadIdentityAuthProvider(BaseAuthProvider):
+    """
+    Exchange the program's cloud identity for short-lived access tokens.
+
+    For a program outside Main Sequence, selected with
+    `MAINSEQUENCE_AUTH_MODE=workload_identity`. Each exchange obtains a subject
+    token from `subject_token_source` (by default the source that
+    `MAINSEQUENCE_WORKLOAD_IDENTITY_SOURCE` selects) and posts it to
+    `/api/v1/workload-identity/token/` as an RFC 8693 token exchange. The
+    returned access token is kept on this provider only, out of `repr()`, and
+    is exchanged again before `expires_in` runs out; it cannot be refreshed.
+    The subject token is never kept.
+    Throttled (`429`) and temporarily unavailable (`503`) exchanges are retried
+    within the timeout budget; a refused one (`401`) fails at once, without
+    asking the source for another token.
+    """
+
+    subject_token_source: SubjectTokenSource | None = field(default=None, repr=False)
+    token_url: str | None = None
+    token_type: str = "Bearer"
+    refresh_skew_seconds: int = 30
+    timeout: tuple[float, float] = DEFAULT_TIMEOUT
+    access_token: str | None = field(default=None, repr=False)
+    expires_at: float | None = None
+    _lock: threading.RLock = field(default_factory=threading.RLock, init=False, repr=False)
+
+    def __post_init__(self):
+        if not self.token_url:
+            self.token_url = f"{API_ENDPOINT}/workload-identity/token/"
+
+    def _needs_exchange(self) -> bool:
+        if not self.access_token:
+            return True
+
+        if self.expires_at is not None:
+            return self.expires_at <= time.time() + self.refresh_skew_seconds
+
+        exp = _decode_jwt_exp(self.access_token)
+        if exp is None:
+            # Use an uninspectable access token until a 401 forces an exchange.
+            return False
+
+        return exp <= int(time.time()) + self.refresh_skew_seconds
+
+    @staticmethod
+    def _log_exchange_retry(status: int, delay: float) -> None:
+        logger.warning(
+            f"Workload identity token exchange returned {status}; retrying in {delay:.1f} s."
+        )
+
+    def _exchange(self) -> requests.Response:
+        # One budget for the subject token, every attempt and every wait,
+        # inside the caller's budget if any.
+        with request_budget(self.timeout) as budget:
+            try:
+                source = self.subject_token_source or subject_token_source_from_environment()
+                body = token_exchange_body(source())
+            except SubjectTokenError as exc:
+                raise AuthError(f"No workload identity subject token: {exc}") from None
+
+            def post() -> requests.Response:
+                return requests.post(
+                    self.token_url,
+                    data=body,
+                    headers={"Accept": "application/json"},
+                    timeout=budget.timeout(),
+                    allow_redirects=False,
+                )
+
+            return send_with_exchange_retries(
+                post,
+                deadline=budget.deadline,
+                on_retry=self._log_exchange_retry,
+            )
+
+    def refresh(
+        self,
+        *,
+        force: bool = False,
+        session: requests.Session | None = None,
+    ) -> None:
+        _ = session
+        with self._lock:
+            if not force and not self._needs_exchange():
+                return
+
+            response = self._exchange()
+            if response.status_code == 401:
+                raise AuthError(
+                    f"Main Sequence did not accept this workload's subject token at "
+                    f"{self.token_url} (HTTP 401). Check that a federated credential of an "
+                    "active external workload names the token's issuer, subject and "
+                    "audience, and that its claim conditions match; the platform does not "
+                    "say which check failed."
+                )
+            if response.status_code < 200 or response.status_code >= 300:
+                raise AuthError(
+                    f"Workload identity token exchange failed with status {response.status_code}."
+                )
+
+            try:
+                data = response.json()
+            except ValueError:
+                data = None
+            if not isinstance(data, dict):
+                raise AuthError("Workload identity token exchange did not answer with JSON.")
+            access = str(data.get("access_token") or "").strip()
+            if not access:
+                raise AuthError(
+                    "Workload identity token exchange response did not include access_token."
+                )
+
+            token_type = str(data.get("token_type") or "Bearer").strip()
+            self.token_type = token_type or "Bearer"
+            try:
+                expires_in = int(data.get("expires_in"))
+            except (TypeError, ValueError):
+                expires_in = None
+            self.expires_at = time.time() + expires_in if expires_in and expires_in > 0 else None
+            self.access_token = access
+
+    def get_headers(self) -> CaseInsensitiveDict:
+        if self._needs_exchange():
+            self.refresh(force=False)
+
+        return CaseInsensitiveDict(
+            {
+                "Authorization": f"{self.token_type} {self.access_token}",
+            }
+        )
+
+
+@dataclass
 class JWTAuthProvider(BaseAuthProvider):
     # Tokens stay out of repr() and str(), so logging the provider never shows them.
     access_token: str | None = field(default=None, repr=False)
@@ -622,6 +766,9 @@ def build_default_auth_provider() -> BaseAuthProvider:
     if provider_kind == "runtime_credential":
         return RuntimeCredentialAuthProvider()
 
+    if provider_kind == WORKLOAD_IDENTITY_AUTH_MODE:
+        return WorkloadIdentityAuthProvider()
+
     if provider_kind == "jwt":
         return JWTAuthProvider()
 
@@ -645,6 +792,10 @@ class AuthLoaders:
             self.provider, RuntimeCredentialAuthProvider
         ):
             self.provider = RuntimeCredentialAuthProvider()
+        elif provider_kind == WORKLOAD_IDENTITY_AUTH_MODE and not isinstance(
+            self.provider, WorkloadIdentityAuthProvider
+        ):
+            self.provider = WorkloadIdentityAuthProvider()
         elif provider_kind == "session_jwt" and not isinstance(
             self.provider, SessionJWTAuthProvider
         ):
@@ -673,6 +824,20 @@ class AuthLoaders:
 
     def use_session_jwt(self, *, access: str | None = None):
         self.provider = SessionJWTAuthProvider(access_token=access, refresh_token=None)
+
+    def use_workload_identity(self, subject_token_source: SubjectTokenSource):
+        """
+        Exchange subject tokens from `subject_token_source`, a callable returning one.
+
+        The process must run with `MAINSEQUENCE_AUTH_MODE=workload_identity`:
+        another mode would replace this provider on the next request.
+        """
+        if _default_auth_provider_kind() != WORKLOAD_IDENTITY_AUTH_MODE:
+            raise AuthError(
+                "use_workload_identity() requires "
+                f"MAINSEQUENCE_AUTH_MODE={WORKLOAD_IDENTITY_AUTH_MODE}."
+            )
+        self.provider = WorkloadIdentityAuthProvider(subject_token_source=subject_token_source)
 
     def clear_auth(self):
         self.provider = None
