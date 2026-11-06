@@ -5633,7 +5633,9 @@ def code_repository_create_cmd(
                 )
             else:
                 warn(
-                    "No GitHub organizations available. CodeRepository will be created without github_org_uid."
+                    "No GitHub organization is linked to your Organization. Sending the request "
+                    "without one; the platform refuses it with github_organization_not_connected "
+                    "until an Organization admin with billing access links a GitHub organization."
                 )
 
         created = create_code_repository(

@@ -471,6 +471,59 @@ def test_code_repository_create_interactive_defaults(cli_mod, runner, monkeypatc
     assert "CodeRepository created: demo-repository (uid=code-repository-uid-321)" in result.output
 
 
+def test_code_repository_create_without_github_organizations_warns_of_refusal(
+    cli_mod,
+    runner,
+    monkeypatch,
+):
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "validate_code_repository_name",
+        lambda code_repository_name, timeout=None: {
+            "code_repository_name": code_repository_name,
+            "available": True,
+            "reason": None,
+            "normalized": {
+                "slugified_code_repository_name": "demo-repository",
+                "repository_library_name": "demo_repository",
+            },
+            "suggestions": [],
+        },
+    )
+    monkeypatch.setattr(cli_mod, "list_github_organizations", lambda: [])
+
+    captured = {}
+
+    def _create_code_repository(**kwargs):
+        captured.update(kwargs)
+        raise cli_mod.ApiError(
+            "CodeRepository create failed (400). "
+            '{"github_org_uid": {"code": "github_organization_not_connected", '
+            '"detail": "No GitHub organization is linked."}}'
+        )
+
+    monkeypatch.setattr(cli_mod, "create_code_repository", _create_code_repository)
+
+    result = runner.invoke(
+        cli_mod.app,
+        [
+            "code-repository",
+            "create",
+            "demo-repository",
+            "--default-base-image-uid",
+            "22222222-2222-4222-8222-222222222222",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert captured["github_org_uid"] is None
+    assert "No GitHub organization is linked to your Organization." in result.output
+    assert "will be created without" not in result.output
+    assert "github_organization_not_connected" in result.output
+    assert "CodeRepository creation failed" in result.output
+
+
 def test_code_repository_create_with_explicit_options_returns_logical_code_repository(
     cli_mod,
     runner,
