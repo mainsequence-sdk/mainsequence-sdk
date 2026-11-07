@@ -4,6 +4,18 @@ All notable changes to this project should be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows versioned releases.
 
+## [Unreleased]
+
+**A FastAPI application in local mode can reuse who holds a token.** In local mode every
+request asked `users/me` before any route ran. `install_request_identity(app,
+local_caller_cache_seconds=60)` now reuses that answer for a token across requests, for the
+period the application sets and never past the token's `exp`. Only the UID and username are
+kept, the `X-User-UID` check still runs on every request, refusals and unavailable checks are
+not kept, and concurrent first requests with the same token share one check. Answers are
+keyed by an HMAC of the token under a per-process key, at most 10,000 are kept, and no token,
+key or hash is logged. A revoked token stays accepted for up to the period. `0`, the default,
+keeps asking on every request; hosted mode and WebSockets are unchanged. See #251.
+
 ## [9.0.36] - 2026-11-07
 
 **A program outside Main Sequence can sign in with its cloud identity.** The new

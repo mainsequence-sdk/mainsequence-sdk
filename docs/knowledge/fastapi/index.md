@@ -324,6 +324,16 @@ The existing `request.state.user` and `request.state.user_uid` fields are compat
 
 Without hosted deployment markers, the integration uses a direct incoming Bearer token and validates it against `MAINSEQUENCE_ENDPOINT/api/v1/users/me/`. The handler still calls the same getter. Local mode cannot override a deployed target or replace a failed assertion. Missing local identity returns 401; an unavailable authenticator returns 503.
 
+By default every request asks `users/me`, so each one waits for a round trip to Main Sequence before any route runs. An application can reuse the answer for a token across requests with `install_request_identity(app, local_caller_cache_seconds=60)`:
+
+- Only who holds the token is reused: the UID and username `users/me` answered. The `X-User-UID` check still runs on every request, against that UID.
+- An answer expires after the period, and never outlives the token's `exp` when the token is a JWT. A refusal (`401`) and an unavailable check (`503`, including a timeout or a network error) are not kept, so the next request asks again.
+- Requests that arrive with the same token while its check is running wait for that check and share its result, success or failure.
+- Answers are keyed by `MAINSEQUENCE_ENDPOINT` and a keyed hash of the token whose key is generated in the process: the token is never stored, and no token, key or hash appears in a log line, an error or a `repr()`. At most 10,000 callers are kept, oldest dropped first.
+- A revoked token stays accepted for up to the period. `60` matches how long the platform's gateway may reuse an admission in hosted mode. `0`, the default, asks on every request.
+
+Hosted mode and WebSockets are unchanged. See [ADR-0036](../../adr/0036-request-scoped-logged-user.md#local-callers-reused-across-requests).
+
 MCP behaves the same way locally. `/mcp` takes the same Bearer token as your routes, and there is no sign-in challenge locally, so configure the client, for example Codex, to send your platform token as a fixed `Authorization: Bearer` header.
 
 The `Origin` check reads `FASTAPI_PUBLIC_BASE_URL` and `FASTAPI_CORS_ALLOW_ORIGINS` once, when `install_mcp` runs. In a deployment the platform sets both: the release's URL and its allowed origins. Locally they are usually unset, so the list is empty. A browser, which always sends `Origin`, then gets 403, while Codex, curl and scripts, which send none, are unaffected. To try a browser-based MCP client locally, allow its origin in the environment the app starts with:

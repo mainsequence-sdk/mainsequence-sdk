@@ -1,5 +1,7 @@
 # ADR-0036: Request-scoped logged user
 
+Amended 2026-11-07 for [SDK issue #251](https://github.com/mainsequence-sdk/mainsequence-sdk/issues/251): in local mode an application can reuse the platform's answer to who holds a Bearer token across requests, for a period it sets with `install_request_identity(app, local_caller_cache_seconds=...)`. `0`, the default, keeps asking on every request. Section "Local callers reused across requests" is added.
+
 Amended 2026-10-15 for [SDK issue #225](https://github.com/mainsequence-sdk/mainsequence-sdk/issues/225), second change: the platform signs no team list any more, so the SDK removes it. `RequestUserIdentity` has no `team_uids`, and the verifier refuses an assertion or a `requester` that lists teams. Team membership is checked only with `in_teams()`.
 
 Amended 2026-10-15 for [SDK issue #225](https://github.com/mainsequence-sdk/mainsequence-sdk/issues/225): team membership is checked on demand. The platform is replacing the team list it signs, which grows with an Organization and passes the verifier's 16,384-byte limit at about 300 teams, with a membership check. The verifier accepts the caller's facts and a `requester` with or without `team_uids`. `RequestUserIdentity.in_teams()` asks the platform with a cache whose lifetime the application sets, and `team_uids` is deprecated. Section "Team membership on demand" is added and section "Requester-bound calls" is edited.
@@ -61,6 +63,23 @@ The application owns its team policies and decides how often it asks about membe
 - **Bounds:** the process keeps at most 10,000 answers and drops the oldest first. Longer lists are sent in calls of at most 100 teams.
 - **Failure:** a call the platform cannot answer raises the SDK's API error; `in_teams()` never answers "not a member" because of it. Outside an authenticated request, in local mode and on WebSockets, it raises `RequestIdentityError`.
 - **No team list:** `RequestUserIdentity` has no `team_uids`. Earlier releases read it from the assertion; the platform no longer signs one, and an assertion that lists teams is refused.
+
+## Local callers reused across requests
+
+Added 2026-11-07 for [#251](https://github.com/mainsequence-sdk/mainsequence-sdk/issues/251).
+
+In local mode every request is authenticated by `GET {MAINSEQUENCE_ENDPOINT}/api/v1/users/me/` with its Bearer, a round trip to Main Sequence before any route runs; concurrent requests each made their own. Hosted mode verifies the assertion locally and has no such cost. Measured against a development platform on 2026-11-07, `users/me` took 2 to 4 seconds and six requests at once got several `503` from the check's 10-second timeout. Callers that reuse one token pay most: a workload identity reuses one access token for up to 14.5 minutes.
+
+- `install_request_identity(app, local_caller_cache_seconds=0)` sets how long an answer may be reused, following `team_membership_cache_seconds`. `0`, the default, keeps today's behavior: every request makes its own call.
+- **What is kept:** only who holds the token, the UID and username `users/me` answered. The `X-User-UID` check runs on every request against that UID. An application that decides a person from other request data keeps deciding it on every request.
+- **Key:** `MAINSEQUENCE_ENDPOINT` and an HMAC-SHA256 of the token under a random key generated with the cache. The token is never stored, and the hash means nothing outside the process.
+- **Lifetime:** the period, and never past the token's `exp` when it is a JWT. The claim is read without verification, only to shorten the lifetime; `users/me` already verified the token.
+- **Refusals:** a `401`, and a `503` from a 5xx, a timeout or a network error, are not kept.
+- **Concurrent first requests:** requests with the same key wait for the check in flight and share its result, success or failure.
+- **Bounds:** at most 10,000 callers per process, oldest dropped first; thread safe.
+- **Logs:** no token, key or hash appears in a log line, an error or a `repr()`.
+- **Revocation:** a revoked token stays accepted for at most the period. `60` matches how long the gateway may reuse an admission in hosted mode.
+- Hosted mode and WebSocket admission are unchanged. The 10-second timeout and the mapping of failures to `503` stay as they are.
 
 ## Requester-bound calls
 
