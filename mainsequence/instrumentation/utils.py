@@ -1,7 +1,11 @@
+import logging
 import os
+from contextvars import ContextVar
 
 import structlog
-from opentelemetry import trace
+from opentelemetry import baggage, trace
+from opentelemetry import context as otel_context
+from opentelemetry.baggage.propagation import W3CBaggagePropagator
 from opentelemetry.sdk.trace import (
     TracerProvider,
 )
@@ -54,9 +58,14 @@ class TracerInstrumentator:
         return format(current_span.context.trace_id, "032x")
 
     def get_telemetry_carrier(self):
-        prop = TraceContextTextMapPropagator()
+        """The W3C ``traceparent`` and ``baggage`` headers of the current context.
+
+        Empty when the current context has neither. The SDK sends them on its
+        calls to Main Sequence and to the applications on it (ADR 0040).
+        """
         telemetry_carrier = {}
-        prop.inject(carrier=telemetry_carrier)
+        TraceContextTextMapPropagator().inject(carrier=telemetry_carrier)
+        W3CBaggagePropagator().inject(carrier=telemetry_carrier)
         return telemetry_carrier
 
     def append_attribute_to_current_span(self, attribute_key, attribute_value):
@@ -97,3 +106,92 @@ class OTelJSONRenderer(structlog.processors.JSONRenderer):
 
         # 3) Now call the base JSONRenderer to produce final JSON
         return super().__call__(logger, method_name, event_dict)
+
+
+# Caller context (ADR 0040): the W3C ``traceparent`` and ``baggage`` an
+# application receives and passes on. The SDK carries every baggage key the
+# same way and gives none of them a meaning.
+
+_parsing_baggage: ContextVar[bool] = ContextVar("mainsequence_parsing_baggage", default=False)
+
+
+class _QuietBaggageParser(logging.Filter):
+    """Drop the parser's warnings while the SDK parses: they quote the header."""
+
+    def filter(self, record):
+        return not _parsing_baggage.get()
+
+
+logging.getLogger("opentelemetry.baggage.propagation").addFilter(_QuietBaggageParser())
+
+
+def _with_baggage_header(header, context):
+    """``context`` with the members of one W3C ``baggage`` header added.
+
+    The parser's limits apply: a header over 8192 bytes is ignored whole, a
+    member over 4096 bytes is skipped and at most 180 members are read. W3C
+    properties, after a member's ``;``, are dropped, as the platform drops them,
+    so each value reads as the platform records it. Malformed input is skipped
+    and never raises.
+    """
+    if not header or len(header.encode()) > W3CBaggagePropagator._MAX_HEADER_LENGTH:
+        return context
+    # Properties follow an unencoded ';', so an encoded ';' inside a value survives.
+    members = ",".join(member.split(";", 1)[0] for member in header.split(","))
+    token = _parsing_baggage.set(True)
+    try:
+        return W3CBaggagePropagator().extract({"baggage": members}, context=context)
+    except Exception:
+        return context
+    finally:
+        _parsing_baggage.reset(token)
+
+
+def _request_context(carrier, *, with_baggage):
+    """The OpenTelemetry context of one inbound request, from its headers.
+
+    Its baggage is exactly the request's ``baggage`` header, or none without
+    ``with_baggage``: never the process's or another request's. Its trace
+    parent is the request's ``traceparent``, unless instrumentation already
+    records a span for the request.
+    """
+    context = baggage.clear(context=otel_context.get_current())
+    if with_baggage:
+        context = _with_baggage_header(carrier.get("baggage"), context)
+    if not trace.get_current_span(context).is_recording():
+        context = TraceContextTextMapPropagator().extract(carrier, context=context)
+    return context
+
+
+def _attach_environment_context():
+    """Attach a Job run's ``TRACEPARENT`` and ``BAGGAGE`` as the process's context.
+
+    The platform starts a run created by a request that carried caller context
+    with both variables, in W3C header format. Without either, nothing changes.
+    The context is attached to the calling thread, as any OpenTelemetry context.
+    """
+    traceparent = os.environ.get("TRACEPARENT")
+    baggage_header = os.environ.get("BAGGAGE")
+    if not traceparent and not baggage_header:
+        return
+    context = _with_baggage_header(
+        baggage_header, baggage.clear(context=otel_context.get_current())
+    )
+    if traceparent:
+        context = TraceContextTextMapPropagator().extract(
+            {"traceparent": traceparent}, context=context
+        )
+    otel_context.attach(context)
+
+
+def _add_log_baggage(logger, method_name, event_dict):
+    """Add the current context's ``mainsequence.`` baggage keys as ``baggage``."""
+    if "baggage" not in event_dict:
+        members = {
+            key: str(value)
+            for key, value in baggage.get_all().items()
+            if key.startswith("mainsequence.")
+        }
+        if members:
+            event_dict["baggage"] = members
+    return event_dict

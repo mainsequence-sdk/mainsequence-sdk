@@ -12,6 +12,7 @@ from urllib.parse import urlsplit
 from uuid import UUID
 
 import requests
+from opentelemetry import context as otel_context
 
 from mainsequence._request_identity import (
     RequestIdentityError,
@@ -21,6 +22,7 @@ from mainsequence._request_identity import (
 )
 from mainsequence._team_memberships import TeamMembershipCache
 from mainsequence.client.models_user import RequestUserIdentity
+from mainsequence.instrumentation.utils import _request_context
 
 from .caller_assertions import (
     ASSERTION_HEADER,
@@ -105,6 +107,17 @@ def _header(scope, name):
             403 if scope["type"] == "websocket" else 401, "Conflicting authentication headers."
         )
     return values[0] if values else None
+
+
+def _trace_carrier(scope):
+    """The request's W3C trace context and baggage headers; repeated fields are joined."""
+    carrier = {}
+    for key, value in scope.get("headers", ()):
+        name = key.lower()
+        if name in {b"traceparent", b"tracestate", b"baggage"}:
+            name, value = name.decode("latin-1"), value.decode("latin-1")
+            carrier[name] = f"{carrier[name]},{value}" if name in carrier else value
+    return carrier
 
 
 def _local_user(scope):
@@ -201,6 +214,7 @@ class _RequestIdentityMiddleware:
             return
         state = scope.setdefault("state", {})
         state.update(user=None, user_uid=None, auth_outcome="anonymous")
+        caller_verified = False
         with _request_scope() as context:
             try:
                 public = (
@@ -248,6 +262,7 @@ class _RequestIdentityMiddleware:
                     else:
                         user = await asyncio.to_thread(_local_user, scope)
                     context.user = user
+                    caller_verified = True
                     state.update(user=user, user_uid=user.uid, auth_outcome="authenticated")
                     scope["headers"] = [
                         (k, v)
@@ -264,7 +279,15 @@ class _RequestIdentityMiddleware:
                 state["auth_outcome"] = "unavailable" if error.status == 503 else "rejected"
                 await _deny(scope, receive, send, error)
                 return
-            await self.app(scope, receive, send)
+            # The caller context arrives next to the caller verified above, and
+            # only with one: a public or preflight request has no baggage (ADR 0040).
+            context_token = otel_context.attach(
+                _request_context(_trace_carrier(scope), with_baggage=caller_verified)
+            )
+            try:
+                await self.app(scope, receive, send)
+            finally:
+                otel_context.detach(context_token)
 
 
 def install_request_identity(app, *, team_membership_cache_seconds=0):

@@ -49,15 +49,18 @@ platform's 90-second limit for answering a direct A2A Message (see
 
 The runtime credential exchange is a `POST` that renews credentials. A `429` or
 `503` answer to it exchanged nothing, so it is retried a bounded number of times
-within the same budget; see [the exchange](#the-exchange).
+within the same budget; see [the exchange](#the-exchange). The workload identity
+exchange is retried the same way; see
+[its exchange](#the-workload-identity-exchange).
 
 The practical question is not "which class handles auth?" but "where does the access token come from, and what happens when it expires?"
 
-There are three supported functional auth models:
+There are four supported functional auth models:
 
 - JWT auth
 - request-bound access-token auth
 - runtime credential auth
+- workload identity auth
 
 JWT auth can be supplied by the CLI's persisted login state or directly through environment variables.
 
@@ -84,6 +87,14 @@ Use runtime credential auth when:
 - the platform injects a runtime credential ID and the projected workload
   identity token file that proves it
 - the process should mint short-lived access tokens as needed
+
+Use workload identity auth when:
+
+- a program runs outside Main Sequence, for example a service in your own cloud
+  account, a CI job or a scheduler
+- its cloud already gives it an identity, such as an Azure managed identity
+- it should sign in as its own external workload instead of with a person's
+  API token or saved session
 
 ## JWT Auth
 
@@ -372,6 +383,180 @@ the error reports the last answer's status. The exchange the SDK makes at
 start-up, to load a job run's start-up state, uses the same token and the same
 retries; without a usable token file it sends nothing.
 
+## Workload Identity Auth
+
+Workload identity auth is for a program that Main Sequence did not deploy and
+that should call it with its own identity, not with a person's credentials. An
+Organization admin creates an **external workload** for it in Command Center and
+adds a **federated credential** that names the identity provider's issuer, the
+exact subject of the program's identity, an audience dedicated to Main Sequence
+and, optionally, claim conditions. The program then proves who it is with a
+token from its own identity provider, the *subject token*. No Main Sequence
+secret is issued, stored or shipped with the program.
+
+The SDK obtains the subject token, exchanges it for a short-lived Main Sequence
+access token and sends that as `Authorization: Bearer <token>`. What the
+workload may do is decided by the access its external workload is granted in
+Command Center.
+
+### Configuration
+
+```bash
+MAINSEQUENCE_ENDPOINT=https://<your Main Sequence address>
+MAINSEQUENCE_AUTH_MODE=workload_identity
+MAINSEQUENCE_WORKLOAD_IDENTITY_SOURCE=<environment | file | azure_managed_identity>
+```
+
+`MAINSEQUENCE_WORKLOAD_IDENTITY_SOURCE` selects where the subject token comes
+from. Each source needs one more setting:
+
+| Source | Setting | The subject token is |
+| --- | --- | --- |
+| `environment` | `MAINSEQUENCE_WORKLOAD_IDENTITY_TOKEN` | the value of that variable, read for every exchange |
+| `file` | `MAINSEQUENCE_WORKLOAD_IDENTITY_TOKEN_FILE` | the content of that file, read for every exchange, so a rotated file is picked up |
+| `azure_managed_identity` | `MAINSEQUENCE_WORKLOAD_IDENTITY_AUDIENCE`, and `MAINSEQUENCE_WORKLOAD_IDENTITY_AZURE_CLIENT_ID` for a user-assigned identity | a token the host's Azure managed identity issues for that audience |
+
+The `azure_managed_identity` source asks the managed identity endpoint that
+Azure Container Apps, App Service and Functions announce in `IDENTITY_ENDPOINT`
+and `IDENTITY_HEADER`. Without those two variables, for example on an Azure
+virtual machine, it asks the instance metadata service. Without
+`MAINSEQUENCE_WORKLOAD_IDENTITY_AZURE_CLIENT_ID` the system-assigned identity
+answers.
+
+A missing or unusable setting is an error that names it, raised before
+anything is sent to Main Sequence. In this mode the SDK does not use
+`MAINSEQUENCE_ACCESS_TOKEN`, `MAINSEQUENCE_REFRESH_TOKEN` or a saved CLI
+session, even when they are present. JWT auth remains the default mode, and
+runtime credential auth is unchanged.
+
+### Your own subject token source
+
+Any callable that takes no argument and returns the subject token as a string
+can be the source, for example one that asks another cloud's identity service:
+
+```python
+from mainsequence.client.utils import loaders
+
+
+def subject_token() -> str:
+    return my_identity_client.get_token("api://main-sequence")
+
+
+loaders.use_workload_identity(subject_token)
+```
+
+The process must still run with `MAINSEQUENCE_AUTH_MODE=workload_identity`;
+`use_workload_identity()` raises `AuthError` otherwise. The source is called
+once per exchange, about every 15 minutes. `EnvironmentSubjectToken`,
+`FileSubjectToken` and `AzureManagedIdentitySubjectToken` in
+`mainsequence.workload_identity` are the built-in sources.
+
+### The workload identity exchange
+
+The SDK posts the subject token to `POST /api/v1/workload-identity/token/` as an
+[RFC 8693](https://www.rfc-editor.org/rfc/rfc8693) token exchange, form encoded:
+
+```text
+grant_type          urn:ietf:params:oauth:grant-type:token-exchange
+subject_token       <the subject token>
+subject_token_type  urn:ietf:params:oauth:token-type:jwt
+```
+
+and uses the `access_token` of the answer. That access token lasts
+`expires_in` seconds (900) and cannot be refreshed: 30 seconds before it
+expires, the next request makes a new exchange with a new subject token. A
+read-only request rejected with `401`, for example because the credential was
+disabled, exchanges again and replays once, within its remaining timeout; a
+write rejected with `401` is not replayed.
+
+| Exchange answer | SDK behavior |
+| --- | --- |
+| `200` | Uses `access_token` as the Bearer until shortly before `expires_in` runs out. |
+| `401` | The subject token was not accepted. Fails at once with `AuthError`, without asking the source for another token. |
+| `429` | The exchange was throttled. Retries. |
+| `503` | Verification is temporarily unavailable. Retries. |
+
+A retry waits the longer of an exponential backoff (0.5, 1 and 2 seconds) and
+the answer's `Retry-After`, at most three times, within the request's timeout
+budget, and reuses the same subject token.
+
+A `401` never says which check failed. Compare the claims of the subject token
+with the federated credential: `iss` with the issuer, `sub` with the subject,
+`aud` with the audience, and every claim condition. The credential must be
+enabled and its external workload active.
+
+Neither token is logged, put in an error message or written to the
+environment. The access token is kept only in the memory of the process: a
+child process does not inherit it and makes its own exchange. The `mainsequence`
+CLI does not sign in with workload identity; use it from the SDK client in your
+program.
+
+### Example: a service on Azure Container Apps
+
+A backend on Azure Container Apps that today calls Main Sequence with a
+person's credentials can use its managed identity instead.
+
+1. **Give the container app a managed identity.** A system-assigned one:
+
+    ```bash
+    az containerapp identity assign --name my-backend --resource-group my-rg --system-assigned
+    ```
+
+    Note the `principalId` it prints: the object ID of the identity, which is
+    the `sub` of its tokens. For a user-assigned identity, also note its
+    client ID.
+
+2. **Choose an audience dedicated to Main Sequence.** In Microsoft Entra ID,
+    register an application, for example "Main Sequence", and give it an
+    Application ID URI such as `api://main-sequence`. It needs no secret, no
+    certificate and no API permissions; it only names the audience. Do not use
+    a generic audience such as `api://AzureADTokenExchange`: Main Sequence
+    refuses it.
+
+3. **Read the claims of one token** from inside the container app, to fill in
+    the credential exactly. This prints the claims, not the token:
+
+    ```python
+    import base64
+    import json
+
+    from mainsequence.workload_identity import AzureManagedIdentitySubjectToken
+
+    token = AzureManagedIdentitySubjectToken(audience="api://main-sequence")()
+    payload = token.split(".")[1]
+    claims = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
+    print({name: claims.get(name) for name in ("iss", "sub", "aud", "tid", "oid")})
+    ```
+
+4. **Create the external workload in Command Center.** An Organization admin
+    creates it in the Environment the backend works in and adds a federated
+    credential: provider Microsoft Entra ID, the issuer (`iss`), the subject
+    (`sub`, the managed identity's object ID), the audience (`aud`), and
+    optionally the condition `tid` for your tenant. Then grant the workload the
+    access the backend needs.
+
+5. **Configure the container app:**
+
+    ```bash
+    az containerapp update --name my-backend --resource-group my-rg \
+      --set-env-vars \
+        MAINSEQUENCE_ENDPOINT=https://<your Main Sequence address> \
+        MAINSEQUENCE_AUTH_MODE=workload_identity \
+        MAINSEQUENCE_WORKLOAD_IDENTITY_SOURCE=azure_managed_identity \
+        MAINSEQUENCE_WORKLOAD_IDENTITY_AUDIENCE=api://main-sequence
+    ```
+
+    For a user-assigned identity, also set
+    `MAINSEQUENCE_WORKLOAD_IDENTITY_AZURE_CLIENT_ID=<its client ID>`.
+
+6. **Remove the person's credentials** from the container app
+   (`MAINSEQUENCE_ACCESS_TOKEN`, `MAINSEQUENCE_REFRESH_TOKEN`, or the secret
+   that held them), and revoke that API token.
+
+The application code does not change: the SDK client exchanges the managed
+identity's token on the first request and again whenever the access token is
+about to expire.
+
 ## Auth Mode Summary
 
 | Mode | Main inputs | Refresh behavior | Best for |
@@ -380,6 +565,7 @@ retries; without a usable token file it sends nothing.
 | JWT via environment | `MAINSEQUENCE_ACCESS_TOKEN` and `MAINSEQUENCE_REFRESH_TOKEN` | refresh token renews access | signed terminals and controlled launches |
 | Request-bound access token | request-provided access token | no refresh | FastAPI and explicitly bound request-context code |
 | Runtime credential | runtime credential ID and its identity token file | exchange credential for new access | long-running non-interactive runtimes |
+| Workload identity | a subject token source and its setting | exchange a new subject token for new access | programs outside Main Sequence with a cloud identity |
 
 ## Credentials In Logs And Errors
 
@@ -389,6 +575,7 @@ printing, formatting or logging one does not show it:
 | Object | Left out |
 | --- | --- |
 | `JWTAuthProvider`, `SessionJWTAuthProvider` | `access_token`, `refresh_token` |
+| `WorkloadIdentityAuthProvider` | `access_token`, `subject_token_source` |
 | `AgentSessionRuntimeAccess` | `token` |
 | `ResourceReleaseRuntimeAccess` | `access`, which holds the runtime token |
 | `mainsequence.cli.browser_auth.BrowserAuthCallback` | `code`, the authorization code |

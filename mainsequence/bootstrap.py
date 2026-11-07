@@ -54,7 +54,8 @@ def prime_runtime_env() -> None:
 
     Only the endpoint is read from the checkout `.env`. Credentials come from the
     process environment when it already has them, and otherwise from the saved
-    CLI session.
+    CLI session, except with `MAINSEQUENCE_AUTH_MODE=workload_identity`, where
+    the saved session is not read.
     """
     global _credential_source
 
@@ -76,6 +77,10 @@ def prime_runtime_env() -> None:
         backend = ""
 
     _set_if_missing("MAINSEQUENCE_ENDPOINT", backend)
+
+    if (os.environ.get("MAINSEQUENCE_AUTH_MODE") or "").strip().lower() == "workload_identity":
+        # A workload signs in with its own identity, never with a person's saved session.
+        return
 
     try:
         tokens = cli_config.get_tokens()
