@@ -20,6 +20,7 @@ import requests
 from requests.structures import CaseInsensitiveDict
 
 from mainsequence.defaults import resolve_backend_endpoint
+from mainsequence.instrumentation import tracer_instrumentator
 from mainsequence.logconf import logger
 from mainsequence.runtime_credential_exchange import (
     RUNTIME_CREDENTIAL_ID_ENV,
@@ -876,6 +877,11 @@ def make_request(
     else:
         request_kwargs = dict(payload)
     request_kwargs.setdefault("allow_redirects", False)
+    # The caller context goes with the call, per request: the session is shared.
+    # A header the caller sets wins (ADR 0040).
+    carrier = tracer_instrumentator.get_telemetry_carrier()
+    if carrier:
+        request_kwargs["headers"] = {**carrier, **(request_kwargs.get("headers") or {})}
     req = getattr(s, r_type.lower())
 
     if accept_gzip:

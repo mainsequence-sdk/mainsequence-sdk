@@ -41,3 +41,5 @@ ownership boundary is recorded in [ADR 0034](0034-extract-metatables-python-pack
 - [ADR 0038: Project MCP on FastAPI releases](0038-project-mcp-on-fastapi-releases.md)
 
 - [ADR 0039: Application skills through the MCP Skills extension](0039-application-skills-through-the-mcp-skills-extension.md)
+
+- [ADR 0040: Caller context on release requests, SDK calls and Job runs](0040-caller-context-on-releases-calls-and-runs.md)

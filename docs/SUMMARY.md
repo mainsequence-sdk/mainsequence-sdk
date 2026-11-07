@@ -5,6 +5,7 @@
         - [Request User Context](knowledge/fastapi/index.md)
     - Server integrations
         - [Caller assertions](knowledge/server/caller_assertions.md)
+        - [Caller context](knowledge/server/caller_context.md)
     - Infrastructure
         - [Recorded model conversations](knowledge/infrastructure/inference.md)
         - [Authentication](knowledge/infrastructure/auth.md)

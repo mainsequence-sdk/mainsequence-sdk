@@ -22,6 +22,7 @@ from structlog.stdlib import BoundLogger
 from ._transport import DeadlineHTTPAdapter, request_budget
 from .defaults import resolve_backend_endpoint
 from .instrumentation import OTelJSONRenderer
+from .instrumentation.utils import _add_log_baggage
 from .repository_identity_security import UNSUPPORTED_SOURCE_IDENTITY_ENV_NAMES
 from .runtime_credential_exchange import (
     RUNTIME_CREDENTIAL_ID_ENV,
@@ -345,6 +346,7 @@ def build_application_logger(application_name: str = "ms-sdk", **metadata):
     pre_chain = [
         structlog.stdlib.add_log_level,
         structlog.stdlib.ExtraAdder(),
+        _add_log_baggage,
         timestamper,
     ]
 
@@ -413,6 +415,7 @@ def build_application_logger(application_name: str = "ms-sdk", **metadata):
     structlog.configure(
         processors=[
             structlog.contextvars.merge_contextvars,  # context that always appears in the logs
+            _add_log_baggage,  # the caller context's mainsequence. keys (ADR 0040)
             structlog.stdlib.add_log_level,
             structlog.stdlib.PositionalArgumentsFormatter(),
             structlog.processors.CallsiteParameterAdder(

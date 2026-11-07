@@ -127,6 +127,72 @@ The platform checks access on every call and limits requester-bound work to at m
 
 SDK releases up to 9.0.17 reject the requester claim the platform now signs, with its `is_organization_admin`, so requester-bound calls to an application on such a release fail with 401 while its other calls are unchanged. This release rejects the earlier two-field requester and any assertion without the caller's `is_organization_admin`; it also rejects a caller or requester that lists `team_uids`, which the platform no longer signs. Which applications may act for their requester, and what that access covers, is described in [Applications that act for their requester](../infrastructure/users_and_access.md#applications-that-act-for-their-requester). See [ADR-0036](../../adr/0036-request-scoped-logged-user.md#requester-bound-calls).
 
+## Caller context
+
+A caller can send its own context with a request, in the W3C `baggage` header:
+which of its own users the call is for, and its own information about the
+call. The caller assertion says who is calling; caller context says who the
+call is for. [Caller context](../server/caller_context.md) describes the keys,
+the trust rule and the limits.
+
+`install_request_identity` makes each request's `baggage` and `traceparent`
+the OpenTelemetry context of that request. Read it with OpenTelemetry's API,
+after checking the caller:
+
+```python
+from fastapi import HTTPException
+from opentelemetry import baggage
+
+from mainsequence.client import User
+
+# Services trusted to vouch for their users: their workload User UIDs.
+TRUSTED_CALLERS = {"<workload User UID of advisor-backend>"}
+
+
+def advisor_person() -> str | None:
+    """The person this call is for, or None."""
+    if User.get_logged_user().uid not in TRUSTED_CALLERS:
+        return None  # context from any other caller is not believed
+    return baggage.get_baggage("mainsequence.advisor.person")
+
+
+@app.get("/portfolio")
+def portfolio():
+    person = advisor_person()
+    if person is None:
+        raise HTTPException(status_code=403, detail="This operation needs an Advisor person.")
+    ...
+```
+
+- The request's baggage is exactly its own `baggage` header, never the
+  process's or another request's. It holds every member the header carries,
+  with W3C properties dropped. `baggage.get_all()` returns them all.
+- Only a request with a verified caller has baggage. A public-ingress or
+  preflight request has none.
+- A request without context is served as usual, and so is one with malformed
+  or oversized baggage: what cannot be read is left out. Missing context means
+  no external user: fail closed, and never fall back to broader access.
+- The context lasts for the whole request, in `def` and `async def` handlers
+  and in the tools served by `install_mcp`. Tasks the request starts, and
+  threads that receive a copy of its context, such as `asyncio.to_thread`, have
+  it too.
+- Calls the SDK makes while handling the request, to Main Sequence and to
+  Agents, pass the context on: a Job run or Agent Task the request starts
+  receives it. A header you set yourself wins.
+- Log lines written through the SDK's logger carry its `mainsequence.` keys as
+  `baggage`.
+- Caller context is not a requester: it names no Main Sequence User, grants
+  nothing and does not change `User.get_requester()`.
+
+The SDK gives no key a meaning and adds no accessor of its own. Locally, send
+the header yourself with the request, as the platform's gateway would:
+
+```bash
+curl -H "Authorization: Bearer $MAINSEQUENCE_ACCESS_TOKEN" \
+  -H "baggage: mainsequence.advisor.person=p-7f3a9c" \
+  http://localhost:8000/portfolio
+```
+
 ## Serving MCP
 
 An application can serve its own MCP server at `/mcp`, next to its HTTP API. Install the `mcp` extra, `pip install "mainsequence[mcp]"`, and pass the server's ASGI app and lifespan to `install_mcp` after `install_request_identity`:
