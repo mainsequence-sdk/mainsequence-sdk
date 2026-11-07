@@ -14,6 +14,7 @@ from uuid import UUID
 import requests
 from opentelemetry import context as otel_context
 
+from mainsequence._local_callers import LocalCallerCache
 from mainsequence._request_identity import (
     RequestIdentityError,
     _get_request_identity,
@@ -120,18 +121,12 @@ def _trace_carrier(scope):
     return carrier
 
 
-def _local_user(scope):
-    authorization = _header(scope, b"authorization") or ""
-    scheme, separator, token = authorization.partition(" ")
-    if scheme.lower() != "bearer" or not separator or not token.strip():
-        raise _AdmissionError(401, "Authenticated request user could not be resolved.")
-    endpoint = os.environ.get("MAINSEQUENCE_ENDPOINT", "").strip().rstrip("/")
-    if not endpoint:
-        raise _AdmissionError(503, "Local caller authentication is unavailable.")
+def _users_me(endpoint, token):
+    """Who holds ``token``, as the platform answers ``users/me``."""
     try:
         response = requests.get(
             endpoint + "/api/v1/users/me/",
-            headers={"Authorization": "Bearer " + token.strip()},
+            headers={"Authorization": "Bearer " + token},
             timeout=10,
             allow_redirects=False,
         )
@@ -140,11 +135,29 @@ def _local_user(scope):
         if response.status_code != 200:
             raise _AdmissionError(401, "Authenticated request user could not be resolved.")
         payload = response.json()
-        user = RequestUserIdentity(uid=payload["uid"], username=payload.get("username"))
+        return RequestUserIdentity(uid=payload["uid"], username=payload.get("username"))
     except requests.RequestException as exc:
         raise _AdmissionError(503, "Caller authentication is unavailable.") from exc
     except (ValueError, TypeError, KeyError) as exc:
         raise _AdmissionError(401, "Authenticated request user could not be resolved.") from exc
+
+
+def _local_user(scope, callers=None, cache_seconds=0):
+    authorization = _header(scope, b"authorization") or ""
+    scheme, separator, token = authorization.partition(" ")
+    token = token.strip()
+    if scheme.lower() != "bearer" or not separator or not token:
+        raise _AdmissionError(401, "Authenticated request user could not be resolved.")
+    endpoint = os.environ.get("MAINSEQUENCE_ENDPOINT", "").strip().rstrip("/")
+    if not endpoint:
+        raise _AdmissionError(503, "Local caller authentication is unavailable.")
+    if callers is not None and cache_seconds > 0:
+        # Only who holds the token is reused; the identity header is checked below (#251).
+        user = callers.caller(
+            endpoint, token, lifetime=cache_seconds, check=lambda: _users_me(endpoint, token)
+        )
+    else:
+        user = _users_me(endpoint, token)
     uid_header = _header(scope, b"x-user-uid")
     if uid_header:
         try:
@@ -191,7 +204,15 @@ async def _deny(scope, receive, send, error):
 
 class _RequestIdentityMiddleware:
     def __init__(
-        self, app, *, mode, verifier, public_ingress, routes, team_membership_cache_seconds=0
+        self,
+        app,
+        *,
+        mode,
+        verifier,
+        public_ingress,
+        routes,
+        team_membership_cache_seconds=0,
+        local_caller_cache_seconds=0,
     ):
         self.app = app
         self.mode = mode
@@ -200,6 +221,9 @@ class _RequestIdentityMiddleware:
         # Membership answers reused across this application's requests (#225).
         self.team_memberships = TeamMembershipCache()
         self.team_membership_cache_seconds = team_membership_cache_seconds
+        # Local-mode callers reused across this application's requests (#251).
+        self.local_callers = LocalCallerCache()
+        self.local_caller_cache_seconds = local_caller_cache_seconds
         for method, path in public_ingress:
             if not any(
                 getattr(route, "path", None) == path
@@ -260,7 +284,12 @@ class _RequestIdentityMiddleware:
                                 is_organization_admin=caller._requester.is_organization_admin,
                             )
                     else:
-                        user = await asyncio.to_thread(_local_user, scope)
+                        user = await asyncio.to_thread(
+                            _local_user,
+                            scope,
+                            self.local_callers,
+                            self.local_caller_cache_seconds,
+                        )
                     context.user = user
                     caller_verified = True
                     state.update(user=user, user_uid=user.uid, auth_outcome="authenticated")
@@ -290,7 +319,7 @@ class _RequestIdentityMiddleware:
                 otel_context.detach(context_token)
 
 
-def install_request_identity(app, *, team_membership_cache_seconds=0):
+def install_request_identity(app, *, team_membership_cache_seconds=0, local_caller_cache_seconds=0):
     """Install once at application creation.
 
     Handlers use User.get_logged_user() for the caller and, on a
@@ -302,16 +331,26 @@ def install_request_identity(app, *, team_membership_cache_seconds=0):
     answer only within the same request. A longer lifetime means fewer calls
     and a membership change seen up to that much later; the choice belongs to
     the application (ADR 0036, #225).
+
+    ``local_caller_cache_seconds`` is how long, in local mode, the platform's
+    answer to who holds a Bearer token may be reused across requests, never
+    past the token's ``exp``. ``0``, the default, asks the platform on every
+    request. A revoked token stays accepted for up to that long; the choice
+    belongs to the application (ADR 0036, #251).
     """
     if getattr(app.state, _INSTALLATION, None) is not None:
         raise RuntimeError("Request identity is already installed.")
-    if (
-        isinstance(team_membership_cache_seconds, bool)
-        or not isinstance(team_membership_cache_seconds, (int, float))
-        or not math.isfinite(team_membership_cache_seconds)
-        or team_membership_cache_seconds < 0
+    for name, value in (
+        ("team_membership_cache_seconds", team_membership_cache_seconds),
+        ("local_caller_cache_seconds", local_caller_cache_seconds),
     ):
-        raise ValueError("team_membership_cache_seconds must be a non-negative number.")
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(value)
+            or value < 0
+        ):
+            raise ValueError(f"{name} must be a non-negative number.")
     mode = _mode()
     public_ingress = _public_routes()
     verifier = CallerAssertionVerifier.from_environment() if mode == "assertion" else None
@@ -322,6 +361,7 @@ def install_request_identity(app, *, team_membership_cache_seconds=0):
         public_ingress=public_ingress,
         routes=app.routes,
         team_membership_cache_seconds=team_membership_cache_seconds,
+        local_caller_cache_seconds=local_caller_cache_seconds,
     )
     setattr(
         app.state,
