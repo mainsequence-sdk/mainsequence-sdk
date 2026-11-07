@@ -5,6 +5,12 @@ import pytest
 
 from tests._support import RETIRED_RUNTIME_CONTEXT_ENV_NAMES, reset_sdk_modules
 
+# Importing the SDK restores OpenTelemetry's TRACEPARENT and BAGGAGE carriers as
+# the process context (ADR 0040), and a developer's shell may set them for other
+# tools. The suite starts without them.
+for _carrier in ("TRACEPARENT", "BAGGAGE"):
+    os.environ.pop(_carrier, None)
+
 
 @pytest.fixture
 def isolated_sdk_imports():

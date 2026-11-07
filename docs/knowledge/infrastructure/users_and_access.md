@@ -18,7 +18,7 @@ Teams are controlled by policies; see [Teams](#teams) and
 There are five concepts to keep separate:
 
 1. `Organization`: the tenant boundary
-2. `User`: a person who signs in to the platform, or the workload identity a deployed Job, FastAPI release or Agent runs as
+2. `User`: a person who signs in to the platform, or a workload identity: the User a deployed Job, FastAPI release or Agent runs as, or an external workload calls as
 3. `Role`: a broad level of responsibility inside the organization
 4. `Team`: a reusable group that can hold policies on resources
 5. Resource access: the policies that decide who can do what on a specific resource
@@ -76,9 +76,10 @@ That is the most explicit form of access.
 ## Workload identities
 
 A deployed Job, FastAPI release or Agent runs as its own User: its workload
-identity. A workload identity belongs to the Organization like a person, but it
-is not a person: other Users see no username, email, join date or first and
-last name for it.
+identity. A program outside Main Sequence can have one too, as an
+[external workload](#external-workloads). A workload identity belongs to the
+Organization like a person, but it is not a person: other Users see no
+username, email, join date or first and last name for it.
 
 Any member of the Organization can read a workload identity by its UID, for
 example to check the caller of a request an application received:
@@ -146,6 +147,50 @@ if user.identity_type == "workload":
     # any object the application created, here an Artifact
     artifact.attach_policy("viewer", principal_type="user", principal_uid=user)
 ```
+
+### External workloads
+
+An **external workload** is a program that Main Sequence did not deploy and
+that calls it with its own identity: a service in your cloud, a CI job, a
+scheduler. Its User is a workload identity like a Job's or a release's: it
+takes no seat and has no password, login or API token.
+
+- **Organization admins create it**, in one Environment. It acts in that
+  Environment only: a request it makes for another Environment is refused with
+  `403`. Another Environment needs another external workload.
+- **It signs in by federation.** An Organization admin adds a federated
+  credential to it, naming the identity provider's issuer, the exact subject of
+  the program's identity, an audience dedicated to Main Sequence and,
+  optionally, claim conditions. The program presents a token from its own
+  identity provider and receives a Main Sequence access token that lasts 900
+  seconds and cannot be refreshed. No secret is issued, stored or shipped with
+  the program. Only Organization admins add, disable and enable credentials.
+  The SDK side is described in
+  [Workload Identity Auth](auth.md#workload-identity-auth).
+- **Its access is its policies.** It starts with none. The external workload
+  itself is shared through its own policies, `viewer`, `editor` and `owner`,
+  held by people and Teams. An `editor` manages the workload's User: they give
+  it the policies it needs elsewhere, for example `user` on a release, under
+  the ordinary rules for giving access.
+- **It never acts for a person.** `acts_for_requester` cannot be enabled for an
+  external workload.
+- **Stopping it.** Disabling a credential is immediate and reversible:
+  exchanges stop, and an access token already issued fails at its next
+  request. Deactivating the external workload is final; a replacement is a new
+  external workload, with a new User and none of the old access.
+
+A call from an external workload reaches a FastAPI release like any other
+call: the caller assertion names the workload's User, so
+`User.get_logged_user().uid` is that User's UID and `is_organization_admin` is
+false. `User.get_by_uid(uid)` reads it with `identity_type` `"workload"` and
+with `job_uid`, `resource_release_uid` and `agent_uid` all `None`. An
+application that an external workload calls recognizes it by that UID, read
+from a call the workload made, never by a name.
+
+An external workload that serves its own users can send their context with a
+call, in the W3C `baggage` header. Its User says who is calling; the context
+says who the call is for, and is believed only as far as the application trusts
+that caller. See [Caller context](../server/caller_context.md).
 
 ## Applications that act for their requester
 

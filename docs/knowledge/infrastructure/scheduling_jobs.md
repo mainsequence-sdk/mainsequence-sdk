@@ -161,6 +161,43 @@ usage = job_runs[0].get_resource_usage()
 aggregate CPU, memory, and disk samples. Application code does not supply an
 Organization Environment UID to read the run's application logs.
 
+## Caller context in a run
+
+A run created by a request that carried
+[caller context](../server/caller_context.md) starts with two environment
+variables, in W3C header format:
+
+- `BAGGAGE`: the request's `mainsequence.<application>.<name>` keys;
+- `TRACEPARENT`: the trace the run belongs to.
+
+A scheduled run, or a run the platform starts on its own, has neither.
+Importing `mainsequence` restores them as the process's OpenTelemetry context,
+so Job code reads the context with OpenTelemetry's API:
+
+```python
+import mainsequence  # restores the run's TRACEPARENT and BAGGAGE
+from opentelemetry import baggage
+
+person = baggage.get_baggage("mainsequence.advisor.person")
+if person is None:
+    ...  # no external user: do only what needs none
+```
+
+- The context is restored on the thread that imports the SDK. A thread you
+  start yourself begins without it, as with any OpenTelemetry context; run its
+  work with `contextvars.copy_context().run` to keep it.
+- Calls the run makes through the SDK pass the context on, so the runs and
+  Agent Tasks it creates inherit it. A call the run makes with its run
+  credentials and no `baggage` header is recorded with the run's own context; a
+  header, when sent, wins.
+- Log lines written through the SDK's logger carry the `mainsequence.` keys as
+  `baggage`.
+- `job.run_job()` called while a FastAPI release handles a request gives the
+  run that request's context.
+
+Missing context means no external user: a run without `BAGGAGE` fails closed
+for anything that needs one.
+
 ## Who can use a Job
 
 A Job's access is decided by its policies:
@@ -179,6 +216,13 @@ the Job processed. `job.run_job()` and `jobs run` need `runner` or more, and
 `jobs update` needs `editor` or `owner`. The Job's creator holds `owner`;
 repository workflows create Jobs as the Organization's automation identity,
 which holds no policy on them. Organization admins hold every action.
+
+Whoever may run a Job may also set the
+[caller context](#caller-context-in-a-run) of the runs they start: a run
+carries the context of the request that created it, whatever that context
+says. A Job whose code makes rules from `BAGGAGE` gives the policies that run
+it, `runner`, `editor` and `owner`, including the ones it takes from its
+branch, only to service users it trusts to vouch for that context.
 
 A standalone Job also takes the policies of its branch: `reader` on the branch
 gives `viewer`, and `editor` or `owner` gives `editor`, whether the branch

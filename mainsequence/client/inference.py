@@ -9,6 +9,7 @@ from uuid import UUID
 import requests
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from ..instrumentation import tracer_instrumentator
 from . import utils
 from .exceptions import raise_for_response
 
@@ -74,7 +75,9 @@ class InferenceClient:
         # Inference opts out of safe-read retries as well: an uncertain outcome
         # must preserve the caller's explicit idempotency key.
         with utils.build_session(loaders=utils.loaders, retries=0) as session:
-            headers = dict(utils.loaders.refresh_headers(force=False, session=session))
+            # The caller context goes with the call (ADR 0040).
+            headers = dict(tracer_instrumentator.get_telemetry_carrier())
+            headers.update(utils.loaders.refresh_headers(force=False, session=session))
             if key is not None:
                 headers["Idempotency-Key"] = key
             try:

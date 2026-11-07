@@ -12,6 +12,8 @@ from requests.adapters import HTTPAdapter
 from urllib3.exceptions import InvalidHeader
 from urllib3.util import Retry, Timeout
 
+from .instrumentation import tracer_instrumentator
+
 DEFAULT_ALLOWED_METHODS = frozenset({"HEAD", "GET", "OPTIONS"})
 DEFAULT_STATUS_FORCELIST = (429, 500, 502, 503, 504)
 DEFAULT_TIMEOUT = (5.0, 120.0)
@@ -97,7 +99,13 @@ def request_within_budget(method, url, *, timeout, **kwargs):
     deadline. Then the response, when it has started, is shut down and
     ``requests.Timeout`` is raised. The request may already have reached the
     server.
+
+    The current ``traceparent`` and ``baggage`` go with the request; a header
+    the caller sets wins (ADR 0040).
     """
+    carrier = tracer_instrumentator.get_telemetry_carrier()
+    if carrier:
+        kwargs["headers"] = {**carrier, **(kwargs.get("headers") or {})}
     with request_budget(timeout) as budget:
         attempt_timeout = budget.timeout()
         lock = threading.Lock()

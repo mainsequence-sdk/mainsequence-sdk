@@ -20,6 +20,19 @@ environment, and in this mode the SDK does not load a saved CLI session. JWT aut
 stays the default and runtime credential auth is unchanged. The authentication guide
 describes the configuration, with an Azure Container Apps example.
 
+**Applications receive their callers' context and pass it on.** A service user can
+send its own context with a call in the W3C `baggage` header: which of its users the
+call is for. `install_request_identity` makes each request's `baggage` and
+`traceparent` the OpenTelemetry context of that request, and only of a request with
+a verified caller; application code reads it with `opentelemetry.baggage`, after
+checking the caller. The SDK's calls to Main Sequence and to Agents carry the current
+`traceparent` and `baggage`, and `TracerInstrumentator.get_telemetry_carrier()` now
+returns both. `import mainsequence` restores a Job run's `TRACEPARENT` and `BAGGAGE`
+as its OpenTelemetry context, and log lines carry the `mainsequence.` keys as
+`baggage`. Without context nothing changes. The new Caller context page describes the
+keys, the trust rule, where context arrives and its limits, and the Users and Access
+guide now describes external workloads. See ADR 0040.
+
 ## [9.0.35] - 2026-11-06
 
 **`code-repository create` no longer says it creates a repository without a GitHub
