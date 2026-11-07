@@ -4,7 +4,7 @@ All notable changes to this project should be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows versioned releases.
 
-## [Unreleased]
+## [9.0.38] - 2026-11-07
 
 **The Caller context page sets no rule on what goes in baggage.** It no longer says that a
 value referring to a person must be an opaque id. What the keys and values mean, including
