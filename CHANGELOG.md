@@ -4,7 +4,7 @@ All notable changes to this project should be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows versioned releases.
 
-## [Unreleased]
+## [9.0.37] - 2026-11-07
 
 **A FastAPI application in local mode can reuse who holds a token.** In local mode every
 request asked `users/me` before any route ran. `install_request_identity(app,
