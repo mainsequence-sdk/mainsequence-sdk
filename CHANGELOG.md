@@ -4,7 +4,7 @@ All notable changes to this project should be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows versioned releases.
 
-## [Unreleased]
+## [9.0.36] - 2026-11-07
 
 **A program outside Main Sequence can sign in with its cloud identity.** The new
 `MAINSEQUENCE_AUTH_MODE=workload_identity` obtains a subject token from the source
