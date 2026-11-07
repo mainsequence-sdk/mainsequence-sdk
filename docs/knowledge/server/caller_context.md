@@ -34,14 +34,14 @@ baggage: mainsequence.<application>.<name>=<value>,mainsequence.<application>.<n
   approval. Main Sequence gives no key a meaning and treats every key the same
   way. Two applications that choose the same segment collide only on calls that
   cross both, and a collision grants nothing in Main Sequence.
-- Values are opaque strings. Encode a `,`, `;`, `=` or space inside a value
-  with percent-encoding, as W3C Baggage requires; OpenTelemetry's propagators
-  do it for you.
+- What the keys and values mean, including whether one refers to a person, is
+  up to whoever designs the application.
+- Main Sequence never parses a value. Encode a `,`, `;`, `=` or space inside a
+  value with percent-encoding, as W3C Baggage requires; OpenTelemetry's
+  propagators do it for you.
 - **Values are public by contract.** Baggage is passed on downstream, to third
   parties too, and Main Sequence records it. Never put a secret, a credential
-  or a proof in it. A value that refers to a person is an opaque, stable id
-  that means nothing without your own records: never an email, a name, a phone
-  number or a government id.
+  or a proof in it.
 
 ## Trust
 
