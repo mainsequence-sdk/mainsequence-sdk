@@ -12,7 +12,8 @@ from typing import Any, ClassVar, Literal
 import requests
 from pydantic import ConfigDict, Field, model_validator
 
-from .._transport import request_budget, request_within_budget
+from .._request_deadline import DEADLINE_HEADER, format_timeout_ms, remaining_request_seconds
+from .._transport import budget_remaining_seconds, request_budget, request_within_budget
 from .base import (
     BaseObjectOrm,
     BasePydanticModel,
@@ -1368,6 +1369,15 @@ class AgentSession(
             "Accept": STANDARD_A2A_CONTENT_TYPE,
             "A2A-Extensions": STANDARD_A2A_RESPONSE_KIND_EXTENSION_URI,
         }
+        # How long this call will still wait, so the runtime can stop a turn nobody waits for
+        # (ADR 0041): what is left of the call's budget and of the current request's caller.
+        waits = [
+            seconds
+            for seconds in (budget_remaining_seconds(), remaining_request_seconds())
+            if seconds is not None and seconds > 0
+        ]
+        if waits:
+            headers[DEADLINE_HEADER] = format_timeout_ms(min(waits))
         return request_within_budget(
             "POST",
             url,

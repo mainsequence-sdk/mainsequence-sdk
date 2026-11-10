@@ -109,8 +109,14 @@ The readiness limit is `ready_timeout` when given; otherwise twice
 `MAINSEQUENCE_RELEASE_READY_TIMEOUT_SECONDS`, default 300.
 
 `wait_for_runtime_access()` stays for code that wants access without sending
-a request. Moving it and Agent message send onto the same wait and cache is
-intended and not yet done; see [Implementation](#implementation).
+a request, and runs the same wait and fills the same cache. Concurrent first
+calls to a cold release share one wait.
+
+Agent message send keeps its own budget rule: waiting for a starting Agent
+runtime spends the call's own timeout, as [ADR 0029](0029-a2a-message-send-only.md)
+decided and its tests hold. It sends the deadline header of
+[section 6](#6-a-deadline-travels-with-the-call). Giving it a separate
+readiness limit would reverse that decision and is left to its owners.
 
 ### 3. A process cache of release runtime state
 
@@ -287,10 +293,10 @@ Not done:
 - No call was made to a deployed release. Whether the gateway forwards
   `Mainsequence-Request-Timeout-Ms`, and passes the two response headers back,
   is unverified.
-- `wait_for_runtime_access` and Agent message send still run their own loops.
-- Concurrent first calls to a cold release each ask the platform; they do not
-  share one wait.
-- ms-tau-sdk and the platform are unchanged.
+- Agent message send still spends its own timeout on a starting runtime (see
+  section 2). It sends the deadline header and nothing else changed.
+- The platform is unchanged. ms-tau-sdk follows the contract in its own code,
+  recorded as an amendment to its ADR 0022.
 
 ## Open questions
 

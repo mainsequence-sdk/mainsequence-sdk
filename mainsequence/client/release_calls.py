@@ -14,6 +14,7 @@ import os
 import threading
 import time
 from collections.abc import Iterable, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -217,9 +218,27 @@ class ReleaseRuntimeCache:
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._entries: dict[str, _Entry] = {}
+        self._starting: dict[str, threading.Lock] = {}
 
     def _entry(self, uid: str) -> _Entry:
         return self._entries.setdefault(uid, _Entry())
+
+    @contextmanager
+    def starting(self, uid: str, seconds: float):
+        """Let one caller wait for a release while the others wait for that caller.
+
+        Holds the release's turn for at most ``seconds``; a caller that does
+        not get it goes on by itself, so no call is held longer than its own
+        limits.
+        """
+        with self._lock:
+            turn = self._starting.setdefault(uid, threading.Lock())
+        held = turn.acquire(timeout=max(0.0, seconds))
+        try:
+            yield
+        finally:
+            if held:
+                turn.release()
 
     def observe(self, uid: str, access: Any) -> _Grant | None:
         """Record a platform answer; returns its token access when it can be called."""
@@ -374,8 +393,35 @@ def _deadline_too_short(
 def _wait_until_ready(
     release: Any, *, ready_timeout: float | None, cache: ReleaseRuntimeCache
 ) -> _Grant:
-    """Ask the platform, which wakes the release, until it can be called."""
+    """Ask the platform, which wakes the release, until it can be called with a token."""
+    access, grant = wait_for_release(release, ready_timeout=ready_timeout, cache=cache)
+    if grant is None:
+        raise ReleaseUnavailableError(
+            f"Release {_release_uid(release)} offers no token access to call it.",
+            resource_release_uid=_release_uid(release),
+            runtime_state=str(access.runtime_access.state),
+            runtime_phase=getattr(access.runtime_presence, "phase", None),
+        )
+    return grant
+
+
+def wait_for_release(
+    release: Any,
+    *,
+    ready_timeout: float | None,
+    cache: ReleaseRuntimeCache | None,
+    resolve: Any = None,
+) -> tuple[Any, _Grant | None]:
+    """Ask the platform, which wakes the release, until it admits requests.
+
+    Returns the platform's answer and its token access, when it offers one.
+    ``resolve`` asks the platform, given a timeout in seconds; by default it is
+    the release's ``resolve_runtime_access``. ``cache`` records what is learned;
+    ``None`` records nothing.
+    """
     uid = _release_uid(release)
+    if resolve is None:
+        resolve = lambda seconds: release.resolve_runtime_access(timeout=seconds)  # noqa: E731
     started = time.monotonic()
     waking_since: float | None = None
     waking_at: datetime.datetime | None = None
@@ -387,29 +433,23 @@ def _wait_until_ready(
         platform_timeout = PLATFORM_TIMEOUT_SECONDS
         if caller_remaining is not None:
             platform_timeout = min(platform_timeout, caller_remaining)
-        access = release.resolve_runtime_access(timeout=platform_timeout)
-        grant = cache.observe(uid, access)
+        access = resolve(platform_timeout)
+        grant = cache.observe(uid, access) if cache is not None else _grant_from_access(access)
         admission = access.runtime_access
         presence = access.runtime_presence
         phase = getattr(presence, "phase", None)
         if admission.can_request:
-            if grant is None:
-                raise ReleaseUnavailableError(
-                    f"Release {uid} offers no token access to call it.",
-                    resource_release_uid=uid,
-                    runtime_state=str(admission.state),
-                    runtime_phase=phase,
-                )
             if waking_since is not None:
                 seconds = time.monotonic() - waking_since
-                cache.record_cold_start(uid, waking_at, seconds)
+                if cache is not None:
+                    cache.record_cold_start(uid, waking_at, seconds)
                 logger.info(
                     "release.call.cold_start",
                     resource_release_uid=uid,
                     cold_start_seconds=round(seconds, 3),
                     wake_requested_at=waking_at.isoformat(),
                 )
-            return grant
+            return access, grant
         if admission.state != "waking":
             notice = getattr(admission, "notice", None)
             detail = getattr(notice, "message", None) or getattr(presence, "detail", None)
@@ -515,7 +555,11 @@ def request_release(
     grant = cache.warm_access(uid)
     from_cache = grant is not None
     if grant is None:
-        grant = _wait_until_ready(release, ready_timeout=ready_timeout, cache=cache)
+        # Concurrent first calls to a cold release share one wait.
+        with cache.starting(uid, _ready_limit(ready_timeout, None)):
+            grant = cache.warm_access(uid)
+            if grant is None:
+                grant = _wait_until_ready(release, ready_timeout=ready_timeout, cache=cache)
     replays = 1 if idempotent else 0
     while True:
         caller_remaining = remaining_request_seconds()
@@ -630,4 +674,5 @@ __all__ = [
     "prewarm_releases",
     "release_runtime_cache",
     "request_release",
+    "wait_for_release",
 ]

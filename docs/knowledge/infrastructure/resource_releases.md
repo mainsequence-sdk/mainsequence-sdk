@@ -150,6 +150,10 @@ apart. A start that finished before that question is recognised only when the
 platform returns `scaling.serving_since`; without it, such a call reads as
 `ReleaseRequestTimeoutError`.
 
+`wait_for_runtime_access()` runs the same wait without sending a request, for
+code that only needs the platform's answer. Concurrent first calls to a cold
+release share one wait.
+
 ### Starting several releases
 
 `prewarm_releases([release_a, release_b])` asks the platform to start each,

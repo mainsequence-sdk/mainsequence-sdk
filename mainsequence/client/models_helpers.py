@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import datetime
-import time
 from decimal import Decimal
 from typing import Any, ClassVar, Literal
 from uuid import UUID
@@ -56,6 +55,9 @@ from .release_calls import (
 )
 from .release_calls import (
     request_release as _request_release,
+)
+from .release_calls import (
+    wait_for_release as _wait_for_release,
 )
 from .utils import make_request
 from .value_sets import OpenStrEnum, OpenValueSet
@@ -1068,34 +1070,29 @@ class ResourceRelease(
         wait_timeout_seconds: float = 600.0,
         timeout: int | float | tuple[float, float] | None = None,
     ) -> ResourceReleaseRuntimeAccess:
-        """Poll until backend-directed runtime admission reaches a terminal state."""
+        """Wait until the platform admits requests to the deployed runtime.
+
+        Asking also starts a release that is scaled to zero. Raises
+        ``ReleaseReadinessTimeoutError`` (a ``TimeoutError``) when
+        ``wait_timeout_seconds`` ends while it is still starting, and
+        ``ReleaseUnavailableError`` (a ``RuntimeError``) when the platform
+        answers that it cannot take requests. To send a request, use
+        ``request``, which waits by itself.
+        """
 
         if wait_timeout_seconds <= 0:
             raise ValueError("wait_timeout_seconds must be greater than 0")
-        deadline = time.monotonic() + wait_timeout_seconds
-        while True:
-            access = self.resolve_runtime_access(
+        access, _ = _wait_for_release(
+            self,
+            ready_timeout=wait_timeout_seconds,
+            # A static site's access is its own, never the release's kept token.
+            cache=release_runtime_cache if static_site_release_uid is None else None,
+            resolve=lambda seconds: self.resolve_runtime_access(
                 static_site_release_uid=static_site_release_uid,
-                timeout=timeout,
-            )
-            if access.runtime_access.can_request:
-                return access
-            if access.runtime_access.state != "waking":
-                detail = (
-                    access.runtime_access.notice.message
-                    if access.runtime_access.notice is not None
-                    else access.runtime_presence.detail
-                )
-                raise RuntimeError(detail)
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                raise TimeoutError(
-                    f"Timed out waiting for ResourceRelease {self.uid} runtime access"
-                )
-            retry_after_ms = access.runtime_access.retry_after_ms
-            if retry_after_ms is None:
-                raise RuntimeError("Transient runtime access response is missing retry_after_ms.")
-            time.sleep(min(remaining, max(0.1, retry_after_ms / 1000.0)))
+                timeout=seconds if timeout is None else timeout,
+            ),
+        )
+        return access
 
     @classmethod
     def by_uid(cls, uid: str | UUID) -> ResourceRelease:

@@ -84,6 +84,12 @@ def remaining_timeout(timeout):
     return Timeout(total=remaining, connect=min(connect, remaining), read=min(read, remaining))
 
 
+def budget_remaining_seconds():
+    """Seconds left of the enclosing :func:`request_budget`; ``None`` outside one."""
+    budget = _ACTIVE_BUDGET.get()
+    return None if budget is None else budget.remaining
+
+
 def request_within_budget(method, url, *, timeout, **kwargs):
     """Send one request, never retried, whose whole exchange ends by one deadline.
 
