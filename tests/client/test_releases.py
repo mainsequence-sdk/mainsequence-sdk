@@ -3,6 +3,7 @@ from pydantic import ValidationError
 
 import mainsequence.client.base as base_mod
 import mainsequence.client.models_helpers as models_helpers_mod
+import mainsequence.client.release_calls as release_calls_mod
 from tests.client.support import CODE_REPOSITORY_BRANCH_UID, _runtime_access_payload
 
 
@@ -312,9 +313,7 @@ def test_resource_release_waits_on_django_retry_after(monkeypatch):
         ),
     )
     slept = []
-    monkeypatch.setattr(models_helpers_mod.time, "sleep", slept.append)
-    monotonic = iter([0.0, 0.0, 2.0])
-    monkeypatch.setattr(models_helpers_mod.time, "monotonic", lambda: next(monotonic))
+    monkeypatch.setattr(release_calls_mod.time, "sleep", slept.append)
 
     access = release.wait_for_runtime_access(wait_timeout_seconds=10)
 

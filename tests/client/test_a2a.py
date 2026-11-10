@@ -269,6 +269,8 @@ def test_agent_session_send_a2a_message_posts_standard_contract(monkeypatch):
     assert captured["runtime"]["headers"]["A2A-Extensions"] == (
         agent_models_mod.STANDARD_A2A_RESPONSE_KIND_EXTENSION_URI
     )
+    # What is left of the call's 15-second budget goes to the runtime (ADR 0041).
+    assert 14000 < int(captured["runtime"]["headers"]["Mainsequence-Request-Timeout-Ms"]) <= 15000
     request_body = json.loads(captured["runtime"]["data"])
     assert request_body == {
         "message": {

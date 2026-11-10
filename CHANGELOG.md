@@ -4,6 +4,19 @@ All notable changes to this project should be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows versioned releases.
 
+## [9.0.40] - 2026-11-10
+
+**The existing release waits follow ADR 0041.** `ResourceRelease.wait_for_runtime_access` now runs the same
+wait as `request`: it fills the process cache, records the start it waited for and honours the
+current request's deadline. It raises `ReleaseReadinessTimeoutError`, still a `TimeoutError`,
+and `ReleaseUnavailableError`, still a `RuntimeError`, and an answer without `retry_after_ms`
+is retried after 2 seconds instead of failing. Access asked for a static site is never kept as
+the release's own. Concurrent first calls to a cold release now share one wait instead of each
+asking the platform. `AgentSession.send_a2a_message` sends `Mainsequence-Request-Timeout-Ms`,
+what is left of the call's budget and of the current request's caller, so a runtime that reads
+it can stop a turn nobody waits for. Its budget is unchanged: waiting for a starting Agent
+runtime still spends the call's own timeout (ADR 0029).
+
 ## [9.0.39] - 2026-11-10
 
 **A call from one release to another no longer times out because the target was starting.**

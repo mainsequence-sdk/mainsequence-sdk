@@ -444,3 +444,79 @@ def test_a_release_is_called_by_uid_without_fetching_it(monkeypatch):
     assert len(platform.sent) == 2
     with pytest.raises(ValueError):
         ResourceRelease.by_uid("")
+
+
+def test_wait_for_runtime_access_uses_the_same_wait_and_fills_the_cache(monkeypatch):
+    platform = Platform(monkeypatch, [_waking(), _ready()], [_response()])
+    release = _release()
+
+    access = release.wait_for_runtime_access(wait_timeout_seconds=5)
+
+    assert access.runtime_access.can_request is True
+    assert release.runtime_status().state == "warm"
+    assert release.runtime_status().last_cold_start_seconds is not None
+    release.request("GET", "/v1/prices", timeout=5)
+    assert platform.asked == 2
+
+
+def test_wait_for_runtime_access_keeps_its_exception_types(monkeypatch):
+    Platform(monkeypatch, [_waking(retry_after_ms=10)])
+    with pytest.raises(TimeoutError) as raised:
+        _release().wait_for_runtime_access(wait_timeout_seconds=0.05)
+    assert isinstance(raised.value, ReleaseReadinessTimeoutError)
+
+    Platform(monkeypatch, [_runtime_access_payload(state="unavailable", can_request=False)])
+    with pytest.raises(RuntimeError) as raised:
+        _release().wait_for_runtime_access(wait_timeout_seconds=5)
+    assert isinstance(raised.value, ReleaseUnavailableError)
+
+
+def test_a_static_sites_access_is_never_kept_as_the_releases(monkeypatch):
+    asked = []
+
+    def resolve(release, **kwargs):
+        asked.append(kwargs)
+        return models_helpers_mod.ResourceReleaseRuntimeAccess.model_validate(_ready())
+
+    monkeypatch.setattr(models_helpers_mod.ResourceRelease, "resolve_runtime_access", resolve)
+    release = _release()
+
+    release.wait_for_runtime_access(static_site_release_uid="site-1", timeout=7)
+
+    assert asked == [{"static_site_release_uid": "site-1", "timeout": 7}]
+    assert release.runtime_status().state == "unknown"
+
+
+def test_concurrent_first_calls_to_a_cold_release_share_one_wait(monkeypatch):
+    import threading
+    import time
+
+    asked = []
+
+    def resolve(release, **kwargs):
+        asked.append(time.monotonic())
+        time.sleep(0.05)
+        answer = _waking(retry_after_ms=50) if len(asked) < 3 else _ready()
+        return models_helpers_mod.ResourceReleaseRuntimeAccess.model_validate(answer)
+
+    monkeypatch.setattr(models_helpers_mod.ResourceRelease, "resolve_runtime_access", resolve)
+    sent = []
+    monkeypatch.setattr(
+        release_calls_mod,
+        "request_within_budget",
+        lambda method, url, **kwargs: sent.append(url) or _response(),
+    )
+    threads = [
+        threading.Thread(
+            target=_release().request, args=("GET", "/v1/prices"), kwargs={"timeout": 5}
+        )
+        for _ in range(6)
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=10)
+
+    assert len(sent) == 6
+    # One caller polled through the start; the others used what it learned.
+    assert len(asked) == 3
