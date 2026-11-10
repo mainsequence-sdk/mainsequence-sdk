@@ -4,7 +4,7 @@ All notable changes to this project should be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows versioned releases.
 
-## [Unreleased]
+## [9.0.39] - 2026-11-10
 
 **A call from one release to another no longer times out because the target was starting.**
 `ResourceRelease.request(method, path, timeout=...)`, and `arequest` for asynchronous code,
