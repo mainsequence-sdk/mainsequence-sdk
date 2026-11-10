@@ -342,6 +342,20 @@ The `Origin` check reads `FASTAPI_PUBLIC_BASE_URL` and `FASTAPI_CORS_ALLOW_ORIGI
 export FASTAPI_CORS_ALLOW_ORIGINS=http://localhost:3000
 ```
 
+## Start time and deadlines
+
+To a verified caller, every HTTP response carries
+`Mainsequence-Process-Started-At`, when this process started, and the first
+one a process serves also carries `Mainsequence-Cold-Start: true`. A calling
+release reads them through
+[`ResourceRelease.request`](../infrastructure/resource_releases.md#call-a-release).
+
+A verified caller's `Mainsequence-Request-Timeout-Ms` header, the milliseconds
+it will still wait, bounds the release calls the handler makes with
+`ResourceRelease.request`. An absent or invalid value bounds nothing. Public
+ingress, preflight and WebSocket requests neither get the response headers nor
+set a deadline.
+
 ## Public ingress, preflight and WebSockets
 
 Exact public method/path pairs require the backend-owned `FASTAPI_PUBLIC_INGRESS` declaration and the gateway's matching admission marker. Anonymous requests have no logged user, and credential/identity headers are stripped. Unlisted routes and methods require authentication. Applications still validate provider callback state or webhook signatures.

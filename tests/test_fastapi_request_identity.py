@@ -758,3 +758,34 @@ def test_reads_as_caller_refuses_a_requester_bound_request(signed, monkeypatch):
 
     assert response.json() == {"caller": [USER, False], "requester": [PERSON, True]}
     assert sent == []
+
+
+def test_a_verified_caller_learns_when_the_process_started_and_sets_a_deadline(signed, monkeypatch):
+    from mainsequence._request_deadline import DEADLINE_HEADER, remaining_request_seconds
+    from mainsequence.client.release_calls import COLD_START_HEADER, PROCESS_STARTED_AT_HEADER
+
+    token, _, _ = signed
+    monkeypatch.setenv("FASTAPI_PUBLIC_INGRESS", json.dumps([{"method": "GET", "path": "/open"}]))
+    app = FastAPI()
+    app.get("/me")(lambda: {"remaining": remaining_request_seconds()})
+    app.get("/open")(lambda: {"remaining": remaining_request_seconds()})
+    install_request_identity(app)
+
+    with TestClient(app) as client:
+        public = client.get("/open", headers={"X-Public-Ingress": "1", DEADLINE_HEADER: "5000"})
+        first = client.get("/me", headers={ASSERTION_HEADER: token(), DEADLINE_HEADER: "5000"})
+        second = client.get("/me", headers={ASSERTION_HEADER: token()})
+        invalid = client.get("/me", headers={ASSERTION_HEADER: token(), DEADLINE_HEADER: "soon"})
+        refused = client.get("/me")
+
+    assert PROCESS_STARTED_AT_HEADER not in public.headers
+    assert public.json() == {"remaining": None}
+    assert first.headers[COLD_START_HEADER] == "true"
+    assert first.headers[PROCESS_STARTED_AT_HEADER].endswith("Z")
+    assert 4 < first.json()["remaining"] <= 5
+    assert COLD_START_HEADER not in second.headers
+    assert second.headers[PROCESS_STARTED_AT_HEADER] == first.headers[PROCESS_STARTED_AT_HEADER]
+    assert second.json() == invalid.json() == {"remaining": None}
+    assert refused.status_code == 401
+    assert PROCESS_STARTED_AT_HEADER not in refused.headers
+    assert remaining_request_seconds() is None

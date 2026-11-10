@@ -3,18 +3,22 @@
 from __future__ import annotations
 
 import asyncio
+import datetime
 import json
 import math
 import os
 import re
+import threading
 from contextlib import asynccontextmanager, contextmanager
 from urllib.parse import urlsplit
 from uuid import UUID
 
+import psutil
 import requests
 from opentelemetry import context as otel_context
 
 from mainsequence._local_callers import LocalCallerCache
+from mainsequence._request_deadline import DEADLINE_HEADER, parse_timeout_ms, request_deadline
 from mainsequence._request_identity import (
     RequestIdentityError,
     _get_request_identity,
@@ -23,6 +27,7 @@ from mainsequence._request_identity import (
 )
 from mainsequence._team_memberships import TeamMembershipCache
 from mainsequence.client.models_user import RequestUserIdentity
+from mainsequence.client.release_calls import COLD_START_HEADER, PROCESS_STARTED_AT_HEADER
 from mainsequence.instrumentation.utils import _request_context
 
 from .caller_assertions import (
@@ -119,6 +124,31 @@ def _trace_carrier(scope):
             name, value = name.decode("latin-1"), value.decode("latin-1")
             carrier[name] = f"{carrier[name]},{value}" if name in carrier else value
     return carrier
+
+
+def _process_started_at():
+    """When this process started, as an RFC 3339 header value."""
+    try:
+        started = psutil.Process().create_time()
+    except psutil.Error:
+        started = datetime.datetime.now(datetime.UTC).timestamp()
+    return (
+        datetime.datetime.fromtimestamp(started, datetime.UTC)
+        .isoformat(timespec="seconds")
+        .replace("+00:00", "Z")
+        .encode("latin-1")
+    )
+
+
+def _caller_timeout(scope):
+    """Seconds the caller will still wait, from its deadline header; the shortest when repeated."""
+    name = DEADLINE_HEADER.lower().encode()
+    limits = [
+        parse_timeout_ms(value.decode("latin-1"))
+        for key, value in scope.get("headers", ())
+        if key.lower() == name
+    ]
+    return min((limit for limit in limits if limit is not None), default=None)
 
 
 def _users_me(endpoint, token):
@@ -224,6 +254,9 @@ class _RequestIdentityMiddleware:
         # Local-mode callers reused across this application's requests (#251).
         self.local_callers = LocalCallerCache()
         self.local_caller_cache_seconds = local_caller_cache_seconds
+        # What a calling release reads to learn when this one started (ADR 0041).
+        self.process_started_at = _process_started_at()
+        self.first_request = threading.Lock()
         for method, path in public_ingress:
             if not any(
                 getattr(route, "path", None) == path
@@ -314,9 +347,27 @@ class _RequestIdentityMiddleware:
                 _request_context(_trace_carrier(scope), with_baggage=caller_verified)
             )
             try:
-                await self.app(scope, receive, send)
+                if scope["type"] == "http" and caller_verified:
+                    # Only a verified caller learns the start time or sets a deadline.
+                    with request_deadline(_caller_timeout(scope)):
+                        await self.app(scope, receive, self._reporting_start(send))
+                else:
+                    await self.app(scope, receive, send)
             finally:
                 otel_context.detach(context_token)
+
+    def _reporting_start(self, send):
+        """Add this process's start time, and whether this is its first request, to the response."""
+        headers = [(PROCESS_STARTED_AT_HEADER.lower().encode(), self.process_started_at)]
+        if self.first_request.acquire(blocking=False):
+            headers.append((COLD_START_HEADER.lower().encode(), b"true"))
+
+        async def reporting(message):
+            if message["type"] == "http.response.start":
+                message = {**message, "headers": [*message.get("headers", ()), *headers]}
+            await send(message)
+
+        return reporting
 
 
 def install_request_identity(app, *, team_membership_cache_seconds=0, local_caller_cache_seconds=0):

@@ -4,6 +4,31 @@ All notable changes to this project should be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows versioned releases.
 
+## [9.0.39] - 2026-11-10
+
+**A call from one release to another no longer times out because the target was starting.**
+`ResourceRelease.request(method, path, timeout=...)`, and `arequest` for asynchronous code,
+first make sure the release is ready, asking the platform, which also starts it, and wait
+while it is `waking` under a separate readiness limit. Only then is the request sent, so
+`timeout` measures the application's work. The limit is `ready_timeout`, or twice the start
+time the platform expects (at least 30 seconds), or `MAINSEQUENCE_RELEASE_READY_TIMEOUT_SECONDS`
+(300). A process cache, read with `ResourceRelease.runtime_status()`, skips the platform call
+while a release is known warm and records the last start waited for. Failures are
+`ReleaseCallError`s that name their phase: `ReleaseReadinessTimeoutError`,
+`ReleaseUnavailableError`, `ReleaseDeadlineTooShortError`, `ReleaseColdStartTimeoutError` and
+`ReleaseRequestTimeoutError`. A request is sent once; `idempotent=True` allows one more send
+after a timeout during a start. `prewarm_releases` starts several releases in parallel.
+`ResourceRelease.by_uid(uid)` makes a handle for these calls without fetching the release.
+`install_request_identity` now adds `Mainsequence-Process-Started-At` to a verified caller's
+responses, with `Mainsequence-Cold-Start: true` on a process's first, and reads the caller's
+`Mainsequence-Request-Timeout-Ms`, which bounds the release calls the handler makes.
+`ResourceReleaseRuntimeAccess` reads an optional `scaling` object (`min_instances`,
+`idle_timeout_seconds`, `expected_cold_start_seconds`, `serving_since`); until the platform
+returns it, the cache assumes a 60-second idle window
+(`MAINSEQUENCE_RELEASE_IDLE_TIMEOUT_SECONDS`). The new scaffold skill
+`application_surfaces/release_calls` teaches the routine. `wait_for_runtime_access` and Agent
+message send are unchanged. See ADR 0041 and the Resource releases guide.
+
 ## [9.0.38] - 2026-11-07
 
 **The Caller context page sets no rule on what goes in baggage.** It no longer says that a

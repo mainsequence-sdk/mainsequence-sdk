@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 import datetime
 import time
 from decimal import Decimal
 from typing import Any, ClassVar, Literal
 from uuid import UUID
 
+import requests
 from pydantic import BaseModel, ConfigDict, Field, PositiveInt
 
 from .base import (
@@ -24,6 +26,36 @@ from .observability import (
     OwnerLogMixin,
     OwnerResourceUsageMixin,
     PublicLogLevel,
+)
+from .release_calls import (
+    ReleaseCallError as ReleaseCallError,
+)
+from .release_calls import (
+    ReleaseColdStartTimeoutError as ReleaseColdStartTimeoutError,
+)
+from .release_calls import (
+    ReleaseDeadlineTooShortError as ReleaseDeadlineTooShortError,
+)
+from .release_calls import (
+    ReleaseReadinessTimeoutError as ReleaseReadinessTimeoutError,
+)
+from .release_calls import (
+    ReleaseRequestTimeoutError as ReleaseRequestTimeoutError,
+)
+from .release_calls import (
+    ReleaseRuntimeStatus as ReleaseRuntimeStatus,
+)
+from .release_calls import (
+    ReleaseUnavailableError as ReleaseUnavailableError,
+)
+from .release_calls import (
+    prewarm_releases as prewarm_releases,
+)
+from .release_calls import (
+    release_runtime_cache as release_runtime_cache,
+)
+from .release_calls import (
+    request_release as _request_release,
 )
 from .utils import make_request
 from .value_sets import OpenStrEnum, OpenValueSet
@@ -838,6 +870,26 @@ class ResourceReleaseRuntimePresence(BasePydanticModel):
     wake: ResourceReleaseRuntimeWake | None = None
 
 
+class ResourceReleaseScaling(BasePydanticModel):
+    """How a release scales, as the platform states it (ADR 0041).
+
+    Every field is ``None`` when the platform does not state it.
+    """
+
+    min_instances: int | None = Field(
+        default=None, ge=0, description="Replicas kept when idle. 0 scales to zero."
+    )
+    idle_timeout_seconds: float | None = Field(
+        default=None, ge=0, description="How long the last replica stays after its last request."
+    )
+    expected_cold_start_seconds: float | None = Field(
+        default=None, ge=0, description="The platform's measured time from wake to serving."
+    )
+    serving_since: datetime.datetime | None = Field(
+        default=None, description="When the oldest current replica began serving."
+    )
+
+
 class ResourceReleaseRuntimeAccess(BasePydanticModel):
     # `access` holds the runtime's bearer token, so neither repr() nor a
     # validation error shows it.
@@ -850,6 +902,7 @@ class ResourceReleaseRuntimeAccess(BasePydanticModel):
     routing: ResourceReleaseRuntimeRouting
     runtime_access: ResourceReleaseRuntimeAdmission
     runtime_presence: ResourceReleaseRuntimePresence
+    scaling: ResourceReleaseScaling | None = None
     access: dict[str, Any] | None = Field(default=None, repr=False)
 
 
@@ -1043,6 +1096,81 @@ class ResourceRelease(
             if retry_after_ms is None:
                 raise RuntimeError("Transient runtime access response is missing retry_after_ms.")
             time.sleep(min(remaining, max(0.1, retry_after_ms / 1000.0)))
+
+    @classmethod
+    def by_uid(cls, uid: str | UUID) -> ResourceRelease:
+        """A handle to call a release by its UID, without asking the platform for it.
+
+        Only ``uid`` is set: use it for ``request``, ``arequest``,
+        ``runtime_status`` and the runtime access methods. Use ``get(pk=...)``
+        to read the release's details.
+        """
+        if uid in (None, ""):
+            raise ValueError("A release UID is required")
+        return cls.model_construct(uid=str(uid))
+
+    def request(
+        self,
+        method: str,
+        path: str,
+        *,
+        timeout: float | tuple[float, float],
+        ready_timeout: float | None = None,
+        idempotent: bool = False,
+        headers: dict[str, str] | None = None,
+        **kwargs: Any,
+    ) -> requests.Response:
+        """Send one HTTP request to this release's application (ADR 0041).
+
+        The release may be scaled to zero. The call first makes sure it is
+        ready, asking the platform, which also starts it, unless this process
+        knows it is warm. Only then is the request sent, so ``timeout`` measures
+        the application's own work and never its start. ``timeout`` is a total
+        in seconds, or a ``(connect, read)`` tuple.
+
+        ``ready_timeout`` limits the wait for a starting release. By default it
+        is twice the start time the platform expects, at least 30 seconds, or
+        ``MAINSEQUENCE_RELEASE_READY_TIMEOUT_SECONDS`` (300) when the platform
+        states none.
+
+        The request is sent once. ``idempotent=True`` allows one more send, and
+        only when the first timed out while the release was starting. Pass it
+        only for a call that is safe to repeat.
+
+        Inside a request handled by an application with
+        ``install_request_identity``, the time the handler's own caller will
+        still wait bounds both limits, and what remains is sent on.
+
+        ``kwargs`` go to ``requests`` (``json``, ``params``, ``data``, …). The
+        response is returned whatever its status. Raises
+        ``ReleaseReadinessTimeoutError``, ``ReleaseUnavailableError``,
+        ``ReleaseDeadlineTooShortError``, ``ReleaseColdStartTimeoutError`` or
+        ``ReleaseRequestTimeoutError``, all ``ReleaseCallError``.
+        """
+        return _request_release(
+            self,
+            method,
+            path,
+            timeout=timeout,
+            ready_timeout=ready_timeout,
+            idempotent=idempotent,
+            headers=headers,
+            **kwargs,
+        )
+
+    async def arequest(self, method: str, path: str, **kwargs: Any) -> requests.Response:
+        """``request`` for asynchronous code: it runs on a worker thread."""
+        return await asyncio.to_thread(self.request, method, path, **kwargs)
+
+    def runtime_status(self) -> ReleaseRuntimeStatus:
+        """What this process knows about the release's runtime, without asking the platform.
+
+        Read it to decide something from the release's state, such as showing
+        "starting". It never starts the release.
+        """
+        if self.uid is None:
+            raise ValueError("ResourceRelease.uid is required to read its runtime status")
+        return release_runtime_cache.status(str(self.uid))
 
 
     uid: str | None = Field(
