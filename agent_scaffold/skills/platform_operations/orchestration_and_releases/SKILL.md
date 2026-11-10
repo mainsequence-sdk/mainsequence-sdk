@@ -45,6 +45,8 @@ This skill must not claim ownership of:
   `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
 - RBAC and access policies:
   `.agents/skills/mainsequence/platform_operations/access_control_and_sharing/SKILL.md`
+- HTTP calls from one release to another, their timeouts and cold starts:
+  `.agents/skills/mainsequence/application_surfaces/release_calls/SKILL.md`
 
 ## Read First
 

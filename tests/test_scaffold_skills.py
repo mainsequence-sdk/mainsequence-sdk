@@ -252,6 +252,7 @@ def test_packaged_scaffold_keeps_retained_sdk_skills():
         "a2a_sdk_execution/SKILL.md",
         "mainsequence-inference/SKILL.md",
         "application_surfaces/api_surfaces/SKILL.md",
+        "application_surfaces/release_calls/SKILL.md",
         "maintenance/bug_auditor/SKILL.md",
         "maintenance/code_repository_maintenance/SKILL.md",
         "maintenance/metatables_transition/SKILL.md",

@@ -70,6 +70,103 @@ For FastAPI runtime routing and readiness, use `release.resolve_runtime_access()
 and the backend-returned routing information. Do not construct a deployment
 hostname from the name or UID.
 
+## Call a release
+
+A release can be scaled to zero, and a request to it is then held until a
+replica starts. `request` keeps that start out of your timeout:
+
+```python
+release = ResourceRelease.by_uid("<RESOURCE_RELEASE_UID>")
+response = release.request("POST", "/v1/prices", timeout=60, json={"symbol": "ABC"})
+response.raise_for_status()
+```
+
+`by_uid` makes a handle from the UID without contacting the platform, unlike
+`get(pk=...)`, which fetches the release's details each time it runs. `request`
+itself asks the platform only on the first call in the process, when the
+release has shown no sign of serving within its idle window, when its token is
+about to expire, and after a timeout.
+
+In asynchronous code use `await release.arequest(...)`, which runs the same
+call on a worker thread.
+
+The call first makes sure the release is ready. It asks the platform, which
+also starts the release, and waits while the answer is `waking`. Only then is
+the request sent, to the URL and with the token the platform returned, so
+`timeout` measures the application's own work. `timeout` is a total in seconds
+or a `(connect, read)` tuple. Other keyword arguments (`json`, `params`,
+`data`, `headers`) go to `requests`. The response is returned whatever its
+status. `path` is a path on the release; the SDK sets `Authorization`.
+
+| Argument | Meaning |
+| --- | --- |
+| `timeout` | Required. How long the application's work may take once it is running. |
+| `ready_timeout` | How long a start may take. Default: twice the start time the platform expects, at least 30 seconds; or `MAINSEQUENCE_RELEASE_READY_TIMEOUT_SECONDS` (300) when the platform states none. |
+| `idempotent` | `True` allows one more send, only after a timeout that happened while the release was starting. Default `False`: the request is sent once. |
+
+### What the process remembers
+
+The SDK keeps one in-memory cache per process, `release_runtime_cache`, with
+the platform's last answer for each release called, when the release last
+answered a request, and the last start this process waited for. While a
+release is known warm, `request` skips the platform call. A release is warm
+when its token is still valid and either the platform reports
+`min_instances >= 1`, or the release answered within its idle window less a
+margin (the larger of 10 seconds and 20% of the window). The window is the
+platform's `idle_timeout_seconds`, or `MAINSEQUENCE_RELEASE_IDLE_TIMEOUT_SECONDS`
+(60) when the platform states none.
+
+The cache is not shared between processes and is not the truth: another
+caller may keep a release warm, and a deployment restarts it. Do not build
+another one. Read it with `runtime_status()`, which never contacts the
+platform and never starts the release:
+
+```python
+status = release.runtime_status()
+status.state                    # "warm", "cold" or "unknown"
+status.last_cold_start_at       # when the last start this process waited for began
+status.last_cold_start_seconds  # how long it took
+status.process_started_at       # when the release's process started, as it reported
+```
+
+`min_instances`, `idle_timeout_seconds` and `expected_cold_start_seconds` are
+`None` until the platform returns a `scaling` object in its answer.
+
+### Failures
+
+Each is a `ReleaseCallError` with `resource_release_uid`, `phase`
+(`readiness` or `request`), `timeout_seconds` and `runtime_phase`.
+
+| Error | Raised when | Sent? |
+| --- | --- | --- |
+| `ReleaseReadinessTimeoutError` | `ready_timeout` ended while the release was starting. | No |
+| `ReleaseUnavailableError` | The platform answered that the release cannot take requests. | No |
+| `ReleaseDeadlineTooShortError` | The caller of the current request will not wait long enough for the release to start. | No |
+| `ReleaseColdStartTimeoutError` | `timeout` ended and the platform then shows the release starting. | Yes |
+| `ReleaseRequestTimeoutError` | `timeout` ended on a serving release. | Yes |
+
+After a request times out, the SDK asks the platform once to tell the last two
+apart. A start that finished before that question is recognised only when the
+platform returns `scaling.serving_since`; without it, such a call reads as
+`ReleaseRequestTimeoutError`.
+
+### Starting several releases
+
+`prewarm_releases([release_a, release_b])` asks the platform to start each,
+in parallel, and returns at once. It accepts releases or UIDs and never
+raises. Call it from an application's lifespan with the releases it depends
+on, so a chain of cold releases costs about the slowest start instead of the
+sum.
+
+### Deadlines across calls
+
+`request` sends `Mainsequence-Request-Timeout-Ms`, the time it will still
+wait. An application with `install_request_identity` reads it from a verified
+caller, and calls made with `request` inside that handler are bounded by what
+remains and send the remainder on. A call that cannot fit the target's
+expected start in that time fails with `ReleaseDeadlineTooShortError` before
+anything is sent. Without the header nothing is bounded.
+
 ## Supported collection filters
 
 The SDK exposes these filters through `ResourceRelease.FILTERSET_FIELDS`:
