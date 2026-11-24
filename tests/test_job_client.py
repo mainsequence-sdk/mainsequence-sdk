@@ -124,6 +124,116 @@ def test_job_run_job_posts_to_canonical_action(monkeypatch):
     }
 
 
+def _run_job_and_capture_payload(monkeypatch, **run_job_kwargs):
+    models_helpers = _load_models_helpers_module()
+    Job = models_helpers.Job
+    captured = {}
+
+    class FakeResponse:
+        status_code = 202
+
+        @staticmethod
+        def json():
+            return {
+                "message": "Job run requested.",
+                "job_run_uid": "4c1d77c8-8a42-42b8-a9c1-06be9a336e5d",
+            }
+
+    monkeypatch.setattr(Job, "build_session", classmethod(lambda cls: object()))
+    monkeypatch.setattr(
+        Job,
+        "get_object_url",
+        classmethod(lambda cls: "https://backend.test/api/v1/jobs"),
+    )
+
+    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
+        captured.update(payload=payload)
+        return FakeResponse()
+
+    monkeypatch.setattr(models_helpers, "make_request", _fake_make_request)
+
+    job = Job(
+        uid="7d0ab07c-d1c0-4b7f-9c69-3c1a41c0a4da",
+        name="Simulated Prices",
+        code_repository_branch_uid="5a28020a-0f1b-47ee-aab8-334286234bea",
+        execution_path="scripts/simulated_prices_launcher.py",
+        cpu_request="2",
+        memory_request="8",
+        related_image_uid="f3cb8477-df47-49cb-a151-80b746fb1243",
+        image_status="ready",
+    )
+    job.run_job(**run_job_kwargs)
+    return captured["payload"]
+
+
+def test_job_run_job_sends_the_compute_given_for_the_run(monkeypatch):
+    payload = _run_job_and_capture_payload(
+        monkeypatch,
+        command_args=["--family", "jobs"],
+        cpu_request="8",
+        memory_request="52",
+    )
+
+    assert payload == {
+        "json": {
+            "command_args": ["--family", "jobs"],
+            "cpu_request": "8",
+            "memory_request": "52",
+        }
+    }
+
+
+def test_job_run_job_sends_compute_without_command_args(monkeypatch):
+    payload = _run_job_and_capture_payload(
+        monkeypatch,
+        cpu_request=0.5,
+        memory_request=2,
+        gpu_request=1,
+        gpu_type="nvidia-l4",
+    )
+
+    assert payload == {
+        "json": {
+            "cpu_request": 0.5,
+            "memory_request": 2,
+            "gpu_request": 1,
+            "gpu_type": "nvidia-l4",
+        }
+    }
+
+
+def test_job_run_job_does_not_check_the_compute_it_sends(monkeypatch):
+    payload = _run_job_and_capture_payload(monkeypatch, cpu_request="500m", gpu_request="9")
+
+    assert payload == {"json": {"cpu_request": "500m", "gpu_request": "9"}}
+
+
+@pytest.mark.parametrize(
+    ("run_job_kwargs", "expected_payload"),
+    [
+        ({}, {}),
+        ({"command_args": ["--name", "demo"]}, {"json": {"command_args": ["--name", "demo"]}}),
+        ({"command_args": []}, {"json": {"command_args": []}}),
+        (
+            {
+                "command_args": ["--name", "demo"],
+                "cpu_request": None,
+                "memory_request": None,
+                "gpu_request": None,
+                "gpu_type": None,
+            },
+            {"json": {"command_args": ["--name", "demo"]}},
+        ),
+    ],
+)
+def test_job_run_job_sends_no_compute_when_none_is_given(
+    monkeypatch, run_job_kwargs, expected_payload
+):
+    payload = _run_job_and_capture_payload(monkeypatch, **run_job_kwargs)
+
+    assert payload == expected_payload
+
+
 @pytest.mark.parametrize(
     "command_args",
     ["--name demo", ("--name", "demo"), ["--name", 1]],

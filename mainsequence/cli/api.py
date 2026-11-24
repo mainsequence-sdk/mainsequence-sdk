@@ -3345,13 +3345,18 @@ def run_code_repository_job(
     job_uid: str,
     *,
     command_args: list[str] | None = None,
+    cpu_request: str | None = None,
+    memory_request: str | None = None,
+    gpu_request: str | None = None,
+    gpu_type: str | None = None,
     timeout: int | None = None,
 ) -> dict[str, Any]:
     """
     Run a CodeRepository job via the SDK client model.
 
     Single source of truth:
-      - delegates request behavior to `Job.run_job()`
+      - delegates request behavior to `Job.run_job()`, which sends the per-run
+        compute fields only when they are given
     """
     tokens = get_tokens()
     access = (tokens.get("access") or "").strip()
@@ -3399,7 +3404,14 @@ def run_code_repository_job(
         ClientJob.ROOT_URL = root_url
 
         job = ClientJob.get_by_uid(str(job_uid), timeout=timeout)
-        payload = job.run_job(timeout=timeout, command_args=command_args)
+        payload = job.run_job(
+            timeout=timeout,
+            command_args=command_args,
+            cpu_request=cpu_request,
+            memory_request=memory_request,
+            gpu_request=gpu_request,
+            gpu_type=gpu_type,
+        )
         effective_tokens: list[str] = []
         execution_path = str(getattr(job, "execution_path", "") or "").strip()
         if execution_path:

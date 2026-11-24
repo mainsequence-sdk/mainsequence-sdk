@@ -490,7 +490,8 @@ workload identity or a team on one resource; see
 - an Agent's `viewer`, `user`, `operator`, `editor` and `owner`; see
   [Agents](agents.md);
 - a release's `viewer`, `user`, `editor` and `owner` and a Job's `viewer`,
-  `runner`, `editor` and `owner`, which also take the policies of the branch
+  `runner`, `sized_runner`, `editor` and `owner`, which also take the policies
+  of the branch
   that declares them, or of the Agent or the release they back; see
   [Who can use a release](resource_releases.md#who-can-use-a-release) and
   [Who can use a Job](scheduling_jobs.md#who-can-use-a-job);

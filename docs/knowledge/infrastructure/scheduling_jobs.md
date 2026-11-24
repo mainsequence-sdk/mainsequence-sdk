@@ -161,6 +161,58 @@ usage = job_runs[0].get_resource_usage()
 aggregate CPU, memory, and disk samples. Application code does not supply an
 Organization Environment UID to read the run's application logs.
 
+## Choose the compute of one run
+
+A manual run uses the Job's CPU, memory and GPUs unless the call names its own.
+The values size that run only: the Job is not changed, and its other runs keep
+the Job's values.
+
+```python
+from mainsequence.client import JobRun
+
+run_payload = job.run_job(
+    command_args=["--family", "jobs"],
+    cpu_request="8",
+    memory_request="52",
+)
+run = JobRun.get_by_uid(run_payload["job_run_uid"])
+print(run.cpu_request, run.memory_request, run.gpu_request, run.gpu_type)
+```
+
+```bash
+mainsequence code-repository jobs run <JOB_UID> --cpu-request 8 --memory-request 52
+mainsequence code-repository jobs run <JOB_UID> --gpu-request 1 --gpu-type nvidia-l4
+```
+
+`run_job()` takes `cpu_request`, `memory_request`, `gpu_request` and
+`gpu_type`, and `jobs run` the options `--cpu-request`, `--memory-request`,
+`--gpu-request` and `--gpu-type`. One left out takes the Job's value. The
+platform checks the resulting set:
+
+- `cpu_request` is a decimal number of vCPU with at most two places, from 0.25
+  to 30;
+- `memory_request` is a decimal number of GiB, from 0.5 to 110, and from 1 to
+  6.5 times the CPU;
+- CPU and memory go together: a run has both or neither;
+- `gpu_request` is a whole number from 1 to 8 and needs a `gpu_type` the Job's
+  cluster offers.
+
+The SDK sends the values as given and does not check them. A set the platform
+refuses starts no run: `run_job()` raises `BadRequestError`, whose `payload`
+holds the errors by field, and `jobs run` prints them and exits with 1. Write
+plain decimal numbers; Kubernetes quantities such as `500m` or `1Gi` are
+refused.
+
+The answer is the same with or without these values, `message` and
+`job_run_uid`. The compute a run got is on the run: read `cpu_request`,
+`memory_request`, `gpu_request` and `gpu_type` from the `JobRun`.
+
+Naming any of the four needs the Job's `run_sized` action; see
+[Who can use a Job](#who-can-use-a-job).
+
+Spot capacity is not offered. `spot` on a Job and on a release is always
+false, and the platform refuses `spot: true`.
+
 ## Caller context in a run
 
 A run created by a request that carried
@@ -205,6 +257,8 @@ A Job's access is decided by its policies:
 - `viewer`: see the Job, its schedule, runs, logs and outputs, including the
   Artifacts its runs published;
 - `runner`: also run the Job and stop its runs;
+- `sized_runner`: also choose each run's CPU, memory and GPUs, without changing
+  the Job;
 - `editor`: also change it (name, description, resources, schedule, arguments,
   image), post a run's status and outputs by hand, delete it, manage what its
   workload can reach, and see who has access;
@@ -213,7 +267,12 @@ A Job's access is decided by its policies:
 Each run uses compute and credits and acts with the Job's own workload access,
 which can be broader than yours, and run logs and outputs can contain the data
 the Job processed. `job.run_job()` and `jobs run` need `runner` or more, and
-`jobs update` needs `editor` or `owner`. The Job's creator holds `owner`;
+`jobs update` needs `editor` or `owner`. A run that names its own
+[compute](#choose-the-compute-of-one-run) also needs the Job's `run_sized`
+action, which `sized_runner`, `editor` and `owner` hold and `runner` does not:
+without it `run_job()` raises `PermissionDeniedError` with code
+`missing_action`, and no run starts. Give `sized_runner` to whoever should size
+runs without being able to change the Job. The Job's creator holds `owner`;
 repository workflows create Jobs as the Organization's automation identity,
 which holds no policy on them. Organization admins hold every action.
 
@@ -221,8 +280,8 @@ Whoever may run a Job may also set the
 [caller context](#caller-context-in-a-run) of the runs they start: a run
 carries the context of the request that created it, whatever that context
 says. A Job whose code makes rules from `BAGGAGE` gives the policies that run
-it, `runner`, `editor` and `owner`, including the ones it takes from its
-branch, only to service users it trusts to vouch for that context.
+it, `runner`, `sized_runner`, `editor` and `owner`, including the ones it takes
+from its branch, only to service users it trusts to vouch for that context.
 
 A standalone Job also takes the policies of its branch: `reader` on the branch
 gives `viewer`, and `editor` or `owner` gives `editor`, whether the branch

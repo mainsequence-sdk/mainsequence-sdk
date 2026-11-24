@@ -282,6 +282,7 @@ mainsequence code-repository jobs runs logs <JOB_RUN_UID> --max-wait-seconds 900
 mainsequence code-repository jobs run <JOB_UID>
 mainsequence code-repository jobs run <JOB_UID> --arg demo-from-cli
 mainsequence code-repository jobs run <JOB_UID> -- --name demo-from-cli
+mainsequence code-repository jobs run <JOB_UID> --cpu-request 8 --memory-request 52
 mainsequence code-repository jobs access list <JOB_UID>
 mainsequence code-repository jobs access grant <JOB_UID> runner --user <USER_UID>
 mainsequence code-repository jobs access revoke <JOB_UID> <BINDING_UID>
@@ -713,11 +714,31 @@ mainsequence code-repository jobs access explain <JOB_UID> jobs.read_runs --user
 
 Who can use a Job is decided by its policies: `viewer` sees the Job, its
 schedule, runs, logs and outputs; `runner` also runs it and stops its runs;
-`editor` also changes and deletes it, manages what its workload can reach and
-sees who has access; `owner` also decides who has access. `jobs run` needs
-`runner` or more and `jobs update` `editor` or `owner`. A standalone Job also
-takes the policies of its branch, and a release's backing Job those of its
+`sized_runner` also chooses each run's CPU, memory and GPUs, without changing
+the Job; `editor` also changes and deletes it, manages what its workload can
+reach and sees who has access; `owner` also decides who has access. `jobs run`
+needs `runner` or more and `jobs update` `editor` or `owner`. A standalone Job
+also takes the policies of its branch, and a release's backing Job those of its
 release; a backing Job is changed, run and deleted with its release.
+
+`jobs run` sizes one run with `--cpu-request`, `--memory-request`,
+`--gpu-request` and `--gpu-type`:
+
+```bash
+mainsequence code-repository jobs run <JOB_UID> --cpu-request 8 --memory-request 52
+mainsequence code-repository jobs run <JOB_UID> --gpu-request 1 --gpu-type nvidia-l4
+```
+
+The values apply to that run only and leave the Job unchanged; an option left
+out takes the Job's value. CPU is a decimal number of vCPU with at most two
+places, from 0.25 to 30. Memory is a decimal number of GiB, from 0.5 to 110 and
+from 1 to 6.5 times the CPU. CPU and memory go together, and `--gpu-request` is
+1 to 8 and needs a GPU type the Job's cluster offers. The platform checks the
+values: when it refuses them the command prints its field errors, exits with 1
+and no run starts. Passing any of the four options needs the Job's `run_sized`
+action, which `sized_runner`, `editor` and `owner` hold and `runner` does not.
+The compute a run got is on the run, not in this command's answer. See
+[Choose the compute of one run](../knowledge/infrastructure/scheduling_jobs.md#choose-the-compute-of-one-run).
 
 - `access list` prints the policies attached to the Job and the access the
   platform computes, including what the Job takes from its branch or its

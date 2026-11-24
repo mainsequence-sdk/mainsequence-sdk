@@ -138,9 +138,10 @@ workload can reach and sees who has access; `owner` also decides who has
 access. A release has four: `viewer` sees its configuration and logs and calls
 it; `user` calls it without its logs; `editor` also changes and deletes it and
 manages what its workload can reach; `owner` also decides who has access. A Job
-has four: `viewer` sees it, its runs, logs and outputs; `runner` also runs it and
-stops its runs; `editor` also changes and deletes it and manages what its
-workload can reach; `owner` also decides who has access. Their creators hold
+has five: `viewer` sees it, its runs, logs and outputs; `runner` also runs it and
+stops its runs; `sized_runner` also chooses each run's CPU, memory and GPUs;
+`editor` also changes and deletes it and manages what its workload can reach;
+`owner` also decides who has access. Their creators hold
 `owner`, except the Organization's automation identity, which creates the
 Agents, releases and Jobs of repository workflows and holds no policy on them.
 

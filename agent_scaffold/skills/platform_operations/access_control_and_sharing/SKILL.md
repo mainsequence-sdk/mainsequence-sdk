@@ -105,8 +105,8 @@ Before changing access or advising on it, collect or infer:
     `operator`, `editor` or `owner`
   - for a `ResourceRelease`, which is decided by policies: `viewer`, `user`,
     `editor` or `owner`
-  - for a `Job`, which is decided by policies: `viewer`, `runner`, `editor` or
-    `owner`
+  - for a `Job`, which is decided by policies: `viewer`, `runner`,
+    `sized_runner`, `editor` or `owner`
   - for a model-provider credential or a custom model provider, which are
     decided by policies: `user`, `editor` or `owner`
 - whether the goal is:
@@ -130,8 +130,8 @@ For every non-trivial access task, decide:
    `CodeRepository`, a `CodeRepositoryBranch` or an `OrganizationProject`, `reader`, `editor` or
    `owner`; on an `Agent`, `viewer`, `user`, `operator`, `editor` or `owner`; on a
    `ResourceRelease`, `viewer`, `user`, `editor` or `owner`; on a `Job`, `viewer`, `runner`,
-   `editor` or `owner`; on a model-provider credential or a custom model provider, `user`,
-   `editor` or `owner`?
+   `sized_runner`, `editor` or `owner`; on a model-provider credential or a custom model
+   provider, `user`, `editor` or `owner`?
 4. Is this configuration non-sensitive or sensitive?
 5. Is the task really an access problem, or is it actually an orchestration or implementation problem?
 6. Is the task creating a `Constant` or `Secret` by name, and does that name already exist?
@@ -303,15 +303,17 @@ A `ResourceRelease` and a `Job` are decided by their policies:
   configuration, activates static deployments, deletes it and manages what its
   workload can reach; `owner` also decides who has access;
 - on a Job, `viewer` sees it, its runs, logs and outputs; `runner` also runs
-  it and stops its runs; `editor` also changes and deletes it and manages what
-  its workload can reach; `owner` also decides who has access.
+  it and stops its runs; `sized_runner` also chooses each run's CPU, memory
+  and GPUs, without changing the Job; `editor` also changes and deletes it and
+  manages what its workload can reach; `owner` also decides who has access.
 
 A release that backs no Agent and a standalone Job also take the policies of
 their branch: branch `reader` gives `viewer`, and `editor` and `owner` give
 `editor`. A release's backing Job follows the release and is changed, run and
 deleted with it. Give
 `user` on a release to the people who only call it, and `runner` on a Job to
-the people who run it without changing it. Use the access methods on
+the people who run it without changing it, or `sized_runner` when they also
+choose a run's CPU, memory and GPUs. Use the access methods on
 `ResourceRelease` and `Job`, or `mainsequence code-repository resources access
 list|grant|revoke|explain` and `mainsequence code-repository jobs access
 list|grant|revoke|explain`. A repository workflow file's `access` entry for a
@@ -441,7 +443,8 @@ User: give it the policies it needs as you would a person, a reading or using
 policy unless it must maintain the object. A `Constant` it reads needs
 `reader`, a `Secret` whose value it reads needs `value_reader`, a `Bucket` it
 uploads Artifacts into needs `contributor`, an `Artifact` it reads needs
-`viewer`, a release it calls needs `user`, a `Job` it runs needs `runner`, an
+`viewer`, a release it calls needs `user`, a `Job` it runs needs `runner`, or
+`sized_runner` when it chooses a run's CPU, memory or GPUs, an
 `Agent` it gives Tasks to needs `user`, and a model-provider credential or a
 custom model provider it sends requests through needs `user`. These grants
 cover every call the application makes for itself.
@@ -577,7 +580,7 @@ Do not claim success until you have checked:
   - `viewer`, `editor` or `owner` on an `Artifact`
   - `viewer`, `user`, `operator`, `editor` or `owner` on an `Agent`
   - `viewer`, `user`, `editor` or `owner` on a `ResourceRelease`
-  - `viewer`, `runner`, `editor` or `owner` on a `Job`
+  - `viewer`, `runner`, `sized_runner`, `editor` or `owner` on a `Job`
   - `user`, `editor` or `owner` on a model-provider credential or a custom
     model provider
 - the task is using `Constant` vs `Secret` correctly
