@@ -4,7 +4,27 @@ All notable changes to this project should be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows versioned releases.
 
-## [9.0.40] - 2026-11-10
+## [9.0.40] - 2026-11-24
+
+**A manual Job run can name its own compute.** `Job.run_job()` takes `cpu_request`,
+`memory_request`, `gpu_request` and `gpu_type`, and `mainsequence code-repository jobs run`
+the options `--cpu-request`, `--memory-request`, `--gpu-request` and `--gpu-type`. They size
+that run only: the Job is not changed, and a field left out takes the Job's value. The fields
+are sent only when given, so a call without them sends what it sent before. The platform
+checks the values, not the SDK: CPU is a decimal number of vCPU with at most two places, 0.25
+to 30; memory is a decimal number of GiB, 0.5 to 110, and 1 to 6.5 times the CPU; CPU and
+memory go together; `gpu_request` is 1 to 8 and needs a `gpu_type` the Job's cluster offers.
+A refused set raises `BadRequestError` with the errors by field and starts no run. Naming any
+of the four needs the Job's `run_sized` action, which the new policy `sized_runner` holds,
+with `editor` and `owner`, and `runner` does not; without it the call raises
+`PermissionDeniedError` with code `missing_action`. The answer is unchanged, and the compute
+a run got is read from the `JobRun`. The fields need a platform that offers per-run compute;
+read the `JobRun` to confirm what a run got. The Jobs guide, the CLI reference and the bundled
+orchestration and access skills describe the arguments, the rules and `sized_runner`.
+
+**`spot` is described as what it is: always false.** Spot capacity is not offered. `spot`
+stays on `Job` and `ResourceRelease` and is always false, and the platform refuses
+`spot: true`. Only the field descriptions and the skill text changed.
 
 **The existing release waits follow ADR 0041.** `ResourceRelease.wait_for_runtime_access` now runs the same
 wait as `request`: it fills the process cache, records the start it waited for and honours the

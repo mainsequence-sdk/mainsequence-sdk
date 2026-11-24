@@ -494,7 +494,7 @@ Verify that:
 - Django resolved and built the exact image for the workflow event
 - the resulting release kind is `fastapi`
 - any declared `public_ingress` pair matches a mounted FastAPI handler
-- compute and spot settings are intentional
+- compute settings are intentional
 
 Enable automatic deployment in the repository workflow when the route paths,
 resource path, and frontend contracts are stable enough for future repository

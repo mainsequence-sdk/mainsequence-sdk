@@ -126,6 +126,8 @@ Use the standard CLI execution loop when execution success matters:
   manual per-run arguments, including values that start with `-`
 - `mainsequence code-repository jobs run <JOB_UID> -- <ARG>...` for manual
   passthrough arguments
+- `mainsequence code-repository jobs run <JOB_UID> --cpu-request <VCPU> --memory-request <GIB>`
+  to size one manual run without changing the Job
 - `mainsequence code-repository jobs runs list <JOB_UID>`
 - `mainsequence code-repository jobs runs logs <JOB_RUN_UID> --max-wait-seconds 900`
 
@@ -145,6 +147,41 @@ job.run_job(
 Treat each argument as one opaque argv string. Do not join arguments into a
 shell command, and do not treat `command_args` as a replacement for the saved
 Job entrypoint.
+
+A manual run can name its own compute. It sizes that run only: the Job is not
+changed, and its other runs keep the Job's values.
+
+```python
+run_payload = job.run_job(
+    command_args=["--family", "jobs"],
+    cpu_request="8",
+    memory_request="52",
+)
+run = JobRun.get_by_uid(run_payload["job_run_uid"])
+```
+
+- The fields are `cpu_request`, `memory_request`, `gpu_request` and `gpu_type`;
+  on the CLI, `--cpu-request`, `--memory-request`, `--gpu-request` and
+  `--gpu-type`. One left out takes the Job's value.
+- `cpu_request` is a decimal number of vCPU with at most two places, from 0.25
+  to 30. `memory_request` is a decimal number of GiB, from 0.5 to 110, and from
+  1 to 6.5 times the CPU. CPU and memory go together. `gpu_request` is 1 to 8
+  and needs a `gpu_type` the Job's cluster offers.
+- Write plain decimal numbers, not Kubernetes quantities such as `500m` or
+  `1Gi`. The platform checks the values; the SDK does not. A refused set raises
+  `BadRequestError` with the errors by field and starts no run.
+- Naming any of the four needs the Job's `run_sized` action, which the policies
+  `sized_runner`, `editor` and `owner` hold and `runner` does not. Without it
+  the call raises `PermissionDeniedError` with code `missing_action`. Do not
+  work around it by changing the Job; ask for `sized_runner`.
+- The answer stays `message` and `job_run_uid`. Read the compute the run got
+  from the `JobRun`: `cpu_request`, `memory_request`, `gpu_request`,
+  `gpu_type`.
+- `timeout` on `run_job()` and `--timeout` on the CLI are the HTTP request
+  timeout, not a limit on the run.
+
+Spot capacity is not offered: `spot` on a Job and on a release is always
+false, and the platform refuses `spot: true`. Do not set it.
 
 Current support matrix:
 

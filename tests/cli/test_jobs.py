@@ -176,8 +176,8 @@ def test_run_code_repository_job_uses_client_model(cli_mod, monkeypatch):
             captured["job_uid_arg"] = uid
             return types.SimpleNamespace(
                 execution_path="scripts/test.py",
-                run_job=lambda timeout=None, command_args=None: (
-                    captured.update(command_args=command_args)
+                run_job=lambda timeout=None, command_args=None, **compute: (
+                    captured.update(command_args=command_args, compute=compute)
                     or {
                         "uid": "4c1d77c8-8a42-42b8-a9c1-06be9a336e5d",
                         "job_uid": uid,
@@ -200,6 +200,12 @@ def test_run_code_repository_job_uses_client_model(cli_mod, monkeypatch):
     out = api_mod.run_code_repository_job(job_uid, command_args=["python", "-m", "jobs.daily"])
     assert captured["job_uid_arg"] == job_uid
     assert captured["command_args"] == ["python", "-m", "jobs.daily"]
+    assert captured["compute"] == {
+        "cpu_request": None,
+        "memory_request": None,
+        "gpu_request": None,
+        "gpu_type": None,
+    }
     assert captured["jwt"] == ("acc", "ref")
     assert out == {
         "uid": "4c1d77c8-8a42-42b8-a9c1-06be9a336e5d",
@@ -208,6 +214,28 @@ def test_run_code_repository_job_uses_client_model(cli_mod, monkeypatch):
         "unique_identifier": "jobrun_abc123",
         "effective_run": "scripts/test.py python -m jobs.daily",
         "command_args": ["python", "-m", "jobs.daily"],
+    }
+
+    out = api_mod.run_code_repository_job(
+        job_uid,
+        cpu_request="8",
+        memory_request="52",
+        gpu_request="1",
+        gpu_type="nvidia-l4",
+    )
+    assert captured["command_args"] is None
+    assert captured["compute"] == {
+        "cpu_request": "8",
+        "memory_request": "52",
+        "gpu_request": "1",
+        "gpu_type": "nvidia-l4",
+    }
+    assert out == {
+        "uid": "4c1d77c8-8a42-42b8-a9c1-06be9a336e5d",
+        "job_uid": job_uid,
+        "status": "QUEUED",
+        "unique_identifier": "jobrun_abc123",
+        "effective_run": "scripts/test.py",
     }
 
 
@@ -441,10 +469,11 @@ def test_code_repository_jobs_run(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(
         cli_mod,
         "run_code_repository_job",
-        lambda job_uid, command_args=None, timeout=None: captured.update(
+        lambda job_uid, command_args=None, timeout=None, **compute: captured.update(
             job_uid=job_uid,
             command_args=command_args,
             timeout=timeout,
+            **compute,
         )
         or {
             "uid": "4c1d77c8-8a42-42b8-a9c1-06be9a336e5d",
@@ -464,6 +493,10 @@ def test_code_repository_jobs_run(cli_mod, runner, monkeypatch):
         "job_uid": job_uid,
         "command_args": ["--name", "demo-from-cli"],
         "timeout": None,
+        "cpu_request": None,
+        "memory_request": None,
+        "gpu_request": None,
+        "gpu_type": None,
     }
     assert "Effective run: scripts/test.py --name demo-from-cli" in result.output
     assert f"CodeRepository job run requested: job_uid={job_uid}" in result.output
@@ -487,10 +520,11 @@ def test_code_repository_jobs_run_with_arg_option(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(
         cli_mod,
         "run_code_repository_job",
-        lambda job_uid, command_args=None, timeout=None: captured.update(
+        lambda job_uid, command_args=None, timeout=None, **compute: captured.update(
             job_uid=job_uid,
             command_args=command_args,
             timeout=timeout,
+            **compute,
         )
         or {
             "uid": "4c1d77c8-8a42-42b8-a9c1-06be9a336e5d",
@@ -510,8 +544,90 @@ def test_code_repository_jobs_run_with_arg_option(cli_mod, runner, monkeypatch):
         "job_uid": job_uid,
         "command_args": ["demo-from-cli"],
         "timeout": None,
+        "cpu_request": None,
+        "memory_request": None,
+        "gpu_request": None,
+        "gpu_type": None,
     }
     assert "Effective run: scripts/test.py demo-from-cli" in result.output
+
+
+def test_code_repository_jobs_run_passes_the_compute_options(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    captured = {}
+    job_uid = "7d0ab07c-d1c0-4b7f-9c69-3c1a41c0a4da"
+    monkeypatch.setattr(
+        cli_mod,
+        "get_code_repository_job",
+        lambda job_uid_arg, timeout=None: {
+            "uid": job_uid_arg,
+            "name": "daily-run",
+            "execution_path": "scripts/test.py",
+        },
+    )
+    monkeypatch.setattr(
+        cli_mod,
+        "run_code_repository_job",
+        lambda job_uid, **kwargs: captured.update(job_uid=job_uid, **kwargs)
+        or {
+            "message": "Job run requested.",
+            "job_run_uid": "4c1d77c8-8a42-42b8-a9c1-06be9a336e5d",
+        },
+    )
+
+    result = runner.invoke(
+        cli_mod.app,
+        [
+            "code-repository",
+            "jobs",
+            "run",
+            job_uid,
+            "--cpu-request",
+            "8",
+            "--memory-request",
+            "52",
+            "--gpu-request",
+            "1",
+            "--gpu-type",
+            "nvidia-l4",
+            "--arg",
+            "demo-from-cli",
+        ],
+    )
+    assert result.exit_code == 0
+    assert captured == {
+        "job_uid": job_uid,
+        "command_args": ["demo-from-cli"],
+        "cpu_request": "8",
+        "memory_request": "52",
+        "gpu_request": "1",
+        "gpu_type": "nvidia-l4",
+        "timeout": None,
+    }
+    assert "4c1d77c8-8a42-42b8-a9c1-06be9a336e5d" in result.output
+
+
+def test_code_repository_jobs_run_reports_refused_compute(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    job_uid = "7d0ab07c-d1c0-4b7f-9c69-3c1a41c0a4da"
+    monkeypatch.setattr(
+        cli_mod,
+        "get_code_repository_job",
+        lambda job_uid_arg, timeout=None: {"uid": job_uid_arg, "execution_path": "scripts/test.py"},
+    )
+
+    def _refuse(job_uid, **kwargs):
+        raise cli_mod.ApiError('400 POST: {"memory_request": ["Out of range for the CPU."]}')
+
+    monkeypatch.setattr(cli_mod, "run_code_repository_job", _refuse)
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["code-repository", "jobs", "run", job_uid, "--cpu-request", "8", "--memory-request", "4"],
+    )
+    assert result.exit_code == 1
+    assert "CodeRepository job run failed" in result.output
+    assert "memory_request" in result.output
 
 
 def test_code_repository_jobs_update_replaces_scheduled_command_args(cli_mod, runner, monkeypatch):

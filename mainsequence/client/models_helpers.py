@@ -164,13 +164,14 @@ class Job(
 
     Who may use a Job is decided by its policies: `viewer` sees the Job, its
     schedule, runs, logs and outputs, including the Artifacts its runs
-    published; `runner` also runs it and stops its runs; `editor` also changes
-    it (name, description, resources, schedule, arguments, image), reports a
-    run's status and outputs by hand, deletes it, manages what its workload can
-    reach and sees who has access; `owner` also decides who has access. The
-    Job's creator holds `owner`, except the Organization's automation identity,
-    which creates the Jobs of repository workflows, and Organization admins hold
-    every action.
+    published; `runner` also runs it and stops its runs; `sized_runner` also
+    chooses each run's CPU, memory and GPUs, without changing the Job; `editor`
+    also changes it (name, description, resources, schedule, arguments, image),
+    reports a run's status and outputs by hand, deletes it, manages what its
+    workload can reach and sees who has access; `owner` also decides who has
+    access. The Job's creator holds `owner`, except the Organization's
+    automation identity, which creates the Jobs of repository workflows, and
+    Organization admins hold every action.
 
     A Job also takes the policies held above it. A standalone Job takes its
     branch's: `reader` on the branch gives `viewer`, and `editor` or `owner`
@@ -328,8 +329,11 @@ class Job(
 
     spot: bool = Field(
         default=False,
-        description="Whether the job should prefer spot or preemptible capacity.",
-        examples=[False, True],
+        description=(
+            "Always false. Spot capacity is not offered, and the API refuses "
+            "`spot: true`."
+        ),
+        examples=[False],
     )
 
     max_runtime_seconds: int | None = Field(
@@ -391,11 +395,46 @@ class Job(
         *,
         timeout: int | None = None,
         command_args: list[str] | None = None,
+        cpu_request: str | int | float | None = None,
+        memory_request: str | int | float | None = None,
+        gpu_request: str | int | None = None,
+        gpu_type: str | None = None,
     ) -> dict[str, Any]:
-        """Start a manual run with optional opaque argv entries.
+        """Start a manual run, with optional argv entries and compute for this run.
 
         ``command_args`` applies only to this run. It does not configure
         arguments for scheduler-created runs.
+
+        ``cpu_request``, ``memory_request``, ``gpu_request`` and ``gpu_type``
+        size this run only; the Job is not changed. A field left out, or
+        ``None``, takes the Job's value. The API checks the resulting set:
+
+        - ``cpu_request`` is a decimal number of vCPU with at most two places,
+          from 0.25 to 30, for example ``"8"`` or ``0.5``;
+        - ``memory_request`` is a decimal number of GiB, from 0.5 to 110, and
+          from 1 to 6.5 times the CPU;
+        - CPU and memory go together: a run has both or neither;
+        - ``gpu_request`` is a whole number from 1 to 8 and needs a
+          ``gpu_type`` the Job's cluster offers.
+
+        The values are sent as given and the SDK does not check them. A set the
+        API refuses raises ``BadRequestError``, whose ``payload`` holds the
+        errors by field, and no run starts.
+
+        Running a Job needs its ``runner`` policy or more. A call that passes
+        one of the four compute fields also needs the Job's ``run_sized``
+        action, which the policies ``sized_runner``, ``editor`` and ``owner``
+        hold and ``runner`` does not; without it the call raises
+        ``PermissionDeniedError``, whose ``payload`` carries the code
+        ``missing_action``, and no run starts.
+
+        ``timeout`` is the timeout of this HTTP request in seconds, not a limit
+        on the run.
+
+        Returns the API's answer, with ``message`` and ``job_run_uid``. The
+        compute the run got is on the run: read ``cpu_request``,
+        ``memory_request``, ``gpu_request`` and ``gpu_type`` from
+        ``JobRun.get_by_uid(job_run_uid)``.
         """
         job_uid = self._public_detail_reference()
         if command_args is not None:
@@ -407,9 +446,20 @@ class Job(
         url = f"{self.get_object_url()}/{job_uid}/run-job/"
         s = self.build_session()
 
-        payload: dict[str, Any] = {}
+        body: dict[str, Any] = {}
         if command_args is not None:
-            payload["json"] = {"command_args": list(command_args)}
+            body["command_args"] = list(command_args)
+        run_compute = {
+            "cpu_request": cpu_request,
+            "memory_request": memory_request,
+            "gpu_request": gpu_request,
+            "gpu_type": gpu_type,
+        }
+        body.update({field: value for field, value in run_compute.items() if value is not None})
+
+        payload: dict[str, Any] = {}
+        if body:
+            payload["json"] = body
 
         r = make_request(
             s=s,
@@ -1271,8 +1321,11 @@ class ResourceRelease(
     spot: bool = Field(
         default=False,
         title="Spot",
-        description="Whether the release should prefer spot or preemptible capacity.",
-        examples=[False, True],
+        description=(
+            "Always false. Spot capacity is not offered, and the API refuses "
+            "`spot: true`."
+        ),
+        examples=[False],
     )
     automatic_deployment: bool = Field(
         default=False,

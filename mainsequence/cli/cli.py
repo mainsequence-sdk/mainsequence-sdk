@@ -6740,6 +6740,26 @@ def code_repository_jobs_run_cmd(
         "--arg",
         help="Append one per-run arg to the saved job entrypoint. Repeatable. Does not replace the saved execution_path.",
     ),
+    cpu_request: str | None = typer.Option(
+        None,
+        "--cpu-request",
+        help="vCPU for this run only, a decimal from 0.25 to 30 such as 8 or 0.5. Default: the Job's value.",
+    ),
+    memory_request: str | None = typer.Option(
+        None,
+        "--memory-request",
+        help="Memory in GiB for this run only, a decimal from 0.5 to 110 and 1 to 6.5 times the run's CPU. Default: the Job's value.",
+    ),
+    gpu_request: str | None = typer.Option(
+        None,
+        "--gpu-request",
+        help="GPUs for this run only, 1 to 8. Needs a GPU type, from --gpu-type or the Job. Default: the Job's value.",
+    ),
+    gpu_type: str | None = typer.Option(
+        None,
+        "--gpu-type",
+        help="GPU accelerator type for this run only, one the Job's cluster offers. Default: the Job's value.",
+    ),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
@@ -6748,12 +6768,20 @@ def code_repository_jobs_run_cmd(
     Uses SDK client `Job.run_job()` as the single source of truth.
     Per-run args are appended to the saved job entrypoint; they do not replace it.
 
+    The compute options size this run only and leave the Job unchanged; an
+    option left out takes the Job's value. The platform checks the values and
+    starts no run when it refuses them. Passing one needs the Job's run_sized
+    action, which the policies sized_runner, editor and owner hold and runner
+    does not. The compute a run got is on the run, not in this command's
+    answer.
+
     Examples
     --------
     ```bash
     mainsequence code-repository jobs run <JOB_UID>
     mainsequence code-repository jobs run <JOB_UID> --arg demo-from-cli
     mainsequence code-repository jobs run <JOB_UID> -- --name demo-from-cli
+    mainsequence code-repository jobs run <JOB_UID> --cpu-request 8 --memory-request 52
     mainsequence code-repository jobs run <JOB_UID> --timeout 60
     ```
     """
@@ -6779,6 +6807,10 @@ def code_repository_jobs_run_cmd(
         payload = run_code_repository_job(
             job_uid=job_uid,
             command_args=merged_command_args or None,
+            cpu_request=cpu_request,
+            memory_request=memory_request,
+            gpu_request=gpu_request,
+            gpu_type=gpu_type,
             timeout=timeout,
         )
     except ApiError as e:
@@ -6923,11 +6955,12 @@ def code_repository_jobs_access_grant_cmd(
     Give a policy on one Job to a person, a workload identity or a team.
 
     The policies are viewer (sees the Job, its schedule, runs, logs and
-    outputs), runner (also runs it and stops its runs), editor (also changes
-    and deletes it and manages what its workload can reach) and owner. Pass
-    exactly one of --user or --team. It needs the Job's manage_access action,
-    which owner holds, and every action of the policy. `mainsequence access
-    policies --type jobs` lists the policies.
+    outputs), runner (also runs it and stops its runs), sized_runner (also
+    chooses each run's CPU, memory and GPUs), editor (also changes and deletes
+    it and manages what its workload can reach) and owner. Pass exactly one of
+    --user or --team. It needs the Job's manage_access action, which owner
+    holds, and every action of the policy. `mainsequence access policies
+    --type jobs` lists the policies.
 
     Examples
     --------
