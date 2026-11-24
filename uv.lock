@@ -751,7 +751,7 @@ wheels = [
 
 [[package]]
 name = "mainsequence"
-version = "9.0.40"
+version = "9.0.41"
 source = { editable = "." }
 dependencies = [
     { name = "cachetools" },

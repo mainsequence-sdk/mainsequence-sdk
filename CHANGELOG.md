@@ -4,7 +4,7 @@ All notable changes to this project should be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows versioned releases.
 
-## [9.0.40] - 2026-11-24
+## [9.0.41] - 2026-11-24
 
 **A manual Job run can name its own compute.** `Job.run_job()` takes `cpu_request`,
 `memory_request`, `gpu_request` and `gpu_type`, and `mainsequence code-repository jobs run`
@@ -25,6 +25,8 @@ orchestration and access skills describe the arguments, the rules and `sized_run
 **`spot` is described as what it is: always false.** Spot capacity is not offered. `spot`
 stays on `Job` and `ResourceRelease` and is always false, and the platform refuses
 `spot: true`. Only the field descriptions and the skill text changed.
+
+## [9.0.40] - 2026-11-10
 
 **The existing release waits follow ADR 0041.** `ResourceRelease.wait_for_runtime_access` now runs the same
 wait as `request`: it fills the process cache, records the start it waited for and honours the
