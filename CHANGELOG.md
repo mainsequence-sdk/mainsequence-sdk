@@ -26,6 +26,10 @@ orchestration and access skills describe the arguments, the rules and `sized_run
 stays on `Job` and `ResourceRelease` and is always false, and the platform refuses
 `spot: true`. Only the field descriptions and the skill text changed.
 
+**Dependency security fixes.** The SDK now requires `opentelemetry-api` 1.45.2
+or later for CVE-2026-126360. The development lockfile upgrades Soup Sieve to
+4.0 for CVE-2026-126190, CVE-2026-126191, CVE-2026-126192 and CVE-2026-126193.
+
 ## [9.0.40] - 2026-11-10
 
 **The existing release waits follow ADR 0041.** `ResourceRelease.wait_for_runtime_access` now runs the same

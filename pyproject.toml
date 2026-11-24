@@ -27,7 +27,7 @@ dependencies = [
   "click>=8.3.3",
   "concurrent-log-handler",
   "keyring>=25.7.0,<26",
-  "opentelemetry-api",
+  "opentelemetry-api>=1.45.2",
   "opentelemetry-exporter-otlp",
   "opentelemetry-sdk",
   "packaging>=24.2",
