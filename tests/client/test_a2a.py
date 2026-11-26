@@ -220,13 +220,14 @@ def test_agent_session_send_a2a_message_posts_standard_contract(monkeypatch):
         }
         return FakeResolveResponse()
 
-    def _fake_request(method, url, *, headers, data, timeout):
+    def _fake_request(method, url, *, headers, data, timeout, dependency=None):
         captured["runtime"] = {
             "method": method,
             "url": url,
             "headers": headers,
             "data": data,
             "timeout": timeout,
+            "dependency": dependency.fields,
         }
         return FakeRuntimeResponse()
 
@@ -259,6 +260,13 @@ def test_agent_session_send_a2a_message_posts_standard_contract(monkeypatch):
     assert payload.message["parts"] == [{"text": "I can analyze workspaces."}]
     assert captured["runtime"]["method"] == "POST"
     assert captured["runtime"]["timeout"] == 15
+    # The runtime's address came from the platform: the send is an agent span (ADR 0042).
+    assert captured["runtime"]["dependency"] == {
+        "dependency_kind": "agent",
+        "target_agent_session_uid": session_uid,
+        "http_method": "POST",
+        "route": "/api/a2a/v1/message:send",
+    }
     assert captured["runtime"]["url"] == (
         "https://7bd86be3-d11a-4ad1-8fe2-9260ccdbca7f.coding-agent.main-sequence.app/"
         "api/a2a/v1/message:send"
@@ -397,7 +405,7 @@ def test_agent_session_send_rejects_missing_message_fields(monkeypatch, missing_
     monkeypatch.setattr(
         agent_models_mod.AgentSession,
         "_post_standard_a2a_message",
-        classmethod(lambda cls, access, *, body, timeout=None: response),
+        classmethod(lambda cls, access, *, body, timeout=None, **_: response),
     )
 
     with pytest.raises(agent_models_mod.ApiError, match="one valid message or task") as error:
@@ -426,7 +434,7 @@ def test_agent_session_direct_message_rejects_task_response(monkeypatch):
     monkeypatch.setattr(
         agent_models_mod.AgentSession,
         "_post_standard_a2a_message",
-        classmethod(lambda cls, access, *, body, timeout=None: response),
+        classmethod(lambda cls, access, *, body, timeout=None, **_: response),
     )
 
     with pytest.raises(agent_models_mod.ApiError, match="does not match.*response_kind"):
@@ -458,7 +466,7 @@ def test_agent_session_send_rejects_mismatched_response_context(monkeypatch):
     monkeypatch.setattr(
         agent_models_mod.AgentSession,
         "_post_standard_a2a_message",
-        classmethod(lambda cls, access, *, body, timeout=None: FakeResponse()),
+        classmethod(lambda cls, access, *, body, timeout=None, **_: FakeResponse()),
     )
 
     with pytest.raises(agent_models_mod.ApiError, match="contextId"):
@@ -578,7 +586,7 @@ def test_agent_session_send_a2a_task_returns_typed_task(monkeypatch):
                 }
             }
 
-    def _fake_request(method, url, *, headers, data, timeout):
+    def _fake_request(method, url, *, headers, data, timeout, dependency=None):
         captured.update(method=method, url=url, headers=headers, data=data, timeout=timeout)
         return FakeRuntimeResponse()
 
@@ -698,8 +706,10 @@ def test_agent_session_a2a_task_helpers_get_wait_and_cancel(monkeypatch):
                 }
             }
 
-    def _fake_request(method, url, *, headers, timeout):
+    def _fake_request(method, url, *, headers, timeout, dependency=None):
         calls.append((method, url, headers, timeout))
+        assert dependency.fields["dependency_kind"] == "agent"
+        assert dependency.fields["target_agent_session_uid"] == session_uid
         return FakeTaskResponse(next(states))
 
     monkeypatch.setattr(agent_models_mod, "request_within_budget", _fake_request)
@@ -816,7 +826,7 @@ def test_agent_session_send_a2a_message_posts_strict_dictionary_contract(monkeyp
         captured["resolve_count"] += 1
         return FakeResolveResponse()
 
-    def _fake_request(method, url, *, headers, data, timeout):
+    def _fake_request(method, url, *, headers, data, timeout, dependency=None):
         captured["data"] = data
         return FakeRuntimeResponse()
 
@@ -898,7 +908,7 @@ def test_agent_session_send_a2a_message_refreshes_access_and_reuses_body(monkeyp
     def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
         return FakeResolveResponse()
 
-    def _fake_request(method, url, *, headers, data, timeout):
+    def _fake_request(method, url, *, headers, data, timeout, dependency=None):
         captured["runtime_bodies"].append(data)
         captured.setdefault("tokens", []).append(headers["Authorization"])
         if len(captured["runtime_bodies"]) == 1:

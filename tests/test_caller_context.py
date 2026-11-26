@@ -12,7 +12,7 @@ import os
 import subprocess
 import sys
 import time
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
 from unittest.mock import Mock
 from uuid import uuid4
@@ -35,6 +35,7 @@ from mainsequence.instrumentation import tracer_instrumentator
 from mainsequence.instrumentation.utils import (
     _add_log_baggage,
     _attach_environment_context,
+    _DependencyCall,
     _request_context,
     _with_baggage_header,
 )
@@ -126,6 +127,28 @@ def _in_own_context(function):
     return contextvars.Context().run(function)
 
 
+def _child_of(traceparent, parent_span_id="00f067aa0ba902b7"):
+    """Whether ``traceparent`` names a new span of TRACE_ID, under ``parent_span_id``'s trace."""
+    version, trace_id, span_id, flags = traceparent.split("-")
+    return (version, trace_id, flags) == ("00", TRACE_ID, "01") and span_id not in {
+        parent_span_id,
+        "0" * 16,
+    }
+
+
+@pytest.fixture
+def platform(monkeypatch):
+    """Serve ``routes`` as the platform's API: the origin of MAINSEQUENCE_ENDPOINT."""
+
+    @contextmanager
+    def serving(routes):
+        with serve(routes) as (base, calls):
+            monkeypatch.setattr(client_utils, "MAINSEQUENCE_ENDPOINT", base.rstrip("/"))
+            yield base, calls
+
+    return serving
+
+
 def _recording(seen):
     """A route that records the request's headers and answers ``{}``."""
 
@@ -183,11 +206,11 @@ def test_a_signed_request_carries_its_caller_context_next_to_the_caller(signed):
     }
 
 
-def test_calls_made_while_handling_a_request_pass_its_context_on(signed):
+def test_calls_made_while_handling_a_request_pass_its_context_on(signed, platform):
     token, _ = signed
     seen = []
 
-    with serve({("GET", "/api/v1/ping/"): _recording(seen)}) as (base, _):
+    with platform({("GET", "/api/v1/ping/"): _recording(seen)}) as (base, _):
 
         def handler():
             client_utils.make_request(
@@ -209,7 +232,8 @@ def test_calls_made_while_handling_a_request_pass_its_context_on(signed):
             )
 
     assert seen[0]["baggage"] == "mainsequence.advisor.person=p-7f3a"
-    assert seen[0]["traceparent"] == TRACEPARENT
+    # The call is its own span in the caller's trace (ADR 0042).
+    assert _child_of(seen[0]["traceparent"])
 
 
 def test_each_request_has_exactly_its_own_baggage_never_the_process_s(signed):
@@ -403,10 +427,10 @@ def test_the_telemetry_carrier_holds_both_headers_of_the_current_context():
     assert carrier == {"traceparent": TRACEPARENT, "baggage": "mainsequence.advisor.person=p+1"}
 
 
-def test_platform_calls_carry_the_context_and_a_header_the_caller_sets_wins():
+def test_platform_calls_carry_the_context_and_a_header_the_caller_sets_wins(platform):
     seen = []
 
-    with serve({("GET", "/api/v1/ping/"): _recording(seen)}) as (base, _):
+    with platform({("GET", "/api/v1/ping/"): _recording(seen)}) as (base, _):
 
         def call(**payload):
             client_utils.make_request(
@@ -431,12 +455,13 @@ def test_platform_calls_carry_the_context_and_a_header_the_caller_sets_wins():
         _in_own_context(run)
 
     without, with_context, explicit = seen
-    # Without context the call is exactly as before.
-    assert "baggage" not in without and "traceparent" not in without
+    # Without context the call starts a new trace and carries no baggage (ADR 0042).
+    assert "baggage" not in without
+    assert without["traceparent"].split("-")[1] != TRACE_ID
     assert with_context["baggage"] == "mainsequence.advisor.person=p-1"
-    assert with_context["traceparent"] == TRACEPARENT
+    assert _child_of(with_context["traceparent"])
     assert explicit["baggage"] == "mainsequence.advisor.person=explicit"
-    assert explicit["traceparent"] == TRACEPARENT
+    assert _child_of(explicit["traceparent"])
 
 
 def test_calls_to_applications_carry_the_context():
@@ -451,17 +476,19 @@ def test_calls_to_applications_carry_the_context():
                     with_baggage=True,
                 )
             )
+            # The platform gave this address, so the call is a platform call.
             request_within_budget(
                 "POST",
                 base + "a2a/message:send",
                 headers={"Authorization": "Bearer runtime"},
                 timeout=5,
+                dependency=_DependencyCall("agent", "POST", "/a2a/message:send"),
             )
 
         _in_own_context(run)
 
     assert seen[0]["baggage"] == "mainsequence.advisor.person=p-1"
-    assert seen[0]["traceparent"] == TRACEPARENT
+    assert _child_of(seen[0]["traceparent"])
     assert seen[0]["authorization"] == "Bearer runtime"
 
 
@@ -498,6 +525,7 @@ def test_inference_calls_carry_the_context(monkeypatch):
     headers = session.request.call_args.kwargs["headers"]
     assert headers["baggage"] == "mainsequence.advisor.person=p-1"
     assert headers["Authorization"] == "auth"
+    assert headers["traceparent"].startswith("00-")
 
 
 # Process start
@@ -575,6 +603,9 @@ print(json.dumps({
     lines = [json.loads(line) for line in result.stdout.splitlines() if line.startswith("{")]
     log_line = next(line for line in lines if line.get("event") == "run started")
     assert log_line["baggage"] == {"mainsequence.advisor.person": "p-7f3a"}
+    # The run's span, from TRACEPARENT, is on every line, recorded or not (ADR 0042).
+    assert (log_line["trace_id"], log_line["span_id"]) == (TRACE_ID, "00f067aa0ba902b7")
+    assert log_line["parent_span_id"] is None and log_line["span"] is None
     assert lines[-1] == {
         "baggage": {"mainsequence.advisor.person": "p-7f3a", "vendor.key": "kept"},
         "carrier": {

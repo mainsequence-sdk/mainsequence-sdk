@@ -222,8 +222,10 @@ variables, in W3C header format:
 - `BAGGAGE`: the request's `mainsequence.<application>.<name>` keys;
 - `TRACEPARENT`: the trace the run belongs to.
 
-A scheduled run, or a run the platform starts on its own, has neither.
-Importing `mainsequence` restores them as the process's OpenTelemetry context,
+A scheduled run, or a run the platform starts on its own, has no `BAGGAGE`.
+A platform that writes each run's span gives every run a `TRACEPARENT` naming
+that span: a run created with caller context continues the caller's trace, and
+a scheduled run is the root of a new one. Importing `mainsequence` restores them as the process's OpenTelemetry context,
 so Job code reads the context with OpenTelemetry's API:
 
 ```python
@@ -236,14 +238,17 @@ if person is None:
 ```
 
 - The context is restored on the thread that imports the SDK. A thread you
-  start yourself begins without it, as with any OpenTelemetry context; run its
-  work with `contextvars.copy_context().run` to keep it.
-- Calls the run makes through the SDK pass the context on, so the runs and
-  Agent Tasks it creates inherit it. A call the run makes with its run
-  credentials and no `baggage` header is recorded with the run's own context; a
-  header, when sent, wins.
+  start yourself begins without it, as with any OpenTelemetry context: its log
+  lines carry no trace id and each platform call it makes starts a new trace.
+  Run its work with `contextvars.copy_context().run` to keep it.
+- `TRACEPARENT` names the run's own span. Calls the run makes to the platform
+  through the SDK are its child spans and pass the context on, so the runs and
+  Agent Tasks it creates inherit it (see
+  [Traces](../server/caller_context.md#traces)). A call the run makes with its
+  run credentials and no `baggage` header is recorded with the run's own
+  context; a header, when sent, wins.
 - Log lines written through the SDK's logger carry the `mainsequence.` keys as
-  `baggage`.
+  `baggage`, and the run's `trace_id` and `span_id`.
 - `job.run_job()` called while a FastAPI release handles a request gives the
   run that request's context.
 

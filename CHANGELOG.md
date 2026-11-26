@@ -4,6 +4,46 @@ All notable changes to this project should be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows versioned releases.
 
+## [9.0.42] - 2026-11-26
+
+**The SDK's hops are spans in a platform trace (ADR 0042).** A trace is the set of runtime
+log lines that share one W3C trace id, and the SDK now writes its part of it as log lines.
+
+- **Importing the SDK configures no OpenTelemetry.** `import mainsequence` no longer sets a
+  global `TracerProvider`, so a provider the application sets, before or after the import, is
+  the one used. With `OTLP_ENDPOINT` set the import no longer raises `AttributeError`; the
+  variable is not read. `TracerInstrumentator().build_tracer()` stays and returns a tracer from
+  whatever provider is set, a no-op one while none is; it never sets a provider or adds a span
+  processor. `mainsequence.instrumentation.tracer` stays, as the same kind of tracer. The
+  tracer is named `mainsequence` instead of `tdag`. Without a provider, spans opened through it
+  record nothing, which is cheaper than the recorded-and-dropped spans before.
+- **A release request's span is its own.** `install_request_identity` makes the request's span,
+  as the platform's launcher names it in `scope["state"]`, the current non-recording span.
+  Without it, in local development for example, the request's `traceparent` is its parent as
+  before; a span the application's own instrumentation records still wins. Baggage is unchanged.
+- **Log lines carry the ids at the top level.** Every JSON log line written through the SDK's
+  logger has `trace_id`, `span_id` and `parent_span_id`, from the current span whether or not it
+  is recording, and `null` without one; `parent_span_id` is set only for a recording span. A
+  Job run's lines therefore carry the run's trace id from `TRACEPARENT`. The nested `span`
+  object is still written next to them; it is deprecated and will be removed in a later minor
+  release, so read the top-level fields.
+- **Each call to the platform is a span.** A call to the Main Sequence API, a release, an Agent
+  (A2A send, get or cancel) or inference sends a `traceparent` with a new span id, a child of the
+  current span, and writes one log line, `dependency.call.completed` (an answer arrived, at
+  `info`) or `dependency.call.failed` (none did, at `warning`), with `dependency_kind`, the
+  target release or Agent session uid, `http_method`, `route` (the path, no query, UUIDs as
+  `{uid}`), `status_code`, `duration_ms`, `outcome` and, on failure, `error_type`. It never holds
+  a URL, query string, header or body. A call made outside any context now starts a new trace
+  instead of sending no `traceparent`.
+- **The carrier goes only to the platform.** `traceparent` and `baggage` are sent only to the
+  origin of `MAINSEQUENCE_ENDPOINT` and to the release and Agent addresses the platform gave.
+  A request `make_request` sends to another origin carries neither.
+- **Reading a trace.** `get_logs()` on a JobRun, ResourceRelease, Agent or AgentSession, and
+  `search_logs()` on those four classes, accept `trace_id`, an exact filter checked by the SDK
+  as 32 lowercase hexadecimal characters (`ValueError` otherwise). The filter needs a platform
+  that offers it. The Caller context, Owner observability, Jobs and FastAPI guides describe
+  traces, the event fields and how to read them.
+
 ## [9.0.41] - 2026-11-24
 
 **A manual Job run can name its own compute.** `Job.run_job()` takes `cpu_request`,

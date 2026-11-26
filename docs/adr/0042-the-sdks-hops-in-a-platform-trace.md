@@ -3,7 +3,8 @@
 
 Date: 2026-11-26
 
-Status: Proposed. Not accepted, not implemented.
+Status: Accepted 2026-11-26, by the owner's instruction to implement it, and
+implemented in the SDK in 9.0.42; see [What was built](#what-was-built).
 
 Owners: Main Sequence SDK maintainers.
 
@@ -156,7 +157,7 @@ missing (an owner the caller cannot see, or a Job run) hangs under its owner.
   adding a processor on each call.
 - The SDK writes one extra log line for each platform call it makes.
 
-## Implementation (after acceptance)
+## Implementation
 
 1. Remove the import-time tracer and make `build_tracer()` inert. Fix the
    crash. Add a test that `import mainsequence` with `OTLP_ENDPOINT` set
@@ -169,3 +170,56 @@ missing (an owner the caller cannot see, or a Job run) hangs under its owner.
    the platform's filter (wire contract).
 5. Update docs: `caller_context.md`, `owner_observability.md`,
    `scheduling_jobs.md` (threads), and the CHANGELOG.
+
+## What was built
+
+In 9.0.42, as decided above, with these refinements read from the code:
+
+- **`tracer` is still exported.** `mainsequence.instrumentation.tracer` is
+  kept for code that imports it, now `trace.get_tracer("mainsequence")`: a
+  proxy that uses whatever provider the application sets, now or later. It
+  configures nothing. The tracer is named `mainsequence` instead of `tdag`.
+  `TracerInstrumentator` keeps all its methods; `get_current_trace_id()` now
+  also reads a non-recording span instead of raising.
+- **The launcher's ids are checked.** They are adopted only when `trace_id` is
+  32 and `span_id` 16 lowercase hexadecimal characters, neither all zeros;
+  otherwise the request falls back to its `traceparent`. The adopted span keeps
+  the inbound flags and `tracestate` when it is in the same trace, and is
+  sampled otherwise. Public and preflight requests adopt it too: the ids are
+  the launcher's, not the caller's.
+- **`parent_span_id` on ordinary log lines** is set only for a recording span.
+  A non-recording span carries no parent in OpenTelemetry, and guessing it
+  from the inbound `traceparent` could be wrong; the hop's own event, written
+  by the platform, names the parent of a request's or run's span.
+- **The events' values.** `dependency.call.completed` is written when an
+  answer arrived, whatever its status, at `info`; `dependency.call.failed` when
+  none did, at `warning`, with `error_type` set to the exception's class name
+  (`NoResponse` if there is none). `outcome` is `ok` below status 400 and
+  `error` otherwise. An API or inference call is one span with its retries and
+  its resend after a refreshed credential; a release call replayed after a
+  start, or an A2A message sent again after a refused credential, is one span
+  for each send. A field a log call sets itself wins over the current
+  context's ids.
+- **The target of an `agent` call** is `target_agent_session_uid`: what the
+  SDK knows when it sends an A2A message, gets or cancels a task is the
+  session, not always the Agent. A `release` call has `target_release_uid`.
+- **`route` for releases and Agents** is the path the SDK appended to the
+  address the platform gave (`/v1/prices`, `/api/a2a/v1/message:send`), not the
+  address's own path, which is opaque and server-issued. Query strings are
+  dropped from every route.
+- **Platform destinations.** A `make_request` call is a platform call when its
+  scheme, host and port equal those of the endpoint the SDK uses
+  (`MAINSEQUENCE_ENDPOINT`). `request_within_budget` carries the carrier and
+  writes an event only when its caller passes the call as a `dependency`,
+  which release calls and A2A calls do. Inference calls the API. Requests the
+  SDK sends with `requests` directly (credential exchange and refresh, the
+  logger's start-up state) were never given the carrier and still are not.
+- **A call outside any context** now carries a `traceparent` that starts a new
+  trace; before, it carried no header. It still carries no baggage.
+
+Tests: `tests/test_platform_trace.py` and `tests/test_instrumentation.py`, with
+the caller-context, release-call, A2A and inference tests updated.
+
+Not verified: no call was made to a deployed platform. The launcher's
+`scope["state"]` ids, every run's `TRACEPARENT` and the log routes' `trace_id`
+filter are the platform's side and were not available to test against.
