@@ -45,3 +45,5 @@ ownership boundary is recorded in [ADR 0034](0034-extract-metatables-python-pack
 - [ADR 0040: Caller context on release requests, SDK calls and Job runs](0040-caller-context-on-releases-calls-and-runs.md)
 
 - [ADR 0041: Cold-start-aware calls between releases](0041-cold-start-aware-release-calls.md)
+
+- [ADR 0042: The SDK's hops in a platform trace](0042-the-sdks-hops-in-a-platform-trace.md)
