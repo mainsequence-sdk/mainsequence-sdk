@@ -44,6 +44,10 @@ log lines that share one W3C trace id, and the SDK now writes its part of it as 
   that offers it. The Caller context, Owner observability, Jobs and FastAPI guides describe
   traces, the event fields and how to read them.
 
+**Dependency security fix.** The development lockfile upgrades virtualenv, which pre-commit
+brings in, to 21.15.13 for PYSEC-2026-4402, fixed in 21.14.13. The SDK's own requirements are
+unchanged.
+
 ## [9.0.41] - 2026-11-24
 
 **A manual Job run can name its own compute.** `Job.run_job()` takes `cpu_request`,
