@@ -2,6 +2,8 @@
 
 Amended 2026-11-27: reading the directory as the caller is a per-call option, `as_caller=True` on the `User` and `Team` reads; `reads_as_caller()` is removed. See [Amendment 2026-11-27](#amendment-2026-11-27-reading-as-the-caller-is-a-per-call-option).
 
+Amended 2026-11-27 for [SDK issue #272](https://github.com/mainsequence-sdk/mainsequence-sdk/issues/272): a FastAPI application can call another FastAPI release for the person whose request it serves, with `act_for_requester=True`; the assertion is presented a second way, to the platform only. See [Amendment 2026-11-27](#amendment-2026-11-27-a-release-call-for-the-requests-person).
+
 Amended 2026-11-07 for [SDK issue #251](https://github.com/mainsequence-sdk/mainsequence-sdk/issues/251): in local mode an application can reuse the platform's answer to who holds a Bearer token across requests, for a period it sets with `install_request_identity(app, local_caller_cache_seconds=...)`. `0`, the default, keeps asking on every request. Section "Local callers reused across requests" is added.
 
 Amended 2026-10-15 for [SDK issue #225](https://github.com/mainsequence-sdk/mainsequence-sdk/issues/225), second change: the platform signs no team list any more, so the SDK removes it. `RequestUserIdentity` has no `team_uids`, and the verifier refuses an assertion or a `requester` that lists teams. Team membership is checked only with `in_teams()`.
@@ -119,3 +121,18 @@ Decision, from 9.0.47:
   deprecation period.
 - A context manager stays right for limits that only restrict, such as
   `request_deadline()`. A context never changes whom a call acts as.
+
+## Amendment 2026-11-27: a release call for the request's person
+
+Issue #272. Besides a directory read with `as_caller=True`, a release call with
+`act_for_requester=True` presents the request's assertion: to
+`resolve-runtime-access` only, on the configured platform endpoint (ADR 0041,
+amendment of the same date). The same checks run first: an authenticated
+request, an assertion, not requester-bound, not ended.
+
+On the receiving release nothing changes. The call arrives requester-bound:
+`User.get_logged_user()` is the calling application, `User.get_requester()` the
+person, `in_teams()` answers for either, and a directory read with
+`as_caller=True` still raises. Unlike an Agent's delegation, this binding is the
+person's inbound request itself and ends with its assertion, at most 300
+seconds after the person's request.

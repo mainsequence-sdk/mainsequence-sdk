@@ -503,6 +503,11 @@ expired delegation is rejected, never switched to another identity.
 - A receiving application cannot forward its inbound assertion to establish
   another requester binding. A directory read with `as_caller=True` still
   refuses these requests.
+- A FastAPI application can call another FastAPI release for the person whose
+  request it serves, with `act_for_requester=True` on the release call. That
+  binding is the inbound request itself: only a person's direct request, at
+  most 300 seconds, only for release calls, and never retried with the
+  application's own grants.
 
 The platform decides which operations support requester-bound access;
 installing this SDK does not enable one. Treat a refused operation as refused,

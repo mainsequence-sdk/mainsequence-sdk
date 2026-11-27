@@ -26,6 +26,7 @@ from mainsequence._request_deadline import (
     format_timeout_ms,
     remaining_request_seconds,
 )
+from mainsequence._request_identity import _assertion_scope
 from mainsequence._transport import request_budget, request_within_budget
 from mainsequence.instrumentation.utils import DependencyCall
 from mainsequence.logconf import logger
@@ -100,6 +101,22 @@ class ReleaseUnavailableError(ReleaseCallError, RuntimeError):
 
 class ReleaseNotDeployedError(ReleaseUnavailableError):
     """The release has no active revision: it was never deployed, or awaits its first rollout."""
+
+
+class ReleaseRequesterError(ReleaseCallError, PermissionError):
+    """A call for the request's person could not be made; nothing was sent.
+
+    ``expired`` is ``True`` when the person's assertion ran out before the
+    release could be called, and ``False`` when the platform refused to give
+    access for the person (``requester_binding_invalid``). The call is never
+    made as the application instead.
+    """
+
+    phase = "readiness"
+
+    def __init__(self, message: str, *, expired: bool = False, **fields: Any):
+        super().__init__(message, **fields)
+        self.expired = expired
 
 
 class ReleaseDeadlineTooShortError(ReleaseCallError, TimeoutError):
@@ -247,8 +264,13 @@ class ReleaseRuntimeCache:
             if held:
                 turn.release()
 
-    def observe(self, uid: str, access: Any) -> _Grant | None:
-        """Record a platform answer; returns its token access when it can be called."""
+    def observe(self, uid: str, access: Any, *, keep_grant: bool = True) -> _Grant | None:
+        """Record a platform answer; returns its token access when it can be called.
+
+        With ``keep_grant=False`` the answer's token, given for a request's
+        person, is returned but never kept as the release's access; the facts
+        about the release (presence, scaling, whether it serves) still are.
+        """
         admission = getattr(access, "runtime_access", None)
         presence = getattr(access, "runtime_presence", None)
         can_request = bool(getattr(admission, "can_request", False))
@@ -262,7 +284,8 @@ class ReleaseRuntimeCache:
             entry.observed_at = _utcnow()
             if scaling is not None:
                 entry.scaling = scaling
-            entry.grant = grant
+            if keep_grant or not can_request:
+                entry.grant = grant
             # The platform's answer is the newest sign either way.
             entry.served = entry.observed if grant is not None else None
         return grant
@@ -313,6 +336,12 @@ class ReleaseRuntimeCache:
         margin = max(MIN_IDLE_MARGIN_SECONDS, IDLE_MARGIN_FRACTION * idle)
         return time.monotonic() - entry.served < idle - margin
 
+    def recently_served(self, uid: str) -> bool:
+        """Whether a request sent now is expected to be served at once."""
+        with self._lock:
+            entry = self._entries.get(uid)
+            return entry is not None and self._recently_served(entry)
+
     def warm_access(self, uid: str) -> _Grant | None:
         """Token access to use without asking the platform, or ``None``."""
         with self._lock:
@@ -353,6 +382,65 @@ class ReleaseRuntimeCache:
 
 
 release_runtime_cache = ReleaseRuntimeCache()
+
+
+@dataclass
+class _Delegation:
+    """A release call made for the person whose request the application serves (#272).
+
+    The person's access lives in the request's own scope, per release, and
+    ends with the request or the token, whichever is first. It is never the
+    release's kept access in ``release_runtime_cache``.
+    """
+
+    scope: Any
+    expires_at: float | None
+
+    @classmethod
+    def current(cls) -> _Delegation:
+        scope = _assertion_scope("act_for_requester=True")
+        return cls(scope=scope, expires_at=_decode_jwt_exp(scope.caller_assertion))
+
+    def kept(self, uid: str, cache: ReleaseRuntimeCache) -> _Grant | None:
+        grant = self.scope.release_grants.get(uid) if self.scope.active else None
+        if grant is None or time.time() >= grant.expires_at - ACCESS_EXPIRY_SKEW_SECONDS:
+            return None
+        return grant if cache.recently_served(uid) else None
+
+    def keep(self, uid: str, grant: _Grant) -> None:
+        if self.scope.active:
+            self.scope.release_grants[uid] = grant
+
+    def drop(self, uid: str) -> None:
+        self.scope.release_grants.pop(uid, None)
+
+    def resolve(self, release: Any) -> Any:
+        return lambda seconds: release.resolve_runtime_access(
+            timeout=seconds, act_for_requester=True
+        )
+
+
+def _response_code(response: Any) -> str | None:
+    """The ``code`` of a JSON error body, or ``None``."""
+    try:
+        body = response.json()
+    except Exception:
+        return None
+    code = body.get("code") if isinstance(body, Mapping) else None
+    return code if isinstance(code, str) else None
+
+
+def _requester_expired(uid: str, access: Any = None) -> ReleaseRequesterError:
+    presence = getattr(access, "runtime_presence", None)
+    admission = getattr(access, "runtime_access", None)
+    return ReleaseRequesterError(
+        f"The assertion of the person this request serves expires before release {uid} "
+        "can be called; nothing was sent, and the call cannot continue for that person.",
+        expired=True,
+        resource_release_uid=uid,
+        runtime_state=str(admission.state) if admission is not None else None,
+        runtime_phase=getattr(presence, "phase", None),
+    )
 
 
 def _release_uid(release: Any) -> str:
@@ -418,10 +506,24 @@ def _deadline_too_short(
 
 
 def _wait_until_ready(
-    release: Any, *, ready_timeout: float | None, cache: ReleaseRuntimeCache
+    release: Any,
+    *,
+    ready_timeout: float | None,
+    cache: ReleaseRuntimeCache,
+    delegation: _Delegation | None = None,
 ) -> _Grant:
     """Ask the platform, which wakes the release, until it can be called with a token."""
-    access, grant = wait_for_release(release, ready_timeout=ready_timeout, cache=cache)
+    if delegation is None:
+        access, grant = wait_for_release(release, ready_timeout=ready_timeout, cache=cache)
+    else:
+        access, grant = wait_for_release(
+            release,
+            ready_timeout=ready_timeout,
+            cache=cache,
+            resolve=delegation.resolve(release),
+            keep_grant=False,
+            expires_at=delegation.expires_at,
+        )
     if grant is None:
         raise ReleaseUnavailableError(
             f"Release {_release_uid(release)} offers no token access to call it.",
@@ -429,6 +531,8 @@ def _wait_until_ready(
             runtime_state=str(access.runtime_access.state),
             runtime_phase=getattr(access.runtime_presence, "phase", None),
         )
+    if delegation is not None:
+        delegation.keep(_release_uid(release), grant)
     return grant
 
 
@@ -438,21 +542,25 @@ def wait_for_release(
     ready_timeout: float | None,
     cache: ReleaseRuntimeCache | None,
     resolve: Any = None,
+    keep_grant: bool = True,
+    expires_at: float | None = None,
 ) -> tuple[Any, _Grant | None]:
     """Ask the platform, which wakes the release, until it admits requests.
 
     The platform's ``retry_after_ms`` alone decides whether to wait: an answer
     that cannot take requests and carries it is asked again after that long,
-    whatever its state, phase or notice, and one without it ends the wait. A
-    ``waking`` answer without it, from an older platform, is asked again after
-    ``DEFAULT_RETRY_SECONDS``. An ask that fails with a ``TransportError`` is
+    whatever its state, phase or notice, and one without it ends the wait. An
+    ask that fails with a ``TransportError`` is
     made again, up to ``MAX_FAILED_PLATFORM_ASKS`` in a row. Every wait ends
     at the readiness limit and at the caller's deadline.
 
     Returns the platform's answer and its token access, when it offers one.
     ``resolve`` asks the platform, given a timeout in seconds; by default it is
     the release's ``resolve_runtime_access``. ``cache`` records what is learned;
-    ``None`` records nothing.
+    ``None`` records nothing. ``keep_grant=False`` records it without keeping
+    the token. ``expires_at`` (epoch seconds) ends the wait with
+    ``ReleaseRequesterError`` when the next ask would come after it: the
+    expiry of the person's assertion a delegated call presents.
     """
     uid = _release_uid(release)
     if resolve is None:
@@ -465,6 +573,8 @@ def wait_for_release(
     waited_on: tuple[str, str | None] | None = None
     failed_asks = 0
     while True:
+        if expires_at is not None and time.time() >= expires_at:
+            raise _requester_expired(uid)
         caller_remaining = remaining_request_seconds()
         if caller_remaining is not None and caller_remaining <= 0:
             raise _deadline_too_short(uid, caller_remaining)
@@ -487,7 +597,12 @@ def wait_for_release(
             time.sleep(min(remaining, DEFAULT_RETRY_SECONDS))
             continue
         failed_asks = 0
-        grant = cache.observe(uid, access) if cache is not None else _grant_from_access(access)
+        if cache is not None:
+            grant = cache.observe(uid, access, keep_grant=keep_grant)
+        elif access.runtime_access.can_request:
+            grant = _grant_from_access(access)
+        else:
+            grant = None
         admission = access.runtime_access
         presence = access.runtime_presence
         state = str(admission.state)
@@ -505,8 +620,6 @@ def wait_for_release(
                 )
             return access, grant
         retry = _retry_hint_seconds(admission)
-        if retry is None and state == "waking":
-            retry = DEFAULT_RETRY_SECONDS
         if retry is None:
             raise _unavailable_error(uid, access)
 
@@ -548,7 +661,10 @@ def wait_for_release(
             remaining = caller_remaining
         if remaining <= 0:
             raise _not_ready_in_time(uid, access, limit, waking_at, expected)
-        time.sleep(min(remaining, retry))
+        pause = min(remaining, retry)
+        if expires_at is not None and time.time() + pause >= expires_at:
+            raise _requester_expired(uid, access)
+        time.sleep(pause)
 
 
 def _wait_remaining(started: float, limit: float) -> float:
@@ -614,15 +730,29 @@ def _held_by_a_start(access: Any, sent_at: datetime.datetime) -> bool:
 
 
 def _access_for_call(
-    release: Any, uid: str, *, ready_timeout: float | None, cache: ReleaseRuntimeCache
+    release: Any,
+    uid: str,
+    *,
+    ready_timeout: float | None,
+    cache: ReleaseRuntimeCache,
+    delegation: _Delegation | None = None,
 ) -> tuple[_Grant, bool]:
     """The access to send with, and whether it is the one this process kept.
 
     The kept access is used while the release is warm and its token fresh;
     otherwise the platform is asked, which starts the release, and the call
     waits while it starts. Concurrent first calls to a cold release share one
-    wait.
+    wait. A delegated call uses only the access its own request was given, and
+    never shares a wait, so no other request receives the person's token.
     """
+    if delegation is not None:
+        grant = delegation.kept(uid, cache)
+        if grant is not None:
+            return grant, True
+        grant = _wait_until_ready(
+            release, ready_timeout=ready_timeout, cache=cache, delegation=delegation
+        )
+        return grant, False
     grant = cache.warm_access(uid)
     if grant is not None:
         return grant, True
@@ -673,6 +803,7 @@ class ReleaseCall:
         *,
         timeout: float,
         ready_timeout: float | None = None,
+        act_for_requester: bool = False,
     ) -> None:
         self._uid = _release_uid(release)
         _check_path(path)
@@ -687,6 +818,7 @@ class ReleaseCall:
         self._path = path
         self._total = float(timeout)
         self._ready_timeout = ready_timeout
+        self._delegation = _Delegation.current() if act_for_requester else None
         self._dependency: DependencyCall | None = None
         self.url: str | None = None
         self.headers: dict[str, str] = {}
@@ -708,6 +840,7 @@ class ReleaseCall:
             self._uid,
             ready_timeout=self._ready_timeout,
             cache=release_runtime_cache,
+            delegation=self._delegation,
         )
         caller_remaining = remaining_request_seconds()
         if caller_remaining is not None and caller_remaining <= 0:
@@ -731,6 +864,8 @@ class ReleaseCall:
         status = self.status_code
         if exc is not None or status is None or (status == 401 and self.reused_access):
             cache.invalidate(self._uid)
+            if self._delegation is not None:
+                self._delegation.drop(self._uid)
         elif status < 500:
             cache.record_response(self._uid, self.response_headers)
         self._dependency.status_code = status
@@ -753,6 +888,7 @@ def request_release(
     ready_timeout: float | None = None,
     idempotent: bool = False,
     headers: Mapping[str, str] | None = None,
+    act_for_requester: bool = False,
     **kwargs: Any,
 ) -> requests.Response:
     """Send one HTTP request to a release's application. See ``ResourceRelease.request``."""
@@ -770,7 +906,11 @@ def request_release(
     total = _total_seconds(timeout)
     cache = release_runtime_cache
 
-    grant, from_cache = _access_for_call(release, uid, ready_timeout=ready_timeout, cache=cache)
+    delegation = _Delegation.current() if act_for_requester else None
+
+    grant, from_cache = _access_for_call(
+        release, uid, ready_timeout=ready_timeout, cache=cache, delegation=delegation
+    )
     replays = 1 if idempotent else 0
     while True:
         caller_remaining = remaining_request_seconds()
@@ -795,16 +935,23 @@ def request_release(
                 )
         except requests.Timeout as error:
             cache.invalidate(uid)
+            if delegation is not None:
+                delegation.drop(uid)
             try:
-                after = release.resolve_runtime_access(timeout=PLATFORM_TIMEOUT_SECONDS)
+                if delegation is not None:
+                    after = delegation.resolve(release)(PLATFORM_TIMEOUT_SECONDS)
+                else:
+                    after = release.resolve_runtime_access(timeout=PLATFORM_TIMEOUT_SECONDS)
             except Exception:
                 after = None
             if after is not None:
-                cache.observe(uid, after)
+                cache.observe(uid, after, keep_grant=delegation is None)
             held = after is not None and _held_by_a_start(after, sent_at)
             if held and replays:
                 replays -= 1
-                grant = _wait_until_ready(release, ready_timeout=ready_timeout, cache=cache)
+                grant = _wait_until_ready(
+                    release, ready_timeout=ready_timeout, cache=cache, delegation=delegation
+                )
                 from_cache = False
                 continue
             failure = ReleaseColdStartTimeoutError if held else ReleaseRequestTimeoutError
@@ -820,7 +967,11 @@ def request_release(
         if response.status_code == 401 and from_cache:
             # The kept token was refused before the application ran: ask for a new one, once.
             cache.invalidate(uid)
-            grant = _wait_until_ready(release, ready_timeout=ready_timeout, cache=cache)
+            if delegation is not None:
+                delegation.drop(uid)
+            grant = _wait_until_ready(
+                release, ready_timeout=ready_timeout, cache=cache, delegation=delegation
+            )
             from_cache = False
             continue
         if response.status_code < 500:
@@ -880,7 +1031,9 @@ __all__ = [
     "ReleaseCallError",
     "ReleaseColdStartTimeoutError",
     "ReleaseDeadlineTooShortError",
+    "ReleaseNotDeployedError",
     "ReleaseReadinessTimeoutError",
+    "ReleaseRequesterError",
     "ReleaseRequestTimeoutError",
     "ReleaseRuntimeCache",
     "ReleaseRuntimeStatus",

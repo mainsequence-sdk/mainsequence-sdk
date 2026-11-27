@@ -173,6 +173,7 @@ Each is a `ReleaseCallError` with `resource_release_uid`, `phase`
 | `ReleaseReadinessTimeoutError` | `ready_timeout` ended while the platform still asked to try again. | No |
 | `ReleaseUnavailableError` | The platform answered that the release cannot take requests, with no retry hint. | No |
 | `ReleaseNotDeployedError` | A `ReleaseUnavailableError`: the release has no active revision yet. | No |
+| `ReleaseRequesterError` | A call with `act_for_requester=True` was refused for the person, or the person's assertion expired first (`expired`). | No |
 | `ReleaseDeadlineTooShortError` | The caller of the current request will not wait long enough for the release to start. | No |
 | `ReleaseColdStartTimeoutError` | `timeout` ended and the platform then shows the release starting. | Yes |
 | `ReleaseRequestTimeoutError` | `timeout` ended on a serving release. | Yes |
@@ -196,6 +197,41 @@ clause. To add context, call
 `wait_for_runtime_access()` runs the same wait without sending a request, for
 code that only needs the platform's answer. Concurrent first calls to a cold
 release share one wait.
+
+### Calling for the person the request serves
+
+Inside a request a person sent to your FastAPI application, pass
+`act_for_requester=True` to make the call **for that person**:
+
+```python
+response = billing.request("GET", "/v1/invoices", timeout=30, act_for_requester=True)
+```
+
+The SDK sends the request's verified caller assertion to the platform when it
+asks for the release's access, and only there; the called release never sees
+it. The platform gives a token that names your application as the caller and
+the person as the requester, so the called application finds the person in
+`User.get_requester()`. `request`, `arequest`, `call`, `resolve_runtime_access`
+and `wait_for_runtime_access` take the option.
+
+- **Only a person's direct request.** The call raises `RequestIdentityError`
+  before asking the platform outside an authenticated request, in local mode,
+  on a WebSocket and inside a requester-bound request (no second hop). The
+  platform refuses an assertion that names a workload with
+  `ReleaseRequesterError`, so use the option on routes people call and call
+  without it on routes workloads call.
+- **Only for this request.** The person's token is kept for the rest of this
+  request, per release, and never in the process's kept access: another
+  request, another person or the application's own calls never receive it.
+- **At most 300 seconds.** The person's assertion expires at most 300 seconds
+  after their request. A wait for a starting release that would outlast it
+  ends with `ReleaseRequesterError` (`expired=True`). Work that outlives the
+  request, or runs in the background, cannot act for the person.
+- **Never the application's grants instead.** A refusal is
+  `ReleaseRequesterError`; nothing is sent, and the call is not retried as the
+  application. A `404` still means the release does not exist for the person.
+- `resolve_runtime_access` with `static_site_release_uid` cannot take the
+  option.
 
 ### Starting several releases
 

@@ -462,9 +462,9 @@ Decision, from 9.0.46:
 
 - **`wait_for_release` asks again whenever the answer carries
   `retry_after_ms`**, under the readiness limit and the caller's deadline, and
-  stops at once on an answer without it, `redeploying` included. A `waking`
-  answer without a hint, from an older platform, still waits, after 2 seconds.
-  `ReleaseReadinessTimeoutError` names the last state and the platform's notice.
+  stops at once on an answer without it, `redeploying` included, and `waking`
+  too (amended for 9.0.47: the SDK codes against the current platform, which
+  gives every `waking` answer a hint). `ReleaseReadinessTimeoutError` names the last state and the platform's notice.
 - **A failed ask is made again.** A `TransportError` from
   `resolve-runtime-access` is asked again after 2 seconds, within the same
   limits, up to three times in a row; the third is raised. The POST is safe to
@@ -479,3 +479,40 @@ Decision, from 9.0.46:
   three change. Tests: `tests/client/test_release_calls.py` and
   `tests/client/test_a2a_request_budget.py`.
 - **Not done:** a failed AgentSession platform ask is not retried.
+
+## Amendment 2026-11-27: a call for the request's person
+
+Issue #272. A FastAPI application serving a person's request could call another
+FastAPI release only as itself. The platform now accepts the request's caller
+assertion on `resolve-runtime-access` and gives a token that names the calling
+application as the caller and the person as the requester.
+
+Decision, from 9.0.47:
+
+- **A per-call option.** `request`, `arequest`, `call`,
+  `resolve_runtime_access` and `wait_for_runtime_access` take
+  `act_for_requester=True`. A block would make every call inside it, including
+  a library's, act for the person; the option keeps that choice on the call
+  (see ADR-0036's amendment of the same date).
+- **The assertion goes only to the platform**, on `resolve-runtime-access`, as
+  `X-MainSequence-Caller-Assertion`, and only to the configured platform
+  endpoint. The called release never receives it.
+- **The person's token is never the release's kept access** of
+  [section 3](#3-a-process-cache-of-release-runtime-state). It is kept in the
+  request's own scope, per release, until the token or the request ends. The
+  platform's facts about the release (presence, scaling, whether it serves)
+  still go to the process cache. A delegated call never shares another call's
+  cold-start wait, so no token crosses between requests.
+- **Every ask for the person sends the assertion again:** while waiting for a
+  start, after a timeout and after a refused token. None falls back to the
+  application's own access.
+- **The wait ends at the assertion's expiry.** The assertion lives at most 300
+  seconds; a wait whose next ask would come after it raises
+  `ReleaseRequesterError` with `expired=True`, before the platform refuses it.
+- **Errors.** `403` `requester_binding_invalid` is `ReleaseRequesterError`, a
+  `ReleaseCallError` with `phase == "readiness"`: nothing was sent. It is never
+  retried as the application. The option raises `RequestIdentityError` before
+  any platform call outside an authenticated request, without an assertion
+  (local mode, WebSockets) and in a requester-bound request.
+- **Not done:** detecting a platform that does not serve this contract. The SDK
+  codes against the current platform contract only.

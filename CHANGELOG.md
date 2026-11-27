@@ -6,6 +6,35 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [9.0.47] - 2026-11-27
 
+**A FastAPI application can call another release for the person whose request it serves
+(ADR 0041 and ADR 0036, amended; #272).** `ResourceRelease.request`, `arequest`, `call`,
+`resolve_runtime_access` and `wait_for_runtime_access` take `act_for_requester=True`. The SDK
+sends the request's verified caller assertion to the platform when it asks for the release's
+access, never to the called release, and the called application sees the person in
+`User.get_requester()`.
+
+- The person's token is kept for the rest of the request, per release, and never in the
+  process's kept access, so no other request, person or application call receives it.
+- Every ask for the person sends the assertion again; none falls back to the application's own
+  access. A wait that would outlast the assertion (at most 300 seconds) ends first.
+- New `ReleaseRequesterError`, a `ReleaseCallError` raised before anything is sent: the platform
+  refused the person (`requester_binding_invalid`, for example a workload caller), or the
+  assertion expired (`expired=True`). Outside an authenticated request, in local mode, on a
+  WebSocket or in a requester-bound request the option raises `RequestIdentityError` before
+  asking the platform.
+
+**An existing Agent session's model can be changed, and is no longer ignored silently (#268).**
+New `AgentSession.select_model(provider, model, thinking=None)` changes a session's LLM provider,
+model and thinking level, and raises `AgentSessionBusyError`, a `ConflictError` (409), while one
+of the session's turns is running. `Agent.get_or_create_session` documents that its creation
+options apply only when it creates the session, and logs `agent.session.model_not_applied` when
+it returns an existing session on another model than the one requested.
+
+**A `waking` answer without a retry hint no longer waits (ADR 0041, amended).** The release
+call's wait asks again only when the platform's answer carries `retry_after_ms`, which the
+current platform gives every `waking` answer; the fallback for a platform that did not is
+removed.
+
 **Reading the directory as the request's caller is a per-call option (ADR 0036, amended).**
 `User.filter`, `User.iter_filter`, `User.get`, `User.get_by_uid` and the same reads on `Team`
 take `as_caller=True`: that one read presents the request's caller assertion and answers with

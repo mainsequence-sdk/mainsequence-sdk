@@ -11,7 +11,8 @@ from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator, 
 from mainsequence._request_identity import (
     CALLER_ASSERTION_HEADER,
     RequestIdentityError,
-    _caller_read_headers,
+    _assertion_header,
+    _assertion_scope,
     _get_request_identity,
     _get_requester,
     _team_membership_scope,
@@ -370,14 +371,23 @@ class _CallerDirectoryReadMixin:
 
     @classmethod
     def _pop_read_options(cls, kwargs: dict[str, Any]) -> dict[str, Any]:
+        scope = kwargs.pop("_caller_scope", None)
         as_caller = kwargs.pop("as_caller", False)
         if not isinstance(as_caller, bool):
             raise TypeError("as_caller must be True or False.")
-        return {"as_caller": as_caller}
+        if as_caller and scope is None:
+            # Bound once: every page of this read presents this request's assertion,
+            # and none is sent after the request ended or for another request.
+            scope = _assertion_scope("as_caller=True")
+        return {"_caller_scope": scope}
 
     @classmethod
-    def _read_request_headers(cls, url: str, *, as_caller: bool = False) -> dict[str, str]:
-        return _caller_read_headers(url, cls.get_object_url(), as_caller=as_caller)
+    def _read_request_headers(cls, url: str, *, _caller_scope: Any = None) -> dict[str, str]:
+        if _caller_scope is None:
+            return {}
+        return _assertion_header(
+            url, cls.get_object_url(), option="as_caller=True", scope=_caller_scope
+        )
 
     @classmethod
     def iter_filter(
@@ -1414,8 +1424,10 @@ class User(_CallerDirectoryReadMixin, UserApiBaseObjectOrm, BasePydanticModel):
     def get_requester(cls) -> RequestUserIdentity | None:
         """Return the person a requester-bound request works for, or ``None``.
 
-        A requester-bound request comes from another application, for example
-        an Agent, while it works for a person: the requester. The platform
+        A requester-bound request comes from another application while it
+        works for a person: the requester. The caller is an Agent, or a
+        FastAPI application that called this release with
+        ``act_for_requester=True`` while serving that person's own request. The platform
         signs that person into the caller assertion, and the request identity
         integration verifies it before any handler or tool runs. The result is
         that checked delegation: the person's own ``uid`` and
@@ -1443,7 +1455,9 @@ class User(_CallerDirectoryReadMixin, UserApiBaseObjectOrm, BasePydanticModel):
         administrative ones, for the exact object and operation. This getter
         verifies identity, not permission; read access or team membership does
         not authorize a write. The platform checks access on every call and
-        limits the work to at most 24 hours after the person's request. A
+        limits the work: an Agent's to at most 24 hours after the person's
+        request, a FastAPI application's to the person's request itself, at
+        most 300 seconds. A
         model-driven Agent can be steered by prompt injection, so per-operation
         checks remain necessary. This getter does not enable platform
         endpoints or extend its request scope.

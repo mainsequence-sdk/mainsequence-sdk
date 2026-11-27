@@ -222,6 +222,21 @@ session = agent.get_or_create_session(
     handle_unique_id="portfolios",
     name="Portfolio analysis",
 )
+```
+
+Creation options (`name`, `llm_provider`, `llm_model`, `llm_thinking` and the
+others) apply only when the call creates the session. For a handle that already
+has one, the session comes back on the model it already had, and a warning is
+logged when the requested `llm_*` differ. To change an existing session's model,
+select it:
+
+```python
+session = session.select_model("openai-codex", "gpt-5.6-luna", thinking="low")
+```
+
+`select_model` raises `AgentSessionBusyError`, a `ConflictError` (409), while one
+of the session's turns is running; nothing changed, so select again once the
+turn has finished.
 
 response = AgentSession.send_a2a_message(
     session.uid,

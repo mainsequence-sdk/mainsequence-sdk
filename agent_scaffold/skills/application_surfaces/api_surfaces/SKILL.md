@@ -247,6 +247,11 @@ def acting_identity() -> RequestUserIdentity:
     return User.get_requester() or User.get_logged_user()
 ```
 
+- The caller of a requester-bound call is an Agent, or another FastAPI
+  application that called with `act_for_requester=True` while serving the
+  person's own request. Authorize the same way for both; directory reads still
+  answer as this application unless they pass `as_caller=True`, which a
+  requester-bound call refuses.
 - Authorize against one identity: the person on a requester-bound call, the
   caller on any other. Never combine the caller's grants with the person's,
   and never fall back to the caller's rights when the person may not.
