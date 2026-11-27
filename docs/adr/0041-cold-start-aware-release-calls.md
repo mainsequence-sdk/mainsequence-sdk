@@ -191,6 +191,9 @@ will still wait, as a duration, so clocks need not agree.
   The error names the target, the remainder and the expected start, so the
   outermost caller learns which hop its limit could not cover.
 - Without the header nothing is reduced.
+- From 9.0.46 an application reads and narrows the same time with the public
+  `mainsequence.client.remaining_request_seconds()` and `request_deadline()`;
+  see [Amendment 2026-11-27: the remaining time is public](#amendment-2026-11-27-the-remaining-time-is-public).
 
 Requested of the platform: the gateway forwards the header unchanged on
 release requests and Agent Task dispatch, as it forwards `baggage` and
@@ -357,4 +360,38 @@ a refused kept token, an exception or no answer, a server error, the record of
 a process start, `runtime_status()` and a later `request` seeing a library's
 answers, `async with`, and a library's own `requests.Session` reusing one
 connection to a local server.
+
+## Amendment 2026-11-27: the remaining time is public
+
+Issue #270. Section 6 gave the caller's remaining time to the SDK's own calls
+only: `request`, and from 9.0.45 `call` and A2A sends, read it through the
+private `mainsequence._request_deadline`. An application's own work, such as a
+FastAPI release that bounds each SQL statement, could not read it, and could
+not apply its own limit to the release calls it makes inside a request.
+
+Decision, from 9.0.46:
+
+- **`mainsequence.client.remaining_request_seconds()`** returns the seconds
+  the current request's caller will still wait: zero or less once it has
+  passed, and `None` without a limit (no header, a public request, a Job run,
+  a script).
+- **`mainsequence.client.request_deadline(seconds)`** bounds the block by
+  `seconds` or by the caller's remaining time, whichever is shorter. It never
+  extends a limit, and `None` changes nothing. The SDK's calls inside the
+  block, and `remaining_request_seconds()`, see the shorter limit.
+- **They are the functions the SDK uses**, exported from `mainsequence.client`,
+  not from `mainsequence.server.fastapi`: the value bounds client calls and is
+  read by code that is not a FastAPI app, and it reads `None` outside a
+  request instead of failing.
+- **Not made public:** the header name and its formatting. A library sending
+  to a release uses `ResourceRelease.call`, which sends the header.
+
+The value lives in a context variable: FastAPI's thread pool, `asyncio` tasks
+and `asyncio.to_thread` carry it, and a plain `threading.Thread` or a
+`concurrent.futures` executor does not.
+
+Tests: `tests/test_fastapi_request_identity.py` reads and narrows the time in
+a sync and an async handler, with and without the header;
+`tests/client/test_release_calls.py` bounds a release call and a `request`
+by a narrower `request_deadline`.
 

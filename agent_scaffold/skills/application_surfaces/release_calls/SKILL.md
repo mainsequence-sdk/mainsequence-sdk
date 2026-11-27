@@ -228,9 +228,28 @@ request too when the request will reach several releases one after another.
 ## Deadlines across a chain
 
 An application with `install_request_identity(app)` reads how long its own
-caller will still wait. Calls made with `request` inside that handler are
-bounded by it, and what remains is sent on to the next release. Nothing is
-needed in application code.
+caller will still wait. Calls made with `request` or `release.call` inside that
+handler are bounded by it, and what remains is sent on to the next release.
+Nothing is needed in application code for those calls.
+
+The application's own work is bounded only if it asks. Use the public
+functions from `mainsequence.client`, never `mainsequence._request_deadline`:
+
+```python
+from mainsequence.client import remaining_request_seconds, request_deadline
+
+with request_deadline(60):  # the API's own limit, cut by its caller's
+    remaining = remaining_request_seconds()  # never None inside the block
+    rows = database.execute(sql, timeout=min(15, remaining))
+    response = prices.request("POST", "/v1/enrich", timeout=30, json=rows)
+```
+
+- `remaining_request_seconds()` is `None` when no caller set a limit, and zero
+  or less once the time has passed: stop then, the caller no longer waits.
+- `request_deadline(seconds)` only shortens; the release calls inside it see
+  the shorter limit and send it on.
+- A plain `threading.Thread` or `concurrent.futures` executor does not carry
+  the deadline; run such work with `contextvars.copy_context().run(...)`.
 
 The limit travels in the `Mainsequence-Request-Timeout-Ms` header. A hop that
 does not receive the header is bounded only by its own `timeout`, so do not

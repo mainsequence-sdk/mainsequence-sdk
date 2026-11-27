@@ -594,6 +594,28 @@ def test_a_library_call_is_bounded_by_the_callers_deadline_and_passes_it_on(monk
     assert 4000 < int(call.headers[DEADLINE_HEADER]) <= 5000
 
 
+def test_an_applications_narrower_deadline_bounds_its_release_calls(monkeypatch):
+    from mainsequence.client import remaining_request_seconds
+    from mainsequence.client import request_deadline as public_request_deadline
+
+    platform = Platform(monkeypatch, [_ready()], [_response()])
+    release = _release()
+
+    with public_request_deadline(5):
+        with public_request_deadline(2):
+            assert 1 < remaining_request_seconds() <= 2
+            with release.call("GET", "/v1/prices", timeout=60) as call:
+                call.record(_response())
+            release.request("GET", "/v1/prices", timeout=60)
+        with public_request_deadline(60):
+            assert 4 < remaining_request_seconds() <= 5
+
+    assert 1 < call.timeout <= 2
+    assert int(call.headers[DEADLINE_HEADER]) <= 2000
+    assert int(platform.sent[0]["headers"][DEADLINE_HEADER]) <= 2000
+    assert remaining_request_seconds() is None
+
+
 def test_a_library_call_with_a_spent_deadline_is_refused_before_sending(monkeypatch):
     Platform(monkeypatch, [_ready()])
     release = _release()

@@ -350,6 +350,39 @@ and `resources/read` on the release's `/mcp`, behind the same authentication
 as tools. Do not register your own `skill://` resources. See
 [Skills](https://mainsequence-sdk.github.io/mainsequence-sdk/knowledge/fastapi/#skills).
 
+### Bound a handler's work by its caller's time
+
+`install_request_identity(app)` turns a verified caller's
+`Mainsequence-Request-Timeout-Ms` into the request's deadline. Release and
+Agent calls the SDK makes inside the handler already respect it. Work the
+handler does itself, such as a database query or a long computation, does not
+unless the handler bounds it with the public functions from
+`mainsequence.client`:
+
+```python
+from mainsequence.client import remaining_request_seconds, request_deadline
+
+
+@app.post("/v1/report")
+def report(body: ReportRequest):
+    with request_deadline(60):  # this API's own limit, cut by the caller's
+        remaining = remaining_request_seconds()  # never None inside the block
+        if remaining <= 0:
+            raise HTTPException(status_code=504, detail="The caller stopped waiting.")
+        rows = database.execute(body.sql, timeout=min(15, remaining))
+    return rows
+```
+
+- Without `request_deadline`, `remaining_request_seconds()` is `None` when the
+  caller set no limit; keep your own limit then.
+- `request_deadline` only shortens, and SDK calls inside it see the shorter
+  limit.
+- Do not import `mainsequence._request_deadline`; it is private.
+- Work started in a plain `threading.Thread` or a `concurrent.futures`
+  executor reads `None`; run it with `contextvars.copy_context().run(...)`.
+
+See [Bounding your own work](https://mainsequence-sdk.github.io/mainsequence-sdk/knowledge/fastapi/#bounding-your-own-work).
+
 ### Public provider callbacks and webhooks
 
 An external OAuth redirect or webhook cannot supply a Main Sequence Bearer token.

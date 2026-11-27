@@ -789,3 +789,55 @@ def test_a_verified_caller_learns_when_the_process_started_and_sets_a_deadline(s
     assert refused.status_code == 401
     assert PROCESS_STARTED_AT_HEADER not in refused.headers
     assert remaining_request_seconds() is None
+
+
+def test_a_handler_reads_and_narrows_its_callers_time_through_the_public_api(signed):
+    from mainsequence import _request_deadline
+    from mainsequence.client import remaining_request_seconds, request_deadline
+
+    # The SDK's own calls use the same functions.
+    assert remaining_request_seconds is _request_deadline.remaining_request_seconds
+    assert request_deadline is _request_deadline.request_deadline
+    token, _, _ = signed
+    app = FastAPI()
+
+    def bounds():
+        seen = {"caller": remaining_request_seconds()}
+        with request_deadline(2):
+            seen["narrowed"] = remaining_request_seconds()
+        with request_deadline(60):
+            seen["not_extended"] = remaining_request_seconds()
+        with request_deadline(None):
+            seen["unchanged"] = remaining_request_seconds()
+        return seen
+
+    @app.get("/sync")
+    def in_the_thread_pool():
+        return bounds()
+
+    @app.get("/async")
+    async def on_the_event_loop():
+        return bounds()
+
+    install_request_identity(app)
+    with TestClient(app) as client:
+        answers = [
+            client.get(
+                path, headers={ASSERTION_HEADER: token(), "Mainsequence-Request-Timeout-Ms": "5000"}
+            ).json()
+            for path in ("/sync", "/async")
+        ]
+        without = client.get("/sync", headers={ASSERTION_HEADER: token()}).json()
+
+    for seen in answers:
+        assert 4 < seen["caller"] <= 5
+        assert 1 < seen["narrowed"] <= 2
+        assert seen["narrowed"] < seen["caller"]
+        assert 4 < seen["not_extended"] <= 5
+        assert 4 < seen["unchanged"] <= 5
+    # Without the header there is no limit, and narrowing sets one.
+    assert without["caller"] is None
+    assert 1 < without["narrowed"] <= 2
+    assert without["not_extended"] > 59
+    assert without["unchanged"] is None
+    assert remaining_request_seconds() is None

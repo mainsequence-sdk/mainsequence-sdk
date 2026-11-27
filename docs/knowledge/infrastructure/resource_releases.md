@@ -193,10 +193,25 @@ sum.
 
 `request` sends `Mainsequence-Request-Timeout-Ms`, the time it will still
 wait. An application with `install_request_identity` reads it from a verified
-caller, and calls made with `request` inside that handler are bounded by what
-remains and send the remainder on. A call that cannot fit the target's
-expected start in that time fails with `ReleaseDeadlineTooShortError` before
-anything is sent. Without the header nothing is bounded.
+caller, and calls made with `request` or `release.call` inside that handler are
+bounded by what remains and send the remainder on. A call that cannot fit the
+target's expected start in that time fails with `ReleaseDeadlineTooShortError`
+before anything is sent. Without the header nothing is bounded.
+
+An application reads the same time with
+`mainsequence.client.remaining_request_seconds()` to bound its own work, and
+narrows it with `request_deadline(seconds)`, which also bounds the release
+calls made inside the block:
+
+```python
+from mainsequence.client import remaining_request_seconds, request_deadline
+
+with request_deadline(60):  # this API's own limit, cut by the caller's
+    statement_timeout = min(15, remaining_request_seconds())
+    response = release.request("POST", "/v1/enrich", timeout=30, json=rows)
+```
+
+See [Bounding your own work](../fastapi/index.md#bounding-your-own-work).
 
 ## Supported collection filters
 

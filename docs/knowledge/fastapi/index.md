@@ -353,10 +353,59 @@ release reads them through
 [`ResourceRelease.request`](../infrastructure/resource_releases.md#call-a-release).
 
 A verified caller's `Mainsequence-Request-Timeout-Ms` header, the milliseconds
-it will still wait, bounds the release calls the handler makes with
-`ResourceRelease.request`. An absent or invalid value bounds nothing. Public
-ingress, preflight and WebSocket requests neither get the response headers nor
-set a deadline.
+it will still wait, becomes the request's deadline. The SDK's own calls inside
+the handler are bounded by what remains and send the remainder on:
+`ResourceRelease.request`, `ResourceRelease.call` and A2A sends. An absent or
+invalid value sets no deadline. Public ingress, preflight and WebSocket requests
+neither get the response headers nor set a deadline.
+
+### Bounding your own work
+
+Work the handler does itself, such as a database query, is bounded by nothing
+unless the handler bounds it. Two functions in `mainsequence.client` do that:
+
+- `remaining_request_seconds()` is the time the caller will still wait, in
+  seconds: zero or less once it has passed, and `None` when no limit was set.
+- `request_deadline(seconds)` bounds everything inside the block by `seconds`,
+  or by the caller's time when that is shorter. It never extends a limit, and
+  `None` changes nothing. Inside it, `remaining_request_seconds()` and the
+  SDK's own calls see the shorter limit.
+
+```python
+from fastapi import FastAPI, HTTPException
+
+from mainsequence.client import ResourceRelease, remaining_request_seconds, request_deadline
+from mainsequence.server.fastapi import install_request_identity
+
+OPERATION_SECONDS = 60  # this API's own limit for one request
+STATEMENT_SECONDS = 15  # and for one SQL statement
+
+app = FastAPI()
+install_request_identity(app)
+prices = ResourceRelease.by_uid("<PRICES_RELEASE_UID>")
+
+
+@app.post("/v1/report")
+def report(body: ReportRequest):
+    with request_deadline(OPERATION_SECONDS):
+        remaining = remaining_request_seconds()  # never None inside the block
+        if remaining <= 0:
+            raise HTTPException(status_code=504, detail="The caller stopped waiting.")
+        rows = database.execute(body.sql, timeout=min(STATEMENT_SECONDS, remaining))
+        # Bounded by what is left of the shorter limit, which is sent on.
+        enriched = prices.request("POST", "/v1/enrich", timeout=30, json=rows)
+    return enriched.json()
+```
+
+Without `request_deadline`, read the caller's time alone and keep your own
+limit when there is none: `limit = STATEMENT_SECONDS if remaining is None else
+min(STATEMENT_SECONDS, remaining)`.
+
+The deadline is held in a context variable. Sync handlers, which FastAPI runs
+in its thread pool, `asyncio` tasks and `asyncio.to_thread` see it. A thread
+you start with `threading.Thread`, or a `concurrent.futures` executor, does
+not: run the work with `contextvars.copy_context().run(...)` there, or it reads
+`None`. Outside a request, in a Job run, a script or a test, it is `None`.
 
 ## Public ingress, preflight and WebSockets
 

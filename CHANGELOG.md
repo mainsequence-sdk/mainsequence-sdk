@@ -4,6 +4,24 @@ All notable changes to this project should be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows versioned releases.
 
+## [9.0.46] - 2026-11-27
+
+**An application can read and narrow the time its caller will still wait (ADR 0041, amended;
+#270).** `mainsequence.client.remaining_request_seconds()` returns the seconds the current
+request's caller will still wait. It is set by `install_request_identity` from a verified
+caller's `Mainsequence-Request-Timeout-Ms`, is zero or less once that time has passed, and is
+`None` without a limit. `mainsequence.client.request_deadline(seconds)` bounds a block by
+`seconds` or by the caller's time, whichever is shorter, and never extends it. A handler can
+now bound its own work, such as a SQL statement, by the shorter of its own limit and its
+caller's, and apply its own limit to the release and Agent calls it makes inside the block.
+Both were private (`mainsequence._request_deadline`); they are the same functions the SDK's
+calls use.
+
+- The FastAPI guide has a new section, "Bounding your own work", with an example. It and the
+  Resource releases guide now say that `ResourceRelease.call` and A2A sends respect the
+  deadline too, not only `ResourceRelease.request`. The `api_surfaces` and `release_calls`
+  agent skills show how a handler bounds its own work.
+
 ## [9.0.45] - 2026-11-27
 
 **`Constant.filter()` and `Constant.get()` work with cachetools 8.** In 9.0.44 and earlier they raised
