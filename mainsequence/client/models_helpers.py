@@ -27,6 +27,9 @@ from .observability import (
     PublicLogLevel,
 )
 from .release_calls import (
+    ReleaseCall as ReleaseCall,
+)
+from .release_calls import (
     ReleaseCallError as ReleaseCallError,
 )
 from .release_calls import (
@@ -1212,6 +1215,38 @@ class ResourceRelease(
     async def arequest(self, method: str, path: str, **kwargs: Any) -> requests.Response:
         """``request`` for asynchronous code: it runs on a worker thread."""
         return await asyncio.to_thread(self.request, method, path, **kwargs)
+
+    def call(
+        self,
+        method: str,
+        path: str,
+        *,
+        timeout: float,
+        ready_timeout: float | None = None,
+    ) -> ReleaseCall:
+        """Prepare one request that your own HTTP client sends to this release.
+
+        For a client library that keeps its own ``requests`` or ``httpx``
+        client, for its connection pool, its streaming or its test seams.
+        The block does around your send what ``request`` does around its own:
+        it reuses the access this process keeps while the release is warm,
+        or waits while it starts; it bounds ``timeout`` (seconds) by the time
+        the current request's caller will still wait and passes that on; it
+        makes the call a span in the caller's trace; and it records the
+        answer for ``runtime_status`` and later calls::
+
+            with release.call("GET", "/v1/prices", timeout=30) as call:
+                response = client.get(call.url, headers=call.headers, timeout=call.timeout)
+                call.record(response)
+
+        ``async with`` works the same way. Entering raises what ``request``
+        raises before it sends: ``ReleaseReadinessTimeoutError``,
+        ``ReleaseUnavailableError`` or ``ReleaseDeadlineTooShortError``. What
+        the send raises is your client's own exception. Use ``request`` when
+        you need no client of your own: it also resends after a refused token
+        and tells a timeout held by a start from a slow application.
+        """
+        return ReleaseCall(self, method, path, timeout=timeout, ready_timeout=ready_timeout)
 
     def runtime_status(self) -> ReleaseRuntimeStatus:
         """What this process knows about the release's runtime, without asking the platform.

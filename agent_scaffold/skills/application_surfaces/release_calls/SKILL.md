@@ -1,6 +1,6 @@
 ---
 name: mainsequence-release-calls
-description: Call one Main Sequence release (FastAPI API, MCP application or Agent-backing release) from another with the SDK's cold-start-aware routine. Use when an application, Job or Agent tool makes HTTP requests to another release, when choosing timeouts for such calls, when a call times out and the target may have been scaled to zero, when a chain of releases (API to API to Agent) needs deadlines, prewarming or a "starting" state, or when a client library sends its own requests to a release (its own requests or httpx client) and must keep those calls in the caller's trace with dependency_call.
+description: Call one Main Sequence release (FastAPI API, MCP application or Agent-backing release) from another with the SDK's cold-start-aware routine. Use when an application, Job or Agent tool makes HTTP requests to another release, when choosing timeouts for such calls, when a call times out and the target may have been scaled to zero, when a chain of releases (API to API to Agent) needs deadlines, prewarming or a "starting" state, or when a client library sends its own requests to a release (its own requests or httpx client) with ResourceRelease.call, so they keep the caller's trace, deadline and the process's release access.
 ---
 
 # Calls Between Main Sequence Releases
@@ -23,9 +23,9 @@ The SDK solves this in one place. Use it; do not build your own.
 
 If the installed SDK has no `ResourceRelease.request`, report the missing
 capability. Do not replace it with a hand-written wait loop. If it has no
-`mainsequence.instrumentation.dependency_call`, a library with its own HTTP
-client cannot make its calls spans: report that, and do not copy the SDK's
-private code.
+`ResourceRelease.call`, a library with its own HTTP client cannot call a
+release the way `request` does: report that, and do not copy the SDK's private
+code.
 
 ## The one way to call a release
 
@@ -60,8 +60,9 @@ What the routine does:
    `release` and `dependency_name` the release's UID.
 
 Never keep the release's URL or token yourself: the routine obtains and renews
-both. The one exception is a client library that must keep its own HTTP
-client; see "A client library with its own HTTP client" below.
+both. A client library that must keep its own HTTP client uses
+`release.call(...)`, which obtains them the same way; see "A client library
+with its own HTTP client" below.
 
 `request` asks the platform only when it must: on the first call in the
 process, when the release has shown no sign of serving within its idle window,
@@ -84,8 +85,8 @@ The target sees the call as coming from your application's own identity.
   `release.runtime_status()`.
 - **No bare HTTP clients for release calls.** Not `requests`, not `httpx`,
   not a URL built from a name or UID. The only exception is a client library
-  that keeps its own client, and then every send is wrapped in
-  `dependency_call`, as described below.
+  that keeps its own client, and then every send is made inside
+  `release.call(...)`, as described below.
 - **`idempotent=True` only when a repeat is safe.** With it, a request that
   timed out while the target was starting is sent once more. Without it,
   nothing is ever sent twice. A read is safe. A write is safe only when the
@@ -115,12 +116,11 @@ An HTTP error status is not an exception: the response is returned.
 
 Use `request` whenever you can. A client library for an API on a release may
 instead need its own `requests` or `httpx` client: one connection pool for its
-whole life, streamed responses, or its own test seam. It then finds the
-address and token with `resolve_runtime_access()` and sends itself, and it
-must make each send a span with `dependency_call`. Without it, every call
-breaks the trace: the release's request lines start a new trace, the release
-never receives the caller context, and the caller's logs have no line for the
-call.
+whole life, streamed responses, or its own test seam. It then sends each call
+inside `release.call(...)`, which does around the library's send what
+`request` does around its own. Without it, every call breaks the trace, skips
+the caller's deadline, and asks the platform every time or misses a release
+that went idle.
 
 Put the block in the one method through which the library sends:
 
@@ -128,7 +128,6 @@ Put the block in the one method through which the library sends:
 import requests
 
 from mainsequence.client import ResourceRelease
-from mainsequence.instrumentation import dependency_call
 
 
 class PricesClient:
@@ -136,37 +135,53 @@ class PricesClient:
         self.release = ResourceRelease.by_uid(release_uid)
         self.session = session or requests.Session()  # kept: one connection pool
 
-    def _send(self, method: str, path: str, **kwargs) -> requests.Response:
-        access = self.release.wait_for_runtime_access().access
-        rpc_url, token = access["rpc_url"].rstrip("/"), access["token"]
-        with dependency_call("release", method, path, name=self.release.uid) as call:
-            headers = {**call.headers(), **(kwargs.pop("headers", None) or {})}
-            headers["Authorization"] = f"Bearer {token}"
-            response = self.session.request(method, rpc_url + path, headers=headers, **kwargs)
-            call.status_code = response.status_code
+    def _send(self, method: str, path: str, *, timeout: float, **kwargs) -> requests.Response:
+        with self.release.call(method, path, timeout=timeout) as call:
+            headers = {**call.headers, **(kwargs.pop("headers", None) or {})}
+            response = self.session.request(
+                method, call.url, headers=headers, timeout=call.timeout, **kwargs
+            )
+            call.record(response)
             return response
 ```
 
+What the block does:
+
+- **Entering** reuses the address and token this process keeps while the
+  release is warm and its token fresh, or asks the platform, which starts the
+  release, and waits while it starts. It raises `ReleaseReadinessTimeoutError`,
+  `ReleaseUnavailableError` or `ReleaseDeadlineTooShortError` with nothing
+  sent, as `request` does.
+- **`call.url`** is the platform's address followed by `path`;
+  **`call.timeout`** is `timeout` cut to the caller's remaining time;
+  **`call.headers`** hold `Authorization`, `Mainsequence-Request-Timeout-Ms`,
+  `traceparent` and `baggage`.
+- **Leaving** records an answer below 500, so `runtime_status()` and later
+  calls see it; after a `401` to the kept access (`call.reused_access`), an
+  exception, or no recorded response, the next call asks the platform. It
+  writes the `dependency.call.*` line.
+
 Rules for the block:
 
-- **`dependency_type` and `name`.** `release` with the release's UID, or
-  `agent` with the Agent session's UID, for an address the platform gave.
-  `api` or `inference` only for the origin of `MAINSEQUENCE_ENDPOINT`.
-- **`path` is the path you add** to the address (`/v1/prices`), not the
-  address's own path. Its query is dropped and UUIDs become `{uid}`.
-- **One send, one block.** Send `call.headers()` with that request, set
-  `call.status_code` as soon as an answer arrives, whatever its status, and
-  leave the block after the body is read. With `httpx`, read a streamed
-  response inside the block. A request sent again is a new block.
-- **Only to platform addresses.** The headers carry the caller's baggage.
-  Never send them to a third party.
-- **Do not copy the SDK's private code** (`_transport`, `release_calls`
-  internals) and do not write `dependency.call.*` lines yourself: the field
-  names belong to the platform's log contract and change with it.
+- **Pass `call.url`, `call.headers` and `call.timeout` to your client**, and
+  `call.record(response)` as soon as the answer arrives, whatever its status.
+  Add your own headers after `call.headers`.
+- **One send, one block.** Leave the block after the body is read; with
+  `httpx`, read a streamed response inside it. A request sent again is a new
+  block. `async with release.call(...)` works in asynchronous code.
+- **Resend after a refused token yourself.** When the answer is `401` and
+  `call.reused_access` is `True`, a request that is safe to repeat may be sent
+  once more, in a new block, which asks the platform for a new token.
+- **A timeout is your client's exception.** Do not retry it blindly: the next
+  call asks the platform, and `release.runtime_status()` shows whether the
+  release was starting.
+- **Do not keep `call.url` or the token** between blocks, and do not copy the
+  SDK's private code (`_transport`, `_request_deadline`, `release_calls`
+  internals) or write `dependency.call.*` lines yourself.
 
-The library also takes over what `request` did: it waits while the release
-starts (`wait_for_runtime_access()`), keeps the address and token only until
-shortly before `access["expires_at"]`, and asks again after a `401`.
+For a platform call that is not to a release, such as one to an Agent runtime,
+`mainsequence.instrumentation.dependency_call` makes the span alone; see the
+Caller context guide.
 
 ## Show state without calling
 
@@ -243,12 +258,13 @@ pass a few minutes, or when `ReleaseDeadlineTooShortError` or
 - A test with the target answering `waking` past `ready_timeout` asserts
   `ReleaseReadinessTimeoutError` and that nothing was sent.
 - No module imports `requests` or `httpx` to reach a release, except a client
-  library's single send method, and that method wraps each send in
-  `dependency_call`.
-- No module stores a release's `rpc_url` or token past `access["expires_at"]`,
-  and only such a client library stores them at all.
-- For a client library: a test sends a call to a local server inside a known
-  span and asserts the received `traceparent` has that span's trace id and a
-  new span id, and that two calls in a row share one connection.
+  library's single send method, and that method sends inside
+  `release.call(...)`.
+- No module stores a release's `rpc_url` or token.
+- For a client library: a test sends calls to a local server inside a known
+  span and a caller deadline, and asserts the received `traceparent` has that
+  span's trace id and a new span id, the received
+  `Mainsequence-Request-Timeout-Ms` is within the deadline, two calls in a row
+  share one connection, and two calls to a warm release ask the platform once.
 - Logs show `release.call.cold_start` with the target's UID when a start was
   waited for.

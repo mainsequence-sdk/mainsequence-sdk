@@ -8,9 +8,7 @@ the ids at the top level; the carrier goes only to the platform.
 
 import contextvars
 import json
-import threading
 from contextlib import contextmanager
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from uuid import uuid4
 
 import pytest
@@ -32,7 +30,7 @@ from mainsequence.instrumentation.utils import (
     add_otel_trace_context,
 )
 from mainsequence.server.fastapi import install_request_identity
-from tests._http_server import answer_json, serve
+from tests._http_server import answer_json, serve, serve_keeping_connections
 
 TRACE_ID = "4bf92f3577b34da6a3ce929d0e0e4736"
 CALLER_SPAN = "00f067aa0ba902b7"
@@ -371,41 +369,6 @@ def test_a_call_that_raises_is_a_failed_event(events):
 # 3, for libraries: a call a library sends with its own HTTP client (issue #263)
 
 
-@contextmanager
-def _release_keeping_connections():
-    """A release's application that keeps connections open, as HTTP/1.1 servers do.
-
-    Yields its address and, for each request, the client port it came from and
-    its headers: two requests from one port came over one connection.
-    """
-    seen = []
-
-    class Handler(BaseHTTPRequestHandler):
-        protocol_version = "HTTP/1.1"
-
-        def do_GET(self):
-            seen.append((self.client_address[1], {k.lower(): v for k, v in self.headers.items()}))
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", "2")
-            self.end_headers()
-            self.wfile.write(b"{}")
-
-        def log_message(self, *args):
-            pass
-
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-    server.daemon_threads = True
-    thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01})
-    thread.start()
-    try:
-        yield f"http://127.0.0.1:{server.server_port}", seen
-    finally:
-        server.shutdown()
-        thread.join()
-        server.server_close()
-
-
 def _in_a_request(function):
     """Run ``function`` as a release's handler runs: in the request's own span, with its baggage."""
 
@@ -425,7 +388,7 @@ def _in_a_request(function):
 def test_a_library_s_own_call_is_a_child_span_written_as_one_event(events):
     path = f"/v1/prices/{UID}?symbol=ABC"
 
-    with _release_keeping_connections() as (rpc_url, seen):
+    with serve_keeping_connections() as (rpc_url, seen):
 
         def call():
             with requests.Session() as session:
@@ -461,7 +424,7 @@ def test_a_library_s_own_call_is_a_child_span_written_as_one_event(events):
 
 
 def test_a_library_s_calls_keep_its_own_connection_pool(events):
-    with _release_keeping_connections() as (rpc_url, seen):
+    with serve_keeping_connections() as (rpc_url, seen):
 
         def calls():
             with requests.Session() as session:

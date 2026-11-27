@@ -4,15 +4,54 @@ All notable changes to this project should be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows versioned releases.
 
+## [9.0.45] - 2026-11-27
+
+**`Constant.filter()` and `Constant.get()` work with cachetools 8.** In 9.0.44 and earlier they raised
+`TypeError: Cannot call @cachedmethod descriptor directly` with cachetools 8, which refuses
+`@cachedmethod` under `@classmethod` (cachetools 7 only warned). The SDK declares `cachetools`
+without an upper bound, so a fresh install could resolve 8. `Constant.get_value()`,
+`Constant.get_by_uid()` and `create_constants_if_not_exist()` failed with it. The ten-minute
+cache now looks up and stores its answers itself, as `cachedmethod` did: one API call for the
+same arguments, in any order, and the call runs outside the cache's lock.
+
+**A library's own HTTP client can call a release as `request` does (ADR 0041, amended;
+#265).** `ResourceRelease.call(method, path, timeout=...)` prepares one request that a client
+library sends with its own `requests` or `httpx` client, for its connection pool, streaming or
+test seams:
+
+```python
+with release.call("GET", "/v1/prices", timeout=30) as call:
+    response = client.get(call.url, headers=call.headers, timeout=call.timeout)
+    call.record(response)
+```
+
+Entering the block reuses the address and token this process keeps while the release is warm,
+or waits while the release starts, and raises `ReleaseReadinessTimeoutError`,
+`ReleaseUnavailableError` or `ReleaseDeadlineTooShortError` with nothing sent, as `request`
+does. `call.timeout` is cut to the time the current request's caller will still wait, and
+`call.headers` carry it on in `Mainsequence-Request-Timeout-Ms`, with `Authorization` and the
+call's `traceparent` and `baggage`. Leaving the block records an answer below 500 for
+`runtime_status()` and later calls, `request`'s included; a `401` to the kept access, an
+exception or no recorded answer makes the next call ask the platform. `async with` works too.
+Before, such a library's call skipped its caller's deadline and either asked the platform before
+every call or kept a token past a release's idle window, and `runtime_status()` never showed it.
+Resending after a refused token, and telling a start from a hang after a timeout, stay with the
+library. `dependency_call` stays the span alone, for platform calls that are not to a release.
+
+- `ReleaseCall` is exported from `mainsequence.client`.
+- The Caller context guide, the Resource releases guide and the `release_calls` skill use
+  `release.call` for a library's release calls. They also no longer tell a library to read
+  `access["expires_at"]`, a field the platform does not always send.
+
 ## [9.0.44] - 2026-11-27
 
 **A library's own calls can be spans in the caller's trace (ADR 0042, amended; #263).** A
 client library that sends requests to a release with its own `requests` or `httpx` client,
 after finding the release with `ResourceRelease.resolve_runtime_access()`, now makes each call
-a span with `mainsequence.instrumentation.dependency_call`. The call carries a `traceparent` that names its own span, a child of the current
-span, and the current `baggage`, and writes the same `dependency.call.completed` or
-`dependency.call.failed` line as the SDK's own calls. The library keeps its own client,
-connection pool and streaming. Before, such calls carried no trace context: the release's
+a span with `mainsequence.instrumentation.dependency_call`. The call carries a `traceparent`
+that names its own span, a child of the current span, and the current `baggage`, and writes
+the same `dependency.call.completed` or `dependency.call.failed` line as the SDK's own calls.
+The library keeps its own client, connection pool and streaming. Before, such calls carried no trace context: the release's
 request lines started a new trace, the release received no caller context, and the caller's
 logs had no line for the call.
 

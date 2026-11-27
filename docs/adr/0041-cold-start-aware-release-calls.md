@@ -7,6 +7,8 @@ Status: Proposed. The SDK's part is implemented and runs on defaults; see
 [section 1](#1-the-platform-states-a-releases-scaling-facts) and
 [section 6](#6-a-deadline-travels-with-the-call) are requests to the platform,
 not observations of it, and nothing here was tried against a deployed release.
+From 9.0.45 a library's own HTTP client can call a release the same way; see
+[Amendment 2026-11-27](#amendment-2026-11-27-a-call-a-librarys-own-client-sends).
 
 Owners: Main Sequence SDK maintainers.
 
@@ -307,3 +309,52 @@ Not done:
 3. Should the platform start a release's declared dependencies when it wakes
    the release, making section 7 automatic?
 4. The header names of sections 5 and 6.
+
+## Amendment 2026-11-27: a call a library's own client sends
+
+Issue #265. A client library that keeps its own `requests` or `httpx` client,
+for its connection pool, its streaming or its test seams, could not call a
+release the way `request` does. The caller's deadline helpers were private, so
+its call was not bounded by the caller's remaining time and passed none on.
+`wait_for_runtime_access()` asks the platform on every call and never reuses
+the access this process keeps, and only `request` records answers in
+`release_runtime_cache`. Such a library asked the platform before every call,
+or kept the token and let a release that went idle start inside its own
+timeout, and `runtime_status()` never showed its calls. Since 9.0.44 it could
+make each call a span with `dependency_call` (ADR 0042), but nothing more.
+
+Decision, from 9.0.45:
+
+- **`ResourceRelease.call(method, path, *, timeout, ready_timeout=None)`**
+  returns a `ReleaseCall`, used with `with` or `async with`, that prepares one
+  request the library's client sends. Entering does what `request` does before
+  it sends: the kept access while the release is warm and its token fresh,
+  otherwise the platform is asked and the call waits under the readiness limit
+  of section 2, and the caller's remaining time is checked
+  (`ReleaseDeadlineTooShortError`). It then exposes `url`, `timeout` (cut to
+  the caller's remaining time), `headers` (`Authorization`, the deadline
+  header of section 6, and the span's `traceparent` and `baggage`) and
+  `reused_access`.
+- **Leaving does what `request` does after it sends.** The library passes its
+  response to `record()`. An answer below 500 is recorded as a sign that the
+  release serves. A `401` to the kept access, an exception in the block or a
+  block that recorded nothing invalidates the kept access, so the next call
+  asks the platform. The `dependency.call.*` line is written.
+- **Two things stay with the library.** It makes the send, so it resends after
+  a refused kept token (`reused_access` says when that applies), and a timeout
+  is its own client's exception: the call does not ask the platform whether a
+  start held it, as `request` does. The next call asks, and `runtime_status()`
+  shows the platform's answer.
+- **`request` and `call` share one access path**, `_access_for_call`, so they
+  reuse each other's warm access and wait for a cold release together.
+- **Not done:** making `_request_deadline` public, a `release=` argument on
+  `dependency_call` (it would tie instrumentation to the release cache), and a
+  pooled or streaming `request`.
+
+Tests: `tests/client/test_release_calls.py` covers the deadline and its header
+inside a caller's deadline, a spent deadline, warm reuse and the idle window,
+a refused kept token, an exception or no answer, a server error, the record of
+a process start, `runtime_status()` and a later `request` seeing a library's
+answers, `async with`, and a library's own `requests.Session` reusing one
+connection to a local server.
+

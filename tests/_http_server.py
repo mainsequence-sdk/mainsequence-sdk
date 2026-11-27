@@ -123,3 +123,39 @@ def never_answer():
         stop.wait()
 
     return route
+
+
+@contextmanager
+def serve_keeping_connections():
+    """Answer every GET with ``{}`` over HTTP/1.1, keeping connections open.
+
+    Yields the base URL, without a trailing slash, and for each request the
+    client port it came from and its lower-cased headers: two requests from one
+    port came over one connection.
+    """
+    seen = []
+
+    class Handler(BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
+        def do_GET(self):
+            seen.append((self.client_address[1], {k.lower(): v for k, v in self.headers.items()}))
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", "2")
+            self.end_headers()
+            self.wfile.write(b"{}")
+
+        def log_message(self, *args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    server.daemon_threads = True
+    thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01})
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_port}", seen
+    finally:
+        server.shutdown()
+        thread.join()
+        server.server_close()

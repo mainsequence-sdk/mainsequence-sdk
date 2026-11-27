@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Literal
 from uuid import UUID
 
 import yaml
-from cachetools import TTLCache, cachedmethod
+from cachetools import TTLCache
 from pydantic import ConfigDict, Field, SecretStr
 
 from .base import (
@@ -1028,6 +1028,29 @@ def _norm_kwargs(kwargs: dict[str, Any]) -> tuple[tuple[str, Any], ...]:
     return tuple(sorted(items))
 
 
+def _cached_call(cache: TTLCache, lock: RLock, kwargs: dict[str, Any], load):
+    """``load()``'s answer for ``kwargs``, taken from ``cache`` while it holds one.
+
+    This is what ``cachetools.cachedmethod`` did for the class methods below.
+    cachetools 8 refuses that decorator under ``@classmethod`` (7 deprecates it),
+    so the lookup is written out: the lock guards only the cache, ``load`` runs
+    outside it, and an answer too large for the cache is returned without being
+    kept.
+    """
+    key = _norm_kwargs(kwargs)
+    with lock:
+        try:
+            return cache[key]
+        except KeyError:
+            pass
+    value = load()
+    try:
+        with lock:
+            return cache.setdefault(key, value)
+    except ValueError:
+        return value
+
+
 class Secret(
     CurrentCodeRepositoryEnvironmentResourceMixin,
     AccessManagedObjectMixin,
@@ -1172,24 +1195,24 @@ class Constant(
     model_config = dict(from_attributes=True)  # allows .model_validate(from_orm_obj)
 
     @classmethod
-    @cachedmethod(
-        lambda cls: cls._filter_cache,  # <- resolves to the real TTLCache
-        lock=lambda cls: cls._cache_lock,
-        key=lambda cls, **kw: _norm_kwargs(kw),
-    )
     def filter(cls, **kwargs):
         # Delegate to your real filter (API/DB) only on cache miss
-        return super().filter(**kwargs)
+        return _cached_call(
+            cls._filter_cache,
+            cls._cache_lock,
+            kwargs,
+            lambda: super(Constant, cls).filter(**kwargs),
+        )
 
     @classmethod
-    @cachedmethod(
-        lambda cls: cls._get_cache,
-        lock=lambda cls: cls._cache_lock,
-        key=lambda cls, **kw: _norm_kwargs(kw),
-    )
     def get(cls, **kwargs):
         # Delegate to the API only on a cache miss.
-        return super().get(**kwargs)
+        return _cached_call(
+            cls._get_cache,
+            cls._cache_lock,
+            kwargs,
+            lambda: super(Constant, cls).get(**kwargs),
+        )
 
     @classmethod
     def get_value(cls, name: str):
