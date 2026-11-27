@@ -56,7 +56,7 @@ def _refused(retry_after_ms=None, phase="serving", code="runtime_unavailable", m
 
 
 def _evidence_pending(retry_after_ms=1):
-    """The platform's answer while it records the runtime's evidence (tdag-django#1309)."""
+    """The platform's answer while it is still recording the runtime's evidence."""
     return _refused(
         retry_after_ms=retry_after_ms,
         phase="redeploying",

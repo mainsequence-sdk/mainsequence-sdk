@@ -449,12 +449,11 @@ platform ask ended it. A client with its own readiness loop could not move to
 `ResourceRelease.call`: it waited through a rollout and retried a failed ask,
 and the SDK did neither.
 
-The platform settled the contract. Since
-Main-Sequence-Server-Side/tdag-django#1230 a release that serves stays `ready`
-through a rollout, whatever `runtime_presence.phase` says. Under
-Main-Sequence-Server-Side/tdag-django#1309 the one temporary `unavailable` left,
-evidence the runtime monitor is still recording, carries `retry_after_ms` and
-the notice code `runtime_evidence_pending`. Every other refusal carries no hint.
+The platform settled the contract. A release that serves stays `ready`
+through a rollout, whatever `runtime_presence.phase` says. The one temporary
+`unavailable` left, evidence the platform is still recording, is to carry
+`retry_after_ms` and the notice code `runtime_evidence_pending`; that is agreed
+but not yet deployed. Every other refusal carries no hint.
 The rule for a client: `can_request` sends; otherwise a `retry_after_ms` asks
 again after that long, within the client's own budget; otherwise it stops and
 shows the notice. Neither the phase nor the notice code decides.

@@ -28,9 +28,9 @@ amended; #269).** The readiness wait of `ResourceRelease.request`, `ResourceRele
 `unavailable` answer the platform meant as temporary ended the call at once. It now asks again
 whenever the answer carries `retry_after_ms`, whatever its state or phase, within
 `ready_timeout` and the caller's deadline, and stops at once on an answer without one. This is
-the platform's rule (tdag-django#1309): a release that is checking its runtime answers
-`unavailable` with a retry hint, and a serving release stays `ready` through a rollout
-(tdag-django#1230). AgentSession message send follows the same rule.
+the platform's rule: a release whose runtime the platform is still checking answers
+`unavailable` with a retry hint, and a serving release stays `ready` through a rollout.
+AgentSession message send follows the same rule.
 
 - A platform ask that fails with a `TransportError` (a timeout, an unreachable platform) is
   made again after 2 seconds, up to three times in a row, within the same limits.
