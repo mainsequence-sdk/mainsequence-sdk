@@ -93,6 +93,24 @@ The target sees the call as coming from your application's own identity.
   target deduplicates it.
 - **Do not catch and retry timeouts yourself.** The errors below say what
   happened; a blind retry can run the target's work twice.
+- **Let `ReleaseCallError` through.** Code that calls a release, with
+  `request` or `release.call`, lets the errors below reach its caller
+  unchanged. Never catch one to raise an error of your own, and never fold
+  them into a library's error class: the error says whether anything was
+  sent, carries the release's UID and phase, and the timeout ones are
+  `TimeoutError`, and a replacement loses all of that. Your own errors are
+  for your own failures and for the target's answers, such as mapping its
+  `404` or `409`. `ReleaseCallError` is an `ApiError`, so put
+  `except ReleaseCallError: raise` before any `except ApiError`. To say what
+  the call was for, add a note and re-raise the same exception:
+
+  ```python
+  try:
+      response = prices.request("GET", "/v1/prices", timeout=30)
+  except ReleaseCallError as error:
+      error.add_note("reading prices for the risk report")
+      raise
+  ```
 
 ## Errors
 
@@ -169,6 +187,11 @@ Rules for the block:
 - **One send, one block.** Leave the block after the body is read; with
   `httpx`, read a streamed response inside it. A request sent again is a new
   block. `async with release.call(...)` works in asynchronous code.
+- **Let the SDK's errors through, and keep "sent" apart from "not sent".**
+  Entering the block raises only the three errors that mean nothing was
+  sent; let them reach your caller unchanged. An exception your client raises
+  inside the block means the request may have been sent: never map it to an
+  error that says nothing was sent, and do not repeat a write after it.
 - **Resend after a refused token yourself.** When the answer is `401` and
   `call.reused_access` is `True`, a request that is safe to repeat may be sent
   once more, in a new block, which asks the platform for a new token.
@@ -280,6 +303,9 @@ pass a few minutes, or when `ReleaseDeadlineTooShortError` or
   library's single send method, and that method sends inside
   `release.call(...)`.
 - No module stores a release's `rpc_url` or token.
+- No module catches a `ReleaseCallError` to raise a different exception, and
+  every `except ApiError` around a release call is preceded by
+  `except ReleaseCallError: raise`.
 - For a client library: a test sends calls to a local server inside a known
   span and a caller deadline, and asserts the received `traceparent` has that
   span's trace id and a new span id, the received

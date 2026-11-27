@@ -177,6 +177,15 @@ apart. A start that finished before that question is recognised only when the
 platform returns `scaling.serving_since`; without it, such a call reads as
 `ReleaseRequestTimeoutError`.
 
+**Let these errors reach your caller unchanged.** Code that calls a release,
+a client library especially, never catches one to raise an error of its own:
+its type says whether the request was sent, and its fields name the release
+and the phase. Keep your own errors for your own failures and for the
+target's answers, such as its `404`. `ReleaseCallError` is an `ApiError`, so
+an `except ApiError` that maps other SDK failures needs
+`except ReleaseCallError: raise` before it. To add context, call
+`error.add_note("...")` and re-raise the same exception.
+
 `wait_for_runtime_access()` runs the same wait without sending a request, for
 code that only needs the platform's answer. Concurrent first calls to a cold
 release share one wait.

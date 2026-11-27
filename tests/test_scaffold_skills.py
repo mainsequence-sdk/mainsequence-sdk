@@ -261,3 +261,14 @@ def test_packaged_scaffold_keeps_retained_sdk_skills():
         "sdk_code_repository_execution/SKILL.md",
     }
     assert not (SCAFFOLD_ROOT / "AGENTS.md").exists()
+
+
+def test_the_release_calls_skill_tells_code_to_let_release_errors_through():
+    content = (
+        SCAFFOLD_ROOT / "skills" / "application_surfaces" / "release_calls" / "SKILL.md"
+    ).read_text(encoding="utf-8")
+
+    assert "**Let `ReleaseCallError` through.**" in content
+    assert "except ReleaseCallError: raise" in content
+    assert "error.add_note(" in content
+    assert "No module catches a `ReleaseCallError` to raise a different exception" in content

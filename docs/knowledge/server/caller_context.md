@@ -247,9 +247,12 @@ with release.call("GET", "/v1/prices", timeout=30) as call:
 
 Entering raises what `request` raises before it sends, with nothing sent:
 `ReleaseReadinessTimeoutError`, `ReleaseUnavailableError` or
-`ReleaseDeadlineTooShortError`. What the send raises is your client's own
-exception. `async with release.call(...)` works the same way; the wait for a
-start runs on a worker thread.
+`ReleaseDeadlineTooShortError`. Let them reach the library's caller
+unchanged; see [Failures](../infrastructure/resource_releases.md#failures).
+What the send raises is your client's own exception, and the request may have
+been sent: never turn it into an error that says nothing was. `async with
+release.call(...)` works the same way; the wait for a start runs on a worker
+thread.
 
 Two things `request` does stay with the library, because it makes the send:
 

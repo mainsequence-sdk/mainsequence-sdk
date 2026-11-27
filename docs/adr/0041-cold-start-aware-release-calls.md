@@ -229,7 +229,10 @@ building a project:
   `runtime_status()`;
 - declare dependencies once and prewarm them in the lifespan;
 - mark a call `idempotent=True` only when replaying it is safe;
-- move a call that exceeds its deadline to submit-and-poll.
+- move a call that exceeds its deadline to submit-and-poll;
+- let `ReleaseCallError` reach the caller unchanged, so the caller still learns
+  whether anything was sent; a library's own errors are for its own failures
+  and the target's answers (added 2026-11-27, issue #267).
 
 The API surfaces skill and the orchestration and releases skill link to it.
 

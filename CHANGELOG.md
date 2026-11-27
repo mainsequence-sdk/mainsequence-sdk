@@ -22,6 +22,18 @@ calls use.
   deadline too, not only `ResourceRelease.request`. The `api_surfaces` and `release_calls`
   agent skills show how a handler bounds its own work.
 
+**The release-call guidance tells code to let `ReleaseCallError` through (#267).** The
+`release_calls` agent skill, the Resource releases guide and the Caller context guide
+described the five release-call errors but never said what code calling a release should do
+with them, so a client library could catch them and raise its own error instead. The caller
+then lost whether the request was sent, the release's UID and phase, and `TimeoutError`. They
+now say to let these errors reach the caller unchanged, to keep a library's own errors for its
+own failures and the target's answers, to put `except ReleaseCallError: raise` before any
+`except ApiError` (a `ReleaseCallError` is an `ApiError`), and to add context with
+`error.add_note()`. With `ResourceRelease.call`, an exception from the library's own client
+inside the block means the request may have been sent and must not become an error that says
+nothing was. The skill's checks include it, and a test keeps the rule in the skill.
+
 ## [9.0.45] - 2026-11-27
 
 **`Constant.filter()` and `Constant.get()` work with cachetools 8.** In 9.0.44 and earlier they raised
