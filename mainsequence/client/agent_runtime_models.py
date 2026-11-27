@@ -1397,7 +1397,7 @@ class AgentSession(
                 "agent",
                 "POST",
                 STANDARD_A2A_MESSAGE_SEND_PATH,
-                target_agent_session_uid=agent_session_uid,
+                name=agent_session_uid,
             ),
         )
 
@@ -1582,9 +1582,7 @@ class AgentSession(
                 },
                 timeout=_a2a_call_timeout(timeout),
                 # The runtime's address is the one the platform gave (ADR 0042).
-                dependency=_DependencyCall(
-                    "agent", method, path, target_agent_session_uid=session_uid
-                ),
+                dependency=_DependencyCall("agent", method, path, name=session_uid),
             )
 
         # One total budget for the whole call, as for send_a2a_message.

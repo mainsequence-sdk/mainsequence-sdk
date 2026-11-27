@@ -306,11 +306,12 @@ def test_a_platform_call_event_names_its_route_never_its_url(platform, events):
         "span_id": span_id,
         # Made outside any context: the root of a new trace.
         "parent_span_id": None,
-        "dependency_kind": "api",
+        "dependency_type": "api",
+        "dependency_name": "mainsequence_backend",
         "http_method": "GET",
         "route": "/api/v1/job-runs/{uid}/logs/",
         "status_code": 404,
-        "outcome": "error",
+        "outcome": "rejected",
     }
 
 
@@ -326,7 +327,7 @@ def test_a_platform_call_without_an_answer_is_a_failed_event(platform, events):
     [(level, event, fields)] = events.lines
     assert (level, event) == ("warning", "dependency.call.failed")
     assert fields["status_code"] is None
-    assert fields["outcome"] == "error"
+    assert fields["outcome"] == "failed"
     assert fields["error_type"] == "ConnectionError"
 
 
@@ -336,17 +337,16 @@ def test_a_release_call_names_its_target_and_its_path_on_the_release(events):
             "POST",
             base + "v1/orders",
             timeout=5,
-            dependency=_DependencyCall(
-                "release", "POST", "/v1/orders?account=1", target_release_uid=UID
-            ),
+            dependency=_DependencyCall("release", "POST", "/v1/orders?account=1", name=UID),
         )
 
     [(_, event, fields)] = events.lines
     assert event == "dependency.call.completed"
-    assert fields["dependency_kind"] == "release"
-    assert fields["target_release_uid"] == UID
+    assert fields["dependency_type"] == "release"
+    assert fields["dependency_name"] == UID
     assert fields["route"] == "/v1/orders"
-    assert fields["outcome"] == "ok"
+    assert fields["outcome"] == "success"
+    assert not {"dependency_kind", "target_release_uid", "target_agent_session_uid"} & set(fields)
 
 
 def test_a_call_that_raises_is_a_failed_event(events):
@@ -489,3 +489,41 @@ def test_collection_log_search_passes_an_exact_trace_id(monkeypatch, model):
     [(url, params)] = sent
     assert url.endswith("/logs/")
     assert params["trace_id"] == TRACE_ID
+
+
+@pytest.mark.parametrize(
+    ("status", "outcome"),
+    [(200, "success"), (302, "success"), (400, "rejected"), (499, "rejected"), (500, "failed")],
+)
+def test_the_outcome_is_the_platform_s(events, status, outcome):
+    with serve({("GET", "/x"): _recording([], status=status)}) as (base, _):
+        request_within_budget(
+            "GET", base + "x", timeout=5, dependency=_DependencyCall("inference", "GET", "/x")
+        )
+
+    [(_, event, fields)] = events.lines
+    assert (event, fields["outcome"], fields["dependency_name"]) == (
+        "dependency.call.completed",
+        outcome,
+        "mainsequence_backend",
+    )
+
+
+def test_log_rows_type_the_dependency_fields():
+    from mainsequence.client.observability import EnvironmentLogSearchRow, OwnerLogRow
+
+    fields = {
+        "dependency_type": "release",
+        "dependency_name": UID,
+        "dependency_operation": "GET /v1/prices",
+        "dependency_attempt": 1,
+        "dependency_duration_ms": 12.5,
+        "dependency_outcome": "success",
+        "dependency_status_code": 200,
+        "dependency_error_type": None,
+        "circuit_breaker_state": "closed",
+    }
+    row = OwnerLogRow.model_validate(fields)
+    assert {name: getattr(row, name) for name in fields} == fields
+    assert set(fields) <= set(OwnerLogRow.model_fields)
+    assert set(fields) <= set(EnvironmentLogSearchRow.model_fields)

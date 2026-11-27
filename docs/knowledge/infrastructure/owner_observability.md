@@ -121,7 +121,20 @@ spans = [row for row in page.rows if row.span_id and row.duration_ms is not None
 ```
 
 Each row has `trace_id`, `span_id`, `parent_span_id`, `duration_ms` and
-`occurred_at`. Build the tree from `parent_span_id`. A span whose parent is not
+`occurred_at`. Build the tree from `parent_span_id`. A row for a call one hop
+made to another also says what was called, typed on `OwnerLogRow` and
+`EnvironmentLogSearchRow`:
+
+| Field | Value |
+| --- | --- |
+| `dependency_type` | The kind of target, such as `api`, `release`, `agent` or `inference`. |
+| `dependency_name` | The target: `mainsequence_backend`, or a release's or Agent session's uid. |
+| `dependency_operation` | The operation called on it. |
+| `dependency_attempt` | Which attempt the row is. |
+| `dependency_duration_ms`, `dependency_status_code`, `dependency_outcome`, `dependency_error_type` | The call's duration, status, outcome (`success`, `rejected` or `failed`) and error type. |
+| `circuit_breaker_state` | The state of the caller's circuit breaker for that target, when it has one. |
+
+Each field is `None` on a row that does not set it. A span whose parent is not
 among the rows, because its owner is one the caller cannot see, or because it
 is a Job run's, hangs under its owner. The filter needs a platform that offers
 it; an older one ignores or refuses the parameter.

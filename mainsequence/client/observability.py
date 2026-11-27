@@ -95,6 +95,16 @@ class OwnerLogRow(BasePydanticModel):
     error_type: str | None = None
     retryable: bool | None = None
     agent_attempt: int | None = None
+    # A call one hop made to another, on a dependency-call row (ADR 0042).
+    dependency_type: str | None = None
+    dependency_name: str | None = None
+    dependency_operation: str | None = None
+    dependency_attempt: int | None = None
+    dependency_duration_ms: int | float | None = None
+    dependency_outcome: str | None = None
+    dependency_status_code: int | None = None
+    dependency_error_type: str | None = None
+    circuit_breaker_state: str | None = None
     data: Any = None
 
 

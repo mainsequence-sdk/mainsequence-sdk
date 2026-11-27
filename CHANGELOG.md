@@ -4,6 +4,32 @@ All notable changes to this project should be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows versioned releases.
 
+## [9.0.43] - 2026-11-27
+
+**The `dependency.call.*` events use the platform's field names (ADR 0042, amended).** The
+events 9.0.42 introduced now write the platform's dependency-call fields, because one of the
+platform's log stores keeps only fields it knows and dropped the 9.0.42 names, so the event did
+not say what it called:
+
+- `dependency_kind` is renamed `dependency_type` (same values: `api`, `release`, `agent`,
+  `inference`).
+- `target_release_uid` and `target_agent_session_uid` are replaced by `dependency_name`:
+  `mainsequence_backend` for API and inference calls, the release's uid for a release call,
+  the Agent session's uid for an A2A call.
+- `outcome` is `success` below status 400, `rejected` from 400 to 499 and `failed` from 500 or
+  without an answer, instead of `ok` and `error`.
+
+The three old field names are no longer written, with no compatibility period: 9.0.42 was out
+for hours only. Code or queries that read them must read the new names. `trace_id`, `span_id`,
+`parent_span_id`, `http_method`, `route`, `status_code`, `duration_ms` and `error_type` are
+unchanged.
+
+**Log rows type the dependency-call fields.** `OwnerLogRow`, and so `EnvironmentLogSearchRow`,
+declare `dependency_type`, `dependency_name`, `dependency_operation`, `dependency_attempt`,
+`dependency_duration_ms`, `dependency_outcome`, `dependency_status_code`,
+`dependency_error_type` and `circuit_breaker_state`. Rows without them read `None`, as before.
+The Caller context and Owner observability guides describe the fields.
+
 ## [9.0.42] - 2026-11-26
 
 **The SDK's hops are spans in a platform trace (ADR 0042).** A trace is the set of runtime

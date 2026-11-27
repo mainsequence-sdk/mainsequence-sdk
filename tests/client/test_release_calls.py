@@ -105,8 +105,8 @@ def test_request_waits_for_a_starting_release_before_its_timeout_starts(monkeypa
     assert sent["headers"][DEADLINE_HEADER] == "60000"
     # The release's address came from the platform: the call is a release span (ADR 0042).
     assert sent["dependency"].fields == {
-        "dependency_kind": "release",
-        "target_release_uid": RELEASE_UID,
+        "dependency_type": "release",
+        "dependency_name": RELEASE_UID,
         "http_method": "POST",
         "route": "/v1/prices",
     }
