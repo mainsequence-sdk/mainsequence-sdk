@@ -33,9 +33,9 @@ from mainsequence.client import User, inference
 from mainsequence.client import utils as client_utils
 from mainsequence.instrumentation import tracer_instrumentator
 from mainsequence.instrumentation.utils import (
+    DependencyCall,
     _add_log_baggage,
     _attach_environment_context,
-    _DependencyCall,
     _request_context,
     _with_baggage_header,
 )
@@ -482,7 +482,7 @@ def test_calls_to_applications_carry_the_context():
                 base + "a2a/message:send",
                 headers={"Authorization": "Bearer runtime"},
                 timeout=5,
-                dependency=_DependencyCall("agent", "POST", "/a2a/message:send"),
+                dependency=DependencyCall("agent", "POST", "/a2a/message:send"),
             )
 
         _in_own_context(run)

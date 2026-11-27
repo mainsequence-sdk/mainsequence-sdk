@@ -104,6 +104,23 @@ status. `path` is a path on the release; the SDK sets `Authorization`.
 | `ready_timeout` | How long a start may take. Default: twice the start time the platform expects, at least 30 seconds; or `MAINSEQUENCE_RELEASE_READY_TIMEOUT_SECONDS` (300) when the platform states none. |
 | `idempotent` | `True` allows one more send, only after a timeout that happened while the release was starting. Default `False`: the request is sent once. |
 
+Each call is a span in the caller's trace: it carries `traceparent` and the
+caller's `baggage`, and writes one `dependency.call.*` log line; see
+[Traces](../server/caller_context.md#traces).
+
+### With your own HTTP client
+
+`request` sends each call on a connection of its own and reads the whole
+response. A client library that must keep its own `requests` or `httpx` client,
+for one connection pool, for streaming or for its own test seams, finds the
+address and token with `resolve_runtime_access()` and wraps each send in
+`mainsequence.instrumentation.dependency_call`, so its calls stay in the
+caller's trace and write the same line; see
+[Calls a library sends itself](../server/caller_context.md#calls-a-library-sends-itself).
+Such a library then does itself what `request` does: it waits while the
+release starts, with `wait_for_runtime_access()`, and asks for a new token
+before the one in `access["expires_at"]` expires.
+
 ### What the process remembers
 
 The SDK keeps one in-memory cache per process, `release_runtime_cache`, with

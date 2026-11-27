@@ -4,6 +4,30 @@ All notable changes to this project should be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows versioned releases.
 
+## [9.0.44] - 2026-11-27
+
+**A library's own calls can be spans in the caller's trace (ADR 0042, amended; #263).** A
+client library that sends requests to a release with its own `requests` or `httpx` client,
+after finding the release with `ResourceRelease.resolve_runtime_access()`, now makes each call
+a span with `mainsequence.instrumentation.dependency_call`. The call carries a `traceparent` that names its own span, a child of the current
+span, and the current `baggage`, and writes the same `dependency.call.completed` or
+`dependency.call.failed` line as the SDK's own calls. The library keeps its own client,
+connection pool and streaming. Before, such calls carried no trace context: the release's
+request lines started a new trace, the release received no caller context, and the caller's
+logs had no line for the call.
+
+- `dependency_call` checks its arguments: `dependency_type` is one of
+  `mainsequence.instrumentation.DEPENDENCY_TYPES` (`api`, `release`, `agent`, `inference`),
+  and `release` and `agent` need `name`, the target's uid. A wrong value raises
+  `ValueError`.
+- The span class the SDK uses for its own calls is public as
+  `mainsequence.instrumentation.DependencyCall`; `instrumentation.utils._DependencyCall` is
+  renamed to it.
+- The Caller context guide has a new section, "Calls a library sends itself", with the rules
+  and a client-library pattern for `requests` and `httpx`; the Resource releases guide and
+  the `release_calls` agent skill say when a library keeps its own client and how it then
+  makes its calls spans.
+
 ## [9.0.43] - 2026-11-27
 
 **The `dependency.call.*` events use the platform's field names (ADR 0042, amended).** The

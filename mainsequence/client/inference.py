@@ -9,7 +9,7 @@ from uuid import UUID
 import requests
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from ..instrumentation.utils import _DependencyCall
+from ..instrumentation.utils import DependencyCall
 from . import utils
 from .exceptions import raise_for_response
 
@@ -74,7 +74,7 @@ class InferenceClient:
         url = f"{utils.API_ENDPOINT.rstrip('/')}/{path}"
         # The call is a span: it carries the caller context with its own span id
         # and is written as one event (ADR 0040, ADR 0042).
-        call = _DependencyCall("inference", method, url)
+        call = DependencyCall("inference", method, url)
         # Inference opts out of safe-read retries as well: an uncertain outcome
         # must preserve the caller's explicit idempotency key.
         with utils.build_session(loaders=utils.loaders, retries=0) as session, call:

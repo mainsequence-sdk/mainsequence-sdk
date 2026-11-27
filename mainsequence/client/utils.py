@@ -22,7 +22,7 @@ import requests
 from requests.structures import CaseInsensitiveDict
 
 from mainsequence.defaults import resolve_backend_endpoint
-from mainsequence.instrumentation.utils import _DependencyCall
+from mainsequence.instrumentation.utils import DependencyCall
 from mainsequence.logconf import logger
 from mainsequence.runtime_credential_exchange import (
     RUNTIME_CREDENTIAL_ID_ENV,
@@ -905,7 +905,7 @@ def make_request(
     # own span id, per request since the session is shared, and is written as
     # one event. A header the caller sets wins (ADR 0040, ADR 0042). A call to
     # any other origin carries neither header.
-    call = _DependencyCall("api", r_type, url) if is_platform_url(url) else None
+    call = DependencyCall("api", r_type, url) if is_platform_url(url) else None
     if call is not None:
         request_kwargs["headers"] = {**call.headers(), **(request_kwargs.get("headers") or {})}
     req = getattr(s, r_type.lower())

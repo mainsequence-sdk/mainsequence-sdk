@@ -26,7 +26,7 @@ from mainsequence._request_deadline import (
     remaining_request_seconds,
 )
 from mainsequence._transport import request_budget, request_within_budget
-from mainsequence.instrumentation.utils import _DependencyCall
+from mainsequence.instrumentation.utils import DependencyCall
 from mainsequence.logconf import logger
 
 from .exceptions import ApiError
@@ -580,7 +580,7 @@ def request_release(
                     },
                     timeout=timeout,
                     # The release's address is the one the platform gave (ADR 0042).
-                    dependency=_DependencyCall("release", method, path, name=uid),
+                    dependency=DependencyCall("release", method, path, name=uid),
                     **kwargs,
                 )
         except requests.Timeout as error:

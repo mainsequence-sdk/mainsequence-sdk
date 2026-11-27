@@ -1,13 +1,16 @@
 """The SDK's hops in a platform trace (ADR 0042).
 
 A release request's span is the one the platform's launcher names; each call
-the SDK makes to the platform is a child span, written as one log event; log
-lines carry the ids at the top level; the carrier goes only to the platform.
+the SDK makes to the platform is a child span, written as one log event, and so
+is a call a library sends itself through ``dependency_call``; log lines carry
+the ids at the top level; the carrier goes only to the platform.
 """
 
 import contextvars
 import json
+import threading
 from contextlib import contextmanager
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from uuid import uuid4
 
 import pytest
@@ -22,9 +25,9 @@ from mainsequence import logconf
 from mainsequence._transport import request_within_budget
 from mainsequence.client import utils as client_utils
 from mainsequence.client.observability import OwnerLogMixin
-from mainsequence.instrumentation import OTelJSONRenderer
+from mainsequence.instrumentation import OTelJSONRenderer, dependency_call
 from mainsequence.instrumentation.utils import (
-    _DependencyCall,
+    DependencyCall,
     _request_context,
     add_otel_trace_context,
 )
@@ -337,7 +340,7 @@ def test_a_release_call_names_its_target_and_its_path_on_the_release(events):
             "POST",
             base + "v1/orders",
             timeout=5,
-            dependency=_DependencyCall("release", "POST", "/v1/orders?account=1", name=UID),
+            dependency=DependencyCall("release", "POST", "/v1/orders?account=1", name=UID),
         )
 
     [(_, event, fields)] = events.lines
@@ -354,7 +357,7 @@ def test_a_call_that_raises_is_a_failed_event(events):
         url = base + "a2a/message:send"
     with pytest.raises(requests.ConnectionError):
         request_within_budget(
-            "POST", url, timeout=1, dependency=_DependencyCall("agent", "POST", "/a2a/x")
+            "POST", url, timeout=1, dependency=DependencyCall("agent", "POST", "/a2a/x")
         )
 
     [(level, event, fields)] = events.lines
@@ -363,6 +366,170 @@ def test_a_call_that_raises_is_a_failed_event(events):
         "dependency.call.failed",
         "ConnectionError",
     )
+
+
+# 3, for libraries: a call a library sends with its own HTTP client (issue #263)
+
+
+@contextmanager
+def _release_keeping_connections():
+    """A release's application that keeps connections open, as HTTP/1.1 servers do.
+
+    Yields its address and, for each request, the client port it came from and
+    its headers: two requests from one port came over one connection.
+    """
+    seen = []
+
+    class Handler(BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
+        def do_GET(self):
+            seen.append((self.client_address[1], {k.lower(): v for k, v in self.headers.items()}))
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", "2")
+            self.end_headers()
+            self.wfile.write(b"{}")
+
+        def log_message(self, *args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    server.daemon_threads = True
+    thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01})
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_port}", seen
+    finally:
+        server.shutdown()
+        thread.join()
+        server.server_close()
+
+
+def _in_a_request(function):
+    """Run ``function`` as a release's handler runs: in the request's own span, with its baggage."""
+
+    def run():
+        otel_context.attach(
+            _request_context(
+                {"traceparent": TRACEPARENT, "baggage": "mainsequence.advisor.person=p-1"},
+                with_baggage=True,
+                state={"trace_id": TRACE_ID, "span_id": LAUNCHER_SPAN},
+            )
+        )
+        return function()
+
+    return _in_own_context(run)
+
+
+def test_a_library_s_own_call_is_a_child_span_written_as_one_event(events):
+    path = f"/v1/prices/{UID}?symbol=ABC"
+
+    with _release_keeping_connections() as (rpc_url, seen):
+
+        def call():
+            with requests.Session() as session:
+                with dependency_call("release", "GET", path, name=UID) as span:
+                    response = session.get(
+                        rpc_url + path, headers={**span.headers(), "Authorization": "Bearer t"}
+                    )
+                    span.status_code = response.status_code
+
+        _in_a_request(call)
+
+    [(_, headers)] = seen
+    _, trace_id, span_id, flags = headers["traceparent"].split("-")
+    # A child of the request's span, in its trace.
+    assert (trace_id, flags) == (TRACE_ID, "01")
+    assert span_id not in {LAUNCHER_SPAN, CALLER_SPAN}
+    assert headers["baggage"] == "mainsequence.advisor.person=p-1"
+    assert headers["authorization"] == "Bearer t"
+    [(level, event, fields)] = events.lines
+    assert (level, event) == ("info", "dependency.call.completed")
+    assert fields.pop("duration_ms") >= 0
+    assert fields == {
+        "trace_id": TRACE_ID,
+        "span_id": span_id,
+        "parent_span_id": LAUNCHER_SPAN,
+        "dependency_type": "release",
+        "dependency_name": UID,
+        "http_method": "GET",
+        "route": "/v1/prices/{uid}",
+        "status_code": 200,
+        "outcome": "success",
+    }
+
+
+def test_a_library_s_calls_keep_its_own_connection_pool(events):
+    with _release_keeping_connections() as (rpc_url, seen):
+
+        def calls():
+            with requests.Session() as session:
+                for _ in range(2):
+                    with dependency_call("release", "GET", "/v1/prices", name=UID) as span:
+                        response = session.get(rpc_url + "/v1/prices", headers=span.headers())
+                        span.status_code = response.status_code
+
+        _in_a_request(calls)
+
+    assert len(seen) == 2
+    # Both requests came over one connection.
+    assert seen[0][0] == seen[1][0]
+    # One span for each call, each written once.
+    sent = [headers["traceparent"].split("-")[2] for _, headers in seen]
+    assert len(set(sent)) == 2
+    assert [fields["span_id"] for _, _, fields in events.lines] == sent
+    assert {fields["parent_span_id"] for _, _, fields in events.lines} == {LAUNCHER_SPAN}
+
+
+def test_a_library_call_that_raises_or_gets_no_answer_is_a_failed_event(events):
+    with serve({}) as (base, _):
+        url = base + "v1/prices"
+    # The server is gone: the call gets no answer.
+    with pytest.raises(requests.ConnectionError):
+        with dependency_call("release", "GET", "/v1/prices", name=UID) as span:
+            requests.get(url, headers=span.headers(), timeout=1)
+    with dependency_call("agent", "POST", "/a2a/message:send", name=UID):
+        pass  # no status was set
+
+    [(level, event, fields), (_, second, unanswered)] = events.lines
+    assert (level, event, fields["error_type"], fields["outcome"]) == (
+        "warning",
+        "dependency.call.failed",
+        "ConnectionError",
+        "failed",
+    )
+    assert (second, unanswered["error_type"], unanswered["status_code"]) == (
+        "dependency.call.failed",
+        "NoResponse",
+        None,
+    )
+
+
+@pytest.mark.parametrize(
+    ("args", "kwargs", "message"),
+    [
+        (("database", "GET", "/x"), {}, "dependency_type"),
+        (("release", "GET", "/x"), {}, "needs name"),
+        (("agent", "POST", "/x"), {"name": ""}, "needs name"),
+        (("api", " ", "/api/v1/x/"), {}, "method"),
+        (("api", "GET", ""), {}, "path"),
+    ],
+)
+def test_dependency_call_refuses_a_call_the_platform_could_not_name(args, kwargs, message):
+    with pytest.raises(ValueError, match=message):
+        dependency_call(*args, **kwargs)
+
+
+def test_the_call_span_is_public_api(events):
+    import mainsequence.instrumentation as instrumentation
+
+    assert {"DEPENDENCY_TYPES", "DependencyCall", "dependency_call"} <= set(instrumentation.__all__)
+    assert instrumentation.DEPENDENCY_TYPES == ("api", "release", "agent", "inference")
+    with instrumentation.dependency_call("api", "get", "/api/v1/users/me/") as call:
+        call.status_code = 200
+    [(_, _, fields)] = events.lines
+    assert (fields["dependency_name"], fields["http_method"]) == ("mainsequence_backend", "GET")
 
 
 # 5. The carrier goes only to the platform
@@ -498,7 +665,7 @@ def test_collection_log_search_passes_an_exact_trace_id(monkeypatch, model):
 def test_the_outcome_is_the_platform_s(events, status, outcome):
     with serve({("GET", "/x"): _recording([], status=status)}) as (base, _):
         request_within_budget(
-            "GET", base + "x", timeout=5, dependency=_DependencyCall("inference", "GET", "/x")
+            "GET", base + "x", timeout=5, dependency=DependencyCall("inference", "GET", "/x")
         )
 
     [(_, event, fields)] = events.lines
