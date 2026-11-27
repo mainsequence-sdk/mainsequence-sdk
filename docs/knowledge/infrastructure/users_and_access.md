@@ -130,7 +130,7 @@ you cannot view, for a person, or when the response does not carry it.
 than for `"human"`.
 
 Inside a FastAPI request, an application can read the directory as its caller
-sees it with `reads_as_caller()`: `User.filter(search=...)` then finds people by
+sees it with `as_caller=True`: `User.filter(search=..., as_caller=True)` finds people by
 email or name and workloads by their Job, release or Agent name, and each
 workload row carries `managed_by_caller`. See
 [Reading the directory as the caller](../fastapi/index.md#reading-the-directory-as-the-caller).

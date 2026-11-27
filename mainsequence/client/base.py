@@ -182,7 +182,12 @@ class BaseObjectOrm:
         return {}
 
     @classmethod
-    def _read_request_headers(cls, url: str) -> dict[str, str]:
+    def _pop_read_options(cls, kwargs: dict[str, Any]) -> dict[str, Any]:
+        """Remove the per-call read options this model accepts from ``kwargs``; none by default."""
+        return {}
+
+    @classmethod
+    def _read_request_headers(cls, url: str, **read_options: Any) -> dict[str, str]:
         """Headers a filter or detail read adds to its own request to ``url``."""
         return {}
 
@@ -528,6 +533,7 @@ class BaseObjectOrm:
         Generator variant: yields objects across all pages without accumulating into memory.
         """
         operation = f"{cls.__name__}.filter"
+        read_options = cls._pop_read_options(kwargs)
         cls._reject_sdk_context_overrides(kwargs, operation=operation)
         filter_kwargs, read_query_kwargs = cls._split_filter_and_read_query_kwargs(kwargs)
         normalized_filters = cls._normalize_filter_kwargs(filter_kwargs)
@@ -546,7 +552,7 @@ class BaseObjectOrm:
 
         while next_url:
             req_payload = {"params": params} if params else {}
-            headers = cls._read_request_headers(next_url)
+            headers = cls._read_request_headers(next_url, **read_options)
             r = make_request(
                 s=cls.build_session(),
                 loaders=cls.LOADERS,
@@ -601,6 +607,7 @@ class BaseObjectOrm:
         Raises `DoesNotExist` if 404 or the response is empty.
         Raises Exception if multiple or unexpected data is returned.
         """
+        read_options = cls._pop_read_options(filters)
         if pk is not None:
             operation = f"{cls.__name__}.get"
             cls._reject_sdk_context_overrides(filters, operation=operation)
@@ -618,7 +625,7 @@ class BaseObjectOrm:
             }
 
             payload = {"params": params}  # neede to pass special serializer
-            headers = cls._read_request_headers(detail_url)
+            headers = cls._read_request_headers(detail_url, **read_options)
             if headers:
                 payload["headers"] = headers
             r = make_request(
@@ -636,7 +643,7 @@ class BaseObjectOrm:
             return cls(**data)
 
         # Otherwise, do the filter approach
-        candidates = cls.filter(timeout=timeout, **filters)
+        candidates = cls.filter(timeout=timeout, **read_options, **filters)
         if not candidates:
             raise DoesNotExist(f"No {cls.class_name()} found matching {filters}")
 
@@ -648,6 +655,7 @@ class BaseObjectOrm:
             return cls.get(
                 pk=candidate._public_detail_reference(),
                 timeout=timeout,
+                **read_options,
             )
 
         return candidate

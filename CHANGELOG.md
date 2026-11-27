@@ -4,6 +4,25 @@ All notable changes to this project should be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows versioned releases.
 
+## [9.0.47] - 2026-11-27
+
+**Reading the directory as the request's caller is a per-call option (ADR 0036, amended).**
+`User.filter`, `User.iter_filter`, `User.get`, `User.get_by_uid` and the same reads on `Team`
+take `as_caller=True`: that one read presents the request's caller assertion and answers with
+what the caller may see. `mainsequence.server.fastapi.reads_as_caller()` is removed. Inside its
+block every directory read answered as the caller, including the reads of library code that
+did not know it was inside one. Replace
+
+```python
+with reads_as_caller():
+    people = User.filter(search=q)
+```
+
+with `people = User.filter(search=q, as_caller=True)`. The checks are unchanged and run before
+the read is sent: an authenticated, signed HTTP request that is not requester-bound and has not
+ended, and only the configured platform endpoint. A later page of `iter_filter` reached after
+the request ended raises `RequestIdentityError`.
+
 ## [9.0.46] - 2026-11-27
 
 **An application can read and narrow the time its caller will still wait (ADR 0041, amended;

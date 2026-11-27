@@ -501,7 +501,8 @@ expired delegation is rejected, never switched to another identity.
   enabled to act for its requester. Delegation cannot restart the time limit,
   select another person or increase their permissions.
 - A receiving application cannot forward its inbound assertion to establish
-  another requester binding. `reads_as_caller()` still refuses these requests.
+  another requester binding. A directory read with `as_caller=True` still
+  refuses these requests.
 
 The platform decides which operations support requester-bound access;
 installing this SDK does not enable one. Treat a refused operation as refused,

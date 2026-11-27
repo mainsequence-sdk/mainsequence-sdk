@@ -17,8 +17,8 @@ class RequestIdentityError(RuntimeError):
 class _RequestScope:
     user: Any = None
     active: bool = True
-    # The verified assertion of a hosted HTTP request, kept only so that
-    # reads_as_caller() can present it (ADR-0036, amended for #198).
+    # The verified assertion of a hosted HTTP request, kept only so that a
+    # directory read with as_caller=True can present it (ADR-0036, amended for #198).
     caller_assertion: str | None = field(default=None, repr=False)
     # The person a requester-bound request works for, verified from its
     # assertion; None on any other request. The user stays the caller, the
@@ -37,10 +37,6 @@ class _RequestScope:
 
 _current_scope: ContextVar[_RequestScope | None] = ContextVar(
     "mainsequence_request_identity", default=None
-)
-# The request scope whose caller the directory reads answer as, inside reads_as_caller().
-_caller_reads: ContextVar[_RequestScope | None] = ContextVar(
-    "mainsequence_caller_reads", default=None
 )
 
 
@@ -98,46 +94,40 @@ def _get_requester():
     return _authenticated_scope("User.get_requester()").requester
 
 
-@contextmanager
-def _reads_as_caller():
-    scope = _current_scope.get()
-    if scope is None or not scope.active or scope.user is None:
-        raise RequestIdentityError(
-            "Reading as the caller needs an authenticated request. Install request "
-            "identity once in the application and call reads_as_caller() inside a request."
-        )
-    if scope.requester is not None:
-        raise RequestIdentityError(
-            "This request is requester-bound. reads_as_caller() cannot forward a "
-            "requester-bearing assertion to the directory endpoints."
-        )
-    if scope.caller_assertion is None:
-        raise RequestIdentityError(
-            "This request carries no caller assertion. Reading as the caller needs a "
-            "hosted HTTP request in assertion mode, not local mode or a WebSocket."
-        )
-    token = _caller_reads.set(scope)
-    try:
-        yield
-    finally:
-        _caller_reads.reset(token)
-
-
 def _origin(url: str) -> tuple[str, str | None, int | None]:
     parts = urlsplit(url)
     scheme = parts.scheme.lower()
     return scheme, parts.hostname, parts.port or {"http": 80, "https": 443}.get(scheme)
 
 
-def _caller_read_headers(url: str, endpoint_url: str) -> dict[str, str]:
-    """The header a directory read sends to ``url``: none outside reads_as_caller()."""
-    scope = _caller_reads.get()
-    if scope is None:
+def _caller_read_headers(url: str, endpoint_url: str, *, as_caller: bool) -> dict[str, str]:
+    """The header one directory read sends to ``url``: none unless it passed ``as_caller=True``.
+
+    Every check runs before the read is sent; a read with ``as_caller=True`` never
+    answers as the application instead.
+    """
+    if not as_caller:
         return {}
-    if not scope.active or scope.caller_assertion is None:
+    scope = _current_scope.get()
+    if scope is not None and not scope.active:
         raise RequestIdentityError(
-            "The request that reads_as_caller() belongs to has ended; its caller "
-            "assertion is no longer available."
+            "The request this read belongs to has ended; its caller assertion is no "
+            "longer available."
+        )
+    if scope is None or scope.user is None:
+        raise RequestIdentityError(
+            "Reading as the caller needs an authenticated request. Install request "
+            "identity once in the application and pass as_caller=True inside a request."
+        )
+    if scope.requester is not None:
+        raise RequestIdentityError(
+            "This request is requester-bound. as_caller=True cannot forward a "
+            "requester-bearing assertion to the directory endpoints."
+        )
+    if scope.caller_assertion is None:
+        raise RequestIdentityError(
+            "This request carries no caller assertion. Reading as the caller needs a "
+            "hosted HTTP request in assertion mode, not local mode or a WebSocket."
         )
     if _origin(url) != _origin(endpoint_url):
         raise RequestIdentityError(

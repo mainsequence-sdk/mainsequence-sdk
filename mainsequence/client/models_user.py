@@ -359,12 +359,59 @@ class TeamHeldAccess(BasePydanticModel):
 
 
 class _CallerDirectoryReadMixin:
-    """Inside ``reads_as_caller()``, ``filter`` and ``get`` reads answer as the
-    request's caller (ADR-0036, amended for #198)."""
+    """Directory reads that can answer as the request's caller, one call at a time.
+
+    ``filter``, ``iter_filter``, ``get`` and ``get_by_uid`` take ``as_caller``.
+    With ``as_caller=True`` that one read presents the caller assertion the
+    request arrived with, and the platform answers with what the caller may
+    see (ADR-0036, amended for #198). Nothing else sends it, and no
+    other call made at the same time changes.
+    """
 
     @classmethod
-    def _read_request_headers(cls, url: str) -> dict[str, str]:
-        return _caller_read_headers(url, cls.get_object_url())
+    def _pop_read_options(cls, kwargs: dict[str, Any]) -> dict[str, Any]:
+        as_caller = kwargs.pop("as_caller", False)
+        if not isinstance(as_caller, bool):
+            raise TypeError("as_caller must be True or False.")
+        return {"as_caller": as_caller}
+
+    @classmethod
+    def _read_request_headers(cls, url: str, *, as_caller: bool = False) -> dict[str, str]:
+        return _caller_read_headers(url, cls.get_object_url(), as_caller=as_caller)
+
+    @classmethod
+    def iter_filter(
+        cls, timeout=None, max_items: int | None = None, *, as_caller: bool = False, **kwargs
+    ):
+        """Yield the matching rows. ``as_caller=True`` reads as the request's caller.
+
+        Each page is read when it is reached, so a page reached after the
+        request ended raises ``RequestIdentityError``.
+        """
+        return super().iter_filter(
+            timeout=timeout, max_items=max_items, as_caller=as_caller, **kwargs
+        )
+
+    @classmethod
+    def filter(cls, timeout=None, *, as_caller: bool = False, **kwargs):
+        """List the matching rows. ``as_caller=True`` reads as the request's caller.
+
+        It raises ``RequestIdentityError`` before any read outside an
+        authenticated request, without a caller assertion (local mode, a
+        WebSocket) or in a requester-bound request; it never reads as the
+        application instead.
+        """
+        return super().filter(timeout=timeout, as_caller=as_caller, **kwargs)
+
+    @classmethod
+    def get(cls, pk=None, timeout=None, *, as_caller: bool = False, **filters):
+        """Read one row. ``as_caller=True`` reads as the request's caller, as ``filter``."""
+        return super().get(pk=pk, timeout=timeout, as_caller=as_caller, **filters)
+
+    @classmethod
+    def get_by_uid(cls, uid: str, timeout=None, *, as_caller: bool = False, **filters):
+        """Read one row by UID. ``as_caller=True`` reads as the request's caller, as ``filter``."""
+        return super().get_by_uid(uid, timeout=timeout, as_caller=as_caller, **filters)
 
 
 class Team(
@@ -1068,9 +1115,9 @@ class User(_CallerDirectoryReadMixin, UserApiBaseObjectOrm, BasePydanticModel):
     as, to pass to ``User.get_by_uid`` and as the ``principal_uid`` of
     ``attach_policy()``.
 
-    Inside ``mainsequence.server.fastapi.reads_as_caller()``, ``User.filter``
-    and ``User.get_by_uid`` answer with what the request's caller may see, and
-    workload rows carry ``managed_by_caller``.
+    With ``as_caller=True``, ``User.filter`` and ``User.get_by_uid`` answer
+    with what the request's caller may see, and workload rows carry
+    ``managed_by_caller``.
     """
 
     # Platform facts, not application authorization policy. None means the
@@ -1151,7 +1198,7 @@ class User(_CallerDirectoryReadMixin, UserApiBaseObjectOrm, BasePydanticModel):
         None,
         title="Managed By Caller",
         description=(
-            "On a workload identity read inside `reads_as_caller()`: whether the "
+            "On a workload identity read with `as_caller=True`: whether the "
             "request's caller manages that workload. None when the row does not carry it."
         ),
         examples=[True],
