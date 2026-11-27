@@ -9,10 +9,12 @@ import socket
 import subprocess
 import threading
 import time
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from decimal import Decimal
 from enum import Enum
 from typing import TypedDict
+from urllib.parse import urlsplit
 from uuid import UUID, getnode
 
 import psutil
@@ -20,7 +22,7 @@ import requests
 from requests.structures import CaseInsensitiveDict
 
 from mainsequence.defaults import resolve_backend_endpoint
-from mainsequence.instrumentation import tracer_instrumentator
+from mainsequence.instrumentation.utils import _DependencyCall
 from mainsequence.logconf import logger
 from mainsequence.runtime_credential_exchange import (
     RUNTIME_CREDENTIAL_ID_ENV,
@@ -844,6 +846,28 @@ class AuthLoaders:
         self.provider = None
 
 
+def _origin(url):
+    parts = urlsplit(url)
+    scheme = parts.scheme.lower()
+    return (
+        scheme,
+        (parts.hostname or "").lower(),
+        parts.port or {"http": 80, "https": 443}.get(scheme),
+    )
+
+
+def is_platform_url(url: str) -> bool:
+    """Whether ``url`` is on the origin of ``MAINSEQUENCE_ENDPOINT``, the platform's API.
+
+    Only such a request from :func:`make_request` carries the caller context
+    and is written as a platform call (ADR 0042).
+    """
+    try:
+        return bool(MAINSEQUENCE_ENDPOINT) and _origin(url) == _origin(MAINSEQUENCE_ENDPOINT)
+    except ValueError:
+        return False
+
+
 def get_rest_token_header():
     return loaders.refresh_headers()
 
@@ -877,17 +901,19 @@ def make_request(
     else:
         request_kwargs = dict(payload)
     request_kwargs.setdefault("allow_redirects", False)
-    # The caller context goes with the call, per request: the session is shared.
-    # A header the caller sets wins (ADR 0040).
-    carrier = tracer_instrumentator.get_telemetry_carrier()
-    if carrier:
-        request_kwargs["headers"] = {**carrier, **(request_kwargs.get("headers") or {})}
+    # A call to the platform is a span: it carries the caller context with its
+    # own span id, per request since the session is shared, and is written as
+    # one event. A header the caller sets wins (ADR 0040, ADR 0042). A call to
+    # any other origin carries neither header.
+    call = _DependencyCall("api", r_type, url) if is_platform_url(url) else None
+    if call is not None:
+        request_kwargs["headers"] = {**call.headers(), **(request_kwargs.get("headers") or {})}
     req = getattr(s, r_type.lower())
 
     if accept_gzip:
         s.headers.setdefault("Accept-Encoding", "gzip")
 
-    with request_budget(timeout) as budget:
+    with request_budget(timeout) as budget, call or nullcontext():
         try:
             for auth_attempt in range(2):
                 if loaders is not None:
@@ -905,11 +931,15 @@ def make_request(
                     or auth_attempt
                     or r_type not in DEFAULT_ALLOWED_METHODS
                 ):
+                    if call is not None:
+                        call.status_code = r.status_code
                     return r
                 r.close()
                 logger.warning("Error 401; forcing auth refresh once within the request budget")
 
         except AuthError as e:
+            if call is not None:
+                call.error = e
             logger.warning(f"Auth error for {url}: {e}")
             r = Response()
             r.code = "auth_error"
@@ -918,6 +948,8 @@ def make_request(
             r._content = str(e).encode("utf-8")
             return r
         except requests.RequestException as e:
+            if call is not None:
+                call.error = e
             logger.warning(f"Request {r_type} to {url} failed: {e}")
             r = Response()
             r.code = "expired"

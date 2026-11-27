@@ -96,10 +96,35 @@ The five clients and their family selectors are:
 | `AgentSession.search_logs()` | `/api/v1/agent-sessions/logs/` | `agent_session_uid`, `agent_uid` |
 
 All five accept `cursor`, `limit`, `level`, and `event`. Runtime-family clients
-also accept `request_id` and `outcome`. Collection rows always identify their
+also accept `request_id`, `outcome` and `trace_id`. Collection rows always identify their
 owner with `owner_type` and `owner_uid`; family-safe additive fields are
 preserved on `EnvironmentLogSearchRow`. A non-null `truncation_reason` explains
 whether the page, result-chain, or examined-candidate limit stopped the query.
+
+## Reading a trace
+
+A trace is the set of runtime log rows that share one W3C trace id; see
+[Traces](../server/caller_context.md#traces). `get_logs()` on a JobRun,
+ResourceRelease, Agent or AgentSession, and the `search_logs()` of the four
+runtime-family clients, accept `trace_id`: an exact filter, 32 lowercase
+hexadecimal characters, checked by the SDK before the call. The rows are those
+the caller may already read; the filter grants no further access.
+
+```python
+page = ResourceRelease.search_logs(
+    organization_environment_uid="<ORGANIZATION_ENVIRONMENT_UID>",
+    start_time="2026-11-26T10:00:00Z",
+    end_time="2026-11-26T11:00:00Z",
+    trace_id="4bf92f3577b34da6a3ce929d0e0e4736",
+)
+spans = [row for row in page.rows if row.span_id and row.duration_ms is not None]
+```
+
+Each row has `trace_id`, `span_id`, `parent_span_id`, `duration_ms` and
+`occurred_at`. Build the tree from `parent_span_id`. A span whose parent is not
+among the rows, because its owner is one the caller cannot see, or because it
+is a Job run's, hangs under its owner. The filter needs a platform that offers
+it; an older one ignores or refuses the parameter.
 
 ## Deployment Logs
 

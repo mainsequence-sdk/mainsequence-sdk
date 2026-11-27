@@ -511,6 +511,7 @@ class JobRun(
         event: str | None = None,
         request_id: str | None = None,
         outcome: LogSearchOutcome | None = None,
+        trace_id: str | None = None,
         timeout: int | float | tuple[float, float] | None = None,
     ) -> EnvironmentLogSearchPage:
         return cls._search_environment_logs(
@@ -525,6 +526,7 @@ class JobRun(
             event=event,
             request_id=request_id,
             outcome=outcome,
+            trace_id=trace_id,
             timeout=timeout,
         )
 
@@ -1068,6 +1070,7 @@ class ResourceRelease(
         event: str | None = None,
         request_id: str | None = None,
         outcome: LogSearchOutcome | None = None,
+        trace_id: str | None = None,
         timeout: int | float | tuple[float, float] | None = None,
     ) -> EnvironmentLogSearchPage:
         return cls._search_environment_logs(
@@ -1081,6 +1084,7 @@ class ResourceRelease(
             event=event,
             request_id=request_id,
             outcome=outcome,
+            trace_id=trace_id,
             timeout=timeout,
         )
 

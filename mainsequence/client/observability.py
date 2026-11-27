@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime
+import re
 from typing import Any, ClassVar, Literal
 from urllib.parse import parse_qsl, unquote, urlparse, urlunparse
 from uuid import UUID
@@ -177,6 +178,18 @@ def _serialize_log_time(name: str, value: LogTime) -> str:
     raise ValueError(f"{name} must be a non-empty RFC 3339 timestamp.")
 
 
+_TRACE_ID = re.compile(r"[0-9a-f]{32}")
+
+
+def _trace_id_filter(trace_id: str | None) -> str | None:
+    """``trace_id`` as the log routes take it: exact, 32 lowercase hexadecimal characters."""
+    if trace_id is not None and (
+        not isinstance(trace_id, str) or not _TRACE_ID.fullmatch(trace_id)
+    ):
+        raise ValueError("trace_id must be 32 lowercase hexadecimal characters.")
+    return trace_id
+
+
 def _owner_log_query_params(
     *,
     start_time: LogTime | None,
@@ -226,6 +239,7 @@ class EnvironmentLogSearchMixin:
         event: str | None = None,
         request_id: str | None = None,
         outcome: LogSearchOutcome | None = None,
+        trace_id: str | None = None,
         timeout: int | float | tuple[float, float] | None = None,
         **family_filters: Any,
     ) -> EnvironmentLogSearchPage:
@@ -243,6 +257,7 @@ class EnvironmentLogSearchMixin:
             "event": event,
             "request_id": request_id,
             "outcome": outcome,
+            "trace_id": _trace_id_filter(trace_id),
             **family_filters,
         }
         params = {
@@ -374,6 +389,7 @@ class _OwnerObservabilityTransportMixin:
         event: str | None = None,
         outcome: LogSearchOutcome | None = None,
         agent_session_uid: str | None = None,
+        trace_id: str | None = None,
         timeout: int | float | tuple[float, float] | None = None,
     ) -> OwnerLogPage:
         params = _owner_log_query_params(
@@ -390,6 +406,7 @@ class _OwnerObservabilityTransportMixin:
             event=event,
             outcome=outcome,
             agent_session_uid=agent_session_uid,
+            trace_id=_trace_id_filter(trace_id),
         )
         return OwnerLogPage.model_validate(
             self._request_observability(
@@ -416,8 +433,14 @@ class OwnerLogMixin(_OwnerObservabilityTransportMixin):
         request_id: str | None = None,
         event: str | None = None,
         outcome: LogSearchOutcome | None = None,
+        trace_id: str | None = None,
         timeout: int | float | tuple[float, float] | None = None,
     ) -> OwnerLogPage:
+        """One page of this owner's runtime logs.
+
+        ``trace_id`` keeps only the rows of one trace: exact, 32 lowercase
+        hexadecimal characters (ADR 0042).
+        """
         return self._get_owner_logs(
             start_time=start_time,
             end_time=end_time,
@@ -431,6 +454,7 @@ class OwnerLogMixin(_OwnerObservabilityTransportMixin):
             request_id=request_id,
             event=event,
             outcome=outcome,
+            trace_id=trace_id,
             timeout=timeout,
         )
 

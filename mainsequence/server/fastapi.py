@@ -343,8 +343,10 @@ class _RequestIdentityMiddleware:
                 return
             # The caller context arrives next to the caller verified above, and
             # only with one: a public or preflight request has no baggage (ADR 0040).
+            # The current span is the request's own, as the platform's launcher
+            # names it in the scope's state (ADR 0042).
             context_token = otel_context.attach(
-                _request_context(_trace_carrier(scope), with_baggage=caller_verified)
+                _request_context(_trace_carrier(scope), with_baggage=caller_verified, state=state)
             )
             try:
                 if scope["type"] == "http" and caller_verified:

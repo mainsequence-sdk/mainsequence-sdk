@@ -103,6 +103,13 @@ def test_request_waits_for_a_starting_release_before_its_timeout_starts(monkeypa
     assert sent["allow_redirects"] is False
     assert sent["headers"]["Authorization"] == "Bearer runtime-token"
     assert sent["headers"][DEADLINE_HEADER] == "60000"
+    # The release's address came from the platform: the call is a release span (ADR 0042).
+    assert sent["dependency"].fields == {
+        "dependency_kind": "release",
+        "target_release_uid": RELEASE_UID,
+        "http_method": "POST",
+        "route": "/v1/prices",
+    }
     status = _release().runtime_status()
     assert status.state == "warm"
     assert status.last_cold_start_seconds is not None

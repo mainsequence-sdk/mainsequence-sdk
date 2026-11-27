@@ -1,21 +1,21 @@
 import logging
 import os
+import re
+import secrets
+import time
 from contextvars import ContextVar
+from urllib.parse import urlsplit
 
 import structlog
 from opentelemetry import baggage, trace
 from opentelemetry import context as otel_context
 from opentelemetry.baggage.propagation import W3CBaggagePropagator
-from opentelemetry.sdk.trace import (
-    TracerProvider,
-)
-from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
 from opentelemetry.trace import (
-    ProxyTracerProvider,
+    NonRecordingSpan,
+    SpanContext,
+    TraceFlags,
     get_current_span,
     get_tracer,
-    get_tracer_provider,
-    set_tracer_provider,
 )
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
@@ -29,33 +29,21 @@ def is_port_in_use(port: int, agent_host: str) -> bool:
 
 class TracerInstrumentator:
     __doc__ = """
-        Main instrumentator class controlls building and exporting of traces 
+        Reads and passes on the current OpenTelemetry context. It never
+        configures OpenTelemetry: that belongs to the application (ADR 0042).
     """
 
-    def build_tracer(self) -> TraceContextTextMapPropagator:
-        from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
-        from opentelemetry.sdk.resources import SERVICE_NAME, Resource
+    def build_tracer(self) -> trace.Tracer:
+        """A tracer from whatever provider is set; a no-op one while none is.
 
-        provider = get_tracer_provider()
-        if isinstance(provider, ProxyTracerProvider):
-            resource = Resource(attributes={SERVICE_NAME: "tdag"})
-            provider = TracerProvider(resource=resource)
-            set_tracer_provider(provider)
-
-        end_point = os.environ.get("OTLP_ENDPOINT")
-
-        if end_point is not None:
-            otlp_exporter = OTLPSpanExporter(endpoint=end_point)
-            if is_port_in_use(4317, agent_host=self.agent_host):
-                get_tracer_provider().add_span_processor(BatchSpanProcessor(otlp_exporter))
-            else:
-                get_tracer_provider().add_span_processor(BatchSpanProcessor(ConsoleSpanExporter()))
-        tracer = get_tracer("tdag")
-        return tracer
+        Kept for compatibility. It never sets a provider, never adds a span
+        processor and never reads ``OTLP_ENDPOINT`` (ADR 0042).
+        """
+        return get_tracer("mainsequence")
 
     def get_current_trace_id(self):
         current_span = get_current_span()
-        return format(current_span.context.trace_id, "032x")
+        return format(current_span.get_span_context().trace_id, "032x")
 
     def get_telemetry_carrier(self):
         """The W3C ``traceparent`` and ``baggage`` headers of the current context.
@@ -76,20 +64,30 @@ class TracerInstrumentator:
 def add_otel_trace_context(logger, method_name, event_dict):
     """
     Enrich log records with OpenTelemetry trace context (trace_id, span_id).
+
+    ``trace_id``, ``span_id`` and ``parent_span_id`` are top-level fields of
+    every line, from the current span context whether or not it is recording,
+    and ``None`` without one; a field the log call sets wins (ADR 0042). Only a
+    recording span knows its parent. The nested ``span`` object is written as
+    before, for one more minor release.
     """
     span = trace.get_current_span()
-    if not span.is_recording():
+    ctx = span.get_span_context()
+    recording = span.is_recording()
+    parent = getattr(span, "parent", None) if recording else None
+    ids = {
+        "trace_id": format(ctx.trace_id, "032x") if ctx.is_valid else None,
+        "span_id": format(ctx.span_id, "016x") if ctx.is_valid else None,
+        "parent_span_id": format(parent.span_id, "016x") if parent else None,
+    }
+    for key, value in ids.items():
+        event_dict.setdefault(key, value)
+
+    if not recording:
         event_dict["span"] = None
         return event_dict
 
-    ctx = span.get_span_context()
-    parent = getattr(span, "parent", None)
-
-    event_dict["span"] = {
-        "span_id": format(ctx.span_id, "016x"),
-        "trace_id": format(ctx.trace_id, "032x"),
-        "parent_span_id": None if not parent else format(parent.span_id, "016x"),
-    }
+    event_dict["span"] = ids
 
     return event_dict
 
@@ -147,19 +145,54 @@ def _with_baggage_header(header, context):
         _parsing_baggage.reset(token)
 
 
-def _request_context(carrier, *, with_baggage):
+_TRACE_ID = re.compile(r"[0-9a-f]{32}")
+_SPAN_ID = re.compile(r"[0-9a-f]{16}")
+
+
+def _launcher_span(state, inbound):
+    """The request's own span, as the platform's launcher names it in ``scope["state"]``.
+
+    ``None`` unless ``trace_id`` and ``span_id`` are valid W3C ids. The inbound
+    span's flags and ``tracestate`` are kept when it is in the same trace.
+    """
+    trace_id, span_id = (state or {}).get("trace_id"), (state or {}).get("span_id")
+    if not (
+        isinstance(trace_id, str)
+        and isinstance(span_id, str)
+        and _TRACE_ID.fullmatch(trace_id)
+        and _SPAN_ID.fullmatch(span_id)
+        and int(trace_id, 16)
+        and int(span_id, 16)
+    ):
+        return None
+    same_trace = inbound.is_valid and inbound.trace_id == int(trace_id, 16)
+    return SpanContext(
+        int(trace_id, 16),
+        int(span_id, 16),
+        is_remote=False,
+        trace_flags=inbound.trace_flags if same_trace else TraceFlags(TraceFlags.SAMPLED),
+        trace_state=inbound.trace_state if same_trace else None,
+    )
+
+
+def _request_context(carrier, *, with_baggage, state=None):
     """The OpenTelemetry context of one inbound request, from its headers.
 
     Its baggage is exactly the request's ``baggage`` header, or none without
-    ``with_baggage``: never the process's or another request's. Its trace
-    parent is the request's ``traceparent``, unless instrumentation already
-    records a span for the request.
+    ``with_baggage``: never the process's or another request's. Its current
+    span is the request's own span that the platform's launcher put in
+    ``state`` (ADR 0042), as a non-recording span. Without that, its trace
+    parent is the request's ``traceparent``. A span that instrumentation
+    already records for the request wins over both.
     """
     context = baggage.clear(context=otel_context.get_current())
     if with_baggage:
         context = _with_baggage_header(carrier.get("baggage"), context)
     if not trace.get_current_span(context).is_recording():
         context = TraceContextTextMapPropagator().extract(carrier, context=context)
+        own = _launcher_span(state, trace.get_current_span(context).get_span_context())
+        if own is not None:
+            context = trace.set_span_in_context(NonRecordingSpan(own), context)
     return context
 
 
@@ -195,3 +228,100 @@ def _add_log_baggage(logger, method_name, event_dict):
         if members:
             event_dict["baggage"] = members
     return event_dict
+
+
+# Calls to the platform (ADR 0042): each is a span, written as one log event.
+
+_UUID = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
+
+
+def _route(path):
+    """A URL's path, without its query, with every UUID replaced by ``{uid}``."""
+    return _UUID.sub("{uid}", urlsplit(path).path or "/")
+
+
+def _random_id(bits):
+    while True:
+        value = secrets.randbits(bits)
+        if value:
+            return value
+
+
+class _DependencyCall:
+    """One call the SDK sends to a platform destination, as a span (ADR 0042).
+
+    The span is a child of the current span, or the root of a new trace when
+    there is none. :meth:`headers` is the carrier to send with it:
+    ``traceparent`` naming this span, and the current ``baggage``. Leaving the
+    ``with`` block writes one log event: ``dependency.call.completed`` once
+    ``status_code`` is set, else ``dependency.call.failed``. The event never
+    holds a URL, a query string, a header or a body: ``route`` is ``path``
+    without its query and with every UUID replaced by ``{uid}``.
+
+    ``kind`` is ``api``, ``release``, ``agent`` or ``inference``; ``targets``
+    are the target's uids, as fields of the event. One instance is one span,
+    whatever retries happen inside it.
+    """
+
+    def __init__(self, kind, method, path, **targets):
+        current = trace.get_current_span().get_span_context()
+        self.parent_span_id = current.span_id if current.is_valid else None
+        self.span = SpanContext(
+            current.trace_id if current.is_valid else _random_id(128),
+            _random_id(64),
+            is_remote=False,
+            trace_flags=current.trace_flags if current.is_valid else TraceFlags(TraceFlags.SAMPLED),
+            trace_state=current.trace_state if current.is_valid else None,
+        )
+        self.fields = {
+            "dependency_kind": kind,
+            **{key: str(value) for key, value in targets.items() if value is not None},
+            "http_method": method.upper(),
+            "route": _route(path),
+        }
+        self.status_code = None
+        self.error = None
+        self.started = time.perf_counter()
+
+    def headers(self):
+        """``traceparent`` with this span's id, and the current ``baggage``."""
+        context = trace.set_span_in_context(NonRecordingSpan(self.span))
+        carrier = {}
+        TraceContextTextMapPropagator().inject(carrier, context=context)
+        W3CBaggagePropagator().inject(carrier, context=context)
+        return carrier
+
+    def __enter__(self):
+        self.started = time.perf_counter()
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        try:
+            self._write(exc if exc is not None else self.error)
+        except Exception:
+            pass  # The event never fails the call.
+        return False
+
+    def _write(self, error):
+        from mainsequence import logconf
+
+        log = logconf.logger
+        if log is None:
+            return
+        failed = error is not None or self.status_code is None
+        fields = {
+            "trace_id": format(self.span.trace_id, "032x"),
+            "span_id": format(self.span.span_id, "016x"),
+            "parent_span_id": (
+                format(self.parent_span_id, "016x") if self.parent_span_id else None
+            ),
+            **self.fields,
+            "status_code": self.status_code,
+            "duration_ms": round((time.perf_counter() - self.started) * 1000, 3),
+            "outcome": "ok" if not failed and self.status_code < 400 else "error",
+        }
+        if failed:
+            fields["error_type"] = type(error).__name__ if error is not None else "NoResponse"
+            log.warning("dependency.call.failed", **fields)
+        else:
+            log.info("dependency.call.completed", **fields)

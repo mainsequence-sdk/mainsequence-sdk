@@ -135,9 +135,11 @@ call. The caller assertion says who is calling; caller context says who the
 call is for. [Caller context](../server/caller_context.md) describes the keys,
 the trust rule and the limits.
 
-`install_request_identity` makes each request's `baggage` and `traceparent`
-the OpenTelemetry context of that request. Read it with OpenTelemetry's API,
-after checking the caller:
+`install_request_identity` makes each request's `baggage` the OpenTelemetry
+context of that request, and the request's own span, as the platform's launcher
+names it, the current span; without one, the request's `traceparent` is its
+parent (see [Traces](../server/caller_context.md#traces)). Read the context
+with OpenTelemetry's API, after checking the caller:
 
 ```python
 from fastapi import HTTPException

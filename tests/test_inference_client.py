@@ -88,7 +88,10 @@ def test_common_controls_and_retry_identity(transport):
     client.complete(**kwargs)
     first = session.request.call_args
     client.complete(**kwargs)
-    assert session.request.call_args == first
+    second = session.request.call_args
+    # Each call is its own span (ADR 0042); everything else is the same request.
+    assert first.kwargs["headers"].pop("traceparent") != second.kwargs["headers"].pop("traceparent")
+    assert second == first
     assert first.kwargs["json"]["thinking_level"] == "high"
     assert first.kwargs["json"]["provider_storage"] == {"store_response": False}
 

@@ -9,7 +9,7 @@ from uuid import UUID
 import requests
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from ..instrumentation import tracer_instrumentator
+from ..instrumentation.utils import _DependencyCall
 from . import utils
 from .exceptions import raise_for_response
 
@@ -72,11 +72,13 @@ class InferenceClient:
         if self.organization_environment_uid is not None:
             query["organization_environment_uid"] = self.organization_environment_uid
         url = f"{utils.API_ENDPOINT.rstrip('/')}/{path}"
+        # The call is a span: it carries the caller context with its own span id
+        # and is written as one event (ADR 0040, ADR 0042).
+        call = _DependencyCall("inference", method, url)
         # Inference opts out of safe-read retries as well: an uncertain outcome
         # must preserve the caller's explicit idempotency key.
-        with utils.build_session(loaders=utils.loaders, retries=0) as session:
-            # The caller context goes with the call (ADR 0040).
-            headers = dict(tracer_instrumentator.get_telemetry_carrier())
+        with utils.build_session(loaders=utils.loaders, retries=0) as session, call:
+            headers = call.headers()
             headers.update(utils.loaders.refresh_headers(force=False, session=session))
             if key is not None:
                 headers["Idempotency-Key"] = key
@@ -101,6 +103,7 @@ class InferenceClient:
                         timeout=timeout,
                         allow_redirects=False,
                     )
+                call.status_code = response.status_code
             except requests.RequestException as exc:
                 raise InferenceTransportError(key) from exc
         if method == "POST":

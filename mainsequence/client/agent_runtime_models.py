@@ -14,6 +14,7 @@ from pydantic import ConfigDict, Field, model_validator
 
 from .._request_deadline import DEADLINE_HEADER, format_timeout_ms, remaining_request_seconds
 from .._transport import budget_remaining_seconds, request_budget, request_within_budget
+from ..instrumentation.utils import _DependencyCall
 from .base import (
     BaseObjectOrm,
     BasePydanticModel,
@@ -634,6 +635,7 @@ class Agent(
         event: str | None = None,
         request_id: str | None = None,
         outcome: LogSearchOutcome | None = None,
+        trace_id: str | None = None,
         timeout: int | float | tuple[float, float] | None = None,
     ) -> EnvironmentLogSearchPage:
         return cls._search_environment_logs(
@@ -648,6 +650,7 @@ class Agent(
             event=event,
             request_id=request_id,
             outcome=outcome,
+            trace_id=trace_id,
             timeout=timeout,
         )
 
@@ -768,6 +771,7 @@ class Agent(
         event: str | None = None,
         outcome: LogSearchOutcome | None = None,
         agent_session_uid: str | None = None,
+        trace_id: str | None = None,
         timeout: int | float | tuple[float, float] | None = None,
     ) -> OwnerLogPage:
         return self._get_owner_logs(
@@ -783,6 +787,7 @@ class Agent(
             event=event,
             outcome=outcome,
             agent_session_uid=agent_session_uid,
+            trace_id=trace_id,
             timeout=timeout,
         )
 
@@ -1101,6 +1106,7 @@ class AgentSession(
         event: str | None = None,
         request_id: str | None = None,
         outcome: LogSearchOutcome | None = None,
+        trace_id: str | None = None,
         timeout: int | float | tuple[float, float] | None = None,
     ) -> EnvironmentLogSearchPage:
         return cls._search_environment_logs(
@@ -1115,6 +1121,7 @@ class AgentSession(
             event=event,
             request_id=request_id,
             outcome=outcome,
+            trace_id=trace_id,
             timeout=timeout,
         )
 
@@ -1353,6 +1360,7 @@ class AgentSession(
         *,
         body: dict[str, Any],
         timeout=None,
+        agent_session_uid: str | None = None,
     ) -> requests.Response:
         if access.mode != "token":
             detail = str(access.detail or "").strip()
@@ -1384,6 +1392,13 @@ class AgentSession(
             headers=headers,
             data=json.dumps(serialize_to_json(body)),
             timeout=_a2a_call_timeout(timeout),
+            # The runtime's address is the one the platform gave (ADR 0042).
+            dependency=_DependencyCall(
+                "agent",
+                "POST",
+                STANDARD_A2A_MESSAGE_SEND_PATH,
+                target_agent_session_uid=agent_session_uid,
+            ),
         )
 
     @staticmethod
@@ -1480,6 +1495,7 @@ class AgentSession(
                 access,
                 body=body,
                 timeout=timeout,
+                agent_session_uid=session_uid,
             )
             if response.status_code in (401, 403):
                 cls.clear_cached_runtime_access(session_uid)
@@ -1491,6 +1507,7 @@ class AgentSession(
                     access,
                     body=body,
                     timeout=timeout,
+                    agent_session_uid=session_uid,
                 )
                 if response.status_code in (401, 403):
                     cls.clear_cached_runtime_access(session_uid)
@@ -1564,6 +1581,10 @@ class AgentSession(
                     "Accept": STANDARD_A2A_CONTENT_TYPE,
                 },
                 timeout=_a2a_call_timeout(timeout),
+                # The runtime's address is the one the platform gave (ADR 0042).
+                dependency=_DependencyCall(
+                    "agent", method, path, target_agent_session_uid=session_uid
+                ),
             )
 
         # One total budget for the whole call, as for send_a2a_message.

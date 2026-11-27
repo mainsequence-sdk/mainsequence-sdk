@@ -12,8 +12,6 @@ from requests.adapters import HTTPAdapter
 from urllib3.exceptions import InvalidHeader
 from urllib3.util import Retry, Timeout
 
-from .instrumentation import tracer_instrumentator
-
 DEFAULT_ALLOWED_METHODS = frozenset({"HEAD", "GET", "OPTIONS"})
 DEFAULT_STATUS_FORCELIST = (429, 500, 502, 503, 504)
 DEFAULT_TIMEOUT = (5.0, 120.0)
@@ -90,7 +88,7 @@ def budget_remaining_seconds():
     return None if budget is None else budget.remaining
 
 
-def request_within_budget(method, url, *, timeout, **kwargs):
+def request_within_budget(method, url, *, timeout, dependency=None, **kwargs):
     """Send one request, never retried, whose whole exchange ends by one deadline.
 
     ``timeout`` has the shared transport's meaning: a number is one total budget
@@ -106,12 +104,23 @@ def request_within_budget(method, url, *, timeout, **kwargs):
     ``requests.Timeout`` is raised. The request may already have reached the
     server.
 
-    The current ``traceparent`` and ``baggage`` go with the request; a header
-    the caller sets wins (ADR 0040).
+    ``dependency`` is the platform call this request is, an
+    ``instrumentation.utils._DependencyCall``. Only then does the request carry
+    ``traceparent``, naming the call's own span, and the current ``baggage``,
+    and the call's event is written; a header the caller sets wins (ADR 0040,
+    ADR 0042). Without it the address is not the platform's and the request
+    carries neither.
     """
-    carrier = tracer_instrumentator.get_telemetry_carrier()
-    if carrier:
-        kwargs["headers"] = {**carrier, **(kwargs.get("headers") or {})}
+    if dependency is None:
+        return _send_within_budget(method, url, timeout=timeout, **kwargs)
+    kwargs["headers"] = {**dependency.headers(), **(kwargs.get("headers") or {})}
+    with dependency:
+        response = _send_within_budget(method, url, timeout=timeout, **kwargs)
+        dependency.status_code = response.status_code
+        return response
+
+
+def _send_within_budget(method, url, *, timeout, **kwargs):
     with request_budget(timeout) as budget:
         attempt_timeout = budget.timeout()
         lock = threading.Lock()
