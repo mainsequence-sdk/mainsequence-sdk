@@ -9,10 +9,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 **A library's own calls can be spans in the caller's trace (ADR 0042, amended; #263).** A
 client library that sends requests to a release with its own `requests` or `httpx` client,
 after finding the release with `ResourceRelease.resolve_runtime_access()`, now makes each call
-a span with `mainsequence.instrumentation.dependency_call`. The call carries a `traceparent` that names its own span, a child of the current
-span, and the current `baggage`, and writes the same `dependency.call.completed` or
-`dependency.call.failed` line as the SDK's own calls. The library keeps its own client,
-connection pool and streaming. Before, such calls carried no trace context: the release's
+a span with `mainsequence.instrumentation.dependency_call`. The call carries a `traceparent`
+that names its own span, a child of the current span, and the current `baggage`, and writes
+the same `dependency.call.completed` or `dependency.call.failed` line as the SDK's own calls.
+The library keeps its own client, connection pool and streaming. Before, such calls carried no trace context: the release's
 request lines started a new trace, the release received no caller context, and the caller's
 logs had no line for the call.
 
@@ -35,6 +35,14 @@ before `git clone` until something else was copied, or forever in a non-interact
 `wl-copy` now writes its output to `/dev/null` in its own session, as `xclip` and `xsel`
 already did, with a 5-second timeout as a backstop. A copy that fails or times out is skipped
 and setup goes on.
+
+**`Constant.filter()` and `Constant.get()` work with cachetools 8.** They raised
+`TypeError: Cannot call @cachedmethod descriptor directly` with cachetools 8, which refuses
+`@cachedmethod` under `@classmethod` (cachetools 7 only warned). The SDK declares `cachetools`
+without an upper bound, so a fresh install could resolve 8. `Constant.get_value()`,
+`Constant.get_by_uid()` and `create_constants_if_not_exist()` failed with it. The ten-minute
+cache now looks up and stores its answers itself, as `cachedmethod` did: one API call for the
+same arguments, in any order, and the call runs outside the cache's lock.
 
 ## [9.0.43] - 2026-11-27
 
