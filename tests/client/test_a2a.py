@@ -262,8 +262,8 @@ def test_agent_session_send_a2a_message_posts_standard_contract(monkeypatch):
     assert captured["runtime"]["timeout"] == 15
     # The runtime's address came from the platform: the send is an agent span (ADR 0042).
     assert captured["runtime"]["dependency"] == {
-        "dependency_kind": "agent",
-        "target_agent_session_uid": session_uid,
+        "dependency_type": "agent",
+        "dependency_name": session_uid,
         "http_method": "POST",
         "route": "/api/a2a/v1/message:send",
     }
@@ -708,8 +708,8 @@ def test_agent_session_a2a_task_helpers_get_wait_and_cancel(monkeypatch):
 
     def _fake_request(method, url, *, headers, timeout, dependency=None):
         calls.append((method, url, headers, timeout))
-        assert dependency.fields["dependency_kind"] == "agent"
-        assert dependency.fields["target_agent_session_uid"] == session_uid
+        assert dependency.fields["dependency_type"] == "agent"
+        assert dependency.fields["dependency_name"] == session_uid
         return FakeTaskResponse(next(states))
 
     monkeypatch.setattr(agent_models_mod, "request_within_budget", _fake_request)

@@ -580,7 +580,7 @@ def request_release(
                     },
                     timeout=timeout,
                     # The release's address is the one the platform gave (ADR 0042).
-                    dependency=_DependencyCall("release", method, path, target_release_uid=uid),
+                    dependency=_DependencyCall("release", method, path, name=uid),
                     **kwargs,
                 )
         except requests.Timeout as error:

@@ -240,6 +240,17 @@ def _route(path):
     return _UUID.sub("{uid}", urlsplit(path).path or "/")
 
 
+# What ``dependency_name`` holds for a call to the Main Sequence API.
+_PLATFORM_API = "mainsequence_backend"
+
+
+def _outcome(status_code):
+    """The platform's outcome of a call: ``status_code`` is ``None`` without an answer."""
+    if status_code is None or status_code >= 500:
+        return "failed"
+    return "rejected" if status_code >= 400 else "success"
+
+
 def _random_id(bits):
     while True:
         value = secrets.randbits(bits)
@@ -258,12 +269,16 @@ class _DependencyCall:
     holds a URL, a query string, a header or a body: ``route`` is ``path``
     without its query and with every UUID replaced by ``{uid}``.
 
-    ``kind`` is ``api``, ``release``, ``agent`` or ``inference``; ``targets``
-    are the target's uids, as fields of the event. One instance is one span,
-    whatever retries happen inside it.
+    The event uses the platform's dependency-call fields: ``dependency_type``
+    is ``kind`` (``api``, ``release``, ``agent`` or ``inference``) and
+    ``dependency_name`` is what was called: ``name``, the target's uid for a
+    release or an Agent, or ``mainsequence_backend`` for the API and
+    inference. ``outcome`` is ``success`` below status 400, ``rejected`` from
+    400 to 499, and ``failed`` from 500 or without an answer. One instance is
+    one span, whatever retries happen inside it.
     """
 
-    def __init__(self, kind, method, path, **targets):
+    def __init__(self, kind, method, path, *, name=None):
         current = trace.get_current_span().get_span_context()
         self.parent_span_id = current.span_id if current.is_valid else None
         self.span = SpanContext(
@@ -274,8 +289,8 @@ class _DependencyCall:
             trace_state=current.trace_state if current.is_valid else None,
         )
         self.fields = {
-            "dependency_kind": kind,
-            **{key: str(value) for key, value in targets.items() if value is not None},
+            "dependency_type": kind,
+            "dependency_name": str(name) if name is not None else _PLATFORM_API,
             "http_method": method.upper(),
             "route": _route(path),
         }
@@ -318,7 +333,7 @@ class _DependencyCall:
             **self.fields,
             "status_code": self.status_code,
             "duration_ms": round((time.perf_counter() - self.started) * 1000, 3),
-            "outcome": "ok" if not failed and self.status_code < 400 else "error",
+            "outcome": _outcome(None if failed else self.status_code),
         }
         if failed:
             fields["error_type"] = type(error).__name__ if error is not None else "NoResponse"

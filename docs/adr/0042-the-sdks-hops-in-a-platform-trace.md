@@ -4,7 +4,9 @@
 Date: 2026-11-26
 
 Status: Accepted 2026-11-26, by the owner's instruction to implement it, and
-implemented in the SDK in 9.0.42; see [What was built](#what-was-built).
+implemented in the SDK in 9.0.42; see [What was built](#what-was-built). The
+event's field names changed in 9.0.43; see
+[Amendment 2026-11-27](#amendment-2026-11-27-the-platforms-field-names).
 
 Owners: Main Sequence SDK maintainers.
 
@@ -223,3 +225,31 @@ the caller-context, release-call, A2A and inference tests updated.
 Not verified: no call was made to a deployed platform. The launcher's
 `scope["state"]` ids, every run's `TRACEPARENT` and the log routes' `trace_id`
 filter are the platform's side and were not available to test against.
+
+## Amendment 2026-11-27: the platform's field names
+
+Section 3 named the event's fields `dependency_kind`, `target_release_uid` and
+`target_agent_session_uid`, with `outcome` `ok` or `error`, and 9.0.42 wrote
+them so. The platform's runtime log contract already defines dependency-call
+fields, and one of its log stores keeps only the fields it knows, so an event
+with the 9.0.42 names reached its reader without saying what it called. From
+9.0.43 the event uses the platform's names and values:
+
+- `dependency_type`: the kind, `api`, `release`, `agent` or `inference`, as
+  `dependency_kind` held it;
+- `dependency_name`: what was called: `mainsequence_backend` for `api` and
+  `inference`, the release's uid for `release`, the Agent session's uid for
+  `agent`;
+- `outcome`: `success` below status 400, `rejected` from 400 to 499, and
+  `failed` from 500 or without an answer, the values of the platform's own
+  request events.
+
+`trace_id`, `span_id`, `parent_span_id`, `http_method`, `route`,
+`status_code`, `duration_ms` and `error_type` are unchanged.
+`dependency_kind`, `target_release_uid` and `target_agent_session_uid` are no
+longer written, with no compatibility period: 9.0.42 was released for hours
+only. `OwnerLogRow` now declares the dependency-call fields the platform's
+rows return (`dependency_type`, `dependency_name`, `dependency_operation`,
+`dependency_attempt`, `dependency_duration_ms`, `dependency_outcome`,
+`dependency_status_code`, `dependency_error_type`, `circuit_breaker_state`),
+so a trace reader gets them typed.

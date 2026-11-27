@@ -171,15 +171,17 @@ current span, sent as its `traceparent`, and writes one log line when it ends:
 | `event` | `dependency.call.completed` when an answer arrived, whatever its status; `dependency.call.failed` when none did. |
 | `trace_id`, `span_id` | The call's own span. |
 | `parent_span_id` | The current span; `null` when the call started a new trace. |
-| `dependency_kind` | `api`, `release`, `agent` or `inference`. |
-| `target_release_uid`, `target_agent_session_uid` | The release or Agent session called, for `release` and `agent` calls. |
+| `dependency_type` | `api`, `release`, `agent` or `inference`. |
+| `dependency_name` | What was called: `mainsequence_backend` for `api` and `inference`, the release's uid for `release`, the Agent session's uid for `agent`. |
 | `http_method`, `route` | The method, and the path without its query, with every UUID replaced by `{uid}`. For a release or an Agent, the path on the release or the runtime. |
 | `status_code` | The answer's status; `null` without an answer. |
 | `duration_ms` | How long the call took, its retries included. |
-| `outcome` | `ok` for a status below 400; `error` otherwise or without an answer. |
+| `outcome` | `success` for a status below 400, `rejected` for 400 to 499, `failed` for 500 and above or without an answer. |
 | `error_type` | On `dependency.call.failed` only: the exception's class name, such as `ConnectionError` or `ReadTimeout`. |
 
-The line never holds a URL, a query string, a header or a body. A completed
+These are the platform's own dependency-call field names and outcome values, so
+the line is kept and read like the platform's own. The line never holds a URL,
+a query string, a header or a body. A completed
 call is written at `info` level and a failed one at `warning`. An API or
 inference call is one span with its retries and its resend after a refreshed
 credential; a release call replayed after a start, or an A2A message sent again
