@@ -105,7 +105,7 @@ def request_within_budget(method, url, *, timeout, dependency=None, **kwargs):
     server.
 
     ``dependency`` is the platform call this request is, an
-    ``instrumentation.utils._DependencyCall``. Only then does the request carry
+    ``instrumentation.utils.DependencyCall``. Only then does the request carry
     ``traceparent``, naming the call's own span, and the current ``baggage``,
     and the call's event is written; a header the caller sets wins (ADR 0040,
     ADR 0042). Without it the address is not the platform's and the request

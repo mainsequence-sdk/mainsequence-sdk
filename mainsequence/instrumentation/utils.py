@@ -258,16 +258,18 @@ def _random_id(bits):
             return value
 
 
-class _DependencyCall:
-    """One call the SDK sends to a platform destination, as a span (ADR 0042).
+class DependencyCall:
+    """One call to a platform destination, as a span (ADR 0042).
 
-    The span is a child of the current span, or the root of a new trace when
-    there is none. :meth:`headers` is the carrier to send with it:
-    ``traceparent`` naming this span, and the current ``baggage``. Leaving the
-    ``with`` block writes one log event: ``dependency.call.completed`` once
-    ``status_code`` is set, else ``dependency.call.failed``. The event never
-    holds a URL, a query string, a header or a body: ``route`` is ``path``
-    without its query and with every UUID replaced by ``{uid}``.
+    The SDK makes one for each call it sends; code that sends its own requests
+    makes one with :func:`dependency_call`, which checks its arguments. The
+    span is a child of the current span, or the root of a new trace when there
+    is none. :meth:`headers` is the carrier to send with it: ``traceparent``
+    naming this span, and the current ``baggage``. Leaving the ``with`` block
+    writes one log event: ``dependency.call.completed`` once ``status_code`` is
+    set, else ``dependency.call.failed``. The event never holds a URL, a query
+    string, a header or a body: ``route`` is ``path`` without its query and with
+    every UUID replaced by ``{uid}``.
 
     The event uses the platform's dependency-call fields: ``dependency_type``
     is ``kind`` (``api``, ``release``, ``agent`` or ``inference``) and
@@ -340,3 +342,50 @@ class _DependencyCall:
             log.warning("dependency.call.failed", **fields)
         else:
             log.info("dependency.call.completed", **fields)
+
+
+DEPENDENCY_TYPES = ("api", "release", "agent", "inference")
+
+
+def dependency_call(dependency_type, method, path, *, name=None):
+    """A call your own HTTP client sends to the platform, as a span (ADR 0042).
+
+    The span and the log event are the ones the SDK makes for its own calls, for
+    code that sends a request itself: a client library that keeps its own
+    ``requests`` or ``httpx`` client, its connection pool or its streaming::
+
+        with dependency_call("release", "GET", "/v1/prices", name=release_uid) as call:
+            response = client.get(
+                rpc_url + "/v1/prices",
+                headers={**call.headers(), "Authorization": f"Bearer {token}"},
+            )
+            call.status_code = response.status_code
+
+    ``dependency_type`` is ``release`` or ``agent`` for a call to an address the
+    platform gave, such as the ``rpc_url`` of
+    ``ResourceRelease.resolve_runtime_access``, with ``name`` the release's or
+    the Agent session's uid; it is ``api`` or ``inference`` for a call to the
+    origin of ``MAINSEQUENCE_ENDPOINT``. ``path`` is the path the request adds
+    to that address. Only its path is written, without its query and with every
+    UUID replaced by ``{uid}``.
+
+    Send :meth:`DependencyCall.headers` with the request, and only to those
+    addresses: they carry the current ``baggage``. Merge your own headers after
+    them, so one of yours with the same name wins. Set ``status_code`` when an
+    answer arrives, whatever its status. Leaving the ``with`` block writes
+    ``dependency.call.completed`` with that status, or ``dependency.call.failed``
+    when no status was set or the block raised. Leave it after the response's
+    body is read, so that ``duration_ms`` covers it. One block is one span: a
+    retry inside it belongs to it, and a call sent again is a new block.
+    """
+    if dependency_type not in DEPENDENCY_TYPES:
+        raise ValueError(f"dependency_type must be one of {', '.join(DEPENDENCY_TYPES)}.")
+    if not isinstance(method, str) or not method.strip():
+        raise ValueError("method must be an HTTP method, such as GET.")
+    if not isinstance(path, str) or not path:
+        raise ValueError("path must be the path the request is sent to.")
+    if dependency_type in ("release", "agent") and name in (None, ""):
+        raise ValueError(
+            "A release or agent call needs name: the release's or the Agent session's uid."
+        )
+    return DependencyCall(dependency_type, method.strip(), path, name=name)

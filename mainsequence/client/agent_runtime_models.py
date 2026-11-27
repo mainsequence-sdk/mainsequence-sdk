@@ -14,7 +14,7 @@ from pydantic import ConfigDict, Field, model_validator
 
 from .._request_deadline import DEADLINE_HEADER, format_timeout_ms, remaining_request_seconds
 from .._transport import budget_remaining_seconds, request_budget, request_within_budget
-from ..instrumentation.utils import _DependencyCall
+from ..instrumentation.utils import DependencyCall
 from .base import (
     BaseObjectOrm,
     BasePydanticModel,
@@ -1393,7 +1393,7 @@ class AgentSession(
             data=json.dumps(serialize_to_json(body)),
             timeout=_a2a_call_timeout(timeout),
             # The runtime's address is the one the platform gave (ADR 0042).
-            dependency=_DependencyCall(
+            dependency=DependencyCall(
                 "agent",
                 "POST",
                 STANDARD_A2A_MESSAGE_SEND_PATH,
@@ -1582,7 +1582,7 @@ class AgentSession(
                 },
                 timeout=_a2a_call_timeout(timeout),
                 # The runtime's address is the one the platform gave (ADR 0042).
-                dependency=_DependencyCall("agent", method, path, name=session_uid),
+                dependency=DependencyCall("agent", method, path, name=session_uid),
             )
 
         # One total budget for the whole call, as for send_a2a_message.

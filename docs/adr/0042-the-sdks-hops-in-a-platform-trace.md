@@ -6,7 +6,9 @@ Date: 2026-11-26
 Status: Accepted 2026-11-26, by the owner's instruction to implement it, and
 implemented in the SDK in 9.0.42; see [What was built](#what-was-built). The
 event's field names changed in 9.0.43; see
-[Amendment 2026-11-27](#amendment-2026-11-27-the-platforms-field-names).
+[Amendment 2026-11-27](#amendment-2026-11-27-the-platforms-field-names). From
+9.0.44 code outside the SDK can make its own calls spans; see
+[Amendment 2026-11-27: calls a library sends itself](#amendment-2026-11-27-calls-a-library-sends-itself).
 
 Owners: Main Sequence SDK maintainers.
 
@@ -253,3 +255,50 @@ rows return (`dependency_type`, `dependency_name`, `dependency_operation`,
 `dependency_attempt`, `dependency_duration_ms`, `dependency_outcome`,
 `dependency_status_code`, `dependency_error_type`, `circuit_breaker_state`),
 so a trace reader gets them typed.
+
+## Amendment 2026-11-27: calls a library sends itself
+
+Issue #263. A client library for an API on a release typically finds the
+release with the public `ResourceRelease.resolve_runtime_access()` and sends
+its calls with its own `requests` or `httpx` client, for its connection pool,
+its streaming or its test seams. Section 3 made only the SDK's own sends spans,
+through the private `_DependencyCall`, so such a library's calls carried no
+trace context: the release's request lines started a new trace, the release
+received no caller context, and the caller's logs had no line for the call.
+`ResourceRelease.request` does make the span, but opens a connection for each
+call, refuses `stream` and takes no client of the caller's.
+
+Decision, from 9.0.44:
+
+- **A public call span.** `mainsequence.instrumentation.dependency_call`,
+  given `dependency_type`, `method`, `path` and, for a release or an Agent,
+  `name`, returns the span the SDK uses for its own calls, now public as
+  `DependencyCall`. Its `headers()` are the
+  carrier to send; the library sets `status_code` when an answer arrives;
+  leaving the `with` block writes the section 3 event, with the field names of
+  the amendment above. The library keeps its own client, pool, retries and
+  streaming.
+- **Its arguments are checked.** `dependency_type` is one of
+  `DEPENDENCY_TYPES` (`api`, `release`, `agent`, `inference`), and `release`
+  and `agent` need `name`, the target's uid, so every line names what was
+  called. `path` is the path the library adds to the platform's address, which
+  becomes `route` as in section 3.
+- **Section 5 covers these calls.** The platform destinations are the same:
+  the origin of `MAINSEQUENCE_ENDPOINT` and the release and Agent addresses the
+  platform gave, now also when the library, not the SDK, sends to an address
+  it obtained through the SDK's public API. The SDK cannot see where a library
+  sends, so the rule is stated in `dependency_call`'s documentation, the
+  [Caller context](../knowledge/server/caller_context.md#calls-a-library-sends-itself)
+  guide and the `release_calls` skill, and keeping to it is the library's
+  part.
+- **No transport is added.** A release-bound session that would also wait for
+  a start and renew the token (the issue's second shape) and a pooled,
+  streaming `ResourceRelease.request` (its third) are not part of this
+  decision. A library that keeps its own client waits and renews with
+  `wait_for_runtime_access()` and `access["expires_at"]`.
+
+Tests: `tests/test_platform_trace.py` sends a library's calls through
+`dependency_call` with its own `requests.Session` to a local HTTP/1.1 server,
+inside a release request's span, and checks that the received `traceparent`
+is a child of that span whose id is the written line's `span_id`, and that two
+calls in a row came over one connection.

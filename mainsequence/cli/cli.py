@@ -534,11 +534,26 @@ def _copy_clipboard(txt: str) -> bool:
         x11 = os.environ.get("DISPLAY")
 
         if wayland and shutil.which("wl-copy"):
-            ok1 = (
-                subprocess.run(["wl-copy"], input=txt, text=True, capture_output=True).returncode
-                == 0
-            )
-            subprocess.run(["wl-copy", "--primary"], input=txt, text=True, capture_output=True)
+            # wl-copy forks a background process that serves the clipboard until
+            # something else takes it over. That process inherits any output pipes,
+            # so capturing output would wait on it; send output to /dev/null instead.
+            def _wl_copy(*args: str) -> bool:
+                return (
+                    subprocess.run(
+                        ["wl-copy", *args],
+                        input=txt,
+                        text=True,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        close_fds=True,
+                        start_new_session=True,
+                        timeout=5,
+                    ).returncode
+                    == 0
+                )
+
+            ok1 = _wl_copy()
+            _wl_copy("--primary")
             return ok1
 
         if x11:
