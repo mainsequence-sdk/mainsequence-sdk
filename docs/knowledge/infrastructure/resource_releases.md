@@ -118,8 +118,11 @@ address and token with `resolve_runtime_access()` and wraps each send in
 caller's trace and write the same line; see
 [Calls a library sends itself](../server/caller_context.md#calls-a-library-sends-itself).
 Such a library then does itself what `request` does: it waits while the
-release starts, with `wait_for_runtime_access()`, and asks for a new token
-before the one in `access["expires_at"]` expires.
+release starts, with `wait_for_runtime_access()`, and asks for a new address
+and token after a `401`, after a timeout, and before
+`access.get("expires_at")` when the platform sends it. Its calls are not
+bounded by its own caller's deadline, and `runtime_status()` does not show
+them ([#265](https://github.com/mainsequence-sdk/mainsequence-sdk/issues/265)).
 
 ### What the process remembers
 

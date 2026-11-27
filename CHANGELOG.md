@@ -14,6 +14,15 @@ without an upper bound, so a fresh install could resolve 8. `Constant.get_value(
 cache now looks up and stores its answers itself, as `cachedmethod` did: one API call for the
 same arguments, in any order, and the call runs outside the cache's lock.
 
+**The library guidance says what the public API does not do yet (#265).** The Caller context
+guide, the Resource releases guide and the `release_calls` skill told a library that keeps its
+own HTTP client to keep a release's token until `access["expires_at"]`, a field the platform
+does not always send, and showed an example that asks the platform before every call without
+saying so. They now read `access.get("expires_at")`, handle a release that offers no token
+access, and set out what asking on each call and keeping the token each cost. They also say
+that such a call does not pass on its caller's deadline and does not show in
+`runtime_status()`.
+
 ## [9.0.44] - 2026-11-27
 
 **A library's own calls can be spans in the caller's trace (ADR 0042, amended; #263).** A

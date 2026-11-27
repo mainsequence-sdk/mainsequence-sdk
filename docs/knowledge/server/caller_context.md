@@ -269,10 +269,31 @@ with dependency_call("release", "GET", "/v1/prices", name=release_uid) as call:
   a new trace.
 
 **In a library**, put the block in the one method through which the library
-sends, so every call, present and future, is a span. The library still gets
-and renews the release's address and token itself, from
-`resolve_runtime_access()`, whose `access` holds `rpc_url`, `token` and
-`expires_at`; `wait_for_runtime_access()` waits while the release starts.
+sends, so every call, present and future, is a span. The library also does
+itself what `request` does around the send, and the public API covers only
+part of it today
+([#265](https://github.com/mainsequence-sdk/mainsequence-sdk/issues/265)):
+
+- **The address and token.** `resolve_runtime_access()` and
+  `wait_for_runtime_access()` return them in `access`: `rpc_url` and `token`,
+  and `expires_at` only when the platform sends it, so read it with
+  `access.get("expires_at")`. `access` is `None` when the release offers no
+  token access.
+- **A start.** `wait_for_runtime_access()` starts a release that scaled to zero
+  and waits while it starts. It asks the platform each time it is called: it
+  does not reuse the access the SDK keeps for `request`.
+- **The caller's deadline.** A library's call is not bounded by the time its
+  own caller will still wait, and sends no `Mainsequence-Request-Timeout-Ms`,
+  so a chain's limit stops at it. Keep each call's own timeout honest.
+- **The release's state.** `release.runtime_status()` reflects only calls made
+  with `request`, not the library's.
+
+So a library chooses how to hold the access:
+
+| | Ask on each call | Keep the address and token |
+| --- | --- | --- |
+| How | Call `wait_for_runtime_access()` before each send, as below. | Ask once, then again after a `401`, after a timeout, and before `access.get("expires_at")` when the platform sent it. |
+| Cost | One platform call more for each request. | A release that scaled to zero in between is started by the request itself, inside the library's own timeout. |
 
 ```python
 import requests
@@ -289,7 +310,10 @@ class PricesClient:
         self.session = session or requests.Session()
 
     def _address(self) -> tuple[str, str]:
+        # Asks the platform on each call, and waits while the release starts.
         access = self.release.wait_for_runtime_access().access
+        if not access or access.get("mode") != "token":
+            raise RuntimeError(f"Release {self.release.uid} offers no token access.")
         return access["rpc_url"].rstrip("/"), access["token"]
 
     def _send(self, method: str, path: str, **kwargs) -> requests.Response:
@@ -307,9 +331,8 @@ class PricesClient:
         return response.json()
 ```
 
-A real library keeps the address and token until shortly before `expires_at`
-instead of asking for them on each call. With `httpx`, the block wraps the same
-send, and a streamed response is read inside it:
+With `httpx`, the block wraps the same send, and a streamed response is read
+inside it:
 
 ```python
 with dependency_call("release", "GET", "/v1/prices/export", name=release_uid) as call:

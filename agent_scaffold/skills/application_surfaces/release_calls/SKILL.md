@@ -137,7 +137,9 @@ class PricesClient:
         self.session = session or requests.Session()  # kept: one connection pool
 
     def _send(self, method: str, path: str, **kwargs) -> requests.Response:
-        access = self.release.wait_for_runtime_access().access
+        access = self.release.wait_for_runtime_access().access  # asks the platform
+        if not access or access.get("mode") != "token":
+            raise RuntimeError(f"Release {self.release.uid} offers no token access.")
         rpc_url, token = access["rpc_url"].rstrip("/"), access["token"]
         with dependency_call("release", method, path, name=self.release.uid) as call:
             headers = {**call.headers(), **(kwargs.pop("headers", None) or {})}
@@ -164,9 +166,25 @@ Rules for the block:
   internals) and do not write `dependency.call.*` lines yourself: the field
   names belong to the platform's log contract and change with it.
 
-The library also takes over what `request` did: it waits while the release
-starts (`wait_for_runtime_access()`), keeps the address and token only until
-shortly before `access["expires_at"]`, and asks again after a `401`.
+The library also takes over what `request` did, and the public API covers
+only part of it (issue #265):
+
+- **Expiry.** `access` holds `rpc_url` and `token`, and `expires_at` only when
+  the platform sends it: read `access.get("expires_at")`, never
+  `access["expires_at"]`. `access` is `None` when the release offers no token
+  access.
+- **Asking.** `wait_for_runtime_access()` starts the release and waits while
+  it starts, and asks the platform each time. Either call it before each send,
+  as above, for one platform call more per request; or keep the address and
+  token and ask again after a `401`, after a timeout, and before `expires_at`
+  when present. A release that scaled to zero in between then starts inside
+  the library's own timeout.
+- **Deadline.** The library's call is not bounded by its caller's deadline
+  and passes none on. Keep its `timeout` honest.
+- **State.** Its calls do not show in `runtime_status()`.
+
+Do not work around these gaps with the SDK's private modules; report the need
+on issue #265.
 
 ## Show state without calling
 
@@ -245,8 +263,9 @@ pass a few minutes, or when `ReleaseDeadlineTooShortError` or
 - No module imports `requests` or `httpx` to reach a release, except a client
   library's single send method, and that method wraps each send in
   `dependency_call`.
-- No module stores a release's `rpc_url` or token past `access["expires_at"]`,
-  and only such a client library stores them at all.
+- Only such a client library stores a release's `rpc_url` or token, and it
+  asks again after a `401`, after a timeout, and before
+  `access.get("expires_at")` when the platform sent it.
 - For a client library: a test sends a call to a local server inside a known
   span and asserts the received `traceparent` has that span's trace id and a
   new span id, and that two calls in a row share one connection.
