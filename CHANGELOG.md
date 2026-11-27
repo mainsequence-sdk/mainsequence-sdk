@@ -28,6 +28,14 @@ logs had no line for the call.
   the `release_calls` agent skill say when a library keeps its own client and how it then
   makes its calls spans.
 
+**`code-repository set-up-locally` no longer hangs on Wayland (#240).** Copying the
+repository's public key with `wl-copy` waited for the background process `wl-copy` leaves to
+serve the clipboard, because that process kept the output pipes the CLI was reading. Setup sat
+before `git clone` until something else was copied, or forever in a non-interactive run.
+`wl-copy` now writes its output to `/dev/null` in its own session, as `xclip` and `xsel`
+already did, with a 5-second timeout as a backstop. A copy that fails or times out is skipped
+and setup goes on.
+
 ## [9.0.43] - 2026-11-27
 
 **The `dependency.call.*` events use the platform's field names (ADR 0042, amended).** The
