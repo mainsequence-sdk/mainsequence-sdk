@@ -30,7 +30,7 @@ from mainsequence._transport import request_budget, request_within_budget
 from mainsequence.instrumentation.utils import DependencyCall
 from mainsequence.logconf import logger
 
-from .exceptions import ApiError
+from .exceptions import ApiError, TransportError
 from .utils import _decode_jwt_exp
 
 READY_TIMEOUT_ENV = "MAINSEQUENCE_RELEASE_READY_TIMEOUT_SECONDS"
@@ -46,6 +46,7 @@ MIN_RETRY_SECONDS = 0.1
 DEFAULT_ACCESS_TTL_SECONDS = 60.0
 ACCESS_EXPIRY_SKEW_SECONDS = 30.0
 PLATFORM_TIMEOUT_SECONDS = 10.0
+MAX_FAILED_PLATFORM_ASKS = 3
 
 PROCESS_STARTED_AT_HEADER = "Mainsequence-Process-Started-At"
 COLD_START_HEADER = "Mainsequence-Cold-Start"
@@ -86,7 +87,7 @@ class ReleaseCallError(ApiError):
 
 
 class ReleaseReadinessTimeoutError(ReleaseCallError, TimeoutError):
-    """The readiness limit ended while the release was still starting."""
+    """The readiness limit ended while the platform still asked to try again later."""
 
     phase = "readiness"
 
@@ -95,6 +96,10 @@ class ReleaseUnavailableError(ReleaseCallError, RuntimeError):
     """The platform answered that the release cannot take requests."""
 
     phase = "readiness"
+
+
+class ReleaseNotDeployedError(ReleaseUnavailableError):
+    """The release has no active revision: it was never deployed, or awaits its first rollout."""
 
 
 class ReleaseDeadlineTooShortError(ReleaseCallError, TimeoutError):
@@ -365,11 +370,31 @@ def _ready_limit(ready_timeout: float | None, expected_cold_start: float | None)
     return _environment_seconds(READY_TIMEOUT_ENV, DEFAULT_READY_TIMEOUT_SECONDS)
 
 
-def _retry_seconds(admission: Any) -> float:
+def _retry_hint_seconds(admission: Any) -> float | None:
+    """The platform's ``retry_after_ms`` in seconds, or ``None`` when it gives none."""
     retry_after_ms = getattr(admission, "retry_after_ms", None)
     if isinstance(retry_after_ms, bool) or not isinstance(retry_after_ms, (int, float)):
-        return DEFAULT_RETRY_SECONDS
+        return None
     return max(MIN_RETRY_SECONDS, retry_after_ms / 1000.0)
+
+
+def _unavailable_error(uid: str, access: Any) -> ReleaseUnavailableError:
+    """The error for an answer that cannot take requests and asks for no retry."""
+    admission = access.runtime_access
+    presence = access.runtime_presence
+    fields = {
+        "resource_release_uid": uid,
+        "runtime_state": str(admission.state),
+        "runtime_phase": getattr(presence, "phase", None),
+    }
+    routing = getattr(access, "routing", None)
+    if routing is not None and getattr(routing, "active_revision_uid", None) is None:
+        return ReleaseNotDeployedError(
+            f"Release {uid} has no active revision: it has not been deployed yet.", **fields
+        )
+    notice = getattr(admission, "notice", None)
+    detail = getattr(notice, "message", None) or getattr(presence, "detail", None)
+    return ReleaseUnavailableError(detail or f"Release {uid} cannot take requests.", **fields)
 
 
 def _deadline_too_short(
@@ -416,6 +441,14 @@ def wait_for_release(
 ) -> tuple[Any, _Grant | None]:
     """Ask the platform, which wakes the release, until it admits requests.
 
+    The platform's ``retry_after_ms`` alone decides whether to wait: an answer
+    that cannot take requests and carries it is asked again after that long,
+    whatever its state, phase or notice, and one without it ends the wait. A
+    ``waking`` answer without it, from an older platform, is asked again after
+    ``DEFAULT_RETRY_SECONDS``. An ask that fails with a ``TransportError`` is
+    made again, up to ``MAX_FAILED_PLATFORM_ASKS`` in a row. Every wait ends
+    at the readiness limit and at the caller's deadline.
+
     Returns the platform's answer and its token access, when it offers one.
     ``resolve`` asks the platform, given a timeout in seconds; by default it is
     the release's ``resolve_runtime_access``. ``cache`` records what is learned;
@@ -425,9 +458,12 @@ def wait_for_release(
     if resolve is None:
         resolve = lambda seconds: release.resolve_runtime_access(timeout=seconds)  # noqa: E731
     started = time.monotonic()
+    limit = _ready_limit(ready_timeout, None)
     waking_since: float | None = None
     waking_at: datetime.datetime | None = None
-    limit: float | None = None
+    expected: float | None = None
+    waited_on: tuple[str, str | None] | None = None
+    failed_asks = 0
     while True:
         caller_remaining = remaining_request_seconds()
         if caller_remaining is not None and caller_remaining <= 0:
@@ -435,10 +471,26 @@ def wait_for_release(
         platform_timeout = PLATFORM_TIMEOUT_SECONDS
         if caller_remaining is not None:
             platform_timeout = min(platform_timeout, caller_remaining)
-        access = resolve(platform_timeout)
+        try:
+            access = resolve(platform_timeout)
+        except TransportError as error:
+            failed_asks += 1
+            remaining = _wait_remaining(started, limit)
+            if failed_asks >= MAX_FAILED_PLATFORM_ASKS or remaining <= 0:
+                raise
+            logger.warning(
+                "release.call.platform_ask_failed",
+                resource_release_uid=uid,
+                failed_asks=failed_asks,
+                error=str(error),
+            )
+            time.sleep(min(remaining, DEFAULT_RETRY_SECONDS))
+            continue
+        failed_asks = 0
         grant = cache.observe(uid, access) if cache is not None else _grant_from_access(access)
         admission = access.runtime_access
         presence = access.runtime_presence
+        state = str(admission.state)
         phase = getattr(presence, "phase", None)
         if admission.can_request:
             if waking_since is not None:
@@ -452,21 +504,19 @@ def wait_for_release(
                     wake_requested_at=waking_at.isoformat(),
                 )
             return access, grant
-        if admission.state != "waking":
-            notice = getattr(admission, "notice", None)
-            detail = getattr(notice, "message", None) or getattr(presence, "detail", None)
-            raise ReleaseUnavailableError(
-                detail or f"Release {uid} cannot take requests.",
-                resource_release_uid=uid,
-                runtime_state=str(admission.state),
-                runtime_phase=phase,
-            )
+        retry = _retry_hint_seconds(admission)
+        if retry is None and state == "waking":
+            retry = DEFAULT_RETRY_SECONDS
+        if retry is None:
+            raise _unavailable_error(uid, access)
 
-        expected = _scaling_seconds(getattr(access, "scaling", None), "expected_cold_start_seconds")
-        wake = getattr(presence, "wake", None)
-        if waking_since is None:
+        if state == "waking" and waking_since is None:
             waking_since = time.monotonic()
+            wake = getattr(presence, "wake", None)
             waking_at = _parse_datetime(getattr(wake, "requested_at", None)) or _utcnow()
+            expected = _scaling_seconds(
+                getattr(access, "scaling", None), "expected_cold_start_seconds"
+            )
             limit = _ready_limit(ready_timeout, expected)
             caller_remaining = remaining_request_seconds()
             if (
@@ -477,10 +527,15 @@ def wait_for_release(
                 raise _deadline_too_short(
                     uid, caller_remaining, expected_cold_start=expected, phase=phase
                 )
+        if waited_on != (state, phase):
+            waited_on = (state, phase)
+            notice = getattr(admission, "notice", None)
             logger.info(
                 "release.call.waiting",
                 resource_release_uid=uid,
+                runtime_state=state,
                 runtime_phase=phase,
+                notice_code=getattr(notice, "code", None),
                 ready_timeout_seconds=limit,
             )
         remaining = started + limit - time.monotonic()
@@ -492,17 +547,48 @@ def wait_for_release(
                 )
             remaining = caller_remaining
         if remaining <= 0:
-            raise ReleaseReadinessTimeoutError(
-                f"Release {uid} was still starting after {limit:.0f}s"
-                + (f" (phase: {phase})." if phase else "."),
-                resource_release_uid=uid,
-                timeout_seconds=limit,
-                runtime_state="waking",
-                runtime_phase=phase,
-                wake_requested_at=waking_at,
-                expected_cold_start_seconds=expected,
-            )
-        time.sleep(min(remaining, _retry_seconds(admission)))
+            raise _not_ready_in_time(uid, access, limit, waking_at, expected)
+        time.sleep(min(remaining, retry))
+
+
+def _wait_remaining(started: float, limit: float) -> float:
+    """Seconds left of the readiness limit, or of the caller's time when shorter."""
+    remaining = started + limit - time.monotonic()
+    caller_remaining = remaining_request_seconds()
+    if caller_remaining is not None:
+        remaining = min(remaining, caller_remaining)
+    return remaining
+
+
+def _not_ready_in_time(
+    uid: str,
+    access: Any,
+    limit: float,
+    waking_at: datetime.datetime | None,
+    expected: float | None,
+) -> ReleaseReadinessTimeoutError:
+    admission = access.runtime_access
+    state = str(admission.state)
+    phase = getattr(access.runtime_presence, "phase", None)
+    if state == "waking":
+        message = f"Release {uid} was still starting after {limit:.0f}s" + (
+            f" (phase: {phase})." if phase else "."
+        )
+    else:
+        notice = getattr(admission, "notice", None)
+        detail = getattr(notice, "message", None)
+        message = f"Release {uid} still could not take requests after {limit:.0f}s" + (
+            f": {detail}" if detail else "."
+        )
+    return ReleaseReadinessTimeoutError(
+        message,
+        resource_release_uid=uid,
+        timeout_seconds=limit,
+        runtime_state=state,
+        runtime_phase=phase,
+        wake_requested_at=waking_at,
+        expected_cold_start_seconds=expected,
+    )
 
 
 def _total_seconds(timeout: Any) -> float:

@@ -10,6 +10,7 @@ from mainsequence._request_deadline import DEADLINE_HEADER, request_deadline
 from mainsequence.client import (
     ReleaseColdStartTimeoutError,
     ReleaseDeadlineTooShortError,
+    ReleaseNotDeployedError,
     ReleaseReadinessTimeoutError,
     ReleaseRequestTimeoutError,
     ReleaseUnavailableError,
@@ -17,6 +18,7 @@ from mainsequence.client import (
     prewarm_releases,
     release_runtime_cache,
 )
+from mainsequence.client.exceptions import TransportError
 from tests.client.support import _runtime_access_payload
 
 RELEASE_UID = "2f4c4c3d-5669-4da5-9d86-b84633c1e6ed"
@@ -36,6 +38,31 @@ def _waking(retry_after_ms=0, **scaling):
     if scaling:
         payload["scaling"] = scaling
     return payload
+
+
+def _refused(retry_after_ms=None, phase="serving", code="runtime_unavailable", message=None):
+    """An ``unavailable`` answer, with or without the platform's retry hint."""
+    payload = _runtime_access_payload(
+        state="unavailable", can_request=False, retry_after_ms=retry_after_ms
+    )
+    payload["runtime_access"]["notice"] = {
+        "code": code,
+        "severity": "info" if retry_after_ms is not None else "warning",
+        "title": "Deployed runtime unavailable",
+        "message": message or "The deployed runtime is unavailable.",
+    }
+    payload["runtime_presence"]["phase"] = phase
+    return payload
+
+
+def _evidence_pending(retry_after_ms=1):
+    """The platform's answer while it records the runtime's evidence (tdag-django#1309)."""
+    return _refused(
+        retry_after_ms=retry_after_ms,
+        phase="redeploying",
+        code="runtime_evidence_pending",
+        message="Checking the deployed runtime.",
+    )
 
 
 def _response(status=200, headers=None):
@@ -64,6 +91,8 @@ class Platform:
     def _resolve(self):
         self.asked += 1
         answer = self.answers.pop(0) if len(self.answers) > 1 else self.answers[0]
+        if isinstance(answer, BaseException):
+            raise answer
         return models_helpers_mod.ResourceReleaseRuntimeAccess.model_validate(answer)
 
     def _send(self, method, url, *, timeout, **kwargs):
@@ -214,6 +243,81 @@ def test_an_unavailable_release_ends_the_call_at_once(monkeypatch):
 
     assert raised.value.runtime_state == "unavailable"
     assert platform.asked == 1
+    assert platform.sent == []
+
+
+def test_an_answer_with_a_retry_hint_is_asked_again_whatever_its_state(monkeypatch):
+    platform = Platform(monkeypatch, [_evidence_pending(), _ready()], [_response()])
+
+    response = _release().request("GET", "/v1/prices", timeout=60)
+
+    assert response.status_code == 200
+    assert platform.asked == 2
+    assert len(platform.sent) == 1
+
+
+def test_redeploying_without_a_retry_hint_ends_the_call_at_once(monkeypatch):
+    platform = Platform(monkeypatch, [_refused(phase="redeploying")])
+
+    with pytest.raises(ReleaseUnavailableError) as raised:
+        _release().request("GET", "/v1/prices", timeout=60)
+
+    assert not isinstance(raised.value, ReleaseNotDeployedError)
+    assert (raised.value.runtime_state, raised.value.runtime_phase) == (
+        "unavailable",
+        "redeploying",
+    )
+    assert platform.asked == 1
+    assert platform.sent == []
+
+
+def test_a_retry_hint_that_never_ends_stops_at_the_readiness_limit(monkeypatch):
+    platform = Platform(monkeypatch, [_evidence_pending(retry_after_ms=10)])
+
+    with pytest.raises(ReleaseReadinessTimeoutError) as raised:
+        _release().request("GET", "/v1/prices", timeout=60, ready_timeout=0.05)
+
+    error = raised.value
+    assert (error.runtime_state, error.runtime_phase) == ("unavailable", "redeploying")
+    assert "Checking the deployed runtime." in str(error)
+    assert platform.asked > 1
+    assert platform.sent == []
+
+
+def test_a_release_without_an_active_revision_is_not_deployed(monkeypatch):
+    answer = _refused(phase="not_deployed")
+    answer["routing"] = {"state": "unavailable", "active_revision_uid": None}
+    platform = Platform(monkeypatch, [answer])
+
+    with pytest.raises(ReleaseNotDeployedError) as raised:
+        _release().request("GET", "/v1/prices", timeout=60)
+
+    assert isinstance(raised.value, ReleaseUnavailableError)
+    assert "not been deployed" in str(raised.value)
+    assert platform.asked == 1
+    assert platform.sent == []
+
+
+def test_a_failed_platform_ask_is_made_again(monkeypatch):
+    monkeypatch.setattr(release_calls_mod, "DEFAULT_RETRY_SECONDS", 0.001)
+    platform = Platform(
+        monkeypatch, [TransportError("platform unreachable"), _ready()], [_response()]
+    )
+
+    response = _release().request("GET", "/v1/prices", timeout=60)
+
+    assert response.status_code == 200
+    assert platform.asked == 2
+
+
+def test_three_failed_platform_asks_in_a_row_end_the_wait(monkeypatch):
+    monkeypatch.setattr(release_calls_mod, "DEFAULT_RETRY_SECONDS", 0.001)
+    platform = Platform(monkeypatch, [TransportError("platform unreachable")])
+
+    with pytest.raises(TransportError):
+        _release().request("GET", "/v1/prices", timeout=60)
+
+    assert platform.asked == release_calls_mod.MAX_FAILED_PLATFORM_ASKS == 3
     assert platform.sent == []
 
 
@@ -592,6 +696,28 @@ def test_a_library_call_is_bounded_by_the_callers_deadline_and_passes_it_on(monk
 
     assert 4 < call.timeout <= 5
     assert 4000 < int(call.headers[DEADLINE_HEADER]) <= 5000
+
+
+def test_an_applications_narrower_deadline_bounds_its_release_calls(monkeypatch):
+    from mainsequence.client import remaining_request_seconds
+    from mainsequence.client import request_deadline as public_request_deadline
+
+    platform = Platform(monkeypatch, [_ready()], [_response()])
+    release = _release()
+
+    with public_request_deadline(5):
+        with public_request_deadline(2):
+            assert 1 < remaining_request_seconds() <= 2
+            with release.call("GET", "/v1/prices", timeout=60) as call:
+                call.record(_response())
+            release.request("GET", "/v1/prices", timeout=60)
+        with public_request_deadline(60):
+            assert 4 < remaining_request_seconds() <= 5
+
+    assert 1 < call.timeout <= 2
+    assert int(call.headers[DEADLINE_HEADER]) <= 2000
+    assert int(platform.sent[0]["headers"][DEADLINE_HEADER]) <= 2000
+    assert remaining_request_seconds() is None
 
 
 def test_a_library_call_with_a_spent_deadline_is_refused_before_sending(monkeypatch):

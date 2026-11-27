@@ -91,8 +91,12 @@ In asynchronous code use `await release.arequest(...)`, which runs the same
 call on a worker thread.
 
 The call first makes sure the release is ready. It asks the platform, which
-also starts the release, and waits while the answer is `waking`. Only then is
-the request sent, to the URL and with the token the platform returned, so
+also starts the release, and asks again while the answer carries a retry hint
+(`retry_after_ms`), whatever its state: a release that is starting answers
+`waking`, and one whose runtime the platform is still checking answers
+`unavailable` with a hint. An answer without a hint ends the call at once. A
+platform ask that fails on the network is made again, up to three times in a
+row. Only then is the request sent, to the URL and with the token the platform returned, so
 `timeout` measures the application's own work. `timeout` is a total in seconds
 or a `(connect, read)` tuple. Other keyword arguments (`json`, `params`,
 `data`, `headers`) go to `requests`. The response is returned whatever its
@@ -166,8 +170,9 @@ Each is a `ReleaseCallError` with `resource_release_uid`, `phase`
 
 | Error | Raised when | Sent? |
 | --- | --- | --- |
-| `ReleaseReadinessTimeoutError` | `ready_timeout` ended while the release was starting. | No |
-| `ReleaseUnavailableError` | The platform answered that the release cannot take requests. | No |
+| `ReleaseReadinessTimeoutError` | `ready_timeout` ended while the platform still asked to try again. | No |
+| `ReleaseUnavailableError` | The platform answered that the release cannot take requests, with no retry hint. | No |
+| `ReleaseNotDeployedError` | A `ReleaseUnavailableError`: the release has no active revision yet. | No |
 | `ReleaseDeadlineTooShortError` | The caller of the current request will not wait long enough for the release to start. | No |
 | `ReleaseColdStartTimeoutError` | `timeout` ended and the platform then shows the release starting. | Yes |
 | `ReleaseRequestTimeoutError` | `timeout` ended on a serving release. | Yes |
@@ -176,6 +181,17 @@ After a request times out, the SDK asks the platform once to tell the last two
 apart. A start that finished before that question is recognised only when the
 platform returns `scaling.serving_since`; without it, such a call reads as
 `ReleaseRequestTimeoutError`.
+
+**Let these errors reach your caller unchanged.** Code that calls a release,
+a client library especially, never catches one to raise an error of its own:
+its type says whether the request was sent, and its fields name the release
+and the phase. Keep your own errors for your own failures and for the
+target's answers, such as its `404`. A broad clause catches them too:
+`except Exception` or `except ApiError` all five, `except TimeoutError` or
+`except OSError` the timeout ones, `except RuntimeError`
+`ReleaseUnavailableError`. Put `except ReleaseCallError: raise` before such a
+clause. To add context, call
+`error.add_note("...")` and re-raise the same exception.
 
 `wait_for_runtime_access()` runs the same wait without sending a request, for
 code that only needs the platform's answer. Concurrent first calls to a cold
@@ -193,10 +209,25 @@ sum.
 
 `request` sends `Mainsequence-Request-Timeout-Ms`, the time it will still
 wait. An application with `install_request_identity` reads it from a verified
-caller, and calls made with `request` inside that handler are bounded by what
-remains and send the remainder on. A call that cannot fit the target's
-expected start in that time fails with `ReleaseDeadlineTooShortError` before
-anything is sent. Without the header nothing is bounded.
+caller, and calls made with `request` or `release.call` inside that handler are
+bounded by what remains and send the remainder on. A call that cannot fit the
+target's expected start in that time fails with `ReleaseDeadlineTooShortError`
+before anything is sent. Without the header nothing is bounded.
+
+An application reads the same time with
+`mainsequence.client.remaining_request_seconds()` to bound its own work, and
+narrows it with `request_deadline(seconds)`, which also bounds the release
+calls made inside the block:
+
+```python
+from mainsequence.client import remaining_request_seconds, request_deadline
+
+with request_deadline(60):  # this API's own limit, cut by the caller's
+    statement_timeout = min(15, remaining_request_seconds())
+    response = release.request("POST", "/v1/enrich", timeout=30, json=rows)
+```
+
+See [Bounding your own work](../fastapi/index.md#bounding-your-own-work).
 
 ## Supported collection filters
 

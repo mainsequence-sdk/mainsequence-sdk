@@ -1,3 +1,9 @@
+from mainsequence._request_deadline import (
+    remaining_request_seconds as remaining_request_seconds,
+)
+from mainsequence._request_deadline import (
+    request_deadline as request_deadline,
+)
 from mainsequence.logconf import logger as logger
 
 from .access_catalog import *  # noqa: F403

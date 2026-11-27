@@ -47,6 +47,19 @@ def _waking_access(retry_after_ms):
     }
 
 
+def _evidence_pending_access(retry_after_ms):
+    access = _waking_access(retry_after_ms)
+    access["runtime_interaction"]["state"] = "unavailable"
+    access["runtime_interaction"]["notice"] = {
+        "code": "runtime_evidence_pending",
+        "severity": "info",
+        "title": "Agent runtime unavailable",
+        "message": "Checking the Agent runtime.",
+    }
+    access["runtime_presence"]["phase"] = "redeploying"
+    return access
+
+
 def _ready_access(rpc_url):
     return {"mode": "token", "rpc_url": rpc_url, "token": "tok-secret", **_ready_runtime_contract()}
 
@@ -197,6 +210,32 @@ def test_runtime_that_becomes_ready_within_the_budget_receives_the_message_once(
     with serve(routes) as (url, calls):
         routes[("POST", RESOLVE_PATH)] = answer_sequence(
             answer_json(200, _waking_access(500)), answer_json(200, _ready_access(url))
+        )
+        routes[("POST", MESSAGE_PATH)] = answer_json(
+            200, {"message": message}, content_type="application/a2a+json"
+        )
+        platform_at(url)
+        result = _send(5)
+
+    assert result.message == message
+    assert [sent_path for _method, sent_path, _body in calls] == [
+        RESOLVE_PATH,
+        RESOLVE_PATH,
+        MESSAGE_PATH,
+    ]
+
+
+def test_an_unavailable_runtime_with_a_retry_hint_is_asked_again(platform_at):
+    message = {
+        "messageId": "msg-runtime-output",
+        "role": "ROLE_AGENT",
+        "contextId": SESSION_UID,
+        "parts": [{"text": "Ready."}],
+    }
+    routes = {}
+    with serve(routes) as (url, calls):
+        routes[("POST", RESOLVE_PATH)] = answer_sequence(
+            answer_json(200, _evidence_pending_access(50)), answer_json(200, _ready_access(url))
         )
         routes[("POST", MESSAGE_PATH)] = answer_json(
             200, {"message": message}, content_type="application/a2a+json"

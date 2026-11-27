@@ -4,6 +4,53 @@ All notable changes to this project should be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows versioned releases.
 
+## [9.0.46] - 2026-11-27
+
+**An application can read and narrow the time its caller will still wait (ADR 0041, amended;
+#270).** `mainsequence.client.remaining_request_seconds()` returns the seconds the current
+request's caller will still wait. It is set by `install_request_identity` from a verified
+caller's `Mainsequence-Request-Timeout-Ms`, is zero or less once that time has passed, and is
+`None` without a limit. `mainsequence.client.request_deadline(seconds)` bounds a block by
+`seconds` or by the caller's time, whichever is shorter, and never extends it. A handler can
+now bound its own work, such as a SQL statement, by the shorter of its own limit and its
+caller's, and apply its own limit to the release and Agent calls it makes inside the block.
+Both were private (`mainsequence._request_deadline`); they are the same functions the SDK's
+calls use.
+
+- The FastAPI guide has a new section, "Bounding your own work", with an example. It and the
+  Resource releases guide now say that `ResourceRelease.call` and A2A sends respect the
+  deadline too, not only `ResourceRelease.request`. The `api_surfaces` and `release_calls`
+  agent skills show how a handler bounds its own work.
+
+**A release call waits whenever the platform asks it to, and survives a failed ask (ADR 0041,
+amended; #269).** The readiness wait of `ResourceRelease.request`, `ResourceRelease.call` and
+`wait_for_runtime_access()` waited only while the platform answered `waking`, so an
+`unavailable` answer the platform meant as temporary ended the call at once. It now asks again
+whenever the answer carries `retry_after_ms`, whatever its state or phase, within
+`ready_timeout` and the caller's deadline, and stops at once on an answer without one. This is
+the platform's rule (tdag-django#1309): a release that is checking its runtime answers
+`unavailable` with a retry hint, and a serving release stays `ready` through a rollout
+(tdag-django#1230). AgentSession message send follows the same rule.
+
+- A platform ask that fails with a `TransportError` (a timeout, an unreachable platform) is
+  made again after 2 seconds, up to three times in a row, within the same limits.
+- New `ReleaseNotDeployedError`, a `ReleaseUnavailableError`, when the release has no active
+  revision: it was created but has not been deployed yet.
+- `ReleaseReadinessTimeoutError` now also ends a wait on an answer other than `waking`, and its
+  message carries the platform's notice.
+
+**The release-call guidance tells code to let `ReleaseCallError` through (#267).** The
+`release_calls` agent skill, the Resource releases guide and the Caller context guide
+described the five release-call errors but never said what code calling a release should do
+with them, so a client library could catch them and raise its own error instead. The caller
+then lost whether the request was sent, the release's UID and phase, and `TimeoutError`. They
+now say to let these errors reach the caller unchanged, to keep a library's own errors for its
+own failures and the target's answers, to put `except ReleaseCallError: raise` before any
+`except ApiError` (a `ReleaseCallError` is an `ApiError`), and to add context with
+`error.add_note()`. With `ResourceRelease.call`, an exception from the library's own client
+inside the block means the request may have been sent and must not become an error that says
+nothing was. The skill's checks include it, and a test keeps the rule in the skill.
+
 ## [9.0.45] - 2026-11-27
 
 **`Constant.filter()` and `Constant.get()` work with cachetools 8.** In 9.0.44 and earlier they raised

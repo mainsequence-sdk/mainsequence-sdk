@@ -9,6 +9,12 @@ Status: Proposed. The SDK's part is implemented and runs on defaults; see
 not observations of it, and nothing here was tried against a deployed release.
 From 9.0.45 a library's own HTTP client can call a release the same way; see
 [Amendment 2026-11-27](#amendment-2026-11-27-a-call-a-librarys-own-client-sends).
+From 9.0.46 the platform's retry hint, not the state, decides whether a call
+waits; see
+[Amendment 2026-11-27](#amendment-2026-11-27-the-retry-hint-decides-the-wait).
+From 9.0.46 such a library lets the SDK's `ReleaseCallError` reach its caller
+unchanged; see
+[Amendment 2026-11-27: a library lets the SDK's errors through](#amendment-2026-11-27-a-library-lets-the-sdks-errors-through).
 
 Owners: Main Sequence SDK maintainers.
 
@@ -99,9 +105,11 @@ a dependency. Each call:
 1. **Resolves access.** From the cache of [section 3](#3-a-process-cache-of-release-runtime-state)
    when the release is known warm, otherwise from `resolve-runtime-access`,
    which also wakes the release.
-2. **Waits while `waking`.** It follows `retry_after_ms`, at least 100 ms
-   apart, under the readiness limit. A state other than `ready` or `waking`
-   ends the call at once.
+2. **Waits while the platform asks it to.** It follows `retry_after_ms`, at
+   least 100 ms apart, under the readiness limit. An answer without a retry
+   hint ends the call at once. (Amended 2026-11-27: the hint decides, not the
+   state; see
+   [the amendment](#amendment-2026-11-27-the-retry-hint-decides-the-wait).)
 3. **Sends the request** to the returned `rpc_url` with the returned token,
    under `timeout`. `timeout` starts here, so it measures the target's work
    and nothing else.
@@ -154,7 +162,7 @@ to a user.
 | Error | Raised when |
 | --- | --- |
 | `ReleaseReadinessTimeoutError` | The readiness limit ended while the release was `waking`. Carries the limit, the last `phase` and the wake's `requested_at`. |
-| `ReleaseUnavailableError` | The platform answered a terminal state. |
+| `ReleaseUnavailableError` | The platform answered that the release cannot take requests, with no retry hint. `ReleaseNotDeployedError`, a subclass, when it has no active revision. |
 | `ReleaseColdStartTimeoutError` | `timeout` ended and the platform then reports the release `waking` or below one serving replica: the request was held by a start, not by the application. |
 | `ReleaseRequestTimeoutError` | `timeout` ended and the release is serving: the application was slow or hung. |
 
@@ -191,6 +199,9 @@ will still wait, as a duration, so clocks need not agree.
   The error names the target, the remainder and the expected start, so the
   outermost caller learns which hop its limit could not cover.
 - Without the header nothing is reduced.
+- From 9.0.46 an application reads and narrows the same time with the public
+  `mainsequence.client.remaining_request_seconds()` and `request_deadline()`;
+  see [Amendment 2026-11-27: the remaining time is public](#amendment-2026-11-27-the-remaining-time-is-public).
 
 Requested of the platform: the gateway forwards the header unchanged on
 release requests and Agent Task dispatch, as it forwards `baggage` and
@@ -226,7 +237,11 @@ building a project:
   `runtime_status()`;
 - declare dependencies once and prewarm them in the lifespan;
 - mark a call `idempotent=True` only when replaying it is safe;
-- move a call that exceeds its deadline to submit-and-poll.
+- move a call that exceeds its deadline to submit-and-poll;
+- let `ReleaseCallError` reach the caller unchanged, so the caller still learns
+  whether anything was sent; a library's own errors are for its own failures
+  and the target's answers (added 2026-11-27; see
+  [the amendment](#amendment-2026-11-27-a-library-lets-the-sdks-errors-through)).
 
 The API surfaces skill and the orchestration and releases skill link to it.
 
@@ -358,3 +373,110 @@ a process start, `runtime_status()` and a later `request` seeing a library's
 answers, `async with`, and a library's own `requests.Session` reusing one
 connection to a local server.
 
+## Amendment 2026-11-27: the remaining time is public
+
+Issue #270. Section 6 gave the caller's remaining time to the SDK's own calls
+only: `request`, and from 9.0.45 `call` and A2A sends, read it through the
+private `mainsequence._request_deadline`. An application's own work, such as a
+FastAPI release that bounds each SQL statement, could not read it, and could
+not apply its own limit to the release calls it makes inside a request.
+
+Decision, from 9.0.46:
+
+- **`mainsequence.client.remaining_request_seconds()`** returns the seconds
+  the current request's caller will still wait: zero or less once it has
+  passed, and `None` without a limit (no header, a public request, a Job run,
+  a script).
+- **`mainsequence.client.request_deadline(seconds)`** bounds the block by
+  `seconds` or by the caller's remaining time, whichever is shorter. It never
+  extends a limit, and `None` changes nothing. The SDK's calls inside the
+  block, and `remaining_request_seconds()`, see the shorter limit.
+- **They are the functions the SDK uses**, exported from `mainsequence.client`,
+  not from `mainsequence.server.fastapi`: the value bounds client calls and is
+  read by code that is not a FastAPI app, and it reads `None` outside a
+  request instead of failing.
+- **Not made public:** the header name and its formatting. A library sending
+  to a release uses `ResourceRelease.call`, which sends the header.
+
+The value lives in a context variable: FastAPI's thread pool, `asyncio` tasks
+and `asyncio.to_thread` carry it, and a plain `threading.Thread` or a
+`concurrent.futures` executor does not.
+
+Tests: `tests/test_fastapi_request_identity.py` reads and narrows the time in
+a sync and an async handler, with and without the header;
+`tests/client/test_release_calls.py` bounds a release call and a `request`
+by a narrower `request_deadline`.
+
+## Amendment 2026-11-27: a library lets the SDK's errors through
+
+Issue #267. The skill of [section 9](#9-a-scaffold-skill-teaches-it) and the
+guides described the five `ReleaseCallError` types and what to do about each,
+but gave a library that calls a release no rule for them. One client library
+caught them and raised its own `RuntimeError`, "did not become available" or
+"is unavailable", for what the SDK reports as `ReleaseReadinessTimeoutError`
+or `ReleaseUnavailableError`. Its caller could no longer tell whether the
+request was sent, which decides whether repeating a write is safe, and lost
+the release's UID and phase and the guidance tied to each type.
+
+Decision, from 9.0.46:
+
+- **Code that calls a release lets `ReleaseCallError` reach its caller
+  unchanged**, through `request` or `release.call(...)`. A library does not
+  catch these errors to raise its own or fold them into its own error class.
+  Its own errors are for its own failures and for the target's answers, such
+  as a `404` or `409`.
+- **Context is added, not substituted**: `error.add_note(...)` and a bare
+  `raise`. A broad `except` (`Exception`, `ApiError`, `TimeoutError`,
+  `OSError`, `RuntimeError`) is preceded by `except ReleaseCallError: raise`.
+- **"Sent" stays apart from "not sent" with `release.call`.** Entering the
+  block raises only the three errors that mean nothing was sent. An exception
+  the library's own client raises inside the block means the request may have
+  been sent, and is never turned into an error that says nothing was.
+- The `release_calls` skill states the rule, in its general rules and for a
+  library's send method, and its Verify section checks it. The "Failures"
+  section of the Resource releases guide and the Caller context guide's
+  `ResourceRelease.call` section say the same.
+- **Not done:** no change to the SDK's code. The SDK cannot stop a library
+  catching an exception; the rule lives in the guidance an agent reads when it
+  writes one. `tests/test_scaffold_skills.py` fails if the rule leaves the
+  skill.
+
+## Amendment 2026-11-27: the retry hint decides the wait
+
+Issue #269. The wait of [section 2](#2-one-routine-calls-a-release) waited
+only while `runtime_access.state` was `waking`, and a `TransportError` from the
+platform ask ended it. A client with its own readiness loop could not move to
+`ResourceRelease.call`: it waited through a rollout and retried a failed ask,
+and the SDK did neither.
+
+The platform settled the contract. Since
+Main-Sequence-Server-Side/tdag-django#1230 a release that serves stays `ready`
+through a rollout, whatever `runtime_presence.phase` says. Under
+Main-Sequence-Server-Side/tdag-django#1309 the one temporary `unavailable` left,
+evidence the runtime monitor is still recording, carries `retry_after_ms` and
+the notice code `runtime_evidence_pending`. Every other refusal carries no hint.
+The rule for a client: `can_request` sends; otherwise a `retry_after_ms` asks
+again after that long, within the client's own budget; otherwise it stops and
+shows the notice. Neither the phase nor the notice code decides.
+
+Decision, from 9.0.46:
+
+- **`wait_for_release` asks again whenever the answer carries
+  `retry_after_ms`**, under the readiness limit and the caller's deadline, and
+  stops at once on an answer without it, `redeploying` included. A `waking`
+  answer without a hint, from an older platform, still waits, after 2 seconds.
+  `ReleaseReadinessTimeoutError` names the last state and the platform's notice.
+- **A failed ask is made again.** A `TransportError` from
+  `resolve-runtime-access` is asked again after 2 seconds, within the same
+  limits, up to three times in a row; the third is raised. The POST is safe to
+  repeat: it only asks, and wakes the release.
+- **`ReleaseNotDeployedError(ReleaseUnavailableError)`** when the answer's
+  `routing.active_revision_uid` is `None`: the release has no revision to wake.
+  It is read from routing, not from the `not_deployed` phase, which also covers
+  an active revision whose Service vanished.
+- **AgentSession message send follows the same rule.** Its loop also asks
+  again when a state outside its transient set carries `retry_after_ms`.
+- `request`, `call` and `wait_for_runtime_access()` share the wait, so all
+  three change. Tests: `tests/client/test_release_calls.py` and
+  `tests/client/test_a2a_request_budget.py`.
+- **Not done:** a failed AgentSession platform ask is not retried.
