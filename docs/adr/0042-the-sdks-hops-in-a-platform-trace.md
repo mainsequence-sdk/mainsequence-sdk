@@ -294,11 +294,10 @@ Decision, from 9.0.44:
 - **No transport is added.** A release-bound session that would also wait for
   a start and renew the token (the issue's second shape) and a pooled,
   streaming `ResourceRelease.request` (its third) are not part of this
-  decision. A library that keeps its own client waits with
-  `wait_for_runtime_access()` and asks again after a `401`, a timeout, or
-  `access.get("expires_at")` when the platform sends it. Passing on the
-  caller's deadline and reusing the access the SDK keeps for `request` are
-  issue #265.
+  decision. From 9.0.45 a library's call to a release uses
+  `ResourceRelease.call`, which also reuses the access the SDK keeps and
+  passes on the caller's deadline (ADR 0041, amendment of 2026-11-27, issue
+  #265); `dependency_call` stays the span alone, for other platform calls.
 
 Tests: `tests/test_platform_trace.py` sends a library's calls through
 `dependency_call` with its own `requests.Session` to a local HTTP/1.1 server,

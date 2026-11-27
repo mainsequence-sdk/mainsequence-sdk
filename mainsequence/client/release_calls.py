@@ -7,6 +7,7 @@ process cache skips the platform call while the target is known warm.
 
 from __future__ import annotations
 
+import asyncio
 import contextvars
 import datetime
 import math
@@ -526,6 +527,137 @@ def _held_by_a_start(access: Any, sent_at: datetime.datetime) -> bool:
     return serving_since is not None and serving_since > sent_at
 
 
+def _access_for_call(
+    release: Any, uid: str, *, ready_timeout: float | None, cache: ReleaseRuntimeCache
+) -> tuple[_Grant, bool]:
+    """The access to send with, and whether it is the one this process kept.
+
+    The kept access is used while the release is warm and its token fresh;
+    otherwise the platform is asked, which starts the release, and the call
+    waits while it starts. Concurrent first calls to a cold release share one
+    wait.
+    """
+    grant = cache.warm_access(uid)
+    if grant is not None:
+        return grant, True
+    with cache.starting(uid, _ready_limit(ready_timeout, None)):
+        grant = cache.warm_access(uid)
+        if grant is None:
+            grant = _wait_until_ready(release, ready_timeout=ready_timeout, cache=cache)
+    return grant, False
+
+
+def _check_path(path: Any) -> None:
+    if not isinstance(path, str) or not path.startswith("/") or path.startswith("//"):
+        raise ValueError("path must be a path on the release, starting with one '/'.")
+
+
+class ReleaseCall:
+    """One request your own HTTP client sends to a release, prepared as ``request`` would.
+
+    Made with ``ResourceRelease.call``, for a client library that keeps its
+    own ``requests`` or ``httpx`` client. Entering the block, with ``with`` or
+    ``async with``, does what ``request`` does before it sends: it takes the
+    access this process keeps while the release is warm and its token fresh,
+    or asks the platform, which starts the release, and waits while it starts
+    (ADR 0041). Then:
+
+    - ``url`` is the address the platform gave, followed by ``path``;
+    - ``timeout`` is the call's ``timeout`` in seconds, cut to what the
+      caller of the current request will still wait;
+    - ``headers`` are ``Authorization``, ``Mainsequence-Request-Timeout-Ms``
+      with that time, and ``traceparent`` and ``baggage`` naming the call's
+      own span (ADR 0042);
+    - ``reused_access`` is ``True`` when the kept access was used.
+
+    Send one request to ``url`` with ``headers`` and ``timeout``, and pass its
+    response to :meth:`record`. Leaving the block does what ``request`` does
+    after it sends: an answer below status 500 is recorded as a sign that the
+    release serves, which ``runtime_status`` and later calls use; a ``401``
+    to the kept access, an exception in the block or a block that recorded
+    no response makes the next call ask the platform again. The call's
+    ``dependency.call.*`` line is written in every case.
+    """
+
+    def __init__(
+        self,
+        release: Any,
+        method: str,
+        path: str,
+        *,
+        timeout: float,
+        ready_timeout: float | None = None,
+    ) -> None:
+        self._uid = _release_uid(release)
+        _check_path(path)
+        if not isinstance(method, str) or not method.strip():
+            raise ValueError("method must be an HTTP method, such as GET.")
+        if _positive_seconds(timeout) is None:
+            raise ValueError("timeout must be a positive number of seconds.")
+        if ready_timeout is not None and _positive_seconds(ready_timeout) is None:
+            raise ValueError("ready_timeout must be greater than 0")
+        self._release = release
+        self._method = method.strip().upper()
+        self._path = path
+        self._total = float(timeout)
+        self._ready_timeout = ready_timeout
+        self._dependency: DependencyCall | None = None
+        self.url: str | None = None
+        self.headers: dict[str, str] = {}
+        self.timeout: float | None = None
+        self.reused_access = False
+        self.status_code: int | None = None
+        self.response_headers: Mapping[str, str] | None = None
+
+    def record(self, response: Any) -> None:
+        """Record the answer: any response with ``status_code`` and ``headers``."""
+        self.status_code = int(response.status_code)
+        self.response_headers = getattr(response, "headers", None)
+
+    def __enter__(self) -> ReleaseCall:
+        if self._dependency is not None:
+            raise RuntimeError("A ReleaseCall prepares one send; make a new one for each.")
+        grant, self.reused_access = _access_for_call(
+            self._release,
+            self._uid,
+            ready_timeout=self._ready_timeout,
+            cache=release_runtime_cache,
+        )
+        caller_remaining = remaining_request_seconds()
+        if caller_remaining is not None and caller_remaining <= 0:
+            raise _deadline_too_short(self._uid, caller_remaining)
+        self.timeout = (
+            self._total if caller_remaining is None else min(self._total, caller_remaining)
+        )
+        self.url = grant.rpc_url.rstrip("/") + self._path
+        # The release's address is the one the platform gave (ADR 0042).
+        self._dependency = DependencyCall("release", self._method, self._path, name=self._uid)
+        self.headers = {
+            **self._dependency.headers(),
+            "Authorization": f"Bearer {grant.token}",
+            DEADLINE_HEADER: format_timeout_ms(self.timeout),
+        }
+        self._dependency.__enter__()
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> bool:
+        cache = release_runtime_cache
+        status = self.status_code
+        if exc is not None or status is None or (status == 401 and self.reused_access):
+            cache.invalidate(self._uid)
+        elif status < 500:
+            cache.record_response(self._uid, self.response_headers)
+        self._dependency.status_code = status
+        return self._dependency.__exit__(exc_type, exc, tb)
+
+    async def __aenter__(self) -> ReleaseCall:
+        # Waiting for a start blocks; the copied context keeps the deadline and span.
+        return await asyncio.to_thread(self.__enter__)
+
+    async def __aexit__(self, exc_type, exc, tb) -> bool:
+        return self.__exit__(exc_type, exc, tb)
+
+
 def request_release(
     release: Any,
     method: str,
@@ -539,8 +671,7 @@ def request_release(
 ) -> requests.Response:
     """Send one HTTP request to a release's application. See ``ResourceRelease.request``."""
     uid = _release_uid(release)
-    if not isinstance(path, str) or not path.startswith("/") or path.startswith("//"):
-        raise ValueError("path must be a path on the release, starting with one '/'.")
+    _check_path(path)
     if ready_timeout is not None and _positive_seconds(ready_timeout) is None:
         raise ValueError("ready_timeout must be greater than 0")
     if "stream" in kwargs:
@@ -553,14 +684,7 @@ def request_release(
     total = _total_seconds(timeout)
     cache = release_runtime_cache
 
-    grant = cache.warm_access(uid)
-    from_cache = grant is not None
-    if grant is None:
-        # Concurrent first calls to a cold release share one wait.
-        with cache.starting(uid, _ready_limit(ready_timeout, None)):
-            grant = cache.warm_access(uid)
-            if grant is None:
-                grant = _wait_until_ready(release, ready_timeout=ready_timeout, cache=cache)
+    grant, from_cache = _access_for_call(release, uid, ready_timeout=ready_timeout, cache=cache)
     replays = 1 if idempotent else 0
     while True:
         caller_remaining = remaining_request_seconds()
@@ -666,6 +790,7 @@ def prewarm_releases(releases: Iterable[Any], *, wait: bool = False) -> None:
 __all__ = [
     "COLD_START_HEADER",
     "PROCESS_STARTED_AT_HEADER",
+    "ReleaseCall",
     "ReleaseCallError",
     "ReleaseColdStartTimeoutError",
     "ReleaseDeadlineTooShortError",

@@ -527,3 +527,235 @@ def test_concurrent_first_calls_to_a_cold_release_share_one_wait(monkeypatch):
     assert len(sent) == 6
     # One caller polled through the start; the others used what it learned.
     assert len(asked) == 3
+
+
+# A request a library's own HTTP client sends (ResourceRelease.call, issue #265)
+
+
+class _Lines:
+    """Stands in for the SDK logger and keeps the dependency-call lines."""
+
+    def __init__(self):
+        self.lines = []
+
+    def info(self, event, **fields):
+        self.lines.append((event, fields))
+
+    warning = info
+
+    def __getattr__(self, name):
+        return lambda *args, **kwargs: None
+
+
+@pytest.fixture
+def lines(monkeypatch):
+    from mainsequence import logconf
+
+    recorder = _Lines()
+    monkeypatch.setattr(logconf, "logger", recorder)
+    return recorder
+
+
+def test_a_library_call_is_prepared_as_request_prepares_its_own(monkeypatch, lines):
+    platform = Platform(monkeypatch, [_waking(), _ready()])
+
+    with _release().call("post", "/v1/prices?symbol=ABC", timeout=60) as call:
+        assert call.url == "https://runtime.example.test/v1/prices?symbol=ABC"
+        assert call.timeout == 60
+        assert call.headers["Authorization"] == "Bearer runtime-token"
+        assert call.headers[DEADLINE_HEADER] == "60000"
+        _, trace_id, span_id, _ = call.headers["traceparent"].split("-")
+        assert call.reused_access is False
+        call.record(_response())
+
+    # It waited for the start, and the SDK sent nothing itself.
+    assert platform.asked == 2
+    assert platform.sent == []
+    assert _release().runtime_status().state == "warm"
+    [(event, fields)] = [line for line in lines.lines if line[0].startswith("dependency.")]
+    assert event == "dependency.call.completed"
+    assert (fields["trace_id"], fields["span_id"]) == (trace_id, span_id)
+    assert (fields["dependency_type"], fields["dependency_name"]) == ("release", RELEASE_UID)
+    assert (fields["http_method"], fields["route"], fields["status_code"]) == (
+        "POST",
+        "/v1/prices",
+        200,
+    )
+
+
+def test_a_library_call_is_bounded_by_the_callers_deadline_and_passes_it_on(monkeypatch):
+    Platform(monkeypatch, [_ready()])
+
+    with request_deadline(5):
+        with _release().call("GET", "/v1/prices", timeout=60) as call:
+            call.record(_response())
+
+    assert 4 < call.timeout <= 5
+    assert 4000 < int(call.headers[DEADLINE_HEADER]) <= 5000
+
+
+def test_a_library_call_with_a_spent_deadline_is_refused_before_sending(monkeypatch):
+    Platform(monkeypatch, [_ready()])
+    release = _release()
+    with release.call("GET", "/v1/prices", timeout=5) as call:
+        call.record(_response())
+
+    with request_deadline(0.001), pytest.raises(ReleaseDeadlineTooShortError):
+        import time
+
+        time.sleep(0.01)
+        with release.call("GET", "/v1/prices", timeout=5):
+            pytest.fail("nothing may be sent")
+
+
+def test_library_calls_reuse_the_warm_access_and_ask_again_after_the_idle_window(monkeypatch):
+    platform = Platform(monkeypatch, [_ready()])
+    release = _release()
+
+    for _ in range(2):
+        with release.call("GET", "/v1/prices", timeout=5) as call:
+            call.record(_response())
+    assert platform.asked == 1
+    assert call.reused_access is True
+
+    # 50 seconds of a 60-second default window, less its 10-second margin, are used up.
+    release_runtime_cache._entries[RELEASE_UID].served -= 50
+    with release.call("GET", "/v1/prices", timeout=5) as call:
+        call.record(_response())
+    assert platform.asked == 2
+    assert call.reused_access is False
+
+
+def test_a_refused_kept_token_makes_the_next_library_call_ask_again(monkeypatch):
+    platform = Platform(monkeypatch, [_ready()])
+    release = _release()
+    with release.call("GET", "/v1/prices", timeout=5) as call:
+        call.record(_response())
+
+    with release.call("GET", "/v1/prices", timeout=5) as call:
+        call.record(_response(status=401))
+    assert call.reused_access is True
+    assert platform.asked == 1
+
+    with release.call("GET", "/v1/prices", timeout=5) as call:
+        call.record(_response())
+    assert platform.asked == 2
+
+
+@pytest.mark.parametrize("ending", ["raises", "records nothing"])
+def test_a_library_call_without_an_answer_makes_the_next_one_ask_again(monkeypatch, lines, ending):
+    platform = Platform(monkeypatch, [_ready()])
+    release = _release()
+    with release.call("GET", "/v1/prices", timeout=5) as call:
+        call.record(_response())
+
+    if ending == "raises":
+        with pytest.raises(requests.Timeout):
+            with release.call("GET", "/v1/prices", timeout=5):
+                raise requests.Timeout("the library's own client timed out")
+    else:
+        with release.call("GET", "/v1/prices", timeout=5):
+            pass
+    assert platform.asked == 1
+
+    with release.call("GET", "/v1/prices", timeout=5) as call:
+        call.record(_response())
+    assert platform.asked == 2
+    assert call.reused_access is False
+    failed = [fields for event, fields in lines.lines if event == "dependency.call.failed"]
+    assert len(failed) == 1
+
+
+def test_a_server_error_to_a_library_call_is_no_sign_of_serving(monkeypatch):
+    Platform(monkeypatch, [_ready()])
+    release = _release()
+    with release.call("GET", "/v1/prices", timeout=5) as call:
+        call.record(_response())
+    answered = release.runtime_status().last_response_at
+
+    with release.call("GET", "/v1/prices", timeout=5) as call:
+        call.record(_response(status=503))
+
+    assert release.runtime_status().last_response_at == answered
+
+
+def test_runtime_status_and_request_see_a_library_s_answers(monkeypatch):
+    platform = Platform(monkeypatch, [_ready()], [_response()])
+    release = _release()
+    started = {release_calls_mod.PROCESS_STARTED_AT_HEADER: "2026-11-10T08:00:00Z"}
+
+    with release.call("GET", "/v1/prices", timeout=5) as call:
+        call.record(_response(headers=started))
+
+    status = release.runtime_status()
+    assert status.state == "warm"
+    assert status.process_started_at == datetime.datetime(2026, 11, 10, 8, tzinfo=datetime.UTC)
+    release.request("GET", "/v1/prices", timeout=5)
+    assert platform.asked == 1
+    assert len(platform.sent) == 1
+
+
+def test_a_library_call_works_with_async_with_and_keeps_the_deadline(monkeypatch):
+    platform = Platform(monkeypatch, [_ready()])
+
+    async def send():
+        with request_deadline(5):
+            async with _release().call("GET", "/v1/prices", timeout=60) as call:
+                call.record(_response())
+        return call
+
+    call = asyncio.run(send())
+
+    assert platform.asked == 1
+    assert call.url == "https://runtime.example.test/v1/prices"
+    assert 4000 < int(call.headers[DEADLINE_HEADER]) <= 5000
+
+
+def test_a_library_s_own_client_keeps_one_connection_and_receives_the_headers(monkeypatch):
+    from tests._http_server import serve_keeping_connections
+
+    with serve_keeping_connections() as (base, seen):
+        answer = _ready()
+        answer["access"]["rpc_url"] = base + "/"
+        Platform(monkeypatch, [answer])
+        release = _release()
+        with requests.Session() as session:
+            for _ in range(2):
+                with release.call("GET", "/v1/prices", timeout=5) as call:
+                    call.record(session.get(call.url, headers=call.headers, timeout=call.timeout))
+
+    assert len(seen) == 2
+    assert seen[0][0] == seen[1][0]  # one connection
+    for _, headers in seen:
+        assert headers["authorization"] == "Bearer runtime-token"
+        assert 0 < int(headers[DEADLINE_HEADER.lower()]) <= 5000
+        assert headers["traceparent"].startswith("00-")
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "timeout", "message"),
+    [
+        ("GET", "v1/prices", 5, "path"),
+        ("GET", "//evil.example/x", 5, "path"),
+        ("", "/v1/prices", 5, "method"),
+        ("GET", "/v1/prices", (5, 30), "timeout"),
+        ("GET", "/v1/prices", 0, "timeout"),
+    ],
+)
+def test_a_library_call_refuses_what_request_refuses(method, path, timeout, message):
+    with pytest.raises(ValueError, match=message):
+        _release().call(method, path, timeout=timeout)
+
+
+def test_a_library_call_prepares_one_send(monkeypatch):
+    from mainsequence.client import ReleaseCall
+
+    Platform(monkeypatch, [_ready()])
+    call = _release().call("GET", "/v1/prices", timeout=5)
+    assert isinstance(call, ReleaseCall)
+    with call:
+        call.record(_response())
+
+    with pytest.raises(RuntimeError, match="one send"):
+        with call:
+            pass

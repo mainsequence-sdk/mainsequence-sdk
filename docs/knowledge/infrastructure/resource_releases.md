@@ -112,17 +112,24 @@ caller's `baggage`, and writes one `dependency.call.*` log line; see
 
 `request` sends each call on a connection of its own and reads the whole
 response. A client library that must keep its own `requests` or `httpx` client,
-for one connection pool, for streaming or for its own test seams, finds the
-address and token with `resolve_runtime_access()` and wraps each send in
-`mainsequence.instrumentation.dependency_call`, so its calls stay in the
-caller's trace and write the same line; see
+for one connection pool, for streaming or for its own test seams, sends each
+call inside `release.call(...)`:
+
+```python
+with release.call("GET", "/v1/prices", timeout=30) as call:
+    response = client.get(call.url, headers=call.headers, timeout=call.timeout)
+    call.record(response)
+```
+
+The block does around the library's send what `request` does around its own:
+it reuses the address and token this process keeps while the release is warm,
+or waits while the release starts; it cuts `timeout` to the time the current
+request's caller will still wait and sends that on in
+`Mainsequence-Request-Timeout-Ms`; it makes the call a span in the caller's
+trace; and it records the answer, so `runtime_status()` and later calls see it.
+`async with` works the same way. Resending after a refused token and telling a
+start from a hang after a timeout stay with the library; see
 [Calls a library sends itself](../server/caller_context.md#calls-a-library-sends-itself).
-Such a library then does itself what `request` does: it waits while the
-release starts, with `wait_for_runtime_access()`, and asks for a new address
-and token after a `401`, after a timeout, and before
-`access.get("expires_at")` when the platform sends it. Its calls are not
-bounded by its own caller's deadline, and `runtime_status()` does not show
-them ([#265](https://github.com/mainsequence-sdk/mainsequence-sdk/issues/265)).
 
 ### What the process remembers
 

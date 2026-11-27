@@ -138,7 +138,8 @@ code reads the context with OpenTelemetry's standard API,
   A request to any other address carries neither header.
 - **Calls your own code sends** to the platform with its own HTTP client, as a
   client library for an API on a release does, carry the same headers and
-  write the same line when each send is wrapped in `dependency_call`; see
+  write the same line when each send is wrapped in `ResourceRelease.call`, for
+  a release, or in `dependency_call`, for another platform call; see
   [Calls a library sends itself](#calls-a-library-sends-itself).
 - **Log lines** written through the SDK's logger carry the current context's
   `mainsequence.` keys as a `baggage` field, and its `trace_id`, `span_id` and
@@ -153,8 +154,9 @@ writes one line that is its span, with `trace_id`, `span_id`, `parent_span_id`
 and `duration_ms`: the platform writes those of the gateway, a release's
 request, a Job run and an Agent's work, and the SDK writes one for each call it
 makes to the platform, and for each call your own code wraps in
-[`dependency_call`](#calls-a-library-sends-itself). Spans are log lines only:
-the SDK exports nothing over OTLP and sets no OpenTelemetry provider.
+[`ResourceRelease.call` or `dependency_call`](#calls-a-library-sends-itself).
+Spans are log lines only: the SDK exports nothing over OTLP and sets no
+OpenTelemetry provider.
 
 **The current span.** In a FastAPI release it is the request's own span, as
 the platform's launcher names it; in a Job run it is the run's span, from
@@ -206,11 +208,9 @@ no-op one while none is set.
 ## Calls a library sends itself
 
 A library that sends requests to the platform with its own HTTP client makes
-each of them a span with `mainsequence.instrumentation.dependency_call`. The
-usual case is a client library for an API that runs as a release: it finds the
-release's address and token with `ResourceRelease.resolve_runtime_access()`
-and sends with a `requests` or `httpx` client it keeps, for its connection
-pool, its streaming or its test seams.
+each of them a span itself. The usual case is a client library for an API that
+runs as a release, which keeps a `requests` or `httpx` client for its
+connection pool, its streaming or its test seams.
 
 Without the span, such a call carries no trace context: the release's request
 lines start a new trace, the release receives no caller context, and the
@@ -221,85 +221,54 @@ current span, exactly as the SDK's own calls are, and writes the same
 
 When you need no client of your own, call the release with
 [`ResourceRelease.request`](../infrastructure/resource_releases.md#call-a-release)
-instead: it makes the span for you, and also waits for a release that is
-starting and renews its token.
+instead: it does everything below for you.
+
+### A call to a release: `ResourceRelease.call`
+
+`release.call(method, path, *, timeout, ready_timeout=None)` prepares one
+request your client sends to the release, and does around it what `request`
+does around its own:
 
 ```python
-from mainsequence.instrumentation import dependency_call
-
-with dependency_call("release", "GET", "/v1/prices", name=release_uid) as call:
-    response = session.get(
-        rpc_url + "/v1/prices",
-        headers={**call.headers(), "Authorization": f"Bearer {token}"},
-    )
-    call.status_code = response.status_code
+with release.call("GET", "/v1/prices", timeout=30) as call:
+    response = client.get(call.url, headers=call.headers, timeout=call.timeout)
+    call.record(response)
 ```
 
-`dependency_call(dependency_type, method, path, *, name=None)` returns a
-`DependencyCall`, used as a context manager:
-
-| Argument | Meaning |
+| When | What happens |
 | --- | --- |
-| `dependency_type` | `release` or `agent` for a call to an address the platform gave: the `rpc_url` in `resolve_runtime_access().access`, or an Agent runtime's. `api` or `inference` for a call to the origin of `MAINSEQUENCE_ENDPOINT`. These are `mainsequence.instrumentation.DEPENDENCY_TYPES`; another value raises `ValueError`. |
-| `method` | The HTTP method. |
-| `path` | The path the request adds to that address, such as `/v1/prices`, not the address's own path. It is written as `route`, without its query and with every UUID replaced by `{uid}`. |
-| `name` | The release's uid for `release`, the Agent session's uid for `agent`; required for both. It is written as `dependency_name`. `api` and `inference` write `mainsequence_backend`. |
+| Entering the block | It takes the address and token this process keeps while the release is warm and its token fresh. Otherwise it asks the platform, which starts the release, and waits while it starts, under `ready_timeout` as `request` does. |
+| `call.url` | The address the platform gave, followed by `path`. |
+| `call.timeout` | `timeout`, in seconds, cut to the time the current request's caller will still wait. Pass it to your client. |
+| `call.headers` | `Authorization` with the release's token, `Mainsequence-Request-Timeout-Ms` with `call.timeout`, and `traceparent` and `baggage` naming the call's own span. Send them with the request; add your own headers after them. |
+| `call.reused_access` | `True` when the kept address and token were used. |
+| `call.record(response)` | Records the answer, from any response with `status_code` and `headers` (`requests`, `httpx`). |
+| Leaving the block | An answer below status 500 is a sign that the release serves: `runtime_status()` shows it, and later calls, `request`'s too, reuse the access. A `401` to the kept access, an exception in the block, or a block that recorded no response makes the next call ask the platform. The `dependency.call.*` line is written. |
 
-**The rules.**
+Entering raises what `request` raises before it sends, with nothing sent:
+`ReleaseReadinessTimeoutError`, `ReleaseUnavailableError` or
+`ReleaseDeadlineTooShortError`. What the send raises is your client's own
+exception. `async with release.call(...)` works the same way; the wait for a
+start runs on a worker thread.
 
-- **One send, one block.** Open the block just before the request is sent and
-  leave it after the response's body is read, so `duration_ms` covers the
-  exchange. A retry your client makes inside the block belongs to that span; a
-  request your code sends again is a new block.
-- **Send `call.headers()` with that request.** They hold `traceparent`, which
-  names the call's own span, and the current `baggage`. A header of your own
-  with the same name wins, so add yours after them.
-- **Set `call.status_code`** as soon as an answer arrives, whatever its status.
-  The block writes `dependency.call.completed` with it, and
-  `dependency.call.failed` when it raises or when no status was set:
-  `error_type` is the exception's class name, or `NoResponse`.
-- **Only to the platform.** Send the headers only to the origin of
-  `MAINSEQUENCE_ENDPOINT` and to addresses the platform gave. The baggage is
-  the caller's context: it must not reach a third party, and the SDK cannot
-  check where your client sends.
-- **Your client stays yours.** The block sends nothing. Your client's pool,
-  timeouts, retries and streaming are unchanged, and no OpenTelemetry
-  configuration is needed: the line is written through the SDK's logger, as
-  the SDK's own lines are. Outside any context, as in a script, the call starts
-  a new trace.
+Two things `request` does stay with the library, because it makes the send:
+
+- **A refused kept token.** `request` sends once more after a `401` to the kept
+  access. With `call`, when `response.status_code == 401` and
+  `call.reused_access`, send a request that is safe to repeat once more, in a
+  new block: that block asks the platform for a new token.
+- **Telling a start from a hang.** After a timeout, `request` asks the platform
+  whether a start held the request. With `call`, the timeout is your client's
+  exception, the next call asks the platform, and
+  `release.runtime_status()` shows what the platform last said.
 
 **In a library**, put the block in the one method through which the library
-sends, so every call, present and future, is a span. The library also does
-itself what `request` does around the send, and the public API covers only
-part of it today
-([#265](https://github.com/mainsequence-sdk/mainsequence-sdk/issues/265)):
-
-- **The address and token.** `resolve_runtime_access()` and
-  `wait_for_runtime_access()` return them in `access`: `rpc_url` and `token`,
-  and `expires_at` only when the platform sends it, so read it with
-  `access.get("expires_at")`. `access` is `None` when the release offers no
-  token access.
-- **A start.** `wait_for_runtime_access()` starts a release that scaled to zero
-  and waits while it starts. It asks the platform each time it is called: it
-  does not reuse the access the SDK keeps for `request`.
-- **The caller's deadline.** A library's call is not bounded by the time its
-  own caller will still wait, and sends no `Mainsequence-Request-Timeout-Ms`,
-  so a chain's limit stops at it. Keep each call's own timeout honest.
-- **The release's state.** `release.runtime_status()` reflects only calls made
-  with `request`, not the library's.
-
-So a library chooses how to hold the access:
-
-| | Ask on each call | Keep the address and token |
-| --- | --- | --- |
-| How | Call `wait_for_runtime_access()` before each send, as below. | Ask once, then again after a `401`, after a timeout, and before `access.get("expires_at")` when the platform sent it. |
-| Cost | One platform call more for each request. | A release that scaled to zero in between is started by the request itself, inside the library's own timeout. |
+sends, so every call, present and future, gets it:
 
 ```python
 import requests
 
 from mainsequence.client import ResourceRelease
-from mainsequence.instrumentation import dependency_call
 
 
 class PricesClient:
@@ -309,20 +278,13 @@ class PricesClient:
         self.release = ResourceRelease.by_uid(release_uid)
         self.session = session or requests.Session()
 
-    def _address(self) -> tuple[str, str]:
-        # Asks the platform on each call, and waits while the release starts.
-        access = self.release.wait_for_runtime_access().access
-        if not access or access.get("mode") != "token":
-            raise RuntimeError(f"Release {self.release.uid} offers no token access.")
-        return access["rpc_url"].rstrip("/"), access["token"]
-
-    def _send(self, method: str, path: str, **kwargs) -> requests.Response:
-        rpc_url, token = self._address()
-        with dependency_call("release", method, path, name=self.release.uid) as call:
-            headers = {**call.headers(), **(kwargs.pop("headers", None) or {})}
-            headers["Authorization"] = f"Bearer {token}"
-            response = self.session.request(method, rpc_url + path, headers=headers, **kwargs)
-            call.status_code = response.status_code
+    def _send(self, method: str, path: str, *, timeout: float, **kwargs) -> requests.Response:
+        with self.release.call(method, path, timeout=timeout) as call:
+            headers = {**call.headers, **(kwargs.pop("headers", None) or {})}
+            response = self.session.request(
+                method, call.url, headers=headers, timeout=call.timeout, **kwargs
+            )
+            call.record(response)
             return response
 
     def price(self, symbol: str) -> dict:
@@ -332,22 +294,72 @@ class PricesClient:
 ```
 
 With `httpx`, the block wraps the same send, and a streamed response is read
-inside it:
+inside it, so the span covers the whole body:
 
 ```python
-with dependency_call("release", "GET", "/v1/prices/export", name=release_uid) as call:
-    with client.stream(
-        "GET", rpc_url + "/v1/prices/export", headers={**call.headers(), **auth}
+async with release.call("GET", "/v1/prices/export", timeout=300) as call:
+    async with client.stream(
+        "GET", call.url, headers=call.headers, timeout=call.timeout
     ) as response:
-        call.status_code = response.status_code
-        for chunk in response.iter_bytes():
+        call.record(response)
+        async for chunk in response.aiter_bytes():
             sink.write(chunk)
 ```
 
+### Any other platform call: `dependency_call`
+
+For a call that is not to a release, such as one to the Main Sequence API or
+an Agent runtime, `mainsequence.instrumentation.dependency_call` makes the
+span alone:
+
+```python
+from mainsequence.instrumentation import dependency_call
+
+with dependency_call("agent", "POST", "/api/a2a/v1/message:send", name=session_uid) as call:
+    response = client.post(url, headers={**call.headers(), **auth}, json=message)
+    call.status_code = response.status_code
+```
+
+`dependency_call(dependency_type, method, path, *, name=None)` returns a
+`DependencyCall`, used as a context manager:
+
+| Argument | Meaning |
+| --- | --- |
+| `dependency_type` | `release` or `agent` for a call to an address the platform gave, `api` or `inference` for a call to the origin of `MAINSEQUENCE_ENDPOINT`. These are `mainsequence.instrumentation.DEPENDENCY_TYPES`; another value raises `ValueError`. For a release, prefer `ResourceRelease.call`, which also manages the access and the deadline. |
+| `method` | The HTTP method. |
+| `path` | The path the request adds to that address, such as `/v1/prices`, not the address's own path. It is written as `route`, without its query and with every UUID replaced by `{uid}`. |
+| `name` | The release's uid for `release`, the Agent session's uid for `agent`; required for both. It is written as `dependency_name`. `api` and `inference` write `mainsequence_backend`. |
+
+**The rules**, for `dependency_call` and `ResourceRelease.call` alike:
+
+- **One send, one block.** Open the block just before the request is sent and
+  leave it after the response's body is read, so `duration_ms` covers the
+  exchange. A retry your client makes inside the block belongs to that span; a
+  request your code sends again is a new block.
+- **Send the block's headers with that request.** They hold `traceparent`,
+  which names the call's own span, and the current `baggage`. A header of your
+  own with the same name wins, so add yours after them.
+- **Record the answer** as soon as it arrives, whatever its status
+  (`call.status_code = ...` for `dependency_call`, `call.record(response)` for
+  `ResourceRelease.call`). The block writes `dependency.call.completed` with
+  it, and `dependency.call.failed` when it raises or when no answer was
+  recorded: `error_type` is the exception's class name, or `NoResponse`.
+- **Only to the platform.** Send the headers only to the origin of
+  `MAINSEQUENCE_ENDPOINT` and to addresses the platform gave. The baggage is
+  the caller's context: it must not reach a third party, and the SDK cannot
+  check where your client sends.
+- **Your client stays yours.** The block sends nothing. Your client's pool,
+  retries and streaming are unchanged, and no OpenTelemetry configuration is
+  needed: the line is written through the SDK's logger, as the SDK's own lines
+  are. Outside any context, as in a script, the call starts a new trace.
+
 **Testing a library.** Send its calls to a local server that records request
 headers, inside a known span: the `traceparent` it receives has that span's
-trace id and a new span id. The SDK's lines go to `mainsequence.logconf.logger`;
-replace it in a test to read the line's `span_id`, `parent_span_id` and
+trace id and a new span id. For a release call, also check that two calls in
+a row to a warm release ask the platform once, and that the
+`Mainsequence-Request-Timeout-Ms` it receives is no more than its caller's
+remaining time. The SDK's lines go to `mainsequence.logconf.logger`; replace it
+in a test to read the line's `span_id`, `parent_span_id` and
 `dependency_name`.
 
 ## Example
