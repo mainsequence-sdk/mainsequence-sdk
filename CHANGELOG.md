@@ -4,6 +4,16 @@ All notable changes to this project should be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows versioned releases.
 
+## [9.0.45] - 2026-11-27
+
+**`Constant.filter()` and `Constant.get()` work with cachetools 8.** In 9.0.44 and earlier they raised
+`TypeError: Cannot call @cachedmethod descriptor directly` with cachetools 8, which refuses
+`@cachedmethod` under `@classmethod` (cachetools 7 only warned). The SDK declares `cachetools`
+without an upper bound, so a fresh install could resolve 8. `Constant.get_value()`,
+`Constant.get_by_uid()` and `create_constants_if_not_exist()` failed with it. The ten-minute
+cache now looks up and stores its answers itself, as `cachedmethod` did: one API call for the
+same arguments, in any order, and the call runs outside the cache's lock.
+
 ## [9.0.44] - 2026-11-27
 
 **A library's own calls can be spans in the caller's trace (ADR 0042, amended; #263).** A
@@ -35,14 +45,6 @@ before `git clone` until something else was copied, or forever in a non-interact
 `wl-copy` now writes its output to `/dev/null` in its own session, as `xclip` and `xsel`
 already did, with a 5-second timeout as a backstop. A copy that fails or times out is skipped
 and setup goes on.
-
-**`Constant.filter()` and `Constant.get()` work with cachetools 8.** They raised
-`TypeError: Cannot call @cachedmethod descriptor directly` with cachetools 8, which refuses
-`@cachedmethod` under `@classmethod` (cachetools 7 only warned). The SDK declares `cachetools`
-without an upper bound, so a fresh install could resolve 8. `Constant.get_value()`,
-`Constant.get_by_uid()` and `create_constants_if_not_exist()` failed with it. The ten-minute
-cache now looks up and stores its answers itself, as `cachedmethod` did: one API call for the
-same arguments, in any order, and the call runs outside the cache's lock.
 
 ## [9.0.43] - 2026-11-27
 
