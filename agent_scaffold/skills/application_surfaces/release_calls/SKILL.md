@@ -1,6 +1,6 @@
 ---
 name: mainsequence-release-calls
-description: Call one Main Sequence release (FastAPI API, MCP application or Agent-backing release) from another with the SDK's cold-start-aware routine. Use when an application, Job or Agent tool makes HTTP requests to another release, when choosing timeouts for such calls, when a call times out and the target may have been scaled to zero, when a chain of releases (API to API to Agent) needs deadlines, prewarming or a "starting" state, or when a client library sends its own requests to a release (its own requests or httpx client) with ResourceRelease.call, so they keep the caller's trace, deadline and the process's release access.
+description: Call one Main Sequence release (FastAPI API, MCP application or Agent-backing release) from another with the SDK's cold-start-aware routine. Use when an application, Job or Agent tool makes HTTP requests to another release, when choosing timeouts for such calls, when a call times out and the target may have been scaled to zero, when a chain of releases (API to API to Agent) needs deadlines, prewarming or a "starting" state, or when a client library sends its own requests to a release (its own requests or httpx client) with ResourceRelease.call, so they keep the caller's trace, deadline and the process's release access, or when deciding what code or a library does with a ReleaseCallError.
 ---
 
 # Calls Between Main Sequence Releases
@@ -100,11 +100,16 @@ The target sees the call as coming from your application's own identity.
   sent, carries the release's UID and phase, and the timeout ones are
   `TimeoutError`, and a replacement loses all of that. Your own errors are
   for your own failures and for the target's answers, such as mapping its
-  `404` or `409`. `ReleaseCallError` is an `ApiError`, so put
-  `except ReleaseCallError: raise` before any `except ApiError`. To say what
-  the call was for, add a note and re-raise the same exception:
+  `404` or `409`. Broader clauses catch them too: `except Exception` and
+  `except ApiError` catch all five (a `ReleaseCallError` is an `ApiError`),
+  `except TimeoutError` and `except OSError` the timeout ones, and
+  `except RuntimeError` `ReleaseUnavailableError`, so put
+  `except ReleaseCallError: raise` before such a clause. To say what the call
+  was for, add a note and re-raise the same exception:
 
   ```python
+  from mainsequence.client import ReleaseCallError
+
   try:
       response = prices.request("GET", "/v1/prices", timeout=30)
   except ReleaseCallError as error:
@@ -298,13 +303,15 @@ pass a few minutes, or when `ReleaseDeadlineTooShortError` or
 - A test calls the code with the target answering `waking` and then `ready`,
   and asserts the request is sent once, after readiness.
 - A test with the target answering `waking` past `ready_timeout` asserts
-  `ReleaseReadinessTimeoutError` and that nothing was sent.
+  that the code's caller receives `ReleaseReadinessTimeoutError` itself, not
+  an error of the library's, and that nothing was sent.
 - No module imports `requests` or `httpx` to reach a release, except a client
   library's single send method, and that method sends inside
   `release.call(...)`.
 - No module stores a release's `rpc_url` or token.
 - No module catches a `ReleaseCallError` to raise a different exception, and
-  every `except ApiError` around a release call is preceded by
+  every broad `except` around a release call (`Exception`, `ApiError`,
+  `TimeoutError`, `OSError`, `RuntimeError`) is preceded by
   `except ReleaseCallError: raise`.
 - For a client library: a test sends calls to a local server inside a known
   span and a caller deadline, and asserts the received `traceparent` has that

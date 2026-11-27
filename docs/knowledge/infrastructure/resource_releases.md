@@ -181,9 +181,11 @@ platform returns `scaling.serving_since`; without it, such a call reads as
 a client library especially, never catches one to raise an error of its own:
 its type says whether the request was sent, and its fields name the release
 and the phase. Keep your own errors for your own failures and for the
-target's answers, such as its `404`. `ReleaseCallError` is an `ApiError`, so
-an `except ApiError` that maps other SDK failures needs
-`except ReleaseCallError: raise` before it. To add context, call
+target's answers, such as its `404`. A broad clause catches them too:
+`except Exception` or `except ApiError` all five, `except TimeoutError` or
+`except OSError` the timeout ones, `except RuntimeError`
+`ReleaseUnavailableError`. Put `except ReleaseCallError: raise` before such a
+clause. To add context, call
 `error.add_note("...")` and re-raise the same exception.
 
 `wait_for_runtime_access()` runs the same wait without sending a request, for
