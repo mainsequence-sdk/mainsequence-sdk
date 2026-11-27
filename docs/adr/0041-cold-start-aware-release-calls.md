@@ -9,6 +9,9 @@ Status: Proposed. The SDK's part is implemented and runs on defaults; see
 not observations of it, and nothing here was tried against a deployed release.
 From 9.0.45 a library's own HTTP client can call a release the same way; see
 [Amendment 2026-11-27](#amendment-2026-11-27-a-call-a-librarys-own-client-sends).
+From 9.0.46 such a library lets the SDK's `ReleaseCallError` reach its caller
+unchanged; see
+[Amendment 2026-11-27: a library lets the SDK's errors through](#amendment-2026-11-27-a-library-lets-the-sdks-errors-through).
 
 Owners: Main Sequence SDK maintainers.
 
@@ -232,7 +235,8 @@ building a project:
 - move a call that exceeds its deadline to submit-and-poll;
 - let `ReleaseCallError` reach the caller unchanged, so the caller still learns
   whether anything was sent; a library's own errors are for its own failures
-  and the target's answers (added 2026-11-27, issue #267).
+  and the target's answers (added 2026-11-27; see
+  [the amendment](#amendment-2026-11-27-a-library-lets-the-sdks-errors-through)).
 
 The API surfaces skill and the orchestration and releases skill link to it.
 
@@ -397,4 +401,38 @@ Tests: `tests/test_fastapi_request_identity.py` reads and narrows the time in
 a sync and an async handler, with and without the header;
 `tests/client/test_release_calls.py` bounds a release call and a `request`
 by a narrower `request_deadline`.
+
+## Amendment 2026-11-27: a library lets the SDK's errors through
+
+Issue #267. The skill of [section 9](#9-a-scaffold-skill-teaches-it) and the
+guides described the five `ReleaseCallError` types and what to do about each,
+but gave a library that calls a release no rule for them. One client library
+caught them and raised its own `RuntimeError`, "did not become available" or
+"is unavailable", for what the SDK reports as `ReleaseReadinessTimeoutError`
+or `ReleaseUnavailableError`. Its caller could no longer tell whether the
+request was sent, which decides whether repeating a write is safe, and lost
+the release's UID and phase and the guidance tied to each type.
+
+Decision, from 9.0.46:
+
+- **Code that calls a release lets `ReleaseCallError` reach its caller
+  unchanged**, through `request` or `release.call(...)`. A library does not
+  catch these errors to raise its own or fold them into its own error class.
+  Its own errors are for its own failures and for the target's answers, such
+  as a `404` or `409`.
+- **Context is added, not substituted**: `error.add_note(...)` and a bare
+  `raise`. A broad `except` (`Exception`, `ApiError`, `TimeoutError`,
+  `OSError`, `RuntimeError`) is preceded by `except ReleaseCallError: raise`.
+- **"Sent" stays apart from "not sent" with `release.call`.** Entering the
+  block raises only the three errors that mean nothing was sent. An exception
+  the library's own client raises inside the block means the request may have
+  been sent, and is never turned into an error that says nothing was.
+- The `release_calls` skill states the rule, in its general rules and for a
+  library's send method, and its Verify section checks it. The "Failures"
+  section of the Resource releases guide and the Caller context guide's
+  `ResourceRelease.call` section say the same.
+- **Not done:** no change to the SDK's code. The SDK cannot stop a library
+  catching an exception; the rule lives in the guidance an agent reads when it
+  writes one. `tests/test_scaffold_skills.py` fails if the rule leaves the
+  skill.
 
