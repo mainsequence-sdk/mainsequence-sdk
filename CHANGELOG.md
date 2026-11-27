@@ -22,6 +22,23 @@ calls use.
   deadline too, not only `ResourceRelease.request`. The `api_surfaces` and `release_calls`
   agent skills show how a handler bounds its own work.
 
+**A release call waits whenever the platform asks it to, and survives a failed ask (ADR 0041,
+amended; #269).** The readiness wait of `ResourceRelease.request`, `ResourceRelease.call` and
+`wait_for_runtime_access()` waited only while the platform answered `waking`, so an
+`unavailable` answer the platform meant as temporary ended the call at once. It now asks again
+whenever the answer carries `retry_after_ms`, whatever its state or phase, within
+`ready_timeout` and the caller's deadline, and stops at once on an answer without one. This is
+the platform's rule (tdag-django#1309): a release that is checking its runtime answers
+`unavailable` with a retry hint, and a serving release stays `ready` through a rollout
+(tdag-django#1230). AgentSession message send follows the same rule.
+
+- A platform ask that fails with a `TransportError` (a timeout, an unreachable platform) is
+  made again after 2 seconds, up to three times in a row, within the same limits.
+- New `ReleaseNotDeployedError`, a `ReleaseUnavailableError`, when the release has no active
+  revision: it was created but has not been deployed yet.
+- `ReleaseReadinessTimeoutError` now also ends a wait on an answer other than `waking`, and its
+  message carries the platform's notice.
+
 **The release-call guidance tells code to let `ReleaseCallError` through (#267).** The
 `release_calls` agent skill, the Resource releases guide and the Caller context guide
 described the five release-call errors but never said what code calling a release should do

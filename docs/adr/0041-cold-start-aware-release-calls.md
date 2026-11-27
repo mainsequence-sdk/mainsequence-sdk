@@ -9,6 +9,9 @@ Status: Proposed. The SDK's part is implemented and runs on defaults; see
 not observations of it, and nothing here was tried against a deployed release.
 From 9.0.45 a library's own HTTP client can call a release the same way; see
 [Amendment 2026-11-27](#amendment-2026-11-27-a-call-a-librarys-own-client-sends).
+From 9.0.46 the platform's retry hint, not the state, decides whether a call
+waits; see
+[Amendment 2026-11-27](#amendment-2026-11-27-the-retry-hint-decides-the-wait).
 From 9.0.46 such a library lets the SDK's `ReleaseCallError` reach its caller
 unchanged; see
 [Amendment 2026-11-27: a library lets the SDK's errors through](#amendment-2026-11-27-a-library-lets-the-sdks-errors-through).
@@ -102,9 +105,11 @@ a dependency. Each call:
 1. **Resolves access.** From the cache of [section 3](#3-a-process-cache-of-release-runtime-state)
    when the release is known warm, otherwise from `resolve-runtime-access`,
    which also wakes the release.
-2. **Waits while `waking`.** It follows `retry_after_ms`, at least 100 ms
-   apart, under the readiness limit. A state other than `ready` or `waking`
-   ends the call at once.
+2. **Waits while the platform asks it to.** It follows `retry_after_ms`, at
+   least 100 ms apart, under the readiness limit. An answer without a retry
+   hint ends the call at once. (Amended 2026-11-27: the hint decides, not the
+   state; see
+   [the amendment](#amendment-2026-11-27-the-retry-hint-decides-the-wait).)
 3. **Sends the request** to the returned `rpc_url` with the returned token,
    under `timeout`. `timeout` starts here, so it measures the target's work
    and nothing else.
@@ -157,7 +162,7 @@ to a user.
 | Error | Raised when |
 | --- | --- |
 | `ReleaseReadinessTimeoutError` | The readiness limit ended while the release was `waking`. Carries the limit, the last `phase` and the wake's `requested_at`. |
-| `ReleaseUnavailableError` | The platform answered a terminal state. |
+| `ReleaseUnavailableError` | The platform answered that the release cannot take requests, with no retry hint. `ReleaseNotDeployedError`, a subclass, when it has no active revision. |
 | `ReleaseColdStartTimeoutError` | `timeout` ended and the platform then reports the release `waking` or below one serving replica: the request was held by a start, not by the application. |
 | `ReleaseRequestTimeoutError` | `timeout` ended and the release is serving: the application was slow or hung. |
 
@@ -436,3 +441,42 @@ Decision, from 9.0.46:
   writes one. `tests/test_scaffold_skills.py` fails if the rule leaves the
   skill.
 
+## Amendment 2026-11-27: the retry hint decides the wait
+
+Issue #269. The wait of [section 2](#2-one-routine-calls-a-release) waited
+only while `runtime_access.state` was `waking`, and a `TransportError` from the
+platform ask ended it. A client with its own readiness loop could not move to
+`ResourceRelease.call`: it waited through a rollout and retried a failed ask,
+and the SDK did neither.
+
+The platform settled the contract. Since
+Main-Sequence-Server-Side/tdag-django#1230 a release that serves stays `ready`
+through a rollout, whatever `runtime_presence.phase` says. Under
+Main-Sequence-Server-Side/tdag-django#1309 the one temporary `unavailable` left,
+evidence the runtime monitor is still recording, carries `retry_after_ms` and
+the notice code `runtime_evidence_pending`. Every other refusal carries no hint.
+The rule for a client: `can_request` sends; otherwise a `retry_after_ms` asks
+again after that long, within the client's own budget; otherwise it stops and
+shows the notice. Neither the phase nor the notice code decides.
+
+Decision, from 9.0.46:
+
+- **`wait_for_release` asks again whenever the answer carries
+  `retry_after_ms`**, under the readiness limit and the caller's deadline, and
+  stops at once on an answer without it, `redeploying` included. A `waking`
+  answer without a hint, from an older platform, still waits, after 2 seconds.
+  `ReleaseReadinessTimeoutError` names the last state and the platform's notice.
+- **A failed ask is made again.** A `TransportError` from
+  `resolve-runtime-access` is asked again after 2 seconds, within the same
+  limits, up to three times in a row; the third is raised. The POST is safe to
+  repeat: it only asks, and wakes the release.
+- **`ReleaseNotDeployedError(ReleaseUnavailableError)`** when the answer's
+  `routing.active_revision_uid` is `None`: the release has no revision to wake.
+  It is read from routing, not from the `not_deployed` phase, which also covers
+  an active revision whose Service vanished.
+- **AgentSession message send follows the same rule.** Its loop also asks
+  again when a state outside its transient set carries `retry_after_ms`.
+- `request`, `call` and `wait_for_runtime_access()` share the wait, so all
+  three change. Tests: `tests/client/test_release_calls.py` and
+  `tests/client/test_a2a_request_budget.py`.
+- **Not done:** a failed AgentSession platform ask is not retried.

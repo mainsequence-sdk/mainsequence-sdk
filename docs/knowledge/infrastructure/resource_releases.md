@@ -91,8 +91,12 @@ In asynchronous code use `await release.arequest(...)`, which runs the same
 call on a worker thread.
 
 The call first makes sure the release is ready. It asks the platform, which
-also starts the release, and waits while the answer is `waking`. Only then is
-the request sent, to the URL and with the token the platform returned, so
+also starts the release, and asks again while the answer carries a retry hint
+(`retry_after_ms`), whatever its state: a release that is starting answers
+`waking`, and one whose runtime the platform is still checking answers
+`unavailable` with a hint. An answer without a hint ends the call at once. A
+platform ask that fails on the network is made again, up to three times in a
+row. Only then is the request sent, to the URL and with the token the platform returned, so
 `timeout` measures the application's own work. `timeout` is a total in seconds
 or a `(connect, read)` tuple. Other keyword arguments (`json`, `params`,
 `data`, `headers`) go to `requests`. The response is returned whatever its
@@ -166,8 +170,9 @@ Each is a `ReleaseCallError` with `resource_release_uid`, `phase`
 
 | Error | Raised when | Sent? |
 | --- | --- | --- |
-| `ReleaseReadinessTimeoutError` | `ready_timeout` ended while the release was starting. | No |
-| `ReleaseUnavailableError` | The platform answered that the release cannot take requests. | No |
+| `ReleaseReadinessTimeoutError` | `ready_timeout` ended while the platform still asked to try again. | No |
+| `ReleaseUnavailableError` | The platform answered that the release cannot take requests, with no retry hint. | No |
+| `ReleaseNotDeployedError` | A `ReleaseUnavailableError`: the release has no active revision yet. | No |
 | `ReleaseDeadlineTooShortError` | The caller of the current request will not wait long enough for the release to start. | No |
 | `ReleaseColdStartTimeoutError` | `timeout` ended and the platform then shows the release starting. | Yes |
 | `ReleaseRequestTimeoutError` | `timeout` ended on a serving release. | Yes |

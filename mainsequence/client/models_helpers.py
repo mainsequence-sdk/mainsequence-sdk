@@ -39,6 +39,9 @@ from .release_calls import (
     ReleaseDeadlineTooShortError as ReleaseDeadlineTooShortError,
 )
 from .release_calls import (
+    ReleaseNotDeployedError as ReleaseNotDeployedError,
+)
+from .release_calls import (
     ReleaseReadinessTimeoutError as ReleaseReadinessTimeoutError,
 )
 from .release_calls import (
@@ -1129,12 +1132,14 @@ class ResourceRelease(
     ) -> ResourceReleaseRuntimeAccess:
         """Wait until the platform admits requests to the deployed runtime.
 
-        Asking also starts a release that is scaled to zero. Raises
-        ``ReleaseReadinessTimeoutError`` (a ``TimeoutError``) when
-        ``wait_timeout_seconds`` ends while it is still starting, and
+        Asking also starts a release that is scaled to zero. It asks again
+        while the platform's answer carries ``retry_after_ms``, and after a
+        failed ask. Raises ``ReleaseReadinessTimeoutError`` (a
+        ``TimeoutError``) when ``wait_timeout_seconds`` ends first, and
         ``ReleaseUnavailableError`` (a ``RuntimeError``) when the platform
-        answers that it cannot take requests. To send a request, use
-        ``request``, which waits by itself.
+        answers that it cannot take requests and gives no retry hint;
+        ``ReleaseNotDeployedError``, a subclass, when the release has no active
+        revision. To send a request, use ``request``, which waits by itself.
         """
 
         if wait_timeout_seconds <= 0:

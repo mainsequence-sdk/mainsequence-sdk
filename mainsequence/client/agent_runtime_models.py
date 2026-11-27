@@ -1252,7 +1252,11 @@ class AgentSession(
                 interaction = access.runtime_interaction
                 if interaction.can_submit:
                     return access
-                if interaction.state not in TRANSIENT_RUNTIME_INTERACTION_STATES:
+                # The retry hint decides: any state that carries one is asked again.
+                if (
+                    interaction.retry_after_ms is None
+                    and interaction.state not in TRANSIENT_RUNTIME_INTERACTION_STATES
+                ):
                     raise ApiError(_runtime_access_blocked_message(access))
                 delay = _runtime_access_retry_seconds(access)
                 if delay >= budget.remaining:

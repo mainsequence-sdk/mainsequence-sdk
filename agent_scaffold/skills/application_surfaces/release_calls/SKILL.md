@@ -125,7 +125,8 @@ ones are also `TimeoutError`.
 | Error | Meaning | What to do |
 | --- | --- | --- |
 | `ReleaseReadinessTimeoutError` | The release was still starting when the readiness limit ended. Nothing was sent. | Report "starting, try again". Check the release's deployment if it repeats. |
-| `ReleaseUnavailableError` | The platform says the release cannot take requests. Nothing was sent. | Report it. Do not retry in a loop. |
+| `ReleaseUnavailableError` | The platform says the release cannot take requests and gave no retry hint. Nothing was sent. | Report it. Do not retry in a loop. |
+| `ReleaseNotDeployedError` | A `ReleaseUnavailableError`: the release has no active revision yet. Nothing was sent. | Report "not deployed yet". It needs a deployment, not a retry. |
 | `ReleaseDeadlineTooShortError` | Your own caller will not wait long enough for the target to start. Nothing was sent. | The outermost caller's limit is too short for this chain, or the work should be submit-and-poll. |
 | `ReleaseColdStartTimeoutError` | The request was sent and timed out while the target was starting. | Safe to repeat only for an idempotent call. |
 | `ReleaseRequestTimeoutError` | The request was sent and timed out on a running target. | The target is slow or hung. Read its logs. |
