@@ -148,11 +148,12 @@ person, read `User.get_by_uid(uid)`: a workload identity has `identity_type`
 endpoint's application policy using the verified user UID.
 
 To list the people, Teams and workloads the caller can see, for example to
-offer access candidates, read inside `reads_as_caller()` from
-`mainsequence.server.fastapi`: `User.filter`, `User.get_by_uid`, `Team.filter`
-and `Team.get_by_uid` then answer with the caller's visibility, and workload
-rows carry `managed_by_caller`. Outside a signed HTTP request it raises
-`RequestIdentityError`; it never reads as the application instead.
+offer access candidates, pass `as_caller=True` to `User.filter`,
+`User.get_by_uid`, `Team.filter` or `Team.get_by_uid`: that one read answers
+with the caller's visibility, and workload rows carry `managed_by_caller`.
+Other reads, including a library's, still read as the application. Outside a
+signed HTTP request the read raises `RequestIdentityError`; it never reads as
+the application instead.
 
 WebSockets retain the platform's gateway ticket/header contract rather than
 the HTTP Bearer/assertion flow; the getter is available while the authenticated
@@ -246,6 +247,11 @@ def acting_identity() -> RequestUserIdentity:
     return User.get_requester() or User.get_logged_user()
 ```
 
+- The caller of a requester-bound call is an Agent, or another FastAPI
+  application that called with `act_for_requester=True` while serving the
+  person's own request. Authorize the same way for both; directory reads still
+  answer as this application unless they pass `as_caller=True`, which a
+  requester-bound call refuses.
 - Authorize against one identity: the person on a requester-bound call, the
   caller on any other. Never combine the caller's grants with the person's,
   and never fall back to the caller's rights when the person may not.
@@ -257,7 +263,7 @@ def acting_identity() -> RequestUserIdentity:
   name whom it acts for. Anyone can write a UID there. Only the signed
   assertion names the requester, and the SDK has verified that it is addressed
   to this release; an invalid one is rejected with 401 before any handler runs.
-- Inside a requester-bound call, `reads_as_caller()` raises
+- Inside a requester-bound call, a read with `as_caller=True` raises
   `RequestIdentityError`: a receiving application cannot forward its inbound
   requester-bearing assertion to the directory endpoints. Platform-authorized
   Agent delegation is separate and keeps the original person and request time.

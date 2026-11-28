@@ -9,7 +9,7 @@ import math
 import os
 import re
 import threading
-from contextlib import asynccontextmanager, contextmanager
+from contextlib import asynccontextmanager
 from urllib.parse import urlsplit
 from uuid import UUID
 
@@ -22,7 +22,6 @@ from mainsequence._request_deadline import DEADLINE_HEADER, parse_timeout_ms, re
 from mainsequence._request_identity import (
     RequestIdentityError,
     _get_request_identity,
-    _reads_as_caller,
     _request_scope,
 )
 from mainsequence._team_memberships import TeamMembershipCache
@@ -427,24 +426,6 @@ def install_request_identity(app, *, team_membership_cache_seconds=0, local_call
     )
 
 
-@contextmanager
-def reads_as_caller():
-    """Read the directory as the request's caller instead of as the application.
-
-    Inside the block, ``User.filter``, ``User.get_by_uid``, ``Team.filter`` and
-    ``Team.get_by_uid`` present the caller assertion the request arrived with,
-    and the platform answers with what the caller may see. No other call sends
-    it. Raises ``RequestIdentityError`` outside an authenticated request or when
-    the request carries no assertion (local mode, WebSockets); it never reads as
-    the application instead. It also raises in a requester-bound request
-    (``User.get_requester()`` is not ``None``): this helper cannot forward a
-    requester-bearing assertion to the directory endpoints. Platform-owned
-    Agent delegation is separate. See ADR-0036.
-    """
-    with _reads_as_caller():
-        yield
-
-
 _MCP_INSTALLATION = "mainsequence_mcp"
 _MCP_PATH = "/mcp"
 _WILDCARD_ORIGIN = re.compile(r"(https?)://\*\.([a-z0-9.-]+)(?::([0-9]{1,5}))?", flags=re.ASCII)
@@ -598,4 +579,4 @@ def install_mcp(app, mcp_app, *, lifespan):
     )
 
 
-__all__ = ["install_mcp", "install_request_identity", "reads_as_caller"]
+__all__ = ["install_mcp", "install_request_identity"]

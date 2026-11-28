@@ -62,14 +62,12 @@ The application calls the platform as its own workload identity, which usually h
 
 ```python
 from mainsequence.client import User
-from mainsequence.server.fastapi import reads_as_caller
 
 
 @app.get("/access-candidates")
 def access_candidates(q: str):
-    with reads_as_caller():
-        people = User.filter(search=q)
-        workloads = User.filter(identity_type="workload", search=q)
+    people = User.filter(search=q, as_caller=True)
+    workloads = User.filter(identity_type="workload", search=q, as_caller=True)
     return {
         "people": [person.uid for person in people],
         "workloads": [
@@ -83,9 +81,9 @@ def access_candidates(q: str):
     }
 ```
 
-Inside the block, `User.filter`, `User.get_by_uid`, `Team.filter` and `Team.get_by_uid` present the caller assertion the request arrived with, and the platform answers with what the caller may see. `search` matches a person's email or name, or a workload's Job, release or Agent name. A workload row carries `managed_by_caller`, true when the caller manages that workload. No other call presents the assertion, and nothing presents it outside the block.
+With `as_caller=True`, `User.filter`, `User.iter_filter`, `User.get_by_uid`, `Team.filter` and `Team.get_by_uid` present the caller assertion the request arrived with, and the platform answers with what the caller may see. `search` matches a person's email or name, or a workload's Job, release or Agent name. A workload row carries `managed_by_caller`, true when the caller manages that workload. Only the read that passes `as_caller=True` presents the assertion: no other call does, including other reads in the same request and the reads a library makes.
 
-The block needs a signed HTTP request. Outside an authenticated request, in local mode and on WebSockets it raises `RequestIdentityError`; it never reads as the application instead. In local mode the SDK session already belongs to the developer, so reads outside the block answer as that person. The assertion lives at most five minutes and is not renewed, so a read after it expires fails. See [ADR-0036](../../adr/0036-request-scoped-logged-user.md#reads-as-the-caller).
+`as_caller=True` needs a signed HTTP request. Outside an authenticated request, in local mode and on WebSockets the read raises `RequestIdentityError` before anything is sent; it never reads as the application instead. In local mode the SDK session already belongs to the developer, so reads without `as_caller` answer as that person. The assertion lives at most five minutes and is not renewed, so a read after it expires fails. See [ADR-0036](../../adr/0036-request-scoped-logged-user.md#reads-as-the-caller).
 
 ## Requester-bound calls
 
@@ -121,7 +119,7 @@ def can_publish(team_uid: str) -> bool:
 - Authorize against one identity: the person on a requester-bound call, the caller on any other. Never combine the caller's grants with the person's, and never fall back to what the acting application may do when the person may not.
 - For a write, check that identity's permission for the exact object and action before mutating anything. A read grant or team membership alone does not establish permission to edit, run, delete or give access. The SDK verifies identity; the application owns these checks.
 - Never parse the assertion, headers or MCP `_meta` yourself, and never trust a person's UID taken from a request body, header or query parameter. Only the signed assertion names the requester, and the SDK has verified that it is addressed to this release.
-- Inside a requester-bound request, `reads_as_caller()` raises `RequestIdentityError`: the receiving application cannot forward a requester-bearing assertion to the platform's directory endpoints. Platform-authorized Agent delegation is a separate platform-owned path; this helper cannot create a binding or forward write authority.
+- Inside a requester-bound request, a read with `as_caller=True` raises `RequestIdentityError`: the receiving application cannot forward a requester-bearing assertion to the platform's directory endpoints. Platform-authorized Agent delegation is a separate platform-owned path; `as_caller` cannot create a binding or forward write authority.
 
 The platform checks access on every call and limits requester-bound work to at most 24 hours after the person's request, including across Agent delegation. A model-driven Agent can be steered by prompt injection, so write tools need explicit operation-specific checks. The SDK does not select the person, enable platform endpoints or extend the lifetime of an inbound request scope.
 

@@ -127,6 +127,7 @@ ones are also `TimeoutError`.
 | `ReleaseReadinessTimeoutError` | The release was still starting when the readiness limit ended. Nothing was sent. | Report "starting, try again". Check the release's deployment if it repeats. |
 | `ReleaseUnavailableError` | The platform says the release cannot take requests and gave no retry hint. Nothing was sent. | Report it. Do not retry in a loop. |
 | `ReleaseNotDeployedError` | A `ReleaseUnavailableError`: the release has no active revision yet. Nothing was sent. | Report "not deployed yet". It needs a deployment, not a retry. |
+| `ReleaseRequesterError` | A call with `act_for_requester=True` was refused for the person (`expired` is `False`), or the person's assertion ran out first (`True`). Nothing was sent. | Never retry as the application. Refused: the caller is not a person, or may not use the target. Expired: the work outlived the person's request. |
 | `ReleaseDeadlineTooShortError` | Your own caller will not wait long enough for the target to start. Nothing was sent. | The outermost caller's limit is too short for this chain, or the work should be submit-and-poll. |
 | `ReleaseColdStartTimeoutError` | The request was sent and timed out while the target was starting. | Safe to repeat only for an idempotent call. |
 | `ReleaseRequestTimeoutError` | The request was sent and timed out on a running target. | The target is slow or hung. Read its logs. |
@@ -135,6 +136,28 @@ Each carries `resource_release_uid`, `phase` (`readiness` or `request`),
 `timeout_seconds` and, when known, `runtime_phase`.
 
 An HTTP error status is not an exception: the response is returned.
+
+## Calling for the person a request serves
+
+On a route people call, pass `act_for_requester=True` to `request`,
+`arequest` or `call` when the target must act for that person, for example
+to apply the person's own access:
+
+```python
+response = billing.request("GET", "/v1/invoices", timeout=30, act_for_requester=True)
+```
+
+- The target sees the person in `User.get_requester()` and your application in
+  `User.get_logged_user()`.
+- Only inside a person's direct request: it raises `RequestIdentityError`
+  outside an authenticated request, in local mode, on a WebSocket and in a
+  requester-bound request, and the platform refuses a workload caller with
+  `ReleaseRequesterError`. Do not use it on routes workloads call, or for
+  background work: the person's assertion lasts at most 300 seconds.
+- Per call, never a block: the option goes on each call that should act for the
+  person, so no other call, and no library's call, does so by accident.
+- The person's token is kept only for the rest of the request, never for the
+  process.
 
 ## A client library with its own HTTP client
 

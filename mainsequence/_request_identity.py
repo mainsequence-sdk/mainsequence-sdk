@@ -17,8 +17,9 @@ class RequestIdentityError(RuntimeError):
 class _RequestScope:
     user: Any = None
     active: bool = True
-    # The verified assertion of a hosted HTTP request, kept only so that
-    # reads_as_caller() can present it (ADR-0036, amended for #198).
+    # The verified assertion of a hosted HTTP request, kept only so that a
+    # directory read with as_caller=True, or a release call with
+    # act_for_requester=True, can present it (ADR-0036, amended for #198 and #272).
     caller_assertion: str | None = field(default=None, repr=False)
     # The person a requester-bound request works for, verified from its
     # assertion; None on any other request. The user stays the caller, the
@@ -33,14 +34,13 @@ class _RequestScope:
     team_memberships: dict = field(default_factory=dict, repr=False)
     team_membership_cache: Any = field(default=None, repr=False)
     team_membership_cache_seconds: float = 0
+    # Release access the platform gave for this request's caller, per release
+    # UID: never kept beyond the request, never in the process cache (#272).
+    release_grants: dict = field(default_factory=dict, repr=False)
 
 
 _current_scope: ContextVar[_RequestScope | None] = ContextVar(
     "mainsequence_request_identity", default=None
-)
-# The request scope whose caller the directory reads answer as, inside reads_as_caller().
-_caller_reads: ContextVar[_RequestScope | None] = ContextVar(
-    "mainsequence_caller_reads", default=None
 )
 
 
@@ -58,6 +58,7 @@ def _request_scope():
         scope.requester = None
         scope.team_memberships = {}
         scope.team_membership_cache = None
+        scope.release_grants = {}
         _current_scope.reset(token)
 
 
@@ -98,46 +99,56 @@ def _get_requester():
     return _authenticated_scope("User.get_requester()").requester
 
 
-@contextmanager
-def _reads_as_caller():
-    scope = _current_scope.get()
-    if scope is None or not scope.active or scope.user is None:
-        raise RequestIdentityError(
-            "Reading as the caller needs an authenticated request. Install request "
-            "identity once in the application and call reads_as_caller() inside a request."
-        )
-    if scope.requester is not None:
-        raise RequestIdentityError(
-            "This request is requester-bound. reads_as_caller() cannot forward a "
-            "requester-bearing assertion to the directory endpoints."
-        )
-    if scope.caller_assertion is None:
-        raise RequestIdentityError(
-            "This request carries no caller assertion. Reading as the caller needs a "
-            "hosted HTTP request in assertion mode, not local mode or a WebSocket."
-        )
-    token = _caller_reads.set(scope)
-    try:
-        yield
-    finally:
-        _caller_reads.reset(token)
-
-
 def _origin(url: str) -> tuple[str, str | None, int | None]:
     parts = urlsplit(url)
     scheme = parts.scheme.lower()
     return scheme, parts.hostname, parts.port or {"http": 80, "https": 443}.get(scheme)
 
 
-def _caller_read_headers(url: str, endpoint_url: str) -> dict[str, str]:
-    """The header a directory read sends to ``url``: none outside reads_as_caller()."""
-    scope = _caller_reads.get()
-    if scope is None:
-        return {}
-    if not scope.active or scope.caller_assertion is None:
+def _assertion_scope(option: str) -> _RequestScope:
+    """The request scope whose caller assertion ``option`` presents.
+
+    Raises ``RequestIdentityError`` before anything is sent when there is none
+    to present; it never lets the call go out as the application instead.
+    """
+    scope = _current_scope.get()
+    if scope is not None and not scope.active:
         raise RequestIdentityError(
-            "The request that reads_as_caller() belongs to has ended; its caller "
-            "assertion is no longer available."
+            "The request this call belongs to has ended; its caller assertion is no "
+            "longer available."
+        )
+    if scope is None or scope.user is None:
+        raise RequestIdentityError(
+            f"{option} needs an authenticated request. Install request identity once "
+            f"in the application and pass {option} inside a request."
+        )
+    if scope.requester is not None:
+        raise RequestIdentityError(
+            f"This request is requester-bound. {option} cannot forward a "
+            "requester-bearing assertion to the platform."
+        )
+    if not scope.caller_assertion:
+        raise RequestIdentityError(
+            f"This request carries no caller assertion. {option} needs a hosted HTTP "
+            "request in assertion mode, not local mode or a WebSocket."
+        )
+    return scope
+
+
+def _assertion_header(
+    url: str, endpoint_url: str, *, option: str, scope: _RequestScope | None = None
+) -> dict[str, str]:
+    """The caller assertion header for one platform request to ``url``.
+
+    ``scope`` is the request the call was bound to when it started, for a read
+    that sends several requests; by default it is the current request.
+    """
+    if scope is None:
+        scope = _assertion_scope(option)
+    elif not scope.active:
+        raise RequestIdentityError(
+            "The request this call belongs to has ended; its caller assertion is no "
+            "longer available."
         )
     if _origin(url) != _origin(endpoint_url):
         raise RequestIdentityError(

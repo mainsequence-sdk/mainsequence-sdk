@@ -1,5 +1,9 @@
 # ADR-0036: Request-scoped logged user
 
+Amended 2026-11-27: reading the directory as the caller is a per-call option, `as_caller=True` on the `User` and `Team` reads; `reads_as_caller()` is removed. See [Amendment 2026-11-27](#amendment-2026-11-27-reading-as-the-caller-is-a-per-call-option).
+
+Amended 2026-11-27 for [SDK issue #272](https://github.com/mainsequence-sdk/mainsequence-sdk/issues/272): a FastAPI application can call another FastAPI release for the person whose request it serves, with `act_for_requester=True`; the assertion is presented a second way, to the platform only. See [Amendment 2026-11-27](#amendment-2026-11-27-a-release-call-for-the-requests-person).
+
 Amended 2026-11-07 for [SDK issue #251](https://github.com/mainsequence-sdk/mainsequence-sdk/issues/251): in local mode an application can reuse the platform's answer to who holds a Bearer token across requests, for a period it sets with `install_request_identity(app, local_caller_cache_seconds=...)`. `0`, the default, keeps asking on every request. Section "Local callers reused across requests" is added.
 
 Amended 2026-10-15 for [SDK issue #225](https://github.com/mainsequence-sdk/mainsequence-sdk/issues/225), second change: the platform signs no team list any more, so the SDK removes it. `RequestUserIdentity` has no `team_uids`, and the verifier refuses an assertion or a `requester` that lists teams. Team membership is checked only with `in_teams()`.
@@ -42,9 +46,9 @@ Migrate existing factories to install the integration before using the matching 
 Added 2026-10-06 for #198.
 
 - In assertion mode, the scope of an admitted HTTP request keeps the verified assertion next to the user. It expires with the scope, also in copied child contexts, and never enters `repr`, `str`, error messages or logs. Local mode, WebSockets and public or OPTIONS requests have none. The verifier's result still does not hold it.
-- `reads_as_caller()` is a context manager. Inside it, the reads of `/users/`, `/users/<uid>/`, `/teams/` and `/teams/<uid>/`, that is `filter`, `iter_filter`, `get` and `get_by_uid` on `User` and `Team`, add `X-MainSequence-Caller-Assertion` with the request's own assertion. No other call sends it, and nothing sends it outside the helper: the SDK never attaches it implicitly.
+- `filter`, `iter_filter`, `get` and `get_by_uid` on `User` and `Team` take `as_caller=True`. That one read of `/users/`, `/users/<uid>/`, `/teams/` or `/teams/<uid>/` adds `X-MainSequence-Caller-Assertion` with the request's own assertion. No other call sends it: the SDK never attaches it implicitly. (Amended 2026-11-27: until 9.0.46 this was the context manager `reads_as_caller()`; see [Amendment 2026-11-27](#amendment-2026-11-27-reading-as-the-caller-is-a-per-call-option).)
 - The header is set on each request, never on the process-wide HTTP session, and goes only to the configured platform endpoint. A paging link on another origin raises instead of being followed with or without the header.
-- No fallback. Entering the helper outside an authenticated request, or in a request without an assertion, raises `RequestIdentityError`, and so does a read inside the helper after its request ended. Neither reads as the workload instead. The assertion lives at most 300 seconds and is not refreshed; a read after it expires fails with the platform's answer.
+- No fallback. A read with `as_caller=True` outside an authenticated request, or in a request without an assertion, raises `RequestIdentityError` before it is sent, and so does one after its request ended, such as a later page of `iter_filter`. Neither reads as the workload instead. The assertion lives at most 300 seconds and is not refreshed; a read after it expires fails with the platform's answer.
 - The platform answers these reads `no-store`; the SDK does not cache them.
 - Process credentials are unchanged. The workload credential still authenticates every call; the assertion only selects whose visibility the answer has.
 
@@ -93,5 +97,42 @@ The platform applies one rule to every call an Agent makes for its work: without
 - `User.get_requester()` returns it, the checked delegation, or `None` when the request is not requester-bound. Outside an authenticated request it raises `RequestIdentityError`, as `User.get_logged_user()` does. `get_logged_user()` is unchanged: it returns the caller, the acting application.
 - Each handler or tool decides whether it needs a person. One that needs a person fails with its own error when `get_requester()` is `None`. One where the person is optional authorizes against `get_requester()` when present, and against `get_logged_user()` otherwise. None parses assertions, headers or MCP `_meta`, takes a person's UID from a request body, header or query parameter, or combines the caller's grants with the person's. The SDK keeps no list of which handlers or tools accept a person.
 - An application authorizes requester-bound REST and MCP reads and writes against the person's ordinary permissions, including administrative ones, for the exact object and action. A read grant or team membership is not write permission. The getter proves identity, not permission, and never enables platform endpoints. Application-owned authorization checks are necessary for model-driven writes because of prompt-injection risk.
-- `reads_as_caller()` raises `RequestIdentityError` as soon as it is entered in a requester-bound request, and never reads as the application instead. A requester-bearing assertion cannot be forwarded to the platform's directory reads; the SDK fails early and says why. Platform-authorized Agent delegation is distinct: the platform preserves the original person and request time, without increasing permissions or restarting the 24-hour maximum. Receiving applications cannot establish that binding themselves, and their request scope still expires with the inbound request.
+- A read with `as_caller=True` raises `RequestIdentityError` in a requester-bound request before it is sent, and never reads as the application instead. A requester-bearing assertion cannot be forwarded to the platform's directory reads; the SDK fails early and says why. Platform-authorized Agent delegation is distinct: the platform preserves the original person and request time, without increasing permissions or restarting the 24-hour maximum. Receiving applications cannot establish that binding themselves, and their request scope still expires with the inbound request.
 - SDK releases up to 9.0.17 reject the requester claim the platform now signs: up to 9.0.14 every `requester` claim, and 9.0.15 to 9.0.17 any but the two-field one. Requester-bound calls to an application on such a release fail closed with 401, and its other calls are unchanged. From this amendment on, the SDK accepts only the shapes above, so it works only with a platform that signs them; there is no deprecation period.
+
+## Amendment 2026-11-27: reading as the caller is a per-call option
+
+`reads_as_caller()` was a context manager: every directory read inside the
+block presented the request's caller assertion, including reads made by
+library code that did not know it was inside one. Choosing whose visibility a
+read answers with is a choice of identity, so it belongs on the call that makes
+it, where a reader of the code sees it.
+
+Decision, from 9.0.47:
+
+- `filter`, `iter_filter`, `get` and `get_by_uid` on `User` and `Team` take
+  `as_caller: bool = False`. With `True`, that one read presents the assertion;
+  every other read, in the same request or not, reads as the application.
+- The checks are unchanged and run before the read is sent: an authenticated
+  request, an assertion (not local mode or a WebSocket), not requester-bound,
+  the configured platform endpoint, and a request that has not ended. A later
+  page of `iter_filter` reached after the request ended raises.
+- `mainsequence.server.fastapi.reads_as_caller()` is removed, with no
+  deprecation period.
+- A context manager stays right for limits that only restrict, such as
+  `request_deadline()`. A context never changes whom a call acts as.
+
+## Amendment 2026-11-27: a release call for the request's person
+
+Issue #272. Besides a directory read with `as_caller=True`, a release call with
+`act_for_requester=True` presents the request's assertion: to
+`resolve-runtime-access` only, on the configured platform endpoint (ADR 0041,
+amendment of the same date). The same checks run first: an authenticated
+request, an assertion, not requester-bound, not ended.
+
+On the receiving release nothing changes. The call arrives requester-bound:
+`User.get_logged_user()` is the calling application, `User.get_requester()` the
+person, `in_teams()` answers for either, and a directory read with
+`as_caller=True` still raises. Unlike an Agent's delegation, this binding is the
+person's inbound request itself and ends with its assertion, at most 300
+seconds after the person's request.

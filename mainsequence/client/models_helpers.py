@@ -9,6 +9,8 @@ from uuid import UUID
 import requests
 from pydantic import BaseModel, ConfigDict, Field, PositiveInt
 
+from mainsequence._request_identity import _assertion_header
+
 from .base import (
     BaseObjectOrm,
     BasePydanticModel,
@@ -45,6 +47,9 @@ from .release_calls import (
     ReleaseReadinessTimeoutError as ReleaseReadinessTimeoutError,
 )
 from .release_calls import (
+    ReleaseRequesterError as ReleaseRequesterError,
+)
+from .release_calls import (
     ReleaseRequestTimeoutError as ReleaseRequestTimeoutError,
 )
 from .release_calls import (
@@ -53,6 +58,7 @@ from .release_calls import (
 from .release_calls import (
     ReleaseUnavailableError as ReleaseUnavailableError,
 )
+from .release_calls import _Delegation, _response_code
 from .release_calls import (
     prewarm_releases as prewarm_releases,
 )
@@ -1099,25 +1105,48 @@ class ResourceRelease(
         *,
         static_site_release_uid: str | UUID | None = None,
         timeout: int | float | tuple[float, float] | None = None,
+        act_for_requester: bool = False,
     ) -> ResourceReleaseRuntimeAccess:
-        """Ask Django for the deployed runtime's current admission decision."""
+        """Ask the platform for the deployed runtime's current admission decision.
+
+        ``act_for_requester=True`` asks for access for the person whose request
+        the application is serving: it sends that request's caller assertion,
+        to the platform only, and the token in ``access`` names the person as
+        its requester. See ``request`` for when it may be used.
+        """
 
         if self.uid is None:
             raise ValueError("ResourceRelease.uid is required to resolve runtime access")
+        if act_for_requester and static_site_release_uid is not None:
+            raise ValueError("act_for_requester cannot be combined with static_site_release_uid.")
+        url = f"{self.get_detail_url()}resolve-runtime-access/"
         body = {}
         if static_site_release_uid is not None:
             body["static_site_release_uid"] = str(static_site_release_uid)
         payload = {"json": self.serialize_for_json(body)}
+        if act_for_requester:
+            payload["headers"] = _assertion_header(
+                url, type(self).get_object_url(), option="act_for_requester=True"
+            )
         response = make_request(
             s=self.build_session(),
             loaders=self.LOADERS,
             r_type="POST",
-            url=f"{self.get_detail_url()}resolve-runtime-access/",
+            url=url,
             payload=payload,
             time_out=timeout,
         )
         if response.status_code != 200:
-            raise_for_response(response, payload=payload)
+            if act_for_requester and response.status_code == 403:
+                refused = _response_code(response)
+                if refused == "requester_binding_invalid":
+                    raise ReleaseRequesterError(
+                        f"The platform refused to give access to release {self.uid} for the "
+                        "person this request serves (requester_binding_invalid). Nothing "
+                        "was sent, and the call is not made as the application instead.",
+                        resource_release_uid=str(self.uid),
+                    )
+            raise_for_response(response, payload={"json": payload["json"]})
         data = response.json()
         if not isinstance(data, dict):
             raise TypeError("ResourceRelease runtime access response must be a JSON object")
@@ -1129,6 +1158,7 @@ class ResourceRelease(
         static_site_release_uid: str | UUID | None = None,
         wait_timeout_seconds: float = 600.0,
         timeout: int | float | tuple[float, float] | None = None,
+        act_for_requester: bool = False,
     ) -> ResourceReleaseRuntimeAccess:
         """Wait until the platform admits requests to the deployed runtime.
 
@@ -1139,11 +1169,17 @@ class ResourceRelease(
         ``ReleaseUnavailableError`` (a ``RuntimeError``) when the platform
         answers that it cannot take requests and gives no retry hint;
         ``ReleaseNotDeployedError``, a subclass, when the release has no active
-        revision. To send a request, use ``request``, which waits by itself.
+        revision. ``act_for_requester=True`` waits for access for the request's
+        person, as ``resolve_runtime_access`` asks for it; the wait also ends
+        with ``ReleaseRequesterError`` when the person's assertion expires
+        first. To send a request, use ``request``, which waits by itself.
         """
 
         if wait_timeout_seconds <= 0:
             raise ValueError("wait_timeout_seconds must be greater than 0")
+        if act_for_requester and static_site_release_uid is not None:
+            raise ValueError("act_for_requester cannot be combined with static_site_release_uid.")
+        delegation = _Delegation.current() if act_for_requester else None
         access, _ = _wait_for_release(
             self,
             ready_timeout=wait_timeout_seconds,
@@ -1152,7 +1188,11 @@ class ResourceRelease(
             resolve=lambda seconds: self.resolve_runtime_access(
                 static_site_release_uid=static_site_release_uid,
                 timeout=seconds if timeout is None else timeout,
+                **({"act_for_requester": True} if act_for_requester else {}),
             ),
+            # A person's token is never the release's kept access (#272).
+            keep_grant=delegation is None,
+            expires_at=delegation.expires_at if delegation is not None else None,
         )
         return access
 
@@ -1177,6 +1217,7 @@ class ResourceRelease(
         ready_timeout: float | None = None,
         idempotent: bool = False,
         headers: dict[str, str] | None = None,
+        act_for_requester: bool = False,
         **kwargs: Any,
     ) -> requests.Response:
         """Send one HTTP request to this release's application (ADR 0041).
@@ -1200,6 +1241,19 @@ class ResourceRelease(
         ``install_request_identity``, the time the handler's own caller will
         still wait bounds both limits, and what remains is sent on.
 
+        ``act_for_requester=True`` makes the call for the person whose request
+        the handler serves: the platform gives a token that names this
+        application as the caller and the person as the requester, and the
+        called release sees the person in ``User.get_requester()``. The token
+        is kept for this request only, never for the process. It raises
+        ``RequestIdentityError`` before any platform call outside an
+        authenticated request, in local mode or on a WebSocket, and in a
+        requester-bound request; ``ReleaseRequesterError`` when the platform
+        refuses (for example when the caller is a workload, not a person) or
+        the person's assertion, at most 300 seconds old, expires. It never
+        falls back to the application's own access. Use it on routes people
+        call, not for background work.
+
         ``kwargs`` go to ``requests`` (``json``, ``params``, ``data``, …). The
         response is returned whatever its status. Raises
         ``ReleaseReadinessTimeoutError``, ``ReleaseUnavailableError``,
@@ -1214,6 +1268,7 @@ class ResourceRelease(
             ready_timeout=ready_timeout,
             idempotent=idempotent,
             headers=headers,
+            act_for_requester=act_for_requester,
             **kwargs,
         )
 
@@ -1228,6 +1283,7 @@ class ResourceRelease(
         *,
         timeout: float,
         ready_timeout: float | None = None,
+        act_for_requester: bool = False,
     ) -> ReleaseCall:
         """Prepare one request that your own HTTP client sends to this release.
 
@@ -1250,8 +1306,18 @@ class ResourceRelease(
         the send raises is your client's own exception. Use ``request`` when
         you need no client of your own: it also resends after a refused token
         and tells a timeout held by a start from a slow application.
+
+        ``act_for_requester=True`` prepares the send for the request's person,
+        as ``request`` does.
         """
-        return ReleaseCall(self, method, path, timeout=timeout, ready_timeout=ready_timeout)
+        return ReleaseCall(
+            self,
+            method,
+            path,
+            timeout=timeout,
+            ready_timeout=ready_timeout,
+            act_for_requester=act_for_requester,
+        )
 
     def runtime_status(self) -> ReleaseRuntimeStatus:
         """What this process knows about the release's runtime, without asking the platform.

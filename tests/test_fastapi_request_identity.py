@@ -18,7 +18,7 @@ from mainsequence.server.caller_assertions import (
     ASSERTION_TYPE,
     CallerAssertionVerifier,
 )
-from mainsequence.server.fastapi import install_request_identity, reads_as_caller
+from mainsequence.server.fastapi import install_request_identity
 
 USER = str(uuid4())
 OTHER = str(uuid4())
@@ -452,8 +452,7 @@ def test_sync_route_reads_as_its_caller(signed, monkeypatch):
     monkeypatch.setattr(base_mod, "make_request", _fake_make_request)
 
     def handler(q: str):
-        with reads_as_caller():
-            rows = User.filter(identity_type="workload", search=q)
+        rows = User.filter(identity_type="workload", search=q, as_caller=True)
         return [{"uid": row.uid, "managed": row.managed_by_caller} for row in rows]
 
     with TestClient(app_for(handler, path="/candidates")) as client:
@@ -491,10 +490,9 @@ def test_concurrent_requests_present_their_own_assertions(signed, monkeypatch):
         if entered == 2:
             release.set()
         await release.wait()
-        with reads_as_caller():
-            User.filter(search="prices")
-            await asyncio.sleep(0)  # the other request reads while this one is inside
-            User.filter(search="prices")
+        User.filter(search="prices", as_caller=True)
+        await asyncio.sleep(0)  # the other request reads in between
+        User.filter(search="prices", as_caller=True)
         User.filter(search="prices")
         await send({"type": "http.response.start", "status": 200, "headers": []})
         await send({"type": "http.response.body", "body": b""})
@@ -527,7 +525,7 @@ def test_concurrent_requests_present_their_own_assertions(signed, monkeypatch):
         assert presented[user] == [{ASSERTION_HEADER: proofs[user]}] * 2 + [None]
 
 
-def test_reads_as_caller_needs_a_signed_http_request(monkeypatch):
+def test_as_caller_needs_a_signed_http_request(monkeypatch):
     monkeypatch.setenv("MAINSEQUENCE_ENDPOINT", ISSUER)
     response = Mock(status_code=200)
     response.json.return_value = {"uid": USER, "username": "local"}
@@ -535,15 +533,13 @@ def test_reads_as_caller_needs_a_signed_http_request(monkeypatch):
 
     def handler():
         with pytest.raises(RequestIdentityError, match="no caller assertion"):
-            with reads_as_caller():
-                pass
+            User.filter(as_caller=True)
         return {"uid": User.get_logged_user().uid}
 
     async def ws(websocket: WebSocket):
         await websocket.accept()
         with pytest.raises(RequestIdentityError, match="no caller assertion"):
-            with reads_as_caller():
-                pass
+            User.filter(as_caller=True)
         await websocket.send_json({"uid": User.get_logged_user().uid})
         await websocket.close()
 
@@ -558,8 +554,7 @@ def test_reads_as_caller_needs_a_signed_http_request(monkeypatch):
     with client.websocket_connect("/ws", headers={"X-User-UID": USER}) as connection:
         assert connection.receive_json() == {"uid": USER}
     with pytest.raises(RequestIdentityError, match="authenticated request"):
-        with reads_as_caller():
-            pass
+        User.filter(as_caller=True)
 
 
 # --- Requester-bound calls (ADR-0036) ----------------------------------------------
@@ -740,18 +735,17 @@ def test_requester_expires_with_its_request(signed):
         copied[0].run(User.get_requester)
 
 
-def test_reads_as_caller_refuses_a_requester_bound_request(signed, monkeypatch):
+def test_as_caller_refuses_a_requester_bound_request(signed, monkeypatch):
     token, _, _ = signed
     sent = []
     monkeypatch.setattr(base_mod, "make_request", lambda **kwargs: sent.append(kwargs))
 
     def handler():
         with pytest.raises(RequestIdentityError, match="requester-bound"):
-            with reads_as_caller():
-                User.filter(search="prices")
+            User.filter(search="prices", as_caller=True)
         return _identities()
 
-    # Unchanged by the person's admin flag: the helper still forwards nothing.
+    # Unchanged by the person's admin flag: the read still forwards nothing.
     person = requester_claim(is_organization_admin=True)
     with TestClient(app_for(handler)) as client:
         response = client.get("/me", headers={ASSERTION_HEADER: token(requester=person)})

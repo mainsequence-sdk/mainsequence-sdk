@@ -620,3 +620,152 @@ def test_agent_get_or_create_session_by_uid_sends_only_session_uid(monkeypatch):
         "payload": {"json": {"session_uid": session_uid}},
         "timeout": 9,
     }
+
+
+# --- The model of an existing session (#268) ----------------------------------------
+
+AGENT_UID_268 = "e0e75693-4110-464c-93e0-82c7fd9c9a23"
+SESSION_UID_268 = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
+
+
+def _session_payload_268(**fields):
+    return {
+        "uid": SESSION_UID_268,
+        "agent_uid": AGENT_UID_268,
+        "agent_name": "Research Copilot",
+        "organization_environment_uid": ENVIRONMENT_UID,
+        "organization_environment_name": "production",
+        "harness": "tau",
+        "harness_protocol": "tau-session-v1",
+        "harness_version": "0.3.1",
+        "name": "my-chat",
+        "status": "running",
+        "llm_provider": "meta",
+        "llm_model": "muse-spark-1.3",
+        "llm_thinking": "medium",
+        "catalog_digest": "sha256:" + ("d" * 64),
+        **fields,
+    }
+
+
+class _Answer:
+    content = b"{}"
+
+    def __init__(self, status_code, body):
+        self.status_code = status_code
+        self._body = body
+        self.text = ""
+        self.headers = {}
+
+    def json(self):
+        return self._body
+
+
+def _agent_268():
+    return agent_models_mod.Agent.model_construct(uid=AGENT_UID_268)
+
+
+@pytest.mark.parametrize(
+    ("status", "requested", "warned"),
+    [
+        (200, {"llm_model": "gpt-5.6-luna"}, True),
+        (200, {"llm_model": "muse-spark-1.3", "llm_thinking": "medium"}, False),
+        (201, {"llm_model": "gpt-5.6-luna"}, False),
+    ],
+    ids=["existing-session-other-model", "existing-session-same-model", "created"],
+)
+def test_get_or_create_session_warns_when_an_existing_session_keeps_its_model(
+    monkeypatch, status, requested, warned
+):
+    answer = _Answer(status, _session_payload_268())
+    monkeypatch.setattr(agent_models_mod, "make_request", lambda **kwargs: answer)
+    warnings = []
+    monkeypatch.setattr(
+        agent_models_mod.logger, "warning", lambda event, **fields: warnings.append((event, fields))
+    )
+
+    session = _agent_268().get_or_create_session(handle_unique_id="my-chat", **requested)
+
+    assert session.llm_model == "muse-spark-1.3"
+    if warned:
+        assert [event for event, _ in warnings] == ["agent.session.model_not_applied"]
+        assert warnings[0][1]["requested"] == {"llm_model": "gpt-5.6-luna"}
+    else:
+        assert warnings == []
+
+
+def test_select_model_patches_the_session_and_returns_it(monkeypatch):
+    sent = []
+
+    def _patch(*, s, loaders, r_type, url, payload, time_out=None):
+        sent.append({"r_type": r_type, "url": url, "json": payload["json"]})
+        return _Answer(
+            200,
+            _session_payload_268(
+                llm_provider="openai-codex", llm_model="gpt-5.6-luna", llm_thinking="low"
+            ),
+        )
+
+    monkeypatch.setattr(base_mod, "make_request", _patch)
+    session = agent_models_mod.AgentSession.model_construct(uid=SESSION_UID_268)
+
+    updated = session.select_model("openai-codex", "gpt-5.6-luna", thinking="low")
+
+    assert (updated.llm_provider, updated.llm_model, updated.llm_thinking) == (
+        "openai-codex",
+        "gpt-5.6-luna",
+        "low",
+    )
+    assert sent[0]["r_type"] == "PATCH"
+    assert sent[0]["url"].endswith(f"/agent-sessions/{SESSION_UID_268}/")
+    assert sent[0]["json"] == {
+        "llm_provider": "openai-codex",
+        "llm_model": "gpt-5.6-luna",
+        "llm_thinking": "low",
+    }
+
+
+def test_select_model_without_thinking_keeps_the_current_level(monkeypatch):
+    sent = []
+
+    def _patch(*, s, loaders, r_type, url, payload, time_out=None):
+        sent.append(payload["json"])
+        return _Answer(200, _session_payload_268(llm_provider="openai", llm_model="gpt-5.4"))
+
+    monkeypatch.setattr(base_mod, "make_request", _patch)
+
+    agent_models_mod.AgentSession.model_construct(uid=SESSION_UID_268).select_model(
+        "openai", "gpt-5.4"
+    )
+
+    assert sent == [{"llm_provider": "openai", "llm_model": "gpt-5.4"}]
+
+
+def test_select_model_while_a_turn_runs_is_a_busy_error(monkeypatch):
+    body = {"detail": "A turn is running.", "error_code": "agent_session_selection_runtime_active"}
+    monkeypatch.setattr(base_mod, "make_request", lambda **kwargs: _Answer(409, body))
+    session = agent_models_mod.AgentSession.model_construct(uid=SESSION_UID_268)
+
+    with pytest.raises(agent_models_mod.AgentSessionBusyError) as raised:
+        session.select_model("openai-codex", "gpt-5.6-luna")
+
+    assert isinstance(raised.value, agent_models_mod.ConflictError)
+    assert raised.value.payload["error_code"] == "agent_session_selection_runtime_active"
+
+
+def test_select_model_keeps_any_other_conflict(monkeypatch):
+    body = {"detail": "Conflict.", "error_code": "something_else"}
+    monkeypatch.setattr(base_mod, "make_request", lambda **kwargs: _Answer(409, body))
+    session = agent_models_mod.AgentSession.model_construct(uid=SESSION_UID_268)
+
+    with pytest.raises(agent_models_mod.ConflictError) as raised:
+        session.select_model("openai-codex", "gpt-5.6-luna")
+
+    assert not isinstance(raised.value, agent_models_mod.AgentSessionBusyError)
+
+
+@pytest.mark.parametrize(("provider", "model"), [("", "m"), ("p", " "), (None, "m")])
+def test_select_model_needs_a_provider_and_a_model(provider, model):
+    session = agent_models_mod.AgentSession.model_construct(uid=SESSION_UID_268)
+    with pytest.raises(ValueError):
+        session.select_model(provider, model)

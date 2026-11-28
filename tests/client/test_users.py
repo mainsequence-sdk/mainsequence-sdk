@@ -14,7 +14,6 @@ from mainsequence._request_identity import (
 )
 from mainsequence.client.exceptions import ApiError, BadRequestError, NotFoundError
 from mainsequence.client.models_foundry import Artifact
-from mainsequence.server.fastapi import reads_as_caller
 from tests.client.support import _UidRef
 
 
@@ -829,8 +828,8 @@ def test_application_resolves_a_workload_caller_and_gives_it_a_policy(monkeypatc
 # --- Reads as the request's caller (ADR-0036, amended for #198) ------------------
 #
 # With the caller assertion a hosted request arrived with, /users/ and /teams/
-# answer with what the caller may see. Only those reads present it, and only
-# inside reads_as_caller().
+# answer with what the caller may see. Only those reads present it, and only the
+# one read that passes as_caller=True.
 
 CALLER_ASSERTION = "header.caller-proof-of-this-request.signature"
 TEAM_UID = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
@@ -890,7 +889,7 @@ def test_workload_row_reads_managed_by_caller(row, expected):
     assert user.managed_by_caller is expected
 
 
-def test_reads_as_caller_sends_the_assertion_only_on_directory_reads(monkeypatch):
+def test_as_caller_sends_the_assertion_only_on_that_read(monkeypatch):
     page_two = f"{models_user_mod.User.get_object_url()}/?search=prices&offset=1"
     workload_member = {"uid": WORKLOAD_USER_UID, "member_kind": "workload"}
     team_row = {**_team_payload(), "created_by": workload_member, "member_count": 1}
@@ -908,17 +907,18 @@ def test_reads_as_caller_sends_the_assertion_only_on_directory_reads(monkeypatch
     )
 
     with _caller_request():
-        with reads_as_caller():
-            workloads = models_user_mod.User.filter(identity_type="workload", search="prices")
-            models_user_mod.User.get_by_uid(WORKLOAD_USER_UID)
-            teams = models_user_mod.Team.filter()
-            team = models_user_mod.Team.get_by_uid(TEAM_UID)
-            # Neither the session's own user nor an access call presents it.
-            models_user_mod.User.get_authenticated_user_details()
-            Artifact.model_construct(uid=SHAREABLE_UID).attach_policy(
-                "viewer", principal_type="user", principal_uid=workloads[0]
-            )
-        # Outside the helper the application reads as itself.
+        workloads = models_user_mod.User.filter(
+            identity_type="workload", search="prices", as_caller=True
+        )
+        models_user_mod.User.get_by_uid(WORKLOAD_USER_UID, as_caller=True)
+        teams = models_user_mod.Team.filter(as_caller=True)
+        team = models_user_mod.Team.get_by_uid(TEAM_UID, as_caller=True)
+        # Neither the session's own user nor an access call presents it.
+        models_user_mod.User.get_authenticated_user_details()
+        Artifact.model_construct(uid=SHAREABLE_UID).attach_policy(
+            "viewer", principal_type="user", principal_uid=workloads[0]
+        )
+        # In the same request, a read without as_caller reads as the application.
         models_user_mod.User.filter()
 
     caller = {CALLER_ASSERTION_HEADER: CALLER_ASSERTION}
@@ -933,28 +933,39 @@ def test_reads_as_caller_sends_the_assertion_only_on_directory_reads(monkeypatch
     assert team.members[0].member_kind == "workload"
 
 
-def test_reads_as_caller_never_falls_back_to_the_application(monkeypatch):
+def test_as_caller_never_falls_back_to_the_application(monkeypatch):
     sent = _record(monkeypatch)
 
     with pytest.raises(RequestIdentityError, match="authenticated request"):
-        with reads_as_caller():
-            pass
+        models_user_mod.User.filter(as_caller=True)
     with _request_scope():  # a public route: no caller
         with pytest.raises(RequestIdentityError, match="authenticated request"):
-            with reads_as_caller():
-                pass
+            models_user_mod.Team.get_by_uid(TEAM_UID, as_caller=True)
     with _caller_request(assertion=None):  # local mode or a WebSocket
         with pytest.raises(RequestIdentityError, match="no caller assertion"):
-            with reads_as_caller():
-                pass
-
+            models_user_mod.User.get_by_uid(WORKLOAD_USER_UID, as_caller=True)
     with _caller_request():
-        with reads_as_caller():
-            copied = copy_context()
+        with pytest.raises(TypeError, match="as_caller"):
+            models_user_mod.User.filter(as_caller="yes")
+        copied = copy_context()
     with pytest.raises(RequestIdentityError, match="has ended"):
-        copied.run(models_user_mod.User.filter)
+        copied.run(lambda: models_user_mod.User.filter(as_caller=True))
 
     assert sent == []
+
+
+def test_a_page_reached_after_the_request_ended_is_refused(monkeypatch):
+    page_two = f"{models_user_mod.User.get_object_url()}/?offset=1"
+    sent = _record(monkeypatch, {"results": [_workload_user_payload()], "next": page_two})
+
+    with _caller_request():
+        rows = models_user_mod.User.iter_filter(as_caller=True)
+        first = next(rows)
+    with pytest.raises(RequestIdentityError, match="has ended"):
+        next(rows)
+
+    assert first.uid == WORKLOAD_USER_UID
+    assert [request["url"] for request in sent] == [f"{models_user_mod.User.get_object_url()}/"]
 
 
 def test_caller_assertion_is_sent_only_to_the_platform_endpoint(monkeypatch):
@@ -966,9 +977,9 @@ def test_caller_assertion_is_sent_only_to_the_platform_endpoint(monkeypatch):
         },
     )
 
-    with _caller_request(), reads_as_caller():
+    with _caller_request():
         with pytest.raises(RequestIdentityError, match="configured platform endpoint"):
-            models_user_mod.User.filter(identity_type="workload")
+            models_user_mod.User.filter(identity_type="workload", as_caller=True)
 
     assert [request["url"] for request in sent] == [f"{models_user_mod.User.get_object_url()}/"]
 
@@ -985,15 +996,15 @@ def test_caller_assertion_stays_out_of_repr_and_error_messages(monkeypatch):
 
     with _caller_request() as context:
         assert CALLER_ASSERTION not in repr(context)
-        with reads_as_caller(), pytest.raises(ApiError) as refused:
-            models_user_mod.User.filter()
+        with pytest.raises(ApiError) as refused:
+            models_user_mod.User.filter(as_caller=True)
 
     assert CALLER_ASSERTION not in str(refused.value)
     assert CALLER_ASSERTION not in repr(refused.value.payload)
 
 
-def test_reads_as_caller_refuses_a_requester_bound_request(monkeypatch):
-    """The helper refuses requester-bearing assertions before any directory read."""
+def test_as_caller_refuses_a_requester_bound_request(monkeypatch):
+    """A requester-bearing assertion is never forwarded to a directory read."""
     sent = _record(monkeypatch)
 
     with _request_scope() as context:
@@ -1001,7 +1012,6 @@ def test_reads_as_caller_refuses_a_requester_bound_request(monkeypatch):
         context.caller_assertion = CALLER_ASSERTION
         context.requester = models_user_mod.RequestUserIdentity(uid=PERSON_UID)
         with pytest.raises(RequestIdentityError, match="requester-bound"):
-            with reads_as_caller():
-                models_user_mod.User.filter()
+            models_user_mod.User.filter(as_caller=True)
 
     assert sent == []

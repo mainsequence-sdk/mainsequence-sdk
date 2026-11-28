@@ -11,7 +11,8 @@ from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator, 
 from mainsequence._request_identity import (
     CALLER_ASSERTION_HEADER,
     RequestIdentityError,
-    _caller_read_headers,
+    _assertion_header,
+    _assertion_scope,
     _get_request_identity,
     _get_requester,
     _team_membership_scope,
@@ -359,12 +360,68 @@ class TeamHeldAccess(BasePydanticModel):
 
 
 class _CallerDirectoryReadMixin:
-    """Inside ``reads_as_caller()``, ``filter`` and ``get`` reads answer as the
-    request's caller (ADR-0036, amended for #198)."""
+    """Directory reads that can answer as the request's caller, one call at a time.
+
+    ``filter``, ``iter_filter``, ``get`` and ``get_by_uid`` take ``as_caller``.
+    With ``as_caller=True`` that one read presents the caller assertion the
+    request arrived with, and the platform answers with what the caller may
+    see (ADR-0036, amended for #198). Nothing else sends it, and no
+    other call made at the same time changes.
+    """
 
     @classmethod
-    def _read_request_headers(cls, url: str) -> dict[str, str]:
-        return _caller_read_headers(url, cls.get_object_url())
+    def _pop_read_options(cls, kwargs: dict[str, Any]) -> dict[str, Any]:
+        scope = kwargs.pop("_caller_scope", None)
+        as_caller = kwargs.pop("as_caller", False)
+        if not isinstance(as_caller, bool):
+            raise TypeError("as_caller must be True or False.")
+        if as_caller and scope is None:
+            # Bound once: every page of this read presents this request's assertion,
+            # and none is sent after the request ended or for another request.
+            scope = _assertion_scope("as_caller=True")
+        return {"_caller_scope": scope}
+
+    @classmethod
+    def _read_request_headers(cls, url: str, *, _caller_scope: Any = None) -> dict[str, str]:
+        if _caller_scope is None:
+            return {}
+        return _assertion_header(
+            url, cls.get_object_url(), option="as_caller=True", scope=_caller_scope
+        )
+
+    @classmethod
+    def iter_filter(
+        cls, timeout=None, max_items: int | None = None, *, as_caller: bool = False, **kwargs
+    ):
+        """Yield the matching rows. ``as_caller=True`` reads as the request's caller.
+
+        Each page is read when it is reached, so a page reached after the
+        request ended raises ``RequestIdentityError``.
+        """
+        return super().iter_filter(
+            timeout=timeout, max_items=max_items, as_caller=as_caller, **kwargs
+        )
+
+    @classmethod
+    def filter(cls, timeout=None, *, as_caller: bool = False, **kwargs):
+        """List the matching rows. ``as_caller=True`` reads as the request's caller.
+
+        It raises ``RequestIdentityError`` before any read outside an
+        authenticated request, without a caller assertion (local mode, a
+        WebSocket) or in a requester-bound request; it never reads as the
+        application instead.
+        """
+        return super().filter(timeout=timeout, as_caller=as_caller, **kwargs)
+
+    @classmethod
+    def get(cls, pk=None, timeout=None, *, as_caller: bool = False, **filters):
+        """Read one row. ``as_caller=True`` reads as the request's caller, as ``filter``."""
+        return super().get(pk=pk, timeout=timeout, as_caller=as_caller, **filters)
+
+    @classmethod
+    def get_by_uid(cls, uid: str, timeout=None, *, as_caller: bool = False, **filters):
+        """Read one row by UID. ``as_caller=True`` reads as the request's caller, as ``filter``."""
+        return super().get_by_uid(uid, timeout=timeout, as_caller=as_caller, **filters)
 
 
 class Team(
@@ -1068,9 +1125,9 @@ class User(_CallerDirectoryReadMixin, UserApiBaseObjectOrm, BasePydanticModel):
     as, to pass to ``User.get_by_uid`` and as the ``principal_uid`` of
     ``attach_policy()``.
 
-    Inside ``mainsequence.server.fastapi.reads_as_caller()``, ``User.filter``
-    and ``User.get_by_uid`` answer with what the request's caller may see, and
-    workload rows carry ``managed_by_caller``.
+    With ``as_caller=True``, ``User.filter`` and ``User.get_by_uid`` answer
+    with what the request's caller may see, and workload rows carry
+    ``managed_by_caller``.
     """
 
     # Platform facts, not application authorization policy. None means the
@@ -1151,7 +1208,7 @@ class User(_CallerDirectoryReadMixin, UserApiBaseObjectOrm, BasePydanticModel):
         None,
         title="Managed By Caller",
         description=(
-            "On a workload identity read inside `reads_as_caller()`: whether the "
+            "On a workload identity read with `as_caller=True`: whether the "
             "request's caller manages that workload. None when the row does not carry it."
         ),
         examples=[True],
@@ -1367,8 +1424,10 @@ class User(_CallerDirectoryReadMixin, UserApiBaseObjectOrm, BasePydanticModel):
     def get_requester(cls) -> RequestUserIdentity | None:
         """Return the person a requester-bound request works for, or ``None``.
 
-        A requester-bound request comes from another application, for example
-        an Agent, while it works for a person: the requester. The platform
+        A requester-bound request comes from another application while it
+        works for a person: the requester. The caller is an Agent, or a
+        FastAPI application that called this release with
+        ``act_for_requester=True`` while serving that person's own request. The platform
         signs that person into the caller assertion, and the request identity
         integration verifies it before any handler or tool runs. The result is
         that checked delegation: the person's own ``uid`` and
@@ -1396,7 +1455,9 @@ class User(_CallerDirectoryReadMixin, UserApiBaseObjectOrm, BasePydanticModel):
         administrative ones, for the exact object and operation. This getter
         verifies identity, not permission; read access or team membership does
         not authorize a write. The platform checks access on every call and
-        limits the work to at most 24 hours after the person's request. A
+        limits the work: an Agent's to at most 24 hours after the person's
+        request, a FastAPI application's to the person's request itself, at
+        most 300 seconds. A
         model-driven Agent can be steered by prompt injection, so per-operation
         checks remain necessary. This getter does not enable platform
         endpoints or extend its request scope.

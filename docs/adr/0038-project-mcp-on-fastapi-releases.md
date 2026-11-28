@@ -161,8 +161,8 @@ administrative ones. A requester-bound write checks the verified person's
 permission for the target object and operation before mutating anything.
 Reading the object or the calling Agent's own grants cannot authorize the
 write. Workload credentials stay separate from the inbound caller, and the
-integration adds no delegation: `reads_as_caller()` keeps its directory-read
-scope and its refusal in requester-bound calls.
+integration adds no delegation: `as_caller=True` keeps its one-read scope and
+its refusal in requester-bound calls.
 
 Local mode is unchanged. ADR 0036 validates the incoming Bearer token against
 `/api/v1/users/me/`, and the integration adds no OAuth challenge. The SDK adds

@@ -4,6 +4,54 @@ All notable changes to this project should be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows versioned releases.
 
+## [9.0.47] - 2026-11-27
+
+**A FastAPI application can call another release for the person whose request it serves
+(ADR 0041 and ADR 0036, amended; #272).** `ResourceRelease.request`, `arequest`, `call`,
+`resolve_runtime_access` and `wait_for_runtime_access` take `act_for_requester=True`. The SDK
+sends the request's verified caller assertion to the platform when it asks for the release's
+access, never to the called release, and the called application sees the person in
+`User.get_requester()`.
+
+- The person's token is kept for the rest of the request, per release, and never in the
+  process's kept access, so no other request, person or application call receives it.
+- Every ask for the person sends the assertion again; none falls back to the application's own
+  access. A wait that would outlast the assertion (at most 300 seconds) ends first.
+- New `ReleaseRequesterError`, a `ReleaseCallError` raised before anything is sent: the platform
+  refused the person (`requester_binding_invalid`, for example a workload caller), or the
+  assertion expired (`expired=True`). Outside an authenticated request, in local mode, on a
+  WebSocket or in a requester-bound request the option raises `RequestIdentityError` before
+  asking the platform.
+
+**An existing Agent session's model can be changed, and is no longer ignored silently (#268).**
+New `AgentSession.select_model(provider, model, thinking=None)` changes a session's LLM provider,
+model and thinking level, and raises `AgentSessionBusyError`, a `ConflictError` (409), while one
+of the session's turns is running. `Agent.get_or_create_session` documents that its creation
+options apply only when it creates the session, and logs `agent.session.model_not_applied` when
+it returns an existing session on another model than the one requested.
+
+**A `waking` answer without a retry hint no longer waits (ADR 0041, amended).** The release
+call's wait asks again only when the platform's answer carries `retry_after_ms`, which the
+current platform gives every `waking` answer; the fallback for a platform that did not is
+removed.
+
+**Reading the directory as the request's caller is a per-call option (ADR 0036, amended).**
+`User.filter`, `User.iter_filter`, `User.get`, `User.get_by_uid` and the same reads on `Team`
+take `as_caller=True`: that one read presents the request's caller assertion and answers with
+what the caller may see. `mainsequence.server.fastapi.reads_as_caller()` is removed. Inside its
+block every directory read answered as the caller, including the reads of library code that
+did not know it was inside one. Replace
+
+```python
+with reads_as_caller():
+    people = User.filter(search=q)
+```
+
+with `people = User.filter(search=q, as_caller=True)`. The checks are unchanged and run before
+the read is sent: an authenticated, signed HTTP request that is not requester-bound and has not
+ended, and only the configured platform endpoint. A later page of `iter_filter` reached after
+the request ended raises `RequestIdentityError`.
+
 ## [9.0.46] - 2026-11-27
 
 **An application can read and narrow the time its caller will still wait (ADR 0041, amended;
@@ -28,9 +76,9 @@ amended; #269).** The readiness wait of `ResourceRelease.request`, `ResourceRele
 `unavailable` answer the platform meant as temporary ended the call at once. It now asks again
 whenever the answer carries `retry_after_ms`, whatever its state or phase, within
 `ready_timeout` and the caller's deadline, and stops at once on an answer without one. This is
-the platform's rule (tdag-django#1309): a release that is checking its runtime answers
-`unavailable` with a retry hint, and a serving release stays `ready` through a rollout
-(tdag-django#1230). AgentSession message send follows the same rule.
+the platform's rule: a release whose runtime the platform is still checking answers
+`unavailable` with a retry hint, and a serving release stays `ready` through a rollout.
+AgentSession message send follows the same rule.
 
 - A platform ask that fails with a `TransportError` (a timeout, an unreachable platform) is
   made again after 2 seconds, up to three times in a row, within the same limits.

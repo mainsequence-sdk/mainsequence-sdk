@@ -1,5 +1,8 @@
 import asyncio
+import base64
 import datetime
+import json
+import time
 
 import pytest
 import requests
@@ -7,11 +10,17 @@ import requests
 import mainsequence.client.models_helpers as models_helpers_mod
 import mainsequence.client.release_calls as release_calls_mod
 from mainsequence._request_deadline import DEADLINE_HEADER, request_deadline
+from mainsequence._request_identity import (
+    CALLER_ASSERTION_HEADER,
+    RequestIdentityError,
+    _request_scope,
+)
 from mainsequence.client import (
     ReleaseColdStartTimeoutError,
     ReleaseDeadlineTooShortError,
     ReleaseNotDeployedError,
     ReleaseReadinessTimeoutError,
+    ReleaseRequesterError,
     ReleaseRequestTimeoutError,
     ReleaseUnavailableError,
     ResourceRelease,
@@ -56,7 +65,7 @@ def _refused(retry_after_ms=None, phase="serving", code="runtime_unavailable", m
 
 
 def _evidence_pending(retry_after_ms=1):
-    """The platform's answer while it records the runtime's evidence (tdag-django#1309)."""
+    """The platform's answer while it is still recording the runtime's evidence."""
     return _refused(
         retry_after_ms=retry_after_ms,
         phase="redeploying",
@@ -80,16 +89,18 @@ class Platform:
         self.answers = list(answers)
         self.responses = list(responses)
         self.asked = 0
+        self.asks = []
         self.sent = []
         monkeypatch.setattr(
             models_helpers_mod.ResourceRelease,
             "resolve_runtime_access",
-            lambda release, **kwargs: self._resolve(),
+            lambda release, **kwargs: self._resolve(**kwargs),
         )
         monkeypatch.setattr(release_calls_mod, "request_within_budget", self._send)
 
-    def _resolve(self):
+    def _resolve(self, **kwargs):
         self.asked += 1
+        self.asks.append(kwargs)
         answer = self.answers.pop(0) if len(self.answers) > 1 else self.answers[0]
         if isinstance(answer, BaseException):
             raise answer
@@ -885,3 +896,267 @@ def test_a_library_call_prepares_one_send(monkeypatch):
     with pytest.raises(RuntimeError, match="one send"):
         with call:
             pass
+
+
+# --- Calls for the person the request serves (#272) ---------------------------------
+
+PERSON_UID = "5b2a6f1e-0c4d-4d8e-9a6b-1f2e3d4c5b6a"
+
+
+def _assertion(expires_in=300):
+    claims = base64.urlsafe_b64encode(
+        json.dumps({"exp": int(time.time() + expires_in)}).encode()
+    ).decode()
+    return f"header.{claims.rstrip('=')}.signature"
+
+
+def _person_request(assertion=None, *, requester=None):
+    """A request admitted in assertion mode, as the request identity binds it."""
+    from contextlib import contextmanager
+
+    from mainsequence.client.models_user import RequestUserIdentity
+
+    @contextmanager
+    def scope():
+        with _request_scope() as context:
+            context.user = RequestUserIdentity(uid=PERSON_UID)
+            context.caller_assertion = _assertion() if assertion is None else assertion
+            context.requester = requester
+            yield context
+
+    return scope()
+
+
+def _ready_for(token):
+    payload = _ready()
+    payload["access"]["token"] = token
+    return payload
+
+
+def test_a_call_for_the_requester_asks_with_the_assertion_and_keeps_the_token_per_request(
+    monkeypatch,
+):
+    platform = Platform(
+        monkeypatch,
+        [_ready_for("person-token"), _ready_for("app-token")],
+        [_response(), _response(), _response()],
+    )
+    release = _release()
+
+    with _person_request():
+        release.request("GET", "/v1/bills", timeout=5, act_for_requester=True)
+        release.request("GET", "/v1/bills", timeout=5, act_for_requester=True)
+        # In the same request, a call without the option is the application's own.
+        release.request("GET", "/v1/bills", timeout=5)
+
+    assert platform.asks == [{"timeout": 10.0, "act_for_requester": True}, {"timeout": 10.0}]
+    tokens = [sent["headers"]["Authorization"] for sent in platform.sent]
+    assert tokens == ["Bearer person-token", "Bearer person-token", "Bearer app-token"]
+    assert all(CALLER_ASSERTION_HEADER not in sent["headers"] for sent in platform.sent)
+    assert release_runtime_cache.warm_access(RELEASE_UID).token == "app-token"
+
+
+def test_a_persons_token_never_serves_another_request(monkeypatch):
+    platform = Platform(
+        monkeypatch,
+        [_ready_for("first-person"), _ready_for("second-person")],
+        [_response(), _response()],
+    )
+    release = _release()
+
+    with _person_request():
+        release.request("GET", "/v1/bills", timeout=5, act_for_requester=True)
+    assert release_runtime_cache.warm_access(RELEASE_UID) is None
+    with _person_request():
+        release.request("GET", "/v1/bills", timeout=5, act_for_requester=True)
+
+    assert platform.asked == 2
+    tokens = [sent["headers"]["Authorization"] for sent in platform.sent]
+    assert tokens == ["Bearer first-person", "Bearer second-person"]
+
+
+def test_concurrent_requests_for_two_people_use_their_own_tokens(monkeypatch):
+    tokens = iter(["token-a", "token-b"])
+    sent = []
+    monkeypatch.setattr(
+        models_helpers_mod.ResourceRelease,
+        "resolve_runtime_access",
+        lambda release, **kwargs: models_helpers_mod.ResourceReleaseRuntimeAccess.model_validate(
+            _ready_for(next(tokens))
+        ),
+    )
+
+    def _send(method, url, *, timeout, headers, **kwargs):
+        sent.append(headers["Authorization"])
+        return _response()
+
+    monkeypatch.setattr(release_calls_mod, "request_within_budget", _send)
+
+    async def person():
+        with _person_request():
+            await _release().arequest("GET", "/v1/bills", timeout=5, act_for_requester=True)
+            await asyncio.sleep(0)
+            await _release().arequest("GET", "/v1/bills", timeout=5, act_for_requester=True)
+
+    async def run():
+        await asyncio.gather(person(), person())
+
+    asyncio.run(run())
+    assert sorted(sent) == ["Bearer token-a"] * 2 + ["Bearer token-b"] * 2
+
+
+@pytest.mark.parametrize(
+    ("scope", "message"),
+    [
+        ("none", "authenticated request"),
+        ("no-assertion", "no caller assertion"),
+        ("requester-bound", "requester-bound"),
+        ("ended", "has ended"),
+    ],
+)
+def test_a_call_for_the_requester_without_one_raises_before_asking(monkeypatch, scope, message):
+    from contextvars import copy_context
+
+    from mainsequence.client.models_user import RequestUserIdentity
+
+    platform = Platform(monkeypatch, [_ready()], [_response()])
+
+    def call():
+        _release().request("GET", "/v1/bills", timeout=5, act_for_requester=True)
+
+    with pytest.raises(RequestIdentityError, match=message):
+        if scope == "none":
+            call()
+        elif scope == "no-assertion":
+            with _person_request(assertion=""):
+                call()
+        elif scope == "requester-bound":
+            with _person_request(requester=RequestUserIdentity(uid=PERSON_UID)):
+                call()
+        else:
+            with _person_request():
+                copied = copy_context()
+            copied.run(call)
+
+    assert platform.asked == 0
+    assert platform.sent == []
+
+
+def test_a_static_site_cannot_be_asked_for_the_requester():
+    with pytest.raises(ValueError, match="static_site_release_uid"):
+        _release().resolve_runtime_access(
+            static_site_release_uid="9d81d63f-b8c9-404d-9f1a-5f2ad29dbf16",
+            act_for_requester=True,
+        )
+
+
+class _PlatformAnswer:
+    def __init__(self, status_code, body):
+        self.status_code = status_code
+        self._body = body
+        self.text = ""
+        self.headers = {}
+        self.content = b"{}"
+
+    def json(self):
+        return self._body
+
+
+def test_resolve_for_the_requester_sends_the_assertion_to_the_platform(monkeypatch):
+    sent = []
+
+    def _make_request(*, s, loaders, r_type, url, payload, time_out=None):
+        sent.append({"url": url, "headers": payload.get("headers")})
+        return _PlatformAnswer(200, _ready_for("person-token"))
+
+    monkeypatch.setattr(models_helpers_mod, "make_request", _make_request)
+    assertion = _assertion()
+
+    with _person_request(assertion):
+        access = _release().resolve_runtime_access(act_for_requester=True)
+    _release().resolve_runtime_access()
+
+    assert access.access["token"] == "person-token"
+    assert sent[0]["headers"] == {CALLER_ASSERTION_HEADER: assertion}
+    assert sent[0]["url"].endswith(f"/{RELEASE_UID}/resolve-runtime-access/")
+    assert sent[1]["headers"] is None
+
+
+def test_a_refused_binding_is_a_requester_error_and_nothing_is_sent(monkeypatch):
+    refusal = _PlatformAnswer(403, {"code": "requester_binding_invalid", "detail": "Refused."})
+    monkeypatch.setattr(models_helpers_mod, "make_request", lambda **kwargs: refusal)
+    sent = []
+    monkeypatch.setattr(
+        release_calls_mod, "request_within_budget", lambda *args, **kwargs: sent.append(kwargs)
+    )
+    assertion = _assertion()
+
+    with _person_request(assertion), pytest.raises(ReleaseRequesterError) as raised:
+        _release().request("GET", "/v1/bills", timeout=5, act_for_requester=True)
+
+    error = raised.value
+    assert error.expired is False
+    assert error.phase == "readiness"
+    assert isinstance(error, release_calls_mod.ReleaseCallError)
+    assert "requester_binding_invalid" in str(error)
+    assert assertion not in str(error)
+    assert sent == []
+    assert release_runtime_cache.warm_access(RELEASE_UID) is None
+
+
+def test_a_wait_that_outlasts_the_persons_assertion_ends_before_it_expires(monkeypatch):
+    # The next ask would come 2 s from now, after the assertion's exp (at most 1 s away).
+    platform = Platform(monkeypatch, [_waking(retry_after_ms=2000)])
+
+    with _person_request(_assertion(expires_in=1)):
+        with pytest.raises(ReleaseRequesterError) as raised:
+            _release().request(
+                "GET", "/v1/bills", timeout=5, ready_timeout=30, act_for_requester=True
+            )
+
+    assert raised.value.expired is True
+    assert platform.asked == 1
+    assert platform.sent == []
+
+
+def test_a_timeout_asks_again_for_the_requester(monkeypatch):
+    platform = Platform(
+        monkeypatch,
+        [_ready_for("person-token"), _ready_for("person-token")],
+        [requests.Timeout("slow")],
+    )
+
+    with _person_request(), pytest.raises(ReleaseRequestTimeoutError):
+        _release().request("GET", "/v1/bills", timeout=5, act_for_requester=True)
+
+    assert [ask.get("act_for_requester") for ask in platform.asks] == [True, True]
+
+
+def test_a_refused_kept_token_for_the_requester_is_asked_for_again(monkeypatch):
+    platform = Platform(
+        monkeypatch,
+        [_ready_for("old-person-token"), _ready_for("new-person-token")],
+        [_response(), _response(status=401), _response()],
+    )
+    release = _release()
+
+    with _person_request():
+        release.request("GET", "/v1/bills", timeout=5, act_for_requester=True)
+        release.request("GET", "/v1/bills", timeout=5, act_for_requester=True)
+
+    assert [ask.get("act_for_requester") for ask in platform.asks] == [True, True]
+    tokens = [sent["headers"]["Authorization"] for sent in platform.sent]
+    assert tokens == ["Bearer old-person-token", "Bearer old-person-token", "Bearer new-person-token"]
+
+
+def test_a_library_call_for_the_requester_uses_the_persons_token(monkeypatch):
+    platform = Platform(monkeypatch, [_ready_for("person-token")])
+
+    with _person_request():
+        with _release().call("GET", "/v1/bills", timeout=5, act_for_requester=True) as call:
+            call.record(_response())
+
+    assert call.headers["Authorization"] == "Bearer person-token"
+    assert CALLER_ASSERTION_HEADER not in call.headers
+    assert platform.asks == [{"timeout": 10.0, "act_for_requester": True}]
+    assert release_runtime_cache.warm_access(RELEASE_UID) is None

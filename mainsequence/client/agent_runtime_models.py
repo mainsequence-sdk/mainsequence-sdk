@@ -15,12 +15,13 @@ from pydantic import ConfigDict, Field, model_validator
 from .._request_deadline import DEADLINE_HEADER, format_timeout_ms, remaining_request_seconds
 from .._transport import budget_remaining_seconds, request_budget, request_within_budget
 from ..instrumentation.utils import DependencyCall
+from ..logconf import logger
 from .base import (
     BaseObjectOrm,
     BasePydanticModel,
     CurrentCodeRepositoryEnvironmentResourceMixin,
 )
-from .exceptions import ApiError, ServerError, raise_for_response
+from .exceptions import ApiError, ConflictError, ServerError, raise_for_response
 from .object_access import AccessManagedObjectMixin
 from .observability import (
     EnvironmentLogSearchMixin,
@@ -464,6 +465,18 @@ class AgentRuntimeNotReadyError(ApiError):
         self.state = state
 
 
+class AgentSessionBusyError(ConflictError):
+    """The session's model cannot change while one of its turns is running.
+
+    The platform answers ``409`` with ``error_code``
+    ``agent_session_selection_runtime_active``. Change the model again once the
+    turn has finished.
+    """
+
+
+SESSION_SELECTION_RUNTIME_ACTIVE = "agent_session_selection_runtime_active"
+
+
 class A2AMessageLimitExceededError(ServerError):
     """The target Agent did not answer a direct Message within the platform's limit.
 
@@ -871,6 +884,13 @@ class Agent(
         - The SDK never supplies a credential owner or forwards provider credentials.
         - Creation options are valid only with `handle_unique_id`.
         - Response is the canonical AgentSessionSerializer payload.
+
+        Creation options (`name`, `parent_session_uid`, `llm_provider`,
+        `llm_model`, `llm_thinking`, `custom_id`) apply only when the call
+        creates the session. For a handle that already has one, the existing
+        session is returned unchanged, on the model it already had; a warning
+        is logged when the requested `llm_*` differ from it. To change an
+        existing session's model, use `AgentSession.select_model`.
         """
         resolved_session_uid = str(session_uid or "").strip() if session_uid is not None else ""
         resolved_handle_unique_id = (
@@ -917,6 +937,27 @@ class Agent(
         session = AgentSession(**session_payload)
         if custom_id is not None and session.custom_id != creation_options["custom_id"]:
             raise ValueError("The returned session does not use the requested configured provider")
+        if response.status_code == 200:
+            requested = {
+                "llm_provider": llm_provider,
+                "llm_model": llm_model,
+                "llm_thinking": llm_thinking,
+            }
+            ignored = {
+                key: value
+                for key, value in requested.items()
+                if value is not None and str(value) != str(getattr(session, key, "") or "")
+            }
+            if ignored:
+                logger.warning(
+                    "agent.session.model_not_applied",
+                    agent_session_uid=session.uid,
+                    requested=ignored,
+                    session_llm_provider=session.llm_provider,
+                    session_llm_model=session.llm_model,
+                    session_llm_thinking=session.llm_thinking,
+                    hint="The session already existed; use AgentSession.select_model to change it.",
+                )
         return session
 
 
@@ -1130,6 +1171,44 @@ class AgentSession(
         "limit": "str",
         "offset": "str",
     }
+
+    def select_model(
+        self,
+        provider: str,
+        model: str,
+        thinking: str | None = None,
+    ) -> AgentSession:
+        """Change this session's LLM provider, model and, when given, thinking level.
+
+        Returns the session as the platform stored it. ``thinking=None`` keeps
+        the current thinking level. Raises ``AgentSessionBusyError`` (a
+        ``ConflictError``, status 409) while one of the session's turns is
+        running: nothing changed, and the call can be made again once the turn
+        has finished.
+        """
+        if not self.uid:
+            raise ValueError("AgentSession.uid is required to select its model")
+        fields: dict[str, str] = {}
+        for key, value in (("llm_provider", provider), ("llm_model", model)):
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"{key.removeprefix('llm_')} must be a non-empty string")
+            fields[key] = value.strip()
+        if thinking is not None:
+            if not isinstance(thinking, str) or not thinking.strip():
+                raise ValueError("thinking must be a non-empty string or None")
+            fields["llm_thinking"] = thinking.strip()
+        try:
+            return type(self).patch_by_uid(self.uid, **fields)
+        except ConflictError as error:
+            payload = error.payload if isinstance(error.payload, dict) else {}
+            if payload.get("error_code") != SESSION_SELECTION_RUNTIME_ACTIVE:
+                raise
+            raise AgentSessionBusyError(
+                f"The model of session {self.uid} cannot change while one of its turns "
+                "is running. Nothing changed; select it again once the turn has finished.",
+                response=error.response,
+                payload=error.payload,
+            ) from error
 
     @classmethod
     def _resolve_agent_session_uid(cls, agent_session: str | AgentSession) -> str:
@@ -2021,5 +2100,6 @@ __all__ = [
     "AgentSemanticSearchResult",
     "AgentSessionRuntimeAccess",
     "AgentSession",
+    "AgentSessionBusyError",
     "AgentSessionStatus",
 ]

@@ -130,7 +130,7 @@ you cannot view, for a person, or when the response does not carry it.
 than for `"human"`.
 
 Inside a FastAPI request, an application can read the directory as its caller
-sees it with `reads_as_caller()`: `User.filter(search=...)` then finds people by
+sees it with `as_caller=True`: `User.filter(search=..., as_caller=True)` finds people by
 email or name and workloads by their Job, release or Agent name, and each
 workload row carries `managed_by_caller`. See
 [Reading the directory as the caller](../fastapi/index.md#reading-the-directory-as-the-caller).
@@ -238,6 +238,19 @@ work and the original request time. Each delegated Agent must itself be enabled
 to act for its requester; delegation cannot select another person, increase
 their permissions or restart the 24-hour limit. A receiving application cannot
 forward its inbound assertion to create another requester binding.
+
+A FastAPI application can also call another FastAPI release for the person
+whose request it serves, with `act_for_requester=True` on its release calls
+(see [Calling for the person the request serves](resource_releases.md#calling-for-the-person-the-request-serves)).
+The rules differ from an Agent's:
+
+- The binding is the inbound request itself: only a person's direct request
+  binds, never a workload's and never a requester-bound request.
+- It lasts as long as that request's assertion, at most 300 seconds, not 24
+  hours.
+- Only release calls use it, and only after the calling application has
+  `acts_for_requester` turned on.
+- A refused binding is never retried with the application's own grants.
 
 The platform decides which operations support requester-bound access. Updating
 the SDK does not enable an operation or turn a refused call into the
